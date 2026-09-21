@@ -48,6 +48,9 @@ pub struct VerifyCapabilityPublicInputs {
     /// capability's `min_threshold`.
     pub threshold: pallas::Base,
     pub predicate_result: pallas::Base,
+    /// The name of the attribute the predicate is over — the host requires it to be the capability's
+    /// `attribute_name`.
+    pub attribute_1_name: pallas::Base,
     /// The credential commitment the proof reconstructs in-circuit — the host requires it to be the
     /// one its stored `Credential` carries.
     pub commitment: pallas::Base,
@@ -65,6 +68,7 @@ impl VerifyCapabilityPublicInputs {
             self.schema_hash,
             self.issuer_pub_x,
             self.issuer_pub_y,
+            self.attribute_1_name,
             self.threshold,
             self.predicate_result,
             self.commitment,
@@ -83,6 +87,10 @@ pub struct VerifyCapabilityCallData {
     pub issuer_public: PublicKey,
     pub holder_public: PublicKey,
     pub schema_hash: pallas::Base,
+    /// The attribute slots' *names*, as `attribute_name_field` maps them; the commitment covers the
+    /// name and the value together.
+    pub attribute_1_name: pallas::Base,
+    pub attribute_2_name: pallas::Base,
     pub attribute_1: pallas::Base,
     pub attribute_2: pallas::Base,
     pub attribute_blind: pallas::Base,
@@ -102,8 +110,10 @@ impl VerifyCapabilityCallData {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         credential_secret: pallas::Base,
+        attribute_1_name: pallas::Base,
         attribute_1: pallas::Base,
         threshold: pallas::Base,
+        attribute_2_name: pallas::Base,
         attribute_2: pallas::Base,
         attribute_blind: pallas::Base,
         issuer_public: PublicKey,
@@ -115,6 +125,8 @@ impl VerifyCapabilityCallData {
     ) -> Self {
         let mut call = Self {
             credential_secret,
+            attribute_1_name,
+            attribute_2_name,
             issuer_public,
             holder_public,
             schema_hash,
@@ -141,6 +153,16 @@ impl VerifyCapabilityCallData {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (hx, hy) = self.holder_public.xy().expect("pk not identity");
+        let attribute_1_hash = poseidon_hash([
+            pallas::Base::from(10u64),
+            self.attribute_1_name,
+            self.attribute_1,
+        ]);
+        let attribute_2_hash = poseidon_hash([
+            pallas::Base::from(10u64),
+            self.attribute_2_name,
+            self.attribute_2,
+        ]);
         let credential_data = poseidon_hash([
             pallas::Base::from(4u64),
             ix,
@@ -148,8 +170,8 @@ impl VerifyCapabilityCallData {
             hx,
             hy,
             self.schema_hash,
-            self.attribute_1,
-            self.attribute_2,
+            attribute_1_hash,
+            attribute_2_hash,
             self.attribute_blind,
         ]);
         poseidon_hash([
@@ -175,6 +197,7 @@ impl VerifyCapabilityCallData {
             schema_hash: self.schema_hash,
             issuer_pub_x: ix,
             issuer_pub_y: iy,
+            attribute_1_name: self.attribute_1_name,
             threshold: self.threshold,
             predicate_result: if self.predicate_result {
                 pallas::Base::one()
@@ -200,7 +223,9 @@ impl VerifyCapabilityCallData {
             Witness::Base(Value::known(hx)),
             Witness::Base(Value::known(hy)),
             Witness::Base(Value::known(self.schema_hash)),
+            Witness::Base(Value::known(self.attribute_1_name)),
             Witness::Base(Value::known(self.attribute_1)),
+            Witness::Base(Value::known(self.attribute_2_name)),
             Witness::Base(Value::known(self.attribute_2)),
             Witness::Base(Value::known(self.attribute_blind)),
             Witness::Base(Value::known(self.credential_secret)),

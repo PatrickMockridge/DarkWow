@@ -64,6 +64,10 @@ impl IssueCredentialPublicInputs {
 pub struct IssueCredentialCallData {
     pub issuer_secret: pallas::Base,
     pub credential_secret: pallas::Base,
+    /// The *names* of the two attribute slots, as `attribute_name_field` maps them. They are hashed
+    /// with their values, so the credential commits which attribute each value is.
+    pub attribute_1_name: pallas::Base,
+    pub attribute_2_name: pallas::Base,
     pub attribute_1: pallas::Base,
     pub attribute_2: pallas::Base,
     pub attribute_blind: pallas::Base,
@@ -81,7 +85,9 @@ impl IssueCredentialCallData {
     pub fn new(
         issuer_secret: pallas::Base,
         credential_secret: pallas::Base,
+        attribute_1_name: pallas::Base,
         attribute_1: pallas::Base,
+        attribute_2_name: pallas::Base,
         attribute_2: pallas::Base,
         attribute_blind: pallas::Base,
         issuer_public: PublicKey,
@@ -93,6 +99,8 @@ impl IssueCredentialCallData {
         Self {
             issuer_secret,
             credential_secret,
+            attribute_1_name,
+            attribute_2_name,
             attribute_1,
             attribute_2,
             attribute_blind,
@@ -117,6 +125,17 @@ impl IssueCredentialCallData {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (hx, hy) = self.holder_public.xy().expect("pk not identity");
+        // One hash per attribute slot, domain-separated, exactly as the circuits compute them.
+        let attribute_1_hash = poseidon_hash([
+            pallas::Base::from(10u64),
+            self.attribute_1_name,
+            self.attribute_1,
+        ]);
+        let attribute_2_hash = poseidon_hash([
+            pallas::Base::from(10u64),
+            self.attribute_2_name,
+            self.attribute_2,
+        ]);
         let credential_data = poseidon_hash([
             pallas::Base::from(4u64),
             ix,
@@ -124,8 +143,8 @@ impl IssueCredentialCallData {
             hx,
             hy,
             self.schema_hash,
-            self.attribute_1,
-            self.attribute_2,
+            attribute_1_hash,
+            attribute_2_hash,
             self.attribute_blind,
         ]);
         poseidon_hash([
@@ -176,7 +195,9 @@ impl IssueCredentialCallData {
             // Private inputs
             Witness::Base(Value::known(self.issuer_secret)),
             Witness::Base(Value::known(self.credential_secret)),
+            Witness::Base(Value::known(self.attribute_1_name)),
             Witness::Base(Value::known(self.attribute_1)),
+            Witness::Base(Value::known(self.attribute_2_name)),
             Witness::Base(Value::known(self.attribute_2)),
             Witness::Base(Value::known(self.attribute_blind)),
             Witness::Base(Value::known(self.tx_commitment)),

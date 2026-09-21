@@ -62,6 +62,12 @@ pub const DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET: pasta_curves::pallas::Base = pas
 pub const DRK_POSEIDON_DOMAIN_KEY_DERIVE: pasta_curves::pallas::Base = pasta_curves::pallas::Base::from_raw([8, 0, 0, 0]);
 pub const DRK_POSEIDON_DOMAIN_CAPABILITY_ID: pasta_curves::pallas::Base = pasta_curves::pallas::Base::from_raw([9, 0, 0, 0]);
 
+/// Domain for a *named* attribute inside a credential commitment: the credential commits
+/// `poseidon(DRK_POSEIDON_DOMAIN_ATTRIBUTE, name, value)` per attribute slot, so that the
+/// attribute a capability names is checkable against the credential rather than assumed from
+/// its position. See OBL-Z17 in `doc/src/arch/verification-hazop.md`.
+pub const DRK_POSEIDON_DOMAIN_ATTRIBUTE: pasta_curves::pallas::Base = pasta_curves::pallas::Base::from_raw([10, 0, 0, 0]);
+
 pub const MERKLE_DEPTH_ORCHARD: usize = 32;
 
 pub const SPARSE_MERKLE_DEPTH: usize = 3;

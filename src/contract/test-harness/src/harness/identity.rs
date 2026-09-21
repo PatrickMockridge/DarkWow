@@ -94,7 +94,9 @@ impl IdentityHarness {
         &self,
         issuer_secret: pallas::Base,
         credential_secret: pallas::Base,
+        attribute_1_name: &[u8],
         attribute_1: pallas::Base,
+        attribute_2_name: &[u8],
         attribute_2: pallas::Base,
         attribute_blind: pallas::Base,
         schema_hash: pallas::Base,
@@ -103,10 +105,17 @@ impl IdentityHarness {
     ) -> Result<IssueCredentialResult> {
         let issuer_public = PublicKey::from_secret(SecretKey::from_bytes(issuer_secret.to_repr()).unwrap());
         let holder_public = PublicKey::from_secret(SecretKey::from_bytes(credential_secret.to_repr()).unwrap());
+        // The same mapping the client, the circuits and the host use — one definition, in the model.
+        let (a1_name, a2_name) = (
+            dwow_identity_contract::model::attribute_name_field(attribute_1_name)
+                .ok_or_else(|| dwow_core::Error::Custom("attribute_1_name is longer than 31 bytes".into()))?,
+            dwow_identity_contract::model::attribute_name_field(attribute_2_name)
+                .ok_or_else(|| dwow_core::Error::Custom("attribute_2_name is longer than 31 bytes".into()))?,
+        );
 
         let input = IssueCredentialCallData::new(
-            issuer_secret, credential_secret, attribute_1, attribute_2, attribute_blind,
-            issuer_public, holder_public, schema_hash, issued_at, expires_at,
+            issuer_secret, credential_secret, a1_name, attribute_1, a2_name, attribute_2,
+            attribute_blind, issuer_public, holder_public, schema_hash, issued_at, expires_at,
         );
 
         let (proof, public_inputs) = create_issue_credential_proof(
@@ -133,13 +142,14 @@ impl IdentityHarness {
 
     /// Verify a capability with ZK proof
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::too_many_arguments)]
     pub fn verify_capability(
         &self,
         credential_secret: pallas::Base,
         capability_id: pallas::Base,
         threshold: pallas::Base,
+        attribute_1_name: &[u8],
         attribute_1: pallas::Base,
+        attribute_2_name: &[u8],
         attribute_2: pallas::Base,
         attribute_blind: pallas::Base,
         capability_secret: pallas::Base,
@@ -153,8 +163,14 @@ impl IdentityHarness {
         // The commitment is derived from the preimage by the client, so the harness supplies the
         // credential's parts and never a commitment of its own — which is what the caller of a real
         // capability proof has.
+        let (a1_name, a2_name) = (
+            dwow_identity_contract::model::attribute_name_field(attribute_1_name)
+                .ok_or_else(|| dwow_core::Error::Custom("attribute_1_name is longer than 31 bytes".into()))?,
+            dwow_identity_contract::model::attribute_name_field(attribute_2_name)
+                .ok_or_else(|| dwow_core::Error::Custom("attribute_2_name is longer than 31 bytes".into()))?,
+        );
         let input = VerifyCapabilityCallData::new(
-            credential_secret, attribute_1, threshold, attribute_2, attribute_blind,
+            credential_secret, a1_name, attribute_1, threshold, a2_name, attribute_2, attribute_blind,
             issuer_public, holder_public, schema_hash, issued_at, expires_at, predicate_result,
         );
 
@@ -176,6 +192,7 @@ impl IdentityHarness {
                 ).map_err(|e| {
                     dwow_core::Error::Custom(format!("invalid commitment: {e}"))
                 })?,
+                attribute_1_name: public_inputs.attribute_1_name,
                 // The threshold the predicate was evaluated at, now a public input of the proof and
                 // compared by the host against the capability's `min_threshold`. The harness takes it
                 // as a field element like every other value here, so it is read back through its

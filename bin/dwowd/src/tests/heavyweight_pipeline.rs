@@ -923,7 +923,9 @@ fn test_recruitment_pipeline_call_data() -> std::result::Result<(), Box<dyn std:
         let issue_result = id_harness.issue_credential(
             issuer_secret,
             worker_secret,
+            b"role",                     // attribute_1's *name* — the commitment covers name and value
             pallas::Base::from(100u64),  // attribute_1: role = senior
+            b"years_experience",         // attribute_2's name
             pallas::Base::from(200u64),  // attribute_2: years_experience = 5
             pallas::Base::from(300u64),  // attribute_blind
             schema_hash,

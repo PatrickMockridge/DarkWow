@@ -91,6 +91,23 @@ pub(crate) fn read_slice(data: &[u8], offset: usize, len: usize) -> Result<&[u8]
     })
 }
 
+/// The field element an attribute *name* commits to: the name's bytes read as a little-endian field
+/// element. At most 31 bytes, so the result is always a canonical representation — and this is the
+/// one mapping the client, both circuits and the host must agree on, since the credential commits
+/// `poseidon(DRK_POSEIDON_DOMAIN_ATTRIBUTE, name, value)` per attribute slot.
+///
+/// Before named attributes, a credential committed values only, so a capability requiring
+/// `attribute_name: "role"` had nothing to compare against: the number `100` in a slot could have
+/// been a role or a tenure, and no host could tell. OBL-Z17.
+pub fn attribute_name_field(name: &[u8]) -> Option<pallas::Base> {
+    if name.len() > 31 {
+        return None
+    }
+    let mut buf = [0u8; 32];
+    buf[..name.len()].copy_from_slice(name);
+    pallas::Base::from_repr(buf).into_option()
+}
+
 /// Capability identifier: hash of name + credential requirement
 #[derive(Debug, Clone, Copy, Eq, PartialEq,)]
 pub struct CapabilityId(pub pallas::Base);
@@ -502,6 +519,10 @@ pub struct CapabilityProof {
     /// `nullifier` — that is what ties the proof to a real, issued credential rather than to a
     /// commitment the caller invented.
     pub commitment: IntentCommitment,
+    /// The *name* of the attribute the predicate is over, as `attribute_name_field` maps it. A public
+    /// input of the proof, and the host requires it to be the capability's `attribute_name` — which
+    /// is what closes attribute identity.
+    pub attribute_1_name: pallas::Base,
     /// The threshold the predicate was evaluated against.
     ///
     /// Carried so the host can compare it against the capability's `min_threshold`
@@ -518,7 +539,7 @@ pub struct CapabilityProof {
 }
 
 #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
-impl CapabilityProof { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(142+self.proof.len()); b.extend_from_slice(&self.capability_id.encode()); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.predicate_result); b.extend_from_slice(&self.issuer_pub.to_bytes()); b.extend_from_slice(&self.schema_hash); b.extend_from_slice(&self.commitment.to_bytes()); b.extend_from_slice(&self.threshold.to_le_bytes()); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.capability_secret.encode()); b.extend_from_slice(&self.created_at.to_le_bytes()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 142 { return Err(ContractError::IoError("CapabilityProof: too short".into())); } let capability_id = CapabilityId::decode(read_slice(data, 0, 32 - 0)?)?; let nullifier = IntentNullifier::from_bytes(read_field::<32>(data, 32)?).map_err(|_| ContractError::IoError("CapabilityProof: invalid nullifier".into()))?; let predicate_result = read_byte(data, 64)?; let issuer_pub = PublicKey::from_bytes(read_field::<32>(data, 65)?).map_err(|e| ContractError::IoError(format!("CapabilityProof: invalid issuer_pub: {}", e)))?; let schema_hash: [u8;32] = read_field::<32>(data, 97)?; let commitment = IntentCommitment::from_bytes(read_field::<32>(data, 129)?).map_err(|_| ContractError::IoError("CapabilityProof: invalid commitment".into()))?; let threshold = u64::from_le_bytes(read_field::<8>(data, 161)?); let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 169)?).to_usize(); let p = 173+proof_len; if data.len() < p+40 { return Err(ContractError::IoError("CapabilityProof: truncated".into())); } let proof = read_slice(data, 173, (p) - (173))?.to_vec(); let capability_secret = CapabilitySecret::decode(read_slice(data, p, 32)?)?; let created_at = u64::from_le_bytes(read_field::<8>(data, p+32)?); Ok(CapabilityProof { capability_id, nullifier, predicate_result, issuer_pub, schema_hash, commitment, threshold, proof, capability_secret, created_at }) } }
+impl CapabilityProof { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(174+self.proof.len()); b.extend_from_slice(&self.capability_id.encode()); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.predicate_result); b.extend_from_slice(&self.issuer_pub.to_bytes()); b.extend_from_slice(&self.schema_hash); b.extend_from_slice(&self.commitment.to_bytes()); b.extend_from_slice(&self.attribute_1_name.to_repr()); b.extend_from_slice(&self.threshold.to_le_bytes()); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.capability_secret.encode()); b.extend_from_slice(&self.created_at.to_le_bytes()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 174 { return Err(ContractError::IoError("CapabilityProof: too short".into())); } let capability_id = CapabilityId::decode(read_slice(data, 0, 32 - 0)?)?; let nullifier = IntentNullifier::from_bytes(read_field::<32>(data, 32)?).map_err(|_| ContractError::IoError("CapabilityProof: invalid nullifier".into()))?; let predicate_result = read_byte(data, 64)?; let issuer_pub = PublicKey::from_bytes(read_field::<32>(data, 65)?).map_err(|e| ContractError::IoError(format!("CapabilityProof: invalid issuer_pub: {}", e)))?; let schema_hash: [u8;32] = read_field::<32>(data, 97)?; let commitment = IntentCommitment::from_bytes(read_field::<32>(data, 129)?).map_err(|_| ContractError::IoError("CapabilityProof: invalid commitment".into()))?; let attribute_1_name = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 161)?)).ok_or_else(|| ContractError::IoError("CapabilityProof: invalid attribute_1_name".into()))?; let threshold = u64::from_le_bytes(read_field::<8>(data, 193)?); let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 201)?).to_usize(); let p = 205+proof_len; if data.len() < p+40 { return Err(ContractError::IoError("CapabilityProof: truncated".into())); } let proof = read_slice(data, 205, (p) - (205))?.to_vec(); let capability_secret = CapabilitySecret::decode(read_slice(data, p, 32)?)?; let created_at = u64::from_le_bytes(read_field::<8>(data, p+32)?); Ok(CapabilityProof { capability_id, nullifier, predicate_result, issuer_pub, schema_hash, commitment, attribute_1_name, threshold, proof, capability_secret, created_at }) } }
 
 /// Parameters for registering a new capability type
 #[derive(Debug, Clone)]

@@ -161,6 +161,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     schema_hash,
                     issuer_x,
                     issuer_y,
+                    proof.attribute_1_name,
                     Base::from(proof.threshold),
                     Base::from(proof.predicate_result as u64),
                     proof.commitment.inner(),
@@ -642,7 +643,17 @@ fn process_verify_capability_instruction(
         return Err(IdentityError::PredicateFailed.into())
     }
 
-    // 5. The threshold the predicate was evaluated at must be at least the capability's floor. The
+    // 5. The attribute the predicate is over must be the one the capability names. Without this the
+    //    predicate holds over whichever of the credential's slots the prover chose: a capability
+    //    about `role` would accept a credential clearing its floor on `experience_years`.
+    let expected_attribute = attribute_name_field(&requirement.attribute_name)
+        .ok_or(IdentityError::AttributeMismatch)?;
+    if params.capability_proof.attribute_1_name != expected_attribute {
+        msg!("[identity::verify_capability] Error: the proof's attribute is not the capability's attribute");
+        return Err(IdentityError::AttributeMismatch.into())
+    }
+
+    // 6. The threshold the predicate was evaluated at must be at least the capability's floor. The
     //    circuit proves `attribute_value >= threshold` and cannot see this record, so a caller free
     //    to choose `threshold` could pass `0` and satisfy any requirement.
     if params.capability_proof.threshold < requirement.min_threshold {

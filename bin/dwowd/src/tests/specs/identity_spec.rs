@@ -23,16 +23,23 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
 
     // Pre-compute credential commitment (deterministic from harness seeds)
     let issuer_pub = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
+    // The attributes are *named*: the commitment covers `poseidon(10, name, value)` per slot, and
+    // the capability below requires `role`, so the credential's first slot must be `role` or the
+    // host's comparison rejects the proof.
     let issue_result = h.issue_credential(issuer_secret, credential_secret,
-        pallas::Base::from(100u64), pallas::Base::from(200u64),
+        b"role", pallas::Base::from(100u64),
+        b"tenure", pallas::Base::from(200u64),
         pallas::Base::from(300u64), schema_hash, 0, 100000)
         .expect("pre-compute issue_credential");
     let commitment = issue_result.public_inputs.commitment;
 
-    // Pre-compute capability_id
+    // Pre-compute capability_id. This must be the *same* requirement the endpoint below registers —
+    // a capability's id is derived from its requirement (`CapabilityId`: "hash of name + credential
+    // requirement"), so two spellings of the requirement are two capabilities and the `verify_state`
+    // lookup keys on this one.
     let reg_result = h.register_capability(b"can_vote".to_vec(),
         CredentialRequirement {
-            schema_hash: [0u8; 32], issuer_pub,
+            schema_hash: schema_hash.to_repr(), issuer_pub,
             min_threshold: 1, attribute_name: b"role".to_vec(),
         }, None)
         .expect("pre-compute register_capability");
@@ -85,22 +92,10 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 verify_state: Some(Box::new({ let k = credential_nullifier.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("credential must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.issue_credential(issuer_secret, credential_secret,
-                        pallas::Base::from(100u64), pallas::Base::from(200u64),
+                        b"role", pallas::Base::from(100u64),
+                        b"tenure", pallas::Base::from(200u64),
                         pallas::Base::from(300u64), schema_hash, 0, 100000)?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-                }),
-            },
-            EndpointSpec {
-                name: "RevokeCredentialV1", is_zk: false,
-                expectation: EndpointExpectation::Success,
-                generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = credential_nullifier.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("credential must be updated".into())); } Ok(()) } })),
-                generate: Box::new(move || {
-                    let nf = IntentNullifier::from_base(poseidon_hash([
-                        pallas::Base::from(1u64), credential_secret, commitment,
-                    ]));
-                    let r = h.revoke_credential(issuer_secret, nf, b"test".to_vec())?;
-                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                 }),
             },
             EndpointSpec {
@@ -138,11 +133,29 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                         // fixture that disagreed with the issuance would not prove at all.
                         let holder_pub = PublicKey::from_secret(SecretKey::from_base(credential_secret));
                         let r = h.verify_capability(credential_secret, cap_id,
-                            pallas::Base::from(50u64), pallas::Base::from(100u64),
-                            pallas::Base::from(200u64), pallas::Base::from(300u64),
+                            pallas::Base::from(50u64),
+                            b"role", pallas::Base::from(100u64),
+                            b"tenure", pallas::Base::from(200u64),
+                            pallas::Base::from(300u64),
                             capability_secret, pk, holder_pub, schema_hash, 0, 100000, true)?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
+                }),
+            },
+            // After `VerifyCapabilityV1`, not before it. The order used to be the reverse, and the
+            // verification endpoint therefore ran against a credential this one had just revoked —
+            // which passed only because revocation was checked nowhere. It is checked now.
+            EndpointSpec {
+                name: "RevokeCredentialV1", is_zk: false,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: Some(Box::new({ let k = credential_nullifier.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("credential must be updated".into())); } Ok(()) } })),
+                generate: Box::new(move || {
+                    let nf = IntentNullifier::from_base(poseidon_hash([
+                        pallas::Base::from(1u64), credential_secret, commitment,
+                    ]));
+                    let r = h.revoke_credential(issuer_secret, nf, b"test".to_vec())?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                 }),
             },
             EndpointSpec {
