@@ -107,7 +107,7 @@ pub(crate) fn game_room_create_pot_process_instruction_v1(
     msg!("[CreatePot] Pot {:?} created", pot_id);
 
     let update = CreatePotUpdateV1 { pot, room, player_nullifier: params.player_nullifier };
-    Ok(update.encode())
+    update.encode()
 }
 
 pub(crate) fn game_room_create_pot_process_update_v1(
@@ -115,7 +115,7 @@ pub(crate) fn game_room_create_pot_process_update_v1(
     update: CreatePotUpdateV1,
 ) -> ContractResult {
     let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
-    wasm::db::db_set(pots_db, &update.pot.pot_id.to_repr(), &update.pot.encode())?;
+    wasm::db::db_set(pots_db, &update.pot.pot_id.to_repr(), &update.pot.encode()?)?;
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     wasm::db::db_set(rooms_db, &update.room.room_id.to_repr(), &update.room.encode())?;
     let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;

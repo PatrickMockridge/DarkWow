@@ -24,6 +24,7 @@
 //! Game Room contract data structures
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, PublicKey},
     error::ContractError,
     pasta::pallas,
@@ -553,28 +554,31 @@ pub struct Pot {
 }
 
 impl Pot {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 84 + self.contributions.len() * PotContribution::ENCODED_SIZE;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.contributions.len())?;
+        let cap = 87 + self.contributions.len() * PotContribution::ENCODED_SIZE;
         let mut b = Vec::with_capacity(cap);
         b.push(self.version);
         b.extend_from_slice(&self.pot_id.to_repr());
         b.extend_from_slice(&self.room_id.to_repr());
         b.extend_from_slice(&self.total.to_le_bytes());
-        b.push(self.contributions.len() as u8);
+        b.extend_from_slice(&n.to_le_bytes());
         for c in &self.contributions {
             b.extend_from_slice(&c.encode());
         }
         b.push(self.state as u8);
         b.push(self.betting_round);
         b.extend_from_slice(&self.created_at.to_le_bytes());
-        b
+        Ok(b)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 84 {
+        // version(1) + pot_id(32) + room_id(32) + total(8) + count(4) + state(1) + round(1)
+        // + created_at(8) = 87 with no contributions.
+        if data.len() < 87 {
             return Err(ContractError::IoError(format!(
-                "Pot: expected at least 84 bytes, got {}",
+                "Pot: expected at least 87 bytes, got {}",
                 data.len()
             )));
         }
@@ -588,9 +592,9 @@ impl Pot {
         ))
         .ok_or_else(|| ContractError::IoError("Pot: invalid room_id".into()))?;
         let total = u64::from_le_bytes(data[65..73].try_into().unwrap());
-        let count = data[73] as usize;
+        let count = SerializedLen::from_le_bytes(data[73..77].try_into().unwrap()).to_usize();
         let mut contributions = Vec::with_capacity(count);
-        let mut pos = 74usize;
+        let mut pos = 77usize;
         for _i in 0..count {
             let contrib = PotContribution::decode(&data[pos..])?;
             pos += PotContribution::ENCODED_SIZE;
@@ -778,21 +782,23 @@ impl Bet {
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
 
-fn write_len_prefixed(b: &mut Vec<u8>, data: &[u8]) {
-    b.extend_from_slice(&(data.len() as u32).to_le_bytes());
+fn write_len_prefixed(b: &mut Vec<u8>, data: &[u8]) -> Result<(), ContractError> {
+    b.extend_from_slice(&SerializedLen::try_from_len(data.len())?.to_le_bytes());
     b.extend_from_slice(data);
+    Ok(())
 }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 fn read_len_prefixed(data: &[u8]) -> Result<(Vec<u8>, usize), ContractError> {
-    if data.len() < 4 {
+    if data.len() < SerializedLen::ENCODED_SIZE {
         return Err(ContractError::IoError("len-prefixed record too short".into()));
     }
-    let len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
-    if data.len() < 4 + len {
+    let len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+    let end = len.saturating_add(SerializedLen::ENCODED_SIZE);
+    if data.len() < end {
         return Err(ContractError::IoError("len-prefixed record truncated".into()));
     }
-    Ok((data[4..4 + len].to_vec(), 4 + len))
+    Ok((data[4..end].to_vec(), end))
 }
 
 /// Parameters for CreateRoomV1
@@ -860,10 +866,10 @@ impl dwow_serial::Decodable for ClosePotParamsV1 { fn decode<D: std::io::Read>(d
 impl ClosePotParamsV1 { pub const ENCODED_SIZE: usize = 128; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(128); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.pot_id.to_repr()); b.extend_from_slice(&self.player.to_bytes()); b.extend_from_slice(&self.player_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 128 { return Err(ContractError::IoError(format!("ClosePotParamsV1: expected 128 bytes, got {}", data.len()))); } Ok(ClosePotParamsV1 { room_id: read_base(&data[0..32])?, pot_id: read_base(&data[32..64])?, player: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ClosePotParamsV1: invalid player: {}", e)))?, player_nullifier: read_base(&data[96..128])? }) } }
 
 #[derive(Debug, Clone,)] pub struct SettlePotParamsV1 { pub caller: PublicKey, pub room_id: RoomId, pub pot_id: PotId, pub winners: Vec<(PublicKey, u64)>, pub signature: Vec<u8>, pub nonce: pallas::Base, pub pot_total: u64 }
-impl dwow_serial::Encodable for SettlePotParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SettlePotParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettlePotParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl SettlePotParamsV1 { pub fn encode(&self) -> Vec<u8> { let wc: usize = self.winners.iter().map(|_| 40).sum(); let mut b = Vec::with_capacity(98+wc+self.signature.len()); b.extend_from_slice(&self.caller.to_bytes()); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.pot_id.to_repr()); b.push(self.winners.len() as u8); for (pk, amt) in &self.winners { b.extend_from_slice(&pk.to_bytes()); b.extend_from_slice(&amt.to_le_bytes()); } b.push(self.signature.len() as u8); b.extend_from_slice(&self.signature); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.pot_total.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 98 { return Err(ContractError::IoError("SettlePotParamsV1: too short".into())); } let caller = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SettlePotParamsV1: invalid caller: {}", e)))?; let room_id = read_base(&data[32..64])?; let pot_id = read_base(&data[64..96])?; let wc = data[96] as usize; let mut pos = 97+wc*40; if data.len() < pos+1 { return Err(ContractError::IoError("SettlePotParamsV1: winners truncated".into())); } let mut winners = Vec::with_capacity(wc); for i in 0..wc { let s = 97+i*40; let pk = PublicKey::from_bytes(data[s..s+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SettlePotParamsV1: invalid winner pk[{}]: {}", i, e)))?; let amt = u64::from_le_bytes(data[s+32..s+40].try_into().unwrap()); winners.push((pk, amt)); } let sig_len = data[pos] as usize; pos += 1; if data.len() < pos+sig_len+40 { return Err(ContractError::IoError("SettlePotParamsV1: signature truncated".into())); } let signature = data[pos..pos+sig_len].to_vec(); pos += sig_len; let nonce = read_base(&data[pos..pos+32])?; let pot_total = u64::from_le_bytes(data[pos+32..pos+40].try_into().unwrap()); Ok(SettlePotParamsV1 { caller, room_id, pot_id, winners, signature, nonce, pot_total }) } }
+impl SettlePotParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let wn = SerializedLen::try_from_len(self.winners.len())?; let sl = SerializedLen::try_from_len(self.signature.len())?; let wc: usize = self.winners.iter().map(|_| 40).sum(); let mut b = Vec::with_capacity(144+wc+self.signature.len()); b.extend_from_slice(&self.caller.to_bytes()); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.pot_id.to_repr()); b.extend_from_slice(&wn.to_le_bytes()); for (pk, amt) in &self.winners { b.extend_from_slice(&pk.to_bytes()); b.extend_from_slice(&amt.to_le_bytes()); } b.extend_from_slice(&sl.to_le_bytes()); b.extend_from_slice(&self.signature); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.pot_total.to_le_bytes()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 144 { return Err(ContractError::IoError("SettlePotParamsV1: too short".into())); } let caller = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SettlePotParamsV1: invalid caller: {}", e)))?; let room_id = read_base(&data[32..64])?; let pot_id = read_base(&data[64..96])?; let wc = SerializedLen::from_le_bytes(data[96..100].try_into().unwrap()).to_usize(); let mut pos = wc.saturating_mul(40).saturating_add(100); if data.len() < pos.saturating_add(4) { return Err(ContractError::IoError("SettlePotParamsV1: winners truncated".into())); } let mut winners = Vec::with_capacity(wc); for i in 0..wc { let s = 100+i*40; let pk = PublicKey::from_bytes(data[s..s+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SettlePotParamsV1: invalid winner pk[{}]: {}", i, e)))?; let amt = u64::from_le_bytes(data[s+32..s+40].try_into().unwrap()); winners.push((pk, amt)); } let sig_len = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize(); pos = pos.saturating_add(4); if data.len() < pos.saturating_add(sig_len).saturating_add(40) { return Err(ContractError::IoError("SettlePotParamsV1: signature truncated".into())); } let signature = data[pos..pos+sig_len].to_vec(); pos = pos.saturating_add(sig_len); let nonce = read_base(&data[pos..pos+32])?; let pot_total = u64::from_le_bytes(data[pos+32..pos+40].try_into().unwrap()); Ok(SettlePotParamsV1 { caller, room_id, pot_id, winners, signature, nonce, pot_total }) } }
 
 #[derive(Debug, Clone,)] pub struct ContributeEntropyParamsV1 { pub room_id: RoomId, pub player: PublicKey, pub commitment: pallas::Base, pub player_nullifier: pallas::Base, pub reveal: Option<pallas::Base> }
 impl dwow_serial::Encodable for ContributeEntropyParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
@@ -883,10 +889,10 @@ pub struct ClaimParamsV1 {
     pub nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for ClaimParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for ClaimParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ClaimParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl ClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(130+self.proof.len()); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.pot_id.to_repr()); b.extend_from_slice(&self.winner.to_bytes()); b.extend_from_slice(&self.payout_amount.to_le_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 130 { return Err(ContractError::IoError("ClaimParamsV1: too short".into())); } let room_id = read_base(&data[0..32])?; let pot_id = read_base(&data[32..64])?; let winner = PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ClaimParamsV1: invalid winner: {}", e)))?; let payout_amount = u64::from_le_bytes(data[96..104].try_into().unwrap()); let proof_len = data[104] as usize; let pos = 105+proof_len; if data.len() < pos+32 { return Err(ContractError::IoError("ClaimParamsV1: proof truncated".into())); } let proof = data[105..pos].to_vec(); let nonce = read_base(&data[pos..pos+32])?; Ok(ClaimParamsV1 { room_id, pot_id, winner, payout_amount, proof, nonce }) } }
+impl ClaimParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(140+self.proof.len()); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.pot_id.to_repr()); b.extend_from_slice(&self.winner.to_bytes()); b.extend_from_slice(&self.payout_amount.to_le_bytes()); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 140 { return Err(ContractError::IoError("ClaimParamsV1: too short".into())); } let room_id = read_base(&data[0..32])?; let pot_id = read_base(&data[32..64])?; let winner = PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ClaimParamsV1: invalid winner: {}", e)))?; let payout_amount = u64::from_le_bytes(data[96..104].try_into().unwrap()); let proof_len = SerializedLen::from_le_bytes(data[104..108].try_into().unwrap()).to_usize(); let pos = proof_len.saturating_add(108); if data.len() < pos.saturating_add(32) { return Err(ContractError::IoError("ClaimParamsV1: proof truncated".into())); } let proof = data[108..pos].to_vec(); let nonce = read_base(&data[pos..pos+32])?; Ok(ClaimParamsV1 { room_id, pot_id, winner, payout_amount, proof, nonce }) } }
 
 #[derive(Debug, Clone,)] pub struct CreatePotParamsV1 { pub room_id: RoomId, pub player: PublicKey, pub nonce: pallas::Base, pub player_nullifier: pallas::Base }
 impl dwow_serial::Encodable for CreatePotParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
@@ -1010,14 +1016,14 @@ impl CreateRoomUpdateV1 {
     }
 }
 
-impl dwow_serial::Encodable for DepositUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for DepositUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for DepositUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl DepositUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let mut b = Vec::new();
         b.extend_from_slice(&self.room_id.to_repr());
-        write_len_prefixed(&mut b, &self.account.encode());
-        b
+        write_len_prefixed(&mut b, &self.account.encode())?;
+        Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
@@ -1058,16 +1064,16 @@ impl WithdrawUpdateV1 {
     }
 }
 
-impl dwow_serial::Encodable for PlaceBetUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for PlaceBetUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PlaceBetUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PlaceBetUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let mut b = Vec::new();
         b.extend_from_slice(&self.bet.encode());
-        write_len_prefixed(&mut b, &self.pot.encode());
-        write_len_prefixed(&mut b, &self.account.encode());
-        write_len_prefixed(&mut b, &self.room.encode());
-        b
+        write_len_prefixed(&mut b, &self.pot.encode()?)?;
+        write_len_prefixed(&mut b, &self.account.encode())?;
+        write_len_prefixed(&mut b, &self.room.encode())?;
+        Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < Bet::ENCODED_SIZE {
@@ -1086,17 +1092,17 @@ impl PlaceBetUpdateV1 {
     }
 }
 
-impl dwow_serial::Encodable for RaiseUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for RaiseUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RaiseUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RaiseUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let mut b = Vec::new();
         b.extend_from_slice(&self.bet.encode());
-        write_len_prefixed(&mut b, &self.pot.encode());
-        write_len_prefixed(&mut b, &self.account.encode());
-        write_len_prefixed(&mut b, &self.room.encode());
+        write_len_prefixed(&mut b, &self.pot.encode()?)?;
+        write_len_prefixed(&mut b, &self.account.encode())?;
+        write_len_prefixed(&mut b, &self.room.encode())?;
         b.extend_from_slice(&self.player_nullifier.to_repr());
-        b
+        Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < Bet::ENCODED_SIZE {
@@ -1118,16 +1124,16 @@ impl RaiseUpdateV1 {
     }
 }
 
-impl dwow_serial::Encodable for CallUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CallUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CallUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CallUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let mut b = Vec::new();
         b.extend_from_slice(&self.bet.encode());
-        write_len_prefixed(&mut b, &self.pot.encode());
-        write_len_prefixed(&mut b, &self.account.encode());
+        write_len_prefixed(&mut b, &self.pot.encode()?)?;
+        write_len_prefixed(&mut b, &self.account.encode())?;
         b.extend_from_slice(&self.player_nullifier.to_repr());
-        b
+        Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < Bet::ENCODED_SIZE {
@@ -1147,15 +1153,15 @@ impl CallUpdateV1 {
     }
 }
 
-impl dwow_serial::Encodable for FoldUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for FoldUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for FoldUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl FoldUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let mut b = Vec::new();
         b.extend_from_slice(&self.room_id.to_repr());
-        write_len_prefixed(&mut b, &self.account.encode());
+        write_len_prefixed(&mut b, &self.account.encode())?;
         b.extend_from_slice(&self.player_nullifier.to_repr());
-        b
+        Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 32 {
@@ -1172,15 +1178,15 @@ impl FoldUpdateV1 {
     }
 }
 
-impl dwow_serial::Encodable for ClosePotUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for ClosePotUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ClosePotUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ClosePotUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let mut b = Vec::new();
-        write_len_prefixed(&mut b, &self.pot.encode());
-        write_len_prefixed(&mut b, &self.room.encode());
+        write_len_prefixed(&mut b, &self.pot.encode()?)?;
+        write_len_prefixed(&mut b, &self.room.encode())?;
         b.extend_from_slice(&self.player_nullifier.to_repr());
-        b
+        Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let (pot_b, n1) = read_len_prefixed(data)?;
@@ -1194,24 +1200,24 @@ impl ClosePotUpdateV1 {
     }
 }
 
-impl dwow_serial::Encodable for SettlePotUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SettlePotUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettlePotUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SettlePotUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> { self.pot.encode() }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { self.pot.encode() }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         Ok(SettlePotUpdateV1 { pot: Pot::decode(data)? })
     }
 }
 
-impl dwow_serial::Encodable for ContributeEntropyUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for ContributeEntropyUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ContributeEntropyUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ContributeEntropyUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let mut b = Vec::new();
-        write_len_prefixed(&mut b, &self.account.encode());
-        write_len_prefixed(&mut b, &self.room.encode());
+        write_len_prefixed(&mut b, &self.account.encode())?;
+        write_len_prefixed(&mut b, &self.room.encode())?;
         b.extend_from_slice(&self.player_nullifier.to_repr());
-        b
+        Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let (account_b, n1) = read_len_prefixed(data)?;
@@ -1258,15 +1264,15 @@ impl ClaimUpdateV1 {
     }
 }
 
-impl dwow_serial::Encodable for CreatePotUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CreatePotUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreatePotUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreatePotUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let mut b = Vec::new();
-        write_len_prefixed(&mut b, &self.pot.encode());
-        write_len_prefixed(&mut b, &self.room.encode());
+        write_len_prefixed(&mut b, &self.pot.encode()?)?;
+        write_len_prefixed(&mut b, &self.room.encode())?;
         b.extend_from_slice(&self.player_nullifier.to_repr());
-        b
+        Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let (pot_b, n1) = read_len_prefixed(data)?;

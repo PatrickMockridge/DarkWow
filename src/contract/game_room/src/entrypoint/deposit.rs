@@ -129,7 +129,7 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
     msg!("[Deposit] Player account prepared at block {}", current_block);
 
     let update = DepositUpdateV1 { room_id: params.room_id, account };
-    Ok(update.encode())
+    update.encode()
 }
 
 #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]

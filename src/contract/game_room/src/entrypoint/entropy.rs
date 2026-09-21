@@ -147,7 +147,7 @@ pub(crate) fn process_contribute_entropy_instruction(
         room,
         player_nullifier: params.player_nullifier,
     };
-    wasm::util::set_return_data(&[&[0x09u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[0x09u8], &update.encode()?[..]].concat())
 }
 
 #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]

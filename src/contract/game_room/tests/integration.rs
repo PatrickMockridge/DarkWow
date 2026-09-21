@@ -791,7 +791,7 @@ fn test_pot_encoding() {
         created_at: 50,
     };
 
-    let encoded = pot.encode();
+    let encoded = pot.encode().unwrap();
     let decoded = Pot::decode(&encoded).unwrap();
 
     assert_eq!(decoded.pot_id, pot.pot_id);
@@ -799,6 +799,90 @@ fn test_pot_encoding() {
     assert_eq!(decoded.total, pot.total);
     assert_eq!(decoded.contributions.len(), 2);
     assert_eq!(decoded.state, pot.state);
+}
+
+/// The contribution count is a `SerializedLen`. `Pot` is **stored state**, so this prefix is read
+/// on every apply — 256 contributions is where the old `u8` wrote `0` and the tail (`state`,
+/// `betting_round`, `created_at`) moved under the decoder's feet.
+#[test]
+fn test_pot_contribution_count_is_not_a_byte() {
+    let contributions: Vec<PotContribution> = (0..256u64)
+        .map(|i| PotContribution {
+            player: make_pubkey(i + 1),
+            amount: i + 1,
+            bet_type: BetType::Bet,
+            block: 50,
+        })
+        .collect();
+    let pot = Pot {
+        version: 0,
+        pot_id: pallas::Base::from(11),
+        room_id: pallas::Base::from(12),
+        total: 32896,
+        contributions: contributions.clone(),
+        state: PotState::Closed,
+        betting_round: 7,
+        created_at: 99,
+    };
+
+    let encoded = pot.encode().unwrap();
+    assert_eq!(encoded.len(), 87 + 256 * PotContribution::ENCODED_SIZE);
+
+    let decoded = Pot::decode(&encoded).unwrap();
+    assert_eq!(decoded.contributions.len(), 256);
+    assert_eq!(decoded.contributions[255].amount, 256);
+    assert_eq!(decoded.state, PotState::Closed);
+    assert_eq!(decoded.betting_round, 7);
+    assert_eq!(decoded.created_at, 99);
+}
+
+/// Two `SerializedLen` prefixes in one struct — the winner count and the signature length — with
+/// 256 winners and a signature longer than 255 bytes, so both truncate under the old `u8`.
+#[test]
+fn test_settle_pot_params_counts_are_not_bytes() {
+    let winners: Vec<(dwow_sdk::crypto::PublicKey, u64)> =
+        (0..256u64).map(|i| (make_pubkey(i + 1), i + 1)).collect();
+    let params = SettlePotParamsV1 {
+        caller: make_pubkey(1),
+        room_id: pallas::Base::from(21),
+        pot_id: pallas::Base::from(22),
+        winners: winners.clone(),
+        signature: vec![0x5A; 300],
+        nonce: pallas::Base::from(23),
+        pot_total: 32896,
+    };
+
+    let encoded = params.encode().unwrap();
+    assert_eq!(encoded.len(), 144 + 256 * 40 + 300);
+
+    let decoded = SettlePotParamsV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.winners.len(), 256);
+    assert_eq!(decoded.winners[255].1, 256);
+    assert_eq!(decoded.signature.len(), 300);
+    assert_eq!(decoded.nonce, params.nonce);
+    assert_eq!(decoded.pot_total, 32896);
+}
+
+/// The proof length is a `SerializedLen`. `nonce` sits *after* the proof, so a truncated prefix
+/// moves it.
+#[test]
+fn test_claim_params_proof_length_is_not_a_byte() {
+    let params = ClaimParamsV1 {
+        room_id: pallas::Base::from(31),
+        pot_id: pallas::Base::from(32),
+        winner: make_pubkey(2),
+        payout_amount: 1234,
+        proof: vec![0xC3; 700],
+        nonce: pallas::Base::from(33),
+    };
+
+    let encoded = params.encode().unwrap();
+    assert_eq!(encoded.len(), 140 + 700);
+
+    let decoded = ClaimParamsV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.proof.len(), 700);
+    assert_eq!(decoded.payout_amount, 1234);
+    assert_eq!(decoded.nonce, params.nonce);
 }
 
 #[test]

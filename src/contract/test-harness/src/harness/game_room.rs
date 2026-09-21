@@ -242,7 +242,7 @@ impl GameRoomHarness {
             pot_total,
         };
         let mut call_data = vec![0x08];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         Ok(SettlePotGRResult { call_data, public_inputs, proof })
     }
 
@@ -262,7 +262,7 @@ impl GameRoomHarness {
         let (proof, public_inputs) = claim_v1_proof(&self.claim_zkbin, &self.claim_pk, &input)?;
         let params = ClaimParamsV1 { room_id, pot_id, winner, payout_amount, proof: vec![], nonce };
         let mut call_data = vec![0x0A];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         Ok(ClaimGRResult { call_data, public_inputs, proof })
     }
 }

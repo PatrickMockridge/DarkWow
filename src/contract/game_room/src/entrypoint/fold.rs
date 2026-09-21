@@ -94,7 +94,7 @@ pub(crate) fn game_room_fold_process_instruction_v1(
     msg!("[Fold] Player {:?} folded", caller);
 
     let update = FoldUpdateV1 { room_id: params.room_id, account, player_nullifier: params.player_nullifier };
-    Ok(update.encode())
+    update.encode()
 }
 
 #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]

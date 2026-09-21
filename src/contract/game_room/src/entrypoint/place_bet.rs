@@ -201,7 +201,7 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
     msg!("[PlaceBet] Bet placed successfully: {:?}", bet_id);
 
     let update = PlaceBetUpdateV1 { bet, pot, account, room };
-    Ok(update.encode())
+    update.encode()
 }
 
 #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
@@ -212,7 +212,7 @@ pub(crate) fn game_room_place_bet_process_update_v1(
     let bets_db = wasm::db::db_lookup(cid, GAME_ROOM_BETS_TREE)?;
     wasm::db::db_set(bets_db, &update.bet.bet_id.to_repr(), &update.bet.encode())?;
     let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
-    wasm::db::db_set(pots_db, &update.pot.pot_id.to_repr(), &update.pot.encode())?;
+    wasm::db::db_set(pots_db, &update.pot.pot_id.to_repr(), &update.pot.encode()?)?;
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
     let account_key = [
         &update.bet.room_id.to_repr()[..],

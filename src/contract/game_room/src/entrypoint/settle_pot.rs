@@ -113,7 +113,7 @@ pub(crate) fn game_room_settle_pot_process_instruction_v1(
     msg!("[SettlePot] Pot {:?} settled with total {}", params.pot_id, pot.total);
 
     let update = SettlePotUpdateV1 { pot };
-    Ok(update.encode())
+    update.encode()
 }
 
 pub(crate) fn game_room_settle_pot_process_update_v1(
@@ -121,7 +121,7 @@ pub(crate) fn game_room_settle_pot_process_update_v1(
     update: SettlePotUpdateV1,
 ) -> ContractResult {
     let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
-    wasm::db::db_set(pots_db, &update.pot.pot_id.to_repr(), &update.pot.encode())?;
+    wasm::db::db_set(pots_db, &update.pot.pot_id.to_repr(), &update.pot.encode()?)?;
     msg!("[SettlePot] Update applied: pot {:?}", update.pot.pot_id);
     Ok(())
 }
