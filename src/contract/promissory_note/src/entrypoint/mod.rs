@@ -748,13 +748,13 @@ fn revoke_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
             user_data_encs: params.inputs.iter().map(|i| i.user_data_enc).collect(),
         };
 
-        let payload_bytes = payload.encode();
+        let payload_bytes = payload.encode()?;
         wasm::util::emit_spend_hook(&target_cid, &payload_bytes)?;
     }
 
     let update = RevokeUpdateV1 { nullifiers: new_nullifiers };
     msg!("[promissory_note::revoke_v1] Burn valid");
-    wasm::util::set_return_data(&[&[PromissoryNoteFunction::RevokeV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[PromissoryNoteFunction::RevokeV1 as u8], &update.encode()?[..]].concat())
 }
 
 // ============================================================================
@@ -823,7 +823,7 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
 
     let update = TransferUpdateV1 { nullifiers: new_nullifiers, commitments: new_commitments };
     msg!("[promissory_note::transfer_v1] Transfer valid");
-    wasm::util::set_return_data(&[&[PromissoryNoteFunction::TransferV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[PromissoryNoteFunction::TransferV1 as u8], &update.encode()?[..]].concat())
 }
 
 // ============================================================================
@@ -1270,7 +1270,7 @@ fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
 
     let update = OtcSwapUpdateV1 { nullifiers: new_nullifiers, commitments: new_commitments };
     msg!("[promissory_note::otc_swap_v1] OTC swap valid");
-    wasm::util::set_return_data(&[&[PromissoryNoteFunction::OtcSwapV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[PromissoryNoteFunction::OtcSwapV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// Apply OtcSwapV1 state update (same as apply_transfer)

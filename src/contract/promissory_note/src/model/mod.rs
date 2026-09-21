@@ -34,6 +34,7 @@
 //! - TransferV1: Private token transfer
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{constants::DRK_POSEIDON_DOMAIN_COMMITMENT, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, ContractId, FuncId, MerkleNode, AssetId},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
@@ -60,16 +61,6 @@ pub(crate) fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[
                 data.len()
             ))
         })
-}
-
-/// Read exactly one byte at `offset` — total, for the same reason as [`read_field`].
-pub(crate) fn read_byte(data: &[u8], offset: usize) -> Result<u8, ContractError> {
-    data.get(offset).copied().ok_or_else(|| {
-        ContractError::IoError(format!(
-            "truncated byte at offset {offset}, buffer has {}",
-            data.len()
-        ))
-    })
 }
 
 /// Borrow exactly `len` bytes at `offset` — total, for the same reason as [`read_field`].
@@ -315,23 +306,24 @@ pub struct Output {
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Output {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let note_bytes = dwow_serial::serialize(&self.note);
-        let cap = 130 + note_bytes.len();
+        let n = SerializedLen::try_from_len(note_bytes.len())?;
+        let cap = 132 + note_bytes.len();
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.value_commit.to_bytes());
         buf.extend_from_slice(&self.token_commit.to_repr());
         buf.extend_from_slice(&self.commitment.encode());
-        buf.extend_from_slice(&(note_bytes.len() as u16).to_le_bytes());
+        buf.extend_from_slice(&n.to_le_bytes());
         buf.extend_from_slice(&note_bytes);
         buf.extend_from_slice(&self.spend_hook.to_bytes());
-        buf
+        Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 130 {
+        if data.len() < 132 {
             return Err(ContractError::IoError(format!(
-                "Output: expected at least 130 bytes, got {}", data.len()
+                "Output: expected at least 132 bytes, got {}", data.len()
             )));
         }
         let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(&read_field::<32>(data, 0)?))
@@ -339,14 +331,14 @@ impl Output {
         let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?))
             .ok_or_else(|| ContractError::IoError("Output: invalid token_commit".into()))?;
         let commitment = CapCommitment::decode(read_slice(data, 64, 32)?)?;
-        let note_len = u16::from_le_bytes(read_field::<2>(data, 96)?) as usize;
-        let note_end = 98 + note_len;
+        let note_len = SerializedLen::from_le_bytes(read_field::<4>(data, 96)?).to_usize();
+        let note_end = 100 + note_len;
         if data.len() < note_end + 32 {
             return Err(ContractError::IoError(format!(
                 "Output: expected at least {} bytes, got {}", note_end + 32, data.len()
             )));
         }
-        let note = dwow_serial::deserialize(read_slice(data, 98, (note_end) - (98))?)
+        let note = dwow_serial::deserialize(read_slice(data, 100, (note_end) - (100))?)
             .map_err(|e| ContractError::IoError(format!("Output: invalid note: {:?}", e)))?;
         let spend_hook = FuncId::from_bytes(read_field::<32>(data, note_end)?)
             .map_err(|_| ContractError::IoError("Output: invalid spend_hook".into()))?;
@@ -584,25 +576,26 @@ pub struct RevokeParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for RevokeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for RevokeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RevokeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RevokeParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 1 + self.inputs.len() * Input::ENCODED_SIZE + 64;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.inputs.len())?;
+        let cap = 4 + self.inputs.len() * Input::ENCODED_SIZE + 64;
         let mut buf = Vec::with_capacity(cap);
-        buf.push(self.inputs.len() as u8);
+        buf.extend_from_slice(&n.to_le_bytes());
         for input in &self.inputs { buf.extend_from_slice(&input.encode()); }
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf
+        Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 65 { return Err(ContractError::IoError("RevokeParamsV1: too short".into())); }
-        let count = read_byte(data, 0)? as usize;
-        let mut pos = 1;
+        if data.len() < 68 { return Err(ContractError::IoError("RevokeParamsV1: too short".into())); }
+        let count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let mut pos = 4;
         let mut inputs = Vec::with_capacity(count);
         for i in 0..count {
             if data.len() < pos + Input::ENCODED_SIZE {
@@ -626,25 +619,26 @@ pub struct RevokeUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
 }
 
-impl dwow_serial::Encodable for RevokeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for RevokeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RevokeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RevokeUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(1 + self.nullifiers.len() * 32);
-        buf.push(self.nullifiers.len() as u8);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.nullifiers.len())?;
+        let mut buf = Vec::with_capacity(4 + self.nullifiers.len() * 32);
+        buf.extend_from_slice(&n.to_le_bytes());
         for nf in &self.nullifiers {
             buf.extend_from_slice(&nf.to_bytes());
         }
-        buf
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.is_empty() {
+        if data.len() < 4 {
             return Err(ContractError::IoError("RevokeUpdateV1: empty data".into()));
         }
-        let count = read_byte(data, 0)? as usize;
-        let expected = 1 + count * 32;
+        let count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let expected = 4 + count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "RevokeUpdateV1: expected {} bytes for {} nullifiers, got {}", expected, count, data.len()
@@ -652,7 +646,7 @@ impl RevokeUpdateV1 {
         }
         let mut nullifiers = Vec::with_capacity(count);
         for i in 0..count {
-            let start = 1 + i * 32;
+            let start = 4 + i * 32;
             let nf = Nullifier::from_bytes(read_field::<32>(data, start)?)
                 .map_err(|e| ContractError::IoError(format!("RevokeUpdateV1: invalid nullifier[{}]: {}", i, e)))?;
             nullifiers.push(nf);
@@ -673,32 +667,36 @@ pub struct TransferParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for TransferParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for TransferParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TransferParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TransferParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let ic = SerializedLen::try_from_len(self.inputs.len())?;
+        let oc = SerializedLen::try_from_len(self.outputs.len())?;
         let input_cap = self.inputs.len() * Input::ENCODED_SIZE;
-        let output_bytes: Vec<Vec<u8>> = self.outputs.iter().map(|o| o.encode()).collect();
+        let output_bytes: Vec<Vec<u8>> =
+            self.outputs.iter().map(|o| o.encode()).collect::<Result<Vec<_>, _>>()?;
         let output_cap: usize = output_bytes.iter().map(|b| b.len()).sum();
-        let mut buf = Vec::with_capacity(2 + input_cap + 2 + output_cap + output_bytes.len() * 2 + 64);
-        buf.push(self.inputs.len() as u8);
+        let mut buf = Vec::with_capacity(8 + input_cap + output_cap + output_bytes.len() * 4 + 64);
+        buf.extend_from_slice(&ic.to_le_bytes());
         for input in &self.inputs { buf.extend_from_slice(&input.encode()); }
-        buf.push(self.outputs.len() as u8);
+        buf.extend_from_slice(&oc.to_le_bytes());
         for ob in &output_bytes {
-            buf.extend_from_slice(&(ob.len() as u16).to_le_bytes());
+            buf.extend_from_slice(&SerializedLen::try_from_len(ob.len())?.to_le_bytes());
             buf.extend_from_slice(ob);
         }
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf
+        Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 3 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); }
-        let input_count = read_byte(data, 0)? as usize;
-        let mut pos = 1;
+        // 4(input count) + 4(output count) + 32(tx_binding) + 32(tx_nonce) = 72
+        if data.len() < 72 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); }
+        let input_count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let mut pos = 4;
         let mut inputs = Vec::with_capacity(input_count);
         for i in 0..input_count {
             if data.len() < pos + Input::ENCODED_SIZE {
@@ -707,14 +705,14 @@ impl TransferParamsV1 {
             inputs.push(Input::decode(read_slice(data, pos, Input::ENCODED_SIZE)?)?);
             pos += Input::ENCODED_SIZE;
         }
-        if data.len() < pos + 1 { return Err(ContractError::IoError("TransferParamsV1: missing output count".into())); }
-        let output_count = read_byte(data, pos)? as usize;
-        pos += 1;
+        if data.len() < pos + 4 { return Err(ContractError::IoError("TransferParamsV1: missing output count".into())); }
+        let output_count = SerializedLen::from_le_bytes(read_field::<4>(data, pos)?).to_usize();
+        pos += 4;
         let mut outputs = Vec::with_capacity(output_count);
         for i in 0..output_count {
-            if data.len() < pos + 2 { return Err(ContractError::IoError(format!("TransferParamsV1: output[{}] truncated", i))); }
-            let out_len = u16::from_le_bytes(read_field::<2>(data, pos)?) as usize;
-            pos += 2;
+            if data.len() < pos + 4 { return Err(ContractError::IoError(format!("TransferParamsV1: output[{}] truncated", i))); }
+            let out_len = SerializedLen::from_le_bytes(read_field::<4>(data, pos)?).to_usize();
+            pos += 4;
             if data.len() < pos + out_len { return Err(ContractError::IoError(format!("TransferParamsV1: output[{}] data truncated", i))); }
             outputs.push(Output::decode(read_slice(data, pos, out_len)?)?);
             pos += out_len;
@@ -735,33 +733,35 @@ pub struct TransferUpdateV1 {
     pub commitments: Vec<CapCommitment>,
 }
 
-impl dwow_serial::Encodable for TransferUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for TransferUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TransferUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TransferUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.nullifiers.len() * 32 + self.commitments.len() * 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let nf = SerializedLen::try_from_len(self.nullifiers.len())?;
+        let cm = SerializedLen::try_from_len(self.commitments.len())?;
+        let cap = 8 + self.nullifiers.len() * 32 + self.commitments.len() * 32;
         let mut buf = Vec::with_capacity(cap);
-        buf.push(self.nullifiers.len() as u8);
+        buf.extend_from_slice(&nf.to_le_bytes());
         for nf in &self.nullifiers { buf.extend_from_slice(&nf.to_bytes()); }
-        buf.push(self.commitments.len() as u8);
+        buf.extend_from_slice(&cm.to_le_bytes());
         for c in &self.commitments { buf.extend_from_slice(&c.to_bytes()); }
-        buf
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 2 {
+        if data.len() < 8 {
             return Err(ContractError::IoError("TransferUpdateV1: data too short".into()));
         }
-        let nf_count = read_byte(data, 0)? as usize;
-        let nf_end = 1 + nf_count * 32;
-        if data.len() < nf_end + 1 {
+        let nf_count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let nf_end = 4 + nf_count * 32;
+        if data.len() < nf_end + 4 {
             return Err(ContractError::IoError(format!(
-                "TransferUpdateV1: expected at least {} bytes, got {}", nf_end + 1, data.len()
+                "TransferUpdateV1: expected at least {} bytes, got {}", nf_end + 4, data.len()
             )));
         }
-        let commitment_count = read_byte(data, nf_end)? as usize;
-        let expected = nf_end + 1 + commitment_count * 32;
+        let commitment_count = SerializedLen::from_le_bytes(read_field::<4>(data, nf_end)?).to_usize();
+        let expected = nf_end + 4 + commitment_count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "TransferUpdateV1: expected {} bytes ({} nf + {} commitments), got {}",
@@ -770,13 +770,13 @@ impl TransferUpdateV1 {
         }
         let mut nullifiers = Vec::with_capacity(nf_count);
         for i in 0..nf_count {
-            let start = 1 + i * 32;
+            let start = 4 + i * 32;
             nullifiers.push(Nullifier::from_bytes(read_field::<32>(data, start)?)
                 .map_err(|e| ContractError::IoError(format!("TransferUpdateV1: invalid nullifier[{}]: {}", i, e)))?);
         }
         let mut commitments = Vec::with_capacity(commitment_count);
         for i in 0..commitment_count {
-            let start = nf_end + 1 + i * 32;
+            let start = nf_end + 4 + i * 32;
             commitments.push(CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(
                 read_field::<32>(data, start)?,
             )).ok_or_else(|| ContractError::IoError(format!("TransferUpdateV1: invalid commitment[{}]", i)))?));
@@ -810,27 +810,27 @@ pub struct RedeemParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for RedeemParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for RedeemParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RedeemParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RedeemParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let input_bytes = self.input.encode();
-        let output_bytes = self.output.encode();
+        let output_bytes = self.output.encode()?;
         let mut buf = Vec::with_capacity(input_bytes.len() + output_bytes.len() + 64);
         buf.extend_from_slice(&input_bytes);
         buf.extend_from_slice(&output_bytes);
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf
+        Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let input = Input::decode(read_slice(data, 0, (Input::ENCODED_SIZE) - (0))?)?;
         let pos = Input::ENCODED_SIZE;
         let output = Output::decode(data.get(pos..).ok_or_else(|| ContractError::IoError("payload truncated".to_string()))?)?;
-        let output_bytes = output.encode();
+        let output_bytes = output.encode()?;
         let pos = pos + output_bytes.len();
         if data.len() < pos + 64 {
             return Err(ContractError::IoError(format!("RedeemParamsV1: expected at least {} bytes, got {}", pos + 64, data.len())));
@@ -890,32 +890,36 @@ pub struct OtcSwapParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for OtcSwapParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for OtcSwapParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for OtcSwapParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl OtcSwapParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let ic = SerializedLen::try_from_len(self.inputs.len())?;
+        let oc = SerializedLen::try_from_len(self.outputs.len())?;
         let input_cap = self.inputs.len() * Input::ENCODED_SIZE;
-        let output_bytes: Vec<Vec<u8>> = self.outputs.iter().map(|o| o.encode()).collect();
+        let output_bytes: Vec<Vec<u8>> =
+            self.outputs.iter().map(|o| o.encode()).collect::<Result<Vec<_>, _>>()?;
         let output_cap: usize = output_bytes.iter().map(|b| b.len()).sum();
-        let mut buf = Vec::with_capacity(2 + input_cap + 2 + output_cap + output_bytes.len() * 2 + 64);
-        buf.push(self.inputs.len() as u8);
+        let mut buf = Vec::with_capacity(8 + input_cap + output_cap + output_bytes.len() * 4 + 64);
+        buf.extend_from_slice(&ic.to_le_bytes());
         for input in &self.inputs { buf.extend_from_slice(&input.encode()); }
-        buf.push(self.outputs.len() as u8);
+        buf.extend_from_slice(&oc.to_le_bytes());
         for ob in &output_bytes {
-            buf.extend_from_slice(&(ob.len() as u16).to_le_bytes());
+            buf.extend_from_slice(&SerializedLen::try_from_len(ob.len())?.to_le_bytes());
             buf.extend_from_slice(ob);
         }
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf
+        Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 3 { return Err(ContractError::IoError("OtcSwapParamsV1: too short".into())); }
-        let input_count = read_byte(data, 0)? as usize;
-        let mut pos = 1;
+        // 4(input count) + 4(output count) + 32(tx_binding) + 32(tx_nonce) = 72
+        if data.len() < 72 { return Err(ContractError::IoError("OtcSwapParamsV1: too short".into())); }
+        let input_count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let mut pos = 4;
         let mut inputs = Vec::with_capacity(input_count);
         for i in 0..input_count {
             if data.len() < pos + Input::ENCODED_SIZE {
@@ -924,14 +928,14 @@ impl OtcSwapParamsV1 {
             inputs.push(Input::decode(read_slice(data, pos, Input::ENCODED_SIZE)?)?);
             pos += Input::ENCODED_SIZE;
         }
-        if data.len() < pos + 1 { return Err(ContractError::IoError("OtcSwapParamsV1: missing output count".into())); }
-        let output_count = read_byte(data, pos)? as usize;
-        pos += 1;
+        if data.len() < pos + 4 { return Err(ContractError::IoError("OtcSwapParamsV1: missing output count".into())); }
+        let output_count = SerializedLen::from_le_bytes(read_field::<4>(data, pos)?).to_usize();
+        pos += 4;
         let mut outputs = Vec::with_capacity(output_count);
         for i in 0..output_count {
-            if data.len() < pos + 2 { return Err(ContractError::IoError(format!("OtcSwapParamsV1: output[{}] truncated", i))); }
-            let out_len = u16::from_le_bytes(read_field::<2>(data, pos)?) as usize;
-            pos += 2;
+            if data.len() < pos + 4 { return Err(ContractError::IoError(format!("OtcSwapParamsV1: output[{}] truncated", i))); }
+            let out_len = SerializedLen::from_le_bytes(read_field::<4>(data, pos)?).to_usize();
+            pos += 4;
             if data.len() < pos + out_len { return Err(ContractError::IoError(format!("OtcSwapParamsV1: output[{}] data truncated", i))); }
             outputs.push(Output::decode(read_slice(data, pos, out_len)?)?);
             pos += out_len;
@@ -952,33 +956,35 @@ pub struct OtcSwapUpdateV1 {
     pub commitments: Vec<CapCommitment>,
 }
 
-impl dwow_serial::Encodable for OtcSwapUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for OtcSwapUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for OtcSwapUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl OtcSwapUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.nullifiers.len() * 32 + self.commitments.len() * 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let nf = SerializedLen::try_from_len(self.nullifiers.len())?;
+        let cm = SerializedLen::try_from_len(self.commitments.len())?;
+        let cap = 8 + self.nullifiers.len() * 32 + self.commitments.len() * 32;
         let mut buf = Vec::with_capacity(cap);
-        buf.push(self.nullifiers.len() as u8);
+        buf.extend_from_slice(&nf.to_le_bytes());
         for nf in &self.nullifiers { buf.extend_from_slice(&nf.to_bytes()); }
-        buf.push(self.commitments.len() as u8);
+        buf.extend_from_slice(&cm.to_le_bytes());
         for c in &self.commitments { buf.extend_from_slice(&c.to_bytes()); }
-        buf
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 2 {
+        if data.len() < 8 {
             return Err(ContractError::IoError("OtcSwapUpdateV1: data too short".into()));
         }
-        let nf_count = read_byte(data, 0)? as usize;
-        let nf_end = 1 + nf_count * 32;
-        if data.len() < nf_end + 1 {
+        let nf_count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let nf_end = 4 + nf_count * 32;
+        if data.len() < nf_end + 4 {
             return Err(ContractError::IoError(format!(
-                "OtcSwapUpdateV1: expected at least {} bytes, got {}", nf_end + 1, data.len()
+                "OtcSwapUpdateV1: expected at least {} bytes, got {}", nf_end + 4, data.len()
             )));
         }
-        let commitment_count = read_byte(data, nf_end)? as usize;
-        let expected = nf_end + 1 + commitment_count * 32;
+        let commitment_count = SerializedLen::from_le_bytes(read_field::<4>(data, nf_end)?).to_usize();
+        let expected = nf_end + 4 + commitment_count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "OtcSwapUpdateV1: expected {} bytes ({} nf + {} commitments), got {}",
@@ -987,13 +993,13 @@ impl OtcSwapUpdateV1 {
         }
         let mut nullifiers = Vec::with_capacity(nf_count);
         for i in 0..nf_count {
-            let start = 1 + i * 32;
+            let start = 4 + i * 32;
             nullifiers.push(Nullifier::from_bytes(read_field::<32>(data, start)?)
                 .map_err(|e| ContractError::IoError(format!("OtcSwapUpdateV1: invalid nullifier[{}]: {}", i, e)))?);
         }
         let mut commitments = Vec::with_capacity(commitment_count);
         for i in 0..commitment_count {
-            let start = nf_end + 1 + i * 32;
+            let start = nf_end + 4 + i * 32;
             commitments.push(CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(
                 read_field::<32>(data, start)?,
             )).ok_or_else(|| ContractError::IoError(format!("OtcSwapUpdateV1: invalid commitment[{}]", i)))?));
@@ -1018,28 +1024,36 @@ pub struct RevokeSpendHookPayload {
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RevokeSpendHookPayload {
-    pub fn encode(&self) -> Vec<u8> {
-        let n = self.nullifiers.len();
-        let cap = 33 + n * 32 * 4; // cid(32) + 4 x [u8 count + n*32]
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        // Each vector carries its OWN count. The encoder used a single `n` for
+        // all four while the decoder reads four independent counts, so anything
+        // but four equal-length vectors already round-tripped wrong.
+        let nf = SerializedLen::try_from_len(self.nullifiers.len())?;
+        let tc = SerializedLen::try_from_len(self.token_commits.len())?;
+        let vc = SerializedLen::try_from_len(self.value_commits.len())?;
+        let ud = SerializedLen::try_from_len(self.user_data_encs.len())?;
+        let cap = 32 + 4 * 4
+            + (self.nullifiers.len() + self.token_commits.len()
+               + self.value_commits.len() + self.user_data_encs.len()) * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.caller_contract_id.to_bytes());
-        buf.push(n as u8);
+        buf.extend_from_slice(&nf.to_le_bytes());
         for v in &self.nullifiers { buf.extend_from_slice(&v.to_repr()); }
-        buf.push(n as u8);
+        buf.extend_from_slice(&tc.to_le_bytes());
         for v in &self.token_commits { buf.extend_from_slice(&v.to_repr()); }
-        buf.push(n as u8);
+        buf.extend_from_slice(&vc.to_le_bytes());
         for v in &self.value_commits { buf.extend_from_slice(&v.to_bytes()); }
-        buf.push(n as u8);
+        buf.extend_from_slice(&ud.to_le_bytes());
         for v in &self.user_data_encs { buf.extend_from_slice(&v.to_repr()); }
-        buf
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 33 {
+        if data.len() < 36 {
             return Err(ContractError::IoError("RevokeSpendHookPayload: data too short".into()));
         }
         let caller_contract_id = ContractId::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|_| ContractError::IoError("RevokeSpendHookPayload: invalid caller_contract_id".into()))?;
-        let n = read_byte(data, 32)? as usize;
+        let n = SerializedLen::from_le_bytes(read_field::<4>(data, 32)?).to_usize();
         fn decode_vec_base(data: &[u8], start: usize, n: usize) -> Result<(Vec<pallas::Base>, usize), ContractError> {
             let mut v = Vec::with_capacity(n);
             for i in 0..n {
@@ -1060,10 +1074,13 @@ impl RevokeSpendHookPayload {
             }
             Ok((v, start + n * 32))
         }
-        let (nullifiers, pos) = decode_vec_base(data, 33, n)?;
-        let (token_commits, pos) = decode_vec_base(data, pos + 1, read_byte(data, pos)? as usize)?;
-        let (value_commits, pos) = decode_vec_point(data, pos + 1, read_byte(data, pos)? as usize)?;
-        let (user_data_encs, _) = decode_vec_base(data, pos + 1, read_byte(data, pos)? as usize)?;
+        let (nullifiers, pos) = decode_vec_base(data, 36, n)?;
+        let (token_commits, pos) = decode_vec_base(data, pos + 4,
+            SerializedLen::from_le_bytes(read_field::<4>(data, pos)?).to_usize())?;
+        let (value_commits, pos) = decode_vec_point(data, pos + 4,
+            SerializedLen::from_le_bytes(read_field::<4>(data, pos)?).to_usize())?;
+        let (user_data_encs, _) = decode_vec_base(data, pos + 4,
+            SerializedLen::from_le_bytes(read_field::<4>(data, pos)?).to_usize())?;
         Ok(RevokeSpendHookPayload { caller_contract_id, nullifiers, token_commits, value_commits, user_data_encs })
     }
 }

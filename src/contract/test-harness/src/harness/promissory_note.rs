@@ -274,7 +274,7 @@ impl PromissoryNoteHarness {
         .build()?;
 
         let mut call_data = vec![0x04u8]; // TransferV1
-        call_data.extend_from_slice(&debris.params.encode());
+        call_data.extend_from_slice(&debris.params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
         Ok(TransferResult {
             call_data,
@@ -325,7 +325,7 @@ impl PromissoryNoteHarness {
         .build()
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
         let mut call_data = vec![0x01u8]; // RedeemV1
-        call_data.extend_from_slice(&debris.params.encode());
+        call_data.extend_from_slice(&debris.params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         Ok(RedeemResult { call_data, proofs: debris.proofs, nullifier: debris.params.input.nullifier })
     }
 
@@ -361,7 +361,7 @@ impl PromissoryNoteHarness {
         .build()
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
         let mut call_data = vec![0x03u8]; // RevokeV1
-        call_data.extend_from_slice(&debris.params.encode());
+        call_data.extend_from_slice(&debris.params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         Ok(RevokeResult { call_data, proofs: debris.proofs, nullifier: debris.params.inputs[0].nullifier })
     }
 
@@ -382,7 +382,7 @@ impl PromissoryNoteHarness {
         .build()?;
 
         let mut call_data = vec![0x05u8]; // OtcSwapV1
-        call_data.extend_from_slice(&debris.params.encode());
+        call_data.extend_from_slice(&debris.params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
         Ok(OtcSwapResult {
             call_data,
