@@ -259,7 +259,7 @@ impl DarkToshiDiceHarness {
         let params = SettleBetParamsV1 { bet_id, proof: vec![], roll_hash: public_inputs.roll_hash };
 
         let mut call_data = vec![0x03];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
         Ok(SettleBetResult { call_data, public_inputs, proof })
     }

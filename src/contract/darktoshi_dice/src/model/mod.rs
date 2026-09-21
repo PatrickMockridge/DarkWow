@@ -28,6 +28,7 @@
 //! use explicit `encode() -> Vec<u8>` and `decode(&[u8]) -> Result<Self, ContractError>`.
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{
         pasta_prelude::PrimeField, poseidon_hash,
         tx_hash_to_base, PublicKey,
@@ -489,9 +490,50 @@ pub struct SettleBetParamsV1 {
     pub roll_hash: pallas::Base,
 }
 
-impl dwow_serial::Encodable for SettleBetParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SettleBetParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettleBetParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl SettleBetParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33 + self.proof.len()); b.extend_from_slice(&self.bet_id.to_repr()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.roll_hash.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 65 { return Err(ContractError::IoError("SettleBetParamsV1: too short".into())); } let bet_id = decode_base(&data[0..32],"bet_id")?; let proof_len = data[32] as usize; if data.len() != 33 + proof_len + 32 { return Err(ContractError::IoError(format!("SettleBetParamsV1: expected {} bytes, got {}", 33+proof_len+32, data.len()))); } let proof = data[33..33+proof_len].to_vec(); let roll_hash = decode_base(&data[33+proof_len..33+proof_len+32],"roll_hash")?; Ok(SettleBetParamsV1 { bet_id, proof, roll_hash }) } }
+
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
+impl SettleBetParamsV1 {
+    /// bet_id(32) + proof length(4) + proof + roll_hash(32).
+    ///
+    /// The length was a single `u8`, which silently truncated at 256 bytes and put every byte after
+    /// it — `roll_hash` included — at the wrong offset. The truncation is *latent* rather than live:
+    /// `proof` is a phantom field that nothing in this contract reads and both the harness and the
+    /// spec leave empty, so no caller has yet carried a proof long enough to trip it. It is fixed
+    /// because the format is what a future caller inherits, and an empty vector is the case the
+    /// fixture happens to exercise. Same class as the `WithdrawParams` truncation the bridge sweep
+    /// records.
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let pl = SerializedLen::try_from_len(self.proof.len())?;
+        let mut b = Vec::with_capacity(36 + self.proof.len());
+        b.extend_from_slice(&self.bet_id.to_repr());
+        b.extend_from_slice(&pl.to_le_bytes());
+        b.extend_from_slice(&self.proof);
+        b.extend_from_slice(&self.roll_hash.to_repr());
+        Ok(b)
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        // 32(bet_id) + 4(proof length) + 32(roll_hash) = 68 with an empty proof.
+        if data.len() < 68 {
+            return Err(ContractError::IoError("SettleBetParamsV1: too short".into()))
+        }
+        let bet_id = decode_base(&data[0..32], "bet_id")?;
+        let proof_len = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize();
+        let pos = 36 + proof_len;
+        if data.len() != pos + 32 {
+            return Err(ContractError::IoError(format!(
+                "SettleBetParamsV1: expected {} bytes, got {}",
+                pos + 32,
+                data.len()
+            )))
+        }
+        let proof = data[36..pos].to_vec();
+        let roll_hash = decode_base(&data[pos..pos + 32], "roll_hash")?;
+        Ok(SettleBetParamsV1 { bet_id, proof, roll_hash })
+    }
+}
 
 /// State update for `SettleBetV1`.
 ///
