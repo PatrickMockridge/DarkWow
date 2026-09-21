@@ -222,8 +222,12 @@ pub fn build_fee_v3_tx(fee: u64) -> TestResult<Transaction> {
     };
 
     // The real encoder, not a hand-assembled byte string.
-    let data =
-        dwow_sdk::mass_balance_call_data::MassBalanceFeeV3CallData::new(params.encode()).encode();
+    // `encode` returns a `Result` since the length-prefix refactor; this call site had not been
+    // updated with the rest of that change, which left the whole `dwowd` test build broken.
+    let data = dwow_sdk::mass_balance_call_data::MassBalanceFeeV3CallData::new(
+        params.encode().map_err(|e| infra("encoding the fee fixture's params", e))?,
+    )
+    .encode();
 
     Ok(Transaction {
         version: BlockVersion::CURRENT,
