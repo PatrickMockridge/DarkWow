@@ -267,7 +267,7 @@ impl AttestationHarness {
         };
 
         let mut call_data = vec![0x00];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(CreateAttestationResult { call_data, attestation_id, proof, public_inputs })
     }
@@ -301,7 +301,7 @@ impl AttestationHarness {
         };
 
         let mut call_data = vec![0x03];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(CreateClaimResult { call_data, claim_id, proof, public_inputs })
     }
@@ -438,7 +438,7 @@ impl AttestationHarness {
         };
 
         let mut call_data = vec![0x08];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(DelegateAttestationResult { call_data, proof, public_inputs })
     }
@@ -463,7 +463,7 @@ impl AttestationHarness {
         };
 
         let mut call_data = vec![0x07];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(CheckNotRevokedResult { call_data, proof, public_inputs })
     }
@@ -498,7 +498,7 @@ impl AttestationHarness {
         };
 
         let mut call_data = vec![0x0a];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(UpdateDelegationResult { call_data, proof, public_inputs })
     }
@@ -578,7 +578,7 @@ impl AttestationHarness {
         };
 
         let mut call_data = vec![0x0c];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(CommitFeeScheduleResult { call_data, proof })
     }
@@ -631,7 +631,7 @@ impl AttestationHarness {
             parent_id: pallas::Base::zero(),
         };
         let mut call_data = vec![0x09];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
         Ok(VerifyChainResult { call_data, proof })
     }
 
@@ -648,7 +648,7 @@ impl AttestationHarness {
             evidence,
         };
         let mut call_data = vec![0x06];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
         Ok(ValidateClaimResult { call_data })
     }
 }

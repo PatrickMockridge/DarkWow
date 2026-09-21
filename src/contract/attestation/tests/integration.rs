@@ -124,7 +124,7 @@ fn test_attestation_encoding() {
         expires_at: Some(100000),
     };
 
-    let encoded = attestation.encode();
+    let encoded = attestation.encode().unwrap();
     let decoded = Attestation::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, attestation.id);
@@ -151,7 +151,7 @@ fn test_claim_encoding() {
         consumed_at: None,
     };
 
-    let encoded = claim.encode();
+    let encoded = claim.encode().unwrap();
     let decoded = Claim::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, claim.id);

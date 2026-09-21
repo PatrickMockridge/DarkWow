@@ -473,7 +473,7 @@ fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> 
         attestation_id: params.attestation_id,
         attestation,
         index_key,
-    }.encode())
+    }.encode()?)
 }
 
 fn revoke_attestation_v1(cid: ContractId, params: RevokeAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -507,7 +507,7 @@ fn revoke_attestation_v1(cid: ContractId, params: RevokeAttestationParamsV1) -> 
     attestation.state = AttestationState::Revoked;
 
     msg!("[attestation::revoke_attestation_v1] Attestation revoked successfully");
-    Ok(RevokeAttestationUpdateV1 { attestation_id: params.attestation_id, attestation }.encode())
+    Ok(RevokeAttestationUpdateV1 { attestation_id: params.attestation_id, attestation }.encode()?)
 }
 
 fn expire_attestation_v1(cid: ContractId, params: ExpireAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -547,7 +547,7 @@ fn expire_attestation_v1(cid: ContractId, params: ExpireAttestationParamsV1) -> 
     attestation.state = AttestationState::Expired;
 
     msg!("[attestation::expire_attestation_v1] Attestation expired successfully");
-    Ok(ExpireAttestationUpdateV1 { attestation_id: params.attestation_id, attestation }.encode())
+    Ok(ExpireAttestationUpdateV1 { attestation_id: params.attestation_id, attestation }.encode()?)
 }
 
 fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -657,7 +657,7 @@ fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> Result<Vec<u
         claim,
         rate_limit_key,
         current_block,
-    }.encode())
+    }.encode()?)
 }
 
 fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -768,7 +768,7 @@ fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> Result<Vec<u
     };
 
     msg!("[attestation::verify_claim_v1] Claim verification result: {:?}", verified);
-    Ok(update.encode())
+    Ok(update.encode()?)
 }
 
 fn consume_claim_v1(cid: ContractId, params: ConsumeClaimParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -839,7 +839,7 @@ fn consume_claim_v1(cid: ContractId, params: ConsumeClaimParamsV1) -> Result<Vec
         claim_id: params.claim_id,
         claim,
         nullifier: params.nullifier,
-    }.encode())
+    }.encode()?)
 }
 
 fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -973,7 +973,7 @@ fn delegate_attestation_v1(cid: ContractId, params: DelegateAttestationParamsV1)
         delegation_id: params.delegation_id,
         success: true,
         delegation_params: params,
-    }.encode())
+    }.encode()?)
 }
 
 fn verify_chain_v1(cid: ContractId, params: VerifyChainParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -1023,7 +1023,7 @@ fn update_delegation_v1(cid: ContractId, params: UpdateDelegationParamsV1) -> Re
         success: true,
         original_attestation_id: params.original_attestation_id,
         updated_params: params,
-    }.encode())
+    }.encode()?)
 }
 
 // ============================================================================
@@ -1081,7 +1081,7 @@ fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u
             attestation,
             index_key_bytes,
             is_new: false,
-        }.encode())
+        }.encode()?)
     }
 
     // Verify the slash event is in the past and within the acceptable recency window.
@@ -1108,7 +1108,7 @@ fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u
         attestation,
         index_key_bytes,
         is_new: true,
-    }.encode())
+    }.encode()?)
 }
 
 // ============================================================================
@@ -1173,7 +1173,7 @@ fn commit_fee_schedule_v1(cid: ContractId, params: CommitFeeScheduleParamsV1) ->
         min_amount: params.min_amount,
         attestation,
         index_key_bytes,
-    }.encode())
+    }.encode()?)
 }
 
 // ============================================================================
@@ -1192,7 +1192,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::CreateAttestationV1 => {
             let update = CreateAttestationUpdateV1::decode(update_payload)?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode())?;
+            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode()?)?;
             let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
             wasm::db::db_set(index_db, &update.index_key.to_repr(), &update.attestation_id.to_bytes())?;
             msg!("[attestation::process_update] CreateAttestation: {:?}", update.attestation_id);
@@ -1201,21 +1201,21 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::RevokeAttestationV1 => {
             let update = RevokeAttestationUpdateV1::decode(update_payload)?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode())?;
+            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode()?)?;
             msg!("[attestation::process_update] RevokeAttestation: {:?}", update.attestation_id);
             Ok(())
         }
         AttestationFunction::ExpireAttestationV1 => {
             let update = ExpireAttestationUpdateV1::decode(update_payload)?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode())?;
+            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode()?)?;
             msg!("[attestation::process_update] ExpireAttestation: {:?}", update.attestation_id);
             Ok(())
         }
         AttestationFunction::CreateClaimV1 => {
             let update = CreateClaimUpdateV1::decode(update_payload)?;
             let claims_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_CLAIMS_TREE)?;
-            wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &update.claim.encode())?;
+            wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &update.claim.encode()?)?;
             let rate_limit_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_RATE_LIMIT_TREE)?;
             wasm::db::db_set(rate_limit_db, &update.rate_limit_key.to_repr(), &update.current_block.to_le_bytes())?;
             msg!("[attestation::process_update] CreateClaim: {:?}", update.claim_id);
@@ -1224,7 +1224,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::VerifyClaimV1 => {
             let update = VerifyClaimUpdateV1::decode(update_payload)?;
             let claims_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_CLAIMS_TREE)?;
-            wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &update.claim.encode())?;
+            wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &update.claim.encode()?)?;
             msg!(
                 "[attestation::process_update] VerifyClaim: {:?}",
                 update.claim_id
@@ -1234,7 +1234,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::ConsumeClaimV1 => {
             let update = ConsumeClaimUpdateV1::decode(update_payload)?;
             let claims_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_CLAIMS_TREE)?;
-            wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &update.claim.encode())?;
+            wasm::db::db_set(claims_db, &update.claim_id.to_bytes(), &update.claim.encode()?)?;
             let nullifiers_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_NULLIFIERS_TREE)?;
             wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
             msg!("[attestation::process_update] ConsumeClaim: {:?}", update.claim_id);
@@ -1262,7 +1262,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::DelegateAttestationV1 => {
             let update = DelegateAttestationUpdateV1::decode(update_payload)?;
             let delegations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_DELEGATIONS_TREE)?;
-            wasm::db::db_set(delegations_db, &update.delegation_id.to_repr(), &update.delegation_params.encode())?;
+            wasm::db::db_set(delegations_db, &update.delegation_id.to_repr(), &update.delegation_params.encode()?)?;
             msg!(
                 "[attestation::process_update] DelegateAttestation: {:?} success={:?}",
                 update.delegation_id,
@@ -1278,7 +1278,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::UpdateDelegationV1 => {
             let update = UpdateDelegationUpdateV1::decode(update_payload)?;
             let delegations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_DELEGATIONS_TREE)?;
-            wasm::db::db_set(delegations_db, &update.original_attestation_id.to_repr(), &update.updated_params.encode())?;
+            wasm::db::db_set(delegations_db, &update.original_attestation_id.to_repr(), &update.updated_params.encode()?)?;
             msg!(
                 "[attestation::process_update] UpdateDelegation: success={:?}",
                 update.success
@@ -1289,7 +1289,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update = AttestSlashUpdateV1::decode(update_payload)?;
             if update.is_new {
                 let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-                wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode())?;
+                wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode()?)?;
                 let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
                 wasm::db::db_set(index_db, &update.index_key_bytes, &[1])?;
             }
@@ -1302,7 +1302,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::CommitFeeScheduleV1 => {
             let update = CommitFeeScheduleUpdateV1::decode(update_payload)?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-            wasm::db::db_set(db, &update.attestation_id.to_repr(), &update.attestation.encode())?;
+            wasm::db::db_set(db, &update.attestation_id.to_repr(), &update.attestation.encode()?)?;
             let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
             wasm::db::db_set(index_db, &update.index_key_bytes, &[1])?;
             msg!(
