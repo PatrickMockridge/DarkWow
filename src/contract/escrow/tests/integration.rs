@@ -169,6 +169,31 @@ fn test_fund_escrow_params_encoding() {
     assert_eq!(decoded.merkle_proof.len(), 2);
 }
 
+/// The proof count is a `SerializedLen`, and `merkle_root` sits *after* the proof — so a truncated
+/// count moves it. 256 elements is the smallest vector whose `u8` encoding is `0`.
+///
+/// The test above stops at `merkle_proof.len()`, which is the field the count feeds; the root is
+/// the one the count's width actually threatens, so it is asserted here.
+#[test]
+fn test_fund_escrow_proof_count_is_not_a_byte() {
+    let proof: Vec<pallas::Base> = (1..=256u64).map(|i| pallas::Base::from(i)).collect();
+    let params = FundEscrowParamsV1 {
+        escrow_id: EscrowId(pallas::Base::from(7)),
+        value_commit: pallas::Point::identity(),
+        merkle_proof: proof.clone(),
+        merkle_root: make_merkle_node(4001),
+    };
+
+    let encoded = params.encode().unwrap();
+    assert_eq!(encoded.len(), 68 + 256 * 32 + 32);
+
+    let decoded = FundEscrowParamsV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.merkle_proof.len(), 256);
+    assert_eq!(decoded.merkle_proof[255], proof[255]);
+    assert_eq!(decoded.merkle_root, params.merkle_root);
+    assert_eq!(decoded.escrow_id, params.escrow_id);
+}
+
 #[test]
 fn test_fund_escrow_update_encoding() {
     let update = FundEscrowUpdateV1 {
