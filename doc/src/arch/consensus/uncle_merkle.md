@@ -482,7 +482,7 @@ coinbase's spendable value is a public, consensus-checked quantity, never a
 prover-asserted hidden value.
 
 To close this, the consensus layer SHALL verify the spendable-note mass balance
-in PLAINTEXT (the coinbase and uncle notes are plaintext — no Mint_V2 proof):
+in PLAINTEXT — the coinbase and uncle notes are plaintext and carry no proof:
 
 ```
 coinbase.effective_value + Σ uncle_note.effective_value == base_reward

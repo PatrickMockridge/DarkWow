@@ -130,12 +130,19 @@ phases are skipped. Cheapest checks run first.
 See [Consensus](consensus/consensus.md) for the full 7-phase validation
 sequence with cheat detection table.
 
-## 2. Coinbase Production — PoWRewardV1 Nullifier Claim `[domain: mass_balance]`
+## 2. Coinbase Production — plaintext `[domain: mass_balance]`
 
-PoWRewardV1 is the consensus-critical block-opening coinbase, part of the
-Pedersen mass balance proof verified during `accept_block`. Its nominal call
-data type is `MassBalanceCoinbaseV1CallData` per [type-system.md §8.2.2](type-system.md).
+The coinbase is a **plaintext** contract call: `PoWRewardV1`, opcode `0x05`, the
+first call of `transactions[0]`. Its nominal call data type is
+`MassBalanceCoinbaseV1CallData` per [type-system.md §8.2.2](type-system.md).
 Full supply audit specification: [consensus.md §Supply Audit](consensus/consensus.md).
+
+Nothing about the reward is hidden. The amount is `expected_reward(H)` — a public
+function of the height — and the recipient's per-block public key `pk_H` is
+published both in the params and in the block header's `miner` field. There is
+therefore no circuit for the coinbase and no proof in the transaction; the
+entrypoint verifies every quantity in plaintext Pedersen/poseidon arithmetic
+(§2.5), and the host verifies the uncle split in plaintext before commit (§6).
 
 **Process engineering context:** The coinbase is the **meter-opening event** —
 it creates the coinbase UTXO at position 0 of the commitment Merkle tree that carries
@@ -148,21 +155,23 @@ for the full pipe/valve/meter analogy.
 
 ### 2.1 Architecture
 
-The coinbase reward follows the same object-capability (o-cap) pattern as
-every other native token operation. The miner who finds valid PoW gains the
-capability to claim the reward by publishing a nullifier against the
-PoWRewardV1 commitment:
+The coinbase creates the miner's spendable reward note. The miner who finds
+valid PoW derives a per-block key, builds the note in plaintext, and publishes
+it with the block:
 
 ```
 PoW valid → miner derives sk_H → miner computes C + nf + vc + S_H (plaintext) →
 miner publishes block with PoWRewardV1 at transactions[0].contract_calls[0] →
-validators verify nf / vc / S_H via plaintext Pedersen arithmetic → reward claimed
+validators recompute C / nf / vc / S_H in plaintext arithmetic → reward accepted
 ```
 
-This is the same pattern as FeeV3, BurnV1, SpendV1, and TransferV1:
-`nullifier = poseidon_hash(secret, coin_commitment)`. The miner exercises
-the coinbase capability by publishing the nullifier. The host-tracked
-nullifier set prevents double-claiming.
+The commitment and nullifier are retained because they are what make the note
+**spendable**: the coinbase mints a note exactly like any other, and spending it
+later is a `SpendV1` operation against `nf = poseidon_hash(sk_H, C)`. They are not
+evidence of anything to a verifier — the verifier recomputes them from the
+plaintext params and compares.
+
+The host-tracked nullifier set prevents the same `nf` being claimed twice.
 
 ### 2.2 Deterministic Key Derivation
 
@@ -238,11 +247,10 @@ The nullifier is a linear capability — it can be exercised exactly once.
 After insertion into the host nullifier set, any duplicate `nf` is rejected
 (Phase 3.2).
 
-### 2.5 Plaintext Verification (no ZK circuit)
+### 2.5 Verification (plaintext)
 
-PoW rewards are **plaintext**: the reward value is public (`expected_reward(H)`,
-`effective_value`), so the coinbase needs no ZK circuit. Every invariant is
-verified by the WASM entrypoint in plaintext Pedersen/poseidon arithmetic:
+Every invariant is verified by the `pow_reward_v1` WASM entrypoint — and, defence
+in depth, by the host before commit — in plaintext Pedersen/poseidon arithmetic:
 
 | # | Check | What It Enforces |
 |---|-------|------------------|
@@ -252,11 +260,10 @@ verified by the WASM entrypoint in plaintext Pedersen/poseidon arithmetic:
 | 4 | `nf = poseidon_hash(spend_secret, C)` (deterministic, wallet-recomputed) | Capability claim (re-verified at spend) |
 | 5 | `S_H = S_{H-1} + vc` (`old_cumulative + value_commit`, Pedersen add) | Cumulative supply chain invariant |
 
-The `Mint_V2` ZK circuit is **NOT used** for the coinbase. It survives only for
-TransferV1/SpendV1 output minting, where the value genuinely stays hidden. The
-"miner knows `sk_H`" property the circuit used to prove is instead enforced at
-spend time by the SpendV1 proof — a miner who publishes a wrong nullifier simply
-makes their own coinbase unspendable, with no consensus risk.
+The reward value is public and `pk_H` is published, so there is nothing for a
+circuit to hide and none is invoked. A miner who publishes a nullifier that does
+not match their note makes their own coinbase unspendable — a self-inflicted loss
+with no consensus risk, because the spend is what re-derives the nullifier.
 
 ### 2.6 WASM Entrypoint Verification
 
@@ -336,10 +343,11 @@ PoWRewardV1 mints new supply into existence. FeeCollectV1 redistributes supply
 that already exists — every fee unit flowing into `fees_db[height]` via
 `apply_fee` is forwarded to the miner. Zero fees are burned or lost.
 
-Both functions share the same capability model: the miner proves knowledge of
-the per-block derived secret `sk_H` by publishing a nullifier. No public key is
-ever exposed. The miner's identity is the capability to produce a valid
-nullifier — same o-cap pattern as every other native token operation.
+Both functions use the same per-block derived key `sk_H` and publish a nullifier
+over the resulting commitment. `pk_H` is **not** secret — it is published in the
+block header's `miner` field and carried in the coinbase params. What preserves
+miner unlinkability is that the key is **cycled per block**, not that it is
+hidden.
 
 ```
 FeeV3 tx pays fee → fees_db[H] += fee
@@ -424,87 +432,63 @@ C_coinbase)` because `C_fee ≠ C_coinbase`. Same secret key, different
 commitment — the nullifier domain-separates naturally via the commitment
 itself.
 
-### 3.5 Plaintext Verification (no ZK circuit)
+### 3.5 Verification (plaintext)
 
-Since 2026-09, FeeCollectV1 carries NO ZK proof. The FeeCollect_V2 circuit
-(`src/contract/native_token/proof/fee_collect.zk`) is deleted: fees are
-plaintext amounts by design — they are dynamic, transaction-specific values,
-and encrypting them proved too complex. The miner's obligations collapse to
-the commitments the AEAD-note machinery already produces:
+The fee amount is public — it is the plain `u64` sum in `fees_db[height]` — so
+FeeCollectV1 carries no proof and none is verified. What the miner publishes is
+the same note material every other operation publishes, built from values that
+are already in the clear:
 
 - **Fee commitment** `C_fee` = poseidon_hash(pk_H.x, pk_H.y, total_fees,
   DRKW_ASSET_ID, 0, 0, commitment_blind) — published in the plaintext
   `FeeCollectParamsV1` (fee-spec.md §3.8).
-- **Nullifier** `nf_fee` = poseidon_hash(sk_H.inner(), C_fee) — the miner's
-  capability claim over the fee commitment.
-- **Value commitment** `vc` = pedersen_commit(total_fees, value_blind) —
-  value_blind = poseidon_hash(sk_H, H, domain=10).
+- **Nullifier** `nf_fee` = poseidon_hash(sk_H.inner(), C_fee) — the claim over
+  the fee commitment.
+- **Value commitment** `vc` = pedersen_commit(total_fees, value_blind).
 - **Token commitment** `tc` = poseidon_hash([DOMAIN_TOKEN_COMMIT,
-  DRKW_ASSET_ID, 0]) — token_blind is fixed at ZERO (native DRKW only).
+  DRKW_ASSET_ID, 0]) — native DRKW only, so `token_blind` is ZERO.
 
-**tx_binding:** `FeeCollectParamsV1.tx_binding` remains
-`poseidon_hash([tx_commitment, tx_nonce])` — a metadata field, no longer a
-proof binding. With `tx_commitment = 0` and `tx_nonce = 0` this is
-`poseidon_hash([0, 0])`, which is NOT zero.
+`FeeCollectParamsV1.tx_binding` is `poseidon_hash([tx_commitment, tx_nonce])`, a
+metadata field. With both zero this is `poseidon_hash([0, 0])`, which is NOT
+zero.
 
-**No cumulative supply constraint.** FeeCollectV1 does not constrain
-`S_H = S_{H-1} + C_H`. Fees are redistribution — the supply audit invariant
-is:
+**No cumulative supply constraint.** Fees are redistribution, not issuance — the
+coinbase mints, FeeCollectV1 moves what already exists. FeeCollectV1 does not
+advance `S_H`. The invariant is:
 
 ```
 total_supply_after_fee_collect == total_supply_before_fee_collect
 ```
 
-**Enforcement is the WASM entrypoint alone** (fee-spec.md §3.9). The L2
-proof-metadata tables still carry one empty per-call proof slot for
-wire-shape compatibility (see §3.7).
+Enforcement is the WASM entrypoint (§3.7), plus the host's pot accounting. The
+L2 proof-metadata tables carry one empty per-call proof slot for wire-shape
+compatibility.
 
-### 3.6 Determinism Proof
+### 3.6 Determinism
 
-**Theorem:** For a fixed `(sk_owner, height)` and a fixed set of mempool
-transactions, every validator re-executing the block produces identical
-`(C_fee, nf_fee, vc, tc)`. The resulting commitment merkle tree root is
-identical. No ambient randomness.
+For a fixed `(sk_owner, height)` and a fixed set of transactions, every validator
+re-executing the block MUST produce identical `(C_fee, nf_fee, vc, tc)`, and hence
+an identical commitment merkle tree root. Two rules achieve that:
 
-**Proof:** Every input is derived from one of three sources:
+1. **No ambient randomness.** Every derived value comes from `derive_instance` or
+   `poseidon_hash` over `(sk_owner, height, domain)` — never `OsRng`. AEAD note
+   encryption MUST use `encrypt_deterministic()` with its ephemeral secret
+   derived under its own domain, not `encrypt(&OsRng)`.
+2. **The fee total is a sum over the block's ordered transaction set** — the same
+   set that produces the block's merkle root.
 
-| Source | Inputs |
-|--------|--------|
-| Constants | `asset_id = 0`, `coin_spend_hook = 0`, `user_data = 0`, `token_blind = 0`, `tx_commitment = 0`, `tx_nonce = 0` |
-| `derive_instance(sk_owner, cid, H)` | `spend_secret`, `public_x`, `public_y` |
-| `poseidon_hash(sk_H.inner(), H, domain)` | `commitment_blind` (domain=12), `value_blind` (domain=10) |
-| Block tx set | `value = Σ FeeV3 fee` (deterministic sum over fixed set) |
+The per-block derived values are domain-separated so no two purposes share a
+derivation path:
 
-The poseidon_hash function is deterministic. The Pedersen commitment is
-deterministic. The fee total is a sum over a fixed ordered set of
-transactions. Therefore the entire output is deterministic. ∎
+| Domain | Purpose |
+|--------|---------|
+| 10 | `value_blind` (fee collection) |
+| 12 | `commitment_blind` (fee collection) |
+| 13 | AEAD ephemeral secret |
 
-**Domain separator assignments:**
-
-| Domain | Purpose | Rationale |
-|--------|---------|-----------|
-| 10 | `value_blind` | Fee-collection value blinding — distinct from coinbase (1) |
-| 12 | `commitment_blind` | Fee-collection coin blinding — distinct from coinbase (3) |
-| 13 | AEAD ephemeral secret | `encrypt_deterministic()` ephemeral key — never reused across purposes |
-
-All three are computed as `poseidon_hash([sk_H.inner(), pallas::Base::from(H),
-pallas::Base::from(domain)])`. Domain 14 (proof RNG seed) is retired with the
-circuit.
-
-`token_blind` is fixed at ZERO — the fee commitment is native DRKW only
-(fee-spec.md §4.2 C5). Blinds are domain-separated from the coinbase's
-(1/2/3), and collision is additionally impossible because
-`total_fees ≠ expected_reward(H)` for any realistic fee level, producing
-different poseidon outputs even with a shared domain separator.
-
-**Consensus requirements for determinism:**
-
-1. AEAD note encryption MUST use `encrypt_deterministic()` with ephemeral
-   secret `SecretKey::from(poseidon_hash([sk_H.inner(), pallas::Base::from(H),
-   pallas::Base::from(13)]))` rather than `encrypt(&OsRng)`.
-2. The fee total MUST be computed as a sum over the exact ordered set of
-   transactions included in the block — the same set that produces the block's
-   merkle root.
+Each is `poseidon_hash([sk_H.inner(), pallas::Base::from(H), pallas::Base::from(domain)])`.
+The coinbase blinds use their own separators (§2.3). `token_blind` is ZERO — the
+fee commitment is native DRKW only (fee-spec.md §4.2 C5).
 
 Any ambient randomness source breaks cross-validator determinism and MUST be
 eliminated.
@@ -746,8 +730,7 @@ The miner MUST:
 - Place FeeCollectV1 as the final transaction in the block
 - Include FeeCollectV1 iff `total_fees > 0`
 
-No ZK circuit — FeeCollectV1 is a plaintext call (no proof,
-no proving RNG).
+FeeCollectV1 is a plaintext call — no proof, no proving key, no proving RNG.
 
 ### 3.15 Validator Obligation
 
@@ -759,7 +742,7 @@ The validator MUST reject blocks that:
 | FeeCollectV1 present but block's summed FeeV3 fees == 0 | Phase 0 (structural) | IMPLEMENTED (validation.rs:322-331) |
 | FeeCollectV1 with non-zero fees absent | Phase 0 (structural) | IMPLEMENTED (validation.rs:327-331) |
 | FeeCollectV1 not the final transaction | Phase 0 (structural) | IMPLEMENTED (validation.rs:336-344) |
-| FeeCollect_V1 ZK proof fails verification | Phase 3.1 | N/A — plaintext (no proof; the empty per-call proof slot in the L1 witness still satisfies the L2 length guard, §3.7) |
+| FeeCollectV1 proof verification | Phase 3.1 | N/A — plaintext, nothing to verify (the empty per-call proof slot in the L1 witness satisfies the L2 length guard, §3.7) |
 | Duplicate fee-collect nullifier at host level | Phase 3.2 | IMPLEMENTED — claim nullifier in `tx.nullifiers` + both sled and in-memory batches ([chain_state.rs:819-827, 911-922](../../../src/linear/src/chain_state.rs)); COINBASE_MATURITY gate applies |
 | WASM rejection: zero/mismatched fee total, duplicate commitment, duplicate nullifier (defense-in-depth, §3.7 check #4), non-DRKW token | Phase 4 | IMPLEMENTED ([entrypoint/mod.rs:971-1007](../../../src/contract/native_token/src/entrypoint/mod.rs)) |
 
@@ -771,9 +754,9 @@ FeeCollectV1 last.
 
 The wallet discovers fee-collection commitments via the same scan mechanism as
 coinbase rewards (§13.2). The scan gate at
-[`bin/dww/src/scan.rs`](../../../bin/dww/src/scan.rs) includes selector `0x06`
-alongside `0x05` (coinbase), `0x00` (FeeV1 — scan-only), `0x03` (TransferV1),
-`0x04` (SpendV1), and `0x08` (FeeV3) in the output-discovery path. The
+[`bin/dww/src/scan.rs`](../../../bin/dww/src/scan.rs) discovers outputs for
+selectors `0x03` (TransferV1), `0x04` (SpendV1), `0x05` (coinbase), `0x06`
+(FeeCollectV1), `0x07` (UncleMintV1) and `0x08` (FeeV3). The
 per-block key `sk_H` is already in
 `trial_secrets` from `secrets_for_contract(NATIVE_TOKEN_CONTRACT_ID, height)` —
 the wallet derives it independently with zero shared state. The AEAD-encrypted
@@ -814,11 +797,9 @@ scan.
 | Value source | Emission schedule | Accumulated fees |
 | Supply effect | Mints new supply | Redistributes existing supply |
 | Cumulative supply | S_H = S_{H-1} + C_H | Unchanged |
-| ZK circuit | None — plaintext | None — plaintext |
-| Public inputs | — (plaintext params) | — (plaintext params) |
 | Key derivation | derive_instance(sk_owner, cid, H) | Same |
-| Nullifier model | nf = poseidon_hash(sk_H, C) | Same |
-| Signature required | No (nullifier proves identity) | No |
+| Nullifier | nf = poseidon_hash(sk_H, C) | Same |
+| Signature | None | None |
 | Wallet scan | §13.2 | §3.16 |
 
 ## 4. Emission Schedule
@@ -998,22 +979,18 @@ reward), with DarkWow-unique exponential `1/2^depth` decay and a subtractive
 Pedersen split instead of an additive reward.
 
 **Invariant:** `canonical_reward + Σ pin_confirmed_i = base_reward` (exactly
-100%). The coinbase split uses Pedersen commitment subtraction at the consensus
-level. No new ZK proofs are needed — the split is verifiable via additive
-homomorphism.
+100%). The split is checked on the plaintext values, and the same equation
+written over the commitments lets a node check it without knowing the blinds:
 
 ```
 C_base = C_effective + Σ C_uncle_i
 ```
 
-The `pow_reward_v1` entrypoint computes and persists `S_H = S_{H-1} + C_base`
-(total minted correctly). Any node can recompute every blind deterministically
-and verify `C_effective + Σ C_uncle_i = C_base` using only public data.
-
-The header field `total_reward` SHALL equal the canonical miner's effective
-reward: `total_reward == canonical_reward == base_reward − Σ pin_confirmed_i`.
-The invariant `total_reward + Σ pin_confirmed_i == base_reward` is enforced by
-`verify_uncle_split()` before the block reaches disk.
+The `pow_reward_v1` entrypoint computes and persists `S_H = S_{H-1} + C_base`, so
+the cumulative supply chain accumulates the full base reward. The header field
+`total_reward` SHALL equal the canonical miner's effective reward:
+`total_reward == canonical_reward == base_reward − Σ pin_confirmed_i`.
+`verify_uncle_split()` enforces it before the block reaches disk.
 
 ### PoWReward Function — Relationship to Uncle Split
 
@@ -1064,9 +1041,9 @@ The invariant `total_reward + Σ pin_confirmed_i == base_reward` is enforced by
 **Key invariant**: the cumulative supply chain ALWAYS accumulates the full
 `base_reward` (`S_H = S_{H-1} + C_base`), while the spendable notes sum to the
 same total — `effective_value + Σ pin_confirmed_i = base_reward`. No over-mint
-and no under-mint: total spendable == total emitted. No new ZK proving key or
-circuit namespace is needed — the split is expressed entirely in plaintext
-params (`total_pin`).
+and no under-mint: total spendable == total emitted. The split is expressed
+entirely in the plaintext params (`total_pin`), so it needs no proving key and
+no circuit namespace.
 
 This is Pareto efficient: miners are never punished for producing non-canonical
 blocks, smaller miners aren't excluded from rewards, and uncle references live
@@ -1281,18 +1258,17 @@ max_target = 4294967295       # u32::MAX, easiest possible
 min_block_interval = 10       # seconds between blocks
 ```
 
-## 11. Coinbase Reward Forwarding (Removed)
+## 11. Reward Destination
 
-Coinbase rewards always go to the mining node's declared key — there is no
-`FORWARD_DESTINATION` override in the current codebase. `build_linear_coinbase`
-(`bin/dwowd/src/registry/model.rs`) derives the recipient from the node's declared
-identity (`MiningRecipient::from_account` → `derive_instance`), with no forwarding
-recipient field.
+A coinbase reward goes to the mining node's own declared key, cycled per block
+(§2.2). There is no forwarding override and no recipient field to redirect it:
+`build_linear_coinbase` (`bin/dwowd/src/registry/model.rs`) derives the recipient
+from the node's declared identity.
 
-In local testing, a wallet decrypts coinbase rewards by declaring the **same** secret as
-the mining node in the shared `keys.toml` (key sharing by declaration). In production, the
-mining keypair and wallet keypair MUST be separate; reward distribution to another address
-is a post-maturity `NativeToken::TransferV1`, not an in-coinbase override.
+In local testing a wallet decrypts coinbase rewards by declaring the **same**
+secret as the mining node in the shared `keys.toml`. In production the mining and
+wallet keypairs MUST be separate, and moving a reward to another address is a
+post-maturity `NativeToken::TransferV1` — not something the coinbase does.
 
 ## 12. Mining Network Architecture
 
@@ -1483,8 +1459,7 @@ reverse-engineering code.*
 
 ### 17.2 FeeCollectV1 — Fee Collection Entrypoint
 
-**Function code**: `0x06`. **ZK-gated**: NO — plaintext
-(no FeeCollect_V2 circuit).
+**Function code**: `0x06`. **ZK-gated**: no — plaintext.
 **Client builder**: `FeeCollectCallBuilder` (`src/contract/native_token/src/client/fee_collect.rs`).
 
 FeeCollectV1 claims the accumulated fee pot `fees_db[height]` and mints a
@@ -1586,8 +1561,7 @@ the block.
 
 ### 17.4 UncleMintV1 — Uncle Reward Entrypoint
 
-**Function code**: `0x07`. **ZK-gated**: NO — plaintext
-(no Mint_V2 proof).
+**Function code**: `0x07`. **ZK-gated**: no — plaintext.
 **Client builder**: `build_uncle_mint()`
 (`src/contract/native_token/src/client/uncle_mint.rs`), wrapped by
 `build_uncle_mint_tx()` (`bin/dwowd/src/registry/model.rs`).

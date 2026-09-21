@@ -954,8 +954,8 @@ Same keys, same chain → identical wallet state. WalletState = f(AccountManager
 
 ### Transparency
 
-The coinbase carries no ZK proof — its call data is plaintext (b6bf44f79) and
-every validator checks each field arithmetically:
+The coinbase carries no ZK proof — its call data is plaintext and every validator
+checks each field arithmetically:
 
 | Field | What It Proves |
 |-------------|----------------|

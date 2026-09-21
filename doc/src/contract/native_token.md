@@ -43,10 +43,10 @@ NativeToken uses a burn-mint privacy model:
 
 BurnV1/TransferV1/SpendV1 inputs and outputs, and FeeV3's input/output values,
 are verified through the Burn_V2/Mint_V2/Fee_V3 ZK circuits. PoWRewardV1,
-FeeCollectV1, and UncleMintV1 are plaintext calls (no ZK proof since
-b6bf44f79 / 2026-09) validated by plaintext Pedersen/Poseidon arithmetic in
-the entrypoint. The FeeV3 fee itself is plaintext. Commitments are Poseidon
-hashes of commitment attributes; values are Pedersen-committed.
+FeeCollectV1 and UncleMintV1 are plaintext calls — they carry no proof and are
+validated by plaintext Pedersen/Poseidon arithmetic in the entrypoint. The FeeV3
+fee itself is plaintext. Commitments are Poseidon hashes of commitment
+attributes; values are Pedersen-committed.
 
 ## Use Case
 
