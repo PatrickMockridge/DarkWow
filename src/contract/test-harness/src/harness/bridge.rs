@@ -121,7 +121,7 @@ impl BridgeHarness {
         };
 
         let mut call_data = vec![0x01];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
         Ok(DepositResult { call_data, proof, public_inputs })
     }
@@ -164,7 +164,7 @@ impl BridgeHarness {
         };
 
         let mut call_data = vec![0x02];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
         Ok(WithdrawResult { call_data, proof, public_inputs })
     }

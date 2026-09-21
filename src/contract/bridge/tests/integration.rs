@@ -94,6 +94,62 @@ fn test_deposit_params_encoding() {
     assert!(matches!(decoded.chain_proof, ExternalChainProof::Ethereum));
 }
 
+/// 256 merkle elements and a 300-byte proof: both past the `u8` bound, and both followed by fields
+/// (`external_state_root`, `fee`, `amount`) that a truncated prefix would move. The test above uses
+/// three of each, which is why neither prefix's width could be seen from it.
+#[test]
+fn test_deposit_params_prefixes_are_not_bytes() {
+    let params = DepositParams {
+        commitment: make_commitment(2),
+        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
+        bridge_nonce: 9,
+        chain: ExternalChain::Monero,
+        external_block_hash: [0x11u8; 32],
+        merkle_proof: vec![[0x22u8; 32]; 256],
+        external_state_root: [0x33u8; 32],
+        fee: 4242,
+        amount: 777,
+        proof: vec![0x44; 300],
+        chain_proof: ExternalChainProof::Ethereum,
+    };
+
+    let encoded = params.encode().unwrap();
+    let decoded = DepositParams::decode(&encoded).unwrap();
+
+    assert_eq!(decoded.merkle_proof.len(), 256);
+    assert_eq!(decoded.merkle_proof[255], [0x22u8; 32]);
+    assert_eq!(decoded.external_state_root, [0x33u8; 32]);
+    assert_eq!(decoded.fee, 4242);
+    assert_eq!(decoded.proof.len(), 300);
+    assert_eq!(decoded.amount, 777);
+}
+
+/// The withdraw proof is kilobyte-scale. `token_minimum` is the last field, so a truncated length
+/// moves it.
+#[test]
+fn test_withdraw_params_proof_length_is_not_a_byte() {
+    let params = WithdrawParams {
+        nullifier: make_nullifier(200),
+        recipient_hash: [0x55u8; 32],
+        amount: 1000,
+        proof: vec![0x66; 300],
+        fee: 55,
+        timeout_height: 999,
+        feed_mode: 1,
+        max_fee_bp: Some(250),
+        token_minimum: 12345,
+    };
+
+    let encoded = params.encode().unwrap();
+    let decoded = WithdrawParams::decode(&encoded).unwrap();
+
+    assert_eq!(decoded.proof.len(), 300);
+    assert_eq!(decoded.amount, 1000);
+    assert_eq!(decoded.max_fee_bp, Some(250));
+    assert_eq!(decoded.token_minimum, 12345);
+    assert_eq!(decoded.timeout_height, 999);
+}
+
 #[test]
 fn test_deposit_params_empty_merkle_proof() {
     // Verify serialization handles empty merkle proof

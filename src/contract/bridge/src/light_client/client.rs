@@ -40,7 +40,7 @@
 //! - `ZecLightClient`: Zcash lightwalletd
 
 use async_trait::async_trait;
-use dwow_sdk::error::ContractError;
+use dwow_sdk::{blockchain::SerializedLen, error::ContractError};
 
 /// Confirmation level for deposits
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,21 +80,22 @@ pub struct MerkleProof {
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl MerkleProof {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(5 + self.path.len() * 32);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let mut b = Vec::with_capacity(8 + self.path.len() * 32);
         b.extend_from_slice(&self.position.to_le_bytes());
-        b.push(self.path.len() as u8);
+        b.extend_from_slice(&SerializedLen::try_from_len(self.path.len())?.to_le_bytes());
         for h in &self.path { b.extend_from_slice(h); }
-        b
+        Ok(b)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 5 { return Err(ContractError::IoError("MerkleProof: too short".into())); }
+        if data.len() < 8 { return Err(ContractError::IoError("MerkleProof: too short".into())); }
         let position = u32::from_le_bytes(data[0..4].try_into().unwrap());
-        let count = data[4] as usize;
-        if data.len() != 5 + count * 32 { return Err(ContractError::IoError(format!("MerkleProof: expected {} bytes, got {}", 5+count*32, data.len()))); }
+        let count = SerializedLen::from_le_bytes(data[4..8].try_into().unwrap()).to_usize();
+        let expected = count.saturating_mul(32).saturating_add(8);
+        if data.len() != expected { return Err(ContractError::IoError(format!("MerkleProof: expected {} bytes, got {}", expected, data.len()))); }
         let mut path = Vec::with_capacity(count);
-        for i in 0..count { path.push(data[5+i*32..5+(i+1)*32].try_into().unwrap()); }
+        for i in 0..count { path.push(data[8+i*32..8+(i+1)*32].try_into().unwrap()); }
         Ok(MerkleProof { position, path })
     }
 }
@@ -110,25 +111,26 @@ pub struct FinalityProof {
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl FinalityProof {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(73 + self.proof.len() * 32);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let mut b = Vec::with_capacity(76 + self.proof.len() * 32);
         b.extend_from_slice(&self.block_hash);
         b.extend_from_slice(&self.block_height.to_le_bytes());
         b.extend_from_slice(&self.checkpoint_hash);
-        b.push(self.proof.len() as u8);
+        b.extend_from_slice(&SerializedLen::try_from_len(self.proof.len())?.to_le_bytes());
         for h in &self.proof { b.extend_from_slice(h); }
-        b
+        Ok(b)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 73 { return Err(ContractError::IoError("FinalityProof: too short".into())); }
+        if data.len() < 76 { return Err(ContractError::IoError("FinalityProof: too short".into())); }
         let block_hash: [u8;32] = data[0..32].try_into().unwrap();
         let block_height = u64::from_le_bytes(data[32..40].try_into().unwrap());
         let checkpoint_hash: [u8;32] = data[40..72].try_into().unwrap();
-        let count = data[72] as usize;
-        if data.len() != 73 + count * 32 { return Err(ContractError::IoError(format!("FinalityProof: expected {} bytes, got {}", 73+count*32, data.len()))); }
+        let count = SerializedLen::from_le_bytes(data[72..76].try_into().unwrap()).to_usize();
+        let expected = count.saturating_mul(32).saturating_add(76);
+        if data.len() != expected { return Err(ContractError::IoError(format!("FinalityProof: expected {} bytes, got {}", expected, data.len()))); }
         let mut proof = Vec::with_capacity(count);
-        for i in 0..count { proof.push(data[73+i*32..73+(i+1)*32].try_into().unwrap()); }
+        for i in 0..count { proof.push(data[76+i*32..76+(i+1)*32].try_into().unwrap()); }
         Ok(FinalityProof { block_hash, block_height, checkpoint_hash, proof })
     }
 }

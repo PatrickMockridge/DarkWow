@@ -52,6 +52,7 @@
 
 pub mod zkbins;
 
+use dwow_sdk::blockchain::SerializedLen;
 use dwow_sdk::error::ContractError;
 
 // ============================================================================
@@ -268,14 +269,14 @@ impl DepositBuilder {
         call_data.push(chain);
         call_data.extend_from_slice(&block_hash);
         // Merkle proof length and data
-        call_data.extend_from_slice(&(merkle_proof.len() as u32).to_le_bytes());
+        call_data.extend_from_slice(&SerializedLen::try_from_len(merkle_proof.len())?.to_le_bytes());
         for proof_element in &merkle_proof {
             call_data.extend_from_slice(proof_element);
         }
         call_data.extend_from_slice(&state_root);
         call_data.extend_from_slice(&fee.to_le_bytes());
         // Proof length and data
-        call_data.extend_from_slice(&(proof.len() as u32).to_le_bytes());
+        call_data.extend_from_slice(&SerializedLen::try_from_len(proof.len())?.to_le_bytes());
         call_data.extend_from_slice(&proof);
 
         Ok(call_data)
@@ -420,7 +421,7 @@ impl WithdrawBuilder {
         call_data.extend_from_slice(&amount.to_le_bytes());
         call_data.extend_from_slice(&fee.to_le_bytes());
         // Proof length and data
-        call_data.extend_from_slice(&(proof.len() as u32).to_le_bytes());
+        call_data.extend_from_slice(&SerializedLen::try_from_len(proof.len())?.to_le_bytes());
         call_data.extend_from_slice(&proof);
 
         Ok(call_data)

@@ -25,6 +25,7 @@
 //!
 //! Security Model: Object Capability Security (No VSS)
 
+use dwow_sdk::blockchain::SerializedLen;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::pallas;
@@ -128,21 +129,21 @@ pub enum ExternalChainProof {
 impl dwow_serial::Encodable for ExternalChainProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = match self { Self::Monero(p) => { let mut v = vec![0u8]; v.extend_from_slice(&dwow_serial::serialize(p)); v } Self::Zcash(p) => { let mut v = vec![1u8]; v.extend_from_slice(&dwow_serial::serialize(p)); v } Self::Aztec(p) => { let mut v = vec![2u8]; v.extend_from_slice(&dwow_serial::serialize(p)); v } Self::Litecoin(p) => { let mut v = vec![3u8]; v.extend_from_slice(&dwow_serial::serialize(p)); v } Self::Ethereum => vec![4u8], }; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ExternalChainProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.is_empty() { return Err(std::io::Error::other("ExternalChainProof: empty")); } Ok(match buf[0] { 0 => Self::Monero(dwow_serial::deserialize(&buf[1..]).map_err(|e| std::io::Error::other(format!("{:?}", e)))?), 1 => Self::Zcash(dwow_serial::deserialize(&buf[1..]).map_err(|e| std::io::Error::other(format!("{:?}", e)))?), 2 => Self::Aztec(dwow_serial::deserialize(&buf[1..]).map_err(|e| std::io::Error::other(format!("{:?}", e)))?), 3 => Self::Litecoin(dwow_serial::deserialize(&buf[1..]).map_err(|e| std::io::Error::other(format!("{:?}", e)))?), 4 => Self::Ethereum, _ => return Err(std::io::Error::other("ExternalChainProof: unknown variant")), }) } }
 
-impl dwow_serial::Encodable for XmrDepositProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let dp = self.dleq_proof.encode(); let mut buf = Vec::with_capacity(57 + self.coinbase_merkle_proof.len()*32 + dp.len()); buf.extend_from_slice(&self.tx_hash); buf.extend_from_slice(&self.block_height.to_le_bytes()); buf.extend_from_slice(&self.output_index.to_le_bytes()); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.extend_from_slice(&self.ephemeral_pub); buf.extend_from_slice(&dp); buf.push(self.coinbase_merkle_proof.len() as u8); for h in &self.coinbase_merkle_proof { buf.extend_from_slice(h); } buf.extend_from_slice(&self.confirmations.to_le_bytes()); w.write_all(&buf)?; Ok(buf.len()) } }
+impl dwow_serial::Encodable for XmrDepositProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let dp = self.dleq_proof.encode(); let mut buf = Vec::with_capacity(57 + self.coinbase_merkle_proof.len()*32 + dp.len()); buf.extend_from_slice(&self.tx_hash); buf.extend_from_slice(&self.block_height.to_le_bytes()); buf.extend_from_slice(&self.output_index.to_le_bytes()); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.extend_from_slice(&self.ephemeral_pub); buf.extend_from_slice(&dp); buf.extend_from_slice(&SerializedLen::try_from_len(self.coinbase_merkle_proof.len()).map_err(|e| std::io::Error::other(format!("{e}")))?.to_le_bytes()); for h in &self.coinbase_merkle_proof { buf.extend_from_slice(h); } buf.extend_from_slice(&self.confirmations.to_le_bytes()); w.write_all(&buf)?; Ok(buf.len()) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl dwow_serial::Decodable for XmrDepositProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.len() < 57 { return Err(std::io::Error::other("XmrDepositProof: too short")); } let tx_hash: [u8;32] = buf[0..32].try_into().map_err(|e| std::io::Error::other(format!("{:?}", e)))?; let block_height = u64::from_le_bytes(buf[32..40].try_into().unwrap()); let output_index = u64::from_le_bytes(buf[40..48].try_into().unwrap()); let amount = u64::from_le_bytes(buf[48..56].try_into().unwrap()); let ephemeral_pub: [u8;32] = buf[56..88].try_into().unwrap(); let dleq_proof = DleqProof::decode(&buf[88..184]).map_err(|e| std::io::Error::other(format!("{:?}", e)))?; let mp_count = buf[184] as usize; let mp_end = 185+mp_count*32; if buf.len() < mp_end+8 { return Err(std::io::Error::other("XmrDepositProof: truncated")); } let mut coinbase_merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { coinbase_merkle_proof.push(buf[185+i*32..185+(i+1)*32].try_into().unwrap()); } let confirmations = u64::from_le_bytes(buf[mp_end..mp_end+8].try_into().unwrap()); Ok(XmrDepositProof { tx_hash, block_height, output_index, amount, ephemeral_pub, dleq_proof, coinbase_merkle_proof, confirmations }) } }
+impl dwow_serial::Decodable for XmrDepositProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.len() < 57 { return Err(std::io::Error::other("XmrDepositProof: too short")); } let tx_hash: [u8;32] = buf[0..32].try_into().map_err(|e| std::io::Error::other(format!("{:?}", e)))?; let block_height = u64::from_le_bytes(buf[32..40].try_into().unwrap()); let output_index = u64::from_le_bytes(buf[40..48].try_into().unwrap()); let amount = u64::from_le_bytes(buf[48..56].try_into().unwrap()); let ephemeral_pub: [u8;32] = buf[56..88].try_into().unwrap(); let dleq_proof = DleqProof::decode(&buf[88..184]).map_err(|e| std::io::Error::other(format!("{:?}", e)))?; let mp_count = SerializedLen::from_le_bytes(buf[184..188].try_into().unwrap()).to_usize(); let mp_end = mp_count.saturating_mul(32).saturating_add(188); if buf.len() < mp_end+8 { return Err(std::io::Error::other("XmrDepositProof: truncated")); } let mut coinbase_merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { coinbase_merkle_proof.push(buf[188+i*32..188+(i+1)*32].try_into().unwrap()); } let confirmations = u64::from_le_bytes(buf[mp_end..mp_end+8].try_into().unwrap()); Ok(XmrDepositProof { tx_hash, block_height, output_index, amount, ephemeral_pub, dleq_proof, coinbase_merkle_proof, confirmations }) } }
 
-impl dwow_serial::Encodable for ZcashDepositProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let mut buf = Vec::with_capacity(122 + self.merkle_path.len()*32 + self.spend_proof.len() + self.output_proof.len()); buf.extend_from_slice(&self.nullifier); buf.extend_from_slice(&self.commitment); buf.extend_from_slice(&self.anchor); buf.push(self.merkle_path.len() as u8); for h in &self.merkle_path { buf.extend_from_slice(h); } buf.push(self.spend_proof.len() as u8); buf.extend_from_slice(&self.spend_proof); buf.push(self.output_proof.len() as u8); buf.extend_from_slice(&self.output_proof); buf.extend_from_slice(&self.randomized_pub_key); buf.extend_from_slice(&self.randomness); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.extend_from_slice(&self.block_height.to_le_bytes()); buf.extend_from_slice(&self.confirmations.to_le_bytes()); w.write_all(&buf)?; Ok(buf.len()) } }
+impl dwow_serial::Encodable for ZcashDepositProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let mut buf = Vec::with_capacity(122 + self.merkle_path.len()*32 + self.spend_proof.len() + self.output_proof.len()); buf.extend_from_slice(&self.nullifier); buf.extend_from_slice(&self.commitment); buf.extend_from_slice(&self.anchor); buf.extend_from_slice(&SerializedLen::try_from_len(self.merkle_path.len()).map_err(|e| std::io::Error::other(format!("{e}")))?.to_le_bytes()); for h in &self.merkle_path { buf.extend_from_slice(h); } buf.extend_from_slice(&SerializedLen::try_from_len(self.spend_proof.len()).map_err(|e| std::io::Error::other(format!("{e}")))?.to_le_bytes()); buf.extend_from_slice(&self.spend_proof); buf.extend_from_slice(&SerializedLen::try_from_len(self.output_proof.len()).map_err(|e| std::io::Error::other(format!("{e}")))?.to_le_bytes()); buf.extend_from_slice(&self.output_proof); buf.extend_from_slice(&self.randomized_pub_key); buf.extend_from_slice(&self.randomness); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.extend_from_slice(&self.block_height.to_le_bytes()); buf.extend_from_slice(&self.confirmations.to_le_bytes()); w.write_all(&buf)?; Ok(buf.len()) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl dwow_serial::Decodable for ZcashDepositProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.len() < 122 { return Err(std::io::Error::other("ZcashDepositProof: too short")); } let nullifier: [u8;32] = buf[0..32].try_into().unwrap(); let commitment: [u8;32] = buf[32..64].try_into().unwrap(); let anchor: [u8;32] = buf[64..96].try_into().unwrap(); let mp_count = buf[96] as usize; let mut pos = 97+mp_count*32; if buf.len() < pos+2 { return Err(std::io::Error::other("ZcashDepositProof: merkle_path truncated")); } let mut merkle_path = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_path.push(buf[97+i*32..97+(i+1)*32].try_into().unwrap()); } let sp_len = buf[pos] as usize; pos += 1; if buf.len() < pos+sp_len { return Err(std::io::Error::other("ZcashDepositProof: spend_proof truncated")); } let spend_proof = buf[pos..pos+sp_len].to_vec(); pos += sp_len; let op_len = buf[pos] as usize; pos += 1; if buf.len() < pos+op_len { return Err(std::io::Error::other("ZcashDepositProof: output_proof truncated")); } let output_proof = buf[pos..pos+op_len].to_vec(); pos += op_len; if buf.len() < pos+88 { return Err(std::io::Error::other("ZcashDepositProof: trailing truncated")); } let randomized_pub_key: [u8;32] = buf[pos..pos+32].try_into().unwrap(); pos += 32; let randomness: [u8;32] = buf[pos..pos+32].try_into().unwrap(); pos += 32; let amount = u64::from_le_bytes(buf[pos..pos+8].try_into().unwrap()); let block_height = u64::from_le_bytes(buf[pos+8..pos+16].try_into().unwrap()); let confirmations = u64::from_le_bytes(buf[pos+16..pos+24].try_into().unwrap()); Ok(ZcashDepositProof { nullifier, commitment, anchor, merkle_path, spend_proof, output_proof, randomized_pub_key, randomness, amount, block_height, confirmations }) } }
+impl dwow_serial::Decodable for ZcashDepositProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.len() < 122 { return Err(std::io::Error::other("ZcashDepositProof: too short")); } let nullifier: [u8;32] = buf[0..32].try_into().unwrap(); let commitment: [u8;32] = buf[32..64].try_into().unwrap(); let anchor: [u8;32] = buf[64..96].try_into().unwrap(); let mp_count = SerializedLen::from_le_bytes(buf[96..100].try_into().unwrap()).to_usize(); let mut pos = mp_count.saturating_mul(32).saturating_add(100); if buf.len() < pos+4 { return Err(std::io::Error::other("ZcashDepositProof: merkle_path truncated")); } let mut merkle_path = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_path.push(buf[100+i*32..100+(i+1)*32].try_into().unwrap()); } let sp_len = SerializedLen::from_le_bytes(buf[pos..pos+4].try_into().unwrap()).to_usize(); pos += 4; if buf.len() < pos.saturating_add(sp_len) { return Err(std::io::Error::other("ZcashDepositProof: spend_proof truncated")); } let spend_proof = buf[pos..pos+sp_len].to_vec(); pos += sp_len; let op_len = SerializedLen::from_le_bytes(buf[pos..pos+4].try_into().unwrap()).to_usize(); pos += 4; if buf.len() < pos.saturating_add(op_len) { return Err(std::io::Error::other("ZcashDepositProof: output_proof truncated")); } let output_proof = buf[pos..pos+op_len].to_vec(); pos += op_len; if buf.len() < pos+88 { return Err(std::io::Error::other("ZcashDepositProof: trailing truncated")); } let randomized_pub_key: [u8;32] = buf[pos..pos+32].try_into().unwrap(); pos += 32; let randomness: [u8;32] = buf[pos..pos+32].try_into().unwrap(); pos += 32; let amount = u64::from_le_bytes(buf[pos..pos+8].try_into().unwrap()); let block_height = u64::from_le_bytes(buf[pos+8..pos+16].try_into().unwrap()); let confirmations = u64::from_le_bytes(buf[pos+16..pos+24].try_into().unwrap()); Ok(ZcashDepositProof { nullifier, commitment, anchor, merkle_path, spend_proof, output_proof, randomized_pub_key, randomness, amount, block_height, confirmations }) } }
 
-impl dwow_serial::Encodable for AztecDepositProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let mut buf = Vec::with_capacity(98 + self.merkle_path.len()*32 + self.proof_bytes.len()); buf.extend_from_slice(&self.nullifier); buf.extend_from_slice(&self.commitment); buf.extend_from_slice(&self.anchor); buf.push(self.merkle_path.len() as u8); for h in &self.merkle_path { buf.extend_from_slice(h); } buf.push(self.proof_bytes.len() as u8); buf.extend_from_slice(&self.proof_bytes); buf.extend_from_slice(&self.value.to_le_bytes()); buf.extend_from_slice(&self.asset_id.to_le_bytes()); buf.extend_from_slice(&self.rollup_height.to_le_bytes()); buf.extend_from_slice(&self.eth_block_height.to_le_bytes()); buf.extend_from_slice(&self.confirmations.to_le_bytes()); buf.extend_from_slice(&self.rollup_tx_hash); w.write_all(&buf)?; Ok(buf.len()) } }
+impl dwow_serial::Encodable for AztecDepositProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let mut buf = Vec::with_capacity(98 + self.merkle_path.len()*32 + self.proof_bytes.len()); buf.extend_from_slice(&self.nullifier); buf.extend_from_slice(&self.commitment); buf.extend_from_slice(&self.anchor); buf.extend_from_slice(&SerializedLen::try_from_len(self.merkle_path.len()).map_err(|e| std::io::Error::other(format!("{e}")))?.to_le_bytes()); for h in &self.merkle_path { buf.extend_from_slice(h); } buf.extend_from_slice(&SerializedLen::try_from_len(self.proof_bytes.len()).map_err(|e| std::io::Error::other(format!("{e}")))?.to_le_bytes()); buf.extend_from_slice(&self.proof_bytes); buf.extend_from_slice(&self.value.to_le_bytes()); buf.extend_from_slice(&self.asset_id.to_le_bytes()); buf.extend_from_slice(&self.rollup_height.to_le_bytes()); buf.extend_from_slice(&self.eth_block_height.to_le_bytes()); buf.extend_from_slice(&self.confirmations.to_le_bytes()); buf.extend_from_slice(&self.rollup_tx_hash); w.write_all(&buf)?; Ok(buf.len()) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl dwow_serial::Decodable for AztecDepositProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.len() < 97 { return Err(std::io::Error::other("AztecDepositProof: too short")); } let nullifier: [u8;32] = buf[0..32].try_into().unwrap(); let commitment: [u8;32] = buf[32..64].try_into().unwrap(); let anchor: [u8;32] = buf[64..96].try_into().unwrap(); let mp_count = buf[96] as usize; let mut pos = 97+mp_count*32; if buf.len() < pos+1 { return Err(std::io::Error::other("AztecDepositProof: merkle_path truncated")); } let mut merkle_path = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_path.push(buf[97+i*32..97+(i+1)*32].try_into().unwrap()); } let pb_len = buf[pos] as usize; pos += 1; if buf.len() < pos+pb_len+68 { return Err(std::io::Error::other("AztecDepositProof: truncated")); } let proof_bytes = buf[pos..pos+pb_len].to_vec(); pos += pb_len; let value = u64::from_le_bytes(buf[pos..pos+8].try_into().unwrap()); let asset_id = u32::from_le_bytes(buf[pos+8..pos+12].try_into().unwrap()); let rollup_height = u64::from_le_bytes(buf[pos+12..pos+20].try_into().unwrap()); let eth_block_height = u64::from_le_bytes(buf[pos+20..pos+28].try_into().unwrap()); let confirmations = u64::from_le_bytes(buf[pos+28..pos+36].try_into().unwrap()); let rollup_tx_hash: [u8;32] = buf[pos+36..pos+68].try_into().unwrap(); Ok(AztecDepositProof { nullifier, commitment, anchor, merkle_path, proof_bytes, value, asset_id, rollup_height, eth_block_height, confirmations, rollup_tx_hash }) } }
+impl dwow_serial::Decodable for AztecDepositProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.len() < 97 { return Err(std::io::Error::other("AztecDepositProof: too short")); } let nullifier: [u8;32] = buf[0..32].try_into().unwrap(); let commitment: [u8;32] = buf[32..64].try_into().unwrap(); let anchor: [u8;32] = buf[64..96].try_into().unwrap(); let mp_count = SerializedLen::from_le_bytes(buf[96..100].try_into().unwrap()).to_usize(); let mut pos = mp_count.saturating_mul(32).saturating_add(100); if buf.len() < pos+4 { return Err(std::io::Error::other("AztecDepositProof: merkle_path truncated")); } let mut merkle_path = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_path.push(buf[100+i*32..100+(i+1)*32].try_into().unwrap()); } let pb_len = SerializedLen::from_le_bytes(buf[pos..pos+4].try_into().unwrap()).to_usize(); pos += 4; if buf.len() < pos.saturating_add(pb_len).saturating_add(68) { return Err(std::io::Error::other("AztecDepositProof: truncated")); } let proof_bytes = buf[pos..pos+pb_len].to_vec(); pos += pb_len; let value = u64::from_le_bytes(buf[pos..pos+8].try_into().unwrap()); let asset_id = u32::from_le_bytes(buf[pos+8..pos+12].try_into().unwrap()); let rollup_height = u64::from_le_bytes(buf[pos+12..pos+20].try_into().unwrap()); let eth_block_height = u64::from_le_bytes(buf[pos+20..pos+28].try_into().unwrap()); let confirmations = u64::from_le_bytes(buf[pos+28..pos+36].try_into().unwrap()); let rollup_tx_hash: [u8;32] = buf[pos+36..pos+68].try_into().unwrap(); Ok(AztecDepositProof { nullifier, commitment, anchor, merkle_path, proof_bytes, value, asset_id, rollup_height, eth_block_height, confirmations, rollup_tx_hash }) } }
 
-impl dwow_serial::Encodable for LitecoinDepositProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let rp = if let Some(ref v) = self.range_proof { v.clone() } else { vec![] }; let mut buf = Vec::with_capacity(52 + self.merkle_proof.len()*32 + rp.len()); buf.extend_from_slice(&self.tx_hash); buf.extend_from_slice(&self.output_index.to_le_bytes()); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.push(self.merkle_proof.len() as u8); for h in &self.merkle_proof { buf.extend_from_slice(h); } buf.extend_from_slice(&self.block_merkle_root); buf.extend_from_slice(&self.block_height.to_le_bytes()); buf.extend_from_slice(&self.confirmations.to_le_bytes()); buf.push(self.confidential_commitment.is_some() as u8); if let Some(ref cc) = self.confidential_commitment { buf.extend_from_slice(cc); } buf.push(self.range_proof.is_some() as u8); buf.extend_from_slice(&rp); buf.push(self.is_confidential as u8); w.write_all(&buf)?; Ok(buf.len()) } }
+impl dwow_serial::Encodable for LitecoinDepositProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let rp = if let Some(ref v) = self.range_proof { v.clone() } else { vec![] }; let mut buf = Vec::with_capacity(52 + self.merkle_proof.len()*32 + rp.len()); buf.extend_from_slice(&self.tx_hash); buf.extend_from_slice(&self.output_index.to_le_bytes()); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.extend_from_slice(&SerializedLen::try_from_len(self.merkle_proof.len()).map_err(|e| std::io::Error::other(format!("{e}")))?.to_le_bytes()); for h in &self.merkle_proof { buf.extend_from_slice(h); } buf.extend_from_slice(&self.block_merkle_root); buf.extend_from_slice(&self.block_height.to_le_bytes()); buf.extend_from_slice(&self.confirmations.to_le_bytes()); buf.push(self.confidential_commitment.is_some() as u8); if let Some(ref cc) = self.confidential_commitment { buf.extend_from_slice(cc); } buf.push(self.range_proof.is_some() as u8); buf.extend_from_slice(&rp); buf.push(self.is_confidential as u8); w.write_all(&buf)?; Ok(buf.len()) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl dwow_serial::Decodable for LitecoinDepositProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.len() < 52 { return Err(std::io::Error::other("LitecoinDepositProof: too short")); } let tx_hash: [u8;32] = buf[0..32].try_into().unwrap(); let output_index = u64::from_le_bytes(buf[32..40].try_into().unwrap()); let amount = u64::from_le_bytes(buf[40..48].try_into().unwrap()); let mp_count = buf[48] as usize; let mut pos = 49+mp_count*32; if buf.len() < pos+50 { return Err(std::io::Error::other("LitecoinDepositProof: truncated")); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(buf[49+i*32..49+(i+1)*32].try_into().unwrap()); } let block_merkle_root: [u8;32] = buf[pos..pos+32].try_into().unwrap(); pos += 32; let block_height = u64::from_le_bytes(buf[pos..pos+8].try_into().unwrap()); pos += 8; let confirmations = u64::from_le_bytes(buf[pos..pos+8].try_into().unwrap()); pos += 8; let has_cc = buf[pos] != 0; pos += 1; let confidential_commitment = if has_cc { let cc: [u8;32] = buf[pos..pos+32].try_into().unwrap(); pos += 32; Some(cc) } else { None }; let has_rp = buf[pos] != 0; pos += 1; let range_proof = if has_rp { let rp = buf[pos..].to_vec(); Some(rp) } else { None }; let is_confidential = if has_rp { true } else { buf[pos] != 0 }; Ok(LitecoinDepositProof { tx_hash, output_index, amount, merkle_proof, block_merkle_root, block_height, confirmations, confidential_commitment, range_proof, is_confidential }) } }
+impl dwow_serial::Decodable for LitecoinDepositProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.len() < 52 { return Err(std::io::Error::other("LitecoinDepositProof: too short")); } let tx_hash: [u8;32] = buf[0..32].try_into().unwrap(); let output_index = u64::from_le_bytes(buf[32..40].try_into().unwrap()); let amount = u64::from_le_bytes(buf[40..48].try_into().unwrap()); let mp_count = SerializedLen::from_le_bytes(buf[48..52].try_into().unwrap()).to_usize(); let mut pos = mp_count.saturating_mul(32).saturating_add(52); if buf.len() < pos+50 { return Err(std::io::Error::other("LitecoinDepositProof: truncated")); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(buf[52+i*32..52+(i+1)*32].try_into().unwrap()); } let block_merkle_root: [u8;32] = buf[pos..pos+32].try_into().unwrap(); pos += 32; let block_height = u64::from_le_bytes(buf[pos..pos+8].try_into().unwrap()); pos += 8; let confirmations = u64::from_le_bytes(buf[pos..pos+8].try_into().unwrap()); pos += 8; let has_cc = buf[pos] != 0; pos += 1; let confidential_commitment = if has_cc { let cc: [u8;32] = buf[pos..pos+32].try_into().unwrap(); pos += 32; Some(cc) } else { None }; let has_rp = buf[pos] != 0; pos += 1; let range_proof = if has_rp { let rp = buf[pos..].to_vec(); Some(rp) } else { None }; let is_confidential = if has_rp { true } else { buf[pos] != 0 }; Ok(LitecoinDepositProof { tx_hash, output_index, amount, merkle_proof, block_merkle_root, block_height, confirmations, confidential_commitment, range_proof, is_confidential }) } }
 
 /// Bridge deposit parameters
 #[derive(Debug, Clone,)]
@@ -183,7 +184,7 @@ pub struct DepositParams {
 
 impl dwow_serial::Encodable for DepositParams {
     fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
-        let b = self.encode();
+        let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?;
         w.write_all(&b)?;
         Ok(b.len())
     }
@@ -197,28 +198,26 @@ impl dwow_serial::Decodable for DepositParams {
 }
 
 impl DepositParams {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let cp_bytes = dwow_serial::serialize(&self.chain_proof);
-        let mut b = Vec::with_capacity(107 + self.merkle_proof.len()*32 + self.proof.len() + cp_bytes.len());
+        let mut b = Vec::with_capacity(113 + self.merkle_proof.len()*32 + self.proof.len() + cp_bytes.len());
         b.extend_from_slice(&self.commitment.to_bytes());
         b.extend_from_slice(&self.recipient_pub.to_bytes());
         b.extend_from_slice(&self.bridge_nonce.to_le_bytes());
         b.extend_from_slice(&(self.chain as u8).to_le_bytes());
         b.extend_from_slice(&self.external_block_hash);
-        b.push(self.merkle_proof.len() as u8);
+        b.extend_from_slice(&SerializedLen::try_from_len(self.merkle_proof.len())?.to_le_bytes());
         for h in &self.merkle_proof { b.extend_from_slice(h); }
         b.extend_from_slice(&self.external_state_root);
         b.extend_from_slice(&self.fee.to_le_bytes());
-        // `u32`, not `u8`: a deposit proof is kilobytes, and the length byte
-        // truncated. Decode then read a wrapped length, mis-placed every field
-        // after it, and reported a 500 MB "expected" size. WithdrawParams
-        // already carries this fix; deposit never got it.
-        b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes());
+        // The proof and chain-proof lengths were widened from `u8` to a bare `u32` because a deposit
+        // proof is kilobytes; this makes the width nominal, as the merkle count never was.
+        b.extend_from_slice(&SerializedLen::try_from_len(self.proof.len())?.to_le_bytes());
         b.extend_from_slice(&self.proof);
-        b.extend_from_slice(&(cp_bytes.len() as u32).to_le_bytes());
+        b.extend_from_slice(&SerializedLen::try_from_len(cp_bytes.len())?.to_le_bytes());
         b.extend_from_slice(&cp_bytes);
         b.extend_from_slice(&self.amount.to_le_bytes());
-        b
+        Ok(b)
     }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -228,15 +227,15 @@ impl DepositParams {
         let bridge_nonce = u64::from_le_bytes(data[64..72].try_into().unwrap());
         let chain = ExternalChain::try_from(data[72]).map_err(|_| ContractError::IoError("DepositParams: invalid chain".into()))?;
         let external_block_hash: [u8;32] = data[73..105].try_into().unwrap();
-        let mp_count = data[105] as usize; let mp_end = 106+mp_count*32;
+        let mp_count = SerializedLen::from_le_bytes(data[105..109].try_into().unwrap()).to_usize(); let mp_end = mp_count.saturating_mul(32).saturating_add(109);
         if data.len() < mp_end+32+8+4 { return Err(ContractError::IoError("DepositParams: truncated".into())); }
         let mut merkle_proof = Vec::with_capacity(mp_count);
-        for i in 0..mp_count { merkle_proof.push(data[106+i*32..106+(i+1)*32].try_into().unwrap()); }
+        for i in 0..mp_count { merkle_proof.push(data[109+i*32..109+(i+1)*32].try_into().unwrap()); }
         let external_state_root: [u8;32] = data[mp_end..mp_end+32].try_into().unwrap();
         let fee = u64::from_le_bytes(data[mp_end+32..mp_end+40].try_into().unwrap());
         // Mirrors `encode`: the proof length is a `u32`. Reading a single byte
         // here made every field after it realign against a truncated length.
-        let proof_len = u32::from_le_bytes(data[mp_end+40..mp_end+44].try_into().unwrap()) as usize;
+        let proof_len = SerializedLen::from_le_bytes(data[mp_end+40..mp_end+44].try_into().unwrap()).to_usize();
         let p = mp_end+44+proof_len;
         if data.len() < p+4 { return Err(ContractError::IoError("DepositParams: proof truncated".into())); }
         // The body starts *after* the four-byte length, not one byte into it. This read
@@ -246,7 +245,7 @@ impl DepositParams {
         // `test_deposit_params_empty_merkle_proof`, which could not run until 2026-09-20: `make test`
         // stopped at the contract build, and the contract build stopped on stale artifacts.
         let proof = data[mp_end+44..p].to_vec();
-        let cp_len = u32::from_le_bytes(data[p..p+4].try_into().unwrap()) as usize;
+        let cp_len = SerializedLen::from_le_bytes(data[p..p+4].try_into().unwrap()).to_usize();
         if data.len() != p+4+cp_len+8 { return Err(ContractError::IoError(format!("DepositParams: expected {} bytes, got {}", p+4+cp_len+8, data.len()))); }
         let chain_proof = dwow_serial::deserialize(&data[p+4..p+4+cp_len]).map_err(|e| ContractError::IoError(format!("DepositParams: invalid chain_proof: {:?}", e)))?;
         let amount = u64::from_le_bytes(data[p+4+cp_len..p+4+cp_len+8].try_into().unwrap());
@@ -287,7 +286,7 @@ pub struct WithdrawParams {
 
 impl dwow_serial::Encodable for WithdrawParams {
     fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
-        let b = self.encode();
+        let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?;
         w.write_all(&b)?;
         Ok(b.len())
     }
@@ -301,12 +300,12 @@ impl dwow_serial::Decodable for WithdrawParams {
 }
 
 impl WithdrawParams {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let mut b = Vec::with_capacity(102 + self.proof.len());
         b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.recipient_hash);
         b.extend_from_slice(&self.amount.to_le_bytes());
-        b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes());
+        b.extend_from_slice(&SerializedLen::try_from_len(self.proof.len())?.to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.fee.to_le_bytes());
         b.extend_from_slice(&self.timeout_height.to_le_bytes());
@@ -314,7 +313,7 @@ impl WithdrawParams {
         b.push(self.max_fee_bp.is_some() as u8);
         if let Some(v) = self.max_fee_bp { b.extend_from_slice(&v.to_le_bytes()); }
         b.extend_from_slice(&self.token_minimum.to_le_bytes());
-        b
+        Ok(b)
     }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -322,7 +321,7 @@ impl WithdrawParams {
         let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("WithdrawParams: invalid nullifier".into()))?;
         let recipient_hash: [u8;32] = data[32..64].try_into().unwrap();
         let amount = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        let proof_len = u32::from_le_bytes(data[72..76].try_into().unwrap()) as usize; let p = 76+proof_len;
+        let proof_len = SerializedLen::from_le_bytes(data[72..76].try_into().unwrap()).to_usize(); let p = proof_len.saturating_add(76);
         if data.len() < p+8+8+1+1+8 { return Err(ContractError::IoError("WithdrawParams: proof truncated".into())); }
         let proof = data[76..p].to_vec();
         let fee = u64::from_le_bytes(data[p..p+8].try_into().unwrap());
