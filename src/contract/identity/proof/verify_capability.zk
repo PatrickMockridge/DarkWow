@@ -1,6 +1,23 @@
 # VerifyCapability_V2 circuit — domain-separated capability verification.
 # V2 changes from V1 (HAZOP RC3):
 #   - Domain separation: every poseidon_hash prepends a unique domain constant
+#
+# What this circuit proves, and what it did not until 2026-09-21:
+#
+#   * it proves the prover knows a credential secret, via the nullifier;
+#   * it proves the credential's attribute satisfies a predicate;
+#   * and it proves *nothing else*, while every consumer — `dao_escrow`, `labor_market`, `tender`,
+#     `insurance_market` — treated it as an authorization. The capability's own record says what a
+#     valid credential must be (`CredentialRequirement { schema_hash, issuer_pub, min_threshold }`,
+#     `model/mod.rs:437-446`) and the circuit carried `schema_hash`, `issuer_pub_x/y` and `threshold`
+#     as witnesses it never exposed, so no host could compare them: an unknown issuer, any schema,
+#     and a threshold of zero were all acceptable. The nullifier was exposed and read by nobody, so a
+#     revoked credential verified exactly like a live one.
+#
+# The four values are now public inputs. The host compares them against the capability record it
+# already loads and discards, checks the threshold against the record's `min_threshold`, and uses the
+# nullifier as a revocation handle. See OBL-Z17 in `doc/src/arch/verification-hazop.md`; possession
+# (the credential *is* a box) is the part still open.
 k = 11;
 field = "pallas";
 
@@ -19,6 +36,10 @@ witness "VerifyCapabilityV2" {
     Base commitment,
     Base attribute_value,
     Base threshold,
+    # Unused since 2026-09-21: this was the input to the `computed_capability` binding that nothing
+    # read (see the REMOVED note in the circuit). It is kept because it is the *possession* secret —
+    # "Capability secret: derived from holder pubkey + capability_id" — and Stage 2 of OBL-Z17 decides
+    # what possession is proved with. A witness nothing reads is still a witness the prover supplies.
     Base capability_secret,
     Base tx_commitment,
     Base tx_nonce,
@@ -29,13 +50,17 @@ circuit "VerifyCapabilityV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
 
-    # Nullifier verification
+    # Nullifier verification. This is the credential's revocation handle: the host checks it against
+    # the identity nullifiers tree and marks it spent, so a revoked credential stops verifying. It
+    # was exposed before and read by nobody.
     computed_nullifier = poseidon_hash(DOMAIN_NULLIFIER, credential_secret, commitment);
     constrain_instance(computed_nullifier);
     constrain_equal_base(computed_nullifier, nullifier);
 
-    # Capability secret binding
-    computed_capability = poseidon_hash(DOMAIN_NULLIFIER, capability_secret, capability_id);
+    # REMOVED: `computed_capability = poseidon_hash(DOMAIN_NULLIFIER, capability_secret,
+    # capability_id);` — computed and then used nowhere, so it tied nothing to anything. The binding
+    # the host needs is not a derived id but the credential's *schema* and *issuer*, which are
+    # exposed below and compared against the capability record.
 
     # Predicate verification
     range_check(64, attribute_value);
@@ -44,6 +69,16 @@ circuit "VerifyCapabilityV2" {
 
     is_lte = less_than_or_equal(threshold, attribute_value);
     constrain_equal_base(is_lte, predicate_result);
+
+    # The four values the capability record is entitled to constrain, exposed so the host can. The
+    # parameters of the call carry copies of all of them (`CapabilityProof`), and until they were
+    # public inputs those copies were instruction data the proof did not bind: a caller could state
+    # any schema, any issuer and any threshold beside a proof about a different credential.
+    constrain_instance(schema_hash);
+    constrain_instance(issuer_pub_x);
+    constrain_instance(issuer_pub_y);
+    constrain_instance(threshold);
+    constrain_instance(predicate_result);
 
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);

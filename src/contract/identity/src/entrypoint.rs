@@ -133,9 +133,39 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = match VerifyCapabilityParams::decode(payload) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize VerifyCapabilityParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
+            // The circuit's instance order, and every value here is one the *proof* binds: exposing
+            // only the nullifier (as this did) left the schema, the issuer, the threshold and the
+            // predicate as instruction data the proof said nothing about, which is what
+            // `process_verify_capability_instruction` now compares against the capability record.
+            let proof = &params.capability_proof;
+            let (issuer_x, issuer_y) = match proof.issuer_pub.xy() {
+                Some(coords) => coords,
+                None => {
+                    msg!("[identity::get_metadata] Error: capability_proof.issuer_pub is the identity point");
+                    let _ = wasm::util::set_return_data(&vec![]);
+                    return Ok(())
+                }
+            };
+            let schema_hash = match Option::<Base>::from(Base::from_repr(proof.schema_hash)) {
+                Some(h) => h,
+                None => {
+                    msg!("[identity::get_metadata] Error: capability_proof.schema_hash is not a canonical field element");
+                    let _ = wasm::util::set_return_data(&vec![]);
+                    return Ok(())
+                }
+            };
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V2.to_string(),
-                vec![params.capability_proof.nullifier.inner(), tx_binding, Base::zero()],
+                vec![
+                    proof.nullifier.inner(),
+                    schema_hash,
+                    issuer_x,
+                    issuer_y,
+                    Base::from(proof.threshold),
+                    Base::from(proof.predicate_result as u64),
+                    tx_binding,
+                    Base::zero(),
+                ],
             ));
         }
         // Non-ZK functions: no public inputs
@@ -542,27 +572,80 @@ fn process_verify_capability_instruction(
 
     msg!("[identity::verify_capability] Verifying capability");
 
-    // Load capability definition
+    // Load the capability definition — and *use* it. This record says what a valid credential must
+    // be (`CredentialRequirement`), and until 2026-09-21 the function loaded it and discarded it
+    // (`let _cap_data = ...`), so none of the checks below existed: any schema, any issuer and a
+    // threshold of zero were all acceptable, and the proof was over whatever credential the caller
+    // held. OBL-Z17 in `doc/src/arch/verification-hazop.md`.
     let capabilities_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
     let cap_bytes = params.capability_proof.capability_id.to_bytes();
-    let _cap_data = wasm::db::db_get(capabilities_db, &cap_bytes)?
+    let cap_data = wasm::db::db_get(capabilities_db, &cap_bytes)?
         .ok_or(IdentityError::CapabilityNotFound)?;
+    let capability = Capability::decode(&cap_data)?;
+    let requirement = &capability.credential_requirement;
 
-    // Possession verified via Box::Take child call.
-    // The credential is a Box; TakeV1 proves the caller holds it.
-    // Revocation checked via Identity's nullifier tree.
+    // 1. The credential must be of the schema the capability requires. Both sides are public inputs
+    //    of the proof, so this compares what the proof was about against what the capability says.
+    if params.capability_proof.schema_hash != requirement.schema_hash {
+        msg!("[identity::verify_capability] Error: credential schema does not match the capability's requirement");
+        return Err(IdentityError::SchemaNotRecognized.into())
+    }
+
+    // 2. …issued by the issuer the capability trusts.
+    if params.capability_proof.issuer_pub != requirement.issuer_pub {
+        msg!("[identity::verify_capability] Error: credential issuer is not the capability's trusted issuer");
+        return Err(IdentityError::IssuerNotTrusted.into())
+    }
+
+    // 3. …and the predicate must actually hold. `predicate_result` is a public input, so this is the
+    //    proof's value and not the param's copy of it.
+    if params.capability_proof.predicate_result != 1 {
+        msg!("[identity::verify_capability] Error: predicate not satisfied");
+        return Err(IdentityError::PredicateFailed.into())
+    }
+
+    // 4. The threshold the predicate was evaluated at must be at least the capability's floor. The
+    //    circuit proves `attribute_value >= threshold` and cannot see this record, so a caller free
+    //    to choose `threshold` could pass `0` and satisfy any requirement.
+    if params.capability_proof.threshold < requirement.min_threshold {
+        msg!("[identity::verify_capability] Error: threshold {} is below the capability's minimum {}",
+             params.capability_proof.threshold, requirement.min_threshold);
+        return Err(IdentityError::PredicateFailed.into())
+    }
+
+    // 5. Revocation. The credential's nullifier is a public input of the proof; an unspent one is
+    //    required here and is written by the apply phase, so a revoked credential stops verifying.
+    let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &params.capability_proof.nullifier.to_bytes())? {
+        msg!("[identity::verify_capability] Error: credential nullifier already spent — revoked or replayed");
+        return Err(IdentityError::NullifierAlreadySpent.into())
+    }
+
+    // STILL OPEN, and it is the part this function cannot check: the credential is a *box*, and
+    // "the caller holds it" needs a `Box::Take` child call, which nothing requires
+    // (`IDENTITY_CONTRACT_BOX_CONTRACT_ID` is stored for exactly that and read nowhere). Nor can the
+    // circuit say *which attribute* the predicate was over — it has one `attribute_value` and the
+    // requirement names an attribute (`requirement.attribute_name`) that the proof does not bind. So
+    // this verifies a credential's schema, issuer, predicate and liveness; possession and attribute
+    // identity are Stage 2 of OBL-Z17.
 
     let update = VerifyCapabilityUpdateV1 {
         capability_id: params.capability_proof.capability_id,
         holder_pub: params.capability_proof.issuer_pub,
         verified: true,
+        nullifier: params.capability_proof.nullifier,
     };
 
     msg!("[identity::verify_capability] Capability verified");
     Ok(update.encode())
 }
 
-fn apply_verify_capability_update(_cid: ContractId, _update: VerifyCapabilityUpdateV1) -> ContractResult {
+fn apply_verify_capability_update(cid: ContractId, update: VerifyCapabilityUpdateV1) -> ContractResult {
+    // Write the credential's nullifier: the exec checked it unspent and this is what makes the check
+    // mean anything — without it the read above would never become true and a revoked credential
+    // would keep verifying.
+    let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[1])?;
     msg!("[identity::verify_capability::update] Verification recorded");
     Ok(())
 }

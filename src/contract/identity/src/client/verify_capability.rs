@@ -37,20 +37,33 @@ use rand::{rngs::OsRng, SeedableRng};
 /// VerifyCapabilityV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct VerifyCapabilityPublicInputs {
-    pub capability_id: pallas::Base,
+    /// The credential's nullifier — the revocation handle the host checks unspent.
     pub nullifier: pallas::Base,
+    /// The credential's schema, compared by the host against the capability's requirement.
+    pub schema_hash: pallas::Base,
+    /// The credential's issuer, compared the same way.
     pub issuer_pub_x: pallas::Base,
     pub issuer_pub_y: pallas::Base,
-    pub schema_hash: pallas::Base,
+    /// The threshold the predicate was evaluated at; the host requires it to be at least the
+    /// capability's `min_threshold`.
+    pub threshold: pallas::Base,
     pub predicate_result: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl VerifyCapabilityPublicInputs {
+    /// `VerifyCapability_V2`'s instance order. This returned three values — the nullifier and the tx
+    /// pair — while the struct carried eight fields, so `capability_id` was the only thing the proof
+    /// said anything about and it was not even an instance. See OBL-Z17.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.nullifier,
+            self.schema_hash,
+            self.issuer_pub_x,
+            self.issuer_pub_y,
+            self.threshold,
+            self.predicate_result,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -116,11 +129,11 @@ impl VerifyCapabilityCallData {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         VerifyCapabilityPublicInputs {
-            capability_id: self.capability_id,
             nullifier: self.compute_nullifier(),
+            schema_hash: self.schema_hash,
             issuer_pub_x: ix,
             issuer_pub_y: iy,
-            schema_hash: self.schema_hash,
+            threshold: self.threshold,
             predicate_result: if self.predicate_result {
                 pallas::Base::one()
             } else {

@@ -161,6 +161,18 @@ impl IdentityHarness {
                 nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
                 issuer_pub: issuer_public,
                 schema_hash: schema_hash.to_repr(),
+                // The threshold the predicate was evaluated at, now a public input of the proof and
+                // compared by the host against the capability's `min_threshold`. The harness takes it
+                // as a field element like every other value here, so it is read back through its
+                // canonical representation.
+                threshold: {
+                    let repr = threshold.to_repr();
+                    let mut low = [0u8; 8];
+                    low.copy_from_slice(&repr[..8]);
+                    // A threshold above 2^64 is not one the host can compare, so it saturates to the
+                    // largest it can — and the host's floor check rejects it, which is the point.
+                    if repr[8..].iter().any(|b| *b != 0) { u64::MAX } else { u64::from_le_bytes(low) }
+                },
                 predicate_result: if predicate_result { 1 } else { 0 },
                 proof: vec![],
                 created_at: 0,

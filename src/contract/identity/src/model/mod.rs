@@ -497,6 +497,13 @@ pub struct CapabilityProof {
     pub issuer_pub: PublicKey,
     /// Schema hash
     pub schema_hash: [u8; 32],
+    /// The threshold the predicate was evaluated against.
+    ///
+    /// Carried so the host can compare it against the capability's `min_threshold`
+    /// (`CredentialRequirement`): the circuit proves `attribute_value >= threshold` and cannot see
+    /// the record, so without this the caller could pass `threshold = 0` and satisfy any predicate
+    /// requirement trivially.
+    pub threshold: u64,
     /// ZK proof of capability satisfaction
     pub proof: Vec<u8>,
     /// Capability secret (proves holder owns this capability)
@@ -506,7 +513,7 @@ pub struct CapabilityProof {
 }
 
 #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
-impl CapabilityProof { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(102+self.proof.len()); b.extend_from_slice(&self.capability_id.encode()); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.predicate_result); b.extend_from_slice(&self.issuer_pub.to_bytes()); b.extend_from_slice(&self.schema_hash); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.capability_secret.encode()); b.extend_from_slice(&self.created_at.to_le_bytes()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 102 { return Err(ContractError::IoError("CapabilityProof: too short".into())); } let capability_id = CapabilityId::decode(read_slice(data, 0, 32 - 0)?)?; let nullifier = IntentNullifier::from_bytes(read_field::<32>(data, 32)?).map_err(|_| ContractError::IoError("CapabilityProof: invalid nullifier".into()))?; let predicate_result = read_byte(data, 64)?; let issuer_pub = PublicKey::from_bytes(read_field::<32>(data, 65)?).map_err(|e| ContractError::IoError(format!("CapabilityProof: invalid issuer_pub: {}", e)))?; let schema_hash: [u8;32] = read_field::<32>(data, 97)?; let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 129)?).to_usize(); let p = 133+proof_len; if data.len() < p+40 { return Err(ContractError::IoError("CapabilityProof: truncated".into())); } let proof = read_slice(data, 133, (p) - (133))?.to_vec(); let capability_secret = CapabilitySecret::decode(read_slice(data, p, 32)?)?; let created_at = u64::from_le_bytes(read_field::<8>(data, p+32)?); Ok(CapabilityProof { capability_id, nullifier, predicate_result, issuer_pub, schema_hash, proof, capability_secret, created_at }) } }
+impl CapabilityProof { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(110+self.proof.len()); b.extend_from_slice(&self.capability_id.encode()); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.predicate_result); b.extend_from_slice(&self.issuer_pub.to_bytes()); b.extend_from_slice(&self.schema_hash); b.extend_from_slice(&self.threshold.to_le_bytes()); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.capability_secret.encode()); b.extend_from_slice(&self.created_at.to_le_bytes()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 110 { return Err(ContractError::IoError("CapabilityProof: too short".into())); } let capability_id = CapabilityId::decode(read_slice(data, 0, 32 - 0)?)?; let nullifier = IntentNullifier::from_bytes(read_field::<32>(data, 32)?).map_err(|_| ContractError::IoError("CapabilityProof: invalid nullifier".into()))?; let predicate_result = read_byte(data, 64)?; let issuer_pub = PublicKey::from_bytes(read_field::<32>(data, 65)?).map_err(|e| ContractError::IoError(format!("CapabilityProof: invalid issuer_pub: {}", e)))?; let schema_hash: [u8;32] = read_field::<32>(data, 97)?; let threshold = u64::from_le_bytes(read_field::<8>(data, 129)?); let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 137)?).to_usize(); let p = 141+proof_len; if data.len() < p+40 { return Err(ContractError::IoError("CapabilityProof: truncated".into())); } let proof = read_slice(data, 141, (p) - (141))?.to_vec(); let capability_secret = CapabilitySecret::decode(read_slice(data, p, 32)?)?; let created_at = u64::from_le_bytes(read_field::<8>(data, p+32)?); Ok(CapabilityProof { capability_id, nullifier, predicate_result, issuer_pub, schema_hash, threshold, proof, capability_secret, created_at }) } }
 
 /// Parameters for registering a new capability type
 #[derive(Debug, Clone)]
@@ -849,17 +856,22 @@ pub struct VerifyCapabilityUpdateV1 {
     pub capability_id: CapabilityId,
     pub holder_pub: PublicKey,
     pub verified: bool,
+    /// The credential's nullifier, which the exec checked unspent and the apply phase writes to the
+    /// identity nullifiers tree. Without it the check would be a read that nothing ever makes true —
+    /// a revoked credential would keep verifying for as long as nobody recorded the spend.
+    pub nullifier: IntentNullifier,
 }
 
 impl dwow_serial::Encodable for VerifyCapabilityUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for VerifyCapabilityUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl VerifyCapabilityUpdateV1 {
-    pub const ENCODED_SIZE: usize = 65;
+    pub const ENCODED_SIZE: usize = 97;
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.capability_id.to_bytes());
         buf.extend_from_slice(&self.holder_pub.to_bytes());
         buf.push(self.verified as u8);
+        buf.extend_from_slice(&self.nullifier.to_bytes());
         buf
     }
     #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
@@ -874,7 +886,9 @@ impl VerifyCapabilityUpdateV1 {
         let holder_pub = PublicKey::from_bytes(read_field::<32>(data, 32)?)
             .map_err(|e| ContractError::IoError(format!("VerifyCapabilityUpdateV1: invalid holder_pub: {}", e)))?;
         let verified = read_byte(data, 64)? != 0;
-        Ok(VerifyCapabilityUpdateV1 { capability_id, holder_pub, verified })
+        let nullifier = IntentNullifier::from_bytes(read_field::<32>(data, 65)?)
+            .map_err(|_| ContractError::IoError("VerifyCapabilityUpdateV1: invalid nullifier".into()))?;
+        Ok(VerifyCapabilityUpdateV1 { capability_id, holder_pub, verified, nullifier })
     }
 }
 
