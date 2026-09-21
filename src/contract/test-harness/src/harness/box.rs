@@ -33,11 +33,22 @@ impl BoxHarness {
         (lp, p, root)
     }
 
+    /// Put the default contents — the fixture `box_spec` proves valid against the store.
     pub fn put(&self) -> Result<BoxPutResult> {
+        self.put_contents(poseidon_hash([pallas::Base::from(100u64)]))
+    }
+
+    /// Put a chosen contents commitment, everything else fixed.
+    ///
+    /// The box id, the state nonces, the keys, the merkle path and the expected root are the fixture
+    /// box's own spec exercises against a real store; only the contents vary. That is what lets
+    /// another contract require a take of *its* box rather than of any box: the caller puts its
+    /// commitment and the verifier's host compares `TakeParams.contents_commit` against it.
+    pub fn put_contents(&self, contents: pallas::Base) -> Result<BoxPutResult> {
         let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);
         let os=pallas::Base::from(42u64);let bid=pallas::Base::from(1u64);
         let osn=pallas::Base::zero();let nsn=pallas::Base::from(1u64);let occ=pallas::Base::zero();
-        let ncc=poseidon_hash([pallas::Base::from(100u64)]);let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
+        let ncc=contents;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
         let nf=poseidon_hash([dnl,os,bid,osn]);let tb=poseidon_hash([dtb,tc,tn]);let nl=poseidon_hash([dml,bid,ncc,nsn]);
         let ol=poseidon_hash([dml,bid,occ,osn]);let (lp,p,root)=Self::build_root(ol);
         let er_base: pallas::Base = root.inner();
@@ -64,10 +75,17 @@ impl BoxHarness {
         Ok(BoxPutResult{call_data:cd,proof})
     }
 
+    /// Take the default contents — the counterpart of `put`.
     pub fn take(&self) -> Result<BoxTakeResult> {
+        self.take_contents(poseidon_hash([pallas::Base::from(100u64)]))
+    }
+
+    /// Take a box whose contents commitment is `contents`. It must be the contents a `put_contents`
+    /// wrote, or box's own exec rejects the take.
+    pub fn take_contents(&self, contents: pallas::Base) -> Result<BoxTakeResult> {
         let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);
         let os=pallas::Base::from(42u64);let bid=pallas::Base::from(1u64);let sn=pallas::Base::from(1u64);
-        let cc=poseidon_hash([pallas::Base::from(100u64)]);let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
+        let cc=contents;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
         let nf=poseidon_hash([dnl,os,bid,sn]);let tb=poseidon_hash([dtb,tc,tn]);let ol=poseidon_hash([dml,bid,cc,sn]);
         let (lp,p,root)=Self::build_root(ol);
         let er_base: pallas::Base = root.inner();
