@@ -40,6 +40,7 @@
 //! ```
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{pasta_prelude::PrimeField, poseidon_hash},
     error::ContractError,
     pasta::pallas,
@@ -155,9 +156,10 @@ pub struct Tender {
 impl Tender {
     /// Encode Tender to bytes.
     /// Variable-length due to String title.
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let title_bytes = self.title.as_bytes();
-        let cap = 154 + 1 + title_bytes.len() + 1 + 1 + 1;
+        let tn = SerializedLen::try_from_len(title_bytes.len())?;
+        let cap = 157 + 1 + title_bytes.len() + 1 + 1 + 1;
         //             ^ prefix: version+id+req_x+req_y+spec+att+min+max+bid_d+rev_d+del_d+state+bid_count+created
         //               1+32+32+32+32+32+8+8+8+8+8+1+8+8 = 218, but we build progressively
         let mut b = Vec::with_capacity(cap);
@@ -165,8 +167,8 @@ impl Tender {
         b.extend_from_slice(&self.id.to_repr());
         b.extend_from_slice(&self.requester_pub_x.to_repr());
         b.extend_from_slice(&self.requester_pub_y.to_repr());
-        // String: u8 length prefix + bytes
-        b.push(title_bytes.len() as u8);
+        // String: SerializedLen prefix + bytes
+        b.extend_from_slice(&tn.to_le_bytes());
         b.extend_from_slice(title_bytes);
         b.extend_from_slice(&self.specification.to_repr());
         b.extend_from_slice(&self.attestation_id.to_repr());
@@ -202,15 +204,15 @@ impl Tender {
                 b.extend_from_slice(v);
             }
         }
-        b
+        Ok(b)
     }
 
     /// Decode Tender from bytes.
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // Minimum size: 1+32+32+32+1(min_title)+32+32+8+8+8+8+8+1+1+8+8+1+1 = 222
-        if data.len() < 222 {
+        // Minimum size: 1+32+32+32+4(min_title)+32+32+8+8+8+8+8+1+1+8+8+1+1 = 225
+        if data.len() < 225 {
             return Err(ContractError::IoError(format!(
-                "Tender: expected at least 222 bytes, got {}",
+                "Tender: expected at least 225 bytes, got {}",
                 data.len()
             )));
         }
@@ -224,16 +226,17 @@ impl Tender {
         let requester_pub_y = pallas::Base::from_repr(data[65..97].try_into().unwrap())
             .into_option()
             .ok_or_else(|| ContractError::IoError("Tender: invalid requester_pub_y".into()))?;
-        let title_len = data[97] as usize;
-        if data.len() < 98 + title_len {
+        let title_len = SerializedLen::from_le_bytes(data[97..101].try_into().unwrap()).to_usize();
+        let title_end = title_len.saturating_add(101);
+        if data.len() < title_end {
             return Err(ContractError::IoError(format!(
                 "Tender: truncated title at pos 97, len {}",
                 title_len
             )));
         }
-        let title = String::from_utf8(data[98..98 + title_len].to_vec())
+        let title = String::from_utf8(data[101..title_end].to_vec())
             .map_err(|_| ContractError::IoError("Tender: invalid UTF-8 in title".into()))?;
-        let mut pos = 98 + title_len;
+        let mut pos = title_end;
         if pos + 32 > data.len() {
             return Err(ContractError::IoError("Tender: truncated specification".into()));
         }
@@ -433,8 +436,9 @@ pub struct Bid {
 impl Bid {
     /// Encode Bid to bytes.
     /// Variable-length due to Vec<u8> encrypted_payload.
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 1+32+32+32+32+8+32+1+self.encrypted_payload.len()+1+1+8;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let pn = SerializedLen::try_from_len(self.encrypted_payload.len())?;
+        let cap = 1+32+32+32+32+8+32+4+self.encrypted_payload.len()+1+1+8;
         let mut b = Vec::with_capacity(cap);
         b.push(self.version);
         b.extend_from_slice(&self.id.to_repr());
@@ -443,8 +447,8 @@ impl Bid {
         b.extend_from_slice(&self.bidder_pub_y.to_repr());
         b.extend_from_slice(&self.amount.to_le_bytes());
         b.extend_from_slice(&self.claim_id.to_repr());
-        // encrypted_payload: u8 len + bytes
-        b.push(self.encrypted_payload.len() as u8);
+        // encrypted_payload: SerializedLen prefix + bytes
+        b.extend_from_slice(&pn.to_le_bytes());
         b.extend_from_slice(&self.encrypted_payload);
         b.push(self.state as u8);
         // revealed_amount: Option<u64>
@@ -456,15 +460,15 @@ impl Bid {
             }
         }
         b.extend_from_slice(&self.created_at.to_le_bytes());
-        b
+        Ok(b)
     }
 
     /// Decode Bid from bytes.
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // Minimum: 1+32+32+32+32+8+32+1(min_payload)+1+1+8 = 180
-        if data.len() < 180 {
+        // Minimum: 1+32+32+32+32+8+32+4(min_payload)+1+1+8 = 183
+        if data.len() < 183 {
             return Err(ContractError::IoError(format!(
-                "Bid: expected at least 180 bytes, got {}",
+                "Bid: expected at least 183 bytes, got {}",
                 data.len()
             )));
         }
@@ -485,15 +489,15 @@ impl Bid {
         let claim_id = pallas::Base::from_repr(data[137..169].try_into().unwrap())
             .into_option()
             .ok_or_else(|| ContractError::IoError("Bid: invalid claim_id".into()))?;
-        let payload_len = data[169] as usize;
-        let pos_after_payload = 170 + payload_len;
+        let payload_len = SerializedLen::from_le_bytes(data[169..173].try_into().unwrap()).to_usize();
+        let pos_after_payload = payload_len.saturating_add(173);
         if data.len() < pos_after_payload {
             return Err(ContractError::IoError(format!(
                 "Bid: truncated encrypted_payload, needed {} more bytes",
-                pos_after_payload - data.len()
+                pos_after_payload.saturating_sub(data.len())
             )));
         }
-        let encrypted_payload = data[170..170+payload_len].to_vec();
+        let encrypted_payload = data[173..pos_after_payload].to_vec();
         let pos = pos_after_payload;
         if pos + 1 > data.len() {
             return Err(ContractError::IoError("Bid: truncated state".into()));
@@ -592,25 +596,26 @@ pub struct CreateTenderParamsV1 {
     pub delivery_deadline: u64,
 }
 
-impl dwow_serial::Encodable for CreateTenderParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CreateTenderParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateTenderParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CreateTenderParamsV1 {
-    pub fn encode(&self) -> Vec<u8> { let tb = self.title.as_bytes(); let mut b = Vec::with_capacity(4+self.proof.len()+1+tb.len()+169); b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.push(tb.len() as u8); b.extend_from_slice(tb); b.extend_from_slice(&self.specification.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.extend_from_slice(&self.min_bid.to_le_bytes()); b.extend_from_slice(&self.max_bid.to_le_bytes()); b.extend_from_slice(&self.bid_deadline.to_le_bytes()); b.extend_from_slice(&self.reveal_deadline.to_le_bytes()); b.extend_from_slice(&self.delivery_deadline.to_le_bytes()); b }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let tb = self.title.as_bytes(); let pl = SerializedLen::try_from_len(self.proof.len())?; let tn = SerializedLen::try_from_len(tb.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+4+tb.len()+169); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.extend_from_slice(&tn.to_le_bytes()); b.extend_from_slice(tb); b.extend_from_slice(&self.specification.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.extend_from_slice(&self.min_bid.to_le_bytes()); b.extend_from_slice(&self.max_bid.to_le_bytes()); b.extend_from_slice(&self.bid_deadline.to_le_bytes()); b.extend_from_slice(&self.reveal_deadline.to_le_bytes()); b.extend_from_slice(&self.delivery_deadline.to_le_bytes()); Ok(b) }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // Minimum: 4(proof_len)+32(tender_id)+32+32+1(title_len)+32+32+8+8+8+8+8 = 204
-        if data.len() < 204 {
+        // Minimum: 4(proof_len)+32(tender_id)+32+32+4(title_len)+32+32+8+8+8+8+8 = 210
+        if data.len() < 210 {
             return Err(ContractError::IoError(format!(
-                "CreateTenderParamsV1: expected at least 204 bytes, got {}",
+                "CreateTenderParamsV1: expected at least 210 bytes, got {}",
                 data.len()
             )));
         }
-        // `u32`, not `u8`: a tender proof is kilobytes, so the old length byte
-        // truncated and every field after it misread. Mirrors `encode`, and the
-        // fix `WithdrawParams` already carries.
-        let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
+        // The proof length is `SerializedLen`. It had already been widened to a bare `u32` — a
+        // tender proof is kilobytes and the old length byte truncated every field after it — and
+        // this makes the width the nominal one. The title's prefix had the same bug and is fixed
+        // in the same motion.
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
         let mut pos = 4usize;
-        if pos + proof_len > data.len() {
+        if data.len() < pos.saturating_add(proof_len) {
             return Err(ContractError::IoError("CreateTenderParamsV1: truncated proof".into()));
         }
         let proof = data[pos..pos+proof_len].to_vec();
@@ -633,12 +638,12 @@ impl CreateTenderParamsV1 {
             .into_option()
             .ok_or_else(|| ContractError::IoError("CreateTenderParamsV1: invalid requester_pub_y".into()))?;
         pos += 32;
-        if pos + 1 > data.len() {
+        if pos + 4 > data.len() {
             return Err(ContractError::IoError("CreateTenderParamsV1: truncated title_len".into()));
         }
-        let title_len = data[pos] as usize;
-        pos += 1;
-        if pos + title_len > data.len() {
+        let title_len = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize();
+        pos += 4;
+        if data.len() < pos.saturating_add(title_len) {
             return Err(ContractError::IoError("CreateTenderParamsV1: truncated title".into()));
         }
         let title = String::from_utf8(data[pos..pos+title_len].to_vec())
@@ -749,21 +754,21 @@ pub struct SubmitBidParamsV1 {
     pub encrypted_payload: Vec<u8>,
 }
 
-impl dwow_serial::Encodable for SubmitBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SubmitBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SubmitBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SubmitBidParamsV1 {
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(2+self.proof.len()+self.encrypted_payload.len()+168); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b.push(self.encrypted_payload.len() as u8); b.extend_from_slice(&self.encrypted_payload); b }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let pn = SerializedLen::try_from_len(self.encrypted_payload.len())?; let mut b = Vec::with_capacity(8+self.proof.len()+self.encrypted_payload.len()+168); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&pn.to_le_bytes()); b.extend_from_slice(&self.encrypted_payload); Ok(b) }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 170 {
+        if data.len() < 176 {
             return Err(ContractError::IoError(format!(
-                "SubmitBidParamsV1: expected at least 170 bytes, got {}",
+                "SubmitBidParamsV1: expected at least 176 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
-        if pos + proof_len > data.len() {
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
+        if data.len() < pos.saturating_add(proof_len) {
             return Err(ContractError::IoError("SubmitBidParamsV1: truncated proof".into()));
         }
         let proof = data[pos..pos+proof_len].to_vec();
@@ -794,12 +799,12 @@ impl SubmitBidParamsV1 {
             .into_option()
             .ok_or_else(|| ContractError::IoError("SubmitBidParamsV1: invalid claim_id".into()))?;
         pos += 32;
-        if pos + 1 > data.len() {
+        if pos + 4 > data.len() {
             return Err(ContractError::IoError("SubmitBidParamsV1: truncated payload_len".into()));
         }
-        let payload_len = data[pos] as usize;
-        pos += 1;
-        if pos + payload_len > data.len() {
+        let payload_len = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize();
+        pos += 4;
+        if data.len() < pos.saturating_add(payload_len) {
             return Err(ContractError::IoError("SubmitBidParamsV1: truncated encrypted_payload".into()));
         }
         let encrypted_payload = data[pos..pos+payload_len].to_vec();
@@ -878,21 +883,21 @@ pub struct RevealBidParamsV1 {
     pub revealed_amount: u64,
 }
 
-impl dwow_serial::Encodable for RevealBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for RevealBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RevealBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RevealBidParamsV1 {
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+72); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.revealed_amount.to_le_bytes()); b }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+72); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.revealed_amount.to_le_bytes()); Ok(b) }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 73 {
+        if data.len() < 76 {
             return Err(ContractError::IoError(format!(
-                "RevealBidParamsV1: expected at least 73 bytes, got {}",
+                "RevealBidParamsV1: expected at least 76 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
-        if pos + proof_len > data.len() {
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
+        if data.len() < pos.saturating_add(proof_len) {
             return Err(ContractError::IoError("RevealBidParamsV1: truncated proof".into()));
         }
         let proof = data[pos..pos+proof_len].to_vec();
@@ -1061,21 +1066,21 @@ pub struct SelectWinnerParamsV1 {
     pub winning_amount: u64,
 }
 
-impl dwow_serial::Encodable for SelectWinnerParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SelectWinnerParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SelectWinnerParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SelectWinnerParamsV1 {
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+168); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.winner_bid_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.extend_from_slice(&self.winner_pub_x.to_repr()); b.extend_from_slice(&self.winner_pub_y.to_repr()); b.extend_from_slice(&self.winning_amount.to_le_bytes()); b }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+168); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.winner_bid_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.extend_from_slice(&self.winner_pub_x.to_repr()); b.extend_from_slice(&self.winner_pub_y.to_repr()); b.extend_from_slice(&self.winning_amount.to_le_bytes()); Ok(b) }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 201 {
+        if data.len() < 204 {
             return Err(ContractError::IoError(format!(
-                "SelectWinnerParamsV1: expected at least 201 bytes, got {}",
+                "SelectWinnerParamsV1: expected at least 204 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
-        if pos + proof_len > data.len() {
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
+        if data.len() < pos.saturating_add(proof_len) {
             return Err(ContractError::IoError("SelectWinnerParamsV1: truncated proof".into()));
         }
         let proof = data[pos..pos+proof_len].to_vec();
@@ -1597,18 +1602,18 @@ pub struct SubmitBidWithCapabilityParamsV1 {
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SubmitBidWithCapabilityParamsV1 {
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(2+self.proof.len()+self.encrypted_payload.len()+201); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b.push(self.encrypted_payload.len() as u8); b.extend_from_slice(&self.encrypted_payload); b.extend_from_slice(&self.required_capability_id); b.extend_from_slice(&self.capability_predicate_result.to_repr()); b }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let pn = SerializedLen::try_from_len(self.encrypted_payload.len())?; let mut b = Vec::with_capacity(8+self.proof.len()+self.encrypted_payload.len()+201); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&pn.to_le_bytes()); b.extend_from_slice(&self.encrypted_payload); b.extend_from_slice(&self.required_capability_id); b.extend_from_slice(&self.capability_predicate_result.to_repr()); Ok(b) }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 236 {
+        if data.len() < 242 {
             return Err(ContractError::IoError(format!(
-                "SubmitBidWithCapabilityParamsV1: expected at least 236 bytes, got {}",
+                "SubmitBidWithCapabilityParamsV1: expected at least 242 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
-        if pos + proof_len > data.len() {
-            return Err(ContractError::IoError("SubmitBidWithCapabilityParamsV1: truncated proof".into()));
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
+        if data.len() < pos.saturating_add(proof_len) {
+            return Err(ContractError::IoError("SubmitBidWithCapabilityParamsV1: truncated proof".into()))
         }
         let proof = data[pos..pos+proof_len].to_vec();
         pos += proof_len;
@@ -1638,12 +1643,12 @@ impl SubmitBidWithCapabilityParamsV1 {
             .into_option()
             .ok_or_else(|| ContractError::IoError("SubmitBidWithCapabilityParamsV1: invalid claim_id".into()))?;
         pos += 32;
-        if pos + 1 > data.len() {
+        if pos + 4 > data.len() {
             return Err(ContractError::IoError("SubmitBidWithCapabilityParamsV1: truncated payload_len".into()));
         }
-        let payload_len = data[pos] as usize;
-        pos += 1;
-        if pos + payload_len > data.len() {
+        let payload_len = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize();
+        pos += 4;
+        if data.len() < pos.saturating_add(payload_len) {
             return Err(ContractError::IoError("SubmitBidWithCapabilityParamsV1: truncated encrypted_payload".into()));
         }
         let encrypted_payload = data[pos..pos+payload_len].to_vec();

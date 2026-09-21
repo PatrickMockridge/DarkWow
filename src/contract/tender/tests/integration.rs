@@ -163,7 +163,7 @@ fn test_tender_encoding() {
         required_dag_id: None,
     };
 
-    let encoded = tender.encode();
+    let encoded = tender.encode().unwrap();
     let decoded = Tender::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, tender.id);
@@ -189,7 +189,7 @@ fn test_bid_encoding() {
         created_at: 50000,
     };
 
-    let encoded = bid.encode();
+    let encoded = bid.encode().unwrap();
     let decoded = Bid::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, bid.id);
@@ -222,6 +222,62 @@ fn test_create_tender_params_encoding() {
     assert_eq!(decoded.title, params.title);
     assert_eq!(decoded.min_bid, params.min_bid);
     assert_eq!(decoded.max_bid, params.max_bid);
+}
+
+/// A tender proof is kilobyte-scale and a title can exceed 255 bytes, so **both** prefixes in
+/// `CreateTenderParamsV1` truncate at the sizes below. The test above uses a 3-byte proof and an
+/// 13-byte title, which is why it could not see either.
+#[test]
+fn test_create_tender_params_prefixes_are_not_bytes() {
+    let params = CreateTenderParamsV1 {
+        proof: vec![0xA5; 700],
+        tender_id: pallas::Base::from(21),
+        requester_pub_x: pallas::Base::from(22),
+        requester_pub_y: pallas::Base::from(23),
+        title: "t".repeat(300),
+        specification: pallas::Base::from(24),
+        attestation_id: pallas::Base::from(25),
+        min_bid: 111,
+        max_bid: 222,
+        bid_deadline: 333,
+        reveal_deadline: 444,
+        delivery_deadline: 555,
+    };
+
+    let encoded = params.encode().unwrap();
+    assert_eq!(encoded.len(), 4 + 700 + 32 + 32 + 32 + 4 + 300 + 32 + 32 + 8 + 8 + 8 + 8 + 8);
+
+    let decoded = CreateTenderParamsV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.proof.len(), 700);
+    assert_eq!(decoded.title.len(), 300);
+    assert_eq!(decoded.tender_id, params.tender_id);
+    assert_eq!(decoded.min_bid, 111);
+    assert_eq!(decoded.delivery_deadline, 555);
+}
+
+/// `SubmitBidParamsV1` carries a proof and an encrypted payload, both with their own prefix, and the
+/// decoder's exact-consumption check is what a wrong width would trip.
+#[test]
+fn test_submit_bid_params_prefixes_are_not_bytes() {
+    let params = SubmitBidParamsV1 {
+        proof: vec![0xB6; 700],
+        tender_id: pallas::Base::from(31),
+        bid_id: pallas::Base::from(32),
+        bidder_pub_x: pallas::Base::from(33),
+        bidder_pub_y: pallas::Base::from(34),
+        amount: 5150,
+        claim_id: pallas::Base::from(35),
+        encrypted_payload: vec![0xC7; 300],
+    };
+
+    let encoded = params.encode().unwrap();
+    assert_eq!(encoded.len(), 4 + 700 + 168 + 4 + 300);
+
+    let decoded = SubmitBidParamsV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.proof.len(), 700);
+    assert_eq!(decoded.encrypted_payload.len(), 300);
+    assert_eq!(decoded.amount, 5150);
+    assert_eq!(decoded.claim_id, params.claim_id);
 }
 
 #[test]

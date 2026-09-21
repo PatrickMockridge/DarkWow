@@ -506,7 +506,7 @@ fn create_tender_v1(cid: ContractId, params: CreateTenderParamsV1) -> Result<Vec
         required_dag_id: None,
     };
 
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
 
     msg!("[tender::create_tender_v1] Tender created successfully");
     Ok(CreateTenderUpdateV1 { tender_id: params.tender_id }.encode())
@@ -570,7 +570,7 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> Result<Vec<u8>, 
     };
 
     // Store bid
-    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode())?;
+    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode()?)?;
 
     // Store nullifier to prevent double submission
     wasm::db::db_mark_spent(nullifiers_db, &params.bid_id.to_repr())?;
@@ -580,7 +580,7 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> Result<Vec<u8>, 
         tender.state = TenderState::Bidding;
     }
     tender.bid_count += 1;
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
 
     msg!("[tender::submit_bid_v1] Bid submitted successfully");
     Ok(SubmitBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }.encode())
@@ -641,7 +641,7 @@ fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> Result<Vec<u8>, 
     bid.state = BidState::Revealed;
     bid.revealed_amount = Some(params.revealed_amount);
 
-    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode())?;
+    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode()?)?;
 
     // Store nullifier to prevent double reveal
     wasm::db::db_mark_spent(nullifiers_db, &reveal_nullifier.to_repr())?;
@@ -686,7 +686,7 @@ fn close_tender_v1(cid: ContractId, params: CloseTenderParamsV1) -> Result<Vec<u
 
     // Transition to Revealed state
     tender.state = TenderState::Revealed;
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
 
     msg!("[tender::close_tender_v1] Tender closed successfully");
     Ok(CloseTenderUpdateV1 { tender_id: params.tender_id }.encode())
@@ -765,11 +765,11 @@ fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> Result<Vec
     // Update tender
     tender.state = TenderState::Awarded;
     tender.selected_bid_id = Some(params.winner_bid_id);
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
 
     // Update winner bid
     winner_bid.state = BidState::Accepted;
-    wasm::db::db_set(bids_db, &params.winner_bid_id.to_repr(), &winner_bid.encode())?;
+    wasm::db::db_set(bids_db, &params.winner_bid_id.to_repr(), &winner_bid.encode()?)?;
 
     msg!("[tender::select_winner_v1] Winner selected successfully");
     Ok(SelectWinnerUpdateV1 { tender_id: params.tender_id, winner_bid_id: params.winner_bid_id, labor_job_id: None }.encode())
@@ -804,7 +804,7 @@ fn cancel_tender_v1(cid: ContractId, params: CancelTenderParamsV1) -> Result<Vec
 
     // Update tender
     tender.state = TenderState::Cancelled;
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
 
     msg!("[tender::cancel_tender_v1] Tender cancelled successfully");
     Ok(CancelTenderUpdateV1 { tender_id: params.tender_id }.encode())
@@ -856,7 +856,7 @@ fn reject_bid_v1(cid: ContractId, params: RejectBidParamsV1) -> Result<Vec<u8>, 
 
     // Update bid
     bid.state = BidState::Rejected;
-    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode())?;
+    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode()?)?;
 
     msg!("[tender::reject_bid_v1] Bid rejected successfully");
     Ok(RejectBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }.encode())
@@ -906,7 +906,7 @@ fn create_tender_with_capability_v1(
         required_dag_id: params.required_dag_id,
     };
 
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
 
     msg!("[tender::create_tender_with_capability_v1] Tender created successfully");
     Ok(CreateTenderWithCapabilityUpdateV1 { tender_id: params.tender_id }.encode())
@@ -987,7 +987,7 @@ fn submit_bid_with_capability_v1(
     };
 
     // Store bid
-    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode())?;
+    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode()?)?;
 
     // Store nullifier to prevent double submission
     wasm::db::db_mark_spent(nullifiers_db, &params.bid_id.to_repr())?;
@@ -997,7 +997,7 @@ fn submit_bid_with_capability_v1(
         tender.state = TenderState::Bidding;
     }
     tender.bid_count += 1;
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
 
     msg!("[tender::submit_bid_with_capability_v1] Bid submitted successfully");
     Ok(SubmitBidWithCapabilityUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }.encode())
