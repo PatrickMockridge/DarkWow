@@ -18,6 +18,19 @@
 # already loads and discards, checks the threshold against the record's `min_threshold`, and uses the
 # nullifier as a revocation handle. See OBL-Z17 in `doc/src/arch/verification-hazop.md`; possession
 # (the credential *is* a box) is the part still open.
+#
+# AND the credential itself is bound. That was Stage 2, and without it the paragraph above was thin:
+# `commitment` was a witness the prover picked, so the nullifier was over a commitment of their
+# choosing, and a caller holding no credential at all could state a schema and an issuer that matched
+# some capability and pass every check. The circuit now reconstructs the commitment from its preimage
+# exactly as `issue_credential.zk:41-61` builds it — issuer, holder, schema, both attributes, the
+# attribute blind, the credential secret and the validity window — and constrains the result. The
+# predicate is evaluated over the *committed* attribute (`attribute_1`), not over a free witness.
+#
+# Still open, and it is the last piece: *possession*. The credential is a box, and
+# `IDENTITY_CONTRACT_BOX_CONTRACT_ID` is stored for precisely the `Box::Take` child call that proves
+# the caller holds it — nothing requires that call, so a caller who can *produce* a valid credential's
+# preimage (not merely claim one) still passes without holding the box.
 k = 11;
 field = "pallas";
 
@@ -26,21 +39,24 @@ constant "VerifyCapabilityV2" {
 }
 
 witness "VerifyCapabilityV2" {
-    Base capability_id,
-    Base nullifier,
+    # The credential's preimage, exactly the fields `issue_credential.zk` hashes. `capability_id`,
+    # `nullifier` (a duplicate of the exposed value), `capability_secret` (the input to the deleted
+    # `computed_capability` binding) and `attribute_value` (a free witness standing in for the
+    # committed attribute) are gone: a witness nothing reads is a value the prover chooses.
     Base issuer_pub_x,
     Base issuer_pub_y,
+    Base holder_pub_x,
+    Base holder_pub_y,
     Base schema_hash,
-    Base predicate_result,
+    Base attribute_1,
+    Base attribute_2,
+    Base attribute_blind,
     Base credential_secret,
+    Base issued_at,
+    Base expires_at,
     Base commitment,
-    Base attribute_value,
     Base threshold,
-    # Unused since 2026-09-21: this was the input to the `computed_capability` binding that nothing
-    # read (see the REMOVED note in the circuit). It is kept because it is the *possession* secret —
-    # "Capability secret: derived from holder pubkey + capability_id" — and Stage 2 of OBL-Z17 decides
-    # what possession is proved with. A witness nothing reads is still a witness the prover supplies.
-    Base capability_secret,
+    Base predicate_result,
     Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
@@ -49,36 +65,59 @@ witness "VerifyCapabilityV2" {
 circuit "VerifyCapabilityV2" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COMMITMENT = witness_base(4);
 
-    # Nullifier verification. This is the credential's revocation handle: the host checks it against
-    # the identity nullifiers tree and marks it spent, so a revoked credential stops verifying. It
-    # was exposed before and read by nobody.
+    # The credential commitment, reconstructed from its preimage. The two hashes and the equality are
+    # `issue_credential.zk`'s, unchanged: whatever the issuer committed to is what this proof is
+    # about, and nothing else about it is knowable to the prover.
+    credential_data = poseidon_hash(
+        DOMAIN_COMMITMENT,
+        issuer_pub_x,
+        issuer_pub_y,
+        holder_pub_x,
+        holder_pub_y,
+        schema_hash,
+        attribute_1,
+        attribute_2,
+        attribute_blind,
+    );
+
+    commitment_check = poseidon_hash(
+        DOMAIN_COMMITMENT,
+        credential_data,
+        credential_secret,
+        issued_at,
+        expires_at,
+    );
+    constrain_equal_base(commitment_check, commitment);
+
+    # The nullifier, over the *bound* commitment — so it identifies a real credential, and not a
+    # commitment the prover made up.
     computed_nullifier = poseidon_hash(DOMAIN_NULLIFIER, credential_secret, commitment);
     constrain_instance(computed_nullifier);
-    constrain_equal_base(computed_nullifier, nullifier);
 
-    # REMOVED: `computed_capability = poseidon_hash(DOMAIN_NULLIFIER, capability_secret,
-    # capability_id);` — computed and then used nowhere, so it tied nothing to anything. The binding
-    # the host needs is not a derived id but the credential's *schema* and *issuer*, which are
-    # exposed below and compared against the capability record.
-
-    # Predicate verification
-    range_check(64, attribute_value);
+    # The predicate, over the *committed* attribute.
+    range_check(64, attribute_1);
     range_check(64, threshold);
     bool_check(predicate_result);
 
-    is_lte = less_than_or_equal(threshold, attribute_value);
+    is_lte = less_than_or_equal(threshold, attribute_1);
     constrain_equal_base(is_lte, predicate_result);
 
-    # The four values the capability record is entitled to constrain, exposed so the host can. The
-    # parameters of the call carry copies of all of them (`CapabilityProof`), and until they were
-    # public inputs those copies were instruction data the proof did not bind: a caller could state
-    # any schema, any issuer and any threshold beside a proof about a different credential.
+    # REMOVED: `computed_capability = poseidon_hash(DOMAIN_NULLIFIER, capability_secret,
+    # capability_id);` — computed and then used nowhere, so it tied nothing to anything. What binds a
+    # proof to a capability is the credential's own content (above) plus the capability record's
+    # requirement (host-side).
+
+    # Exposed so the host can compare them against the capability record and the credential it
+    # stores. `commitment` is among them because the stored `Credential` carries that field, so the
+    # host can require the proof's commitment to be the stored one's.
     constrain_instance(schema_hash);
     constrain_instance(issuer_pub_x);
     constrain_instance(issuer_pub_y);
     constrain_instance(threshold);
     constrain_instance(predicate_result);
+    constrain_instance(commitment);
 
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);

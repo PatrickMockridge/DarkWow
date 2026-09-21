@@ -111,9 +111,14 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
+                        // The capability's requirement must actually describe the credential this
+                        // spec issues: same schema, same issuer, and a floor the credential's
+                        // attribute clears. It used to require schema `[0u8; 32]` while issuing the
+                        // credential with schema `schema_hash` — an incoherence nothing noticed
+                        // because nothing compared them.
                         let r = h.register_capability(b"can_vote".to_vec(),
                             CredentialRequirement {
-                                schema_hash: [0u8; 32], issuer_pub: pk,
+                                schema_hash: schema_hash.to_repr(), issuer_pub: pk,
                                 min_threshold: 1, attribute_name: b"role".to_vec(),
                             }, None)?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
@@ -128,9 +133,14 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
-                        let r = h.verify_capability(credential_secret, commitment,
-                            pallas::Base::from(100u64), pallas::Base::from(50u64),
-                            capability_secret, pk, schema_hash, cap_id, true)?;
+                        // The credential's own parts, exactly as `IssueCredentialV1` above built
+                        // them: the verify circuit reconstructs the commitment from these, so a
+                        // fixture that disagreed with the issuance would not prove at all.
+                        let holder_pub = PublicKey::from_secret(SecretKey::from_base(credential_secret));
+                        let r = h.verify_capability(credential_secret, cap_id,
+                            pallas::Base::from(50u64), pallas::Base::from(100u64),
+                            pallas::Base::from(200u64), pallas::Base::from(300u64),
+                            capability_secret, pk, holder_pub, schema_hash, 0, 100000, true)?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),

@@ -163,6 +163,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     issuer_y,
                     Base::from(proof.threshold),
                     Base::from(proof.predicate_result as u64),
+                    proof.commitment.inner(),
                     tx_binding,
                     Base::zero(),
                 ],
@@ -624,13 +625,24 @@ fn process_verify_capability_instruction(
         return Err(IdentityError::IssuerNotTrusted.into())
     }
 
-    // 3. The predicate must actually hold — a public input, so this is the proof's value.
+    // 3. The proof must be *about this credential*. `commitment` is a public input the circuit
+    //    reconstructs from the credential's preimage (`issuer`, `holder`, `schema`, both attributes,
+    //    the attribute blind, the credential secret and the validity window), so requiring it to
+    //    equal the stored record's commitment is what ties everything above to a credential the
+    //    issuer actually signed. Without it the schema, issuer and threshold are compared against the
+    //    caller's *claims* and a caller holding no credential at all can satisfy all of them.
+    if params.capability_proof.commitment.inner() != credential.commitment.inner() {
+        msg!("[identity::verify_capability] Error: the proof's commitment is not the stored credential's");
+        return Err(IdentityError::AttributeMismatch.into())
+    }
+
+    // 4. The predicate must actually hold — a public input, so this is the proof's value.
     if params.capability_proof.predicate_result != 1 {
         msg!("[identity::verify_capability] Error: predicate not satisfied");
         return Err(IdentityError::PredicateFailed.into())
     }
 
-    // 4. The threshold the predicate was evaluated at must be at least the capability's floor. The
+    // 5. The threshold the predicate was evaluated at must be at least the capability's floor. The
     //    circuit proves `attribute_value >= threshold` and cannot see this record, so a caller free
     //    to choose `threshold` could pass `0` and satisfy any requirement.
     if params.capability_proof.threshold < requirement.min_threshold {
@@ -645,16 +657,13 @@ fn process_verify_capability_instruction(
     // nullifier is already spent at issuance, so the write was a no-op and the check it was meant to
     // support was backwards.
     //
-    // STILL OPEN, and the two parts this function cannot reach. *Binding*: the circuit never
-    // reconstructs `commitment` from the credential's preimage, so it is a witness the prover picks —
-    // the comparisons above then hold between the record and the caller's *claims*, while nothing
-    // ties the proof to this credential. `issue_credential.zk:41-61` shows exactly how to bind it
-    // (reconstruct `credential_data` and `commitment` and `constrain_equal_base`), and until
-    // `verify_capability.zk` does the same, a caller who knows no credential at all can state a
-    // schema and an issuer that match some capability and pass. *Possession*: the credential is a
-    // box, `IDENTITY_CONTRACT_BOX_CONTRACT_ID` is stored for precisely the `Box::Take` child call
-    // that would prove the caller holds it, and nothing requires that call. Both are Stage 2 of
-    // OBL-Z17.
+    // STILL OPEN, and it is the last piece: *possession*. The credential is a box, and
+    // `IDENTITY_CONTRACT_BOX_CONTRACT_ID` is stored for precisely the `Box::Take` child call that
+    // proves the caller holds it — nothing requires that call, so a caller who can produce a valid
+    // credential's preimage (the issuer's and holder's keys, the schema, both attributes and the
+    // blind) still passes without holding the box. Everything else — that the credential exists, is
+    // live, is for this capability's schema and issuer, and that the predicate held over an attribute
+    // it actually committed to — is checked above. Remaining work of OBL-Z17.
 
     let update = VerifyCapabilityUpdateV1 {
         capability_id: params.capability_proof.capability_id,

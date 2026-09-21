@@ -133,21 +133,29 @@ impl IdentityHarness {
 
     /// Verify a capability with ZK proof
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub fn verify_capability(
         &self,
         credential_secret: pallas::Base,
-        commitment: pallas::Base,
-        attribute_value: pallas::Base,
+        capability_id: pallas::Base,
         threshold: pallas::Base,
+        attribute_1: pallas::Base,
+        attribute_2: pallas::Base,
+        attribute_blind: pallas::Base,
         capability_secret: pallas::Base,
         issuer_public: PublicKey,
+        holder_public: PublicKey,
         schema_hash: pallas::Base,
-        capability_id: pallas::Base,
+        issued_at: u64,
+        expires_at: u64,
         predicate_result: bool,
     ) -> Result<VerifyCapabilityResult> {
+        // The commitment is derived from the preimage by the client, so the harness supplies the
+        // credential's parts and never a commitment of its own — which is what the caller of a real
+        // capability proof has.
         let input = VerifyCapabilityCallData::new(
-            credential_secret, commitment, attribute_value, threshold,
-            capability_secret, issuer_public, schema_hash, capability_id, predicate_result,
+            credential_secret, attribute_1, threshold, attribute_2, attribute_blind,
+            issuer_public, holder_public, schema_hash, issued_at, expires_at, predicate_result,
         );
 
         let (proof, public_inputs) = create_verify_capability_proof(
@@ -161,6 +169,13 @@ impl IdentityHarness {
                 nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
                 issuer_pub: issuer_public,
                 schema_hash: schema_hash.to_repr(),
+                // The commitment the client derived from the preimage. It is a public input of the
+                // proof, and the host requires it to equal the stored credential's.
+                commitment: dwow_sdk::crypto::IntentCommitment::from_bytes(
+                    public_inputs.commitment.to_repr(),
+                ).map_err(|e| {
+                    dwow_core::Error::Custom(format!("invalid commitment: {e}"))
+                })?,
                 // The threshold the predicate was evaluated at, now a public input of the proof and
                 // compared by the host against the capability's `min_threshold`. The harness takes it
                 // as a field element like every other value here, so it is read back through its

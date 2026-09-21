@@ -48,6 +48,9 @@ pub struct VerifyCapabilityPublicInputs {
     /// capability's `min_threshold`.
     pub threshold: pallas::Base,
     pub predicate_result: pallas::Base,
+    /// The credential commitment the proof reconstructs in-circuit — the host requires it to be the
+    /// one its stored `Credential` carries.
+    pub commitment: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -64,6 +67,7 @@ impl VerifyCapabilityPublicInputs {
             self.issuer_pub_y,
             self.threshold,
             self.predicate_result,
+            self.commitment,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -73,55 +77,93 @@ impl VerifyCapabilityPublicInputs {
 /// Input data for verify_capability proof generation
 #[derive(Debug, Clone)]
 pub struct VerifyCapabilityCallData {
+    /// The credential's preimage — the same fields `issue_credential` hashes. The holder knows them;
+    /// the proof reconstructs the commitment from them so that everything below is bound.
     pub credential_secret: pallas::Base,
-    pub commitment: pallas::Base,
-    pub attribute_value: pallas::Base,
-    pub threshold: pallas::Base,
-    pub capability_secret: pallas::Base,
-    // Public inputs
     pub issuer_public: PublicKey,
+    pub holder_public: PublicKey,
     pub schema_hash: pallas::Base,
-    pub capability_id: pallas::Base,
+    pub attribute_1: pallas::Base,
+    pub attribute_2: pallas::Base,
+    pub attribute_blind: pallas::Base,
+    pub issued_at: u64,
+    pub expires_at: u64,
+    /// The credential commitment, computed from the preimage above by `new` — never supplied, so a
+    /// caller cannot state a commitment that disagrees with the credential it is proving about.
+    pub commitment: pallas::Base,
+    /// The threshold the committed attribute must meet.
+    pub threshold: pallas::Base,
     pub predicate_result: bool,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl VerifyCapabilityCallData {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         credential_secret: pallas::Base,
-        commitment: pallas::Base,
-        attribute_value: pallas::Base,
+        attribute_1: pallas::Base,
         threshold: pallas::Base,
-        capability_secret: pallas::Base,
+        attribute_2: pallas::Base,
+        attribute_blind: pallas::Base,
         issuer_public: PublicKey,
+        holder_public: PublicKey,
         schema_hash: pallas::Base,
-        capability_id: pallas::Base,
+        issued_at: u64,
+        expires_at: u64,
         predicate_result: bool,
     ) -> Self {
-        Self {
+        let mut call = Self {
             credential_secret,
-            commitment,
-            attribute_value,
-            threshold,
-            capability_secret,
             issuer_public,
+            holder_public,
             schema_hash,
-            capability_id,
+            attribute_1,
+            attribute_2,
+            attribute_blind,
+            issued_at,
+            expires_at,
+            commitment: pallas::Base::zero(),
+            threshold,
             predicate_result,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
-        }
+        };
+        call.commitment = call.compute_commitment();
+        call
+    }
+
+    /// The credential commitment — the same two hashes `issue_credential.zk:41-61` and
+    /// `IssueCredentialCallData::compute_commitment` compute. The verify circuit reconstructs it
+    /// in-circuit, so the client must agree with it exactly.
+    pub fn compute_commitment(&self) -> pallas::Base {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+        let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+        let (hx, hy) = self.holder_public.xy().expect("pk not identity");
+        let credential_data = poseidon_hash([
+            pallas::Base::from(4u64),
+            ix,
+            iy,
+            hx,
+            hy,
+            self.schema_hash,
+            self.attribute_1,
+            self.attribute_2,
+            self.attribute_blind,
+        ]);
+        poseidon_hash([
+            pallas::Base::from(4u64),
+            credential_data,
+            self.credential_secret,
+            pallas::Base::from(self.issued_at),
+            pallas::Base::from(self.expires_at),
+        ])
     }
 
     /// Compute nullifier from credential_secret and commitment (domain-separated, V2)
     pub fn compute_nullifier(&self) -> pallas::Base {
         poseidon_hash([pallas::Base::from(1u64), self.credential_secret, self.commitment])
-    }
-
-    /// Compute capability hash (domain-separated, V2)
-    pub fn compute_capability(&self) -> pallas::Base {
-        poseidon_hash([pallas::Base::from(1u64), self.capability_secret, self.capability_id])
     }
 
     pub fn compute_public_inputs(&self) -> VerifyCapabilityPublicInputs {
@@ -139,6 +181,7 @@ impl VerifyCapabilityCallData {
             } else {
                 pallas::Base::zero()
             },
+            commitment: self.commitment,
             tx_binding,
             tx_nonce: self.tx_nonce,
         }
@@ -148,20 +191,24 @@ impl VerifyCapabilityCallData {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+        let (hx, hy) = self.holder_public.xy().expect("pk not identity");
         vec![
-            // Public inputs as witnesses
-            Witness::Base(Value::known(self.capability_id)),
-            Witness::Base(Value::known(self.compute_nullifier())),
+            // The credential preimage, in `issue_credential.zk`'s order.
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
+            Witness::Base(Value::known(hx)),
+            Witness::Base(Value::known(hy)),
             Witness::Base(Value::known(self.schema_hash)),
-            Witness::Base(Value::known(if self.predicate_result { pallas::Base::one() } else { pallas::Base::zero() })),
-            // Private inputs
+            Witness::Base(Value::known(self.attribute_1)),
+            Witness::Base(Value::known(self.attribute_2)),
+            Witness::Base(Value::known(self.attribute_blind)),
             Witness::Base(Value::known(self.credential_secret)),
+            Witness::Base(Value::known(pallas::Base::from(self.issued_at))),
+            Witness::Base(Value::known(pallas::Base::from(self.expires_at))),
             Witness::Base(Value::known(self.commitment)),
-            Witness::Base(Value::known(self.attribute_value)),
             Witness::Base(Value::known(self.threshold)),
-            Witness::Base(Value::known(self.capability_secret)),
+            Witness::Base(Value::known(if self.predicate_result { pallas::Base::one() } else { pallas::Base::zero() })),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(tx_binding)), // tx_binding
