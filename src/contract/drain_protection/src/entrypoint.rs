@@ -402,7 +402,7 @@ fn init_fund_process_instruction_v1(
     };
 
     // Store fund directly (InitializeUpdateV1 only has fund_id)
-    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode())?;
+    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode()?)?;
 
     let update = crate::model::InitializeUpdateV1 { instance_seed: params.instance_seed, fund_id: fund.id };
     Ok(encode_initialize_update_v1(&update))
@@ -620,7 +620,7 @@ fn lock_process_instruction_v1(
     fund.lock_state = crate::model::LockState::Locked;
     fund.lock_expires_at = current_block + params.duration_blocks;
 
-    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode())?;
+    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode()?)?;
 
     let update = LockUpdateV1 { locked_until: fund.lock_expires_at };
     Ok(encode_lock_update_v1(&update))
@@ -652,7 +652,7 @@ fn unlock_process_instruction_v1(
 
     fund.lock_state = crate::model::LockState::Unlocked;
 
-    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode())?;
+    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode()?)?;
 
     let update = UnlockUpdateV1 { unlocked_at: current_block };
     Ok(encode_unlock_update_v1(&update))
@@ -692,7 +692,7 @@ fn update_config_process_instruction_v1(
         fund.spend_authority = new_authority;
     }
 
-    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode())?;
+    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode()?)?;
 
     let update = crate::model::UpdateConfigUpdateV1 {
         authority_change_timelock: if params.new_spend_authority.is_some() {

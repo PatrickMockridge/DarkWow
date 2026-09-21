@@ -26,8 +26,8 @@
 use dwow_drain_protection_contract::{
     model::{
         DrainConfig, ExitParamsV1, ExitQueueEntry, ExitRequest, ExitUpdateV1, LockParamsV1,
-        LockState, LockUpdateV1, MemberWeight, ProposeParamsV1, ProposeUpdateV1, ProtectedFund,
-        RateLimit, TransferParamsV1, TransferRecord, TransferUpdateV1, UnlockParamsV1,
+        LockState, LockUpdateV1, MemberWeight, ObservationPending, ProposeParamsV1, ProposeUpdateV1,
+        ProtectedFund, RateLimit, TransferParamsV1, TransferRecord, TransferUpdateV1, UnlockParamsV1,
         UnlockUpdateV1, UpdateConfigParamsV1, UpdateConfigUpdateV1, VoteParamsV1, VoteUpdateV1,
     },
     DrainProtectionFunction,
@@ -214,6 +214,108 @@ fn test_exit_params_encoding() {
 
     assert_eq!(decoded.contribution_weight, params.contribution_weight);
     assert_eq!(decoded.current_block, params.current_block);
+}
+
+/// A drain-protection proof is kilobyte-scale, so a `u8` prefix truncated it and every field after
+/// it misread. `ExitParamsV1` carries its proof *last*, so nothing follows to be moved — the exact
+/// length check is what a wrong width trips.
+#[test]
+fn test_exit_params_proof_length_is_not_a_byte() {
+    let params = ExitParamsV1 {
+        fund_id: pallas::Base::from(41),
+        member_pubkey: make_pubkey(2),
+        contribution_weight: 4242,
+        current_block: 5000,
+        dao_escrow_bulla: pallas::Base::from(42),
+        dao_membership_note: pallas::Base::from(43),
+        effective_weight: pallas::Base::from(1000),
+        proof: vec![0xE9; 700],
+    };
+
+    let encoded = params.encode().unwrap();
+    assert_eq!(encoded.len(), 180 + 700);
+
+    let decoded = ExitParamsV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.proof.len(), 700);
+    assert_eq!(decoded.contribution_weight, 4242);
+    assert_eq!(decoded.current_block, 5000);
+}
+
+/// `ProposeParamsV1` carries its proof last too, with the same `u8` prefix.
+#[test]
+fn test_propose_params_proof_length_is_not_a_byte() {
+    let params = ProposeParamsV1 {
+        message_hash: pallas::Base::from(51),
+        multisig_group_id: pallas::Base::from(52),
+        prover_pubkey: make_pubkey(3),
+        vote_period_blocks: 77,
+        proof: vec![0xFA; 700],
+    };
+
+    let encoded = params.encode().unwrap();
+    assert_eq!(encoded.len(), 108 + 700);
+
+    let decoded = ProposeParamsV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.proof.len(), 700);
+    assert_eq!(decoded.vote_period_blocks, 77);
+    assert_eq!(decoded.message_hash, params.message_hash);
+}
+
+/// `ProtectedFund` is **stored state** with five prefixes, three of them vector counts whose fields
+/// follow. A 256-member fund is the smallest count that truncates to `0`, and the fields after it —
+/// the three heights, the exit queue, the two optionals, the reserve and the observations — are the
+/// canaries.
+#[test]
+fn test_protected_fund_member_count_is_not_a_byte() {
+    let members: Vec<MemberWeight> = (0..256u64)
+        .map(|i| MemberWeight { contribution: i + 1, deposited_at: 100, weight_multiplier: 1 })
+        .collect();
+    let fund = ProtectedFund {
+        version: 0,
+        instance_seed: [5u8; 32],
+        id: pallas::Base::from(61),
+        total_funds: 999,
+        spend_authority: make_pubkey(4),
+        lock_state: LockState::Locked,
+        rate_limit: RateLimit::default(),
+        multisig_group_id: pallas::Base::from(62),
+        purse_id: pallas::Base::from(63),
+        drain_config: DrainConfig::default(),
+        members: members.clone(),
+        lock_expires_at: 111,
+        authority_change_timelock: 222,
+        created_at: 333,
+        exit_queue_state: vec![ExitQueueEntry {
+            position: 1,
+            member_pubkey: make_pubkey(5),
+            requested_value: 10,
+            weight: 1,
+            queued_at: 400,
+            processed: false,
+        }],
+        circuit_breaker_state: None,
+        dead_mans_switch_state: None,
+        no_loss_reserve_balance: 888,
+        observation_pending: vec![ObservationPending {
+            proposal_id: pallas::Base::from(64),
+            amount: 7,
+            observation_ends_at: 999,
+        }],
+    };
+
+    let encoded = fund.encode().unwrap();
+    let decoded = ProtectedFund::decode(&encoded).unwrap();
+    assert_eq!(decoded.members.len(), 256);
+    assert_eq!(decoded.members[255].contribution, 256);
+    assert_eq!(decoded.lock_expires_at, 111);
+    assert_eq!(decoded.authority_change_timelock, 222);
+    assert_eq!(decoded.created_at, 333);
+    assert_eq!(decoded.exit_queue_state.len(), 1);
+    assert_eq!(decoded.exit_queue_state[0].queued_at, 400);
+    assert_eq!(decoded.no_loss_reserve_balance, 888);
+    assert_eq!(decoded.observation_pending.len(), 1);
+    assert_eq!(decoded.observation_pending[0].observation_ends_at, 999);
+    assert_eq!(decoded.lock_state, LockState::Locked);
 }
 
 #[test]
