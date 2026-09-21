@@ -43,7 +43,7 @@ fn test_create_group_params_roundtrip() {
         tx_nonce: pallas::Base::from(88u64),
     };
 
-    let encoded = params.encode();
+    let encoded = params.encode().unwrap();
     assert!(!encoded.is_empty(), "encode must produce non-empty output");
 
     let decoded = CreateGroupParamsV1::decode(&encoded)
@@ -52,7 +52,7 @@ fn test_create_group_params_roundtrip() {
     assert_eq!(decoded.pubkeys.len(), params.pubkeys.len());
     assert_eq!(decoded.proof, params.proof);
 
-    assert_eq!(params.encode(), encoded, "encode must be deterministic");
+    assert_eq!(params.encode().unwrap(), encoded, "encode must be deterministic");
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn test_sign_params_roundtrip() {
         tx_nonce: pallas::Base::from(88u64),
     };
 
-    let encoded = params.encode();
+    let encoded = params.encode().unwrap();
     assert!(!encoded.is_empty());
 
     let decoded = SignParamsV1::decode(&encoded)
@@ -75,7 +75,7 @@ fn test_sign_params_roundtrip() {
     assert_eq!(decoded.proof, params.proof);
     assert_eq!(decoded.tx_binding, params.tx_binding);
 
-    assert_eq!(params.encode(), encoded, "encode must be deterministic");
+    assert_eq!(params.encode().unwrap(), encoded, "encode must be deterministic");
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn test_finalize_params_roundtrip() {
         tx_nonce: pallas::Base::from(88u64),
     };
 
-    let encoded = params.encode();
+    let encoded = params.encode().unwrap();
     assert!(!encoded.is_empty());
 
     let decoded = FinalizeParamsV1::decode(&encoded)
@@ -96,7 +96,7 @@ fn test_finalize_params_roundtrip() {
     assert_eq!(decoded.message_hash, params.message_hash);
     assert_eq!(decoded.proof, params.proof);
 
-    assert_eq!(params.encode(), encoded, "encode must be deterministic");
+    assert_eq!(params.encode().unwrap(), encoded, "encode must be deterministic");
 }
 
 #[test]

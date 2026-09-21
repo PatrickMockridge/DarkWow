@@ -86,7 +86,7 @@ impl MultiSigHarness {
             proof: proof.as_ref().to_vec(), tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x01u8];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
         Ok(CreateGroupResult { call_data, proof, group_id })
     }
 
@@ -119,7 +119,7 @@ impl MultiSigHarness {
             proof: proof.as_ref().to_vec(), tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x02u8];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
         Ok(SignResult { call_data, proof })
     }
 
@@ -152,7 +152,7 @@ impl MultiSigHarness {
             message_hash, proof: proof.as_ref().to_vec(), tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x03u8];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
         Ok(FinalizeResult { call_data, proof })
     }
 }

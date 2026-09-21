@@ -1,4 +1,5 @@
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, Nullifier, PublicKey},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -131,29 +132,30 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 // Per type-system.md §2.2: bytes round-trip across module boundaries is forbidden.
 // Per §10.5: re-lift validation SHALL use named constructors (from_bytes).
 
-fn encode_create_group_update_v1(update: &CreateGroupUpdateV1) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(37 + update.pubkeys.len() * 32);
+fn encode_create_group_update_v1(update: &CreateGroupUpdateV1) -> Result<Vec<u8>, ContractError> {
+    let n = SerializedLen::try_from_len(update.pubkeys.len())?;
+    let mut buf = Vec::with_capacity(39 + update.pubkeys.len() * 32);
     buf.push(MultiSigFunction::CreateGroupV1 as u8);
     buf.extend_from_slice(&update.group_id.to_bytes());
-    buf.push(update.pubkeys.len() as u8); // u8 prefix — max 255 members
+    buf.extend_from_slice(&n.to_le_bytes());
     for pk in &update.pubkeys {
         buf.extend_from_slice(&pk.to_bytes());
     }
     buf.push(update.threshold);
     buf.push(update.total_keys);
-    buf
+    Ok(buf)
 }
 
 fn decode_create_group_update_v1(data: &[u8]) -> Result<CreateGroupUpdateV1, ContractError> {
-    if data.len() < 35 {
+    if data.len() < 38 {
         return Err(ContractError::IoError(format!(
-            "CreateGroupUpdateV1: expected at least 35 bytes, got {}", data.len()
+            "CreateGroupUpdateV1: expected at least 38 bytes, got {}", data.len()
         )));
     }
     let group_id = GroupId::from_bytes(&read_field::<32>(data, 0)?)
         .ok_or_else(|| ContractError::IoError("CreateGroupUpdateV1: invalid GroupId".into()))?;
-    let pk_count = read_byte(data, 32)? as usize;
-    let pk_end = 33 + pk_count * 32;
+    let pk_count = SerializedLen::from_le_bytes(read_field::<4>(data, 32)?).to_usize();
+    let pk_end = 36 + pk_count * 32;
     if data.len() < pk_end + 2 {
         return Err(ContractError::IoError(format!(
             "CreateGroupUpdateV1: expected {} bytes for {} pubkeys, got {}", pk_end + 2, pk_count, data.len()
@@ -161,7 +163,7 @@ fn decode_create_group_update_v1(data: &[u8]) -> Result<CreateGroupUpdateV1, Con
     }
     let mut pubkeys = Vec::with_capacity(pk_count);
     for i in 0..pk_count {
-        let start = 33 + i * 32;
+        let start = 36 + i * 32;
         let pk = PublicKey::from_bytes(read_field::<32>(data, start)?)
             .map_err(|e| ContractError::IoError(format!("CreateGroupUpdateV1: invalid PublicKey[{}]: {e}", i)))?;
         pubkeys.push(pk);
@@ -196,24 +198,24 @@ fn decode_sign_update_v1(data: &[u8]) -> Result<SignUpdateV1, ContractError> {
     Ok(SignUpdateV1 { group_id, message_hash, nullifier })
 }
 
-fn encode_finalize_update_v1(update: &FinalizeUpdateV1) -> Vec<u8> {
-    let nf_count = update.consumed_nullifiers.len();
-    let mut buf = Vec::with_capacity(98 + nf_count * 32); // 1 + 96 + 1 + N*32
+fn encode_finalize_update_v1(update: &FinalizeUpdateV1) -> Result<Vec<u8>, ContractError> {
+    let n = SerializedLen::try_from_len(update.consumed_nullifiers.len())?;
+    let mut buf = Vec::with_capacity(101 + update.consumed_nullifiers.len() * 32); // 1 + 96 + 4 + N*32
     buf.push(MultiSigFunction::FinalizeV1 as u8);
     buf.extend_from_slice(&update.group_id.to_bytes());
     buf.extend_from_slice(&update.message_hash.to_repr());
     buf.extend_from_slice(&update.approval_commit.to_repr());
-    buf.push(nf_count as u8);
+    buf.extend_from_slice(&n.to_le_bytes());
     for nf in &update.consumed_nullifiers {
         buf.extend_from_slice(&nf.to_bytes());
     }
-    buf
+    Ok(buf)
 }
 
 fn decode_finalize_update_v1(data: &[u8]) -> Result<FinalizeUpdateV1, ContractError> {
-    if data.len() < 97 {
+    if data.len() < 100 {
         return Err(ContractError::IoError(format!(
-            "FinalizeUpdateV1: expected at least 97 bytes, got {}", data.len()
+            "FinalizeUpdateV1: expected at least 100 bytes, got {}", data.len()
         )));
     }
     let group_id = GroupId::from_bytes(&read_field::<32>(data, 0)?)
@@ -222,8 +224,8 @@ fn decode_finalize_update_v1(data: &[u8]) -> Result<FinalizeUpdateV1, ContractEr
         .ok_or_else(|| ContractError::IoError("FinalizeUpdateV1: invalid message_hash".into()))?;
     let approval_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 64)?))
         .ok_or_else(|| ContractError::IoError("FinalizeUpdateV1: invalid approval_commit".into()))?;
-    let nf_count = read_byte(data, 96)? as usize;
-    let expected = 97 + nf_count * 32;
+    let nf_count = SerializedLen::from_le_bytes(read_field::<4>(data, 96)?).to_usize();
+    let expected = 100 + nf_count * 32;
     if data.len() != expected {
         return Err(ContractError::IoError(format!(
             "FinalizeUpdateV1: expected {} bytes for {} nullifiers, got {}", expected, nf_count, data.len()
@@ -231,7 +233,7 @@ fn decode_finalize_update_v1(data: &[u8]) -> Result<FinalizeUpdateV1, ContractEr
     }
     let mut consumed_nullifiers = Vec::with_capacity(nf_count);
     for i in 0..nf_count {
-        let start = 97 + i * 32;
+        let start = 100 + i * 32;
         let nf = Nullifier::from_bytes(read_field::<32>(data, start)?)
             .map_err(|e| ContractError::IoError(format!("FinalizeUpdateV1: invalid Nullifier[{}]: {e}", i)))?;
         consumed_nullifiers.push(nf);
@@ -276,18 +278,25 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if params.threshold as usize > pubkeys.len() {
                 return Err(MultiSigError::InvalidThreshold.into());
             }
+            // `total_keys` is a `u8` field, so the count has to fit: `try_from`
+            // with an error path rather than a truncating `as`
+            // (contract-wasm-type-system.md §A.4.5). A key count the field cannot
+            // represent also makes the threshold meaningless, so it is the same
+            // invariant violation.
+            let total_keys = u8::try_from(pubkeys.len())
+                .map_err(|_| MultiSigError::InvalidThreshold)?;
             let group_id = MultiSigGroup::derive_group_id(
                 pubkeys.first().ok_or(MultiSigError::EmptyKeyList)?,
                 params.threshold,
-                pubkeys.len() as u8,
+                total_keys,
             )?;
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
             if wasm::db::db_contains_key(groups_db, &group_id.to_bytes())? {
                 return Err(MultiSigError::GroupAlreadyExists.into());
             }
             wasm::util::set_return_data(&encode_create_group_update_v1(&CreateGroupUpdateV1 {
-                group_id, pubkeys, threshold: params.threshold, total_keys: params.pubkeys.len() as u8,
-            }))?;
+                group_id, pubkeys, threshold: params.threshold, total_keys,
+            })?)?;
         }
         MultiSigFunction::SignV1 => {
             let params = SignParamsV1::decode(payload)?;
@@ -361,7 +370,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 group_id: params.group_id, message_hash: params.message_hash,
                 approval_commit,
                 consumed_nullifiers: consumed,
-            }))?;
+            })?)?;
         }
         MultiSigFunction::InitializeV1 => {
             msg!("[multisig::process_instruction] Error: InitializeV1 must be called via init");
@@ -394,7 +403,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
                 version: 1, group_id: u.group_id, pubkeys: u.pubkeys,
                 threshold: u.threshold, total_keys: u.total_keys,
             };
-            wasm::db::db_set(groups_db, &u.group_id.to_bytes(), &group.encode())?;
+            wasm::db::db_set(groups_db, &u.group_id.to_bytes(), &group.encode()?)?;
             Ok(())
         }
         MultiSigFunction::SignV1 => {
