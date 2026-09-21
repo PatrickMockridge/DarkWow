@@ -76,6 +76,13 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
     let position_commitment: Arc<Mutex<Option<pallas::Base>>> = Arc::new(Mutex::new(None));
     let mint_commitment: Arc<Mutex<Option<pallas::Base>>> = Arc::new(Mutex::new(None));
 
+    // OBL-Z14: the governance authority must be the identity that files reports —
+    // this fixture's `sk` (10), which `GovernanceReportV1` below passes as the
+    // reporter. The host compares the report's exposed reporter pair against this
+    // stored point, so declaring any other key would (correctly) reject the report.
+    let gov_pub = PublicKey::from_secret(SecretKey::from_base(sk));
+    let (governance_pub_x, governance_pub_y) = gov_pub.xy().expect("pk not identity");
+
     // Deployment init ix: store the PN contract id so validate_child_contract_id passes.
     let deploy_ix = InitializeParams {
         model: StablecoinModel::PooledDebt,
@@ -99,6 +106,8 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
         token_symbol: [0u8; 32],
         deployer_auth: pallas::Base::zero(),
         promissory_note_contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
+        governance_pub_x,
+        governance_pub_y,
     }
     .encode();
 

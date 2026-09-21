@@ -217,6 +217,16 @@ pub struct InitializeParams {
 
     /// PromissoryNote contract ID for cross-contract validation
     pub promissory_note_contract_id: ContractId,
+
+    /// OBL-Z14: the governance authority's point, declared by the deployer.
+    ///
+    /// `deployer_auth` above is `poseidon_hash([7, deployer_secret, contract_salt])` — a hash, so
+    /// it has no coordinates and cannot be compared against a report's `reporter_pub`. The
+    /// authority is therefore carried as a point: a governance report must prove knowledge of the
+    /// secret behind it (`governance_report.zk` instances `reporter_pub_x/y`), and the host
+    /// compares those against this stored pair.
+    pub governance_pub_x: pallas::Base,
+    pub governance_pub_y: pallas::Base,
 }
 
 impl dwow_serial::Encodable for InitializeParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
@@ -226,7 +236,7 @@ impl InitializeParams {
     /// Encode to canonical bytes (ρ-calculus: quote).
     pub fn encode(&self) -> Vec<u8> {
         let cp_count = self.collateral_params.len();
-        let cap = 181 + cp_count * 25;
+        let cap = 245 + cp_count * 25;
         let mut buf = Vec::with_capacity(cap);
         buf.push(self.model.clone() as u8);
         buf.extend_from_slice(&self.min_collateralization_ratio.to_le_bytes());
@@ -253,13 +263,15 @@ impl InitializeParams {
         buf.extend_from_slice(&self.token_symbol);
         buf.extend_from_slice(&self.deployer_auth.to_repr());
         buf.extend_from_slice(&self.promissory_note_contract_id.to_bytes());
+        buf.extend_from_slice(&self.governance_pub_x.to_repr());
+        buf.extend_from_slice(&self.governance_pub_y.to_repr());
         buf
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
     #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 181 {
+        if data.len() < 245 {
             return Err(ContractError::IoError(format!(
                 "InitializeParams: expected at least 181 bytes, got {}", data.len()
             )));
@@ -275,7 +287,7 @@ impl InitializeParams {
         let price_deviation_threshold = u64::from_le_bytes(data[57..65].try_into().unwrap());
         let cp_count = data[65] as usize;
         let dm_start = 66 + cp_count * 25;
-        if data.len() < dm_start + 18 + 97 {
+        if data.len() < dm_start + 211 {
             return Err(ContractError::IoError(format!(
                 "InitializeParams: expected at least {} bytes for {} collateral_params, got {}",
                 dm_start + 18 + 97, cp_count, data.len()
@@ -303,11 +315,16 @@ impl InitializeParams {
             .ok_or_else(|| ContractError::IoError("InitializeParams: invalid deployer_auth".into()))?;
         let promissory_note_contract_id = ContractId::from_bytes(data[dm_start + 115..dm_start + 147].try_into().unwrap())
             .map_err(|_| ContractError::IoError("InitializeParams: invalid promissory_note_contract_id".into()))?;
+        let governance_pub_x = Option::<pallas::Base>::from(pallas::Base::from_repr(data[dm_start + 147..dm_start + 179].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("InitializeParams: invalid governance_pub_x".into()))?;
+        let governance_pub_y = Option::<pallas::Base>::from(pallas::Base::from_repr(data[dm_start + 179..dm_start + 211].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("InitializeParams: invalid governance_pub_y".into()))?;
         Ok(InitializeParams {
             model, min_collateralization_ratio, liquidation_threshold, liquidation_penalty,
             base_rate, pi_kp, pi_ki, twap_window, price_deviation_threshold,
             collateral_params, dead_man_switch, token_authority_pub, create_token,
             token_symbol, deployer_auth, promissory_note_contract_id,
+            governance_pub_x, governance_pub_y,
         })
     }
 }

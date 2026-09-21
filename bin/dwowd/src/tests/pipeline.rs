@@ -243,6 +243,9 @@ impl ContractTestingPipeline {
                     CDP_LIQUIDATION_PENALTY, CDP_BASE_RATE, CDP_PI_KP, CDP_PI_KI,
                     CDP_PRICE_FEED_TWAP_WINDOW, CDP_PRICE_DEVIATION_THRESHOLD,
                 };
+                let gov_pub = dwow_sdk::crypto::PublicKey::from_secret(
+                    dwow_sdk::crypto::SecretKey::from_base(dwow_sdk::pasta::pallas::Base::from(1u64)),
+                );
                 let params = InitializeParams {
                     model: StablecoinModel::PooledDebt,
                     min_collateralization_ratio: CDP_MIN_COLLATERALIZATION_RATIO,
@@ -268,6 +271,9 @@ impl ContractTestingPipeline {
                     deployer_auth: dwow_sdk::pasta::pallas::Base::zero(),
                     promissory_note_contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32])
                         .unwrap(),
+                    // OBL-Z14: authority point for the same secret as token_authority_pub.
+                    governance_pub_x: gov_pub.x().expect("pk not identity"),
+                    governance_pub_y: gov_pub.y().expect("pk not identity"),
                 };
                 dwow_serial::serialize(&params)
             }

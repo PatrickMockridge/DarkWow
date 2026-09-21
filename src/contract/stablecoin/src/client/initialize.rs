@@ -93,6 +93,15 @@ pub struct InitializeCallBuilder {
     pub promissory_note_contract_id: ContractId,
     /// Deployer authorization for InitV1 ZK proof
     pub deployer_auth: pallas::Base,
+    /// OBL-Z14: the governance authority's point, declared at deploy time.
+    ///
+    /// The deployer supplies this — the builder holds no deployer secret (that lives on
+    /// [`InitV1CallData`]). It is the point a governance report must prove knowledge of: the
+    /// report circuit instances `reporter_pub_x/y` and the host compares them against the stored
+    /// pair. Derive it with `PublicKey::from_secret(SecretKey::from_base(deployer_secret))`, the
+    /// same base the circuit uses.
+    pub governance_pub_x: pallas::Base,
+    pub governance_pub_y: pallas::Base,
 }
 
 impl InitializeCallBuilder {
@@ -178,6 +187,8 @@ impl InitializeCallBuilder {
             token_symbol,
             deployer_auth: self.deployer_auth,
             promissory_note_contract_id: self.promissory_note_contract_id,
+            governance_pub_x: self.governance_pub_x,
+            governance_pub_y: self.governance_pub_y,
         };
 
         InitializeCallDebris { params, token_mint_debris }

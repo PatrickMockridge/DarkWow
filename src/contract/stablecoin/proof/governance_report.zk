@@ -46,11 +46,20 @@ circuit "GovernanceReportV2" {
     BPS = witness_base(10000);
 
     # Verify reporter is authorized (owns the secret)
+    #
+    # OBL-Z14. `reporter_pub_x/y` were declared as public inputs and never instanced, so the two
+    # equalities below were between the point derived from `reporter_secret` and a *witness the
+    # prover chooses* — satisfiable by any secret, which bound the report to nothing. The instance
+    # is what makes them the verifier's values: with them fixed, a prover must know the secret whose
+    # NULLIFIER_K-multiple is the exposed point. That is the same per-instance derivation
+    # `native_token/proof/burn.zk` uses for a spend.
     reporter_public = ec_mul_base(reporter_secret, NULLIFIER_K);
     reporter_public_x = ec_get_x(reporter_public);
     reporter_public_y = ec_get_y(reporter_public);
     constrain_equal_base(reporter_public_x, reporter_pub_x);
     constrain_equal_base(reporter_public_y, reporter_pub_y);
+    constrain_instance(reporter_pub_x);
+    constrain_instance(reporter_pub_y);
 
     # Every value that enters a multiplication or a comparison is range-checked, so no product can
     # wrap the field. The comparison chip is 253 bits wide and range-checks its *offset* — the

@@ -57,12 +57,17 @@ pub struct GovernanceReportPublicInputs {
 }
 
 impl GovernanceReportPublicInputs {
-    /// Convert to vector for ZK proof creation
-    /// Order matches constrain_instance calls in governance_report.zk:
-    /// total_collateral, total_debt, outstanding, collateral_ratio_bps, interest_accrued,
-    /// tx_binding, tx_nonce
+    /// Convert to vector for ZK proof creation.
+    ///
+    /// Order MUST match the `constrain_instance` calls in `governance_report.zk`
+    /// position-for-position: the reporter pair is instanced **first** (it sits in
+    /// the circuit's authorization block, above every other instance), then the
+    /// amounts, then the tx pair. `check-circuit-metadata-alignment.sh` compares
+    /// these counts against the circuit and against the host's metadata push.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
+            self.reporter_pub_x,
+            self.reporter_pub_y,
             self.total_collateral,
             self.total_debt,
             self.outstanding,

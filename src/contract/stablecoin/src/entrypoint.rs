@@ -142,6 +142,13 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
             token_symbol: [0u8; 32],
             deployer_auth: pallas::Base::zero(),
             promissory_note_contract_id: ContractId::ZERO,
+            // OBL-Z14: default deployment declares NO governance authority. (0, 0) is not a point
+            // any `PublicKey::from_secret` can produce, so this fails closed — every governance
+            // report is rejected as unattributed until a real deployment supplies the point. That
+            // is the right default for the test path this branch exists for; a live deployment
+            // goes through the `else` arm with params carrying the authority.
+            governance_pub_x: pallas::Base::zero(),
+            governance_pub_y: pallas::Base::zero(),
         }
     } else {
         InitializeParams::decode(ix)
@@ -180,13 +187,14 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_set(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &params.promissory_note_contract_id.to_bytes())?;
     wasm::db::db_set(info_db, STABLECOIN_CONTRACT_PURSE_CONTRACT_ID, &PURSE_CONTRACT_ID.to_bytes())?;
 
-    // NOTE (OBL-Z14): the governance authority key is deliberately NOT stored here
-    // yet. `InitializeParams.deployer_auth` is `poseidon_hash([7, deployer_secret,
-    // contract_salt])`, while a report's identity is a curve point derived as
-    // `ec_mul_base(secret, NULLIFIER_K)` — Orchard's nullifier base, not the
-    // standard generator. Storing the hash would give the report check nothing it
-    // could compare against. The shape has to be settled first; see the note in
-    // `process_governance_report_instruction`.
+    // OBL-Z14: the governance authority, stored as a POINT (x ‖ y, 64 bytes).
+    // `deployer_auth` above is a hash of the deployer's secret and has no
+    // coordinates, so it cannot be compared against a report's `reporter_pub`. A
+    // report must prove knowledge of the secret behind this point
+    // (`governance_report.zk` instances `reporter_pub_x/y`), and
+    // `process_governance_report_instruction` compares the two.
+    let gov_point = [params.governance_pub_x.to_repr().as_slice(), params.governance_pub_y.to_repr().as_slice()].concat();
+    wasm::db::db_set(info_db, STABLECOIN_CONTRACT_GOVERNANCE_PUBKEY_KEY, &gov_point)?;
 
     // Initialize total debt and collateral to zero
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &0u64.to_le_bytes())?;
@@ -394,13 +402,27 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     let _ = wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
+            // OBL-Z14: the reporter pair is instanced FIRST, because
+            // `constrain_instance` order in a zkas circuit is the order the calls
+            // appear, and the authorization block sits above every other instance.
+            // The metadata order MUST match it: `check-circuit-metadata-alignment.sh`
+            // compares counts only and would not catch a transposition.
+            let (reporter_pub_x, reporter_pub_y) = match params.reporter_pub.xy() {
+                Some(coords) => coords,
+                None => {
+                    msg!("[stablecoin::get_metadata] Error: GovernanceReport reporter_pub is the identity point");
+                    let _ = wasm::util::set_return_data(&vec![]); return Ok(());
+                }
+            };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             // Order matches constrain_instance in governance_report.zk:
-            // total_collateral, total_debt, outstanding, collateral_ratio_bps, interest_accrued,
-            // tx_binding, tx_nonce
+            // reporter_pub_x, reporter_pub_y, total_collateral, total_debt, outstanding,
+            // collateral_ratio_bps, interest_accrued, tx_binding, tx_nonce
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V2.to_string(),
                 vec![
+                    reporter_pub_x,
+                    reporter_pub_y,
                     pallas::Base::from(params.total_collateral),
                     pallas::Base::from(params.total_debt),
                     pallas::Base::from(params.outstanding),
@@ -1349,14 +1371,40 @@ fn process_governance_report_instruction(
     let self_ = &calls[call_idx].data;
     let params = GovernanceReportParams::decode(&self_.data[1..])?;
 
-    // OBL-Z14 (reporter attribution) is NOT yet enforced here. The stored
-    // authority is `poseidon_hash([7, deployer_secret, contract_salt])` — a hash —
-    // while this report's identity is a curve point, and the circuit's own
-    // derivation (`ec_mul_base(reporter_secret, NULLIFIER_K)`) differs from the
-    // client's (`PublicKey::from_secret(reporter_secret)`). Until those three
-    // agree on one shape there is no comparison to write: any check here would be
-    // between values that cannot be equal. See
-    // `doc/src/arch/verification-hazop.md` OBL-Z14 and its remedy section.
+    // OBL-Z14: a report names a reporter, and the circuit now *instances* that
+    // pair, so `params.reporter_pub` is bound to the prover's secret rather than
+    // being a value the caller asserts. What the proof cannot know is whether that
+    // reporter is the authority this contract recognizes — only the host can check
+    // that, against the point stored at init. Without this check a report could be
+    // attributed to any key.
+    let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
+    let gov_point = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_GOVERNANCE_PUBKEY_KEY)?
+        .ok_or_else(|| ContractError::IoError("governance authority not configured".to_string()))?;
+    if gov_point.len() != 64 {
+        return Err(ContractError::IoError("governance authority malformed".to_string()))
+    }
+    let gov_x = Option::<pallas::Base>::from(pallas::Base::from_repr(
+        gov_point[0..32].try_into().unwrap(),
+    ))
+    .ok_or_else(|| ContractError::IoError("governance authority x not canonical".to_string()))?;
+    let gov_y = Option::<pallas::Base>::from(pallas::Base::from_repr(
+        gov_point[32..64].try_into().unwrap(),
+    ))
+    .ok_or_else(|| ContractError::IoError("governance authority y not canonical".to_string()))?;
+    let (reporter_x, reporter_y) = match params.reporter_pub.xy() {
+        Some(coords) => coords,
+        None => {
+            msg!("[stablecoin::process_instruction] GovernanceReport: reporter_pub is the identity point");
+            return Err(StablecoinError::ConfigError("Report reporter is the identity point".to_string()).into())
+        }
+    };
+    if reporter_x != gov_x || reporter_y != gov_y {
+        msg!("[stablecoin::process_instruction] GovernanceReport: reporter is not the governance authority");
+        return Err(StablecoinError::ConfigError(
+            "Report reporter is not the governance authority".to_string(),
+        )
+        .into())
+    }
 
     // Read on-chain config DB values
     let config_db = wasm::db::db_lookup(cid, "config")?;

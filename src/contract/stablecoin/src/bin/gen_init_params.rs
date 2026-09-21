@@ -118,6 +118,13 @@ fn main() {
         token_symbol: *b"USDx\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
         deployer_auth: dwow_sdk::pasta::pallas::Base::zero(),
         promissory_note_contract_id: pn_contract_id,
+        // OBL-Z14: placeholders, like `deployer_auth` above. A real deployment MUST
+        // supply the deployer's authority point — the coordinates of
+        // `PublicKey::from_secret(SecretKey::from_base(deployer_secret))` — or every
+        // governance report is rejected as unattributed. This tool generates a
+        // template, not a live deployment.
+        governance_pub_x: dwow_sdk::pasta::pallas::Base::zero(),
+        governance_pub_y: dwow_sdk::pasta::pallas::Base::zero(),
     };
 
     let buf = params.encode();
