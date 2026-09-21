@@ -442,7 +442,7 @@ fn darkbet_create_market_process_instruction_v1(
         close_block,
         market_id
     );
-    Ok(update.encode())
+    update.encode()
 }
 
 fn darkbet_create_market_process_update_v1(
@@ -483,7 +483,7 @@ fn darkbet_create_market_process_update_v1(
         instance_seed: update.instance_seed,
     };
 
-    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &market.encode())?;
+    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &market.encode()?)?;
 
     // Record nullifier
     let nullifiers_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_NULLIFIERS_TREE)?;
@@ -1064,7 +1064,7 @@ fn darkbet_buy_position_process_instruction_v1(
         params.amount,
         payout
     );
-    Ok(update.encode())
+    update.encode()
 }
 
 fn darkbet_buy_position_process_update_v1(
@@ -1092,7 +1092,7 @@ fn darkbet_buy_position_process_update_v1(
     wasm::db::db_set(positions_db, &update.position_id.to_repr(), &position.encode())?;
 
     // Persist advanced market (carried from exec)
-    wasm::db::db_set(markets_db, &update.market.market_id.to_repr(), &update.market.encode())?;
+    wasm::db::db_set(markets_db, &update.market.market_id.to_repr(), &update.market.encode()?)?;
 
     // Record nullifier
     wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
@@ -1213,7 +1213,7 @@ fn darkbet_add_liquidity_process_instruction_v1(
     };
 
     msg!("[darkbet::add_liquidity] Adding liquidity: {}", params.amount);
-    Ok(update.encode())
+    update.encode()
 }
 
 fn darkbet_add_liquidity_process_update_v1(
@@ -1240,7 +1240,7 @@ fn darkbet_add_liquidity_process_update_v1(
     wasm::db::db_set(lp_shares_db, &update.lp_share_id.to_repr(), &lp_share.encode())?;
 
     // Persist advanced market (carried from exec)
-    wasm::db::db_set(markets_db, &update.market.market_id.to_repr(), &update.market.encode())?;
+    wasm::db::db_set(markets_db, &update.market.market_id.to_repr(), &update.market.encode()?)?;
 
     // Record nullifier
     wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
@@ -1363,7 +1363,7 @@ fn darkbet_remove_liquidity_process_instruction_v1(
         payout,
         fees_withdrawn
     );
-    Ok(update.encode())
+    update.encode()
 }
 
 fn darkbet_remove_liquidity_process_update_v1(
@@ -1376,7 +1376,7 @@ fn darkbet_remove_liquidity_process_update_v1(
 
     // Persist advanced LP share and market (carried from exec)
     wasm::db::db_set(lp_shares_db, &update.lp_share_id.to_repr(), &update.lp_share.encode())?;
-    wasm::db::db_set(markets_db, &update.market.market_id.to_repr(), &update.market.encode())?;
+    wasm::db::db_set(markets_db, &update.market.market_id.to_repr(), &update.market.encode()?)?;
 
     // Record nullifier
     wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
@@ -1564,7 +1564,7 @@ fn darkbet_resolve_market_process_instruction_v1(
     };
 
     msg!("[darkbet::resolve_market] Market resolved at block {}", current_block);
-    Ok(update.encode())
+    update.encode()
 }
 
 fn darkbet_resolve_market_process_update_v1(
@@ -1575,7 +1575,7 @@ fn darkbet_resolve_market_process_update_v1(
     let nullifiers_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_NULLIFIERS_TREE)?;
 
     // Persist advanced market (carried from exec)
-    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &update.market.encode())?;
+    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &update.market.encode()?)?;
 
     // Record nullifier
     wasm::db::db_mark_spent(nullifiers_db, &update.nullifier.to_repr())?;
@@ -1709,7 +1709,7 @@ fn darkbet_settle_market_process_instruction_v1(
     };
 
     msg!("[darkbet::settle_market] Settling {} matches", params.match_ids.len());
-    Ok(update.encode())
+    update.encode()
 }
 
 fn darkbet_settle_market_process_update_v1(
@@ -1720,7 +1720,7 @@ fn darkbet_settle_market_process_update_v1(
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
 
     // Persist advanced market (carried from exec)
-    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &update.market.encode())?;
+    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &update.market.encode()?)?;
 
     // Persist advanced matches (carried from exec)
     for m in &update.matches {

@@ -239,7 +239,7 @@ impl DarkbetExchangeHarness {
         };
 
         let mut call_data = vec![0x00];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
         Ok(CreateMarketResult { call_data, public_inputs, proof })
     }
@@ -299,7 +299,7 @@ impl DarkbetExchangeHarness {
         };
 
         let mut call_data = vec![0x0A];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
         Ok(ClaimWinningsResult { call_data, public_inputs, proof })
     }
@@ -456,7 +456,7 @@ impl DarkbetExchangeHarness {
         let params = SettleMarketParamsV1 { market_id, match_ids };
 
         let mut call_data = vec![0x05];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
         Ok(SettleMarketResult { call_data })
     }

@@ -31,11 +31,11 @@
 
 use dwow_darkbet_exchange_contract::{
     model::{
-        CancelOrderParamsV1, CreateMarketParamsV1,
+        CancelOrderParamsV1, ClaimWinningsParamsV1, CreateMarketParamsV1,
         LpShare, LpShareState, Market, MarketState, MarketType, Match, MatchOrdersParamsV1,
         MatchState, Order, OrderState, OrderType, Outcome, PlaceBackParamsV1,
         PlaceLayParamsV1, Position, PositionState,
-        ResolveMarketParamsV1,
+        ResolveMarketParamsV1, SettleMarketParamsV1,
     },
     DarkbetFunction, DARKBET_EXCHANGE_COMMISSION_BP, DARKBET_EXCHANGE_MAX_MARKET_LIFETIME,
     DARKBET_EXCHANGE_MIN_ORDER_SIZE,
@@ -477,6 +477,87 @@ fn test_create_market_params_encoding() {
     assert_eq!(decoded.market_type, 0);
     assert_eq!(decoded.nonce, params.nonce);
     assert_eq!(decoded.nullifier, params.nullifier);
+}
+
+/// Three `SerializedLen` prefixes in one struct, and 256 outcomes is where the old `u8` broke:
+/// `256 as u8 == 0`, so the count said "none" and the decoder either rejected the buffer or read
+/// the tail from the wrong offset. The two-outcome fixture above cannot see this.
+///
+/// `instance_seed` is read from the *end* of the buffer, so it is the canary: if any prefix in
+/// front of it is the wrong width, this field decodes to the wrong bytes.
+#[test]
+fn test_create_market_params_counts_are_not_bytes() {
+    use dwow_sdk::crypto::schnorr::Signature;
+
+    let outcomes: Vec<String> = (0..256u64).map(|i| format!("o{i}")).collect();
+    let params = CreateMarketParamsV1 {
+        description: "d".repeat(300),
+        outcomes: outcomes.clone(),
+        oracle_id: make_base([1u8; 32]),
+        commission_bp: 200,
+        market_type: 0,
+        protocol_fee: 100,
+        lp_fee: 200,
+        duration_blocks: 1000,
+        creator_pub: make_pubkey(2),
+        signature: Signature::dummy(),
+        instance_seed: [7u8; 32],
+        nonce: 5,
+        nullifier: make_base_u64(9),
+    };
+
+    let encoded = serialize(&params);
+    // 32 + 32 + 4 + description + 4 + Σ(4 + outcome) + 221
+    let expected = 229
+        + params.description.len()
+        + outcomes.iter().map(|o| 4 + o.len()).sum::<usize>();
+    assert_eq!(encoded.len(), expected);
+
+    let decoded: CreateMarketParamsV1 = deserialize(&encoded).unwrap();
+    assert_eq!(decoded.description.len(), 300);
+    assert_eq!(decoded.outcomes.len(), 256);
+    assert_eq!(decoded.outcomes[255], outcomes[255]);
+    assert_eq!(decoded.instance_seed, [7u8; 32]);
+    assert_eq!(decoded.nonce, 5);
+}
+
+/// The match-id count is a `SerializedLen`. 256 ids is the smallest vector the old `u8` could not
+/// carry, and the decoder's exact-length check is what would have rejected it.
+#[test]
+fn test_settle_market_params_count_is_not_a_byte() {
+    let match_ids: Vec<pallas::Base> = (1..=256u64).map(make_base_u64).collect();
+    let params = SettleMarketParamsV1 { market_id: make_base([3u8; 32]), match_ids: match_ids.clone() };
+
+    let encoded = params.encode().unwrap();
+    assert_eq!(encoded.len(), 36 + 256 * 32);
+
+    let decoded = SettleMarketParamsV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.match_ids.len(), 256);
+    assert_eq!(decoded.match_ids[255], match_ids[255]);
+    assert_eq!(decoded.market_id, params.market_id);
+}
+
+/// The proof length is a `SerializedLen`. A `ClaimWinningsV1` proof is kilobyte-scale, so the old
+/// `u8` truncated it modulo 256 and the buffer stopped matching `106 + proof_len`.
+#[test]
+fn test_claim_winnings_proof_length_is_not_a_byte() {
+    let params = ClaimWinningsParamsV1 {
+        position_id: make_base([4u8; 32]),
+        market_id: make_base([5u8; 32]),
+        winning_outcome: 1,
+        owner: make_pubkey(6),
+        amount: 12345,
+        proof: vec![0xAB; 700],
+    };
+
+    let encoded = params.encode().unwrap();
+    assert_eq!(encoded.len(), 109 + 700);
+
+    let decoded = ClaimWinningsParamsV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.proof.len(), 700);
+    assert_eq!(decoded.amount, 12345);
+    assert_eq!(decoded.winning_outcome, 1);
+    assert_eq!(decoded.position_id, params.position_id);
 }
 
 #[test]

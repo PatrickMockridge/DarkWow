@@ -27,6 +27,7 @@
 //! order-book matching (back/lay) and AMM pool modes.
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{poseidon_hash, schnorr::Signature, PublicKey},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
@@ -824,11 +825,81 @@ pub struct CreateMarketParamsV1 {
     pub nullifier: pallas::Base,
 }
 
-impl dwow_serial::Encodable for CreateMarketParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CreateMarketParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateMarketParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl CreateMarketParamsV1 { pub fn encode(&self) -> Vec<u8> { let sig_bytes = self.signature.encode(); let out_bytes: Vec<Vec<u8>> = self.outcomes.iter().map(|o| { let mut v = Vec::with_capacity(1+o.len()); v.push(o.len() as u8); v.extend_from_slice(o.as_bytes()); v }).collect(); let mut b = Vec::with_capacity(83+self.description.len()+out_bytes.iter().map(|o| o.len()).sum::<usize>()+sig_bytes.len()); b.push(self.description.len() as u8); b.extend_from_slice(self.description.as_bytes()); b.push(self.outcomes.len() as u8); for ob in &out_bytes { b.extend_from_slice(ob); } b.extend_from_slice(&self.oracle_id.to_repr()); b.extend_from_slice(&self.commission_bp.to_le_bytes()); b.push(self.market_type); b.extend_from_slice(&self.protocol_fee.to_le_bytes()); b.extend_from_slice(&self.lp_fee.to_le_bytes()); b.extend_from_slice(&self.duration_blocks.to_le_bytes()); b.extend_from_slice(&self.creator_pub.to_bytes()); b.extend_from_slice(&sig_bytes); b.extend_from_slice(&self.nonce.to_le_bytes()); b.extend_from_slice(&self.nullifier.to_repr()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 83 { return Err(ContractError::IoError("CreateMarketParamsV1: too short".into())); } let desc_len = data[0] as usize; let mut pos = 1+desc_len; if data.len() < pos+1 { return Err(ContractError::IoError("CreateMarketParamsV1: desc truncated".into())); } let description = String::from_utf8(data[1..pos].to_vec()).map_err(|e| ContractError::IoError(format!("CreateMarketParamsV1: invalid description: {}", e)))?; let out_count = data[pos] as usize; pos += 1; let mut outcomes = Vec::with_capacity(out_count); for _ in 0..out_count { if data.len() < pos+1 { return Err(ContractError::IoError("CreateMarketParamsV1: outcome truncated".into())); } let ol = data[pos] as usize; pos += 1; if data.len() < pos+ol { return Err(ContractError::IoError("CreateMarketParamsV1: outcome data truncated".into())); } outcomes.push(String::from_utf8(data[pos..pos+ol].to_vec()).map_err(|e| ContractError::IoError(format!("CreateMarketParamsV1: invalid outcome: {}", e)))?); pos += ol; } if data.len() < pos+221 { return Err(ContractError::IoError("CreateMarketParamsV1: trailing truncated".into())); } let oracle_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateMarketParamsV1: invalid oracle_id".into()))?; pos += 32; let commission_bp = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4; let market_type = data[pos]; pos += 1; let protocol_fee = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4; let lp_fee = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4; let duration_blocks = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8; let creator_pub = PublicKey::from_bytes(data[pos..pos+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateMarketParamsV1: invalid creator_pub: {}", e)))?; pos += 32; let signature = Signature::decode(&data[pos..pos+64]).ok_or_else(|| ContractError::IoError("CreateMarketParamsV1: invalid signature".into()))?; let nonce = u64::from_le_bytes(data[pos+64..pos+72].try_into().unwrap()); let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+72..pos+104].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateMarketParamsV1: invalid nullifier".into()))?; let instance_seed: [u8;32] = data[data.len()-32..].try_into().unwrap(); Ok(CreateMarketParamsV1 { description, outcomes, oracle_id, commission_bp, market_type, protocol_fee, lp_fee, duration_blocks, creator_pub, signature, instance_seed, nonce, nullifier }) } }
+impl CreateMarketParamsV1 {
+    /// description length(4) + description + outcome count(4) + outcomes(4 + bytes each) + tail(221).
+    ///
+    /// Three prefixes, all `SerializedLen`: the description's length, the outcome count, and each
+    /// outcome's own length. A 256-outcome market is what the `u8` form could not carry.
+    ///
+    /// Every offset derived from the wire is `saturating_add`ed: a hostile prefix can say
+    /// `0xFFFFFFFF`, and on wasm32's 32-bit `usize` `4 + that` wraps to a small number that would
+    /// then slice out of bounds. Saturation turns it into the length check it should have been.
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let sig_bytes = self.signature.encode();
+        let dl = SerializedLen::try_from_len(self.description.len())?;
+        let ol = SerializedLen::try_from_len(self.outcomes.len())?;
+        let out_bytes: Vec<Vec<u8>> = self
+            .outcomes
+            .iter()
+            .map(|o| {
+                let mut v = Vec::with_capacity(4 + o.len());
+                v.extend_from_slice(&SerializedLen::try_from_len(o.len())?.to_le_bytes());
+                v.extend_from_slice(o.as_bytes());
+                Ok(v)
+            })
+            .collect::<Result<Vec<_>, ContractError>>()?;
+        let cap = 229 + self.description.len()
+            + out_bytes.iter().map(|o| o.len()).sum::<usize>();
+        let mut b = Vec::with_capacity(cap);
+        b.extend_from_slice(&dl.to_le_bytes());
+        b.extend_from_slice(self.description.as_bytes());
+        b.extend_from_slice(&ol.to_le_bytes());
+        for ob in &out_bytes { b.extend_from_slice(ob); }
+        b.extend_from_slice(&self.oracle_id.to_repr());
+        b.extend_from_slice(&self.commission_bp.to_le_bytes());
+        b.push(self.market_type);
+        b.extend_from_slice(&self.protocol_fee.to_le_bytes());
+        b.extend_from_slice(&self.lp_fee.to_le_bytes());
+        b.extend_from_slice(&self.duration_blocks.to_le_bytes());
+        b.extend_from_slice(&self.creator_pub.to_bytes());
+        b.extend_from_slice(&sig_bytes);
+        b.extend_from_slice(&self.nonce.to_le_bytes());
+        b.extend_from_slice(&self.nullifier.to_repr());
+        b.extend_from_slice(&self.instance_seed);
+        Ok(b)
+    }
+
+    /// An empty description with no outcomes is the minimum: 4 + 4 + 221 = 229.
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 229 {
+            return Err(ContractError::IoError("CreateMarketParamsV1: too short".into()))
+        }
+        let desc_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = desc_len.saturating_add(4);
+        if data.len() < pos.saturating_add(4) {
+            return Err(ContractError::IoError("CreateMarketParamsV1: desc truncated".into()))
+        }
+        let description = String::from_utf8(data[4..pos].to_vec()).map_err(|e| ContractError::IoError(format!("CreateMarketParamsV1: invalid description: {}", e)))?;
+        let out_count = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize();
+        pos = pos.saturating_add(4);
+        let mut outcomes = Vec::with_capacity(out_count);
+        for _ in 0..out_count {
+            if data.len() < pos.saturating_add(4) {
+                return Err(ContractError::IoError("CreateMarketParamsV1: outcome truncated".into()));
+            }
+            let ol = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize();
+            pos = pos.saturating_add(4);
+            if data.len() < pos.saturating_add(ol) {
+                return Err(ContractError::IoError("CreateMarketParamsV1: outcome data truncated".into()));
+            }
+            outcomes.push(String::from_utf8(data[pos..pos+ol].to_vec()).map_err(|e| ContractError::IoError(format!("CreateMarketParamsV1: invalid outcome: {}", e)))?);
+            pos = pos.saturating_add(ol);
+        }
+        if data.len() < pos.saturating_add(221) { return Err(ContractError::IoError("CreateMarketParamsV1: trailing truncated".into())); } let oracle_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateMarketParamsV1: invalid oracle_id".into()))?; pos += 32; let commission_bp = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4; let market_type = data[pos]; pos += 1; let protocol_fee = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4; let lp_fee = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4; let duration_blocks = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8; let creator_pub = PublicKey::from_bytes(data[pos..pos+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateMarketParamsV1: invalid creator_pub: {}", e)))?; pos += 32; let signature = Signature::decode(&data[pos..pos+64]).ok_or_else(|| ContractError::IoError("CreateMarketParamsV1: invalid signature".into()))?; let nonce = u64::from_le_bytes(data[pos+64..pos+72].try_into().unwrap()); let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+72..pos+104].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateMarketParamsV1: invalid nullifier".into()))?; let instance_seed: [u8;32] = data[data.len()-32..].try_into().unwrap(); Ok(CreateMarketParamsV1 { description, outcomes, oracle_id, commission_bp, market_type, protocol_fee, lp_fee, duration_blocks, creator_pub, signature, instance_seed, nonce, nullifier }) } }
 
 /// Update from CreateMarketV1
 #[derive(Debug, Clone)]
@@ -1092,7 +1163,7 @@ pub struct ClaimWinningsParamsV1 {
 }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl ClaimWinningsParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(106+self.proof.len()); b.extend_from_slice(&self.position_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr()); b.push(self.winning_outcome); b.extend_from_slice(&self.owner.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 106 { return Err(ContractError::IoError("ClaimWinningsParamsV1: too short".into())); } let position_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ClaimWinningsParamsV1: invalid position_id".into()))?; let market_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ClaimWinningsParamsV1: invalid market_id".into()))?; let winning_outcome = data[64]; let owner = PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ClaimWinningsParamsV1: invalid owner: {}", e)))?; let amount = u64::from_le_bytes(data[97..105].try_into().unwrap()); let proof_len = data[105] as usize; if data.len() != 106+proof_len { return Err(ContractError::IoError(format!("ClaimWinningsParamsV1: expected {} bytes, got {}", 106+proof_len, data.len()))); } let proof = data[106..].to_vec(); Ok(ClaimWinningsParamsV1 { position_id, market_id, winning_outcome, owner, amount, proof }) } }
+impl ClaimWinningsParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(109+self.proof.len()); b.extend_from_slice(&self.position_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr()); b.push(self.winning_outcome); b.extend_from_slice(&self.owner.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 109 { return Err(ContractError::IoError("ClaimWinningsParamsV1: too short".into())); } let position_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ClaimWinningsParamsV1: invalid position_id".into()))?; let market_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ClaimWinningsParamsV1: invalid market_id".into()))?; let winning_outcome = data[64]; let owner = PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ClaimWinningsParamsV1: invalid owner: {}", e)))?; let amount = u64::from_le_bytes(data[97..105].try_into().unwrap()); let proof_len = SerializedLen::from_le_bytes(data[105..109].try_into().unwrap()).to_usize(); if data.len() != proof_len.saturating_add(109) { return Err(ContractError::IoError(format!("ClaimWinningsParamsV1: expected {} bytes, got {}", proof_len.saturating_add(109), data.len()))); } let proof = data[109..].to_vec(); Ok(ClaimWinningsParamsV1 { position_id, market_id, winning_outcome, owner, amount, proof }) } }
 
 /// Update from ClaimWinningsV1
 #[derive(Debug, Clone)]
@@ -1264,19 +1335,29 @@ impl LpShare {
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Market {
-    pub fn encode(&self) -> Vec<u8> {
-        let outcomes_bytes: usize = self.outcomes.iter().map(|s| 1 + s.len()).sum();
-        let cap = 203 + self.description.len() + outcomes_bytes + self.outcome_pools.len() * 8;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let dl = SerializedLen::try_from_len(self.description.len())?;
+        let ol = SerializedLen::try_from_len(self.outcomes.len())?;
+        let pl = SerializedLen::try_from_len(self.outcome_pools.len())?;
+        let outcomes_bytes: usize = self
+            .outcomes
+            .iter()
+            .map(|s| SerializedLen::ENCODED_SIZE + s.len())
+            .sum();
+        let cap = 213 + self.description.len() + outcomes_bytes + self.outcome_pools.len() * 8;
         let mut b = Vec::with_capacity(cap);
         b.push(self.version);
         b.extend_from_slice(&self.market_id.to_repr());
         b.extend_from_slice(&self.creator.to_bytes());
-        // description (u8-prefixed String)
-        b.push(self.description.len() as u8);
+        // description (SerializedLen-prefixed String)
+        b.extend_from_slice(&dl.to_le_bytes());
         b.extend_from_slice(self.description.as_bytes());
-        // outcomes (u8 count, each u8-prefixed String)
-        b.push(self.outcomes.len() as u8);
-        for s in &self.outcomes { b.push(s.len() as u8); b.extend_from_slice(s.as_bytes()); }
+        // outcomes (SerializedLen count, each SerializedLen-prefixed String)
+        b.extend_from_slice(&ol.to_le_bytes());
+        for s in &self.outcomes {
+            b.extend_from_slice(&SerializedLen::try_from_len(s.len())?.to_le_bytes());
+            b.extend_from_slice(s.as_bytes());
+        }
         b.extend_from_slice(&self.oracle_id.to_repr());
         b.extend_from_slice(&self.commission_bp.to_le_bytes());
         b.push(self.market_type as u8);
@@ -1286,7 +1367,7 @@ impl Market {
         b.extend_from_slice(&self.matched_volume.to_le_bytes());
         b.extend_from_slice(&self.total_pool.to_le_bytes());
         b.extend_from_slice(&self.total_lp_shares.to_le_bytes());
-        b.push(self.outcome_pools.len() as u8);
+        b.extend_from_slice(&pl.to_le_bytes());
         for v in &self.outcome_pools { b.extend_from_slice(&v.to_le_bytes()); }
         b.extend_from_slice(&self.protocol_fee.to_le_bytes());
         b.extend_from_slice(&self.lp_fee.to_le_bytes());
@@ -1297,27 +1378,29 @@ impl Market {
         if let Some(w) = self.winning_outcome { b.push(w); }
         b.extend_from_slice(&self.created_at.to_le_bytes());
         b.extend_from_slice(&self.instance_seed);
-        b
+        Ok(b)
     }
+    /// Empty description, no outcomes, no pools is the minimum: 204 + 3 × 3 = 213.
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 203 { return Err(ContractError::IoError(format!("Market: expected at least 203 bytes, got {}", data.len()))); }
+        if data.len() < 213 { return Err(ContractError::IoError(format!("Market: expected at least 213 bytes, got {}", data.len()))); }
         let version = data[0];
         let market_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Market: invalid market_id".into()))?;
         let creator = PublicKey::from_bytes(data[33..65].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Market: invalid creator: {}", e)))?;
-        let desc_len = data[65] as usize;
-        if data.len() < 66 + desc_len { return Err(ContractError::IoError("Market: data too short for description".into())); }
-        let description = String::from_utf8(data[66..66 + desc_len].to_vec()).map_err(|e| ContractError::IoError(format!("Market: invalid description: {}", e)))?;
-        let out_pos = 66 + desc_len;
-        let out_count = data[out_pos] as usize;
-        let mut pos = out_pos + 1;
+        let desc_len = SerializedLen::from_le_bytes(data[65..69].try_into().unwrap()).to_usize();
+        let desc_end = desc_len.saturating_add(69);
+        if data.len() < desc_end.saturating_add(4) { return Err(ContractError::IoError("Market: data too short for description".into())); }
+        let description = String::from_utf8(data[69..desc_end].to_vec()).map_err(|e| ContractError::IoError(format!("Market: invalid description: {}", e)))?;
+        let out_pos = desc_end;
+        let out_count = SerializedLen::from_le_bytes(data[out_pos..out_pos+4].try_into().unwrap()).to_usize();
+        let mut pos = out_pos.saturating_add(4);
         let mut outcomes = Vec::with_capacity(out_count);
         for _ in 0..out_count {
-            if data.len() < pos + 1 { return Err(ContractError::IoError("Market: data too short for outcome".into())); }
-            let slen = data[pos] as usize;
-            pos += 1;
-            if data.len() < pos + slen { return Err(ContractError::IoError("Market: outcome data truncated".into())); }
+            if data.len() < pos.saturating_add(4) { return Err(ContractError::IoError("Market: data too short for outcome".into())); }
+            let slen = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize();
+            pos = pos.saturating_add(4);
+            if data.len() < pos.saturating_add(slen) { return Err(ContractError::IoError("Market: outcome data truncated".into())); }
             outcomes.push(String::from_utf8(data[pos..pos + slen].to_vec()).map_err(|e| ContractError::IoError(format!("Market: invalid outcome: {}", e)))?);
-            pos += slen;
+            pos = pos.saturating_add(slen);
         }
         if data.len() < pos + 32 + 4 + 1 + 1 + 40 { return Err(ContractError::IoError("Market: data too short for numeric fields".into())); }
         let oracle_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Market: invalid oracle_id".into()))?; pos += 32;
@@ -1329,8 +1412,8 @@ impl Market {
         let matched_volume = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
         let total_pool = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
         let total_lp_shares = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
-        let pool_count = data[pos] as usize; pos += 1;
-        if data.len() < pos + pool_count * 8 { return Err(ContractError::IoError("Market: data too short for outcome_pools".into())); }
+        let pool_count = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize(); pos += 4;
+        if data.len() < pos.saturating_add(pool_count.saturating_mul(8)) { return Err(ContractError::IoError("Market: data too short for outcome_pools".into())); }
         let mut outcome_pools = Vec::with_capacity(pool_count);
         for _ in 0..pool_count { outcome_pools.push(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())); pos += 8; }
         if data.len() < pos + 4 + 4 + 8 + 1 + 1 + 8 + 32 { return Err(ContractError::IoError("Market: data too short for trailing fields".into())); }
@@ -1451,14 +1534,15 @@ impl CancelOrderUpdateV1 {
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ResolveMarketUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(73 + self.market.encode().len());
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let m = self.market.encode()?;
+        let mut b = Vec::with_capacity(73 + m.len());
         b.extend_from_slice(&self.market_id.to_repr());
         b.push(self.winning_outcome);
         b.extend_from_slice(&self.resolved_at_block.to_le_bytes());
         b.extend_from_slice(&self.nullifier.to_repr());
-        b.extend_from_slice(&self.market.encode());
-        b
+        b.extend_from_slice(&m);
+        Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 73 { return Err(ContractError::IoError(format!("ResolveMarketUpdateV1: expected at least 73 bytes, got {}", data.len()))); }
@@ -1496,26 +1580,29 @@ impl ClaimWinningsUpdateV1 {
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SettleMarketUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(56 + self.match_ids.len() * 32 + self.matches.len() * 167 + self.market.encode().len());
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let mb = self.market.encode()?;
+        let n = SerializedLen::try_from_len(self.match_ids.len())?;
+        let mut b = Vec::with_capacity(60 + self.match_ids.len() * 32 + self.matches.len() * 167 + mb.len());
         b.extend_from_slice(&self.market_id.to_repr());
-        b.push(self.match_ids.len() as u8);
+        b.extend_from_slice(&n.to_le_bytes());
         for id in &self.match_ids { b.extend_from_slice(&id.to_repr()); }
         b.extend_from_slice(&self.settled_count.to_le_bytes());
         b.extend_from_slice(&self.total_payout.to_le_bytes());
         b.extend_from_slice(&self.total_commission.to_le_bytes());
         for m in &self.matches { b.extend_from_slice(&m.encode()); }
-        b.extend_from_slice(&self.market.encode());
-        b
+        b.extend_from_slice(&mb);
+        Ok(b)
     }
+    /// market_id(32) + count(4) + 8 + 8 + 8 is the floor: 60.
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 56 { return Err(ContractError::IoError(format!("SettleMarketUpdateV1: expected at least 56 bytes, got {}", data.len()))); }
+        if data.len() < 60 { return Err(ContractError::IoError(format!("SettleMarketUpdateV1: expected at least 60 bytes, got {}", data.len()))); }
         let market_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SettleMarketUpdateV1: invalid market_id".into()))?;
-        let count = data[32] as usize;
-        if data.len() < 57 + count * 32 + count * 167 { return Err(ContractError::IoError(format!("SettleMarketUpdateV1: data too short for {} matches", count))); }
+        let count = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize();
+        if data.len() < count.saturating_mul(32 + 167).saturating_add(60) { return Err(ContractError::IoError(format!("SettleMarketUpdateV1: data too short for {} matches", count))); }
         let mut match_ids = Vec::with_capacity(count);
-        for i in 0..count { let s = 33 + i * 32; match_ids.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[s..s+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError(format!("SettleMarketUpdateV1: invalid match_id[{}]", i)))?); }
-        let pos = 33 + count * 32;
+        for i in 0..count { let s = 36 + i * 32; match_ids.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[s..s+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError(format!("SettleMarketUpdateV1: invalid match_id[{}]", i)))?); }
+        let pos = 36 + count * 32;
         let settled_count = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap());
         let total_payout = u64::from_le_bytes(data[pos+8..pos+16].try_into().unwrap());
         let total_commission = u64::from_le_bytes(data[pos+16..pos+24].try_into().unwrap());
@@ -1529,16 +1616,25 @@ impl SettleMarketUpdateV1 {
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CreateMarketUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let outcomes_bytes: usize = self.outcomes.iter().map(|s| 1 + s.len()).sum();
-        let cap = 107 + self.description.len() + outcomes_bytes;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let dl = SerializedLen::try_from_len(self.description.len())?;
+        let ol = SerializedLen::try_from_len(self.outcomes.len())?;
+        let outcomes_bytes: usize = self
+            .outcomes
+            .iter()
+            .map(|s| SerializedLen::ENCODED_SIZE + s.len())
+            .sum();
+        let cap = 197 + self.description.len() + outcomes_bytes;
         let mut b = Vec::with_capacity(cap);
         b.extend_from_slice(&self.market_id.to_repr());
         b.extend_from_slice(&self.creator.to_bytes());
-        b.push(self.description.len() as u8);
+        b.extend_from_slice(&dl.to_le_bytes());
         b.extend_from_slice(self.description.as_bytes());
-        b.push(self.outcomes.len() as u8);
-        for s in &self.outcomes { b.push(s.len() as u8); b.extend_from_slice(s.as_bytes()); }
+        b.extend_from_slice(&ol.to_le_bytes());
+        for s in &self.outcomes {
+            b.extend_from_slice(&SerializedLen::try_from_len(s.len())?.to_le_bytes());
+            b.extend_from_slice(s.as_bytes());
+        }
         b.extend_from_slice(&self.oracle_id.to_repr());
         b.extend_from_slice(&self.commission_bp.to_le_bytes());
         b.push(self.market_type as u8);
@@ -1548,26 +1644,31 @@ impl CreateMarketUpdateV1 {
         b.extend_from_slice(&self.instance_seed);
         b.extend_from_slice(&self.nullifier.to_repr());
         b.extend_from_slice(&self.created_at.to_le_bytes());
-        b
+        Ok(b)
     }
+    /// An empty description with no outcomes is the minimum: 32 + 32 + 4 + 4 + 125 = 197.
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 107 { return Err(ContractError::IoError(format!("CreateMarketUpdateV1: expected at least 107 bytes, got {}", data.len()))); }
+        if data.len() < 197 { return Err(ContractError::IoError(format!("CreateMarketUpdateV1: expected at least 197 bytes, got {}", data.len()))); }
         let market_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateMarketUpdateV1: invalid market_id".into()))?;
         let creator = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateMarketUpdateV1: invalid creator: {}", e)))?;
-        let desc_len = data[64] as usize;
-        if data.len() < 65 + desc_len { return Err(ContractError::IoError("CreateMarketUpdateV1: data too short for description".into())); }
-        let description = String::from_utf8(data[65..65+desc_len].to_vec()).map_err(|e| ContractError::IoError(format!("CreateMarketUpdateV1: invalid description: {}", e)))?;
-        let pos = 65 + desc_len;
-        let out_count = data[pos] as usize;
-        let mut p = pos + 1;
+        let desc_len = SerializedLen::from_le_bytes(data[64..68].try_into().unwrap()).to_usize();
+        let pos = desc_len.saturating_add(68);
+        if data.len() < pos.saturating_add(4) { return Err(ContractError::IoError("CreateMarketUpdateV1: data too short for description".into())); }
+        let description = String::from_utf8(data[68..pos].to_vec()).map_err(|e| ContractError::IoError(format!("CreateMarketUpdateV1: invalid description: {}", e)))?;
+        let out_count = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize();
+        let mut p = pos.saturating_add(4);
         let mut outcomes = Vec::with_capacity(out_count);
         for _ in 0..out_count {
-            if data.len() < p + 1 { return Err(ContractError::IoError("CreateMarketUpdateV1: outcome data truncated".into())); }
-            let slen = data[p] as usize; p += 1;
+            if data.len() < p.saturating_add(4) { return Err(ContractError::IoError("CreateMarketUpdateV1: outcome data truncated".into())); }
+            let slen = SerializedLen::from_le_bytes(data[p..p+4].try_into().unwrap()).to_usize();
+            p = p.saturating_add(4);
+            // The old reader sliced `data[p..p+slen]` guarded only by the *one*-byte check above,
+            // so a length claiming past the end panicked instead of erroring.
+            if data.len() < p.saturating_add(slen) { return Err(ContractError::IoError("CreateMarketUpdateV1: outcome data truncated".into())); }
             outcomes.push(String::from_utf8(data[p..p+slen].to_vec()).map_err(|e| ContractError::IoError(format!("CreateMarketUpdateV1: invalid outcome: {}", e)))?);
-            p += slen;
+            p = p.saturating_add(slen);
         }
-        if data.len() < p + 125 { return Err(ContractError::IoError("CreateMarketUpdateV1: data too short for tail".into())); }
+        if data.len() < p.saturating_add(125) { return Err(ContractError::IoError("CreateMarketUpdateV1: data too short for tail".into())); }
         let oracle_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[p..p+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateMarketUpdateV1: invalid oracle_id".into()))?; p += 32;
         let commission_bp = u32::from_le_bytes(data[p..p+4].try_into().unwrap()); p += 4;
         let market_type = MarketType::try_from(data[p])?; p += 1;
@@ -1666,14 +1767,15 @@ impl MatchOrdersUpdateV1 {
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl BuyPositionUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(153 + self.market.encode().len());
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let mb = self.market.encode()?;
+        let mut b = Vec::with_capacity(153 + mb.len());
         b.extend_from_slice(&self.position_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr());
         b.extend_from_slice(&self.owner.to_bytes()); b.push(self.outcome);
         b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.payout.to_le_bytes());
         b.extend_from_slice(&self.created_at.to_le_bytes()); b.extend_from_slice(&self.instance_seed);
-        b.extend_from_slice(&self.nullifier.to_repr()); b.extend_from_slice(&self.market.encode());
-        b
+        b.extend_from_slice(&self.nullifier.to_repr()); b.extend_from_slice(&mb);
+        Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 185 { return Err(ContractError::IoError(format!("BuyPositionUpdateV1: expected at least 185 bytes, got {}", data.len()))); }
@@ -1692,14 +1794,15 @@ impl BuyPositionUpdateV1 {
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl AddLiquidityUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(160 + self.market.encode().len());
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let mb = self.market.encode()?;
+        let mut b = Vec::with_capacity(160 + mb.len());
         b.extend_from_slice(&self.lp_share_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr());
         b.extend_from_slice(&self.provider.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes());
         b.extend_from_slice(&self.shares_minted.to_le_bytes()); b.extend_from_slice(&self.fees_earned.to_le_bytes());
         b.extend_from_slice(&self.created_at.to_le_bytes()); b.extend_from_slice(&self.instance_seed);
-        b.extend_from_slice(&self.nullifier.to_repr()); b.extend_from_slice(&self.market.encode());
-        b
+        b.extend_from_slice(&self.nullifier.to_repr()); b.extend_from_slice(&mb);
+        Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 192 { return Err(ContractError::IoError(format!("AddLiquidityUpdateV1: expected at least 192 bytes, got {}", data.len()))); }
@@ -1718,14 +1821,15 @@ impl AddLiquidityUpdateV1 {
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RemoveLiquidityUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(120 + 154 + self.market.encode().len());
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let mb = self.market.encode()?;
+        let mut b = Vec::with_capacity(120 + 154 + mb.len());
         b.extend_from_slice(&self.market_id.to_repr()); b.extend_from_slice(&self.lp_share_id.to_repr());
         b.extend_from_slice(&self.provider.to_bytes()); b.extend_from_slice(&self.shares_burned.to_le_bytes());
         b.extend_from_slice(&self.payout.to_le_bytes()); b.extend_from_slice(&self.fees_withdrawn.to_le_bytes());
         b.extend_from_slice(&self.nullifier.to_repr()); b.extend_from_slice(&self.lp_share.encode());
-        b.extend_from_slice(&self.market.encode());
-        b
+        b.extend_from_slice(&mb);
+        Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 306 { return Err(ContractError::IoError(format!("RemoveLiquidityUpdateV1: expected at least 306 bytes, got {}", data.len()))); }
@@ -1770,7 +1874,7 @@ impl dwow_serial::Decodable for ResolveMarketParamsV1 { fn decode<D: std::io::Re
 impl ResolveMarketParamsV1 { pub fn encode(&self) -> Vec<u8> { let sig = self.oracle_signature.encode(); let mut b = Vec::with_capacity(65+sig.len()); b.extend_from_slice(&self.market_id.to_repr()); b.push(self.winning_outcome); b.extend_from_slice(&self.oracle_pub.to_bytes()); b.extend_from_slice(&sig); b.extend_from_slice(&self.nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 161 { return Err(ContractError::IoError("ResolveMarketParamsV1: too short".into())); } let sig = Signature::decode(&data[65..129]).ok_or_else(|| ContractError::IoError("ResolveMarketParamsV1: invalid oracle_signature".into()))?; Ok(ResolveMarketParamsV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ResolveMarketParamsV1: invalid market_id".into()))?, winning_outcome: data[32], oracle_pub: PublicKey::from_bytes(data[33..65].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ResolveMarketParamsV1: invalid oracle_pub: {}", e)))?, oracle_signature: sig, nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[129..161].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ResolveMarketParamsV1: invalid nullifier".into()))? }) } }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl SettleMarketParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33+self.match_ids.len()*32); b.extend_from_slice(&self.market_id.to_repr()); b.push(self.match_ids.len() as u8); for id in &self.match_ids { b.extend_from_slice(&id.to_repr()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 33 { return Err(ContractError::IoError("SettleMarketParamsV1: too short".into())); } let count = data[32] as usize; if data.len() != 33+count*32 { return Err(ContractError::IoError(format!("SettleMarketParamsV1: expected {} bytes, got {}", 33+count*32, data.len()))); } let mut match_ids = Vec::with_capacity(count); for i in 0..count { match_ids.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[33+i*32..33+(i+1)*32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SettleMarketParamsV1: invalid match_id".into()))?); } Ok(SettleMarketParamsV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SettleMarketParamsV1: invalid market_id".into()))?, match_ids }) } }
+impl SettleMarketParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.match_ids.len())?; let mut b = Vec::with_capacity(36+self.match_ids.len()*32); b.extend_from_slice(&self.market_id.to_repr()); b.extend_from_slice(&n.to_le_bytes()); for id in &self.match_ids { b.extend_from_slice(&id.to_repr()); } Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 36 { return Err(ContractError::IoError("SettleMarketParamsV1: too short".into())); } let count = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize(); if data.len() != count.saturating_mul(32).saturating_add(36) { return Err(ContractError::IoError(format!("SettleMarketParamsV1: expected {} bytes, got {}", count.saturating_mul(32).saturating_add(36), data.len()))); } let mut match_ids = Vec::with_capacity(count); for i in 0..count { match_ids.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[36+i*32..36+(i+1)*32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SettleMarketParamsV1: invalid match_id".into()))?); } Ok(SettleMarketParamsV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SettleMarketParamsV1: invalid market_id".into()))?, match_ids }) } }
 
 impl dwow_serial::Encodable for CancelOrderParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CancelOrderParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
