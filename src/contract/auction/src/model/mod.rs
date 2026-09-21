@@ -45,6 +45,7 @@
 //! ```
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey},
     error::ContractError,
     pasta::pallas,
@@ -567,11 +568,12 @@ pub struct CreateAuctionParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
-impl dwow_serial::Encodable for CreateAuctionParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CreateAuctionParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateAuctionParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateAuctionParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 266 + self.merkle_proof.len() * 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.merkle_proof.len())?;
+        let cap = 244 + self.merkle_proof.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.seller_pubkey.to_bytes());
         buf.extend_from_slice(&self.item_commitment.to_repr());
@@ -580,16 +582,17 @@ impl CreateAuctionParamsV1 {
         buf.extend_from_slice(&self.deadline_block.to_le_bytes());
         buf.extend_from_slice(&self.auction_id.to_repr());
         buf.extend_from_slice(&self.seller_commitment.to_repr());
-        buf.push(self.merkle_proof.len() as u8);
+        buf.extend_from_slice(&n.to_le_bytes());
         for p in &self.merkle_proof { buf.extend_from_slice(&p.to_repr()); }
         buf.extend_from_slice(&self.merkle_root.to_repr());
         buf.extend_from_slice(&self.instance_seed);
-        buf
+        Ok(buf)
     }
 
+    /// The floor is the empty proof: 176 + 4 + 32(root) + 32(seed) = 244.
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 234 { return Err(ContractError::IoError("CreateAuctionParamsV1: too short".into())); }
+        if data.len() < 244 { return Err(ContractError::IoError("CreateAuctionParamsV1: too short".into())); }
         let seller_pubkey = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateAuctionParamsV1: invalid seller_pubkey: {}", e)))?;
         let item_commitment = read_base(&data[32..64])?;
         let reserve_price = u64::from_le_bytes(data[64..72].try_into().unwrap());
@@ -597,11 +600,11 @@ impl CreateAuctionParamsV1 {
         let deadline_block = u64::from_le_bytes(data[104..112].try_into().unwrap());
         let auction_id = read_base(&data[112..144])?;
         let seller_commitment = read_base(&data[144..176])?;
-        let proof_count = data[176] as usize;
-        let mp_end = 177 + proof_count * 32;
-        if data.len() < mp_end + 64 { return Err(ContractError::IoError("CreateAuctionParamsV1: merkle_proof truncated".into())); }
+        let proof_count = SerializedLen::from_le_bytes(data[176..180].try_into().unwrap()).to_usize();
+        let mp_end = proof_count.saturating_mul(32).saturating_add(180);
+        if data.len() < mp_end.saturating_add(64) { return Err(ContractError::IoError("CreateAuctionParamsV1: merkle_proof truncated".into())); }
         let mut merkle_proof = Vec::with_capacity(proof_count);
-        for i in 0..proof_count { merkle_proof.push(read_base(&data[177 + i*32..177 + (i+1)*32])?); }
+        for i in 0..proof_count { merkle_proof.push(read_base(&data[180 + i*32..180 + (i+1)*32])?); }
         let merkle_root = read_base(&data[mp_end..mp_end+32])?;
         let instance_seed: [u8; 32] = data[mp_end+32..mp_end+64].try_into().unwrap();
         Ok(CreateAuctionParamsV1 { seller_pubkey, item_commitment, reserve_price, asset_id, deadline_block, auction_id, seller_commitment, merkle_proof, merkle_root, instance_seed })

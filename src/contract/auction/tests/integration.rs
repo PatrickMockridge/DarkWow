@@ -265,6 +265,39 @@ fn test_create_auction_params_encoding() {
     assert_eq!(decoded.deadline_block, params.deadline_block);
 }
 
+/// The proof count is a `SerializedLen`, and both `merkle_root` and `instance_seed` sit *after* the
+/// proof — so a truncated count moves them. 256 elements is the smallest count whose `u8` encoding
+/// is `0`.
+///
+/// The test above asserts only the fields in front of the proof, which is why the old width could
+/// not be seen from it.
+#[test]
+fn test_create_auction_proof_count_is_not_a_byte() {
+    let proof: Vec<pallas::Base> = (1..=256u64).map(|i| pallas::Base::from(i)).collect();
+    let params = CreateAuctionParamsV1 {
+        seller_pubkey: make_pubkey(3),
+        item_commitment: pallas::Base::from(11),
+        reserve_price: 4242,
+        asset_id: pallas::Base::one(),
+        deadline_block: 7777,
+        auction_id: pallas::Base::from(12),
+        seller_commitment: pallas::Base::from(13),
+        merkle_proof: proof.clone(),
+        merkle_root: pallas::Base::from(14),
+        instance_seed: [6u8; 32],
+    };
+
+    let encoded = params.encode().unwrap();
+    assert_eq!(encoded.len(), 244 + 256 * 32);
+
+    let decoded = CreateAuctionParamsV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.merkle_proof.len(), 256);
+    assert_eq!(decoded.merkle_proof[255], proof[255]);
+    assert_eq!(decoded.merkle_root, params.merkle_root);
+    assert_eq!(decoded.instance_seed, [6u8; 32]);
+    assert_eq!(decoded.deadline_block, 7777);
+}
+
 #[test]
 fn test_create_auction_update_encoding() {
     let update = CreateAuctionUpdateV1 {

@@ -166,7 +166,7 @@ impl AuctionHarness {
         };
 
         let mut call_data = vec![0x00];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
         Ok(CreateAuctionResult { call_data, auction_id: public_inputs.auction_id, proof, public_inputs })
     }
