@@ -263,7 +263,10 @@ pub fn build_fee_and_finalize_tx(
     // FeeV3 call data via nominal MassBalanceFeeV3CallData (type-system.md §8.2.3, §10.5).
     // The selector (0x08) is unchanged; the payload is now FeeParamsV3.
     // This is the SINGLE constructor — no raw vec![0x08u8] anywhere.
-    let fee_call_data = MassBalanceFeeV3CallData::new(fee_v3_result.params.encode()).encode();
+    let fee_call_data =
+        MassBalanceFeeV3CallData::new(
+            fee_v3_result.params.encode().map_err(|e| Error::ContractError(format!("{e}")))?,
+        ).encode();
 
     let fee_call = ContractCall {
         contract_id: *NATIVE_TOKEN_CONTRACT_ID,

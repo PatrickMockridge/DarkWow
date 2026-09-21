@@ -230,7 +230,7 @@ impl FeeV3CallBuilder {
         };
 
         // Serialize call data: [0x08][FeeParamsV3 encoded]
-        let encoded_params = params.encode();
+        let encoded_params = params.encode()?;
         let mut call_data = Vec::with_capacity(1 + encoded_params.len());
         call_data.push(0x08u8);
         call_data.extend_from_slice(&encoded_params);

@@ -101,7 +101,7 @@ impl NativeTokenHarness {
         let debris = BurnCallBuilder { inputs, burn_zkbin, burn_pk }.build()?;
 
         let mut call_data = vec![0x02u8]; // BurnV1
-        call_data.extend_from_slice(&debris.params.encode());
+        call_data.extend_from_slice(&debris.params.encode()?);
 
         Ok(BurnResult {
             call_data,
@@ -174,7 +174,7 @@ impl NativeTokenHarness {
 
         // FeeV3 call data: [0x08][FeeParamsV3 encoded] — plaintext fee
         let mut call_data = vec![0x08u8];
-        call_data.extend_from_slice(&result.params.encode());
+        call_data.extend_from_slice(&result.params.encode()?);
 
         Ok(FeeV3Result { call_data, params: result.params, proofs: result.proofs })
     }
@@ -239,7 +239,7 @@ impl NativeTokenHarness {
             builder.build(&mut rng)?
         };
         let mut call_data = vec![0x03u8]; // TransferV1
-        call_data.extend_from_slice(&debris.params.encode());
+        call_data.extend_from_slice(&debris.params.encode()?);
         Ok(TransferResult { call_data, proofs: debris.proofs, nullifier: debris.params.inputs[0].nullifier })
     }
 
@@ -305,7 +305,7 @@ impl NativeTokenHarness {
             tx_nonce: debris.params.tx_nonce,
         };
         let mut call_data = vec![0x04u8]; // SpendV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
         Ok(SpendResult { call_data, proofs: debris.proofs, nullifier: params.input.nullifier })
     }
 }

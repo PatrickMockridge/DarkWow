@@ -321,7 +321,7 @@ pub async fn build_linear_coinbase_effective(
     // Selector byte 0x05 = NativeTokenFunction::PoWRewardV1.
     let pow_reward_selector: u8 = dwow_native_token_contract::NativeTokenFunction::PoWRewardV1 as u8;
     let mut pow_reward_call_data = vec![pow_reward_selector];
-    pow_reward_call_data.extend_from_slice(&debris.params.encode());
+    pow_reward_call_data.extend_from_slice(&debris.params.encode()?);
     let pow_reward_call = dwow_chain::ContractCall {
         contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
         data: pow_reward_call_data,
@@ -426,7 +426,7 @@ pub fn build_fee_collect_tx(
 
     let nullifier = debris.params.nullifier;
     let call_data = {
-        let serialized = debris.params.encode();
+        let serialized = debris.params.encode()?;
         let mut buf = vec![dwow_native_token_contract::NativeTokenFunction::FeeCollectV1 as u8];
         buf.extend_from_slice(&serialized);
         buf
@@ -495,7 +495,7 @@ pub fn build_uncle_mint_tx(
     )?;
 
     let call_data = {
-        let serialized = debris.params.encode();
+        let serialized = debris.params.encode()?;
         let mut buf = vec![dwow_native_token_contract::NativeTokenFunction::UncleMintV1 as u8];
         buf.extend_from_slice(&serialized);
         buf

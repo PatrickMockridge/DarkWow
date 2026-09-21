@@ -1336,7 +1336,7 @@ impl Dww {
         // deserialize(params) and the balance checker parse. Direct encode,
         // no length prefix.
         let mut data = vec![0x03u8];
-        data.extend_from_slice(&debris.params.encode());
+        data.extend_from_slice(&debris.params.encode().map_err(|e| Error::ContractError(format!("{e}")))?);
 
         let leaf = dwow_core::tx::ContractCallLeaf {
             call: dwow_sdk::tx::ContractCall {

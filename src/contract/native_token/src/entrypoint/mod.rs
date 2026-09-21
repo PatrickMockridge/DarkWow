@@ -624,24 +624,24 @@ fn decode_fee_update(data: &[u8]) -> Result<FeeUpdate, ContractError> {
     FeeUpdate::decode(data)
 }
 
-fn encode_burn_update_v1(update: &BurnUpdateV1) -> Vec<u8> {
-    let inner = update.encode();
+fn encode_burn_update_v1(update: &BurnUpdateV1) -> Result<Vec<u8>, ContractError> {
+    let inner = update.encode()?;
     let mut buf = Vec::with_capacity(1 + inner.len());
     buf.push(NativeTokenFunction::BurnV1 as u8);
     buf.extend_from_slice(&inner);
-    buf
+    Ok(buf)
 }
 
 fn decode_burn_update_v1(data: &[u8]) -> Result<BurnUpdateV1, ContractError> {
     BurnUpdateV1::decode(data)
 }
 
-fn encode_transfer_update_v1(update: &TransferUpdateV1) -> Vec<u8> {
-    let inner = update.encode();
+fn encode_transfer_update_v1(update: &TransferUpdateV1) -> Result<Vec<u8>, ContractError> {
+    let inner = update.encode()?;
     let mut buf = Vec::with_capacity(1 + inner.len());
     buf.push(NativeTokenFunction::TransferV1 as u8);
     buf.extend_from_slice(&inner);
-    buf
+    Ok(buf)
 }
 
 fn decode_transfer_update_v1(data: &[u8]) -> Result<TransferUpdateV1, ContractError> {
@@ -815,7 +815,7 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     let update = TransferUpdateV1 { nullifiers: new_nullifiers, commitments: new_commitments };
     msg!("[native_token::transfer_v1] Transfer valid");
-    wasm::util::set_return_data(&encode_transfer_update_v1(&update))
+    wasm::util::set_return_data(&encode_transfer_update_v1(&update)?)
 }
 
 // ============================================================================
@@ -906,7 +906,7 @@ fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     let update = BurnUpdateV1 { nullifiers: new_nullifiers };
     msg!("[native_token::burn_v1] Burn valid");
-    wasm::util::set_return_data(&encode_burn_update_v1(&update))
+    wasm::util::set_return_data(&encode_burn_update_v1(&update)?)
 }
 
 // ============================================================================

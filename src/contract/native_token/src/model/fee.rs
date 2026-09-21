@@ -12,7 +12,7 @@
 //! Spec: fee-spec.md §12.4.
 
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
-use dwow_sdk::blockchain::{FeeAmount, FeeTier};
+use dwow_sdk::blockchain::{FeeAmount, FeeTier, SerializedLen};
 use dwow_sdk::crypto::poseidon_hash;
 use crate::error::NativeTokenError;
 use dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING;
@@ -89,7 +89,7 @@ pub struct FeeParamsV3 {
 
 impl dwow_serial::Encodable for FeeParamsV3 {
     fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
-        let b = self.encode();
+        let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?;
         w.write_all(&b)?;
         Ok(b.len())
     }
@@ -104,9 +104,9 @@ impl dwow_serial::Decodable for FeeParamsV3 {
 }
 
 impl FeeParamsV3 {
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let input_bytes = self.input.encode();
-        let output_bytes = self.output.encode();
+        let output_bytes = self.output.encode()?;
         let mut buf = Vec::with_capacity(input_bytes.len() + output_bytes.len() + 8 + 1 + 32 + 32 + 32);
         buf.extend_from_slice(&input_bytes);
         buf.extend_from_slice(&output_bytes);
@@ -119,21 +119,21 @@ impl FeeParamsV3 {
         // fee_v3_tx_binding (32 bytes) + tx_nonce (32 bytes)
         buf.extend_from_slice(&self.fee_v3_tx_binding.inner().to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf
+        Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         fn parse_err(_field: &str) -> ContractError {
             NativeTokenError::ParseError.into()
         }
-        if data.len() < Input::ENCODED_SIZE + 130 {
+        if data.len() < Input::ENCODED_SIZE + 132 {
             return Err(parse_err("FeeParamsV3: too short for input+output"));
         }
         let input = Input::decode(read_slice(data, 0, Input::ENCODED_SIZE)?)?;
         let input_len = Input::ENCODED_SIZE;
-        let output_len = 130 + u16::from_le_bytes(
-            read_field::<2>(data, input_len + 128)?
-        ) as usize;
+        let output_len = 132 + SerializedLen::from_le_bytes(
+            read_field::<4>(data, input_len + 128)?
+        ).to_usize();
         let output = Output::decode(read_slice(data, input_len, output_len)?)?;
         let mut pos = input_len + output_len;
 

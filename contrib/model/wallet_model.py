@@ -4398,15 +4398,15 @@ def build_transfer(wallet_db: WalletDb, asset_id_str: str, amount: int,
     # patterns — so the AEAD note bytes must be embedded in the call data.
     func_code = 0x03  # NativeToken TransferV1
     call_data = bytes([func_code])
-    # TransferParamsV1: num_inputs (u8), then each Input (simplified)
-    call_data += b'\x01'  # 1 input
+    # TransferParamsV1: num_inputs (SerializedLen — fixed u32 LE), then each Input (simplified)
+    call_data += (1).to_bytes(4, 'little')  # 1 input
     call_data += input_cap.commitment.encode()[:32] if hasattr(input_cap.commitment, 'encode') else b'\x00' * 32  # value_commit placeholder
     call_data += int(0).to_bytes(32, 'little')  # token_commit placeholder (native: poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, 0, 0]))
     call_data += base58.b58decode(input_nf)[:32].rjust(32, b'\x00')  # nullifier
     call_data += b'\x00' * 96  # merkle_root + user_data_enc + spend_hook + sig_pub
-    # Outputs: num_outputs (u8), then each Output {commitment(32) + AeadEncryptedNote}
+    # Outputs: num_outputs (SerializedLen — fixed u32 LE), then each Output {commitment(32) + AeadEncryptedNote}
     num_outputs = 2 if (change_value > 0 and not half_split) else 1
-    call_data += bytes([num_outputs])
+    call_data += num_outputs.to_bytes(4, 'little')
     call_data += b'\x00' * 32  # output[0] commitment placeholder
     call_data += aes_out.encode()
     if change_value > 0 and not half_split:
