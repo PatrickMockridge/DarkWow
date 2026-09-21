@@ -27,8 +27,10 @@ use dwow_dao_escrow_contract::{
     modes::{MODE_ESCROW, MODE_TREASURY, MODE_TREASURY_ENDOWMENT},
     model::{
         DaoEscrow, DaoEscrowBulla, DaoEscrowMode, EnableDrainProtectionParamsV1,
+        CapabilityRequirement,
         EnableDrainProtectionUpdateV1, FeeConfig, InitializeParamsV1, InitializeUpdateV1,
-        Membership, MembershipNote, PayPremiumParamsV1, PayPremiumUpdateV1, UpdateParamsV1,
+        Membership, MembershipNote, PayPremiumParamsV1, PayPremiumUpdateV1,
+        RegisterCapabilityRequirementUpdateV1, UpdateParamsV1,
         UpdateUpdateV1, WithdrawParamsV1, WithdrawUpdateV1,
     },
     DaoEscrowFunction, DAO_ESCROW_CONTRACT_BULLAS_TREE, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE,
@@ -410,4 +412,51 @@ fn test_constants() {
     assert_eq!(DAO_ESCROW_CONTRACT_BULLAS_TREE, "bullas");
     assert_eq!(DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE, "membership");
     assert_eq!(DAO_ESCROW_CONTRACT_ENDOWMENT_TREE, "endowment");
+}
+
+/// `CapabilityRequirement` is **stored state**; its role prefix was a `u8`. A 300-byte role is past
+/// the `u8` bound, and `identity_contract_bulla` and `active` sit *after* the role — they are the
+/// canaries.
+#[test]
+fn test_capability_requirement_role_length_is_not_a_byte() {
+    let requirement = CapabilityRequirement {
+        version: 0,
+        role: vec![b'x'; 300],
+        capability_id: [7u8; 32],
+        identity_contract_bulla: pallas::Base::from(71),
+        active: true,
+    };
+
+    let encoded = requirement.encode().unwrap();
+    assert_eq!(encoded.len(), 70 + 300);
+
+    let decoded = CapabilityRequirement::decode(&encoded).unwrap();
+    assert_eq!(decoded.role.len(), 300);
+    assert_eq!(decoded.capability_id, [7u8; 32]);
+    assert_eq!(decoded.identity_contract_bulla, pallas::Base::from(71));
+    assert!(decoded.active);
+}
+
+/// The same prefix in the register-update struct, where the requirement follows the role.
+#[test]
+fn test_register_capability_requirement_role_length_is_not_a_byte() {
+    let requirement = CapabilityRequirement {
+        version: 0,
+        role: vec![b'y'; 300],
+        capability_id: [8u8; 32],
+        identity_contract_bulla: pallas::Base::from(72),
+        active: false,
+    };
+    let update = RegisterCapabilityRequirementUpdateV1 {
+        dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(73)),
+        role: vec![b'z'; 300],
+        requirement: requirement.clone(),
+    };
+
+    let encoded = update.encode().unwrap();
+    let decoded = RegisterCapabilityRequirementUpdateV1::decode(&encoded).unwrap();
+    assert_eq!(decoded.role.len(), 300);
+    assert_eq!(decoded.requirement.role.len(), 300);
+    assert_eq!(decoded.requirement.identity_contract_bulla, pallas::Base::from(72));
+    assert!(!decoded.requirement.active);
 }

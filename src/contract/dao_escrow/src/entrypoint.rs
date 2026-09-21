@@ -1588,7 +1588,7 @@ fn register_capability_requirement_v1(
     };
 
     msg!("[dao_escrow::register_capability_requirement_v1] Requirement registered");
-    wasm::util::set_return_data(&update.encode())
+    wasm::util::set_return_data(&update.encode()?)
 }
 
 /// RegisterCapabilityRequirementV1 apply - store capability requirement
@@ -1597,7 +1597,7 @@ fn register_capability_requirement_apply_v1(
     update: model::RegisterCapabilityRequirementUpdateV1,
 ) -> ContractResult {
     let caps_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE)?;
-    wasm::db::db_set(caps_db, &update.role, &update.requirement.encode())?;
+    wasm::db::db_set(caps_db, &update.role, &update.requirement.encode()?)?;
     msg!("[dao_escrow::register_capability_requirement_apply_v1] Capability requirement stored");
     Ok(())
 }
@@ -1744,7 +1744,7 @@ if false {
     };
 
     msg!("[dao_escrow::resolve_dispute_v1] Dispute resolved");
-    wasm::util::set_return_data(&update.encode())
+    wasm::util::set_return_data(&update.encode()?)
 }
 
 /// ResolveDisputeV1 apply - store dispute resolution record
@@ -1758,7 +1758,7 @@ fn resolve_dispute_apply_v1(cid: ContractId, update: model::ResolveDisputeUpdate
     }
 
     // Store minimal resolution record keyed by dispute_id
-    let resolution_data = update.encode();
+    let resolution_data = update.encode()?;
     wasm::db::db_set(disputes_db, &update.dispute_id.to_repr(), &resolution_data)?;
     msg!("[dao_escrow::resolve_dispute_apply_v1] Dispute resolution stored");
     Ok(())
@@ -1864,7 +1864,7 @@ fn deactivate_capability_requirement_v1(
     };
 
     msg!("[dao_escrow::deactivate_capability_requirement_v1] Capability requirement deactivation computed");
-    wasm::util::set_return_data(&update.encode())
+    wasm::util::set_return_data(&update.encode()?)
 }
 
 /// DeactivateCapabilityRequirementV1 apply — writes the deactivation to state
@@ -1879,7 +1879,7 @@ fn deactivate_capability_requirement_apply_v1(
         ))?;
     let mut requirement = model::CapabilityRequirement::decode(&req_data)?;
     requirement.active = false;
-    wasm::db::db_set(caps_db, &update.role, &requirement.encode())?;
+    wasm::db::db_set(caps_db, &update.role, &requirement.encode()?)?;
     msg!("[dao_escrow::deactivate_capability_requirement_apply_v1] Capability requirement deactivation written");
     Ok(())
 }
