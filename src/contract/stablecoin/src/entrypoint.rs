@@ -180,6 +180,14 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_set(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &params.promissory_note_contract_id.to_bytes())?;
     wasm::db::db_set(info_db, STABLECOIN_CONTRACT_PURSE_CONTRACT_ID, &PURSE_CONTRACT_ID.to_bytes())?;
 
+    // NOTE (OBL-Z14): the governance authority key is deliberately NOT stored here
+    // yet. `InitializeParams.deployer_auth` is `poseidon_hash([7, deployer_secret,
+    // contract_salt])`, while a report's identity is a curve point derived as
+    // `ec_mul_base(secret, NULLIFIER_K)` — Orchard's nullifier base, not the
+    // standard generator. Storing the hash would give the report check nothing it
+    // could compare against. The shape has to be settled first; see the note in
+    // `process_governance_report_instruction`.
+
     // Initialize total debt and collateral to zero
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &0u64.to_le_bytes())?;
     wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &0u64.to_le_bytes())?;
@@ -471,11 +479,14 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let update_bytes = match func {
         StablecoinFunction::InitializeV1 => {
-            let params = InitializeParams::decode(&self_.data[1..])?;
-            // Store governance pubkey from init params for future UpdateConfig authorization
-            let gov_key_bytes = params.deployer_auth.to_repr();
-            let _update = vec![(STABLECOIN_CONTRACT_GOVERNANCE_PUBKEY_KEY.to_vec(), gov_key_bytes.to_vec())];
-            msg!("[stablecoin::process_instruction] InitializeV1: stored governance pubkey");
+            // InitializeV1 persists nothing here: the config — including the
+            // governance authority key — is written once at deploy time by
+            // `init_contract`, the only path permitted to write outside apply.
+            // This arm previously built that key into an update, never returned
+            // it, and logged "stored governance pubkey". Nothing was stored, which
+            // is why OBL-Z14 had no key to check a report's reporter against.
+            // The decode still validates the params are well-formed.
+            let _params = InitializeParams::decode(&self_.data[1..])?;
             vec![]
         }
         StablecoinFunction::OpenPositionV1 => process_open_position_instruction(cid, call_idx, calls)?,
@@ -1337,6 +1348,15 @@ fn process_governance_report_instruction(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = GovernanceReportParams::decode(&self_.data[1..])?;
+
+    // OBL-Z14 (reporter attribution) is NOT yet enforced here. The stored
+    // authority is `poseidon_hash([7, deployer_secret, contract_salt])` — a hash —
+    // while this report's identity is a curve point, and the circuit's own
+    // derivation (`ec_mul_base(reporter_secret, NULLIFIER_K)`) differs from the
+    // client's (`PublicKey::from_secret(reporter_secret)`). Until those three
+    // agree on one shape there is no comparison to write: any check here would be
+    // between values that cannot be equal. See
+    // `doc/src/arch/verification-hazop.md` OBL-Z14 and its remedy section.
 
     // Read on-chain config DB values
     let config_db = wasm::db::db_lookup(cid, "config")?;
