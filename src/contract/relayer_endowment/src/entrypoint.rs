@@ -736,7 +736,7 @@ fn process_settle_fees_instruction(
     let update = SettleFeesUpdateV1 { account, deployments };
 
     msg!("[relayer_endowment::settle_fees] Settled fees to {} deployments", update.deployments.len());
-    Ok(update.encode())
+    update.encode()
 }
 
 fn apply_settle_fees_update(cid: ContractId, update: SettleFeesUpdateV1) -> ContractResult {

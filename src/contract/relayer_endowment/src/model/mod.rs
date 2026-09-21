@@ -24,6 +24,7 @@
 //! Data structures for relayer_endowment contract calls
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{pasta_prelude::PrimeField, PublicKey},
     error::ContractError,
     pasta::pallas,
@@ -511,33 +512,37 @@ pub struct SettleFeesParamsV1 {
     pub signature_public: PublicKey,
 }
 
-impl dwow_serial::Encodable for SettleFeesParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SettleFeesParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettleFeesParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SettleFeesParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 41 + self.allocations.len() * FeeAllocation::ENCODED_SIZE;
+    /// relayer_pub(32) + total_fees(8) + allocation count(4) + signature_public(32) + allocations.
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.allocations.len())?;
+        let cap = 76 + self.allocations.len() * FeeAllocation::ENCODED_SIZE;
         let mut b = Vec::with_capacity(cap);
         b.extend_from_slice(&self.relayer_pub.to_bytes());
         b.extend_from_slice(&self.total_fees.to_le_bytes());
-        b.push(self.allocations.len() as u8);
+        b.extend_from_slice(&n.to_le_bytes());
         b.extend_from_slice(&self.signature_public.to_bytes());
         for alloc in &self.allocations {
             b.extend_from_slice(&alloc.encode());
         }
-        b
+        Ok(b)
     }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 105 {
+        // 32(relayer_pub) + 8(total_fees) + 4(count) + 32(signature_public) = 76
+        if data.len() < 76 {
             return Err(ContractError::IoError(format!(
-                "SettleFeesParamsV1: expected at least 105 bytes, got {}",
+                "SettleFeesParamsV1: expected at least 76 bytes, got {}",
                 data.len()
             )));
         }
         let relayer_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap())?;
         let total_fees = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let alloc_count = data[40] as usize;
-        let header = 73usize; // 32 + 8 + 1 + 32
+        let alloc_count =
+            SerializedLen::from_le_bytes(data[40..44].try_into().unwrap()).to_usize();
+        let header = 76usize; // 32 + 8 + 4 + 32
         let expected = header + alloc_count * FeeAllocation::ENCODED_SIZE;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
@@ -545,7 +550,7 @@ impl SettleFeesParamsV1 {
                 expected, data.len()
             )));
         }
-        let signature_public = PublicKey::from_bytes(data[41..73].try_into().unwrap())?;
+        let signature_public = PublicKey::from_bytes(data[44..76].try_into().unwrap())?;
         let mut allocations = Vec::with_capacity(alloc_count);
         for i in 0..alloc_count {
             let start = header + i * FeeAllocation::ENCODED_SIZE;
@@ -564,25 +569,28 @@ pub struct SettleFeesUpdateV1 {
     pub deployments: Vec<EndowmentDeployment>,
 }
 
-impl dwow_serial::Encodable for SettleFeesUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SettleFeesUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SettleFeesUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SettleFeesUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = RelayerEndowmentAccount::ENCODED_SIZE + 1 +
-            self.deployments.len() * (1 + EndowmentDeployment::ENCODED_SIZE);
+    /// account(ENCODED_SIZE) + deployment count(4) + per deployment: length(4) + bytes.
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.deployments.len())?;
+        let cap = RelayerEndowmentAccount::ENCODED_SIZE + 4 +
+            self.deployments.len() * (4 + EndowmentDeployment::ENCODED_SIZE);
         let mut b = Vec::with_capacity(cap);
         b.extend_from_slice(&self.account.encode());
-        b.push(self.deployments.len() as u8);
+        b.extend_from_slice(&n.to_le_bytes());
         for deployment in &self.deployments {
             let db = deployment.encode();
-            b.push(db.len() as u8);
+            b.extend_from_slice(&SerializedLen::try_from_len(db.len())?.to_le_bytes());
             b.extend_from_slice(&db);
         }
-        b
+        Ok(b)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let header = RelayerEndowmentAccount::ENCODED_SIZE + 1;
+        let header = RelayerEndowmentAccount::ENCODED_SIZE + 4;
         if data.len() < header {
             return Err(ContractError::IoError(format!(
                 "SettleFeesUpdateV1: expected at least {} bytes, got {}",
@@ -590,15 +598,17 @@ impl SettleFeesUpdateV1 {
             )));
         }
         let account = RelayerEndowmentAccount::decode(&data[0..RelayerEndowmentAccount::ENCODED_SIZE])?;
-        let count = data[RelayerEndowmentAccount::ENCODED_SIZE] as usize;
+        let count = SerializedLen::from_le_bytes(
+            data[RelayerEndowmentAccount::ENCODED_SIZE..header].try_into().unwrap(),
+        ).to_usize();
         let mut deployments = Vec::with_capacity(count);
         let mut pos = header;
         for _ in 0..count {
-            if pos >= data.len() {
+            if pos + 4 > data.len() {
                 return Err(ContractError::IoError("SettleFeesUpdateV1: truncated deployment length".into()));
             }
-            let len = data[pos] as usize;
-            pos += 1;
+            let len = SerializedLen::from_le_bytes(data[pos..pos + 4].try_into().unwrap()).to_usize();
+            pos += 4;
             if pos + len > data.len() {
                 return Err(ContractError::IoError("SettleFeesUpdateV1: truncated deployment".into()));
             }

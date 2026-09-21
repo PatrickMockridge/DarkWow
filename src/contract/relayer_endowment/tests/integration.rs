@@ -397,6 +397,57 @@ fn test_settle_fees_update_encoding() {
     assert_eq!(decoded.deployments[1].deployment_id, update.deployments[1].deployment_id);
 }
 
+/// The allocation count is a `SerializedLen` (u32), not a `u8`.
+///
+/// 256 is the smallest vector that exhibits the truncation the old prefix had: `256 as u8 == 0`, so
+/// the encoder wrote a count of zero and every allocation after it landed at an offset the decoder
+/// never reached. The two-allocation fixtures above cannot see this — which is why the round-trips
+/// they perform passed while the format was still wrong.
+#[test]
+fn test_settle_fees_params_count_is_not_a_byte() {
+    let params = SettleFeesParamsV1 {
+        relayer_pub: make_pubkey(1),
+        total_fees: 256,
+        allocations: (0..256u64)
+            .map(|i| FeeAllocation { deployment_id: pallas::Base::from(i + 1), fee_amount: 1 })
+            .collect(),
+        signature_public: make_pubkey(1),
+    };
+
+    let encoded = serialize(&params);
+    // relayer_pub(32) + total_fees(8) + count(4) + signature_public(32) + allocations.
+    assert_eq!(encoded.len(), 76 + 256 * FeeAllocation::ENCODED_SIZE);
+
+    let decoded: SettleFeesParamsV1 = deserialize(&encoded).unwrap();
+    assert_eq!(decoded.allocations.len(), 256);
+    assert_eq!(decoded.total_fees, 256);
+    assert_eq!(decoded.allocations[255].deployment_id, params.allocations[255].deployment_id);
+    assert_eq!(decoded.allocations[255].fee_amount, 1);
+}
+
+/// The deployment count and each deployment's own length are `SerializedLen` (u32), not `u8`.
+///
+/// Two prefixes truncate here — the outer count and the per-deployment length — so this pins the
+/// whole layout against the encoded size as well as the round-trip.
+#[test]
+fn test_settle_fees_update_count_is_not_a_byte() {
+    let deployments: Vec<EndowmentDeployment> =
+        (1..=256u64).map(|i| make_deployment(i, 1, 2, 1000)).collect();
+    let expected = RelayerEndowmentAccount::ENCODED_SIZE
+        + 4
+        + deployments.iter().map(|d| 4 + d.encode().len()).sum::<usize>();
+    let update =
+        SettleFeesUpdateV1 { account: make_account(1, 5000000, 256), deployments };
+
+    let encoded = serialize(&update);
+    assert_eq!(encoded.len(), expected);
+
+    let decoded: SettleFeesUpdateV1 = deserialize(&encoded).unwrap();
+    assert_eq!(decoded.deployments.len(), 256);
+    assert_eq!(decoded.deployments[255].deployment_id, update.deployments[255].deployment_id);
+    assert_eq!(decoded.deployments[255].amount, 1000);
+}
+
 #[test]
 fn test_update_config_params_encoding() {
     let params = UpdateConfigParamsV1 {
