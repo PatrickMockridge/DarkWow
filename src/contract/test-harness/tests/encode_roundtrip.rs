@@ -166,8 +166,12 @@ fn test_box_encode_roundtrip() {
 fn test_multisig_encode_roundtrip() {
     use dwow_multisig_contract::model::{CreateGroupParamsV1, SignParamsV1, FinalizeParamsV1, GroupId};
 
+    // OBL-Z11: a group stores a hiding commitment per member, not a member's public key —
+    // the commitment is what stops a non-member claiming a member's key. Same change gave
+    // SignParamsV1 a `member_commitment` + `nullifier` pair in place of `signer_pub`, and
+    // FinalizeParamsV1 an `approval_commit` + the approvals it counts.
     let cg = CreateGroupParamsV1 {
-        pubkeys: vec![dummy_pubkey(); 3],
+        member_commitments: vec![pallas::Base::from(7u64); 3],
         threshold: 2,
         proof: vec![1, 2],
         tx_binding: pallas::Base::from(99u64),
@@ -178,7 +182,8 @@ fn test_multisig_encode_roundtrip() {
     let sign = SignParamsV1 {
         group_id: GroupId(pallas::Base::from(42u64)),
         message_hash: pallas::Base::from(12345u64),
-        signer_pub: dummy_pubkey(),
+        member_commitment: pallas::Base::from(7u64),
+        nullifier: pallas::Base::from(8u64),
         proof: vec![1, 2, 3],
         tx_binding: pallas::Base::from(99u64),
         tx_nonce: pallas::Base::from(88u64),
@@ -188,6 +193,10 @@ fn test_multisig_encode_roundtrip() {
     let fin = FinalizeParamsV1 {
         group_id: GroupId(pallas::Base::from(42u64)),
         message_hash: pallas::Base::from(12345u64),
+        approval_commit: pallas::Base::from(9u64),
+        // Non-empty: an empty Vec would skip the SerializedLen prefix and the per-element
+        // loop, which are the parts of the layout most likely to drift.
+        approvals: vec![dummy_nullifier()],
         proof: vec![5, 6, 7],
         tx_binding: pallas::Base::from(99u64),
         tx_nonce: pallas::Base::from(88u64),
