@@ -453,7 +453,7 @@ The derivation may be:
 A `constrain_instance` of a bare witness with zero prior use in any constraint
 is a specification violation — the host verifier receives a value the circuit
 never proved anything about. This is an Orchard-class vulnerability (see
-safety.md Lesson 16).
+safety.md RC2 — *a witness the circuit does not bind*).
 
 ### A.3.1.1 Explicit Encoding Rules
 

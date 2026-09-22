@@ -89,6 +89,6 @@ Domain-separated Poseidon hashes throughout.
 - [Privacy Model](../arch/privacy.md) — L1/L2, consume+create model, architectural principles
 - [Contract WASM Type System](../arch/contract-wasm-type-system.md) — Four encoding boundaries
 - [O-Cap Model](../arch/ocap.md) — Purse in the O-Cap stack
-- [Safety](../dev/contracts/safety.md) — Lesson 22: four-component architecture
+- [Safety](../dev/contracts/safety.md) — the four-component L1 operation architecture
 - [Box](box.md) — Single-capability container
 - Source: `src/contract/purse/`

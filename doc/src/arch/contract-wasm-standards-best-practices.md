@@ -435,5 +435,5 @@ When bringing a contract up to this standard, verify:
 - [Contract WASM Type System](contract-wasm-type-system.md) — Foundational spec, §3.1 (explicit encoding), §11 (canonical patterns)
 - [Type System](type-system.md) — Primitive types, barbs, nominal newtypes, non-unifiable pairs
 - [Genesis](genesis.md) — Genesis contract list, ContractId derivation
-- [Safety](../dev/contracts/safety.md) — Security lessons and flakey patterns
+- [Safety](../dev/contracts/safety.md) — the twelve contract root causes and the flakey patterns that hide them
 - [Wallet Architecture](wallet.md) — Scan paths, capability construction, pure function model

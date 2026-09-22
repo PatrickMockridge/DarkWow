@@ -152,6 +152,34 @@ declaration. The API version and circuit version are independent:
 | Manifest proof_circuit | `FeeV3` | Which `[[circuits]]` entry names the proving circuit |
 | .zk circuit name | `Fee_V3` | The compiled circuit artifact |
 
+### `include_bytes!` Paths Match the Makefile Output Exactly
+
+The Makefile produces `proof/<stem>.zk.bin` from `proof/<stem>.zk` by direct stem substitution
+(`$(ZK_SRC:.zk=.zk.bin)`). Every `include_bytes!` path references that exact filename, with no version
+marker added:
+
+```rust
+include_bytes!("../proof/mint.zk.bin");   // NOT mint_v2.zk.bin
+```
+
+During the V1→V2 consolidation, 327 `include_bytes!` calls referenced `_v2.zk.bin` paths the Makefile
+never produces. Any path that adds, removes, or alters part of the stem fails at compile time with
+"No such file or directory" — a loud failure, but one that costs a full rebuild to discover, and one
+that a stem-adding rename introduces wholesale. The circuit version lives inside the file
+(`circuit "Mint_V2"`); it never appears in a path.
+
+### Entrypoint Module Filenames Carry No Version Suffix
+
+Module files under `entrypoint/` are named for the function without `_v1`: `commit_bet.rs`, not
+`commit_bet_v1.rs`. The functions inside still carry the API version
+(`baccarat_commit_bet_process_instruction_v1`).
+
+During a prior refactoring, 39 module files were renamed to drop the `_v1` suffix but the
+corresponding `mod` declarations and `use` statements were not updated, leaving six contracts unable
+to compile for an unknown period. Keeping module filenames suffix-free removes the class of bug where
+a file rename is not propagated to its `mod` declaration — the same failure shape as the manifest,
+namespace-constant, and `include_bytes!` rules above.
+
 ## Future Versioning
 
 Going forward, versioning is handled via manifests:

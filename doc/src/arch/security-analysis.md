@@ -532,7 +532,7 @@ as non-exploitable. See [Opcodes and Formal Verification](zk/opcodes.md) and
 
 ### Documentation
 
-- [safety.md](../dev/contracts/safety.md) — Lessons 16-20 document ZK vulnerability classes; includes formal verification results summary
+- [safety.md](../dev/contracts/safety.md) — the twelve contract root causes, each with the findings that taught it and the rule it yields
 - [opcodes.md](zk/opcodes.md) — Full Lean 4 proof architecture and all 32 opcode verification results
 - [opcodes-status.md](zk/opcodes-status.md) — Complete verification status for all 120 circuits
 - [Full audit report](../../../contrib/model/security_audit_2026-06-05.md) — Detailed findings with code traces

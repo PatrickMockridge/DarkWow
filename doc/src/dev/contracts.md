@@ -245,7 +245,7 @@ circuit some_proof_v1(prover: Witness) {
 
 ## Further Reading
 
-- [Contract Inherent Safety](contracts/safety.md) — Design principles for safe contracts, NativeToken/PromissoryNote separation of concerns, and hardening lessons from security review
+- [Contract Inherent Safety](contracts/safety.md) — Design principles for safe contracts, NativeToken/PromissoryNote separation of concerns, and the twelve root causes contract vulnerabilities fall into
 - [Contract Standards](contracts/standards.md) — ZK circuit primitives, token layer architecture, security requirements
 - [Contract Composability](../contract/composability.md) — Cross-contract child call patterns and amount validation
 - [Python Contract Simulations](testing/python-simulations.md) — Smoke test layer: model state machines in Python to catch design bugs before reaching the testnet

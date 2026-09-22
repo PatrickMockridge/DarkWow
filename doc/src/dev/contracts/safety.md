@@ -1,10 +1,27 @@
 # Smart Contract Inherent Safety
 
+The failure classes that have actually occurred in this codebase, stated as root causes, with the
+findings that taught each one as its evidence.
+
+**Two companion documents, not three copies of this one:**
+
+- [Contract Safety Checklist](checklist.md) — the operative pre-commit checklist. It is derived from
+  the root causes below; this document is the explanation, that one is the instrument.
+- [Verification Obligation Register](../../arch/verification-hazop.md) — every property the system
+  must hold, where it is enforced, and whether anything checks it today. **Open obligations live
+  there.** A resolved finding is a root cause entry below; an unresolved one is an `OBL-*` row there.
+
+A finding is never recorded in both places. If you are looking for the current status of an open
+item, it is in the register — not here.
+
 ## Fundamentals
 
-Smart contract safety begins with a counterintuitive principle: **the safest code is the code you never write**. Every feature added to a contract is a potential vulnerability. Every code path is an attack surface. Every authorization check is a point of failure.
-
-This is not a statement about code quality — it's about combinatorial complexity. A contract with 3 functions has a manageable set of state transitions to audit. A contract with 12 functions, ACL-gated minting, governance-controlled parameters, and cross-contract child calls has an exponentially larger space of possible interactions to verify.
+Smart contract safety begins with a counterintuitive principle: **the safest code is the code you
+never write**. Every feature is a potential vulnerability, every code path an attack surface, every
+authorization check a point of failure. This is not a statement about code quality — it is about
+combinatorial complexity. A contract with 3 functions has a manageable state space to audit. A
+contract with 12 functions, ACL-gated minting, governance-controlled parameters, and cross-contract
+child calls has an exponentially larger space of interactions to verify.
 
 ### The Principle of Minimum Functionality
 
@@ -12,1257 +29,61 @@ This is not a statement about code quality — it's about combinatorial complexi
 Security ∝ 1 / (features × code_paths × authorization_gates)
 ```
 
-Three corollaries follow:
+Three corollaries:
 
-1. **Isolate blast radius**: Put the minimum viable logic in the most frequently called contracts. Sophisticated business logic goes in less critical contracts where failures are contained.
+1. **Isolate blast radius.** Put the minimum viable logic in the most frequently called contracts.
+   Sophisticated business logic goes in less critical contracts where failures are contained.
+2. **Remove, don't gate.** If you think a feature needs an ACL gate to be safe, ask whether the
+   feature should exist at all. Authorization is itself an attack surface.
+3. **Separate concerns by failure cost.** A bug in a DEX loses user funds for that trade. A bug in
+   the consensus token loses block rewards for every miner. These are not the same severity.
 
-2. **Remove, don't gate**: If you think a feature needs an ACL gate to be safe, ask whether the feature should exist at all. Authorization is itself an attack surface — every permission check is a place an attacker can try to bypass.
+### Design Exemplar: NativeToken vs PromissoryNote
 
-3. **Separate concerns by failure cost**: A bug in a DEX loses user funds for that trade. A bug in the consensus token loses block rewards for every miner. These are not the same severity.
+The token architecture is the concrete expression of these principles: functionality split across
+two contracts with deliberately asymmetric safety requirements.
 
----
-
-## Design Exemplar: NativeToken vs PromissoryNote
-
-DarkWow's token architecture is the concrete expression of these principles. It splits token functionality across two contracts with deliberately asymmetric safety requirements.
-
-### NativeToken: Consensus Safety by Minimum Functionality
-
-NativeToken handles exactly what consensus requires — block rewards, fee payment, and value transfer. It is **deliberately minimal**:
+**NativeToken** handles exactly what consensus requires — block rewards, fee payment, value
+transfer — and is deliberately minimal:
 
 | What it does | What it deliberately omits |
 |---|---|
-| PoW block rewards (PoWRewardV1) | No token freezing |
-| Network fee payment (FeeV3) | No governance coupling |
+| PoW block rewards (`PoWRewardV1`) | No token freezing |
+| Network fee payment (`FeeV3`) | No governance coupling |
 | Private transfers (Mint/Burn/Transfer) | No multi-token support |
 | | No authorization gates |
 | | No token registry |
 | | No business logic |
 
-Every omission is a security property. No freeze means no freeze-key attack. No governance coupling means no plutocratic takeover of consensus. No multi-token support means no token-ID confusion attacks. No authorization gates means no auth bypass.
+Every omission is a security property. No freeze means no freeze-key attack. No governance coupling
+means no plutocratic takeover of consensus. No multi-token support means no token-ID confusion. No
+authorization gates means no auth bypass. **In consensus-critical code, the feature you don't add is
+the vulnerability you don't create.** NativeToken is the most frequently called contract in the
+system; a bug here cascades to every transaction, every block, every miner reward.
 
-The principle: **in consensus-critical code, the feature you don't add is the vulnerability you don't create.** NativeToken is the most frequently called contract in the system. A bug here cascades to every transaction, every block, every miner reward.
-
-### PromissoryNote: Minimum Viable Business Logic for DeFi
-
-PromissoryNote carries the business logic that DeFi contracts need to compose — multi-token support, authorization, and cross-contract value verification. It is still minimal by DeFi standards (no AMM, no lending pools, no governance), but it carries more logic than NativeToken because composition demands it:
+**PromissoryNote** carries the business logic DeFi contracts must compose — multi-token support,
+authorization, cross-contract value verification. Still minimal by DeFi standards (no AMM, no
+lending pools, no governance), but more logic than NativeToken because composition demands it:
 
 | What it adds | Why it's needed |
 |---|---|
-| TokenMintV1 | Permissionless token creation for stablecoins, wrapped assets, LP tokens |
-| Multi-token support (asset_id) | DEX, lending, yield — all need multiple token types |
+| `TokenMintV1` | Permissionless token creation for stablecoins, wrapped assets, LP tokens |
+| Multi-token support (`asset_id`) | DEX, lending, yield — all need multiple token types |
 | Token registry | Prevents unauthorized minting of unregistered token types |
-| BlindOutput_V1 ZK circuit | Proves all output commitments are correctly formed (fully private) |
-| validate_child_value_commit | Helper for parent contracts to verify child call amounts via commitment comparison |
+| `BlindOutput_V1` circuit | Proves all output commitments are correctly formed, fully private |
+| `validate_child_value_commit` | Lets a parent verify a child call's amount by commitment comparison |
 
-### Why Not One Contract?
+**Why not one contract?** A monolithic token contract creates a single point of failure — a bug in
+DeFi token logic would break consensus. Separating them gives failure isolation (a PromissoryNote bug
+cannot break mining rewards), different audit postures (maximum review vs. flexibility), independent
+evolution, and process safety (DeFi developers never touch consensus-critical code).
 
-A monolithic token contract that handles both consensus and DeFi creates a single point of failure — a bug in DeFi token logic can break consensus. By separating them:
+### The o-cap / ZK-proof symbiosis
 
-1. **Failure isolation**: A bug in PromissoryNote cannot break NativeToken. Mining rewards and fees keep flowing regardless.
-2. **Different audit postures**: Consensus tokens need maximum security review; DeFi tokens need flexibility. One codebase can't optimize for both.
-3. **Independent evolution**: The consensus token can remain frozen while DeFi tokens evolve.
-4. **Process safety**: Developers working on DeFi features don't touch consensus-critical code.
+Object-capability security and zero-knowledge proofs are complementary, not two independent design
+choices. Each addresses a weakness in the other:
 
-```
-┌──────────────────────────────────────┐
-│           NativeToken                 │
-│  Consensus only — block rewards, fees │
-│  MINIMAL by design                    │
-│  No freezing, no auth, no registry   │
-│  Blast radius: ENTIRE NETWORK        │
-└──────────────┬───────────────────────┘
-               │
-┌──────────────┴───────────────────────┐
-│           PromissoryNote                     │
-│  DeFi composition — multi-token, auth │
-│  MINIMAL VIABLE for DeFi              │
-│  Business logic, cross-contract calls │
-│  Blast radius: individual tokens     │
-└──────────────┬───────────────────────┘
-               │
-┌──────────────┴───────────────────────┐
-│     DeFi Contracts (DEX, Bridge...)   │
-│  Application logic lives here        │
-│  Blast radius: individual operations │
-└──────────────────────────────────────┘
-```
-
----
-
-## Hardening Lessons: What Can Go Wrong
-
-The following sections describe real vulnerabilities that were identified through security review and their mitigations. Each represents a class of bug that can occur in any contract.
-
-### Lesson 1: Authorization Gaps — The Two-Step Auth Anti-Pattern
-
-**The vulnerability (historical)**: PromissoryNote originally used a two-step auth model (`AuthTokenMintV1` → `MintV1`). `MintV1` accepted an `auth_proof` struct containing a nullifier, but the on-chain contract **never checked that the nullifier was actually spent**. The ZK proof verified correctly, but the prior authorization step wasn't enforced on-chain. Anyone could call `MintV1` with arbitrary `auth_proof` data and mint tokens without ever calling `AuthTokenMintV1`.
-
-**The fix**: The two-step model was removed entirely (May 2026). `AuthTokenMintV1` and `RotateMintAuthorityV1` were deleted. `MintV1` now proves knowledge of the backing secret directly against the stored `token_auth_parent` (backing capability commitment) in a single step. The token registry stores the commitment; `MintV1` proves the prover knows the corresponding secret.
-
-1. **Token registry Merkle tree** — `TokenMintV1` stores the `asset_id` and `token_auth_parent` in an on-chain registry. `MintV1` verifies the token exists via Merkle proof against the registry root.
-
-2. **Single-step backing proof** — `MintV1` proves knowledge of `mint_secret` where `token_auth_parent = poseidon_hash(mint_secret)`. No separate auth step, no nullifier to consume. The proof IS the authorization.
-
-3. **No authority to rotate** — Key rotation is the issuer contract's concern, not the token primitive's. PromissoryNote provides mint/burn/transfer; the issuer handles supply caps, timelocks, and key rotation.
-
-**The principle**: **Two-step authorization is an anti-pattern in o-cap systems.** If step 2 requires step 1 to have occurred, step 1's on-chain artifact must be verified in step 2 — creating a fragile chain of state dependencies. The correct pattern is a single-step proof: prove knowledge of the capability secret directly. The proof IS the authorization; there is no prior step to forget to check.
-
-**The deeper pattern**: This is a specific case of a general o-cap failure mode — **authorization by presence rather than authorization by proof-of-knowledge**. A multi-step ACL (register → authorize → execute) creates multiple points of failure where on-chain verification can be skipped. The o-cap model collapses this to a single step: prove you know the secret, and that proof is your authority. This pattern recurs across many contract types — whenever a function requires a prior action, ask whether the prior action can be eliminated by proving knowledge of the capability directly.
-
-### Lesson 2: Cross-Contract Routing — The Opcode Collision
-
-**The vulnerability**: Every parent contract validates child calls by checking `child_call.data[0]` — the function opcode byte. But `0x04` is used by both `PromissoryNote::TransferV1` and `Attestation::VerifyClaimV1`. A contract like `labor_market::create_job_v1` checks `data[0] == 0x04` expecting a money transfer, while `labor_market::submit_deliverable_v1` checks `data[0] == 0x04` expecting attestation verification. The contracts never validate `child_call.contract_id`.
-
-If a malicious transaction builder swapped the `contract_id` for a child call, the parent would accept the wrong child function — the opcode matches, but the contract being called is wrong. The WASM runtime dispatches by `contract_id`, so the call goes to the intended contract, but the parent's validation is blind to which contract that is.
-
-**The fix**: Two complementary defenses:
-
-1. **Contract ID validation helper** — `validate_child_contract_id(child_contract_id, expected_contract_id)` provides a standard way for parent contracts to verify the target contract, not just the function code. This should be called after the opcode check.
-
-2. **Value amount validation** — Even with contract_id validation, parent contracts should verify the transfer amount via `validate_child_value_commit` using deterministic blind derivation. The parent computes the expected `value_commit` from its own state and compares it to the child Output's `value_commit` — no plaintext values, no new fields on the shared data model.
-
-**The principle**: **Validate the target, not just the action.** Checking `data[0]` tells you what function will run, but not what contract will run it. Always validate `contract_id` alongside function code, and validate amount/value fields when the child call moves assets.
-
-### Lesson 3: Unproven Outputs — The Blind Output Gap
-
-**The vulnerability**: TransferV1 and OtcSwapV1 outputs had no ZK proof of correct commitment formation for fully private outputs. Commitments were created client-side and inserted into the transaction without any ZK constraint proving:
-
-- The commitment is correctly computed from the attributes
-- The value commitment matches the value and blind
-- The value is within 64-bit range
-
-The only on-chain check was commitment uniqueness — preventing duplicate commitments but not proving correct formation. A buggy client could produce malformed commitments that would be accepted on-chain.
-
-**The fix**: A new `BlindOutput_V1` ZK circuit (Poseidon-only, no EC) proves correct commitment formation for all outputs. The circuit constrains `commitment = poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)` and `value_commit = poseidon_hash(value, value_blind)` as public inputs, with a 64-bit range check on value. Every TransferV1 and OtcSwapV1 output uses this single circuit — fully private, no conditional value revelation.
-
-**The principle**: **Every output must have a ZK proof of correct formation.** Client-side construction is not sufficient — the network must be able to verify that every commitment and value commitment is correctly computed. Without this, buggy or malicious clients can inject arbitrary commitments.
-
-### Lesson 4: Composition Amount Blindness
-
-**The vulnerability**: Before the cross-contract composition refactor, parent contracts called `promissory_note::transfer_v1` as a child call but could not verify the transfer amount. The amount was encrypted inside `AeadEncryptedNote` (which the parent can't decrypt), and the `value_commit` was a Poseidon hash (the parent doesn't know the blind). A parent like a bridge or DEX that expects a transfer of 1000 tokens had no way to verify that the child call actually transferred 1000 tokens — only that a TransferV1 call existed.
-
-**The principle**: **A child call's existence is not proof of its correctness.** When a child call moves value, the parent must verify the amount. Relying on the transaction builder to set the right amount is trusting off-chain infrastructure with on-chain correctness.
-
-#### First Attempt: The `public_value` Flakey Pattern
-
-The initial fix added `public_value: Option<u64>` and `public_asset_id: Option<pallas::Base>` to the `Output` struct, backed by a `TransferOutput_V1` ZK circuit. Parent contracts read the plaintext `public_value` from the child call data and compared it to the expected amount.
-
-**This was a flakey pattern — it worked but broke the privacy model.** The `Output` is serialized into `ContractCall.data` and stored on-chain. Every composed transfer broadcast its amount in plaintext. The fix solved cross-contract verification by sacrificing the very property the protocol exists to provide.
-
-**Why it passed review**: The `Option<u64>` type made it *look* optional — as if setting it to `None` preserved privacy. But for any composed transfer, it *had* to be `Some(...)`, making privacy conditional and broken for the exact use case cross-contract composition exists to serve. The field was optional in type but mandatory in practice.
-
-#### The Correct Fix: `value_commit` Comparison
-
-The proper fix keeps values fully private by leveraging the cryptographic commitment already present in every `Output`:
-
-1. **The child's `value_commit`** is `poseidon_hash(value, value_blind)` — already part of every Output and already proven correct by the `BlindOutput_V1` ZK proof.
-
-2. **The parent derives `value_blind`** deterministically from its own unique state: `poseidon_hash([expected_value, nullifier])`. No new on-chain fields needed.
-
-3. **The parent recomputes the expected `value_commit`** and checks it equals the child Output's `value_commit`. Equality proves the child commitment has the expected value (Poseidon collision resistance).
-
-4. **The transaction builder** derives the same blind and uses it when generating the child's `BlindOutput_V1` proof. No new params. No plaintext values. Fully private.
-
-```rust
-// Parent contract computes:
-let value_blind = poseidon_hash([
-    pallas::Base::from(expected_value),
-    nullifier.inner(),
-]);
-let expected_commit = poseidon_hash([
-    pallas::Base::from(expected_value),
-    value_blind,
-]);
-
-// Checks child output contains a matching value_commit
-validate_child_value_commit(&child_call.data, expected_value, value_blind);
-```
-
-This eliminates `public_value`, `public_asset_id`, and the entire `TransferOutput_V1` circuit. All outputs use the fully-private `BlindOutput_V1` — one circuit, no conditional privacy leakage.
-
-**The meta-lesson**: When you find yourself adding a field that violates a core design constraint to solve a verification problem, the verification itself is the right question — but the answer is almost always to use the cryptographic commitments you already have, not to add plaintext fallbacks.
-
-### Lesson 5: Pubkey as Database Key — Static Identity Queryable On-Chain
-
-**The vulnerability**: Several contracts use raw public keys as database keys for state lookups. This makes identity trivially enumerable on-chain: anyone who knows a pubkey can derive the DB key and enumerate all records for that identity.
-
-Concrete examples from the audit:
-
-| Contract | DB Key Pattern | What It Reveals |
-|---|---|---|
-| Bridge | `db_set(relayers_db, &serialize(&relayer_pub), ...)` | All relayers and their withdrawal history |
-| Identity | `db_set(issuers_db, &serialize(&issuer_id), ...)` | All issuers and their credential types |
-| Identity | `issuance_key = serialize(capability_id) + serialize(holder_pub)` | All capabilities issued to a known holder |
-| DrainProtection | `vote_key = serialize(&(proposal_id, voter_pubkey))` | Exactly how each voter voted on each proposal |
-
-In the o-cap model, authorization is "what you can prove" not "who you are." Storing a raw pubkey as a DB key inverts this: it makes identity the primary lookup dimension, enabling trivial surveillance of all activity linked to a known public key.
-
-**The fix**: Hash the pubkey through Poseidon before using it as a DB key. For a 32-byte pubkey, split into four u64 chunks to preserve full entropy:
-
-```rust
-fn compute_relayer_key(relayer_pub: &[u8; 32]) -> Vec<u8> {
-    let mut chunks = [0u64; 4];
-    for i in 0..4 {
-        let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&relayer_pub[i * 8..(i + 1) * 8]);
-        chunks[i] = u64::from_le_bytes(bytes);
-    }
-    let hash = poseidon_hash([
-        pallas::Base::from(chunks[0]),
-        pallas::Base::from(chunks[1]),
-        pallas::Base::from(chunks[2]),
-        pallas::Base::from(chunks[3]),
-    ]);
-    hash.to_repr().to_vec()
-}
-```
-
-For composite keys (e.g. `(capability_id, holder_pub)`), hash all components together rather than concatenating raw bytes. The resulting key is a Poseidon hash — unlinkable to the original pubkey without knowing the pubkey itself, but still deterministic so the contract can reconstruct it.
-
-**The principle**: **DB keys should be derived via hash, never raw identity material.** The hash preserves look-up capability (anyone who knows the pubkey can recompute the key) but prevents enumeration (without knowing the pubkey first, the key reveals nothing). This is the same principle as address cycling applied to database layout.
-
-### Lesson 6: Signature Key Reuse — Static Identity Link Across Transactions
-
-**The vulnerability**: The `signature_public` field in `Input` structs was documented as a generic "signature public key." Client builders accepted a `Keypair` (the full wallet keypair) or a `signature_secret: SecretKey` without any enforcement that it be ephemeral. If a client reused the wallet-level secret, every transaction from that wallet would share the same `signature_public`, creating a static identity link across all of a user's activity.
-
-This affected two critical token contracts:
-
-| Contract | Field | Client File |
-|---|---|---|
-| NativeToken (BurnV1) | `Input.signature_public: PublicKey` | `burn_v1.rs` — accepted full `Keypair` |
-| NativeToken (FeeV3) | `Input.signature_public: PublicKey` | `fee.rs` — accepted `ephemeral_signature_secret: SecretKey` |
-| PromissoryNote (TransferV1) | `signature_public: pallas::Base` | `transfer_v1.rs` — accepted `signature_secret: pallas::Base` |
-| PromissoryNote (BurnV1) | `signature_public: pallas::Base` | `burn_v1.rs` — accepted `signature_secret: pallas::Base` |
-
-The `signature_public` is exposed as a public input to the ZK proof and stored on-chain. If it's the wallet's persistent key, every Input from that wallet is trivially linkable.
-
-**The fix**: Three changes that enforce ephemeral derivation at the type and naming level:
-
-1. **Rename the field** to `ephemeral_signature_secret` — the name itself communicates the invariant.
-2. **Document the requirement** in the struct definition: "MUST be fresh per transaction, never the wallet secret."
-3. **Remove full Keypair from builders** — accept only the individual secrets needed, preventing accidental wallet-key reuse.
-
-```rust
-// BEFORE — wallet keypair accepted, nothing prevents reuse
-pub struct BurnCallInput {
-    pub keypair: Keypair,  // wallet-level identity
-    // ...
-}
-
-// AFTER — separate secrets, ephemeral enforcement by name
-pub struct BurnCallInput {
-    /// MUST be fresh per burn — never the wallet secret
-    pub ephemeral_signature_secret: SecretKey,
-    pub secret: SecretKey,  // commitment ownership secret
-    // ...
-}
-```
-
-**The principle**: **Every signature must use an ephemeral key.** The o-cap model requires that each capability consumption (nullifier) be unlinkable to every other. A reused signature public key is a static identity that links all of a user's transactions. The type system and naming conventions should make the invariant impossible to miss.
-
-### Lesson 7: User Data Encoding Identity — Smuggling Public Keys in Opaque Fields
-
-**The vulnerability**: The `user_data` field on coins is designed as opaque private data committed into the commitment hash — a place for application-specific metadata that stays behind the commitment. But the stablecoin contract encoded identity material into this field:
-
-```rust
-// BEFORE — identity smuggled into opaque field
-let sender_pub = poseidon_hash([owner_secret]);
-let user_data = poseidon_hash([
-    pallas::Base::from(mint_amount),
-    stablecoin_asset_id,
-    sender_pub,  // ← identity derived from owner_secret
-]);
-```
-
-The `user_data` is committed into the commitment hash and passed as a public input to `PromissoryNote::MintV1`. While Poseidon-hashed, `poseidon_hash([owner_secret])` is a deterministic function of the owner's secret — it's effectively a public key fingerprint embedded in every mint operation. Anyone who knows (or guesses) the owner_secret can identify all commitments minted by that owner.
-
-**The fix**: Use a constant (zero) in place of the identity-derived value:
-
-```rust
-// AFTER — no identity material
-let user_data = poseidon_hash([
-    pallas::Base::from(mint_amount),
-    stablecoin_asset_id,
-    pallas::Base::zero(),  // no identity
-]);
-```
-
-Authorization is handled by the nullifier (which consumes the position capability), not by embedding identity in auxiliary data. The nullifier already proves "someone who knows the owner_secret authorized this" — encoding the same secret's hash in `user_data` adds no security and undermines privacy.
-
-**The principle**: **Opaque fields must not carry identity material.** If a field is committed into a commitment hash or passed as a ZK public input, it is visible on-chain (either directly or through the commitment). Any identity-derived data in these fields creates a linkable fingerprint. Authorization belongs in nullifiers, not in auxiliary data fields.
-
-### Lesson 8: Token ID Carrying Identity Fragments
-
-**The vulnerability**: When creating a new token type in PromissoryNote, the stablecoin contract derived `token_auth_parent` — one of the inputs to the token ID computation — from the authority's public key:
-
-```rust
-// BEFORE — token ID embeds authority identity fragment
-let auth_bytes: [u8; 8] = token_authority_pub[0..8].try_into().unwrap();
-let auth_u64 = u64::from_le_bytes(auth_bytes);
-let token_auth_parent = pallas::Base::from(auth_u64);
-let asset_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
-```
-
-The resulting `asset_id` embeds the first 8 bytes of the token authority's public key. Anyone who knows (or suspects) which authority created a token can check: extract the first 8 bytes, recompute the token ID, and see if it matches. Every commitment holding this token carries a fingerprint of its creator.
-
-**The fix**: Use a random `token_auth_parent`:
-
-```rust
-// AFTER — random, unlinkable to authority
-let token_auth_parent = BaseBlind::random(&mut OsRng).inner();
-let asset_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
-```
-
-The authority's ability to mint is proven through the MintV1 flow (backing secret proof against the token registry), not through the token ID itself. The token ID needs to be unique, not identity-bearing.
-
-**The principle**: **Token IDs must be unlinkable to their authority.** A token's existence and ownership should reveal nothing about who created it. The authority relationship is a capability (proven via nullifier + ZK proof), not an identity (embedded in the token ID). Randomizing all derivation inputs preserves both uniqueness and privacy.
-
-### Lesson 9: Full Keypair in Client Builders — Wallet Secret Leakage
-
-**The vulnerability**: The `PoWRewardCallBuilder` carried the full wallet `Keypair` and serialized the wallet secret into the commitment's encrypted note memo:
-
-```rust
-// BEFORE — wallet keypair in builder, secret in memo
-pub struct PoWRewardCallBuilder {
-    pub signature_keypair: Keypair,  // full wallet identity
-    // ...
-}
-
-// In build():
-let note = NativeNote {
-    // ...
-    memo: serialize(&self.signature_keypair.secret),  // wallet secret bytes
-};
-```
-
-Two problems: (1) the full wallet keypair in the builder struct invites reuse of the wallet identity for signing (see Lesson 6); (2) the wallet secret is serialized into the note memo — AEAD-encrypted and only decryptable by the recipient, but unnecessary exposure of the wallet's root secret. If the recipient's key is ever compromised, the sender's wallet secret is revealed.
-
-**The fix**: Separate the commitment-ownership secret from the ephemeral signature secret, and remove the wallet secret from the memo:
-
-```rust
-// AFTER — no wallet keypair, no secret in memo
-pub struct PoWRewardCallBuilder {
-    pub secret: SecretKey,                       // commitment ownership
-    pub ephemeral_signature_secret: SecretKey,   // MUST be fresh per reward claim
-    // ...
-}
-
-// In build():
-let note = NativeNote {
-    // ...
-    memo: vec![],  // no secret leakage
-};
-```
-
-**The principle**: **Client builders should never carry full wallet keypairs.** Accept only the individual secrets needed for the specific operation. Never serialize wallet secrets into note memos — the note already carries the commitment blind and value, which are sufficient for the recipient to spend the commitment. The wallet secret should never leave the wallet.
-
-### Lesson 10: Capability Descriptors as Living Specification
-
-**The vulnerability**: Capability descriptors — the `descriptor()` functions that declare each contract's actions, required capabilities, and state transitions — were out of sync with the actual contract code. The review found every descriptor had at least one error:
-
-| Contract | Error | Impact |
-|---|---|---|
-| darkbet_exchange | `Any` expression nested `All` sub-expressions instead of taking `CapabilityId` directly | Descriptor wouldn't compile |
-| game_room | `capability_id:` field name instead of `id:` on `CapabilityOutput` | Descriptor wouldn't compile |
-| subscription | Same field name error; `SubscribeV1` had wrong function_id | Wrong function mapped |
-| darkbet_exchange | Missing `ClaimWinnings` action entirely | Incomplete interface |
-
-These are not just cosmetic — capability descriptors serve as the machine-readable interface specification. The host runtime uses them to verify that transactions only call declared functions with the correct capabilities. A descriptor that compiles but has wrong function_ids silently allows calls the contract doesn't handle, or rejects calls it should accept. A descriptor missing produce/consume transitions means the capability state machine drifts from reality — capabilities that should be consumed persist, and capabilities that should be produced never appear.
-
-**The fix**: Every descriptor was corrected to match the actual entrypoint dispatch table: function_ids verified, `consume`/`produces` transitions mirroring actual state changes, expression types matching the SDK API. The gold standard reference is `darktoshi_dice/src/capability.rs` — it is the only descriptor that was complete and correct from initial implementation.
-
-**The principle**: **Capability descriptors are code, not documentation.** They must be treated with the same rigor as the entrypoint dispatch table. A function added to the entrypoint without a corresponding descriptor action is invisible to the capability system — it can be called without capability checks. A function in the descriptor that doesn't exist in the entrypoint is a dead path that wastes verification cycles. The descriptor and the dispatch table must be kept in lockstep. When you add a function to a contract, the capability descriptor update is not optional — it is part of the function's implementation.
-
-### Lesson 11: Spend Hook Callback Safety — Trust but Verify
-
-**The vulnerability**: The spend_hook callback mechanism delivers a `BurnSpendHookPayload`
-to the target contract's `__spend_hook` export. The payload includes `caller_contract_id`
-— the PN contract that initiated the burn. If the receiver trusts this field without
-verification, a malicious contract could forge callbacks by calling `emit_spend_hook`
-directly (if it has access to the host function) or by deploying a fake PN contract.
-
-**The fix**: Three mandatory checks in every spend_hook receiver:
-
-1. **Verify the caller**: Check `payload.caller_contract_id == expected_pn_contract_id`.
-   Store the expected PN contract ID during `init_contract` and retrieve it in the handler.
-2. **Track nullifiers**: Store every processed nullifier in a dedicated DB tree. Check for
-   duplicates before processing. A burn can be replayed if nullifiers aren't tracked.
-3. **Keep handlers deterministic**: The callback runs in the same overlay as the burn.
-   Don't depend on oracle prices, cross-chain state, or any external data that could
-   change between proof generation and callback execution.
-
-```rust
-fn process_spend_hook(contract_id: ContractId, instruction_data: &[u8]) -> ContractResult {
-    let payload: BurnSpendHookPayload = deserialize(instruction_data)?;
-
-    // 1. Verify the caller
-    let expected_pn = get_stored_pn_contract_id()?;
-    if payload.caller_contract_id != expected_pn {
-        return Err(ContractError::InvalidCaller);
-    }
-
-    // 2. Replay protection
-    for nullifier in &payload.nullifiers {
-        if nullifier_already_processed(nullifier)? {
-            return Err(ContractError::ReplayDetected);
-        }
-    }
-
-    // 3. Build update (deterministic — no external data)
-    let update = SpendHookCallbackUpdateV1 { /* ... */ };
-    set_return_data(&serialize(&update))
-}
-```
-
-**The principle**: **Spend_hook callbacks are capability exercise, not trusted messages.**
-The callback proves that commitments were burned — it does not prove who initiated the burn
-or that the payload is authentic. Always verify `caller_contract_id` against a stored
-expected value. Always track nullifiers for replay protection. The handler must be
-deterministic: same input always produces same output, with no dependency on state
-that could change between overlay creation and callback execution.
-
-### Lesson 12: Compiler-Synthesizer Drift — When the Circuit Compiler Outpaces the VM
-
-**The vulnerability**: The zkas compiler (`bin/zkas/`) and the ZK circuit synthesizer
-(`src/zk/vm.rs`) are two halves of a single pipeline — the compiler produces `.zk.bin`
-artifacts, the synthesizer consumes them. When the compiler gains a new feature but the
-synthesizer isn't updated to match, every circuit recompiled with the new compiler
-breaks at keygen time.
-
-This happened when the zkas compiler added `Base` as a new constant type (commit
-`652c2b779`). Circuits recompiled with the new compiler included `Base <name>`
-constants in their binaries. The synthesizer only handled four magic constant names
-(`VALUE_COMMIT_VALUE`, `VALUE_COMMIT_RANDOM`, `VALUE_COMMIT_RANDOM_BASE`,
-`NULLIFIER_K`). Any circuit with a `Base` constant that didn't match those four names
-crashed at `ProvingKey::build` with `Err(Synthesis)`.
-
-The symptom was generic — a `Synthesis` error during keygen, one of 16+ possible
-failure sites in the synthesizer. The root cause was upstream: a compiler change
-that wasn't mirrored in the VM. The bridge's `deposit_v1.zk` declared `Base
-commitment` as a constant — a documentation-only declaration with no functional
-purpose (the actual public input binding was already handled by
-`constrain_instance`). Removing it fixed the immediate issue, but the systemic
-problem remains: the compiler and VM can drift.
-
-**Diagnostic procedure** — when a `Synthesis` error hits at `proof.rs:113`
-(`ProvingKey::build` → `keygen_vk`), follow these steps in order:
-
-1. **Identify which circuit fails.** Add `eprintln!` before each `ProvingKey::build`
-   call in the harness `spawn()`. The first one that doesn't print "OK" is the failing
-   circuit. This narrows the problem from "the contract" to "this specific .zk.bin."
-
-2. **Inspect the `.zk.bin` constants.** Decode the binary in test code with
-   `ZkBinary::decode(&bytes, false)` and print `zkbin.constants` — a
-   `Vec<(VarType, String)>`. If any entry has a name not in the set
-   `{VALUE_COMMIT_VALUE, VALUE_COMMIT_RANDOM, VALUE_COMMIT_RANDOM_BASE, NULLIFIER_K}`,
-   the VM synthesizer cannot handle it.
-
-3. **Check if the constant is actually used.** Grep the `.zk` source for the constant
-   name. If no opcode references it, it's a documentation-only declaration — remove it
-   from the constant block and recompile the `.zk.bin`. `constrain_instance` already
-   binds public inputs; the `Base` declaration was redundant.
-
-4. **If the constant IS used by an opcode**, a VM synthesizer change is needed. The
-   synthesizer must learn to handle the new constant type. This requires explicit
-   permission — the VM is security-critical infrastructure (see `vm-off-limits` rule).
-
-5. **Cross-check: was the circuit recently recompiled?** Run `git log --oneline -1 --
-   <circuit>.zk.bin`. If the recompile coincides with a zkas compiler change (grep
-   `git log` for "zkas" or "compiler"), the binary format likely changed. Compare
-   the old and new `.zk.bin` constants to confirm what was added.
-
-**Preventive check**: After any zkas compiler change, recompile a known-good
-circuit (e.g. `burn_v1.zk`) and verify `ProvingKey::build` succeeds. This catches
-compiler-VM drift before it reaches production circuits.
-
-**The principle**: **The compiler and synthesizer are a matched pair — updating one
-requires verifying the other.** Every new zkas feature must be accompanied by
-synthesizer support before any circuit uses it in production. The `.zk.bin` format
-is the contract between them; when the format changes, both sides must change
-together. When the gap is found after the fact, work backwards from the binary
-to the source — decode the constants, trace the names, check which ones the VM
-can't handle. The answer is in what the compiler emitted, not in what the VM
-should accept.
-
-### Lesson 13: Hash Function Impedance Mismatch — Circuit Merkle vs SDK Merkle
-
-**The vulnerability**: ZK circuits and the SDK use different hash functions for Merkle
-tree operations. The circuit's `merkle_root` opcode uses the Orchard `MerkleChip`,
-which hashes with **Sinsemilla** (via `OrchardHashDomains::MerkleCrh`). The SDK's
-`MerkleNode::combine` uses **Poseidon**. For the same leaf and authentication path,
-these produce different roots.
-
-This creates a hard barrier to testing: you cannot generate a valid Merkle proof
-for a Sinsemilla-based circuit using SDK utilities. A test that builds a Poseidon
-Merkle tree and passes the root to a Sinsemilla circuit will always fail — the
-circuit computes a different root and `constrain_equal_base` rejects it. Valid
-test data for circuits that use `merkle_root` requires either:
-(a) external chain integration (the bridge needs Merkle proofs from Ethereum,
-Monero, etc.), or
-(b) a Sinsemilla-compatible Merkle tree in the SDK that matches the circuit's
-hash function.
-
-The SDK's `MerkleNode` and the circuit's `merkle_root` opcode implement the same
-*algorithm* (binary Merkle tree with position-dependent hashing) but different
-*hash functions*. They are algorithmically compatible but cryptographically
-incompatible — the same inputs produce different outputs.
-
-**The detection heuristic**: If a test provides Merkle data computed with the SDK's
-MerkleTree and the circuit rejects it with a constraint failure, check which hash
-function each side uses. The ZK opcode documentation (`doc/src/arch/zk/opcodes.md`)
-lists the hash function for each opcode.
-
-**The principle**: **Merkle trees used in ZK circuits must have a matching off-circuit
-implementation.** For every hash function used in a circuit opcode, there must be a
-corresponding utility in the SDK that produces the same output for the same input.
-When the SDK and circuit diverge (Sinsemilla vs Poseidon), the gap becomes a hard
-dependency on external infrastructure before the circuit can be meaningfully tested.
-
-### Lesson 14: Input Reuse Attacks — Bind Nullifiers to Operation Context
-
-**The vulnerability**: A nullifier proves a commitment is spent — the holder knows the
-secret and the commitment hasn't been double-spent. But if the nullifier isn't bound
-to the specific *operation* or *context* in which it's used, the same commitment can
-be "spent" across multiple independent operations.
-
-The DAO proposal input reuse exploit (upstream commit `1814306ed`) is the
-canonical example. A DAO member submits a proposal backed by commitment inputs to
-satisfy the proposer threshold. The nullifier proves the commitments are valid, but
-without context binding, the same commitments can be submitted again for a different
-proposal — bypassing the threshold because the nullifiers aren't linked to
-any specific proposal.
-
-**The fix**: Bind the input nullifier to the operation's unique identifier:
-
-```
-input_nullifier = poseidon_hash(commitment_nullifier, operation_bulla)
-```
-
-Each (commitment, operation) pair produces a unique on-chain artifact. The entrypoint
-checks that `input_nullifier` hasn't been seen before. A reused commitment with a
-different operation bulla produces a different `input_nullifier`, which passes
-the uniqueness check — but the RAW `commitment_nullifier` is spent in the first
-proposal and can't be respent. The ZK circuit constrains that both the
-`input_nullifier` and the `operation_bulla` are correctly derived and reveals
-them as public instances.
-
-**Detection**: For every contract function that accepts commitment inputs via
-nullifiers, ask: is the nullifier unique to this operation, or could the
-same nullifier be submitted in a different operation context? If the
-nullifier isn't bound to the operation, the same economic stake can be
-reused across multiple independent actions.
-
-**The principle**: **Every input nullifier must be bound to the operation it
-authorizes.** A nullifier that proves "I spent commitment X" without saying "for
-purpose Y" allows commitment X to be spent for purposes Y, Z, and W simultaneously.
-The fix is one line in the ZK circuit — `poseidon_hash(nullifier, context_bulla)`
-— but the absence of that line is a protocol-level vulnerability.
-
-**Audit heuristic**: Grep for `constrain_instance` calls in `.zk` circuits
-that handle commitment inputs. If a nullifier is constrained as an instance but no
-operation-specific identifier is also constrained, the nullifier isn't context-bound.
-
-**DarkWow audit result (2026-06-03):** All 27 contracts checked. Every
-nullifier-bearing circuit already binds to an operation-specific context
-(proposal ID, swap ID, job ID, auction ID, position commitment, or commitment
-identity). No fixes required.
-
-### Lesson 15: Parent Call Validation — Validate Contract ID + Function Code
-
-**The vulnerability**: A contract function designed to be called ONLY as a child
-of a specific parent call validates the parent's *opcode* (`data[0]`) but not
-the parent's *contract ID*. Since opcodes are not globally unique (`0x04` is
-used by multiple contracts), an attacker can swap the target contract while
-keeping the opcode the same.
-
-The DAO `auth_xfer` exploit (upstream commit `3b73ab4e1`) is the canonical
-example. `auth_xfer` was designed to run only as a child of `dao::exec()`.
-It checked the parent call's opcode but never validated the parent's
-`contract_id`. An attacker could invoke `auth_xfer` outside the DAO
-execution context — the opcode check passed, but the contract ID was wrong.
-
-This is a concrete instance of safety.md Lesson 2 — "Validate the target,
-not just the action." Checking `data[0]` tells you what function will run,
-but not what contract will run it.
-
-**The fix**: Two mandatory checks on every cross-contract parent call:
-
-```rust
-if exec_callnode.data.contract_id != *DAO_CONTRACT_ID {
-    return Err(DaoError::AuthXferParentWrongContractId.into())
-}
-if exec_callnode.data.data[0] != DaoFunction::Exec as u8 {
-    return Err(DaoError::AuthXferParentWrongFunctionCode.into())
-}
-```
-
-**Detection**: For every contract function that validates a parent call,
-check whether BOTH `contract_id` AND `function_code` are validated. If
-only `data[0]` is checked, the validation is incomplete.
-
-**The principle**: **Every parent call validation must check both contract_id
-and function code.** Opcodes are namespaced per contract — the same byte
-means different things in different contracts. Without contract_id
-validation, the check is blind to which contract is being called. This
-extends safety.md Lesson 2 with the specific two-field check pattern.
-
-**DarkWow audit result (2026-06-03):** All 9 cross-contract-dependent contracts
-checked. 7 were already safe (auction, dex, bridge, stablecoin, darkbet_exchange,
-relayer_endowment; tender has no child calls yet). 2 required fixes:
-`dao_escrow::verify_member_capability_v1` (missing identity contract_id check)
-and `labor_market` (3 functions: dispute_v1, initiate_dispute_v1,
-accept_job_with_capability_v1 missing dao_escrow/identity contract_id checks).
-Both fixed.
-
-### Lesson 16: Unconstrained ZK Witnesses — The Mint Authorization Bypass
-
-**The vulnerability**: PromissoryNote's `Mint_V1` ZK circuit declared `mint_public` as a witness and exposed it via `constrain_instance`, but had NO constraint proving `mint_public = poseidon_hash(backing_secret)`. The `backing_secret` witness didn't exist at all in the circuit. The comment on the witness block said "Backing capability proof (mint_public = poseidon_hash(backing_secret))" but this was aspirational text, not a circuit constraint.
-
-The entrypoint checked `params.mint_public != stored_auth` at line 530, where `stored_auth` is publicly readable from the on-chain token registry. Since `mint_public` was completely unconstrained in the circuit, any prover could:
-1. Read `stored_auth` from the token registry (public data)
-2. Set `mint_public = stored_auth` as the witness value
-3. Generate a valid ZK proof
-4. Bypass the entrypoint's authorization check and mint tokens of ANY registered token type
-
-**The fix (2026-06-05)**: Added `Base backing_secret` to the witness block and constrained `derived_mint_public = poseidon_hash(backing_secret); constrain_equal_base(derived_mint_public, mint_public)`. The client now passes `mint_secret` as a witness instead of the pre-computed `mint_public`, letting the circuit derive `mint_public` from the secret.
-
-**The principle**: **Every witness that serves as an authorization check must have its derivation constrained in the circuit.** If `mint_public` is compared against on-chain state to authorize minting, the circuit must prove that `mint_public` is derived from a secret the prover knows — not just accept it as a free variable. An aspirational comment is not a constraint. The ZK circuit is the only enforcement mechanism; if it's not in the circuit, it doesn't exist.
-
-**Detection heuristic**: For every `constrain_instance` of a value that is checked against on-chain state in the entrypoint, verify the circuit constrains how that value is derived. Grep for the value name in the `.zk` file — if it only appears as `constrain_instance(value)` without any prior derivation constraint, it's a free witness.
-
-**Free-witness audit checklist** (for every `constrain_instance(X)` in a `.zk` circuit):
-- [ ] Is `X` a witness slot? If yes, trace its use in the circuit body.
-- [ ] Is `X` constrained equal to a circuit-computed value via `constrain_equal_base`?
-- [ ] Is `X` used as input to a circuit-computed value that IS published?
-- [ ] Is `X` declared in the witness block but never referenced anywhere? (unused witness)
-
-A witness that satisfies none of the above is a free witness. An unused witness
-is dead code — it occupies a slot in the proving key and params struct but the
-circuit proves nothing about it.
-
-### Lesson 17: Off-Circuit Value Conservation — The Fee Inflation Vector
-
-**The vulnerability**: NativeToken's `FeeV1` ZK circuit had zero constraint linking `input_value` and `output_value`. The fee subtraction (`output_value = input_value - fee`) was computed off-circuit in the Rust client. The circuit used `input_value` solely in the input commitment hash and `output_value` solely in the output commitment hash — they were independent witnesses with no relationship enforced.
-
-Since the entrypoint has no way to detect value inflation (values are hidden in Pedersen commitments with different blinds), a prover could set `output_value = input_value + 1,000,000` and generate a valid ZK proof. The 1-in-1-out structure provided zero actual conservation.
-
-**The fix (2026-06-05)**: Added `Base fee` witness, `constrain_instance(fee)`, and the constraint `computed_sum = base_add(output_value, fee); constrain_equal_base(computed_sum, input_value)` in the circuit. The fee is now a ZK public input, verified against the transaction's declared fee in the entrypoint. Range checks added on all three values.
-
-**The principle**: **Structural conservation (1-in-1-out) is not cryptographic conservation.** If the ZK circuit doesn't enforce the relationship between values, the relationship doesn't exist. Every value transformation (fee subtraction, interest accrual, exchange rate conversion) that happens off-circuit must be constrained in-circuit. The Rust client is a convenience, not a security boundary.
-
-**Related finding**: NativeToken's `TransferV1` also lacked cross-proof value conservation. Unlike PromissoryNote's `verify_value_conservation()` (which sums Pedersen commitments per token_commit), NativeToken had no check that `sum(input value_commits) == sum(output value_commits)`. Fixed (2026-06-05) by adding the same Pedersen homomorphic sum check across inputs and outputs.
-
-### Lesson 18: Independent Witness Separation — The Commitment-Owner/Transaction-Signer Split
-
-**The vulnerability**: Both NativeToken and PromissoryNote burn circuits had separate `spend_secret` (for nullifier derivation) and `signature_secret` (for transaction signing) witnesses with no cross-constraint. A prover could use `secret_A` for commitment ownership proof and `secret_B` for transaction signing — the commitment owner and the transaction signer could be different entities.
-
-This broke the fundamental assumption that the person signing the burn transaction is the commitment owner. The nullifier proves knowledge of `spend_secret` (since `nullifier = poseidon_hash(spend_secret, commitment)`), but the transaction signature proves knowledge of a different `signature_secret`. No constraint linked them.
-
-**The fix (2026-06-05)**: Derive `signature_secret` in-circuit from `spend_secret` and `nullifier`:
-```
-derived_signature_secret = poseidon_hash(spend_secret, nullifier);
-constrain_equal_base(derived_signature_secret, signature_secret);
-```
-The `signature_secret` is cryptographically bound to `spend_secret` (can't use an independent secret), but since `nullifier` is unique per commitment, each burn produces a different `signature_secret` — and therefore a different `signature_public`, preserving unlinkability across burns. The transaction signer IS the commitment owner by construction, but each burn has a unique on-chain identity.
-
-**The principle**: **When a ZK proof proves ownership of a secret, derive per-operation signing keys from that secret — don't reuse the static key directly.** Adding a second independent secret for signing creates a separation that can be exploited. But exposing the raw static key (`pub = ec_mul_base(spend_secret, K)`) as a public input links all of a user's burns on-chain. The correct pattern derives a per-burn signing key using a unique operation identifier (the nullifier): `signature_secret = hash(spend_secret, nullifier)`. This binds the signer to the commitment owner cryptographically while ensuring each burn has a distinct, unlinkable signature public key.
-
-**First-attempt pitfall**: The initial fix removed `signature_secret` entirely and exposed `derived_pub_x/y` (from `pub = ec_mul_base(spend_secret, K)`) directly as public inputs. This fixed the separation attack but created a privacy regression — every burn from the same commitment owner revealed the same static public key, making all burns trivially linkable. The per-burn derivation pattern fixes both problems simultaneously.
-
-### Lesson 19: Isolated Execution Overlays — The Same-Block Double-Spend
-
-**The vulnerability**: In `bin/dwowd/src/execution.rs`, every contract call receives `base_overlay.clone()` — an independent copy of the pre-block state. No call sees any other call's state changes during execution. Diffs are merged post-hoc with `main_overlay.add_diff(diff)` which silently overwrites duplicate keys.
-
-Two transactions spending the same commitment in the same block both pass their exec-phase nullifier checks (base state shows nullifier unspent). Both writes land in the merge. The merge silently overwrites, so both transactions appear to succeed.
-
-The mempool only deduplicates by exact transaction hash — two different transactions spending the same nullifier are not detected as conflicting.
-
-**Status (2026-07-31)**: Resolved. The execution pipeline now uses a shared overlay model for canonical calls (call N+1 sees call N's nullifier spend). Uncle-vs-uncle key conflict detection is in place. Deployooor write-key conflict detection is in place. The mempool performs nullifier deduplication at admission time (BTreeSet-based, with chain-state consultation and sled persistence).
-
-**The principle**: **Isolated execution overlays are correct only when combined with conflict detection at merge time.** If every call sees an independent pre-block state, two calls can both "succeed" while making conflicting state changes. The merge phase must detect and reject these conflicts — silent overwrite is not safe for value-bearing state.
-
-**Mitigation in the meantime**: The miner's block construction logic should reject transactions with conflicting nullifiers before block assembly. The mempool should track a set of spent nullifiers alongside transactions.
-
-### Lesson 20: Supply Audit Capability — The Orchard Lesson
-
-**The vulnerability**: In May 2026, a missing circuit constraint was discovered in
-the Orchard shielded pool (Halo 2 proving system). The circuit contained an
-under-constrained elliptic-curve multiplication check — the circuit verified that
-a multiplication *was performed* but did not constrain the validity of the inputs.
-An attacker could supply arbitrary false inputs and produce a valid ZK proof. The
-bug existed undetected for **four years** (since NU5 activation in May 2022) and
-survived multiple rounds of human cryptographic review.
-
-**Critical consequence — undetectable counterfeiting**: Because the Orchard pool is
-fully shielded (all balances hidden behind Pedersen commitments), counterfeit commitments
-created through this exploit would be cryptographically indistinguishable from
-legitimate ones. There is **no way to determine** whether the vulnerability was ever
-exploited on mainnet. Market cap dropped ~$3B on disclosure.
-
-**The architectural root cause — missing capability**: The Orchard pool relied
-entirely on per-transaction balance checks (the binding signature + `valueBalance`
-field). If a single circuit constraint was missing, the entire edifice collapsed —
-because the binding signature depends on those commitments being correctly formed.
-There was no independent supply audit capability. No second witness to supply
-integrity.
-
-**NativeToken's capability — the Pedersen cumulative chain**: Every NativeToken
-coinbase carries a Pedersen commitment chain from genesis to tip:
-
-```
-S_H = S_{H-1} + C_H
-```
-
-This is a **single capability** verified through two independent cryptographic
-properties:
-
-**Property 1 — ZK circuit constraint.** The Mint_V1 circuit constrains
-`ec_add(S_{H-1}, C_H) == S_H` and exposes `S_H` as a public input (6 public
-inputs including `new_cumulative_x` and `new_cumulative_y`). Depends on
-**Halo2 proof system soundness**.
-
-**Property 2 — Pedersen binding (external audit).** Any node reads the stored
-cumulative state via the `blockchain.get_cumulative_supply` RPC endpoint and
-checks the `S_H = S_{H-1} + C_H` identity using pure Pedersen arithmetic.
-**Does not verify a single ZK proof.** Depends on **Pedersen commitment
-binding**.
-
-To hide inflation from all nodes, an attacker must break **both** properties
-simultaneously. A ZK soundness bug alone (Orchard class) is caught by the audit
-— the forged `S_H` won't match `pedersen_commit(expected_supply, expected_blind)`.
-A Pedersen binding break alone is caught by the circuit — `ec_add` still rejects.
-
-**Active consensus rule — proof of token balance**: As of June 2026, the supply
-audit is an **active consensus rule** enforced at every block acceptance path in
-`dwowd`. The proof of token balance (`bin/dwowd/src/proof_of_token_balance.rs`)
-combines the cumulative supply chain with a per-block Pedersen mass balance
-equation: `Σ outputs + Σ burns + Σ fees == Σ inputs`. This proves that
-non-coinbase transactions do not secretly mint darkw. A block that fails the
-check is rejected — it will not be applied to the chain. The check runs at all
-six block acceptance paths (P2P broadcast, built-in miner, RPC miner, stratum,
-merge mining, and consensus sync).
-
-**What it covers**: The chain proves an upper bound on supply (coinbase creation
-only). Burns reduce actual supply below the bound but don't threaten the ceiling.
-The threat model is under-reporting (hidden inflation), which the circuit
-constraint prevents — every coinbase MUST extend the chain correctly, proven in ZK.
-
-**The principle**: **Shielded assets need a supply audit capability — not just
-per-transaction balance checks, but a cumulative, cross-transaction commitment
-chain that any observer can independently verify.** Per-transaction checks are
-necessary but not sufficient — a single missing constraint in any circuit can
-break them all. A cumulative chain that spans the entire monetary history
-provides a second witness: you must corrupt EVERY proof to hide inflation, not
-just one. And if you do, the break is immediately visible to every node on the
-network.
-
-**Audit heuristic — the "capability test"**: For any shielded asset, ask: "If a
-circuit constraint bug allows unbounded minting, can anyone detect it?" If the
-answer is no, the asset needs a cumulative commitment chain. The test is not
-"has the circuit been reviewed?" — the Orchard circuit was reviewed for four
-years. The test is "does the architecture provide a supply audit capability
-independent of any single circuit?"
-
-**The burden of proof**: The Orchard post-exploit response added turnstile
-accounting to the shielded pool — users must now prove their transactions are
-legitimate through permissioned exit paths. The burden of proof and suspicion
-falls on *users* trying to transact privately. The cumulative chain inverts
-this: the burden of proof is on the miners earning coinbase rewards and paying
-fees. Every coinbase's extension of the supply chain must be checkable in the
-clear — the reward value is public, so no ZK proof is needed or used. Users carry
-no such burden — they are not suspected counterfeiters until
-proven innocent. The audit capability doesn't surveil users; it verifies the
-money supply at the source.
-
-This is not a silver bullet. It is a detection mechanism that eliminates the
-Zcash mode of failure — where a single circuit bug means permanent uncertainty
-about circulating supply, and the only remedy is to impose controls on privacy
-users after the fact. Node operators run it as a passive alarm. The core
-repository uses it as a signal to investigate, patch, or coordinate a fork.
-Honest nodes that detect a discrepancy can refuse to build on the dishonest
-chain. The burden of action is on those who benefit from the system, not on
-those who use it.
-
----
-
-## HAZOP Circuit Hardening Program (2026-07)
-
-In July 2026, a cross-contract adversarial security audit examined all 181 ZK circuits
-across 32 contracts through the ρ-calculus object-capability model — where the circuit
-IS the type, the predicate language IS the capability, and every vulnerability is a
-capability exhibited without possessing the required name (type-system.md §5, ocap.md §3).
-
-A HAZOP (Hazard and Operability) analysis traced every finding to its root cause in the
-type system, grouped findings into five root cause classes, and prescribed remediation
-through cryptographic constraint addition. The meta-cause: **"The ZK circuit's constraint
-system is not mechanically verified against the declared predicate language"**. It was cited
-to the `circuitSoundnessBridge` axiom (type-system.md §11.4); that axiom is **deleted**, and
-the two halves of the meta-cause have since moved in opposite directions. The *constraint*
-half is now mechanized structurally — `script/circuit_instance_derivation.py` classifies every
-`constrain_instance` in all 180 `.zk` sources (OBL-Z1). The *declared predicate language* half
-is still not mechanized, and is named by the hypothesis `CircuitDerivable r s` in
-`Capability/Inversion.lean`, which nothing yet supplies.
-
-### Methodology
-
-The HAZOP examined each circuit through the lens of the ρ-calculus type system:
-
-1. **Name possession** (type-system.md §5): "A process SHALL perform action A if and
-   only if it possesses the name for A." A circuit that accepts a proof from a prover
-   who does not possess the declared secret exhibits the barb without the name.
-
-2. **Type distinction** (type-system.md §2): "Two types SHALL NOT be unified."
-   `poseidon_hash` erases type distinctions at its output boundary — a nullifier and
-   a token commitment produce the same `pallas::Base` type.
-
-3. **Canonical encoding** (type-system.md §2.2): Numeric values crossing the
-   circuit/entrypoint boundary must use their declared domain representation. Field
-   arithmetic applied to u64 values is a type error.
-
-4. **Cryptographic primitive types** (type-system.md §8.1): Every primitive name
-   (SecretKey, Commitment, Nullifier) must be cryptographically bound to the secret
-   that authorizes its use. A `constrain_instance` without an in-circuit derivation
-   constraint is a free witness — an Orchard-class vulnerability (Lesson 16).
-
-### Root Cause Summary
-
-| RC | Class | Circuits | Exploitability | Mechanism | Remediation Status |
-|----|-------|----------|----------------|-----------|-------------------|
-| **RC1** | Witness Non-Binding | 21 circuits | CRITICAL | `constrain_instance` on unconstrained witnesses; `bool_check` on u64 amounts; missing `range_check` | **Fixed (2026-07-31)** — all 21 circuits; Lean4-verified |
-| **RC2** | Vacuous Proof Acceptance | 6 circuits | CRITICAL | `zero_cond` feeds `merkle_root` without `less_than_strict(ZERO, value)` guard | **Fixed (2026-07-31)** — guards on all 6 circuits |
-| **RC3** | Missing Domain Separation | 177 circuits | FIXED | `poseidon_hash` type erasure — nullifier hash indistinguishable from commitment hash | **FIXED** — all 178 circuits ported to V2 with `DOMAIN_*` constants; CI gate (`scripts/check-circuit-domain-separation.sh`) enforces permanently |
-| **RC4** | Arithmetic Domain Confusion | 8 circuits | HIGH | `base_div` (field division via Fermat) applied to u64 integer division | **Fixed (2026-07-31)** |
-| **RC5** | Fix Propagation Failure | 2 circuits | CRITICAL | Copied circuits lack provenance tracking — fixes to origin not propagated to derivatives | **Fixed (2026-07-31)** — bearer_bond domain fixes propagated |
-
-### Finding RC1: Witness Non-Binding
-
-**Sub-class A — `bool_check` on u64 amounts (11 circuits, stablecoin + DEX)**:
-`bool_check(value)` constrains a field element to {0, 1} using `small_range_check` with
-range=2. Applied to u64 values and swap amounts, it limited all operations to 0 or 1
-token unit. The `range_check(64, value)` already present alongside it was correct;
-`bool_check` was redundant and destructive. **Fix**: Remove `bool_check` calls; the
-existing `range_check` provides the correct u64 bound.
-
-**Sub-class B — `public_key` unbound to `spend_secret` (1 circuit, promissory_note)**:
-`MintV1` accepted `public_key` as an independent witness — the prover could mint commitments
-to keys they don't control, making rewards permanently unspendable. **Fix**:
-`constrain_equal_base(public_key, mint_public)` where `mint_public` is bound to
-`backing_secret` via `poseidon_hash`. This is the same class as native_token M8
-(see Lesson 16).
-
-**Sub-class E — Missing `range_check(64, value)` (9 circuits, labor_market + tender +
-betting_stake)**: u64-valued witnesses (`amount`, `payment`, `stake`, `fee`) without
-range proofs. Field overflow could produce incorrect arithmetic results. **Fix**: Add
-`range_check(64, value)` for every u64 witness before it enters arithmetic operations.
-
-### Finding RC2: Vacuous Proof Acceptance — The Zero-Condition Merkle Bypass
-
-The `zero_cond(value, leaf)` gadget returns the tree's zero leaf when `value == 0`.
-Without a `less_than_strict(ZERO, value)` guard, setting `value=0` makes `merkle_root`
-always succeed — the zero leaf exists at every position in every Merkle tree. The prover
-forges `↓prove-inclusion` without possessing a real commitment.
-
-**Affected**: bearer_bond burn, bridge azt/xmr/zec/ltc deposit (5 circuits).
-**Already fixed in**: promissory_note burn, native_token burn V2, bridge deposit_v1.
-**Fix**: Add `less_than_strict(ZERO, value)` before every `zero_cond(value, leaf)` that
-feeds into `merkle_root`. This is a constrain-only guard — it enforces the inequality
-but returns no value, so the circuit structure is unchanged.
-
-**Type-system rule**: "Every conditional gadget whose output feeds into a cryptographic
-verifier SHALL have its branch condition constrained. `zero_cond` feeding `merkle_root`
-SHALL be preceded by `less_than_strict(ZERO, value)`."
-
-### Finding RC3: Missing Domain Separation — The Poseidon Type Erasure Boundary
-
-`poseidon_hash` is a type erasure boundary. Typed inputs (`Nullifier`, `Commitment`,
-`AssetId`) produce the same output type (`pallas::Base`). Without domain separation, a
-nullifier hash in circuit A is bitwise-identical to a token commitment hash in circuit B
-given the same inputs — the hash output loses its behavioral position. Per type-system.md
-§2, two distinct types SHALL NOT be unified; `poseidon_hash` unifies them at the output.
-
-**Scope**: 177 circuits across 32 contracts. Every `poseidon_hash` invocation needed a
-domain separator prepended as its first input.
-
-**Fix**: Each circuit declares domain constants via `witness_base(N)` and prepends the
-appropriate constant to every `poseidon_hash` call:
-
-```
-circuit "ExampleV2" {
-    DOMAIN_NULLIFIER = witness_base(1);
-    DOMAIN_TOK_COMMIT = witness_base(2);
-    DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_COMMITMENT = witness_base(4);
-    DOMAIN_USER_DATA_ENC = witness_base(6);
-    DOMAIN_SIGNATURE_SECRET = witness_base(7);
-
-    nf = poseidon_hash(DOMAIN_NULLIFIER, spend_secret, C);
-    C  = poseidon_hash(DOMAIN_COMMITMENT, pub_x, pub_y, value, asset_id, ...);
-    tb = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
-}
-```
-
-Each circuit was migrated to a V2 namespace (`XxxV1` → `XxxV2`), compiled, registered
-in the entrypoint's `init_contract`, and activated in `get_metadata`. V1 circuits are
-preserved alongside V2 for backward compatibility; only `get_metadata` switches to V2.
-
-**Domain constant vocabulary** (7 values, cross-circuit):
-1 = NULLIFIER, 2 = TOKEN_COMMIT, 3 = TX_BINDING, 4 = COIN_COMMIT,
-5 = MERKLE_LEAF, 6 = USER_DATA_ENC, 7 = SIGNATURE_SECRET
-
-**Verification**: `grep -rn "poseidon_hash(" proof/*_v2.zk | grep -v "DOMAIN_"` returns
-zero results. Every `poseidon_hash` call in every V2 circuit has a domain constant as its
-first argument. 32 contracts, all 177 circuits, all compile clean.
-
-### Finding RC4: Arithmetic Domain Confusion — base_div on u64 Values
-
-`base_div(a, b)` computes `a * b^(p-2) mod p` using Fermat's little theorem — this is
-**field** division producing a field element, not **integer** division producing a u64.
-Applied to fee calculation (`fee = amount * bps / 10000`), interest accrual, and oracle
-price aggregation, it produces a modular inverse rather than a truncated quotient. For
-integers that don't divide evenly in the field, the result is a large field element
-bearing no relationship to the intended integer quotient.
-
-**Fix**: Replace `base_div(a, b)` with quotient-remainder constraints:
-```
-# floor(a/b) = q  ⇔  q*b <= a < (q+1)*b
-ONE = witness_base(1);
-q_times_b = base_mul(q, b);
-lte_check = less_than_or_equal(q_times_b, a);
-constrain_equal_base(lte_check, ONE);
-q_plus_1 = base_add(q, ONE);
-upper = base_mul(q_plus_1, b);
-less_than_strict(a, upper);
-```
-
-For ratio comparisons (`a/b >= threshold`), cross-multiplication eliminates division:
-`a * 10000 >= threshold * b`.
-
-**Affected**: 8 circuits across 7 contracts (stablecoin accrue_interest +
-governance_report, dex execute_swap_fee, oracle aggregate, identity create_claim_ratio,
-bearer_bond prove_coverage, labor_market milestone_payment, drain_protection exit).
-
-**Type-system rule**: "`base_div` SHALL NOT appear in any ZK circuit that declares
-u64-valued witnesses. Integer division SHALL be implemented via quotient-remainder
-constraints."
-
-### Finding RC5: Fix Propagation Failure
-
-bearer_bond circuits (`burn_v1.zk`, `redeem_v1.zk`, `blind_output_v1.zk`) are copies of
-promissory_note circuits but lacked promissory_note's security fixes:
-- `redeem_v1.zk` missing `constrain_equal_base(value, ZERO)` (Lesson 16 pattern)
-- `burn_v1.zk` missing per-burn `signature_secret` derivation (Lesson 18 pattern)
-
-**Root cause**: Copied circuits are not tracked as derivatives. No provenance chain
-exists. Fixes to the original are not propagated to copies — a configuration management
-failure where the fix EXISTS but isn't applied.
-
-**Fix**: Applied promissory_note fixes to bearer_bond copies following the established
-patterns. **Type-system rule**: "Every ZK circuit file SHALL declare its provenance.
-CI SHALL enforce that fixes to origin circuits propagate to all derived circuits."
-
-### The ρ-Calculus O-Cap Framework for Circuit Security
-
-The HAZOP program validated a framework for reasoning about ZK circuit security through
-the object-capability model. The framework applies to every circuit, existing and future:
-
-1. **Every `constrain_instance(X)` must have an in-circuit derivation** `X = f(witnesses)`.
-   A `constrain_instance` without a derivation constraint is a free witness — the prover
-   can set X to any value that passes the entrypoint check (Orchard-class, Lesson 16).
-
-2. **Every `poseidon_hash` must include a domain separator** identifying its semantic
-   purpose. The hash output type (`pallas::Base`) erases the input type distinction.
-   Domain constants restore it (RC3).
-
-3. **Every u64-valued witness must have `range_check(64, value)`** before entering
-   arithmetic. Field arithmetic on unbounded values can overflow the u64 domain (RC1-E).
-
-4. **Field division (`base_div`) must not appear in circuits with u64 witnesses.**
-   Integer division requires quotient-remainder constraints; field division produces
-   modular inverses (RC4).
-
-5. **Every conditional gadget feeding a cryptographic verifier must constrain its
-   branch condition.** `zero_cond` before `merkle_root` must be guarded by
-   `less_than_strict(ZERO, value)` (RC2).
-
-6. **Copied circuits must declare provenance.** When a security fix is applied to an
-   origin circuit, all derivatives must receive the same fix (RC5).
-
-### Audit Heuristic Addendum
-
-When reviewing ZK circuits, add these checks to the existing audit checklist:
-
-- [ ] Every `constrain_instance(X)` has a derivation constraint `X = f(witnesses)` in the circuit
-- [ ] Every `poseidon_hash(...)` call prepends a domain constant as its first argument
-- [ ] Every `Base` witness representing a u64 value has `range_check(64, value)`
-- [ ] No `base_div` appears in circuits with u64-valued witnesses
-- [ ] Every `zero_cond(value, leaf)` before `merkle_root` is preceded by `less_than_strict(ZERO, value)`
-- [ ] Circuit files that are copies of other circuits declare their provenance and have all origin fixes applied
-
-### Lesson 21: Serialization-Derived Safety — Explicit Encoding as Defense-in-Depth
-
-**The vulnerability**: All 33 contracts originally used `#[derive(SerialEncodable,
-SerialDecodable)]` on state structs and parameter types. The derive macros produce
-opaque byte blobs that bypass every validating constructor. `Nullifier`'s derived
-`Decodable` reads `pallas::Base` directly — it never calls `Nullifier::from_bytes()`
-and silently accepts zero and non-canonical values. A `serialize(&purse)` was observed
-to silently produce 9 bytes instead of 129 — the derived `Decodable` accepted this,
-producing a corrupt Purse with zeroed fields. The error surfaced only as
-`ContractError::IoError("Unknown")` at the WASM boundary.
-
-**The fix**: Every contract now uses explicit `encode()`/`decode()` methods with
-fixed byte layouts and per-field validation through named constructors:
-
-```rust
-// AFTER — see src/contract/purse/src/model/mod.rs
-fn decode_purse(data: &[u8]) -> Result<Purse, ContractError> {
-    if data.len() != 129 {
-        return Err(ContractError::IoError(format!(
-            "Purse: expected 129 bytes, got {}", data.len()
-        )));
-    }
-    let purse_id = PurseId::from_bytes(data[1..33].try_into().unwrap())
-        .ok_or_else(|| ContractError::IoError("Purse: invalid purse_id".into()))?;
-    // Every field through its validating constructor — no derive bypass.
-}
-```
-
-**Migration scope**: 33 contracts, ~1500 lines changed. Every `SerialEncodable`/
-`SerialDecodable` derive removed from every contract model, entrypoint, and client
-file. Additional code-quality fixes applied: `.unwrap()` → `?` in metadata helpers
-(44 occurrences), `let _ =` removed from `set_return_data` (5), `unwrap_or_else`
-replaced with explicit `match` (1), dead imports removed (2), legacy bridge impls
-converted to standalone methods (30+ impls across 6 contracts).
-
-**The principle**: **Every type crossing a persistence boundary must use explicit
-encoding with validating constructors.** Derive macros operate below the type system
-and silently accept invalid data. Fixed byte layouts with per-field validation ensure
-corrupt state is detected at the field level. The compiler cannot verify derive macros;
-it CAN verify that every `from_bytes`/`from_repr` call site validates its input.
-
-**Reference**: [Contract WASM Standards & Best Practices](../../arch/contract-wasm-standards-best-practices.md)
-for the full specification, canonical patterns, and migration checklist.
-
-### Lesson 22: Generic-Prover Proof Serialization — Raw Transcript vs Length-Prefixed Encoding
-
-**The vulnerability** (wallet's generic-prover write path, wallet.md §6.4.1): every wallet-driven
-L1 capability proof failed `verify_zkp` with `L2 proof verify … invalid proof: call[0] namespace
-'Put'`. The public inputs were all correct; the failure was in the proof **bytes**, not the witness.
-
-`create_generic_proof` (`bin/dww/src/prover_impl.rs`) returned
-`dwow_serial::Encodable::encode(&proof)` — the **length-prefixed** VarInt encoding of the proof —
-instead of the raw transcript bytes. `Proof(Vec<u8>)` derives `SerialEncodable`, so `encode()` prepends
-a VarInt length. The caller then wrapped those bytes with `Proof::new(bytes)` (a raw-bytes wrapper) and
-the tx witness serialized `Proof` again — a **second** VarInt prefix. The verifier's transcript
-(`Proof::verify` reads `self.0` as the Blake2b transcript) began with a spurious VarInt and verification
-failed.
-
-**The fix**: return the raw transcript, not the `Encodable` form:
-
-```rust
-// AFTER — bin/dww/src/prover_impl.rs
-let proof_bytes = proof.as_ref().to_vec();   // raw transcript bytes
-// NOT: dwow_serial::Encodable::encode(&proof)   ← adds a VarInt length prefix
-```
-
-**Four lessons:**
-
-1. **Never pre-encode a `SerialEncodable` value and then wrap it as raw bytes.** A type that derives
-   `SerialEncodable` (length-prefixed) and is later consumed as a raw byte blob (`Proof::new`) must be
-   handed through as `as_ref().to_vec()`, not `encode()`. The derive prefix is silent — it survives
-   code review and only surfaces as "invalid proof" at the verifier.
-2. **The unit test MUST mirror the production consumer's exact wrapping.** The first reproduction
-   decoded the proof with `deserialize` (which strips the length prefix) and therefore PASSED; the e2e
-   path uses `Proof::new` (which does not strip) and FAILED. The test masked the bug by not matching the
-   consumer. A decisive test builds the proof through the prover, wraps it exactly as the tx witness
-   does, and then calls `verify_zkp`.
-3. **Merkle-path padding must match the hash domain (see Lesson 13).** Padding a Sinsemilla
-   MerkleCRH^Orchard path with `pallas::Base::zero()` or Poseidon `smt::EMPTY_NODES_FP` produces a
-   wrong root; pad with `MerkleNode::empty_root(altitude)`. (Latent here because `tree.witness` always
-   returns the full 32-element path, but it is a T5 soundness bug in any shallow-tree path.)
-4. **Merkle-triple congruence (T5).** The `(leaf_position, merkle_path, merkle_root)` fed to the circuit
-   MUST all derive from ONE tree. The wallet-local scan tree is unseeded (first leaf at position 0) while
-   the per-contract tree is zero-seeded (first leaf at position 1) — substituting `cap.leaf_position`
-   for the reconstructed `proof.leaf_position` mixes two trees and makes
-   `merkle_root(pos_local, path_c, leaf) ≠ root_c`.
-
-**Reference**: [L1 Capability Write-Path Spec](../testing/l1-capability-write-path-spec.md) (the
-real-vs-fake acceptance matrix these proofs must satisfy), and the prover unit tests in
-`bin/dww/src/prover_impl.rs::tests`.
-
----
-
-## Flakey Patterns: Recognition and Prevention
-
-A **flakey pattern** is a solution that passes functional tests but violates a core architectural invariant. It looks correct in isolation — the code compiles, the tests pass, the immediate problem is solved — but it undermines the very property the system exists to provide. These are the most dangerous bugs because they survive code review and automated testing.
-
-Flakey patterns are also the primary way that **blast radius expands without anyone noticing**. In an o-cap architecture, each capability is meant to be a self-contained authorization token — lose one, lose access to exactly one action. A flakey pattern that allows silent authorization bypass, capability reuse, or cross-instance identity linking doesn't break one action; it erodes the isolation that the o-cap model depends on. One flakey signature check in a shared validation path can turn a single-capability compromise into a cross-contract exploit. The o-cap model's blast-radius guarantee is only as strong as the weakest verification in the capability chain.
-
-### Anatomy of a Flakey Pattern
-
-Every flakey pattern shares three characteristics:
-
-1. **Solves the immediate problem** — the functional requirement is met. The parent *can* verify the child amount.
-2. **Breaks a core invariant** — a non-negotiable design constraint is sacrificed. Privacy is the invariant; plaintext values break it.
-3. **Disguises the breakage** — the violation is hidden behind optional types, configurable defaults, or conditional logic that makes it look safe. `Option<u64>` *looks* like privacy is preserved.
-
-### The Warning Signs
-
-When reviewing code, these signals indicate a potential flakey pattern:
-
-| Signal | Example | Why It's Dangerous |
-|---|---|---|
-| **Plaintext data in privacy structs** | `public_value: Option<u64>` on `Output` | The struct is on-chain; all fields are visible regardless of type wrapping |
-| **Optional fields that are mandatory for correctness** | `public_value` must be `Some(...)` for any composed transfer | The "optional" is a lie — the field is required for the primary use case |
-| **New ZK circuits that reveal what old ones hid** | `TransferOutput_V1` vs `BlindOutput_V1` | Proves the same thing but with extra public inputs that leak data |
-| **Fields added to satisfy one caller's needs** | Bridge needed amount verification → `Output` got `public_value` | One contract's requirement leaked into the shared data model |
-| **Type-level safety without invariant enforcement** | `Option<u64>` is type-safe but doesn't enforce privacy | Rust's type system can't check protocol-level invariants |
-| **"Backed by a ZK proof" without on-chain verification** | `auth_proof` fields in `MintV1` only ZK-verified | ZK proofs constrain witnesses, not on-chain state (Lesson 1) |
-| **Opcode checks without contract ID checks** | `data[0] == 0x04` without validating `contract_id` | Same opcode used by multiple contracts (Lesson 2) |
-| **Raw pubkeys as database keys** | `db_set(relayers_db, &serialize(&relayer_pub), ...)` | Enables enumeration of all records for a known identity (Lesson 5) |
-| **Shared signature secrets across transactions** | `signature_secret` reused from wallet key | All Inputs from the same wallet share a static identity link (Lesson 6) |
-| **Identity material in opaque data fields** | `user_data = poseidon_hash([..., sender_pub])` | Smuggles public key fingerprints through fields meant for private app data (Lesson 7) |
-| **Identity fragments in token derivation** | `token_auth_parent = authority_pub[..8]` | Token ID carries a fingerprint of its creator, making all holders linkable (Lesson 8) |
-| **Full wallet keypair in client builders** | `signature_keypair: Keypair` on builder structs | Invites wallet secret reuse; may leak secret into serialized data (Lesson 9) |
-| **Shared raw pubkeys across contract instances** | Same wallet pubkey used for `owner_pubkey`, `member_pub`, `staker_pub` across multiple instances of the same contract | Cross-instance identity linking — an observer enumerates all contracts a user interacts with by matching the pubkey. Fix: `SecretKey::derive_instance` |
-| **Silent authorization bypass** | `verify_capability_for_action` returns `Ok(())` when governance is inactive instead of `Err(GovernanceNotActive)` | Caller proceeds as if authorized — the check exists in code but the failure branch is a no-op. The function name says "verify" but the implementation says "succeed." |
-| **Placeholder signatures in production params** | `signature: pallas::Base::zero()` instead of `signature: schnorr::Signature` | Type system prevents accidental misuse — `pallas::Base::zero()` compiles everywhere, `schnorr::Signature` requires actual signing. A scalar zero is not a signature. |
-| **Safety features disabled by default** | `DrainConfig { circuit_breaker: None, exit_queue: None }` as `Default` | Every deploy starts insecure. Operators must opt-in to safety. Defaults should be the secure configuration; opt-out for exceptions. |
-| **Missing temporal validation** | Slash attestation accepts `block_height` from any block, including future blocks | A relayer can pre-register a slash for block N+1000, blocking real slash attestations at that height via idempotency check. Temporal order matters — validate that events happened in the past and within a recency window. |
-| **Capability descriptors out of sync with dispatch** | Descriptor says `function_id: 0x01` for `Subscribe` but dispatch maps `0x00` | The host capability engine enforces rules on the wrong functions. A function call passes capability checks for an action it doesn't perform. The descriptor is security infrastructure, not documentation (Lesson 10). |
-| **ZK circuit / client public input ordering mismatch** | Circuit `constrain_instance` order: `[x, y, id, bid]`. Client `to_vec()`: `[id, bid, x, y]` | Proofs verify against the circuit's instance column order. Mismatched order means instance column 0 constrains `x` but receives `id` — the proof verifies garbage. The circuit, the entrypoint, and the client builder must agree on public input order. |
-
-### The Fix Pattern
-
-Flakey patterns are almost always fixed by one of two approaches: **use the cryptographic commitments you already have**, or **derive per-instance keys deterministically**.
-
-```
-FLAKEY:  Add plaintext field + new ZK circuit to prove plaintext matches hidden value
-PROPER:  Compare existing commitments using deterministic derivation both sides compute
-
-FLAKEY:  Use raw wallet pubkey across multiple contract instances
-PROPER:  Derive per-instance key via SecretKey::derive_instance(&contract_id, &instance_seed)
-
-FLAKEY:  Return Ok(()) when authorization check finds nothing (silent pass)
-PROPER:  Return Err(GovernanceNotActive) — deny by default, enumerate only the success conditions
-
-FLAKEY:  Accept pallas::Base or [u8; 32] as a signature type
-PROPER:  Use schnorr::Signature — let the type system enforce that actual signing occurred
-
-FLAKEY:  Safety features are None by default, requiring operator opt-in
-PROPER:  Safety features are enabled by default — Default::default() is the secure configuration
-
-FLAKEY:  Accept block_height without bounds checking
-PROPER:  Validate temporal parameters: block_height <= current_block && current_block - block_height <= MAX_AGE
-
-FLAKEY:  Capability descriptor drifts from entrypoint dispatch table
-PROPER:  Descriptor and dispatch are a matched pair — updating one without the other is a half-implemented change
-```
-
-The `value_commit` approach (Lesson 4) exemplifies the first: instead of adding `public_value` plus a `TransferOutput_V1` circuit, we use the existing `value_commit` plus deterministic blind derivation. Fewer lines of code, fewer circuits, stronger privacy.
-
-The `derive_instance` approach (Per-Capability Keys) exemplifies the second: instead of reusing the wallet pubkey across all escrows, stakes, and pools, each instance gets a unique derived key. Same wallet, different pubkey per instance — cross-instance linking becomes impossible.
-
-The deny-by-default approach (Lesson 10, DAO governance) exemplifies a third principle: authorization checks must enumerate what grants access and reject everything else. A function named `verify_X` that returns `Ok(())` when X doesn't exist is not verifying — it's a no-op with a misleading name.
-
-### The Root Causes
-
-Looking across every vulnerability identified in the review, the root causes fall into just five categories:
-
-1. **Insufficient on-chain verification** — ZK proof accepted as sufficient without checking on-chain state (Lesson 1). Signature field exists but verification is missing or uses a placeholder type (ESC-001, INS-001, DAO-002).
-
-2. **Authorization by presence, not proof** — A parameter field or function name implies authorization, but nothing checks it. The parameter exists, the code compiles, but the guard is decorative (MV-001, DAO-001).
-
-3. **Default insecurity** — The path of least resistance (default config, easiest client API, simplest builder) produces an insecure configuration (DRAIN-001, Lesson 9).
-
-4. **Drift between specification and implementation** — Capability descriptors don't match dispatch tables. Client `to_vec()` order doesn't match circuit `constrain_instance` order. The system has two sources of truth and they disagree (Lesson 10, TENDER-002).
-
-5. **Missing temporal or lifecycle constraints** — Functions accept parameters without validating when an event occurred, whether a lock period has elapsed, or whether state was persisted before the next phase (ATTEST-001, BET-001, POOL-001).
-
-6. **Orchard-class ZK circuit under-constraint** — A `constrain_instance` without an in-circuit derivation constraint is a potential unlimited-mint exploit. The Zcash Orchard bug (May 2024, found by AI-assisted audit) was exactly this: an unconstrained EC base point. Every DarkWow ZK circuit has been formally audited for this class (see below).
-
-### Formal Verification of the ZK Circuit Surface
-
-Every root cause above has a ZK-circuit analog. Lessons 16–20 document five ZK-specific
-vulnerability classes (unconstrained witnesses, off-circuit value conservation, independent
-witness separation, isolated overlays, supply audit gaps). These lessons were derived from
-manual audit. Since June 2026, all 120 contract circuits (across 26 contracts) have been
-**manually audited** against the Orchard-class detection rule:
-
-> Every `constrain_instance(X)` must have an in-circuit derivation `X = f(witnesses)`.
-> A `constrain_instance` without a derivation constraint is an Orchard-class vulnerability.
-
-**Correction.** This text previously said the circuits were "formally verified in Lean 4". The
-audit is manual: `proofs/lean/src/DarkFi/Circuits/` contains no Lean declarations. Beyond that,
-the rule is now **mechanized over the circuit sources** by
-`script/circuit_instance_derivation.py` (gate: `scripts/check-circuit-instance-derivation.sh`),
-which classifies every `constrain_instance` in all 180 `.zk` files — derived, bound, redundant,
-or declared with a host-side mechanism in `script/circuit_free_instances.txt`. What it does *not*
-establish is that a derivation means what the circuit intends, which is the opcode-semantics
-layer; `Axioms.NoFreeInstances` remains the name for that residual obligation and is still
-uninterpreted and unconsumed. `ECOps.detect_orchard_class_vulnerability` is a `def` over a
-*modelled* gadget and carries no weight for a real circuit.
-
-The proofs are built with:
-```bash
-cd proofs/lean && lake build DarkFi
-```
-
-**Results**: 1 Orchard-class vulnerability found and fixed (C1 — PN MintV1 `mint_public`
-was `constrain_instance`'d without a `poseidon_hash(backing_secret)` derivation constraint).
-Five other bugs confirmed fixed (C2, C4, H2, H3, M1). All 120 circuits now pass.
-
-The formal proofs cover three layers:
-- **Layer 1**: All 32 zkVM opcodes proved sound (EC operations, hashes, field arithmetic, comparisons)
-- **Layer 2**: All 120 contract circuits pass the Orchard-class instance-derivation audit
-- **Layer 3**: Cross-cutting theorems (Pedersen homomorphism, value conservation, nullifier determinism, signature binding, Merkle inclusion, zero-cond soundness)
-
-The known `IsEqualBase` (0x54) bug — `delta_invert` unconstrained when `a == b` — remains
-documented as non-exploitable (the output is always correct when `a == b`). `IsNotEqual` (0x62)
-is the fully-pure replacement.
-
-See [Opcodes and Formal Verification](../../arch/zk/opcodes.md) and
-[Opcodes Status](../../arch/zk/opcodes-status.md) for the complete verification results.
-
-Every fix in the review maps to one of these five root causes. When auditing a contract, these are the five questions to ask — they catch the majority of vulnerabilities before they reach production.
-
-### Audit Heuristic
-
-When auditing for flakey patterns, ask of every field on every on-chain struct:
-
-1. **Is this field visible on-chain?** If yes, what information does it reveal?
-2. **Is there a cryptographic commitment already present** that could serve the same purpose without revealing the value?
-3. **Is this field "optional" but actually required** for the contract's primary use case?
-4. **Was this field added to satisfy a single caller's requirement** rather than the general model?
-5. **Does a new ZK circuit reveal more public inputs** than the circuit it replaces or supplements?
-6. **Is a raw public key used as a database key?** If yes, replace with `poseidon_hash(pubkey_chunks)` — hash-preserved lookup without identity leakage.
-7. **Could a signature public key be reused across transactions?** If the field is named `signature_secret` or `signature_public` without "ephemeral," the naming itself may invite reuse. Rename to `ephemeral_signature_secret`.
-8. **Does `user_data` or any opaque field encode identity material?** Grep for `poseidon_hash([owner_secret])` or `sender_pub` in `user_data` derivations. Authorization belongs in nullifiers.
-9. **Does a token ID derivation use identity-linked inputs?** Check `token_auth_parent` and `asset_id = poseidon_hash(...)` for pubkey fragments. Use random blinds instead.
-10. **Does a client builder carry a full `Keypair`?** If yes, replace with individual secrets. The wallet root keypair should never appear in contract client code.
-11. **Does the same raw wallet pubkey appear across multiple contract instances?** If yes, derive per-instance keys with `SecretKey::derive_instance(&contract_id, &instance_seed)`. Store a random `instance_seed: [u8; 32]` on-chain so the wallet can reconstruct the derived key without a circular dependency. The same wallet creates a different pubkey for every contract instance — cryptographically unlinkable.
-
-If the answer to any of (3)-(5) is yes, and the answer to (2) is "yes, but we need to know the blind," consider deterministic blind derivation before adding a plaintext field.
-
-If the answer to any of (6)-(11) is yes, the code has an o-cap privacy deviation. Apply the fix pattern from the corresponding lesson.
-
-12. **Does an authorization function return `Ok(())` when the thing it's checking is absent?** If `verify_X` returns success when X doesn't exist, it's not verifying — it's rubber-stamping. Every verification function must have a deny-by-default posture: enumerate the conditions that permit access, and reject everything else.
-13. **Is a signature field typed as `pallas::Base` or `[u8; 32]` instead of `schnorr::Signature`?** The type system is a security tool. `schnorr::Signature` communicates intent and prevents zero-value placeholders. Raw scalar types invite `::zero()` and `::dummy()`.
-14. **Are safety features opt-in?** Check `Default` impls on config structs. If `circuit_breaker` defaults to `None` and `exit_queue` defaults to `None`, the contract deploys with safety off. Flip the defaults — enable protection by default, let operators explicitly disable.
-15. **Does a function accept a `block_height` argument without validating it's in the past?** Temporal parameters must be bounded: `block_height <= current_block` and `current_block - block_height <= MAX_AGE`. Without this, future blocks can be pre-registered and stale events replayed.
-16. **Are function_ids in the capability descriptor verified against the entrypoint dispatch table?** For every `Action` in the descriptor, grep the entrypoint for the corresponding function enum variant. Mismatched IDs mean the capability engine authorizes the wrong actions.
-17. **Does the `to_vec()` order in the client match the `constrain_instance` order in the circuit?** Write a comment above both listing the expected order. They must be identical, position for position. The entrypoint's `zk_public_inputs` must also match.
-18. **Does the contract receive spend_hook callbacks?** If yes, verify: (a) `caller_contract_id` is validated against the expected PN contract, (b) nullifiers are tracked for replay protection, (c) the handler is fallible (callback failure reverts the burn), (d) `define_contract_with_spend_hook!` is used instead of `define_contract!`, (e) the spend_hook handler does not make external assumptions (oracle prices, cross-chain state) — the callback runs in the same overlay as the burn and must be deterministic.
-19. **Does the `.zk` source declare any `Base` constants with non-magic names?** If the constant name isn't `VALUE_COMMIT_VALUE`, `VALUE_COMMIT_RANDOM`, `VALUE_COMMIT_RANDOM_BASE`, or `NULLIFIER_K`, verify the VM synthesizer handles it. `Base` constants that exist only as documentation should be removed — `constrain_instance` already binds the public input.
-20. **Do the circuit and the SDK use the same Merkle hash function?** Grep the circuit's `.zk` source for `merkle_root` — it uses Sinsemilla via `OrchardHashDomains::MerkleCrh`. Grep the SDK for `MerkleNode::combine` — it uses Poseidon. If they differ, valid Merkle proofs cannot be generated from SDK utilities. Either add a Sinsemilla-compatible Merkle tree to the SDK or document the external chain dependency.
-21. **Are input nullifiers bound to their operation context?** For every `constrain_instance` of a nullifier in a `.zk` circuit, check whether an operation-specific identifier (bulla, proposal ID, swap ID) is also constrained and bound to the nullifier. A nullifier that proves "I spent commitment X" without saying "for purpose Y" can be reused across different purposes — each use spends the same commitment for a different operation. Fix: `input_nullifier = poseidon_hash(commitment_nullifier, operation_bulla)`.
-22. **Does every parent call validation check BOTH `contract_id` AND `function_code`?** Grep for `data[0]` checks in child-call validation paths. If the code checks the opcode byte but not the `contract_id`, it's vulnerable to contract-swapping. The same opcode means different things in different contracts. Always validate both fields.
-
-### The O-Cap / ZK-Proof Symbiosis
-
-Object-capability security and zero-knowledge proofs are not two independent design choices — they are complementary. Each addresses a weakness in the other:
-
-| O-Cap provides | ZK-Proof provides |
+| O-cap provides | ZK-proof provides |
 |---|---|
 | Fine-grained per-action authorization | Hiding *who* holds the capability |
 | State-machine transitions (produce/consume) | Hiding *which* capability is being exercised |
@@ -1270,957 +91,906 @@ Object-capability security and zero-knowledge proofs are not two independent des
 | Auditable on-chain state (who can do what) | Unlinkability across transactions |
 | Revocability (consume the cap) | Privacy of the revocation event |
 
-**The o-cap model without ZK proofs** is a permission system with full surveillance: every capability exercise is visible, every holder is linkable, every state transition is public. The system is secure but not private.
+**O-cap without ZK** is a permission system with full surveillance: every capability exercise is
+visible, every holder linkable. Secure but not private. **ZK without o-cap** is a privacy layer over a
+monolithic authorization scheme: you can hide who authorized an action, but one compromised key
+controls everything. Private but not secure.
 
-**ZK proofs without the o-cap model** are a privacy layer on a monolithic authorization scheme: you can hide who authorized an action, but if the underlying auth is a single god-mode ACL, a single compromised key controls everything. The system is private but not secure.
-
-**Together**, they create a system where each action requires a specific, unlinkable capability proof:
-- The o-cap model ensures that compromising one capability (e.g., a specific escrow's cancel right) doesn't grant access to any other capability (blast radius = 1).
-- The ZK proof ensures that exercising that capability reveals nothing about which capability was used, who holds it, or what other capabilities that holder possesses.
-
-This is why DarkWow contracts separate **capability derivation** (on-chain, per-instance, auditable) from **capability exercise** (ZK-proven, off-chain, unlinkable). The `CapabilityId` is a Poseidon hash of `(contract_id, capability_type, instance_seed)` — deterministic, unique per action per instance, and only meaningful to someone who already knows all three inputs. The ZK proof constrains that the prover knows a valid capability secret without revealing which one.
-
-#### The Capability Descriptor as Security Boundary
-
-The capability descriptor is the contract's security interface — it declares:
-- Which actions exist (function IDs)
-- What capabilities are required to call each action (`requires`)
-- What capabilities are consumed by each action (`consumes`)
-- What capabilities are produced by each action (`produces`)
-
-The host runtime enforces these declarations. An action not in the descriptor cannot be called through the capability system. A capability not declared as `produces` cannot be minted. A capability not declared as `consumes` cannot be revoked.
-
-This means the descriptor is a **compile-time security audit** written in Rust types. A missing `consumes` entry means a capability persists when it should be destroyed — a privilege that should be one-shot becomes reusable. A missing `produces` entry means a state transition has no artifact — the system can't track who entered what state. A wrong `requires` expression means the wrong capability gates access.
-
-The discipline: every time you add, remove, or rename a contract function, update the capability descriptor. The descriptor and the dispatch table must match, or the capability system is enforcing rules on a phantom contract.
-
-
-
-### Consensus-Critical Contracts
-
-If your contract handles block rewards, fee payment, or any function that the network cannot function without:
-
-- [ ] No governance coupling — no one can vote to change its behavior
-- [ ] No authorization gates — no freeze, no ACL, no permissioned minting
-- [ ] No multi-token support — single asset, no token-ID confusion possible
-- [ ] Minimum functions — if a feature can live in a separate contract, it should
-- [ ] Every output has a ZK proof — no client-side-only commitment construction
-- [ ] Poseidon-only circuits — no EC operations in internal ZK circuits
-
-### DeFi / Application Contracts
-
-If your contract composes with other contracts and handles user funds:
-
-- [ ] Validate `contract_id` on child calls, not just `data[0]`
-- [ ] Validate child transfer amounts via `validate_child_value_commit` with deterministic blind derivation
-- [ ] Every authorization model has on-chain state backing — ZK proofs alone are not enough
-- [ ] Registries exist for any resource that must be "registered before use" (tokens, members, etc.)
-- [ ] Nullifier-based replay prevention for all authorization operations
-- [ ] Merkle proofs for all existence checks against growing datasets
-- [ ] Child call validation happens in the `instruction` phase, before state mutation
-- [ ] All database trees are initialized in `init_contract`
-- [ ] If receiving spend_hook callbacks: verify `caller_contract_id`, track nullifiers for replay, use `define_contract_with_spend_hook!`
-- [ ] If issuing tokens: set `spend_hook` on minted commitments to your contract ID so burns route through your callback
-- [ ] If receiving commitments from child calls: verify `output.spend_hook` matches expectations (all 5 ZK circuits expose it as a public input)
-
-### Intentional Transparency vs. Privacy Leaks
-
-Not every plaintext field on a params struct is a flakey pattern. Some amounts MUST be known on-chain for correct contract operation. The distinction:
-
-**Intentional transparency** (keep the plaintext field):
-- Bridge withdrawal amounts — cross-chain visibility is inherent; both chains know the amount
-- Stablecoin pool totals — global collateral/debt tracking requires known amounts for ratio checks
-- DEX order-book prices — market-visible by design; hidden prices would prevent matching
-- Fee amounts — network fees are public by protocol design
-
-**Privacy leak** (remove the plaintext field, use commitments):
-- Individual transfer amounts on Output structs — use `value_commit` comparison (see Lesson 4)
-- Spend amounts on Input structs — use client-side witnesses (see Lesson 3 / RC3)
-- Token IDs when already committed — use token_commit comparison
-
-**Heuristic**: If the value updates a global state aggregate that other users depend on (pool totals, market prices, cross-chain proofs), the amount is legitimately public. If the value is only needed by the two counterparties to a transfer, it should stay behind a commitment.
-
-### ZK Circuit Development
-
-- [ ] Is EC required? If this is an internal DarkWow circuit, use Poseidon-only
-- [ ] Every output commitment has a BlindOutput_V1 ZK proof of correct formation — no conditional privacy leakage
-- [ ] Public inputs to the circuit are verified against on-chain state in the entrypoint
-- [ ] Range checks on all value fields (64-bit for values)
-- [ ] Nullifier uniqueness is checked both in the circuit AND in the on-chain nullifiers tree
-- [ ] After recompiling a circuit with a new zkas version, verify `ProvingKey::build` succeeds
-- [ ] Every `Base` constant in the `.zk` source has a corresponding handler in the VM synthesizer
-- [ ] Merkle hash functions match between circuit (`merkle_root` opcode) and SDK (`MerkleNode::combine`) — Sinsemilla vs Poseidon divergence blocks testability
-- [ ] `to_vec()` instance count matches the circuit's `constrain_instance` count — mismatched counts cause silent proving failures
-- [ ] Contract uses explicit `encode()`/`decode()`, not `#[derive(SerialEncodable, SerialDecodable)]` — see [Contract WASM Standards & Best Practices](../../arch/contract-wasm-standards-best-practices.md)
-- [ ] Zero `.unwrap()` in entrypoint code — metadata helpers return `Result<Vec<u8>, ContractError>` and use `?` propagation
-- [ ] Zero `let _ =` in entrypoint code — all results propagated or explicitly handled
+Together they give a system where each action needs one specific, unlinkable capability proof. This
+is why contracts separate **capability derivation** (on-chain, per-instance, auditable) from
+**capability exercise** (ZK-proven, off-chain, unlinkable). A `CapabilityId` is
+`poseidon_hash(contract_id, capability_type, instance_seed)` — deterministic, unique per action per
+instance, and meaningful only to someone who already knows all three inputs. The proof constrains
+that the prover knows a valid capability secret without revealing which one. **The whole of RC8 is the
+set of ways that separation leaks**, which is why it is stated here rather than with the findings.
 
 ---
 
-## Design Principles: Hardening by Construction
+## The Root Causes
 
-The following principles emerged from a systematic review of hardening gaps across all contracts. Each was identified as a deferred concern, fixed across the codebase, and distilled into a rule that prevents recurrence. They are not contract-specific bugs — they are patterns that should be built into every new contract from the start.
+Twelve classes account for every contract vulnerability found in this codebase's review history.
+They are **root causes, not symptoms**: `MAX_BYTES` is wrong is a symptom; *all `MAX_BYTES` values
+assume binary encoding but the encoding is JSON* is closer; *the encoding format is not enforced by
+the type system, so `MAX_BYTES` values can silently mismatch* is the root cause.
 
-### Principle 1: Version Every State Struct
+| RC | Class | The rule in one line |
+|----|-------|---------------------|
+| [RC1](#rc1--a-check-that-cannot-fail) | A check that cannot fail | A function named `verify_*` must be able to return `Err` |
+| [RC2](#rc2--a-witness-the-circuit-does-not-bind) | A witness the circuit does not bind | Every `constrain_instance(X)` needs an in-circuit derivation of `X` |
+| [RC3](#rc3--type-erasure-at-the-hash-boundary) | Type erasure at the hash boundary | Every hash that stands for a typed value carries a domain separator |
+| [RC4](#rc4--arithmetic-in-the-wrong-domain) | Arithmetic in the wrong domain | No `base_div` where the quantity is an integer |
+| [RC5](#rc5--two-representations-of-one-fact-one-of-them-updated) | Two representations of one fact, one of them updated | Derive one side from the other, or make drift a compile error |
+| [RC6](#rc6--irreversible-work-before-the-check-that-guards-it) | Irreversible work before the check that guards it | All fallible work precedes the destructive work |
+| [RC7](#rc7--an-on-chain-invariant-computed-off-circuit) | An on-chain invariant computed off-circuit | Structural conservation is not cryptographic conservation |
+| [RC8](#rc8--private-material-reaching-a-public-surface) | Private material reaching a public surface | Authorization goes in nullifiers; nothing identity-derived goes on-chain |
+| [RC9](#rc9--safety-that-is-opt-in) | Safety that is opt-in | `Default::default()` is the secure configuration |
+| [RC10](#rc10--a-value-with-no-bound) | A value with no bound | Every user-supplied value has a stated ceiling |
+| [RC11](#rc11--a-consensus-path-that-can-disagree) | A consensus path that can disagree | Two nodes reading the same chain reach the same conclusion, bit for bit |
+| [RC12](#rc12--an-error-dropped-panicked-on-or-made-indistinguishable) | An error dropped, panicked on, or made indistinguishable | Each failure has its own error and its own recovery |
 
-**The gap**: With one exception (identity contract), no state struct in any contract carried a version field. State structs are serialized to binary and stored in Merkle trees. If a future upgrade changes a struct's serialization layout, existing on-chain data becomes unreadable with no migration path.
+### RC1 — A check that cannot fail
 
-**The fix**: Added `pub version: u8` as the first field of every state struct (~60 structs across 22 contracts), defaulting to `0`. The entrypoint reads the version byte, deserializes the old format, and migrates to the new format on write.
+**What makes it possible.** A guard whose failure branch is a no-op, a verifier that only checks
+shape, or a guard that is skipped when the thing it guards is unconfigured. The check is present in
+the source, so review reads it as protection, but no input makes it return failure.
 
-**The principle**: **Version your state before you need to.** The cost is one byte per record. The alternative — a hard fork to fix unreadable on-chain data — is catastrophic. This is not speculative future-proofing; it is insurance against a failure mode that has hit every long-lived blockchain. Every state struct gets `pub version: u8` at creation time, not when the first breaking change forces it.
+**How it has manifested.**
 
-### Principle 2: Secure Defaults Are the Only Defaults
+* *A two-step authorization whose second step never verifies the first.* PromissoryNote's
+  `AuthTokenMintV1` → `MintV1` pair: `MintV1` accepted an `auth_proof` containing a nullifier and
+  **never checked that the nullifier was spent**. The ZK proof verified correctly; the on-chain
+  authorization step was decorative. Anyone could mint without ever calling the authorization
+  function. Removed in May 2026 — `AuthTokenMintV1` and `RotateMintAuthorityV1` were deleted, and
+  `MintV1` now proves knowledge of the backing secret directly against the stored
+  `token_auth_parent`. There is no prior step left to forget.
+* *Stub verifiers.* The Bridge's `verify_xmr_deposit`, `verify_zcash_deposit` and siblings validated
+  *shape* — non-empty, valid point, non-zero — and returned `Ok`, with the real cryptographic
+  verification deferred behind `FIXME`. Any function named `verify_*` that returns `Ok(())` after
+  checking `.is_empty()` and `.len()` is in this class.
+* *Trusting a payload's self-description.* `BurnSpendHookPayload` carries `caller_contract_id`. A
+  handler that trusts it accepts forged callbacks. The payload proves commitments were burned; it
+  does not prove who initiated the burn.
+* *A guard conditional on configuration.* `if value != ContractId::ZERO { validate(value) }` and
+  `if let Some(token) = auth_token { check(token) }` mean an unconfigured deployment runs with the
+  check disabled — the default deployment is the insecure one. See also RC9.
+* *An authorization value the circuit never derived.* `MintV1` exposed `public_key` as an independent
+  witness, so a prover could mint commitments to keys they do not control — permanently unspendable
+  rewards. Fixed by `constrain_equal_base(public_key, mint_public)` with `mint_public` bound to
+  `backing_secret`. This is the circuit-side form of the same class; the circuit-side mechanism is
+  RC2.
+* *A placeholder that passes as a value.* `signature: pallas::Base::zero()` compiles wherever a
+  signature is expected. A scalar zero is not a signature.
 
-**The gap**: Client builders defaulted `nonce` and `secret_nonce` fields to `pallas::Base::zero()`. A zero nonce means every call from the same caller with the same parameters produces an identical commitment — trivially linkable. The setter API allowed callers to override, but the default was the least-private possible value. A developer who calls `Builder::new()` and forgets to set a nonce gets the worst outcome.
+**The rule.** **Deny by default: enumerate the conditions that permit access, and reject everything
+else.** A function named `verify_*` must have a reachable `Err`. If step 2 requires step 1 to have
+occurred, step 1's artifact must be verified in step 2 — or, better, the two steps must be collapsed
+into one proof. In an o-cap system the single-step form is always available: prove knowledge of the
+capability secret, and that proof *is* the authority.
 
-**The fix**: Replaced all `pallas::Base::zero()` nonce defaults with `pallas::Base::random(&mut OsRng)` across 8 builders in betting_stake, slot, and game_room contracts. Callers can still override via setters, but the default is private.
+**Detection.**
 
-**The principle**: **The path of least resistance must be the secure path.** A developer who calls `Builder::new()` without reading every optional setter should get a secure configuration by default. Defaults that are "safe if you remember to change them" are insecure — someone will forget. This applies to nonces, blinds, safety feature flags, and every other configurable parameter. `Default::default()` should produce a secure instance; opt out for exceptions, never opt in for safety.
+- For every `constrain_instance` of a value the entrypoint compares against on-chain state: does the
+  circuit constrain how that value was derived? (RC2's check, same site.)
+- Grep for `!= .*ZERO` guards, `unwrap_or(`, and `verify_` functions whose body has no `Err` return.
+  A `verify_*` with no reachable error path is the defect, whatever it computes.
+- For every cross-contract call, check **both** `contract_id` and `function_code`. Opcodes are
+  namespaced per contract — `0x04` is `PromissoryNote::TransferV1` *and* `Attestation::VerifyClaimV1`.
+  Checking `data[0]` alone is blind to which contract runs. This is the concrete form of its
+  historical statement as "validate the target, not just the action".
+- For every spend_hook receiver: `caller_contract_id` verified against a stored expected value,
+  nullifiers tracked for replay, and the handler deterministic — it runs in the same overlay as the
+  burn and must not consult oracle prices, cross-chain state, or anything that can change between
+  proof generation and callback execution. Use `define_contract_with_spend_hook!`, not
+  `define_contract!`.
+- Is a signature-typed field declared as `pallas::Base` or `[u8; 32]` instead of `schnorr::Signature`?
+  The type system is a security tool; raw scalar types invite `::zero()` and `::dummy()`.
 
-### Principle 3: Creation Requires a Deactivation Path
-
-**The gap**: State structs across multiple contracts carried `active: bool` or `is_active: bool` flags, but no contract function ever set them to `false`. Underwriters could not resign, markets could not close, risk types could not be retired, governance could not be paused, capability requirements could not be revoked, relayer endowments could not be deactivated. Every record, once created, was permanently active — a state leak with no recovery.
-
-**The fix**: Added 7 deactivation functions across 4 contracts:
-
-| Contract | Function | What it deactivates |
-|---|---|---|
-| insurance_market | `DeactivateUnderwriterV1` | Underwriter record |
-| insurance_market | `CloseMarketV1` | Insurance market |
-| insurance_market | `RetireRiskTypeV1` | Risk type definition |
-| oracle | `SetOracleActiveV1` | Oracle feed |
-| dao_escrow | `SetGovernanceActiveV1` | Governance config |
-| dao_escrow | `DeactivateCapabilityRequirementV1` | Capability requirement |
-| relayer_endowment | `DeactivateEndowmentV1` | Endowment account |
-
-Each follows the full-stack contract pattern: function enum variant → model structs (ParamsV1 + UpdateV1) → entrypoint dispatch → client builder → capability descriptor. Every function verifies caller authorization (owner, capability holder, or governance proof) before mutating state.
-
-**The principle**: **Every `active` flag needs a function that sets it to `false`.** Creation without deletion is a state leak. For every "create" or "register" function in a contract, there must be a corresponding "deactivate" function. This should be part of the contract scaffolding template — not retrofitted after review catches the gap.
-
-### Principle 4: Bound All User-Supplied Iteration
-
-**The gap**: Several functions accepted user-supplied `Vec` parameters and iterated over them without length checks. The WASM runtime has execution limits, so this is not a DoS vector today, but hitting the runtime ceiling produces an opaque WASM trap — functional but not debuggable. As gas metering evolves, unbounded iteration incurs proportional and unpredictable costs.
-
-**The fix**: Added per-call limit constants with explicit assertions before iteration loops:
-
-| Contract | Constant | Value |
-|---|---|---|
-| darkbet_exchange | `DARKBET_EXCHANGE_MAX_SETTLE_MATCHES` | 100 |
-| pool_stake | `POOL_STAKE_MAX_REBALANCE_MEMBERS` | 100 |
-| relayer_endowment | `RELAYER_ENDOWMENT_MAX_ALLOCATIONS` | 100 |
-| identity | `IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS` | 100 |
-| roulette | `ROULETTE_CONTRACT_MAX_SETTLE_BETS` | 100 |
-
-**The principle**: **User-supplied collections must have explicit upper bounds.** An assertion with a clear error message ("Too many match IDs for settle") is debuggable; a WASM trap at the runtime execution limit is not. Choose bounds generous enough for legitimate use and small enough to keep execution cost predictable. Functions that need to process more items can be called multiple times with different slices.
-
-### Architectural Concerns
-
-Two patterns identified in the review require network-level infrastructure not yet built. They remain noted but are not actionable at the contract level:
-
-**Oracle centralization.** Contracts use single-oracle models (darkbet_exchange checks a single `oracle_id`, insurance_market uses a single `oracle_pubkey`). Mitigation — threshold oracles, M-of-N attestations, oracle rotation — requires the oracle network to support those primitives first. When that infrastructure exists, dependent contracts should accept M-of-N signatures rather than a single key.
-
-**Rate limiting.** Only `drain_protection` implements rate limiting. Per-block or per-epoch limits on state-creating functions are defense-in-depth once fee markets and gas accounting exist. Until then, transaction fees are the rate limit.
-
----
-
-## Error Propagation — Defense in Depth
-
-The hard path (contracts using Merkle inclusion proofs for private resource
-identities, per [privacy.md](../../arch/privacy.md)) carries an extra dimension
-of constraint. Every host function in the Merkle tree, SMT, and database
-infrastructure becomes a failure point. When these fail with non-descriptive
-errors, root-causing takes hours instead of minutes.
-
-### The Rule
-
-Every failure site in a host function that serves hard-path contracts MUST
-return a distinct error code. `ContractError::Internal` (error code 2) SHALL
-NOT be used as a catch-all for multiple failure conditions. Each distinct
-failure SHALL have its own `ContractError` variant.
-
-### Example: merkle_add
-
-The `merkle_add` host function had 18 distinct failure sites. All 18 returned
-`ContractError::Internal` (error code 2). When PromissoryNote's heavyweight
-test failed at `apply()`, the error message was `ContractError(Internal)` —
-impossible to determine which of the 18 sites fired.
-
-After replacing the 18 `INTERNAL_ERROR` returns with 6 distinct variants
-(`MerkleDecodeFailed`, `MerkleMemoryFault`, `MerkleHandleOutOfBounds`,
-`MerkleCursorMismatch`, `MerkleEncodeFailed`, `MerkleRootNotFound`) plus
-reusing 3 existing variants (`DbGetFailed`, `DbGetEmpty`, `DbSetFailed`),
-the error became self-describing: `ContractError(DbGetEmpty)`.
-
-This immediately identified the failure: the Merkle tree data key was not
-found in the database. The root cause was then found in minutes (a guard
-condition in `init_contract` that skipped tree initialization).
-
-### Checklist for New Host Functions
-
-When adding a host function that serves hard-path contracts:
-
-- [ ] Every `Err` return path has a distinct `ContractError` variant
-- [ ] The variant name describes what failed (not a generic `Internal`)
-- [ ] The host-side `error!()` log includes contract ID and relevant keys
-- [ ] No two failure sites share the same error code
-- [ ] New variants follow the `ComponentOperationFailed` naming convention
-
-### The `INTERNAL_ERROR` Prohibition
-
-`ContractError::Internal` SHALL NOT be used in host functions that have more
-than one failure mode. It is a reserved code for genuinely unrecoverable
-conditions (WASM memory faults, host environment crashes). Every recoverable
-failure — missing data, corrupt data, handle out of bounds, deserialization
-failure — SHALL have its own code.
-
-### Lesson 22: Metadata-Circuit Poseidon Hash Drift — The Domain Separation Boundary
-
-**The vulnerability**: The ZK circuit prepends domain constants (`witness_base(N)`)
-as the first input to every `poseidon_hash` call (HAZOP RC3, July 2026). But the
-Rust-side code — the test harness, the contract's `get_metadata` function, and the
-`process_instruction` handlers — all compute the same values WITHOUT domain constants.
-
-The circuit computes `nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret,
-box_id, state_nonce)` — 4 inputs. The harness computes `nullifier =
-poseidon_hash([box_id, state_nonce])` — 2 inputs. Poseidon uses
-`ConstantLength<N>`, so inputs of different arity produce completely different
-outputs.
-
-The proof constrains `nullifier_C` (4-input) as a public input. The metadata
-function returns `nullifier_M` (2-input) as the same public input position.
-The host verifier compares them: `nullifier_C != nullifier_M` → proof verification
-fails. Every `constrain_instance` value derived from a domain-separated hash is
-affected: nullifier, owner_pub, Merkle leaf, tx_binding, derived IDs.
-
-**Scope**: Box and Purse L1 circuits — 8 mismatches in Box, 12+ in Purse across
-all three circuits. Root cause: the RC3 domain-separation migration added domain
-constants to circuits but the Rust-side code was never updated.
-
-**The fix — two patterns**:
-
-**Pattern A (witness-only inputs)**: Pass the value through params. The caller
-pre-computes with correct domain constants and passes in the params struct.
-The circuit constrains `constrain_equal_base(circuit_value, params_value)` then
-`constrain_instance(params_value)`. The metadata function uses `params.value`
-directly. Required when the hash input includes witness-only data (e.g.,
-`owner_secret` in nullifier, `balance_blind` in Pedersen coordinates).
-
-**Pattern B (available inputs)**: Replicate the domain constant in Rust-side hash
-calls. Used for values where all inputs are available in Rust (e.g.,
-`tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`).
-
-**The principle**: **Every `poseidon_hash` call in a domain-separated circuit
-must have an identical match in the Rust-side code.** The circuit's domain
-constants, the harness's hash calls, and the metadata function's hash calls
-must produce byte-identical outputs. A mismatch in any of: input count, input
-order, or domain constant value produces a proof verification failure. Values
-that depend on witness-only inputs MUST pass through params — the metadata
-function cannot compute them.
-
-**Audit heuristic**: For every `constrain_instance(X)` in a circuit where
-`X = poseidon_hash(domain, inputs...)`, verify the Rust-side metadata function
-and harness compute `X` identically. If the metadata function lacks any input,
-the value must be caller-provided through params.
-
-**DarkWow audit result (2026-07-29)**: Box and Purse L1 circuits all affected.
-Fixed via Pattern A for nullifier/Merkle root, Pattern B for tx_binding/owner_pub.
-
-**The structural law — four-component architecture for every L1 operation**:
-
-The fix generalizes to a compositional law. Every L1 operation follows a clean
-four-component separation where the data flow is: caller provides all values →
-circuit constrains → metadata echoes → host verifies → exec validates state →
-apply writes state.
-
-1. **Circuit** (`.zk`): Constrains cryptographic relationships. Every
-   `constrain_instance` value is a caller-provided witness. The circuit
-   computes a value, constrains it equal to the witness via
-   `constrain_equal_base`, then publishes the witness. No circuit-local
-   variable ever appears in `constrain_instance`.
-
-2. **Params** (model): Carries every value needed by both circuit and metadata.
-   Each `constrain_instance` position maps to a field in the params struct.
-
-3. **Metadata** (entrypoint `get_metadata`): Pure echo. Reads `params.field`
-   directly — no domain constants, no `poseidon_hash`, no field arithmetic,
-   no computation of any kind. The metadata function is the specification
-   of the public input vector order.
-
-4. **Exec + Apply** (entrypoint `process_instruction` + `process_update`):
-   Exec validates against chain state only (nullifier unspent, root in DB).
-   Apply writes state only (merkle_add, db_set). Neither handler computes
-   cryptographic values — the circuit already proved everything.
-
-**The invariant**: `metadata[i] == proof_instance[i]` for all i. When the
-metadata function is a pure echo, this invariant holds by construction.
-When the metadata function computes anything, it introduces a second source
-of truth that can drift from the circuit.
-
-**Audit heuristic — the trace test**: For every `constrain_instance(X)` in a
-circuit, trace `X` back to its origin. If `X` is a circuit-local variable
-(computed from `poseidon_hash` or `merkle_root`), the circuit is wrong —
-the pattern requires a caller-provided witness constrained against the
-computed value. If `X` is a witness, trace it through the params struct to
-the metadata function — verify the metadata echoes it without computation.
+**Taught by.** Lessons 1, 2, 11, 15; HAZOP RC1 sub-class B; old `RC-A`, `RC-F`; HAZOP
+`pattern4_capability_bypass`. The class labels `ESC-001`, `INS-001`, `DAO-001`, `DAO-002`, `MV-001`
+were used for it in an earlier review and are defined nowhere else.
 
 ---
 
-### Lesson 23: L1 Combinatorial Complexity — Hard Bounds from Formal Analysis
+### RC2 — A witness the circuit does not bind
 
-**Date**: 2026-07-30
-**Severity**: Structural (not a bug)
-**Contracts affected**: All pure L1 contracts (Box, Purse as reference implementations)
-**Formal verification**: `proofs/lean/src/DarkFi/Combinatorial/`
+**What makes it possible.** The prover supplies a value, the circuit publishes it, and nothing in
+the circuit relates it to anything else. The statement verified is weaker than the statement
+intended, and the gap is silent — the proof verifies.
 
-**What happened**: Box and Purse were upgraded from L2 (singleton, deterministic
-KV lookup) to L1 (anonymous encrypted objects, Merkle inclusion proofs, full ZK).
-The L2→L1 upgrade introduces an exponential — not linear — jump in the
-combinatorial state space. In L2, K sequential operations have exactly 1 valid
-state trajectory. In L1 with N concurrent anonymous objects, K operations have
-N^K valid trajectories. This is the **L1/L2 combinatorial asymmetry** — the
-foundational reason L1 contracts require fundamentally different reasoning.
+**How it has manifested.**
 
-**The L1 contract triage** (derived from formal combinatorial analysis of Box
-and Purse, the two most complex pure L1 contracts in the codebase):
+* *The Orchard class: an unconstrained witness in a published position.* PromissoryNote's `Mint_V1`
+  declared `mint_public` as a witness and exposed it via `constrain_instance` with **no constraint**
+  relating it to `poseidon_hash(backing_secret)` — the `backing_secret` witness did not exist. The
+  comment above the witness block asserted the derivation; a comment is not a constraint. A prover
+  could read the public `stored_auth` from the token registry, set `mint_public = stored_auth`, and
+  mint any registered token type. Fixed June 2026 by adding the secret witness and
+  `constrain_equal_base(derived_mint_public, mint_public)`.
+* *Vacuous acceptance through a conditional gadget.* `zero_cond(value, leaf)` returns the tree's zero
+  leaf when `value == 0`. Without a `less_than_strict(ZERO, value)` guard, setting `value = 0` makes
+  `merkle_root` succeed at every position in every tree — the prover forges inclusion without
+  possessing a commitment.
+* *A boolean check on an amount.* `bool_check(value)` is `small_range_check` with range 2. Applied to
+  a u64 amount it restricts every operation to 0 or 1 token unit — a destructive constriction
+  alongside an already-correct `range_check(64, value)`.
+* *A u64 witness with no range check.* Field overflow in `amount`, `payment`, `stake`, `fee` produces
+  arithmetic results with no relation to the integers intended.
+* *An output with no proof of formation.* `TransferV1` and `OtcSwapV1` outputs were constructed
+  client-side with only a uniqueness check on-chain. A buggy or malicious client could inject
+  commitments that were never proven correctly formed.
 
-| Tier | Public Inputs | Witness Values | Operations | Verdict |
-|------|--------------|----------------|------------|---------|
-| Safe | ≤9 | ≤13 | ≤3 | Pure L1, bounded by construction |
-| Scrutiny | 10–15 | 14–20 | 4–6 | Explicit bounds proof required |
-| Exceeds | >15 | >20 | >6 | L2 or sharded architecture |
+**The rule.** **Every `constrain_instance(X)` must have an in-circuit derivation
+`X = f(witnesses)`.** A published value with no derivation is a free variable and the circuit proves
+nothing about it. Every u64-valued witness gets `range_check(64, value)` before entering arithmetic.
+Every conditional gadget whose output feeds a cryptographic verifier must constrain its branch
+condition. Every output carries a ZK proof of correct formation — client-side construction is not a
+security boundary.
 
-**The L1 complexity ceiling** (empirical from Purse, the ceiling case):
+**What is mechanized, and what is not.** The rule is enforced structurally over the circuit sources
+by `script/circuit_instance_derivation.py` (gate: `scripts/check-circuit-instance-derivation.sh`),
+which classifies every `constrain_instance` in all `.zk` files as derived, bound, redundant, or
+declared free with a host-side mechanism in `script/circuit_free_instances.txt`. Two things it does
+**not** establish, and they must not be read as settled: a *derivation* proving what the circuit
+intends is the opcode-semantics layer, still named by the uninterpreted, unconsumed obligation
+`Axioms.NoFreeInstances`; and `ECOps.detect_orchard_class_vulnerability` is a `def` over a *modelled*
+gadget that carries no weight for a real circuit. This is **not** "the circuits are formally
+verified" — `proofs/lean/src/DarkFi/Circuits/` contains no Lean declarations, and an earlier version
+of this document said otherwise.
 
-| Parameter | Ceiling | Source |
-|-----------|---------|--------|
-| Public inputs per operation | 9 | Purse Deposit/Withdraw |
-| Witness-only values per operation | 13 | Purse Deposit/Withdraw |
-| Operations per contract | 3 | Purse (Deposit, Withdraw, Balance) |
+**Detection.**
 
-**Wallet scan bound**: For a mobile wallet scanning ~1000 objects/sec with
-~120s block intervals, the practical anonymity set ceiling is ~120K concurrent
-objects. Beyond this, mobile users cannot discover their own objects between
-blocks. The binding constraint is the slowest supported client — if mobile
-users can't scan the set, privacy collapses to desktop-only.
+- For every `constrain_instance(X)` in a `.zk` circuit: is `X` a witness? Trace it. Is it constrained
+  equal to a circuit-computed value via `constrain_equal_base`? Is it an input to a computed value
+  that is published? Is it declared and never referenced (an unused witness — dead weight in the
+  proving key)? A witness satisfying none of these is free.
+- Every `zero_cond(value, leaf)` feeding `merkle_root` is preceded by `less_than_strict(ZERO, value)`.
+- Every `Base` witness representing a u64 quantity has `range_check(64, value)`.
+- `bool_check` does not appear on a u64-valued witness.
+- Every output commitment has a `BlindOutput_V1` proof — no conditional privacy leakage.
 
-**The anonymity budget is per-contract**: O-cap composition gives each contract
-its own Merkle tree, so one contract's state space does not merge into another's. Without o-caps
-(shared state) they would merge, and the joint space would be the product
-(`CompositionBounds.unconstrained_composition_explosion`).
-
-**Correction (2026-09-20).** This paragraph previously claimed "the formal additive composition
-theorem proves that composed state spaces combine as `|T(A ∘ B)| = |T(A)| + |T(B)|`". There is no
-such theorem. `CompositionBounds.ocap_additive_composition` restates the two per-contract count
-functions in closed form and adds them; no operation composing two contracts appears anywhere in the
-tree. What *is* additive is the size of one composed capability —
-`Combinations.card_biUnion_le_sum : |⋃_{c∈S} B c| ≤ Σ_{c∈S} |B c|` — and what is a *product*, even
-with per-contract trees, is the number of distinct operation combinations across contracts
-(`Combinations.combinationCount`). Isolating state does not divide the count of ways to combine.
-
-**Box and Purse within safe L1 bounds**:
-
-| Contract | Public Inputs | Witness Values | Operations | Safe? |
-|----------|--------------|----------------|------------|-------|
-| Box Put | 5 | 9 | — | ✓ |
-| Box Take | 4 | 7 | — | ✓ |
-| Purse Deposit | 9 | 13 | — | ✓ (ceiling) |
-| Purse Withdraw | 9 | 13 | — | ✓ (ceiling) |
-| Purse Balance | 7 | 11 | — | ✓ |
-
-Purse IS the L1 ceiling. Any contract more complex than Purse exceeds safe
-single-contract L1 bounds and SHALL use L2 or a sharded architecture.
-
-**Consume+create invariant** (structural, not optional): Each non-terminal L1
-operation SHALL nullify exactly one old state and create exactly one new Merkle
-leaf. This keeps the active object count bounded at N. Without it, stale objects
-accumulate unboundedly (N, N+1, N+2, ...), degrading anonymity for all users.
-
-**Formal verification status** (proofs/lean/src/DarkFi/Combinatorial/, core
-Lean 4 only, zero Mathlib, verified by `lake build DarkFi`):
-
-| Module | Content |
-|--------|---------|
-| `StateSpace.lean` | L1AnonymitySet, L2SingletonState, PublicState, WitnessState types |
-| `Transitions.lean` | Per-operation transition counts, consume+create invariant |
-| `ComplexityJump.lean` | L2 trajectory = 1, L1 N^K theorem, anonymity growth corollary |
-| `CompositionBounds.lean` | O-cap additive composition vs unconstrained multiplicative |
-| `Limits.lean` | Theoretical max (2^32−1), wallet scan bound, L1 complexity ceiling |
-
-**Pre-existing build system bugs found during verification** (these prevented
-the existing proofs/lean/ project from building, confirmed by independent audit):
-
-1. `src/DarkFi/HAZOP.lean:32-34`: imports `HAZOP.Critical` etc. — paths missing
-   `DarkFi.` prefix (correct: `DarkFi.HAZOP.Critical`)
-2. `src/DarkFi/Capability/Types.lean:72`: `deriving Repr, BEq` on
-   `ConcurrentProcess` causes universe constraint failure with `Finset Barb`
-   fields — `BEq` removed
-3. `src/DarkFi.lean`: root module did not exist — `lakefile.lean` declared
-   `roots := #[`DarkFi]` but the file was never committed
-4. `src/DarkFi/Field.lean`: multiple missing Mathlib tactics (`mul_comm`,
-   `Int.div_lt_iff_lt_mul`, `pow_le_pow_right`, `nlinarith`, `ring`) —
-   project declared zero dependencies but used Mathlib-only tactics
-5. `src/DarkFi/Comparison.lean`: doc comment before imports (invalid ordering
-   for root-module compilation)
-6. `src/DarkFi/Soundness.lean:71`: unterminated comment syntax error
-7. `src/DarkFi/Circuits/Exchange.lean:37`: syntax error (orphaned `/-!` block)
-8. All 5 new Combinatorial modules: doc comments moved after imports per Lean 4
-   ordering requirement; `def X := Nat` changed to `abbrev X := Nat` so `BEq`
-   inherits from `Nat`
-
-**How to apply**: Every future L1 contract proposal SHALL pass the combinatorial
-bounds check against the triage table BEFORE implementation begins. Contracts in
-the "scrutiny" tier require a formal bounds proof (following the pattern in
-Combinatorial/). Contracts in the "exceeds" tier are architecturally invalid as
-single-contract L1 — they SHALL be designed as L2 or sharded. The triage is
-enforced by architectural review, not by the compiler; it is a design constraint,
-not a static analysis check.
-
-**Generalization to All Halo2 L1 Contracts** (2026-07-30):
-
-The complete L1 type system specification — including trajectory identification,
-barb ordering under N^K, additive composition, nominal L1 domain types, and
-combinatorial error theory — is at [contract-wasm-type-system.md Part C](../../arch/contract-wasm-type-system.md).
-This lesson summarizes the hardening log; the specification is normative.
-
-The triage above is not specific to Box and Purse. The general theorem
-(`proofs/lean/src/DarkFi/Combinatorial/GeneralTheorem.lean`) proves that for
-ANY Halo2 L1 contract C(k, P, W, O, D) with N concurrent anonymous objects:
-
-1. **Combinatorial Asymmetry**: T_L1(N, K) = N^K vs T_L2(K) = 1. The anonymity
-   set creates an exponential branching factor that L2 does not have.
-
-2. **Safe L1 Classification Soundness**: `classifyL1Contract(c) = safeL1` iff
-   P ≤ P_CEILING × O ∧ W ≤ W_CEILING × O ∧ O ≤ O_CEILING. The classifier is
-   correct by construction (proved via `native_decide`).
-
-3. **O-Cap Composition Preserves Safety**: **WITHDRAWN.** There is no theorem in the tree stating
-   that composing two `safeL1` contracts leaves them `safeL1`. `GeneralTheorem.ocap_preserves_safety`
-   was `… : True := by trivial` with all four parameters unused, and has been deleted; the
-   correction at `privacy.md` §"O-Cap Composition" records the same. What composition *does* give is
-   that each contract's own Merkle tree stays its own, so no state merges
-   (`CompositionBounds.unconstrained_composition_explosion` is the statement that merging *would*
-   multiply). What it does not give is a bound on the number of ways to combine operations across
-   contracts — that count is a product, proved in `Combinatorial/Combinations.lean`.
-
-4. **Exceeds Is Terminal**: Increasing k (circuit size) does not change the
-   classification. The problem is structural (too many public inputs or
-   operations), not circuit-size-related.
-
-The ceiling constants are DERIVED, not observed:
-
-| Constant | Value | Derivation |
-|----------|-------|------------|
-| P_CEILING | 9 | 1/7 instance column proportion × k=13 rows × 1% density per op |
-| W_CEILING | 13 | 4 minimum + 1 merkle_path + 2 contents + 6 balance/blinds |
-| O_CEILING | 3 | consume + create + read-only query; 4+ ops exceeds wallet scan |
-| PRACTICAL_MAX_OBJECTS | 120,000 | 1000 scans/sec mobile × 120s block interval |
-
-Formal ceiling derivation: `proofs/lean/src/DarkFi/Combinatorial/CeilingDerivation.lean`.
-Theorems `p_ceiling_ge_minimum`, `w_ceiling_ge_minimum`, `o_ceiling_ge_minimum`,
-and `scrutiny_gt_safe` verify the constants are internally consistent and
-non-degenerate.
-
-Theorem `box_is_safeL1` and `purse_is_safeL1` in GeneralTheorem.lean prove that
-both contracts classify correctly as safeL1. The classification is verified by
-`native_decide` — no manual inspection required.
+**Taught by.** Lesson 16; Orchard lesson 20; HAZOP RC1 (sub-classes A and E), RC2; old `RC-A`
+(reference-defect half), `RC-I`; HAZOP `pattern1_free_instance`, `pattern2_zero_cond`,
+`pattern6_bool_check_u64`, `pattern7_missing_range`. Open residue: `OBL-Z16` (fifteen sites),
+`OBL-Z17` (the authorization primitive itself), `OBL-Z6`.
 
 ---
 
-### ZK Infrastructure Hardening (HAZOP 2026-07-31)
+### RC3 — Type erasure at the hash boundary
 
-Several cross-cutting ZK infrastructure improvements were implemented:
+**What makes it possible.** `poseidon_hash` maps every typed input to the same output type. A
+nullifier hash, a token commitment and a Merkle leaf are all `pallas::Base` and are
+indistinguishable without a domain separator. Two types that must not unify do unify at that
+boundary.
 
-- **Domain separation CI gate:** `scripts/check-circuit-domain-separation.sh` prevents
-  new V1 circuits from being introduced. Any `poseidon_hash(...)` without a `DOMAIN_`
-  prefix argument causes CI failure.
+**How it has manifested.**
 
-- **VK cache FIFO eviction (M-4):** The verifying key cache (`src/zk/verifier.rs`)
-  uses FIFO eviction with a 256-entry cap, deterministic eviction of oldest entries.
+* *Undifferentiated hashes across 177 circuits.* A nullifier hash in one circuit was bitwise
+  identical to a token commitment hash in another, given the same inputs. Every `poseidon_hash`
+  invocation needed a domain constant as its first argument. Fixed by porting every circuit to a V2
+  namespace with `DOMAIN_*` constants, enforced permanently by
+  `scripts/check-circuit-domain-separation.sh`.
+* *A nullifier not bound to its operation.* A nullifier proves a commitment is spent; it does not say
+  *for what*. Without binding, the same commitments can be resubmitted for a different proposal,
+  swap, or job — bypassing a threshold because the nullifier is not linked to any specific operation.
+  The DAO proposal-input-reuse exploit is the canonical instance. Fix:
+  `input_nullifier = poseidon_hash(commitment_nullifier, operation_bulla)`.
+* *A type declaration that erased a type.* The zkas compiler added `Base` as a constant type and
+  circuits recompiled with it; the VM synthesizer recognised only four magic constant names. Any
+  circuit with a `Base` constant outside those four crashed at keygen. Part of the problem was a
+  declaration with no functional purpose — `constrain_instance` already bound the public input.
 
-- **Roulette PlaceBet fix (C-9):** `place_bet.zk` — `bet_id` and `nullifier` now derived
-  in-circuit via Poseidon with domain constants and constrained via `constrain_equal_base`.
-  `table_id`, `player_pub`, and `amount` are cryptographically bound to the proof.
+**The rule.** **Every hash that stands for a typed value carries a domain separator identifying its
+semantic purpose.** `poseidon_hash` is a type-erasure boundary; the domain constant restores the
+distinction. And **every input nullifier is bound to the operation it authorizes** — a nullifier
+that says "I spent commitment X" without saying "for purpose Y" lets X be spent for Y, Z and W
+simultaneously. The rule is the same in both places: the value's *position* must be part of the value.
 
-- **VK cache FIFO eviction (M-4):** The verifying key cache (`src/zk/verifier.rs`)
-  uses FIFO eviction with a 256-entry cap, deterministic eviction of oldest entries.
+**Detection.**
 
----
+- Every `poseidon_hash(...)` in every `.zk` circuit prepends a `DOMAIN_*` constant as its first
+  argument. `grep "poseidon_hash(" proof/*.zk | grep -v "DOMAIN_"` returns nothing.
+- For every `constrain_instance` of a nullifier: is an operation-specific identifier (bulla, proposal
+  ID, swap ID, job ID) also constrained and bound to it?
+- The domain vocabulary, cross-circuit: `1 = NULLIFIER`, `2 = TOKEN_COMMIT`, `3 = TX_BINDING`,
+  `4 = COIN_COMMIT`, `5 = MERKLE_LEAF`, `6 = USER_DATA_ENC`, `7 = SIGNATURE_SECRET`.
 
-## Audit Finding Status (verified 2026-08-03 against `linear-master`)
-
-Consolidated from [Red Team Audit](../../arch/audit/red-team-findings.md) (47 findings),
-[HAZOP Root Cause Analysis](../../arch/audit/red-team-hazop-analysis.md) (9 families,
-6 structural changes), and [Comprehensive Security Audit](../../arch/audit/comprehensive-security-audit.md)
-(~314 findings), all dated 2026-07-31. Each finding was verified against current code
-with exact file:line references. Status reflects code as of 2026-08-03.
-
-### Red Team Audit — CRITICAL (11 findings)
-
-| ID | Description | Status | Notes |
-|----|-------------|--------|-------|
-| C-1 | Bridge Monero DLEq proof stubbed | PARTIAL | Implemented in `verify/monero.rs` behind `#[cfg(feature = "bridge-verify")]`; fallback still skips DLEq |
-| C-2 | Bridge Ethereum deposits skip verification | FIXED | `!= Ethereum` bypass removed; non-Ethereum chains hard-rejected without feature flag |
-| C-3 | Bridge Zcash/Aztec non-emptiness only | PARTIAL | Monero DLEq + Litecoin SHA-256d fixed; Zcash Groth16 and Aztec PLONK still return "not yet implemented" |
-| C-4 | Bridge 11 ops no ZK proof | PARTIAL | 5 new ZK circuits added (CancelWithdraw, ExecuteGuaranteedWithdraw, ClaimHtlc, RefundHtlc, AcceptWithdrawal); 7 admin ops still `Ok(vec![])` |
-| C-5 | Gas exhaustion not checked (9/10 host fns) | FIXED | All 10/10 host functions now use `charge_gas()` with exhaustion check; `db_del_local` fixed 2026-08-03 |
-| C-6 | Coinbase maturity AFTER sled commit | **OUTSTANDING** | Maturity check (lines 1089-1118) still runs after atomic commit (lines 998-1028); no rollback |
-| C-7 | ~150 V1 circuits lack domain separation | FIXED | Zero `*_v1.zk` files remain; all circuits ported to V2 with `DOMAIN_*` constants |
-| C-8 | Bridge V1 all hashes undifferentiated | FIXED | All 8 bridge proofs are V2 with domain-separated `poseidon_hash` on all 5 hash types |
-| C-9 | Roulette PlaceBet no public inputs | FIXED | `PlaceBet_V2` constrains `bet_id` (encoding table_id, amount) and `nullifier` via `constrain_equal_base` |
-| C-10 | Blind\<F\> derives Debug | FIXED | Manual `Debug` impl renders `<redacted>`; `Drop` zeroizes; `Copy` removed |
-| C-11 | SecretKey Display leaks full secret | FIXED | `Debug` redacts; `Display` gated behind `unsafe-display-secret` feature (only dww + darkirc enable it); accidental `{}` formatting is compile error |
-
-### Red Team Audit — HIGH (16 findings)
-
-| ID | Description | Status | Notes |
-|----|-------------|--------|-------|
-| H-1 | Block reward no upper bound | FIXED | 2× expected reward cap with `saturating_mul(2)` added as defense-in-depth |
-| H-2 | Fork resolution first-come-first-served | PARTIAL | Competing-block validation substantially improved (Monero, target, prev-hash, timestamp, dedup); still FCFS — no chain-work reorganization |
-| H-3 | Block storage uses serde_json | **OUTSTANDING** | `serde_json::to_vec()` still used at chain_state.rs:887; not replaced with deterministic encoding |
-| H-4 | Multisig SignV1 no membership check | FIXED | `group.pubkeys.iter().any(|pk| pk == &params.signer_pub)` check added |
-| H-5 | Multisig FinalizeV1 signatures replayable | FIXED | `db_del` replaces zero-value pattern; consumed signatures fully removed |
-| H-6 | Bridge HTLC no cryptographic auth | FIXED | ZK circuits for ClaimHtlc (preimage proof) and RefundHtlc (sender key proof) |
-| H-7 | WASM threads/atomics 0xFE not rejected | **OUTSTANDING** | `reject_nondeterministic_features()` intentionally disabled (no-op); Rust stdlib generates false positives. Atomics penalized at 256 gas |
-| H-8 | Identity-only nullifiers in governance circuits | PARTIAL | 6/7 circuits fixed (nonce, proposal_id, lock added); `purchase_coverage_with_capability.zk` still identity-only |
-| H-9 | Wallet default password "changeme" | FIXED | Default removed; requires TOML config or `DWOW_WALLET_PASS` env var |
-| H-10 | RPC auth_token never enforced | FIXED | Full auth gate: first non-auth request must provide token; unauthenticated → error |
-| H-11 | ContractId::ZERO bypass in 25+ sites | **OUTSTANDING** | 50+ instances across 16 contracts still use `== ContractId::ZERO` bypass guards |
-| H-12 | Bridge withdrawal host verification bypass | FIXED | In-circuit Merkle proof verification + in-contract historical root check |
-| H-13 | Roulette SettleBet won free witness | **OUTSTANDING** | `won` still declared as free witness; not derived via `is_equal_base`. Payout constrained as instance but `won` is independent |
-| H-14 | Competing block skips PowSource::Monero | FIXED | `is_coinbase_valid_merkle_root()` called in competing-block path |
-| H-15 | Uncle chain extensions skip difficulty | FIXED | Full `get_next_work_required` + Monero merge-mine check applied |
-| H-16 | Proof-to-call index ordering gap | PARTIAL | Global + per-call length guards added; no explicit call_index correspondence field. Relies on VK mismatch detection |
-
-### Red Team Audit — MEDIUM (15 findings)
-
-| ID | Description | Status | Notes |
-|----|-------------|--------|-------|
-| M-1 | O(n) chain traversal in get_next_work_required | PARTIAL | Loop still O(n); error handling improved. Full fix requires schema migration |
-| M-2 | saturating_sub vs checked_sub divergence | FIXED | Both paths now use `checked_sub` with consistent `unwrap_or_else` |
-| M-3 | Competing blocks skip Monero merkle proof | FIXED | `is_coinbase_valid_merkle_root()` now called in both competing and uncle extension paths |
-| M-4 | VK cache non-LRU eviction | FIXED | FIFO eviction by insertion order; oldest half removed on overflow |
-| M-5 | Metadata ordering not mechanically verified | PARTIAL | Count verification exists; no parse-and-compare of `constrain_instance` order vs `to_public_inputs()` |
-| M-6 | Hardcoded devnet passphrase | FIXED | `DEVNET_PASSPHRASE` removed; `DWOW_KEY_PASSPHRASE` env var required |
-| M-7 | Wallet capability revoked before confirmation | FIXED | Capabilities now marked PENDING at broadcast; deferred to block confirmation |
-| M-8 | Bridge governance DoS without bounds | FIXED | Sanity bounds: `MAX_CONFIRMATIONS = 10,000`, `MAX_FEE = 1,000,000,000,000` |
-| M-9 | Bridge ContractId::ZERO bypass in deposit | FIXED | Guard exists on all 4 deposit/withdrawal paths (fail-closed: reject if PN not configured) |
-| M-10 | Bridge max_deposit/max_withdrawal never applied | FIXED | Both now written to config DB and enforced |
-| M-11 | Roulette ZK proof ceremonial | **OUTSTANDING** | House determines winning number via plaintext; ZK circuit verified but adds no independent security |
-| M-12 | Uniform WASM opcode cost | FIXED | 5-tier cost system: 1 gas (simple) through 256 gas (SIMD/atomics) |
-| M-13 | No wall-clock timeout | PARTIAL | 30-second soft limit logs warning but does NOT terminate; hard enforcement needs cooperative yield |
-| M-14 | 256MB memory at ~3,840 gas | FIXED | Memory growth charged at `new_pages × 64KB`; exhaustion fails the call |
-| M-15 | deposit.zk external_block_hash never used | **OUTSTANDING** | Witness declared but never constrained in circuit body; used only in host dedup |
-
-### Red Team Audit — LOW (5 findings)
-
-| ID | Description | Status | Notes |
-|----|-------------|--------|-------|
-| L-1 | Chain work recomp mismatch for target=0 | FIXED | Both paths now use `.max(1)` |
-| L-2 | Uncle chain extension min/max target only | FIXED | Covered by H-15 fix (full difficulty adjustment) |
-| L-3 | Bridge external_block_hash dead witness | **OUTSTANDING** | Same as M-15 |
-| L-4 | Roulette settle_bet won free witness | **OUTSTANDING** | Same as M-11/H-13 |
-| L-5 | drk_log has no ACL | FIXED | Documented design decision: ephemeral per-call buffer, never committed to sled |
-
-### Structural Changes (HAZOP SC-1 through SC-6)
-
-| ID | Change | Status | Notes |
-|----|--------|--------|-------|
-| SC-1 | `Verified<T>` type-level proof marker | Not implemented | Would resolve RC-A (12 findings). Bridge uses feature-gated dispatch instead |
-| SC-2 | Pre-commit validation phase | Not implemented | Would resolve RC-B (3 findings). C-6 still outstanding |
-| SC-3 | `charge_gas!` macro | FIXED | `charge_gas()` method exists and used by all 10/10 state-mutating host functions; not a macro but functionally complete |
-| SC-4 | Circuit migration CI gate | FIXED | `scripts/check-circuit-domain-separation.sh` enforces; zero V1 circuits remain |
-| SC-5 | Security trait lint | Not implemented | Auto-derive prevention for sensitive types done manually (Blind, SecretKey) |
-| SC-6 | Fail-closed configuration | PARTIAL | Bridge now fail-closed; 50+ ContractId::ZERO bypasses still fail-open elsewhere |
-
-### Cross-Audit Contradictions Resolved
-
-| Contradiction | Red Team | Security Audit | Resolution |
-|---------------|----------|---------------|------------|
-| TLS TOFU pinning | IMPLEMENTED at tls.rs:156-173 | H1: missing, MITM-able | **Red Team correct.** Blake3 fingerprint comparison with rejection on mismatch |
-| SecretKey Debug | FIXED — `<redacted>` at keypair.rs:91-95 | C14: leaks full key material | **Red Team correct on Debug.** Security Audit valid on Display (base58 leak) |
-| Chain work recomputation | FIXED at chain_state.rs:168-196 | H7: not recomputed | **Red Team correct.** Full recompute on startup, validates against sled cache |
-
-### Outstanding Items Summary
-
-| ID | Severity | Description | Effort |
-|----|----------|-------------|--------|
-| C-6 | CRITICAL | Coinbase maturity after sled commit | Trivial (move 30-line check before commit) |
-| H-3 | HIGH | serde_json non-deterministic block storage | Moderate (schema migration required) |
-| H-7 | HIGH | WASM threads/atomics scanner disabled | Simple (re-enable with Rust-stdlib-aware filtering) |
-| H-11 | HIGH | 50+ ContractId::ZERO bypass guards | Moderate (fail-closed at each site) |
-| H-13 | HIGH | Roulette SettleBet won free witness | Simple (add `is_equal_base` constraint) |
-| M-11 | MEDIUM | Roulette ZK proof ceremonial | Design (house determines winner; ZK adds no security) |
-| M-15/L-3 | MEDIUM | deposit.zk external_block_hash unconstrained | Trivial (constrain or remove dead witness) |
-| M-1 | MEDIUM | O(n) chain traversal | Moderate (schema migration) |
-| M-5 | MEDIUM | Metadata ordering not verified | Simple (parse-and-compare test) |
-| M-13 | MEDIUM | Wall-clock timeout soft-only | Moderate (needs cooperative yield in WASM middleware) |
-| C-1/C-3/C-4 | CRITICAL | Partial fixes (feature gates, remaining stubs) | Varies |
-
-### HANDOVER.md — Serialization Conformance (2026-07-27)
-
-All 14 verification items **RESOLVED**:
-- 3 anti-pattern sweeps produce zero output
-- All 8 fine-detail areas addressed (correct ENCODED_SIZE, explicit encode/decode, bridge impls delegate correctly)
-- All 10 guardrails enforced (zero SerialEncodable/SerialDecodable on DB types, no serialize() on state)
-- Dead import at `bridge/src/model/mod.rs:36` (`SerialDecodable, SerialEncodable`) is cosmetic; no derive macros use it
-
-### Guardrails Preserved (from HANDOVER.md)
-
-1. Every DB type SHALL have explicit encode/decode with validating constructors
-2. Fields SHALL use nominal types per type-system.md §8.1
-3. ρ-calculus `eval(quote(x)) ∼ x` must hold
-4. No re-adding SerialEncodable/SerialDecodable under any circumstances
-5. Pattern catalog is the template — no novel encoding approaches
-6. No sed on Rust code — Edit tool only, every byte offset auditable
+**Taught by.** HAZOP RC3; lessons 14 and 22 (metadata drift); old `RC-D`; HAZOP
+`pattern5_nullifier_collision`. Closed and gated: `OBL-Z2`, `OBL-Z7`.
 
 ---
 
-## Naming Conventions — Circuits, Manifests, and Entrypoints
+### RC4 — Arithmetic in the wrong domain
 
-The V1→V2 circuit migration (HAZOP RC3 domain separation, May 2026) and the
-subsequent naming consolidation exercise (August 2026) established these
-conventions. Every rule below prevents a specific class of bug that was
-discovered during these efforts. For the full V1→V2 migration rationale,
-see [Circuit Versioning](../../arch/circuit-versioning.md).
+**What makes it possible.** A field operation used where an integer operation was meant. The two
+agree on small inputs often enough to pass tests, and diverge exactly on the inputs an adversary
+chooses.
 
-### 1. Circuit source filenames carry no version suffix
+**How it has manifested.** `base_div(a, b)` computes `a · b^(p−2) mod p` — Fermat inversion, a
+*field* element. Applied to `fee = amount · bps / 10000`, to interest accrual, and to oracle price
+aggregation, it produces a modular inverse, not a truncated quotient. For integers that do not divide
+evenly in the field the result is a large field element with no relationship to the intended
+quotient. Eight circuits across seven contracts were affected.
 
-`.zk` source files are named for the function they prove: `mint.zk`,
-`deposit.zk`, `create_swap.zk`. The circuit version is declared inside the
-file (`circuit "Mint_V2"`), not in the filename.
-
-**Why:** When V1 circuits were deleted during the HAZOP migration, the `.zk`
-filenames stayed the same — only the circuit body changed. Putting the
-version in the filename (`mint_v2.zk`) would have required renaming the file,
-which cascades to Makefile rules, include_bytes! paths, and every tool that
-references that path. The filename describes the function; the circuit inside
-declares which version it is.
-
-### 2. include_bytes! paths must match Makefile output exactly
-
-The Makefile produces `.zk.bin` with the same stem as the `.zk` source file:
-`proof/mint.zk` → `proof/mint.zk.bin`. include_bytes! paths must reference
-the exact filename produced by the build. No version markers in the path.
-
-**Why:** During consolidation, 327 include_bytes! calls referenced
-`_v2.zk.bin` paths that the Makefile never produces. The Makefile uses
-`$(ZK_SRC:.zk=.zk.bin)` — a direct stem-for-stem substitution. Any
-include_bytes! path that adds, removes, or changes any part of the stem
-will fail at compile time with "No such file or directory."
-
-### 3. Circuit names inside .zk files use V2 suffix
-
-Circuit declarations use either `CamelCaseV2` (e.g., `IssueCredentialV2`,
-`DepositV2`) or `Snake_Case_V2` (e.g., `Mint_V2`, `CommitBet_V2`). The
-convention depends on the contract — use whichever style the contract
-already uses, never mix within a single contract.
-
-**Why:** The V2 suffix distinguishes domain-separated circuits from their
-deleted V1 originals. All circuits on disk are V2. A future V3 circuit
-would use a V3 suffix. The suffix is part of the circuit identity — it
-tells you which hardening pass this circuit belongs to.
-
-### 4. Manifest circuit entries match .zk circuit names exactly
-
-`[[circuits]].name` must be identical to the .zk `circuit` declaration string.
-`[[functions]].proof_circuit` must match a declared `[[circuits]].name`.
-The `namespace` field is the contract name (e.g., `"native_token"`).
-
-**Why:** The wallet's generic prover loads circuits by `(ContractId,
-namespace, name)`. A mismatch between the manifest's `name` and the .zk
-circuit declaration causes a lookup failure at proof-generation time.
-During consolidation, manifests were found to reference V1 circuit names
-that no longer exist on disk — the entries were stale by over 3 months.
-
-### 5. Rust namespace constants match .zk circuit names exactly
-
-`pub const CONTRACT_ZKAS_<FUNCTION>_NS_V2: &str = "CircuitNameV2";` must
-reproduce the .zk circuit declaration string character-for-character.
-
-**Why:** These constants are the lookup key used by the contract entrypoint
-to verify ZK proofs. A mismatch means the entrypoint verifies a proof
-against the wrong circuit, or fails to find the circuit at all. During
-consolidation, ~70 V1 namespace constants were found pointing to circuits
-that don't exist — pure dead code that had no effect but disguised which
-circuit was actually in use.
-
-### 6. Enum variants and model types carry V1 as the contract API version
-
-`MintV1 = 0x01`, `FeeParamsV3`, `CreateSwapParamsV1` — the V1/V3 suffix on
-Rust types is the contract function interface version, NOT the circuit
-version. Most variants keep their original `V1` suffix; the fee entrypoint
-is `FeeV3 = 0x08` with model type `FeeParamsV3`. The function `FeeV3` uses
-circuit `Fee_V3` — the mapping is declared in the manifest, not encoded in
-the type name.
-
-**Why:** The contract API version and the circuit version are independent
-layers. The API version changes when the function's semantics, parameters,
-or opcode meaning change. The circuit version changes when the ZK proof
-is hardened. They can change independently — a function can keep its V1
-API while its circuit advances to V2, V3, etc. Confusing these two
-layers led to the catastrophic rename attempts that preceded this
-consolidation.
-
-### 7. Entrypoint module filenames carry no version suffix
-
-Module files in `entrypoint/` are named without `_v1`: `commit_bet.rs`,
-not `commit_bet_v1.rs`. The functions inside still use `_v1` naming
-(e.g., `baccarat_commit_bet_process_instruction_v1`), matching the
-contract API version.
-
-**Why:** During a prior refactoring, 39 module files were renamed to drop
-the `_v1` suffix but the corresponding `mod` declarations and `use`
-statements were never updated. This left 6 contracts unable to compile
-for an unknown period. The filename describes which function the module
-handles; the function names inside carry the API version. Keeping the
-module filename suffix-free prevents the class of bug where a file rename
-is not propagated to the mod declaration.
-
----
-
-- [NativeToken](./native_token.md) — Consensus token with zero business logic
-- [Standards](./standards.md) — ZK circuit, token, and testing standards
-- [Composability](../../contract/composability.md) — Cross-contract child call patterns
-- [PromissoryNote](../../contract/promissory_note.md) — Privacy-preserving bearer instrument contract for DeFi tokens
-- [Python Contract Simulations](../testing/python-simulations.md) — Smoke test layer for catching state machine bugs before reaching the testnet
-
----
-
-## Lesson 24: No Variable Reassignment in zkas Circuits
-
-**Status:** CONFIRMED (2026-08-05, identity unified claim circuit deploy failure)
-
-### The Bug
-
-A unified ZK circuit was written with variable reassignment chains:
-
-```zkas
-mode_sum = base_add(is_basic, is_threshold);
-mode_sum = base_add(mode_sum, is_ratio);    // REASSIGNMENT
-mode_sum = base_add(mode_sum, is_multi);    // REASSIGNMENT
-mode_sum = base_add(mode_sum, is_dag);      // REASSIGNMENT
-```
-
-The zkas compiler accepted this input and produced a `.zk.bin` file **without error**. However, `zkas validate` reported:
+**The rule.** **`base_div` must not appear in any circuit with u64-valued witnesses.** Integer
+division is stated as quotient–remainder constraints:
 
 ```
-CORRUPTED: Opcode base_add references heap idx 48 but only 48 entries available
+# floor(a/b) = q  ⇔  q*b <= a < (q+1)*b
+q_times_b = base_mul(q, b);
+constrain_equal_base(less_than_or_equal(q_times_b, a), ONE);
+less_than_strict(a, base_mul(base_add(q, ONE), b));
 ```
 
-The compiler's heap index resolution (`rposition` for variable lookup) produces out-of-bounds references when the same variable name is reassigned multiple times. Each reassignment creates a new heap slot, but opcode arguments referencing the previous assignment can end up pointing past the current available heap.
+For ratio comparisons, cross-multiply and drop the division entirely: `a/b ≥ t` becomes
+`a · t_scale ≥ t · b`.
 
-### Why the Compiler Doesn't Reject It
+**Detection.** `grep base_div proof/*.zk` in any contract with u64 parameters. Any surviving
+`base_div` needs a proof that its operands are field quantities.
 
-The zkas compiler performs name resolution during circuit compilation using `lookup_heap` which uses `rposition` (last match). When a variable like `mode_sum` is reassigned, the compiler correctly pushes a new heap entry. However, the decoder's validation pass checks `heap_idx < constants + witnesses + prev_assignments` — and `prev_assignments` is computed per-statement. A reference to a variable whose assignment hasn't yet been counted in `prev_assignments` for the current statement causes the validation failure.
-
-### The Fix
-
-Use **unique variable names** for every intermediate result:
-
-```zkas
-sum_bt   = base_add(is_basic, is_threshold);     // unique name
-sum_btr  = base_add(sum_bt, is_ratio);            // unique name
-sum_btrm = base_add(sum_btr, is_multi);           // unique name
-mode_sum = base_add(sum_btrm, is_dag);            // unique name
-```
-
-The same pattern applies to `poseidon_hash`, `cond_select`, and any other opcode that feeds its output back as input to a subsequent opcode.
-
-### Detection
-
-Every `.zk.bin` file MUST pass `zkas validate <file>` before being deployed or embedded in a contract WASM. The `make all` build step does NOT perform this validation automatically — it only checks that the `.zk` source compiles. A post-compile validation step is required:
-
-```bash
-zkas compile input.zk -o output.zk.bin && zkas validate output.zk.bin
-```
-
-**Why this matters:** A circuit that compiles without error can still produce a corrupt binary. Without validation, the binary is embedded in the WASM via `include_bytes!()` and deployed to genesis. The first indication of failure is a cryptic `Db set failed` error at block acceptance time, deep in the `zkas_db_set` host function — far from the circuit source.
+**Taught by.** HAZOP RC4; HAZOP `pattern3_field_div`. The mechanized form is
+`proofs/lean/src/DarkFi/BaseDivGadget.lean`; the step from the gadget to the integers it stands for
+is `OBL-Z12`, still open.
 
 ---
 
-## Lesson 25: Generic-Prover Write Path — Seed Discipline, Note Production, and Derived-Rule DAG
+### RC5 — Two representations of one fact, one of them updated
 
-**Status:** ANALYSIS (2026-08-27, wallet-driven generic-prover write path)
+**What makes it possible.** The same fact is written down twice — in two languages, two files, two
+layers, or a copy of itself — and only one side is edited. Nothing in the build compares them.
 
-### The Vulnerability
+**How it has manifested.** This is the most frequently recurring root cause in the codebase; the
+instances are worth listing, because the recurrence is the point.
 
-The wallet's generic prover ([wallet.md §6.4.1](../../arch/wallet.md)) builds non-native proofs
-manifest-driven, but the write path — `invoke_contract` (`bin/dww/src/lib.rs:1572`) →
-`ManifestContractClient::build` (`src/sdk/src/contract_client.rs:289`) → `generate_proof` (`lib.rs:926`) →
-`create_generic_proof` (`bin/dww/src/prover_impl.rs:185`) → params assembly (`src/sdk/src/manifest.rs:588`) —
-has latent root causes that the wallet-driven E2E test surfaced as symptoms, not fixes. Eight root causes:
+* *Circuit vs. Rust metadata.* The domain-separation migration added `DOMAIN_*` constants to the
+  circuits and left the Rust side computing the same values without them. Poseidon over
+  `ConstantLength<N>` produces different outputs for different arities — the circuit's 4-input
+  nullifier never equalled the harness's 2-input one, so every `constrain_instance` derived from a
+  domain-separated hash verified against the wrong value. Eight mismatches in Box, twelve in Purse.
+  The structural fix is that **metadata is a pure echo** — see the four-component law below.
+* *Fixed origin, unfixed copies.* bearer_bond's `burn_v1.zk`, `redeem_v1.zk` and `blind_output_v1.zk`
+  are copies of promissory_note circuits and lacked its fixes: `redeem` was missing
+  `constrain_equal_base(value, ZERO)`, `burn` was missing the per-burn `signature_secret` derivation.
+  Copies were not tracked as derivatives, so a fix to the original reached nothing.
+* *Capability descriptor vs. dispatch table.* Every descriptor had at least one error — wrong
+  `function_id`, missing action, wrong field name, nesting that would not compile. Descriptors are
+  what the host runtime uses to decide which calls are permitted, so a wrong `function_id` authorizes
+  the wrong function.
+* *Client `to_vec()` order vs. circuit instance order.* Orderings that disagree make the proof verify
+  against a mangled instance vector.
+* *Manifest vs. circuit declaration vs. Rust namespace constant.* Three spellings of one circuit
+  name. Manifests were found referencing V1 circuit names stale by over three months; ~70 namespace
+  constants pointed at circuits that did not exist.
+* *Makefile output vs. `include_bytes!` path.* 327 `include_bytes!` calls referenced `_v2.zk.bin`
+  paths the Makefile never produces (`$(ZK_SRC:.zk=.zk.bin)` is a direct stem substitution).
+* *File rename vs. `mod` declaration.* 39 module files were renamed to drop `_v1` and the `mod`
+  declarations were not updated — six contracts stopped compiling for an unknown period.
+* *Compiler vs. synthesizer.* The zkas compiler gained a feature the VM had not learned. The
+  `.zk.bin` format is the contract between them; it changed on one side only.
+* *Compiler vs. decoder.* zkas accepted variable reassignment chains and emitted a `.zk.bin` without
+  error, which `zkas validate` then rejected as corrupted (`base_add references heap idx 48 but only
+  48 entries available`) — the compiler's name resolution and the decoder's heap validation held two
+  different models of the same file.
+* *Spec vs. code.* A documented exponential-decay formula implemented as a linear approximation; a
+  comment claiming sorted keys make `serde_json` deterministic across versions.
+* *A fix applied at one site and not its siblings.* The gas-exhaustion check existed and was applied
+  to one of ten host functions; `is_gas_exhausted()` was written and never called. The
+  domain-separation architecture existed and 150 circuits had not been ported to it.
 
-1. **Seed not plumbed.** `build` passes `[0u8; 32]` to `generate_proof` (`contract_client.rs:358`); the
-   shell's random seed (`lib.rs:1691`/`1739`) is not threaded through. `derive_blind([0;32], name)`
-   (`prover_impl.rs:504-506`) is then a publicly-known constant for every `blind:<name>` witness — a purse
-   deposit/withdraw through this path uses predictable blinds (linkability/forgery). Violates
-   [wallet.md §6.1](../../arch/wallet.md).
-2. **No capability selection.** `generate_proof` binds `caps[0]` (`lib.rs:946`) with no contract/asset
-   filter, so a multi-capability wallet binds the wrong note fields and the wrong Merkle proof/root.
-   Violates [wallet.md §6.2](../../arch/wallet.md) barb-cover selection.
-3. **No produce-side note.** The AEAD note exists only in the test harness
-   (`test-harness/src/harness/box.rs:57-63`); the wallet path emits none. A box/purse transferred to a
-   new owner is undiscoverable — the Create phase of [ocap.md §6.1](../../arch/ocap.md) is missing.
-4. **Zero transaction binding.** `TxCommitment | TxNonce` are both bound to `pallas::Base::zero()`
-   (`prover_impl.rs:329-334`), so the proof is not bound to the real transaction.
-5. **Derived-rule forward references.** Derived rules are not enforced as a DAG — a rule whose operand is a
-   later *derived* slot is unhandled (pass 2 is sequential, `prover_impl.rs:217`).
-6. **Intermediate public inputs.** `extract_instances` hard-errors on `constrain_instance` targets that are
-   VM intermediates (`prover_impl.rs:473-479`) — PN's `coin`/`value_commit`/`token_commit` — needing a
-   `public_inputs` declaration.
-7. **Witness-tagged type constraint.** A witness-tagged wire param must be a `Base` slot; a Scalar-slot
-   wire param fails (`contract_client.rs:366-377`, `prover_impl.rs:252-259`).
-8. **Secret resolution.** `key_coords == None` is a hard error (`lib.rs:954`) with no `spend_secret`
-   fallback (which the native path uses, `lib.rs:1162-1168`); `cap.leaf_position as u32` truncates a `u64`.
+**The rule.** **Where the same fact must be written twice, derive one side from the other or make
+disagreement impossible to compile.** Where derivation is not available, add a gate that compares
+them: `scripts/check-circuit-domain-separation.sh` and
+`scripts/check-circuit-metadata-alignment.sh` exist for exactly this reason. A pattern established at
+one site is not established — enumerate its siblings and apply it to all of them, or the remaining
+sites are the bug.
 
-### The Fix
+**Detection.**
 
-Each root cause has one structural fix (not a patch):
-1. Thread `Seed` from the shell through `build` → `generate_proof` → `create_generic_proof`.
-2. Select the capability by `contract_id` + `requiredBarbs` (barb-cover).
-3. Emit a manifest-driven produce-side note (note_schema fields ← bound values, encrypt to `recipient`).
-4. Bind `TxCommitment`/`TxNonce` from the real transaction.
-5. Enforce the derived-rule DAG at parse time (a forward-ref/cycle is a parse error).
-6. Add `[[circuits]].public_inputs` (`slot:<i>` / `derived:<rule>:<slots>`) + prover support.
-7. Type-check witness-tagged fields against the slot `VarType`.
-8. `spend_secret` fallback + checked `leaf_position` cast.
+- For every `constrain_instance(X)` where `X` involves a hash: does the Rust-side metadata function
+  compute `X` identically — same arity, same order, same domain constant? If it computes anything at
+  all, it is a second source of truth (see the four-component law).
+- Every `.zk` file that is a copy of another declares its provenance.
+- Descriptor `function_id`s are verified against the entrypoint dispatch table.
+- Circuit/client/entrypoint agree on public-input order, position for position.
+- `[[circuits]].name`, the `.zk` `circuit` string, and the Rust namespace constant are
+  character-identical.
+- A new zkas feature is paired with synthesizer support before any production circuit uses it; after
+  any compiler change, recompile a known-good circuit and confirm `ProvingKey::build` succeeds.
+- Every `.zk.bin` passes `zkas validate` before being embedded. `make all` does not do this.
+- When a fix lands at one site, grep for its siblings before calling it done.
 
-### The Principle
-
-The seven write-path invariants (each a SHALL, cross-referenced to the ρ-calculus trace in
-[wallet.md §6.4.1](../../arch/wallet.md) and the `Prover.lean` theorems):
-1. **Seed discipline** — every blind and proving randomness derives from the shell's `Seed`.
-2. **Barb-cover selection** — `covers(⋃ barbs(caps), requiredBarbs(action))`.
-3. **Note production (Create)** — a produce-side note is emitted to the recipient.
-4. **Transaction binding** — the proof binds the real `tx_commitment`/`tx_nonce`.
-5. **Derived-rule DAG** — derived rules form a DAG; a forward-ref/cycle is a parse error.
-6. **Public-input declaration** — every `constrain_instance` target is a declared `slot:`/`derived:` entry.
-7. **Type preservation** — witness-tagged wire fields bind their declared `VarType`.
-
-### Detection
-
-- `grep '\[0u8; 32\]' bin/dww/src` — the seed must never be hardcoded in the prover path.
-- `grep 'caps\[0\]' bin/dww/src/lib.rs` — capability selection must filter by contract/asset.
-- `grep -n 'AeadEncryptedNote::encrypt' bin/dww/src` — the write path must emit the produce-side note.
-- `grep 'TxCommitment\|TxNonce' bin/dww/src/prover_impl.rs` — must not bind to zero.
-- `grep 'derived:' src/contract/*/manifest.toml` — operands must form a topological pre-order (DAG).
-- `grep 'ConstrainInstance' src/zk` — intermediate-heap targets need the `public_inputs` declaration.
+**Taught by.** Lessons 10, 12, 13, 21, 22 (both), 24, 25; HAZOP RC5; old `RC-C` (propagation),
+`RC-G` (partly), `RC-I`, `RC-D` (deployment half); HAZOP `pattern1` (redundant/declared instances).
+Open residue: `OBL-Z1`, `OBL-Z5`, `OBL-Z8`, `OBL-Z13`.
 
 ---
 
-# Raw Unwrap / Expect Audit
+### RC6 — Irreversible work before the check that guards it
 
-## Policy
+**What makes it possible.** The operation that cannot be undone happens before the check that could
+have rejected it. The check runs, may even fail — but the state it was meant to protect is already
+gone.
 
-Raw `.unwrap()` / `.expect()` SHALL NOT appear in production code. They are
+**How it has manifested.**
+
+* *A validation after the atomic commit.* Coinbase maturity was checked *after* `sled::Batch::apply`,
+  with no rollback path — a maturity failure left the block committed. The architecture had split
+  validation into a pre-commit phase (structure, PoW, WASM execution) and a post-commit phase
+  (maturity, signature consumption) without a transaction for the second.
+* *Data consumed before the fallible operation.* `take_competing_blocks()` removed entries before
+  subsequent fallible work; if that work failed, the data was lost. No savepoint existed.
+* *A merge that overwrites rather than detects.* Every contract call received
+  `base_overlay.clone()`, so no call saw another's writes; diffs were merged with
+  `main_overlay.add_diff(diff)`, which silently overwrites duplicate keys. Two transactions spending
+  the same commitment in the same block both passed their exec-phase nullifier checks and both
+  appeared to succeed. Resolved: a shared overlay model for canonical calls, uncle-vs-uncle and
+  Deployooor write-key conflict detection, and mempool nullifier deduplication at admission.
+
+**The rule.** **All fallible work precedes the destructive work.** After the atomic commit, nothing
+may reject the block — validation that can fail belongs before it. Where two operations can write the
+same key, the merge must *detect* the conflict rather than resolve it by overwriting; silent
+overwrite is never safe for value-bearing state.
+
+**Detection.** For every `sled::Batch::apply` (or equivalent commit), list the validations that
+follow it. For every `take_*`/`remove`/`delete`, list the fallible operations that follow it. For
+every merge of concurrent write sets, state what happens on a duplicate key.
+
+**Taught by.** Old `RC-B`; HAZID RC4; lesson 19. The unresolved residue — coinbase maturity
+checked after the sled commit — is carried as an open obligation in the register.
+
+---
+
+### RC7 — An on-chain invariant computed off-circuit
+
+**What makes it possible.** A relationship that the protocol depends on is established by the
+client, which is a convenience rather than a security boundary. The circuit verifies each value
+individually and never relates them.
+
+**How it has manifested.**
+
+* *Fee subtraction computed in Rust.* NativeToken's `FeeV1` circuit contained **zero** constraint
+  linking `input_value` and `output_value`; `output_value = input_value − fee` was computed
+  client-side. A prover could set `output_value = input_value + 1_000_000` and generate a valid
+  proof. The 1-in-1-out structure provided no conservation at all. `TransferV1` likewise lacked the
+  cross-proof Pedersen sum check that PromissoryNote's `verify_value_conservation()` performs.
+* *Two independent witnesses where one derivation was needed.* Burn circuits had separate
+  `spend_secret` (nullifier) and `signature_secret` (signing) witnesses with no cross-constraint, so
+  the commitment owner and the transaction signer could be different entities. The fix derives
+  `signature_secret = poseidon_hash(spend_secret, nullifier)` — binding signer to owner while keeping
+  each burn unlinkable. The first attempt exposed `pub = ec_mul_base(spend_secret, K)` directly, which
+  fixed the separation and created a privacy regression: every burn from one owner revealed the same
+  static public key.
+* *A child call's amount taken on faith.* A parent calling `promissory_note::transfer_v1` could see
+  that a transfer existed but not that it transferred the expected amount — the amount was inside an
+  `AeadEncryptedNote` the parent cannot decrypt, and the `value_commit` blind was unknown to it.
+* *No second witness to supply integrity.* The Orchard pool's integrity rested entirely on
+  per-transaction balance checks. One missing constraint collapsed the edifice, and because the pool
+  is fully shielded, counterfeit commitments are cryptographically indistinguishable from legitimate
+  ones — there is no way to determine whether the bug was ever exploited.
+
+**The rule.** **Structural conservation is not cryptographic conservation.** Every value
+transformation performed off-circuit (fee subtraction, interest accrual, exchange-rate conversion)
+is constrained in-circuit. Where a parent must verify a child's amount, use the commitment already
+present — `value_commit = poseidon_hash(value, value_blind)` with the blind derived deterministically
+from the parent's own unique state — rather than adding a plaintext field. The fix for the
+`public_value` attempt is the model: the `Option<u64>` field *looked* optional but was mandatory for
+any composed transfer, so it made privacy conditional and broke it for exactly the case composition
+exists to serve. When you find yourself adding a field that violates a core design constraint to
+solve a verification problem, the answer is to use the commitments you already have.
+
+And for any shielded asset: **ask whether a circuit bug allowing unbounded minting would be
+detectable.** If not, the asset needs a cumulative commitment chain independent of any single
+circuit. The test is not "has the circuit been reviewed?" — Orchard's was reviewed for four years.
+NativeToken's answer is the Pedersen cumulative chain `S_H = S_{H-1} + C_H`, verified two independent
+ways: the `Mint_V1` circuit constrains `ec_add(S_{H-1}, C_H) == S_H` (depends on Halo2 soundness),
+and any node can check the identity in pure Pedersen arithmetic via the
+`blockchain.get_cumulative_supply` RPC without verifying a proof (depends on Pedersen binding). To
+hide inflation an attacker must break both simultaneously. The burden of proof falls on the miners
+extending the chain, whose rewards are public — not on private users.
+
+**Detection.** For every value transformation in a contract: is the relationship constrained
+in-circuit, or asserted by the client? For every parent that moves value via a child: is the child's
+`value_commit` recomputed and compared? For every authorization witness pair (`spend_*`,
+`signature_*`): is the derivation constrained?
+
+**Taught by.** Lessons 3, 4, 17, 18, 20. Registers as `OBL-C1`, `OBL-C3`, `OBL-C4`, `OBL-C5`.
+
+---
+
+### RC8 — Private material reaching a public surface
+
+**What makes it possible.** A value that identifies a participant, or a secret used to authorize
+them, is placed where an observer can read it, enumerate it, or correlate it. The o-cap model's
+guarantee is unlinkability; this class is the ways it leaks.
+
+**How it has manifested.**
+
+* *A public key as a database key.* `db_set(relayers_db, &serialize(&relayer_pub), …)` makes identity
+  the primary lookup dimension: anyone who knows a pubkey enumerates every record for it. The same
+  pattern appeared for issuers, for `(capability_id, holder_pub)` composite keys, and for
+  `(proposal_id, voter_pubkey)` — which reveals exactly how each voter voted.
+* *A signature key reused across transactions.* `signature_public` was documented as a generic
+  "signature public key" and builders accepted a full `Keypair` or an unconstrained secret. Reusing
+  the wallet key gives every transaction the same on-chain identity link. The fix names the field
+  `ephemeral_signature_secret` so the invariant is unmissable, and removes `Keypair` from builders.
+* *Identity smuggled into an opaque field.* `user_data = poseidon_hash([..., sender_pub])` where
+  `sender_pub = poseidon_hash([owner_secret])` — a deterministic fingerprint of the owner, committed
+  into every mint and passed as a public input. Authorization was already covered by the nullifier;
+  the identity added no security and removed privacy.
+* *Identity fragments in a token ID.* `token_auth_parent = authority_pub[0..8]` embeds the creator in
+  every commitment of that token. The token ID needs to be unique, not identity-bearing: the
+  authority relation is a capability proven by the mint flow, not a fact about the ID.
+* *The wallet keypair in a client builder.* `signature_keypair: Keypair` on a builder invites reuse,
+  and one builder serialised the wallet secret into the note memo. Accept only the individual secrets
+  an operation needs; the memo needs no secret at all.
+* *One wallet key across contract instances.* The same pubkey as `owner_pubkey`, `member_pub` and
+  `staker_pub` across instances links every contract a user touches. Each instance derives its own
+  key via `SecretKey::derive_instance(contract_id, instance_seed)`, with a random `instance_seed`
+  stored on-chain so the wallet can reconstruct it without a circular dependency.
+* *A secret in a derived trait.* `SecretKey`'s and `Blind<F>`'s derived `Debug`/`Display` printed raw
+  field elements. Fixed by manual `<redacted>` impls, `Drop` zeroisation, and gating `Display` behind
+  a feature flag — but each such type needs individual audit, which is why a lint matters more than
+  the fix.
+
+**The rule.** **Authorization belongs in nullifiers, not in auxiliary data; and nothing
+identity-derived goes on-chain.** Hash identity material before using it as a key of any kind. Derive
+per-instance keys rather than reusing one. Never let a builder hold a wallet keypair, and never let a
+sensitive type derive a formatting trait.
+
+Note the boundary — this class is *not* "all plaintext is a leak". **Intentional transparency** keeps
+a field public where the aggregate is legitimately shared: bridge withdrawal amounts (both chains
+know them), stablecoin pool totals (ratio checks need them), DEX order-book prices (hidden prices
+prevent matching), network fees (public by design). **The heuristic:** if the value updates a global
+aggregate other users depend on, it is legitimately public; if it is needed only by the two
+counterparties to a transfer, it belongs behind a commitment.
+
+**Detection.**
+
+- Is a raw public key used as a database key? Replace with `poseidon_hash(chunks)` — lookup is
+  preserved for anyone who knows the key, enumeration is not.
+- Could a signature public key be reused across transactions? Is the field named `ephemeral_*`?
+- Does `user_data` or any opaque field encode identity material? Grep for `poseidon_hash([owner_secret])`
+  or `sender_pub` in `user_data` derivations.
+- Does a token-ID derivation use identity-linked inputs?
+- Does a client builder carry a full `Keypair`?
+- Does the same raw wallet pubkey appear across multiple contract instances?
+- Does any type in `src/sdk/src/crypto/` that wraps a field element derive `Debug` or `Display`?
+
+**Taught by.** Lessons 5, 6, 7, 8, 9; old `RC-E`; the flakey-pattern rows for shared pubkeys and
+placeholder signatures.
+
+---
+
+### RC9 — Safety that is opt-in
+
+**What makes it possible.** The secure configuration is available, requires deliberate action, and is
+not the default. A developer who does not read every optional setter gets the insecure system.
+
+**How it has manifested.**
+
+* *Client builders defaulting to the least-private value.* `nonce` and `secret_nonce` defaulted to
+  `pallas::Base::zero()`, so every call with the same parameters from the same caller produced an
+  identical, trivially linkable commitment. The setter existed; the default was the trap. Fixed across
+  eight builders by defaulting to `pallas::Base::random(&mut OsRng)`.
+* *Safety features off by default.* `DrainConfig { circuit_breaker: None, exit_queue: None }` as
+  `Default` means every deployment starts unprotected and operators must opt in.
+* *A random seed supplied as a constant.* The generic-prover path passed `[0u8; 32]` where the shell's
+  random seed belonged, making every `blind:<name>` witness a publicly-known constant.
+* *A default password.* A wallet shipped with `"changeme"`.
+
+**The rule.** **`Default::default()` must be the secure configuration.** Opt out for exceptions;
+never opt in for safety. A developer who calls `Builder::new()` without reading the optional setters
+should get the private, protected behaviour.
+
+**Detection.** Read the `Default` impl of every config struct and every builder. Does the default
+produce a private, protected instance? Grep for `zero()` and literal-constant defaults in
+nonce/blind/seed positions.
+
+**Taught by.** Design Principle 2; old `RC-F` (defaults half); the `DRAIN-001` class label.
+
+---
+
+### RC10 — A value with no bound
+
+**What makes it possible.** A parameter is accepted without a stated ceiling, so its cost, its
+lifetime, or its effect is unbounded.
+
+**How it has manifested.**
+
+* *Temporal parameters unchecked.* A slash attestation accepting a `block_height` from any block —
+  including the future — lets a relayer pre-register a slash for block N+1000 and block the real
+  attestations at that height via the idempotency check.
+* *Creation with no deactivation path.* `active: bool` flags with no function that clears them:
+  underwriters could not resign, markets could not close, risk types could not be retired, governance
+  could not be paused, capabilities could not be revoked. Every record, once created, was permanently
+  active. Seven deactivation functions were added across four contracts.
+* *User-supplied collections iterated without a limit.* Not a DoS vector under the current runtime
+  ceiling, but the ceiling produces an opaque WASM trap rather than a diagnosable error, and as gas
+  metering evolves the cost becomes proportional and unpredictable. Five per-call `MAX_*` constants
+  were added (`DARKBET_EXCHANGE_MAX_SETTLE_MATCHES`, `POOL_STAKE_MAX_REBALANCE_MEMBERS`,
+  `RELAYER_ENDOWMENT_MAX_ALLOCATIONS`, `IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS`,
+  `ROULETTE_CONTRACT_MAX_SETTLE_BETS`, all 100).
+* *Governance-configurable values with no sanity bounds.* Bridge confirmation counts and fee
+  ceilings could be set to any value; `max_deposit`/`max_withdrawal` were parsed and never written to
+  state at all.
+* *Costs that scale without a limit.* O(n) chain traversal in `get_next_work_required`; a verifying-key
+  cache whose eviction was by insertion order and therefore manipulable.
+
+**The rule.** **Every user-supplied value has a stated ceiling, and every `active` flag has a
+function that clears it.** Creation without deletion is a state leak. An assertion with a clear
+message ("Too many match IDs for settle") is debuggable; a runtime-limit trap is not. Choose bounds
+generous enough for legitimate use and small enough to keep cost predictable — functions needing more
+can be called repeatedly with different slices. Temporal parameters are bounded on both sides:
+`block_height <= current_block` and `current_block - block_height <= MAX_AGE`.
+
+**Detection.** For every `create`/`register` function, is there a corresponding deactivate? For every
+`Vec` parameter that is iterated, is there a `MAX_*` assertion before the loop? For every
+`block_height` parameter, is it bounded? For every governance-settable value, are there bounds?
+
+**Taught by.** Design Principles 3 and 4; old `RC-H`; the `ATTEST-001`, `BET-001`, `POOL-001` class
+labels.
+
+---
+
+### RC11 — A consensus path that can disagree
+
+**What makes it possible.** Two nodes read the same chain data and reach different conclusions,
+because the path depends on something that is not a function of the chain — memory ordering, hash
+iteration order, wall-clock time, or a serialization that is not byte-deterministic.
+
+**How it has manifested.**
+
+* *A non-deterministic serializer in consensus paths.* `serde_json` used for block storage, block-size
+  measurement, and competing-block dedup hashing, with a comment claiming sorted keys make it
+  deterministic across serde versions. The codebase has `dwow_serial` for exactly this.
+* *Relaxed atomics and saturating arithmetic masking invariant violations.* `saturating_*` where
+  `checked_*` was meant turns an overflow bug into a silent wrong answer; `Ordering` other than
+  Acquire/Release on consensus atomics admits reordering.
+* *Hash-map iteration order feeding consensus decisions.* Without a deterministic tiebreaker, two
+  nodes enumerate differently.
+* *A soft time limit.* A 30-second wall-clock warning that does not terminate still lets a slow node
+  and a fast node disagree about whether a call completed.
+* *A feature scanner with an incomplete deny-list.* WASM threads/atomics (`0xFE`) were not rejected.
+  Disabling the scanner entirely is worse than the gap it closes.
+
+**The rule.** **Two nodes reading the same chain must reach the same conclusion, bit for bit.**
+Consensus paths use `dwow_serial`, `checked_*`, deterministic ordering with explicit tiebreakers, and
+non-relaxed atomics. Nothing in a consensus decision path may depend on wall-clock time, address
+space, or iteration order.
+
+**Detection.** Grep `src/linear/` and `bin/dwowd/` for `serde_json`, `HashMap::iter`, `Ordering::Relaxed`,
+and `saturating_` in comparison or invariant positions. Any such site in a consensus decision path is
+in this class.
+
+**Taught by.** HAZID RC3, RC6 (arithmetic half); old `RC-G`, `RC-I`.
+
+---
+
+### RC12 — An error dropped, panicked on, or made indistinguishable
+
+**What makes it possible.** A `Result` is discarded, unwrapped, or collapsed into an error code that
+several distinct failures share. The failure is either not handled, or handled indistinguishably.
+
+**How it has manifested.**
+
+* *A derive macro below the type system.* Every contract originally used
+  `#[derive(SerialEncodable, SerialDecodable)]` on state and parameter types. The derived `Decodable`
+  reads `pallas::Base` directly — it never calls the validating `Nullifier::from_bytes()` and silently
+  accepts zero and non-canonical values. A `serialize(&purse)` was observed to produce 9 bytes where
+  129 were expected, accepted without complaint, yielding a corrupt Purse with zeroed fields. The
+  error surfaced only as `ContractError::IoError("Unknown")` at the WASM boundary. Every contract now
+  uses explicit `encode()`/`decode()` with fixed layouts and per-field validation through named
+  constructors.
+* *A host function with one error code for eighteen failures.* `merkle_add` had 18 distinct failure
+  sites, all returning `ContractError::Internal` (code 2). A failing heavyweight test reported
+  `ContractError(Internal)` — impossible to attribute. Replacing them with six distinct variants plus
+  three existing ones produced `ContractError(DbGetEmpty)`, which identified the cause in minutes (a
+  guard in `init_contract` skipping tree initialisation).
+* *Errors substituted with defaults.* `.unwrap_or(default)` on a PoW hash comparison, on chain-state
+  reads, and on `let _ = set_return_data(...)` turns a failure into a silently wrong consensus value.
+  Consensus code in particular must fail closed rather than substitute.
+* *A panic on untrusted input.* Raw `.unwrap()`/`.expect()` throughout production code — RandomX
+  `.expect()` in chain state, `Scalar::from_repr().unwrap()` at a crypto boundary, `File::create()
+  .unwrap()`. A panic is a liveness failure on input an adversary chooses.
+
+**The rule.** **Every failure site has its own error, and every `Result` is acted on.** The policy is
 enforced at compile time:
 
 ```rust
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 ```
 
-`#[cfg(test)]` code is exempt (test fixtures/assertions legitimately unwrap).
-A panic-capable unwrap that is *provably safe* (locally-provable invariant,
-compile-time constant, FFI/byte-encode boundary, length-checked `.try_into()`) is
-a documented dispensation:
+A panic-capable unwrap that is *provably safe* — a locally-provable invariant, a compile-time
+constant, an FFI or byte-encode boundary, a length-checked `try_into()` — is a documented
+dispensation rather than a bare `.unwrap()`:
 
 ```rust
 #[expect(clippy::unwrap_used, reason = "type-system.md §2.3.2 — len checked above")]
 ```
 
-`#[expect]` documents *and* warns if the unwrap is later removed, so the
-annotation cannot go stale.
+`#[expect]` documents the reason *and* warns if the unwrap is later removed, so the annotation cannot
+go stale.
 
-## Inventory (2026-08-21)
+In host functions serving hard-path contracts, `ContractError::Internal` (code 2) SHALL NOT be a
+catch-all: each distinct recoverable failure — missing data, corrupt data, handle out of bounds,
+deserialization failure — gets its own variant. It is reserved for genuinely unrecoverable conditions
+(host memory faults, environment crashes). New variants follow the `ComponentOperationFailed` naming
+convention, and the host-side `error!()` log includes the contract ID and relevant keys.
 
-| Construct | Count |
-|-----------|-------|
-| `.unwrap()` | 8,326 |
-| `.expect(` | 1,773 |
-| `panic!` / `unreachable!` / `todo!` / `unimplemented!` | 233 |
+> **A naming collision worth knowing.** `safety.md C1` in a `#[expect(…, reason = …)]` under
+> `bin/dwowd/src/` refers to the **unwrap-audit tier C1** (RandomX `.expect()`), not to the red-team
+> finding `C-1` and not to HAZOP root cause `RC1`. The tiers were `C1` (RandomX `.expect()`), `C2`
+> (`unwrap_or([0u8; N])` PoW bypass), `H3` (`Scalar::from_repr().unwrap()`), `H4` (precision loss),
+> `M1–M7` (mutex poison, daemon/miner/client unwraps).
 
-Heaviest concentrations: `bin/app` UI (~2,000), contract `model/mod.rs` files
-(serde/`TryFrom` helpers), and `bin/dwowd/src/tests` (exempt). Prior adversarial
-audit tiers to reconcile against the current tree (see `memory/get-unwrap-audit-handover.md`):
-C1 (RandomX `.expect()`), C2 (`unwrap_or([0u8;N])` PoW bypass), H3
-(`Scalar::from_repr().unwrap()`), H4 (precision loss), M1-M7 (Mutex poison,
-daemon/miner/client unwraps).
+**Detection.** `cargo clippy` with the two denies above is the instrument. Beyond it: is every
+`Result` from a host function propagated or explicitly matched? Does any `Err` path share the
+`Internal` code with a different cause? Does a consensus path use `unwrap_or` where `?` belongs?
 
-## Incident (fixed)
-
-The wallet→wallet transfer panicked at `bin/dww/src/wallet_util.rs:279` —
-`String::from_utf8(dest).unwrap()` in a hand-rolled base64 encoder that used
-*decode* tables (`E0`/`E1`/`E2`, with `-1` at index 61) as *encode* tables, so any
-input containing byte `0x3D` wrote `0xFF` and panicked. Fixed by deleting the
-broken copy and delegating to `dwow_core::util::encoding::base64::{encode, decode}`.
-
-## Prioritised remediation order (critical path)
-
-Production code only (`#[cfg(test)]`/`tests/` exempt). Fix P0/P1 as real error
-handling (`?`/typed error); annotate P2/P3 with `#[expect(…, reason = "…")]`.
-
-### P0 — CRITICAL (panic on untrusted input / silent consensus bypass)
-
-| Site | Hazard |
-|------|--------|
-| `src/linear/src/chain_state.rs:921,924,1036,1040` — RandomX `.expect()` | node panics under memory pressure / bad key |
-| `src/linear/src/block.rs:603,604` — RandomX `.expect()` | node panics |
-| `src/linear/src/chain_state.rs:367,372,1775` — `try_into().unwrap_or([0u8;N])` | DB corruption → zero hash/height → PoW/continuity bypass |
-
-### P1 — HIGH (panic on malformed/boundary input)
-
-| Site | Hazard |
-|------|--------|
-| `src/sdk/src/crypto/blind.rs:182`, `keypair.rs:320` — `Scalar::from_repr().unwrap()` / `.expect()` | out-of-range repr panic |
-| `src/sdk/src/crypto/intent.rs:171`, `contract_id.rs:163` — `pk.xy().expect("pk not identity")` | identity-point panic |
-| `src/sdk/src/crypto/merkle_node.rs:162` — Sinsemilla `.expect()` | domain-overflow panic |
-| `src/linear/src/chain_state.rs:1172` — `pallas::Point` repr `.expect()` | crypto invariant panic |
-| `bin/dww/src/config.rs:255,256` — `File::create/write_all().unwrap()` | IO-error panic |
-| `bin/dww/src/lib.rs:1100,1111` — `cache.as_ref().unwrap()` | `None` cache panic |
-| `bin/dww/src/manifest_resolver.rs:137` — `value.as_str().unwrap()` | non-string manifest panic |
-| `bin/dww/src/fee_builder.rs:514` — `encrypt_fee_for_miner` `.expect()` | crypto panic |
-
-### P2 — MEDIUM (provably-safe invariants → `#[expect]`)
-
-`keypair.rs:291,396` (len-checked `try_into`), `monero/fixed_array.rs:89,90` and
-`merkle_tree_parameters.rs:58,105` ("can't fail"), `config.rs:345` + `ffi.rs:82`
-(compile-time), `fee_builder.rs:98-104` (embedded binary), `message_publisher.rs:376`
-(name registration), `transport/socks5.rs:52,62` + `unix.rs:87,88` (net-full only).
-
-### P3 — LOW (FFI/byte-encode boundaries)
-
-`ffi.rs` `CString::new(compile-time-str).unwrap()` family.
+**Taught by.** Lesson 21; the raw-unwrap/expect audit; the error-propagation rule; HAZID RC1
+(swallowed-error half).
 
 ---
 
-# FeeV3 — Public Gas/Fee Model
+## Flakey Patterns: How These Fail Review
 
-The fee is plaintext and deterministic — `fee = gas × CF × tier × risk`
-(fee-spec.md §12.4.1, `compute_fee_v3`, `src/linear/src/fee_window.rs:314`) —
-with three uniform price tiers (low / medium / high, 1×/2×/4× multipliers)
-chosen by the user. There is no ZK proof hiding the fee, no threshold proof,
-and no encrypted-fee channel to the miner. Admission is a plain
-`fee >= tier_price` comparison; collection is a plain `fees_db[height]` u64
-sum. See [fee-spec.md](../../arch/consensus/fee-spec.md).
+A **flakey pattern** passes functional tests while violating a core architectural invariant. It looks
+correct in isolation — the code compiles, the tests pass, the immediate problem is solved — and it
+undermines the property the system exists to provide. These are the most dangerous bugs because they
+survive review and automated testing. They are also the primary way **blast radius expands without
+anyone noticing**: one flakey signature check in a shared validation path turns a single-capability
+compromise into a cross-contract exploit.
 
-The fee is a plain arithmetic function of public inputs, so every node
-derives the identical value — a wrong `total_fees` from a decryption failure
-cannot fork the chain because there is nothing to decrypt.
+### Anatomy
 
-## Retained Proof Machinery
+Every flakey pattern has three characteristics:
 
-- **The `Fee_V3` mass-balance circuit** — Pedersen value conservation
-  (`input = output + fee`) — binds the hidden input/output values to the
-  now-public fee.
-- **The gas formula** — circuit difficulty + WASM storage, scaled by the
-  congestion factor, tier, and risk factor in `compute_fee_v3`.
-- **The self-declared `BlockCharge` + `ContractRiskTracker`** — the
-  manifest's declared block capacity and the observed-vs-declared feedback
-  loop (`src/linear/src/contract_risk.rs`).
-- **The congestion window / PID controller** (`fee_window_flags`) — the
-  gas-price oracle that scales the fee; the three tiers move together with
-  it.
+1. **Solves the immediate problem** — the functional requirement is met.
+2. **Breaks a core invariant** — a non-negotiable constraint is sacrificed.
+3. **Disguises the breakage** — hidden behind optional types, configurable defaults, or conditional
+   logic that makes it look safe. `Option<u64>` *looks* like privacy is preserved.
 
-The host-side material retained for auditing the Fee_V3 proof is
-`fee_value_commit` and `fee_v3_tx_binding`
-(`src/contract/native_token/src/model/fee.rs`).
+### Warning signs
+
+| Signal | Example | Root cause |
+|---|---|---|
+| Plaintext data in a privacy struct | `public_value: Option<u64>` on `Output` | RC8 |
+| Optional fields that are mandatory for correctness | `public_value` must be `Some(..)` for any composed transfer | RC8 |
+| A new circuit revealing what the old one hid | `TransferOutput_V1` vs `BlindOutput_V1` | RC8 |
+| A field added to satisfy one caller | Bridge needed amount verification → `Output` grew a field | RC8 |
+| Type-level safety without invariant enforcement | `Option<u64>` is type-safe and enforces nothing | RC8 |
+| "Backed by a ZK proof" without an on-chain check | `auth_proof` fields only ZK-verified | RC1 |
+| An opcode check without a contract-ID check | `data[0] == 0x04` alone | RC1 |
+| A raw pubkey as a database key | `db_set(relayers_db, &serialize(&relayer_pub), …)` | RC8 |
+| A signature secret shared across transactions | `signature_secret` reused from the wallet key | RC8 |
+| Identity material in an opaque field | `user_data = poseidon_hash([.., sender_pub])` | RC8 |
+| Identity fragments in a token derivation | `token_auth_parent = authority_pub[..8]` | RC8 |
+| A full wallet keypair in a client builder | `signature_keypair: Keypair` on a builder | RC8 |
+| One raw pubkey across contract instances | Same pubkey for `owner_pubkey`, `member_pub`, `staker_pub` | RC8 |
+| A silent authorization bypass | `verify_capability_for_action` returns `Ok(())` when governance is inactive | RC1 |
+| A placeholder signature in production params | `signature: pallas::Base::zero()` | RC1 |
+| Safety features disabled by default | `DrainConfig { circuit_breaker: None, .. }` as `Default` | RC9 |
+| Missing temporal validation | A slash attestation accepting any `block_height` | RC10 |
+| A descriptor out of sync with dispatch | Descriptor says `0x01`, dispatch maps `0x00` | RC5 |
+| Circuit/client public-input ordering mismatch | Circuit `[x, y, id, bid]`, client `[id, bid, x, y]` | RC5 |
+
+### The fix pattern
+
+Two approaches resolve almost every instance: **use the cryptographic commitments you already
+have**, or **derive per-instance keys deterministically**.
+
+```
+FLAKEY:  Add a plaintext field + a new circuit to prove the plaintext matches the hidden value
+PROPER:  Compare the existing commitments, both sides computing the blind deterministically
+
+FLAKEY:  Reuse the raw wallet pubkey across contract instances
+PROPER:  Derive per-instance via SecretKey::derive_instance(contract_id, instance_seed)
+
+FLAKEY:  Return Ok(()) when an authorization check finds nothing
+PROPER:  Return Err — deny by default, enumerate only the success conditions
+
+FLAKEY:  Accept pallas::Base or [u8; 32] as a signature type
+PROPER:  Use schnorr::Signature — let the type system require that signing occurred
+
+FLAKEY:  Safety features None by default, requiring operator opt-in
+PROPER:  Safety features enabled by default — Default::default() is the secure configuration
+
+FLAKEY:  Accept block_height with no bounds
+PROPER:  block_height <= current_block && current_block - block_height <= MAX_AGE
+
+FLAKEY:  Capability descriptor drifts from the entrypoint dispatch table
+PROPER:  Treat them as a matched pair; updating one alone is a half-implemented change
+```
+
+---
+
+## Design Constraints: Hardening by Construction
+
+These are not failure classes. They are the rules a new contract is built to from the start, derived
+from the same review history.
+
+### The L1 combinatorial bound
+
+Box and Purse were upgraded from L2 (singleton, deterministic KV lookup) to L1 (anonymous encrypted
+objects, Merkle inclusion proofs, full ZK). The upgrade introduces an **exponential** jump in the
+state space: in L2, K sequential operations have exactly 1 valid state trajectory; in L1 with N
+concurrent anonymous objects, K operations have N^K. This is the foundational reason L1 contracts
+require different reasoning.
+
+Every L1 contract proposal passes the triage **before implementation begins**:
+
+| Tier | Public inputs | Witness values | Operations | Verdict |
+|------|--------------|----------------|------------|---------|
+| Safe | ≤9 | ≤13 | ≤3 | Pure L1, bounded by construction |
+| Scrutiny | 10–15 | 14–20 | 4–6 | Explicit bounds proof required |
+| Exceeds | >15 | >20 | >6 | Not valid as single-contract L1 — use L2 or sharding |
+
+The ceiling constants are **derived, not observed**:
+
+| Constant | Value | Derivation |
+|----------|-------|------------|
+| `P_CEILING` | 9 | 1/7 instance-column proportion × k=13 rows × 1% density per operation |
+| `W_CEILING` | 13 | 4 minimum + 1 merkle_path + 2 contents + 6 balance/blinds |
+| `O_CEILING` | 3 | consume + create + read-only query; 4+ operations exceeds the wallet scan |
+| `PRACTICAL_MAX_OBJECTS` | 120,000 | 1000 scans/sec mobile × 120 s block interval |
+
+Purse *is* the ceiling: Box Put 5/9, Box Take 4/7, Purse Deposit 9/13, Purse Withdraw 9/13, Purse
+Balance 7/11. Any contract more complex than Purse exceeds safe single-contract L1 bounds.
+
+Two structural invariants come with it. **Consume+create:** each non-terminal L1 operation nullifies
+exactly one old state and creates exactly one new Merkle leaf, keeping the active object count bounded
+at N — without it, stale objects accumulate unboundedly (RC10) and degrade anonymity for everyone.
+**Per-contract anonymity:** o-cap composition gives each contract its own Merkle tree, so one
+contract's state space does not merge into another's.
+
+> **A claim that was withdrawn.** An earlier version of this section asserted a formal *additive*
+> composition theorem — `|T(A ∘ B)| = |T(A)| + |T(B)|`. There is no such theorem, and
+> `GeneralTheorem.ocap_preserves_safety` was `… : True := by trivial` with all four parameters unused;
+> it has been deleted. What *is* additive is the size of one composed capability
+> (`Combinations.card_biUnion_le_sum : |⋃_{c∈S} B c| ≤ Σ_{c∈S} |B c|`). What is a *product*, even with
+> per-contract trees, is the number of distinct ways to combine operations across contracts
+> (`Combinations.combinationCount`). Isolating state does not divide the count of ways to combine.
+
+Enforced by architectural review, not by the compiler. Formal material:
+`proofs/lean/src/DarkFi/Combinatorial/` (`StateSpace`, `Transitions`, `ComplexityJump`,
+`CompositionBounds`, `Limits`, `CeilingDerivation`, `GeneralTheorem`, `Combinations`), core Lean 4
+with zero Mathlib. The full L1 type system — trajectory identification, barb ordering under N^K,
+additive composition, nominal L1 domain types, combinatorial error theory — is normative in
+[contract-wasm-type-system.md Part C](../../arch/contract-wasm-type-system.md).
+
+### The four-component L1 operation
+
+Every L1 operation separates into four components with a single data flow: caller provides all values
+→ circuit constrains → metadata echoes → host verifies → exec validates state → apply writes state.
+
+1. **Circuit** (`.zk`): constrains cryptographic relationships. Every `constrain_instance` value is a
+   caller-provided witness. The circuit computes a value, constrains it equal to the witness via
+   `constrain_equal_base`, then publishes the witness. No circuit-local variable ever appears in
+   `constrain_instance`.
+2. **Params** (model): carries every value the circuit and the metadata both need — each
+   `constrain_instance` position maps to a field.
+3. **Metadata** (entrypoint `get_metadata`): a **pure echo**. Reads `params.field` directly — no
+   domain constants, no `poseidon_hash`, no field arithmetic, no computation of any kind. The metadata
+   function *is* the specification of the public-input vector order.
+4. **Exec + Apply** (entrypoint `process_instruction` + `process_update`): exec validates against chain
+   state (nullifier unspent, root in DB); apply writes state (`merkle_add`, `db_set`). Neither computes
+   cryptographic values — the circuit already proved everything.
+
+**The invariant:** `metadata[i] == proof_instance[i]` for all `i`. When metadata is a pure echo this
+holds by construction. When metadata computes anything it introduces a second source of truth that can
+drift from the circuit — which is exactly what happened, as the eight Box and twelve Purse mismatches
+in RC5.
+
+**Why params must carry everything.** A `constrain_instance` value whose hash inputs include
+witness-only data — `owner_secret` in a nullifier, `balance_blind` in Pedersen coordinates, Merkle
+leaf and derived IDs — *cannot* be recomputed by the metadata function, because the metadata function
+sees only public data. Such a value must be a caller-provided field in params, with the circuit
+constraining `constrain_equal_base(computed, params_value)` before publishing the witness. This is the
+only reason a value appears in both params and the circuit, and it is the rule that made the earlier
+"replicate the domain constant on the Rust side" workaround unnecessary for anything but values whose
+inputs are *all* public.
+
+### Version every state struct
+
+`pub version: u8` is the first field of every state struct (~60 structs across 22 contracts),
+defaulting to 0; the entrypoint reads it, deserialises the old format, and migrates on write. The cost
+is one byte per record. The alternative — a hard fork to fix unreadable on-chain data — is
+catastrophic. Version your state before you need to.
+
+### Secure defaults are the only defaults
+
+See RC9. `Default::default()` produces a secure instance; opt out for exceptions.
+
+### Creation requires a deactivation path
+
+See RC10. For every "create" or "register" function there is a corresponding "deactivate" function,
+verifying caller authorization (owner, capability holder, or governance proof) before mutating state.
+This belongs in the contract scaffolding template, not in a review finding.
+
+### Bound all user-supplied iteration
+
+See RC10. An assertion with a clear message is debuggable; a runtime-limit trap is not.
+
+### Architectural concerns not yet actionable
+
+Two patterns need network-level infrastructure that does not exist yet, and are recorded rather than
+fixed at the contract level:
+
+- **Oracle centralisation.** Contracts use single-oracle models (`darkbet_exchange` checks one
+  `oracle_id`, `insurance_market` uses one `oracle_commitment`). Threshold oracles, M-of-N
+  attestations and oracle rotation require the oracle network to support those primitives first. When
+  it does, dependent contracts should accept M-of-N rather than a single key.
+- **Rate limiting.** Only `drain_protection` implements it. Per-block or per-epoch limits on
+  state-creating functions are defense-in-depth once fee markets and gas accounting exist; until
+  then, transaction fees are the rate limit.
+
+### Naming conventions
+
+Circuit, manifest, and entrypoint naming rules — source filenames carry no version suffix, circuit
+names inside `.zk` files carry the V2 suffix, manifest entries match the `.zk` declaration exactly,
+Rust namespace constants match it character-for-character, enum variants carry the *contract API*
+version (independent of the circuit version), and entrypoint module filenames carry no version suffix
+— are normative in [Circuit Versioning](../../arch/circuit-versioning.md), which also carries the
+V1→V2 migration rationale. Each rule there prevents a specific instance of RC5.
+
+---
+
+## Legacy identifiers
+
+This document previously numbered its findings as Lessons 1–25, with a second, colliding `RC1–RC5`
+scheme for the July-2026 circuit campaign. Lesson numbers are cited from other documents and from
+Rust comments, so the mapping is kept. **The root-cause ID is the stable name; the lesson number is
+an alias.**
+
+| Legacy | Root cause | Legacy | Root cause |
+|---|---|---|---|
+| Lesson 1 — two-step auth | RC1 | Lesson 15 — parent call validation | RC1 |
+| Lesson 2 — cross-contract routing | RC1 | Lesson 16 — unconstrained witnesses | RC2 |
+| Lesson 3 — unproven outputs | RC2 | Lesson 17 — off-circuit conservation | RC7 |
+| Lesson 4 — composition amount blindness | RC7 | Lesson 18 — independent witness separation | RC7 |
+| Lesson 5 — pubkey as DB key | RC8 | Lesson 19 — isolated execution overlays | RC6 |
+| Lesson 6 — signature key reuse | RC8 | Lesson 20 — supply audit capability | RC7 |
+| Lesson 7 — user data encoding identity | RC8 | Lesson 21 — serialization-derived safety | RC12 |
+| Lesson 8 — token ID identity fragments | RC8 | Lesson 22 (first) — generic-prover serialization | RC5 |
+| Lesson 9 — full keypair in builders | RC8 | Lesson 22 (second) — metadata hash drift | RC5 |
+| Lesson 10 — capability descriptors | RC5 | Lesson 23 — L1 combinatorial complexity | Design constraint |
+| Lesson 11 — spend hook callback safety | RC1 | Lesson 24 — zkas variable reassignment | RC5 |
+| Lesson 12 — compiler-synthesizer drift | RC5 | Lesson 25 — generic-prover write path | RC5, RC7, RC9, RC12 |
+| Lesson 13 — hash impedance mismatch | RC5 | | |
+| Lesson 14 — input reuse attacks | RC3 | | |
+
+The July-2026 circuit campaign's `RC1`–`RC5` map as: `RC1` witness non-binding → **RC2**;
+`RC2` vacuous proof acceptance → **RC2**; `RC3` missing domain separation → **RC3**;
+`RC4` arithmetic domain confusion → **RC4**; `RC5` fix propagation failure → **RC5**.
+
+Cross-cutting identifiers that appear in other documents map as: red-team `RC-A` verification-as-
+format-check, `RC-F` validation-gated-on-configuration → **RC1**; `RC-B` post-commit validation →
+**RC6**; `RC-C` gas-accounting bypass and `RC-I` incomplete feature gating → **RC5**; `RC-D` domain
+separation absent → **RC3**; `RC-E` sensitive-type auto-traits → **RC8**; `RC-G` non-deterministic
+serialization → **RC11**; `RC-H` design decisions with known gaps → **RC10**. The consensus HAZID's
+`RC1` swallowed errors → **RC12** and **RC1**; `RC2` missing implementations → **RC1**;
+`RC3` non-determinism → **RC11**; `RC4` destructive-before-fallible → **RC6**; `RC5` two sources of
+truth → **RC5**; `RC6` spec/code formula mismatch → **RC5**. The Lean HAZOP catalogue's
+`pattern1_free_instance`, `pattern2_zero_cond`, `pattern6_bool_check_u64`, `pattern7_missing_range` →
+**RC2**; `pattern3_field_div` → **RC4**; `pattern4_capability_bypass` → **RC1**;
+`pattern5_nullifier_collision` → **RC3**.
+
+Ten identifiers — `ESC-001`, `INS-001`, `DAO-001`, `DAO-002`, `MV-001`, `DRAIN-001`, `TENDER-002`,
+`ATTEST-001`, `BET-001`, `POOL-001` — appear nowhere in this repository except in the five sentences
+that introduced them. They were class labels without per-finding detail, not findings. Their intended
+classes, read from those sentences, were **RC1** (`ESC-001`, `INS-001`, `DAO-001`, `DAO-002`,
+`MV-001`), **RC9** (`DRAIN-001`), **RC5** (`TENDER-002`) and **RC10** (`ATTEST-001`, `BET-001`,
+`POOL-001`). Nothing depends on them and they are not carried forward.
+
+## References
+
+- [Contract Safety Checklist](checklist.md) — the operative checklist derived from these root causes
+- [Verification Obligation Register](../../arch/verification-hazop.md) — every property, where it is
+  enforced, and what checks it; the home of open obligations
+- [Contract WASM Standards & Best Practices](../../arch/contract-wasm-standards-best-practices.md) —
+  canonical encoding and entrypoint patterns
+- [Circuit Versioning](../../arch/circuit-versioning.md) — circuit/manifest/entrypoint naming rules
+- [Contract WASM Type System](../../arch/contract-wasm-type-system.md) — the L1 type system, Part C
+- [NativeToken](native_token.md) — consensus token with zero business logic
+- [Standards](standards.md) — ZK circuit, token, and testing standards
+- [Composability](../../contract/composability.md) — cross-contract child-call patterns
+- [PromissoryNote](../../contract/promissory_note.md) — the DeFi bearer instrument

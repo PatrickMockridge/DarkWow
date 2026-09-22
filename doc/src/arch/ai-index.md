@@ -162,9 +162,11 @@ The theoretical basis. Read in this order.
   from concept to deployed contract.
 - **[Contract Safety Checklist](../dev/contracts/checklist.md)** — pre-deploy
   verification items.
-- **[Contract Safety (Formal Verification)](../dev/contracts/safety.md)** —
-  23 lessons from contract audits. *Lesson 16: constrain_instance must have
-  visible derivation. Lesson 23: L1 complexity ceilings.*
+- **[Contract Safety (Root Causes)](../dev/contracts/safety.md)** —
+  the twelve contract root causes, each stated with the rule it yields, how it
+  is detected, and the findings that taught it. *RC2: every
+  `constrain_instance` must have a visible derivation. Design constraints: the
+  L1 complexity ceilings.*
 - **[Contract Standards](../contract-standards.md)** — minimum standards and
   best practices.
 - **[Contract Catalog](../contracts.md)** — all 32 contracts with manifests.
@@ -235,7 +237,7 @@ Every change MUST preserve them. Source document and section in parentheses.
 
 - **Every constrain_instance MUST have a visible derivation in the circuit
   body.** A constrain_instance of a bare witness is an Orchard-class
-  vulnerability. ([safety.md Lesson 16](../dev/contracts/safety.md))
+  vulnerability. ([safety.md RC2](../dev/contracts/safety.md))
 - **Domain constants on every poseidon_hash.** 7 constants (witness_base(1..7)).
   Every hash call MUST prepend the appropriate domain constant.
   ([privacy.md §5.2](privacy.md))

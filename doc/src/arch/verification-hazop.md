@@ -320,7 +320,7 @@ number of distinct operation combinations is `∏(nᵢ + 1) − 1`, and for `n�
 
 **The correction this carries, and it is the point.** The documents assert that o-cap composition is
 additive — `T(A ∘ B) = T(A) + T(B)`, "the state spaces add, not multiply", "prevents cross-contract
-combinatorial explosion" (`privacy.md` §6, `safety.md` Lesson 23,
+combinatorial explosion" (`privacy.md` §6, `safety.md`'s L1 combinatorial bound,
 `contract-wasm-type-system.md` §C.7, `ai-index.md`). Two things are wrong with that chain:
 
 * **`ocap_additive_composition` does not establish it.** After `rw [box_total_linear,

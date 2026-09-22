@@ -447,5 +447,5 @@ src/contract/native_token/
 
 - [PromissoryNote](../../contract/promissory_note.md) — DeFi token contract
 - [Supply Audit](../../arch/consensus/consensus.md#supply-audit-capability) — Design rationale
-- [Smart Contract Safety](./safety.md) — Lesson 20: Supply Audit Capability
+- [Smart Contract Safety](./safety.md) — RC7: an on-chain invariant computed off-circuit, and the supply audit capability
 - [Block Explorer Guide](../../testnet/block-explorer.md) — Supply audit via RPC

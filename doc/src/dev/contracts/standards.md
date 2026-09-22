@@ -379,5 +379,5 @@ fn test_dex_swap_with_fee() {
 
 ## See Also
 
-- [Contract Inherent Safety](safety.md) — The principles behind NativeToken/PromissoryNote separation, hardening lessons from security review, and practical checklist for contract developers
+- [Contract Inherent Safety](safety.md) — the minimum-functionality principle behind the NativeToken/PromissoryNote split, the twelve contract root causes with the rule each yields, and the design constraints a new contract is built to
 - [Composability](../../contract/composability.md) — Cross-contract child call patterns

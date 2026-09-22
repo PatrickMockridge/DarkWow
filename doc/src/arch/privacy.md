@@ -180,7 +180,8 @@ MUST use the same domain constants as the circuit.
 by a visible derivation `X = f(witnesses)` in the circuit body. A
 `constrain_instance` of a bare witness with no derivation constraint is a
 free witness — the prover can set it to any value that passes the entrypoint
-check. Per safety.md Lesson 16, this is an Orchard-class vulnerability. The
+check. See `safety.md` RC2 — *a witness the circuit does not bind*; this is an
+Orchard-class vulnerability. The
 derivation may be direct (`constrain_equal_base` against a circuit-computed
 value) or indirect (`X` is also used as input to another constrained value).
 
@@ -388,7 +389,8 @@ The formal statement and mechanized proof are in:
 (theorem `safe_l1_classification_sound`, theorem `exceeds_is_terminal`), and the
 combinatorial-asymmetry arithmetic is `Combinatorial.Transitions.l1_exceeds_l2`.
 The ceiling derivation is in `CeilingDerivation.lean`.
-The hardening log book with empirical bounds is in safety.md Lesson 23.
+The ceilings, their derivation, and the empirical bounds are in `safety.md`'s *L1 combinatorial
+bound*.
 
 **Correction (2026-09-20).** This list also included `l1_combinatorial_asymmetry`, which was
 `l1_exceeds_l2` with two decoration parameters (`(c : Halo2L1Contract) (hL1 : isL1 c)`) that

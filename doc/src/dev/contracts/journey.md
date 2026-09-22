@@ -29,7 +29,8 @@ Before writing code, understand what makes DarkWow contracts different:
 
 Read the [Contract Developer Guide](../../for-contract-developers.md) for the
 full architecture overview, and [Smart Contract Inherent Safety](../contracts/safety.md)
-for the 20 vulnerability lessons — **before you write a line of code.**
+for the twelve root causes contract vulnerabilities fall into — **before you write a line of
+code.**
 
 ## 2. Pick a template contract
 

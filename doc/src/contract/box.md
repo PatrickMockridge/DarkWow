@@ -84,5 +84,5 @@ Circuits use domain-separated Poseidon hashes (HAZOP RC3).
 - [Privacy Model](../arch/privacy.md) — L1/L2, consume+create model, architectural principles
 - [Contract WASM Type System](../arch/contract-wasm-type-system.md) — Four encoding boundaries
 - [O-Cap Model](../arch/ocap.md) — Box in the O-Cap stack
-- [Safety](../dev/contracts/safety.md) — Lesson 22: four-component architecture
+- [Safety](../dev/contracts/safety.md) — the four-component L1 operation architecture
 - Source: `src/contract/box/`
