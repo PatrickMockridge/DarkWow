@@ -296,22 +296,39 @@ impl PoWConsensus {
     }
 
     /// Load consensus state from a sled tree.
-    /// Values not found in storage keep their current defaults.
+    ///
+    /// A value that is **absent** keeps its current default — a fresh node has no stored target. A value
+    /// that is present but the **wrong length** is corrupt, and is an error: silently keeping the default
+    /// (which this did until 2026-09-22, `OBL-C53`) meant a node whose `target` key was damaged started
+    /// on the *initial* target, a consensus-critical value quietly wrong with nothing downstream able to
+    /// tell. A node that cannot read its own difficulty must not guess at it.
     pub fn load(&self, tree: &sled::Tree) -> Result<()> {
         if let Some(bytes) = tree
             .get(b"target")
             .map_err(|e| LinearError::StorageError(e.to_string()))?
         {
-            if bytes.len() == 4 {
-                let mut arr = [0u8; 4];
-                arr.copy_from_slice(&bytes);
-                self.target.store(u32::from_le_bytes(arr), Ordering::Release);
+            if bytes.len() != 4 {
+                return Err(LinearError::StorageError(format!(
+                    "consensus `target` is {} bytes, expected 4 — refusing to start on a default target",
+                    bytes.len()
+                )));
             }
+            let mut arr = [0u8; 4];
+            arr.copy_from_slice(&bytes);
+            self.target.store(u32::from_le_bytes(arr), Ordering::Release);
         }
         if let Some(bytes) = tree
             .get(b"timestamps")
             .map_err(|e| LinearError::StorageError(e.to_string()))?
         {
+            // `chunks_exact` silently discards a trailing partial chunk, which would drop a timestamp
+            // without a word. The length must be a whole number of 8-byte entries.
+            if bytes.len() % 8 != 0 {
+                return Err(LinearError::StorageError(format!(
+                    "consensus `timestamps` is {} bytes, not a multiple of 8",
+                    bytes.len()
+                )));
+            }
             let mut timestamps = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
             timestamps.clear();
             for chunk in bytes.chunks_exact(8) {
@@ -602,6 +619,55 @@ mod tests {
     /// on failed block commit — if restore produces different state, the node's
     /// difficulty adjustment window is corrupted after a reorg.
     #[test]
+    /// OBL-C53 — `load` refuses corrupt state instead of silently starting on a default.
+    ///
+    /// Three cases, and the middle one is the defect: an **absent** value is a fresh node and keeps its
+    /// default; a **present but wrong-length** value is corruption and must be an error; a **well-formed**
+    /// value loads. Without the second case a node whose `target` key was damaged would run on the initial
+    /// target — a consensus-critical value quietly wrong, and nothing downstream could tell.
+    #[test]
+    fn test_load_rejects_corrupt_state_but_allows_absence() {
+        let tree = sled::Config::new().temporary(true).open().unwrap().open_tree("consensus").unwrap();
+
+        // Absent: a fresh node. Must keep its default, not error.
+        let fresh = test_consensus();
+        fresh.load(&tree).expect("an empty tree is a fresh node, not corruption");
+
+        // Corrupt `target`: wrong length.
+        tree.insert(b"target", &[0xABu8, 0xCD][..]).unwrap();
+        assert!(
+            test_consensus().load(&tree).is_err(),
+            "OBL-C53: a wrong-length `target` is corrupt state and must be refused, not skipped — \
+             skipping it starts the node on the initial target without saying so"
+        );
+        tree.remove(b"target").unwrap();
+
+        // Corrupt `timestamps`: not a whole number of entries. `chunks_exact` would drop the remainder
+        // silently, which is the same class of quiet loss.
+        tree.insert(b"timestamps", &[0u8; 12][..]).unwrap();
+        assert!(
+            test_consensus().load(&tree).is_err(),
+            "a `timestamps` value that is not a multiple of 8 must be refused rather than partially loaded"
+        );
+        tree.remove(b"timestamps").unwrap();
+
+        // Well-formed values load. Positive control: without this, a `load` that always errored would
+        // satisfy both assertions above.
+        let mut target = Vec::new();
+        target.extend_from_slice(&0x0000_FFFFu32.to_le_bytes());
+        tree.insert(b"target", target).unwrap();
+        let mut ts = Vec::new();
+        for t in [1000u64, 1120, 1240] {
+            ts.extend_from_slice(&t.to_le_bytes());
+        }
+        tree.insert(b"timestamps", ts).unwrap();
+
+        let loaded = test_consensus();
+        loaded.load(&tree).expect("well-formed state must load");
+        assert_eq!(loaded.target(), BlockTarget::new(0x0000_FFFF), "the stored target must be loaded");
+        assert_eq!(loaded.snapshot_timestamps().len(), 3, "and the stored timestamps");
+    }
+
     fn test_timestamp_snapshot_restore_roundtrip() {
         let c = test_consensus();
         c.record_block(BlockTimestamp::new(1000));
