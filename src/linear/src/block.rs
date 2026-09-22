@@ -128,7 +128,13 @@ pub struct BlockHeader {
     /// Proof of Work source — native RandomX or Monero merge-mined.
     /// `MoneroPowData` contains cryptographic proof that the Monero
     /// block was mined with our merge mining tag embedded.
-    #[serde(default = "PowSource::native", skip)]
+    ///
+    /// `skip` was removed on 2026-09-22 (`OBL-C69`). It made this field absent from every serde
+    /// encoding, and the P2P block wire *is* serde — so a relayed merge-mined block arrived
+    /// reclassified as native and was checked with RandomX over a header xmrig never hashed.
+    /// `PowSource` now has `Serialize`/`Deserialize` impls (`src/linear/src/serial_sync.rs`) that
+    /// carry the canonical codec's bytes, so the two serializations cannot disagree again.
+    #[serde(default = "PowSource::native")]
     pub pow_source: PowSource,
 }
 
@@ -1202,20 +1208,22 @@ mod tests {
         }
     }
 
-    /// OBL-C69 — the serde serialization of `BlockHeader` silently discards `pow_source`.
+    /// OBL-C69 (fixed) — the serde serialization of `BlockHeader` preserves `pow_source`.
     ///
-    /// `pow_source` is declared `#[serde(default = "PowSource::native", skip)]`, so it is not written,
-    /// and deserialization reconstructs `PowSource::Native` — a merge-mined block is reclassified as
-    /// native. That is not merely data loss: the merge-mining path skips native PoW verification
-    /// precisely *because* the header was never hashed by xmrig, so the downgraded block asserts a PoW
-    /// claim it cannot satisfy. `src/linear/src/serial_sync.rs:135-146` carries the correct codec, which
-    /// encodes the discriminator explicitly — so two serializations of one consensus field exist and
-    /// only the hand-written one preserves it.
+    /// **This test was the characterization test for the defect and is now the regression control.**
+    /// `pow_source` was declared `#[serde(default = "PowSource::native", skip)]`, so it was never
+    /// written and deserialization reconstructed `PowSource::Native` — a merge-mined block was
+    /// reclassified as native. That was not merely data loss: the merge-mining path skips native PoW
+    /// verification precisely *because* the header was never hashed by xmrig, so the downgraded block
+    /// asserted a PoW claim it could not satisfy. The P2P block wire is serde
+    /// (`linear_broadcast.rs:112`, `:144`, `:172`), so this was the live path.
     ///
-    /// **This test asserts the defect.** Stage 3 adds real `Serialize`/`Deserialize` for `PowSource`
-    /// and drops the `skip`, at which point this assertion inverts.
+    /// `PowSource` now has `Serialize`/`Deserialize` impls that carry the canonical codec's bytes
+    /// (`src/linear/src/serial_sync.rs`), so the two serializations of this consensus field cannot
+    /// disagree again. The stronger assertion lives in `bin/dwowd/src/tests/wire_format.rs`, which
+    /// round-trips a block that genuinely carries a `MoneroPowData`.
     #[test]
-    fn test_serde_serialization_of_header_drops_pow_source() {
+    fn test_serde_serialization_of_header_carries_pow_source() {
         let header = BlockHeader {
             version: BlockVersion::CURRENT,
             previous: blake3::hash(b"parent"),
@@ -1240,17 +1248,21 @@ mod tests {
 
         let json = serde_json::to_string(&header).expect("BlockHeader is Serialize");
         assert!(
-            !json.contains("pow_source"),
-            "OBL-C69 appears fixed: `pow_source` is now present in the serde encoding. Invert this \
-             assertion to `assert!(json.contains(\"pow_source\"), ...)`. See \
-             doc/src/arch/verification-hazop.md"
+            json.contains("pow_source"),
+            "the serde encoding must carry `pow_source`; when it did not, a relayed merge-mined block \
+             arrived reclassified as native (OBL-C69). If this fails the `skip` attribute is back."
         );
 
-        // The decode side is what makes it a *downgrade* rather than an omission: the attribute's
-        // `default = "PowSource::native"` restores `Native`. That side is not asserted here, because it
-        // cannot be reached without constructing a `MoneroPowData` — parsing a real Monero testnet block
-        // is what `bin/dwowd/src/tests/merge_mining.rs` exists for, and the round-trip assertion belongs
-        // with that fixture. Stage 3 adds it there once `PowSource` is serializable.
+        // Round-trip it, so the assertion is about the wire and not only about one direction.
+        let decoded: BlockHeader = serde_json::from_str(&json).expect("BlockHeader is Deserialize");
+        assert!(
+            matches!(decoded.pow_source, PowSource::Native),
+            "a native header must round-trip as native"
+        );
+
+        // The Monero variant's round-trip is asserted in
+        // `bin/dwowd/src/tests/wire_format.rs`, which has a real `MoneroPowData` fixture to hand —
+        // constructing one here would mean parsing a Monero testnet block inside a unit test.
     }
 
     /// L1-FW-5a: fee_window_flags excluded from mining blob + len invariant.

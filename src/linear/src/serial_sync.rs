@@ -32,6 +32,7 @@ use std::io::Result;
 
 use super::{Block, BlockHeader, ContractCall, PowSource, Transaction, TxInput, TxOutput, UncleBlock};
 use crate::fee_window::FeeWindowFlags;
+use crate::monero::MoneroPowData;
 
 impl Encodable for TxInput {
     fn encode<W: std::io::Write>(&self, s: &mut W) -> Result<usize> {
@@ -133,16 +134,80 @@ impl Encodable for BlockHeader {
         len += self.anchor_monero_height.encode(s)?;
         len += self.anchor_monero_hash.encode(s)?;
         len += self.finality_flags.encode(s)?;
-        match &self.pow_source {
-            PowSource::Native => {
-                len += 0u8.encode(s)?;
-            }
+        len += self.pow_source.encode(s)?;
+        Ok(len)
+    }
+}
+
+/// The canonical wire encoding of `PowSource`: a discriminator, then the Monero proof if present.
+///
+/// Extracted from `BlockHeader`'s impl so that `PowSource` has a codec of its own — which serde then
+/// uses as its transport (see the `Serialize`/`Deserialize` impls below). Splitting it out is what
+/// closes `OBL-C69`: `BlockHeader`'s serde derive had `pow_source` declared `#[serde(skip)]`, so the
+/// canonical codec preserved the merge-mining proof and the serde one silently dropped it, and the
+/// P2P block wire is serde. Two serializations of one consensus field existed and only one worked.
+impl Encodable for PowSource {
+    fn encode<S: std::io::Write>(&self, s: &mut S) -> Result<usize> {
+        match self {
+            PowSource::Native => 0u8.encode(s),
             PowSource::Monero(data) => {
-                len += 1u8.encode(s)?;
+                let mut len = 1u8.encode(s)?;
                 len += data.encode(s)?;
+                Ok(len)
             }
         }
-        Ok(len)
+    }
+}
+
+impl Decodable for PowSource {
+    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self> {
+        let disc: u8 = Decodable::decode(d)?;
+        match disc {
+            0 => Ok(PowSource::Native),
+            1 => Ok(PowSource::Monero(MoneroPowData::decode(d)?)),
+            // Fail closed. This arm used to return `PowSource::Native`, which silently reclassified a
+            // block whose discriminator was corrupt or unknown as native — the same downgrade
+            // `OBL-C69` records, on the consensus path rather than the wire. A merge-mined block
+            // decoded this way then claims native PoW, which it cannot satisfy.
+            other => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unknown PowSource discriminator {other}"),
+            )),
+        }
+    }
+}
+
+/// `PowSource` in serde, as a transport for the canonical codec above.
+///
+/// A hex string rather than a byte sequence, because the serde consumer here is JSON (the block wire
+/// and the block RPC) and serde_json renders `serialize_bytes` as an array of integers — several
+/// times larger, and unreadable in a log. The point of these impls is that they *cannot* disagree with
+/// the codec: they carry its bytes verbatim rather than restating the layout.
+impl serde::Serialize for PowSource {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        let bytes = dwow_serial::serialize(self);
+        s.serialize_str(&hex::encode(bytes))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PowSource {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        struct HexVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for HexVisitor {
+            type Value = PowSource;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a hex-encoded PowSource")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> std::result::Result<PowSource, E> {
+                let bytes = hex::decode(v).map_err(E::custom)?;
+                dwow_serial::deserialize(&bytes).map_err(E::custom)
+            }
+        }
+
+        d.deserialize_str(HexVisitor)
     }
 }
 
@@ -165,15 +230,7 @@ impl Decodable for BlockHeader {
         let anchor_monero_height = Decodable::decode(d)?;
         let anchor_monero_hash = Decodable::decode(d)?;
         let finality_flags = Decodable::decode(d)?;
-        let disc: u8 = Decodable::decode(d)?;
-        let pow_source = match disc {
-            0 => PowSource::Native,
-            1 => {
-                let data = crate::monero::MoneroPowData::decode(d)?;
-                PowSource::Monero(data)
-            }
-            _ => PowSource::Native,
-        };
+        let pow_source = PowSource::decode(d)?;
         Ok(Self {
             version, previous, merkle_root, timestamp, target, nonce, height,
             uncle_merkle_root, total_reward, randomx_key, miner, commitment_merkle_root,

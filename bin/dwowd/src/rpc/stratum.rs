@@ -344,8 +344,11 @@ impl DwowNode {
             id,
         );
 
-        // Serialize submissions to prevent concurrent RandomX VM access
-        let _submit_guard = self.mining_state.linear_submit_lock.lock().await;
+        // Serialize submissions to prevent concurrent RandomX VM access.
+        //
+        // `mut` because the guard is released and re-taken around the Arweave anchor POST — see the
+        // comment at the `drop` below (OBL-C68). Everything that touches the VM must run under it.
+        let mut submit_guard = self.mining_state.linear_submit_lock.lock().await;
 
         // Parse request params
         let Some(params) = params.get::<HashMap<String, JsonValue>>() else {
@@ -558,6 +561,21 @@ impl DwowNode {
                 let block_hash = chain_state.hash_block_with_cached_vm(&block).expect("hash failed");
                 let mut block_hash_bytes = [0u8; 32];
                 block_hash_bytes.copy_from_slice(block_hash.as_bytes());
+
+                // Release the submission lock for the network call (OBL-C68).
+                //
+                // The lock exists to serialise RandomX VM access, and `hash_block_with_cached_vm` above
+                // needs it — but `anchor_block` touches no VM. It performs a blocking HTTP POST with a
+                // 30-second end-to-end deadline (`ureq`'s `timeout_global`, which the crate documents as
+                // covering DNS through response body), and holding the lock across it serialised *every*
+                // other stratum submission behind one stuck anchor while also blocking the async executor
+                // thread. Do not move this call back inside the lock.
+                //
+                // Releasing it here is safe: between the drop and the re-acquire only `anchor_block` and
+                // local mutation of `block` run, and a submission that interleaves is rejected by
+                // `accept_block`'s own height check — the same outcome serialisation would have produced.
+                drop(submit_guard);
+
                 match anchor_block(&block_hash_bytes, block.header.timestamp.get(), block.header.height) {
                     Some(tx_id) => {
                         block.header.anchor_tx_id = tx_id;
@@ -575,6 +593,9 @@ impl DwowNode {
                         );
                     }
                 }
+
+                // Re-take it before `accept_block`, which needs the VM.
+                submit_guard = self.mining_state.linear_submit_lock.lock().await;
             }
         }
 

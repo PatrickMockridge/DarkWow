@@ -97,26 +97,28 @@ fn block_broadcast_wire_golden() {
         "pin_confirmed value must roundtrip unchanged");
 }
 
-/// OBL-C69 — the P2P wire codec drops `pow_source`, so a relayed merge-mined block arrives
-/// reclassified as native.
+/// OBL-C69 (fixed) — the P2P wire codec carries `pow_source`, so a relayed merge-mined block stays
+/// merge-mined.
+///
+/// **This test was the characterization test for the defect and is now the regression control.** The
+/// wire codec is `serde_json` in all three directions (`Encodable`, `AsyncEncodable`, `AsyncDecodable`)
+/// and `pow_source` used to be `#[serde(default = "PowSource::native", skip)]`, so the field was never
+/// written and every relayed merge-mined block arrived reclassified as native. `PowSource` now carries
+/// the canonical codec's bytes through serde (`src/linear/src/serial_sync.rs`).
 ///
 /// The test above pins the wire format with `pow_source: PowSource::Native`, which is exactly why it
-/// cannot see this: the field it would have to notice is `#[serde(default = "PowSource::native", skip)]`
-/// (`src/linear/src/block.rs:131`), so for a native block "present" and "absent" are indistinguishable.
-/// This test uses a block that really does carry a merge-mining proof.
+/// could never see this: for a native block, "present" and "absent" are indistinguishable. This test
+/// uses a block that really does carry a merge-mining proof — which is also why it lives here and not
+/// in `block.rs`, where constructing a `MoneroPowData` would mean parsing a Monero block in a unit test.
 ///
-/// The consequence is not asserted here, and deliberately. `block_acceptor.rs:191` dispatches on
-/// `pow_source`, so a downgraded block takes the native branch and is checked with RandomX over a header
-/// xmrig never hashed — but under this repository's test harness that check is invoked with
-/// `BlockTarget::MAX` (`merge_mining.rs`'s acceptance test does exactly that), under which *every* hash
-/// passes. So the harness cannot reproduce the rejection, and a test asserting one would be asserting a
-/// premise the setup contradicts. What is asserted is the mechanism; the consequence follows from the
-/// chain's real target, and it is recorded in the register row rather than faked here.
-///
-/// **This test asserts the defect.** Stage 3 gives `PowSource` real `Serialize`/`Deserialize` impls and
-/// drops the `skip`, at which point both assertions invert.
+/// The *consequence* is still not asserted, and deliberately. `block_acceptor.rs:191` dispatches on
+/// `pow_source`, so a downgraded block would take the native branch and be checked with RandomX over a
+/// header xmrig never hashed — but this repository's harness invokes that check with `BlockTarget::MAX`
+/// (as `merge_mining.rs`'s acceptance test does), under which every hash passes. The harness therefore
+/// cannot reproduce the rejection, and a test asserting one would rest on a premise the setup
+/// contradicts. What is asserted is the mechanism, which is what the defect was.
 #[test]
-fn block_broadcast_wire_drops_pow_source() {
+fn block_broadcast_wire_carries_pow_source() {
     let monero_data = build_test_monero_powdata()
         .expect("the Monero testnet fixture must build");
 
@@ -148,36 +150,36 @@ fn block_broadcast_wire_drops_pow_source() {
     let json = String::from_utf8(bytes.clone()).expect("JSON wire format");
 
     assert!(
-        !json.contains("pow_source"),
-        "OBL-C69 appears fixed: the wire now carries `pow_source`. Invert this assertion to \
-         `assert!(json.contains(\"pow_source\"), ...)`. See doc/src/arch/verification-hazop.md"
+        json.contains("pow_source"),
+        "the wire must carry `pow_source`; when it did not, a relayed merge-mined block arrived \
+         reclassified as native and was checked with native RandomX over a header xmrig never hashed \
+         (OBL-C69). If this fails the `skip` attribute is back."
     );
 
     let decoded: BlockBroadcast = dwow_serial::deserialize(&bytes).expect("wire roundtrip");
     assert!(
-        matches!(decoded.block.header.pow_source, PowSource::Native),
-        "OBL-C69 appears fixed: a relayed merge-mined block no longer decodes as native. Invert this \
-         assertion; see doc/src/arch/verification-hazop.md"
+        matches!(decoded.block.header.pow_source, PowSource::Monero(_)),
+        "a relayed merge-mined block must still be merge-mined after the round trip"
     );
 }
 
-/// OBL-C70 — the `MAX_BLOCK_SIZE` measurement is blind to the merge-mining proof.
+/// OBL-C70 (fixed) — the `MAX_BLOCK_SIZE` measurement is sensitive to the merge-mining proof.
 ///
 /// `block_acceptor.rs:164` sizes a block with `serde_json::to_vec(block).len()` and rejects it against
 /// `MAX_BLOCK_SIZE`; `linear_broadcast.rs:175` applies the same bound to the same encoding on the wire.
-/// Because that encoding omits `pow_source` (`OBL-C69`), the measured length is invariant under the size
-/// of the Monero proof — so for a merge-mined block the bound does not bound the block.
+/// While that encoding omitted `pow_source` (`OBL-C69`) the measured length was invariant under the size
+/// of the Monero proof, so for a merge-mined block the bound did not bound the block. With `pow_source`
+/// carried again, the measure grows with the proof.
 ///
 /// Measured on the *acceptance measure itself* (`serde_json::to_vec`), not on a proxy, so the assertion
-/// is about the number the code compares against its limit.
+/// is about the number the code compares against its limit. The `assert_ne!` on the canonical codec is
+/// the control: it proves the proof is genuinely present, so a `serde` impl that silently wrote nothing
+/// could not make the second assertion pass.
 ///
 /// The comment at `block_acceptor.rs:167-172` reasons about serde *version* drift across the 1% margin.
 /// That is a different concern and this test does not bear on it.
-///
-/// **This test asserts the defect.** Once the anchor/proof material is measured, the two lengths
-/// diverge and the assertion inverts.
 #[test]
-fn block_size_measurement_is_blind_to_the_monero_proof() {
+fn block_size_measurement_is_sensitive_to_the_monero_proof() {
     let proof = build_test_monero_powdata().expect("the Monero testnet fixture must build");
 
     let head = |pow_source: PowSource| Block {
@@ -220,12 +222,11 @@ fn block_size_measurement_is_blind_to_the_monero_proof() {
     );
 
     // The measure `block_acceptor.rs:164` and `linear_broadcast.rs:175` compare against `MAX_BLOCK_SIZE`
-    // is invariant under it.
-    assert_eq!(
-        json_len(&merge_mined),
-        json_len(&native),
-        "OBL-C70 appears fixed: the acceptance measure now grows with the merge-mining proof, so \
-         `MAX_BLOCK_SIZE` is sensitive to it. Invert this assertion to `assert_ne!`. See \
-         doc/src/arch/verification-hazop.md"
+    // must grow with it, or the bound does not bound the block.
+    assert!(
+        json_len(&merge_mined) > json_len(&native),
+        "the acceptance measure must grow with the merge-mining proof; while it did not, a \
+         merge-mined block's `MAX_BLOCK_SIZE` check measured a form that omitted the proof entirely \
+         (OBL-C70)"
     );
 }

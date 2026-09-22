@@ -214,7 +214,18 @@ impl DataItem {
         self.bytes[HEADER_LENGTH..HEADER_LENGTH + tag_bytes].to_vec()
     }
 
-    /// Deserialize a DataItem from a raw binary blob (from Arweave gateway).
+    /// Deserialize a DataItem from a raw binary blob (from Arweave gateway, or from a block).
+    ///
+    /// This is the only path from untrusted bytes into a `DataItem`, so it must reject everything the
+    /// accessors cannot handle — see `OBL-C71`. Three rejections, and each was once missing:
+    ///
+    ///   * a buffer shorter than the fixed header;
+    ///   * a signature type other than Ed25519; and
+    ///   * a declared tag-bytes length that does not fit in the buffer, which is what made `raw_tags`
+    ///     and `raw_data` panic with "range end index out of range" on a crafted input. The check uses
+    ///     `checked_add`, because `HEADER_LENGTH + tag_bytes` on a `tag_bytes` near `u64::MAX` overflowed
+    ///     the `usize` addition: it panicked in debug and silently wrapped in release, where `raw_data`
+    ///     then returned the wrong region and the payload comparison read attacker-chosen bytes.
     pub fn deserialize(bytes: &[u8]) -> Option<Self> {
         if bytes.len() < HEADER_LENGTH {
             return None;
@@ -222,6 +233,17 @@ impl DataItem {
         // Check signature type
         let sig_type = u16::from_le_bytes([bytes[0], bytes[1]]);
         if sig_type != SIGNATURE_TYPE {
+            return None;
+        }
+        // The declared tag area must fit, or every accessor that slices past it is out of range.
+        let tag_bytes = read_u64_le(&bytes[108..116]);
+        let Ok(tag_bytes) = usize::try_from(tag_bytes) else {
+            return None;
+        };
+        let Some(tag_end) = HEADER_LENGTH.checked_add(tag_bytes) else {
+            return None;
+        };
+        if tag_end > bytes.len() {
             return None;
         }
         Some(Self {
@@ -517,87 +539,73 @@ mod tests {
         );
     }
 
-    /// OBL-C71 — a `DataItem` decoded from untrusted bytes must not panic its verifier.
+    /// OBL-C71 (fixed) — a `DataItem` decoded from untrusted bytes is rejected rather than panicking
+    /// its verifier.
     ///
-    /// `deserialize` validates the length and the signature type and nothing else. Two accessors then
-    /// slice using `tag_bytes`, an unvalidated `u64` read straight out of the buffer, and **which of
-    /// them panics first depends on `tag_count`** — a detail worth stating, because `raw_tags` returns
-    /// early on a zero count, so a buffer that lies only about `tag_bytes` reaches `raw_data` instead:
+    /// **This test was the characterization test for the defect and is now the regression control.**
+    /// Before the fix, `deserialize` validated only the buffer length and the signature type, so a
+    /// buffer declaring a `tag_bytes` larger than the buffer was accepted and then made the accessors
+    /// slice out of range. Which one panicked first depended on `tag_count`, because `raw_tags` returns
+    /// early on a zero count:
     ///
-    ///   * `tag_count == 0` → `raw_tags` returns empty without slicing; `raw_data` slices
-    ///     `bytes[116 + tag_bytes..]` and panics (`data_item.rs:149`).
-    ///   * `tag_count != 0` → `raw_tags` slices `bytes[116..116 + tag_bytes]` and panics first (`:214`).
+    ///   * `tag_count == 0` → `raw_data` sliced `bytes[116 + tag_bytes..]` and panicked (`:149`).
+    ///   * `tag_count != 0` → `raw_tags` sliced `bytes[116..116 + tag_bytes]` and panicked first
+    ///     (`:214`), and it sits on the `verify_signature` path.
     ///
-    /// Both cases are exercised below, because a fix that guarded only one would otherwise pass.
-    /// A `tag_bytes` near `u64::MAX` also overflows the `usize` addition in `data_start`, which panics
-    /// in debug and silently wraps in release — in release `raw_data` then returns the wrong region, so
-    /// the payload comparison reads attacker-chosen bytes. That case is not asserted here; the two
-    /// above are enough to establish the defect and a third would only vary the arithmetic.
+    /// Observed at both sites before the fix, in release. Both cases are still exercised, because a fix
+    /// that guarded only one would pass a single-case test. `tag_bytes` near `u64::MAX` — which
+    /// overflowed the `usize` addition, panicking in debug and silently wrapping in release, where
+    /// `raw_data` returned the wrong region — is covered too, since `checked_add` is what closed it.
     ///
-    /// Written with `catch_unwind` rather than as documentation, so the panic is *observed*: today the
-    /// closures return `Err`, and the assertions say so. Stage 3 makes them return normally with the
-    /// item rejected, at which point the `is_err()` assertions invert to `is_ok()`.
-    ///
-    /// The panic messages this prints are expected — the test harness captures them per-test.
+    /// `catch_unwind` is retained deliberately: the assertion is "no panic", and a panic here would
+    /// abort the test rather than fail it, hiding which input caused it.
     #[test]
-    fn test_data_item_hostile_tag_bytes_do_not_panic_the_verifier() {
+    fn test_data_item_hostile_tag_bytes_are_rejected_not_panicked() {
         let wallet = CaribinaWallet::generate();
         let mut item = DataItem::new(b"hostile tags");
         item.sign(&wallet);
 
-        // Positive control: an honest item verifies and reads its payload without panicking.
+        // Positive control: an honest item still verifies and reads its payload. Without this, a
+        // `deserialize` that rejected everything would satisfy every assertion below.
         let honest = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             item.verify_signature() && item.raw_data() == b"hostile tags"
         }));
         assert_eq!(
             honest.ok(),
             Some(true),
-            "control: an honest item must verify and read its payload — if this fails the assertions \
-             below prove nothing about hostile input"
+            "control: an honest item must verify and read its payload"
         );
 
-        // A hostile tag length, with the tag count left at zero: reaches `raw_data`.
-        let mut hostile_zero_count = item.as_bytes().to_vec();
-        hostile_zero_count[108..116].copy_from_slice(&1000u64.to_le_bytes());
-        let zero_count = DataItem::deserialize(&hostile_zero_count)
-            .expect("deserialize accepts this: the buffer is long enough and the type byte is 2");
-        assert_eq!(read_u64_le(&zero_count.bytes[100..108]), 0, "control: the tag count is still zero");
+        // Both hostile shapes, plus the `u64::MAX` overflow case, must be refused by `deserialize`.
+        let hostile_cases: [(&str, u64, u64); 3] = [
+            ("tag_bytes past the end, tag count zero", 0, 1000),
+            ("tag_bytes past the end, tag count one", 1, 1000),
+            ("tag_bytes near u64::MAX", 0, u64::MAX),
+        ];
+        for (name, tag_count, tag_bytes) in hostile_cases {
+            let mut hostile = item.as_bytes().to_vec();
+            hostile[100..108].copy_from_slice(&tag_count.to_le_bytes());
+            hostile[108..116].copy_from_slice(&tag_bytes.to_le_bytes());
 
-        let verify = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            zero_count.verify_signature()
-        }));
-        assert!(
-            verify.is_err(),
-            "OBL-C71 appears fixed: `verify_signature` no longer panics on a hostile `tag_bytes` with \
-             a zero tag count. Invert this to `assert!(verify.is_ok())` and assert the item is rejected \
-             instead. See doc/src/arch/verification-hazop.md"
-        );
+            let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                DataItem::deserialize(&hostile)
+            }));
+            let decoded = decoded.unwrap_or_else(|_| panic!("{name}: deserialize itself panicked"));
+            assert!(
+                decoded.is_none(),
+                "{name}: a declared tag area that does not fit the buffer must be rejected — \
+                 accepting it is what let the accessors slice out of range (OBL-C71)"
+            );
+        }
 
-        let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            zero_count.raw_data().len()
-        }));
-        assert!(
-            read.is_err(),
-            "OBL-C71 appears fixed: `raw_data` no longer panics on a hostile `tag_bytes`. Invert this \
-             to `assert!(read.is_ok())` and assert the payload is rejected instead. See \
-             doc/src/arch/verification-hazop.md"
-        );
-
-        // The same lie, now with a non-zero tag count: reaches `raw_tags` first.
-        let mut hostile_nonzero_count = item.as_bytes().to_vec();
-        hostile_nonzero_count[100..108].copy_from_slice(&1u64.to_le_bytes());
-        hostile_nonzero_count[108..116].copy_from_slice(&1000u64.to_le_bytes());
-        let nonzero_count = DataItem::deserialize(&hostile_nonzero_count)
-            .expect("deserialize accepts this too");
-
-        let tags = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            nonzero_count.raw_tags().len()
-        }));
-        assert!(
-            tags.is_err(),
-            "OBL-C71 appears fixed: `raw_tags` no longer panics on a hostile `tag_bytes` with a \
-             non-zero tag count. Invert this to `assert!(tags.is_ok())`. See \
-             doc/src/arch/verification-hazop.md"
-        );
+        // And a well-formed tagged item still round-trips, so the guard is not over-broad.
+        let tags = vec![Tag { name: "App-Name".to_string(), value: "caribina".to_string() }];
+        let mut tagged = DataItem::new_with_tags(b"tagged payload", &tags);
+        tagged.sign(&wallet);
+        let decoded = DataItem::deserialize(tagged.as_bytes())
+            .expect("a well-formed tagged item must still deserialize");
+        assert!(decoded.verify_signature(), "the round-tripped item must still verify");
+        assert_eq!(decoded.raw_data(), b"tagged payload");
+        assert_eq!(decoded.raw_tags(), serialize_tags(&tags), "its tag area must still read back");
     }
 }
