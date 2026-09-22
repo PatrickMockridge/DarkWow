@@ -22,6 +22,11 @@
 # may name another row's status in its own prose — that is a finding about the row, and it is
 # reported rather than hidden. The real fix is a convention, not a parser.
 #
+# A third limitation, found on `OBL-T10`: a row whose *code spans* contain `**` (it writes
+# `proofs/lean/src/**/*.lean`) derails bold-span pairing for that whole row, so its real marker is
+# missed and the row is reported as unmarked. The marker is still greppable by hand; only this
+# report's span parser is defeated.
+#
 # What it does not do: it does not decide whether a status is *true*. A row holding two tokens
 # ("CLOSED for oracle", "still FAILS") is counted under both.
 #
