@@ -52,3 +52,18 @@ witness.json
 .claude/
 scripts/sync.log
 doc/book/
+
+# Lean build outputs and fetched dependencies. Upstream Lean convention is that the whole `.lake/`
+# directory is generated: `.lake/build/` holds compiled artifacts and `.lake/packages/` holds the
+# sources `lake` fetches from `lake-manifest.json`. 65 files under `.lake/build/` were tracked until
+# 2026-09-22, which is why every session opened on hundreds of modified files and a real change was
+# hard to spot among them — `lake build` regenerates all of it.
+/proofs/lean/.lake/
+
+# Built binaries that live beside their crate rather than at the root (the root-level names are
+# covered above; these are the same programs built in place).
+/bin/dwowd/dwowd
+/bin/dww/dow_wallet
+
+# Ad-hoc compiler output
+a.out
