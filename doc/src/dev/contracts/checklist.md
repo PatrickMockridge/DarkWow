@@ -65,6 +65,28 @@ For contracts that handle user funds (PromissoryNote, Stablecoin, Bridge, DEX, �
   (`if value != ContractId::ZERO { validate(..) }`) is replaced by an explicit rejection when the
   configuration is absent. See `RC1` and `RC9`.
 
+## Exec / Apply Phasing
+
+For every contract, without exception. The host ACL enforces both rules mechanically, and a
+violation is not a style problem — it is a call that **cannot succeed**. `vm_runtime.rs:954` runs
+`apply` as `ContractSection::Update`, and no read function admits `Update`. See `RC6` (irreversible
+work before the check that guards it) and the type system §A.4.7 / §B.2.2.
+
+- [ ] **Apply writes blindly.** No `db_get`, `db_contains_key`, `get_object_size` or
+  `get_object_bytes` is reachable from an `apply` function — the read triad is denied in `Update`
+  and returns `CallerAccessDenied` at runtime. Any value apply needs is computed in `exec` and
+  carried through the update struct. See §B.2.2 and `OBL-C72` in the register.
+- [ ] **Exec does not write.** No `db_set`, `db_del`, `merkle_add` or
+  `sparse_merkle_insert_batch` is reachable from an `exec` function; all mutation is in `apply`.
+  A write in exec fails the same way. See §A.4.7 and `OBL-C73` in the register.
+- [ ] **The bridge is the only channel.** Everything `apply` acts on arrived in the update struct,
+  which `exec` built. `db_lookup` allocates a handle and is legal in both phases — it is the only
+  one that is.
+- [ ] **Manifest declares the capability block.** `[[actions]]` with `required_barbs`,
+  `[[capabilities]]` with `primitives` and `note_schema` — the declaration `wallet_construct`
+  composes against. Without it the contract is not constructible by the generic wallet. See
+  `ocap.md` §7, `type-system.md` §13, and `OBL-C74` in the register.
+
 ## ZK Circuit Development
 
 For any new or modified circuit:

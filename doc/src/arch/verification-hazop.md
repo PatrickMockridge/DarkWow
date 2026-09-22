@@ -982,6 +982,107 @@ sweep); `build-resource` `B7` (BuildKit, not configured — a deliberate future 
 `hazop-darkleaf-in-contractcall-data` proposal, whose own verdict was **REJECT** and which was never
 implemented — recorded as closed-by-rejection rather than left to look like untracked work.
 
+### The contract phase rules — found by reading the genesis contracts as a benchmark (`OBL-C72`+)
+
+The nine genesis contracts were read end to end, not sampled, and set against the other 25. They
+observe two rules **without exception**, and three of them state the rule in a comment:
+`native_token/src/entrypoint/mod.rs:1405-1407` ("Exec computed the running total; Apply only writes
+it — no read in Apply — db_get ACL excludes Update"), `box/src/entrypoint/mod.rs:143-144`, and
+`purse/src/entrypoint/mod.rs:202`. Both rules are normative in
+[contract-wasm-type-system.md](../arch/contract-wasm-type-system.md) §A.4.7 and §B.2.2 and enforced
+mechanically by the host ACL. **Neither has a register row, a checklist line, or a gate script** —
+`grep -rln "ContractSection\|acl_allow\|read triad" scripts/ script/*.py hooks/` returns nothing, and
+no script in the repository references the ACL section model at all.
+
+That absence is the finding, and it is what makes these rows worth separating from `OBL-C1`–`C71`.
+Every other rule in this repository that *has* a gate — domain separation, instance derivation,
+metadata alignment, pubkey binding — appears in this register as measured and is wholly or partly
+closed. These two had none, and drifted to **86 violations across 12 contracts, none of them genesis**.
+
+The measurement is `scripts/check-phase-host-functions.sh`, which parses each contract's declared
+`define_contract!` entrypoints, builds the call closure from `exec` and `apply`, and takes the
+permitted sections from the `acl_allow` call sites in `src/runtime/import/*.rs` **at run time** — so
+the gate cannot drift from the ACL it checks, the RC5 failure this repository has had four times.
+**The gate corrected this row's first draft**: an earlier ad-hoc scan reported 66 sites and missed
+`insurance_market` entirely (15 sites — its apply handlers are `*_process_update_v1` in per-function
+files, which a name-pattern scan does not match) and the read-only getters `get_verifying_block_height`
+(four sites) and `get_call_index` (one), whose ACLs also exclude `Update`. The 86 is the gate's
+number; 66 was a pattern-matching artifact.
+
+| ID | Proposition | Source | Sev |
+|---|---|---|---|
+| OBL-C72 | The `apply` entrypoint performs blind writes only: no `db_get`, `db_contains_key`, `get_object_size` or `get_object_bytes` is reachable from it, and any value apply needs is computed in `exec` and carried through the update struct | §A.4.7, §B.2.2; `src/runtime/import/db.rs:638`,`:787`,`:1325`,`:1551`; `vm_runtime.rs:954` | C |
+| OBL-C73 | A state write (`db_set`, `db_del`, `merkle_add`, `sparse_merkle_insert_batch`) is not reachable from an `exec`-phase function; all mutation is in `apply` | §A.4.7, §B.2.2; `src/runtime/import/db.rs:358`,`:504`; `merkle.rs:50`; `smt.rs:142` | C |
+| OBL-C74 | Every contract declares in its manifest the barbs each action requires, the capabilities it defines, its note schema and its capability primitives — the declaration `type-system.md` §13 and `ocap.md` §7 make the basis of `wallet_construct` | `manifest.md`; `ocap.md` §7; `contract-wasm-type-system.md` §A.2.2, §A.0.3, §13 | H |
+
+**OBL-C72 — read-in-apply. 66 sites, 9 contracts, zero genesis.** §A.4.7 states the rule as a list
+of four denied functions and §B.2.2 supplies the consequence verbatim: *"An `apply` function that
+calls any read-triad function will fail at runtime with `CALLER_ACCESS_DENIED`."* The mechanism is
+not partial: `vm_runtime.rs:954` runs apply as `ContractSection::Update`, and **no** read function
+admits `Update` — not `db_get`, not its `_local` variant, not `db_contains_key`. The class is wider
+than the four names §A.4.7 lists: every read-only getter carries the same `[Deploy, Metadata, Exec]`
+ACL, so `get_verifying_block_height` (four sites) and `get_call_index` (one) are in it too. There is
+no workaround idiom, so every one of these sites is a call that cannot succeed.
+
+| contract | sites | first example |
+|---|---|---|
+| `labor_market` | 24 | `entrypoint.rs:920 create_job_apply_v1()` → `db_contains_key` |
+| `insurance_market` | 15 | `entrypoint/close_market.rs:63 …_process_update_v1()` → `db_get` |
+| `dao_escrow` | 12 | `entrypoint.rs:554 pay_premium_apply_v1()` → `db_get` |
+| `pool_stake` | 9 | `entrypoint.rs:487 apply_join_pool_update()` → `db_get` |
+| `subscription` | 2 | `entrypoint.rs:669 update_usage_apply_v1()` → `db_get` |
+| `bearer_bond` | 1 | `entrypoint/mod.rs:1237 apply_prove_coverage()` → `db_get` |
+| `bridge` | 1 | `entrypoint.rs:811 get_current_timestamp()` → `db_get` |
+| `relayer_endowment` | 1 | `relayer.rs:379 apply_register_fee_schedule()` → `db_get` |
+| `stablecoin` | 1 | `entrypoint.rs:1738 apply_redeem_stable_update()` → `db_contains_key` |
+
+**Confirmed at runtime, not only by reading**: `pool_stake`'s heavyweight suite fails at apply with
+`ContractError(CallerAccessDenied)`, and the first statement of `apply_join_pool_update` is a
+`db_get` on the registry tree. This row exists because that failure was previously recorded as "a
+fresh thread" while §B.2.2 had already named both the rule and the error — the row is placed here so
+the next reader does not have to rediscover it.
+
+**OBL-C73 — write-in-exec. 20 sites, 4 contracts, zero genesis.** The mirror rule. `db_set`/`db_del`
+admit `[Deploy, Update]` only and `merkle_add` admits `[Update]`, so a write in exec fails with the
+same `CALLER_ACCESS_DENIED`:
+
+| contract | sites | first example |
+|---|---|---|
+| `tender` | 9 | `entrypoint.rs:484 create_tender_v1()` → `db_set` |
+| `drain_protection` | 7 | `entrypoint.rs:368 init_fund_process_instruction_v1()` → `db_set` |
+| `pool_stake` | 2 | `entrypoint.rs:532 process_leave_pool_instruction()` → `db_set` |
+| `dex` | 2 | `entrypoint/set_transparency_level.rs:42` → `db_set` |
+
+`pool_stake:532` is the already-recorded LeavePool write; `:1112`
+(`process_rebalance_pool_shares_instruction`) is its sibling. Union with `OBL-C72`: **12 distinct
+contracts, 86 sites, zero genesis.**
+
+**OBL-C74 — the manifest capability block exists only in genesis.** `type-system.md` §13 makes
+`wallet_construct` *"a pure function of primitives and required barbs, not contract names"*, and
+§A.2.2 makes the barb declaration mandatory: *"Every contract SHALL declare in its manifest which
+barbs each action requires."* Measured across all 32 manifests: `[[actions]]` is present in 9 (the 8
+genesis contracts that have it, plus `dex`), `required_barbs` / `note_schema` / `primitives` in **8,
+all genesis** — and in **none** of the 24 non-genesis contracts. For those contracts the declaration
+§A.0.3 builds the fundamental invariant on does not exist, so the invariant cannot be stated and the
+generic wallet has nothing to compose against. `identity` is the genesis exception, missing all six
+of `[[capabilities]]`, `[[actions]]`, `required_barbs`, `note_schema`, `primitives` and `witness_map`
+— consistent with it being the one genesis contract that documents a `Box::Take` child call it never
+enforces (`entrypoint.rs:670-677`, `OBL-Z17`). `witness_map` is present in 3 of 32, and §A.6.1
+already records that nothing validates it. **Not part of this row, and recorded so it is not read as
+one:** `[[cost_profiles]]` is absent from **all 32** manifests, genesis included — a schema-wide gap
+rather than a genesis/non-genesis one.
+
+**Why these three and not more.** The other candidate classes found in the same pass were left out
+deliberately, because the measurement that produced them is not trustworthy and a row that overstates
+its evidence is worse than no row. The `set_return_data` selector-byte rule (`A.1.5`) was scored
+wrongly three times — twice because the byte is pushed inside the `encode_*_update` helper rather
+than at the call site — and its residual list (`bearer_bond` 8, `betting_stake` 1, `insurance_market`
+1, `roulette` 1) is a **candidate list, not a finding**, needing each exec/apply pair read by hand.
+The "version every state struct" rule was not measured at all: the scan counted `*PublicInputs` and
+`*CallData` structs, which are not persisted state. The lesson is the one `safety.md` RC5 keeps
+teaching — a scan that reads one side of a pair manufactures defects — and it is recorded here rather
+than left in a scratch file.
+
 ## Verified 2026-09-22: what these rows actually are
 
 Every row added or already present was re-read against the code before a remediation campaign was
