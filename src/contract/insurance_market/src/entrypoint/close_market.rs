@@ -27,6 +27,7 @@ use dwow_sdk::{error::ContractError, msg, wasm};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::{CloseMarketParamsV1, CloseMarketUpdateV1};
 use crate::INSURANCE_CONTRACT_MARKETS_TREE;
 
@@ -55,7 +56,7 @@ pub fn insurance_market_close_market_process_instruction_v1(
     };
 
     msg!("[insurance_market::close_market] Market closed: {:?}", params.market_id);
-    Ok(update.encode())
+    Ok([&[InsuranceMarketFunction::CloseMarketV1 as u8], &update.encode()[..]].concat())
 }
 
 /// Process update for CloseMarketV1

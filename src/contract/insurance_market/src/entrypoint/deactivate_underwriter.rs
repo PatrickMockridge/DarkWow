@@ -27,6 +27,7 @@ use dwow_sdk::{error::ContractError, msg, wasm};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::{DeactivateUnderwriterParamsV1, DeactivateUnderwriterUpdateV1};
 use crate::INSURANCE_CONTRACT_UNDERWRITERS_TREE;
 
@@ -59,7 +60,8 @@ pub fn insurance_market_deactivate_underwriter_process_instruction_v1(
     };
 
     msg!("[insurance_market::deactivate_underwriter] Underwriter deactivated: {:?}", params.underwriter_id);
-    Ok(update.encode())
+    Ok([&[InsuranceMarketFunction::DeactivateUnderwriterV1 as u8],
+        &update.encode()[..]].concat())
 }
 
 /// Process update for DeactivateUnderwriterV1

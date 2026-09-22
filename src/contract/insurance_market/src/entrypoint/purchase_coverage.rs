@@ -37,6 +37,7 @@ use dwow_promissory_note_contract::validation::{
 };
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::{
     calculate_premium,
     derive_coverage_id,
@@ -189,7 +190,7 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
         coverage_id,
         premium
     );
-    Ok(update.encode())
+    Ok([&[InsuranceMarketFunction::PurchaseCoverageV1 as u8], &update.encode()[..]].concat())
 }
 
 /// Process update for PurchaseCoverageV1

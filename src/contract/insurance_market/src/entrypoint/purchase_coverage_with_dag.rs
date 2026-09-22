@@ -36,6 +36,7 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::{
     calculate_premium,
     derive_coverage_id,
@@ -178,7 +179,8 @@ pub fn insurance_market_purchase_coverage_with_dag_process_instruction_v1(
         params.required_dag_id,
         params.dag_path_index
     );
-    Ok(update.encode())
+    Ok([&[InsuranceMarketFunction::PurchaseCoverageWithDAGV1 as u8],
+        &update.encode()[..]].concat())
 }
 
 /// Process update for PurchaseCoverageWithDAGV1

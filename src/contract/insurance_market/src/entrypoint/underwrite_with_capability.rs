@@ -29,6 +29,7 @@ use dwow_sdk::{error::ContractError, msg, wasm};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::{
     calculate_max_coverage,
     derive_underwriter_id,
@@ -120,7 +121,8 @@ pub fn insurance_market_underwrite_with_capability_process_instruction_v1(
         "[insurance_market::underwrite_with_cap] Underwriter registered with capability: {:?}",
         underwriter_id
     );
-    Ok(update.encode())
+    Ok([&[InsuranceMarketFunction::UnderwriteWithCapabilityV1 as u8],
+        &update.encode()[..]].concat())
 }
 
 /// Process update for UnderwriteWithCapabilityV1

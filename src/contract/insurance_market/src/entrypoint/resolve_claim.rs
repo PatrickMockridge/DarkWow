@@ -38,6 +38,7 @@ use dwow_promissory_note_contract::validation::{
 };
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::{
     calculate_slash,
     ResolveClaimParamsV1,
@@ -158,7 +159,7 @@ pub fn insurance_market_resolve_claim_process_instruction_v1(
         payout,
         slash_amount
     );
-    Ok(update.encode())
+    Ok([&[InsuranceMarketFunction::ResolveClaimV1 as u8], &update.encode()[..]].concat())
 }
 
 /// Process update for ResolveClaimV1

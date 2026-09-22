@@ -29,6 +29,7 @@ use dwow_sdk::{error::ContractError, msg, wasm};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::{
     calculate_slash,
     ResolveClaimWithCapabilityParamsV1,
@@ -119,7 +120,8 @@ pub fn insurance_market_resolve_claim_with_capability_process_instruction_v1(
         payout,
         slash_amount
     );
-    Ok(update.encode())
+    Ok([&[InsuranceMarketFunction::ResolveClaimWithCapabilityV1 as u8],
+        &update.encode()[..]].concat())
 }
 
 /// Process update for ResolveClaimWithCapabilityV1

@@ -27,6 +27,7 @@ use dwow_sdk::{error::ContractError, msg, wasm};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::{derive_claim_id, FileClaimParamsV1, FileClaimUpdateV1};
 use crate::{INSURANCE_CONTRACT_CLAIMS_TREE, INSURANCE_CONTRACT_COVERAGES_TREE};
 
@@ -101,7 +102,7 @@ pub fn insurance_market_file_claim_process_instruction_v1(
     };
 
     msg!("[insurance_market::file_claim] Claim filed: {:?}", claim_id);
-    Ok(update.encode())
+    Ok([&[InsuranceMarketFunction::FileClaimV1 as u8], &update.encode()[..]].concat())
 }
 
 /// Process update for FileClaimV1

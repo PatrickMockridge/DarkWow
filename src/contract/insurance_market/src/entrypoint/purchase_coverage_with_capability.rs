@@ -33,6 +33,7 @@ use dwow_sdk::{
 };
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::{
     calculate_premium,
     derive_coverage_id,
@@ -164,7 +165,8 @@ pub fn insurance_market_purchase_coverage_with_capability_process_instruction_v1
         premium,
         required_capability_id
     );
-    Ok(update.encode())
+    Ok([&[InsuranceMarketFunction::PurchaseCoverageWithCapabilityV1 as u8],
+        &update.encode()[..]].concat())
 }
 
 /// Process update for PurchaseCoverageWithCapabilityV1

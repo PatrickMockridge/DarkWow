@@ -27,6 +27,7 @@ use dwow_sdk::{error::ContractError, msg, wasm};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::{RetireRiskTypeParamsV1, RetireRiskTypeUpdateV1};
 use crate::INSURANCE_CONTRACT_RISK_TYPES_TREE;
 
@@ -55,7 +56,7 @@ pub fn insurance_market_retire_risk_type_process_instruction_v1(
     };
 
     msg!("[insurance_market::retire_risk_type] Risk type retired: {:?}", params.risk_type_id);
-    Ok(update.encode())
+    Ok([&[InsuranceMarketFunction::RetireRiskTypeV1 as u8], &update.encode()[..]].concat())
 }
 
 /// Process update for RetireRiskTypeV1

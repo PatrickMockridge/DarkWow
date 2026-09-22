@@ -29,6 +29,7 @@ use dwow_sdk::{error::ContractError, msg, pasta::pallas, wasm};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::UpdatePremiumParamsV1;
 use crate::INSURANCE_CONTRACT_MARKETS_TREE;
 
@@ -92,7 +93,7 @@ pub fn insurance_market_update_premium_process_instruction_v1(
         old_premium_rate,
         params.new_premium_rate
     );
-    Ok(update.encode())
+    Ok([&[InsuranceMarketFunction::UpdatePremiumV1 as u8], &update.encode()[..]].concat())
 }
 
 /// Process update for UpdatePremiumV1

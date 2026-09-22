@@ -27,6 +27,7 @@ use dwow_sdk::{error::ContractError, msg, wasm};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::{derive_risk_type_id, RegisterRiskTypeParamsV1, RegisterRiskTypeUpdateV1};
 use crate::INSURANCE_CONTRACT_RISK_TYPES_TREE;
 
@@ -80,7 +81,7 @@ pub fn insurance_market_register_risk_type_process_instruction_v1(
     };
 
     msg!("[insurance_market::register_risk_type] Risk type registered: {:?}", update.risk_type_id);
-    update.encode()
+    Ok([&[InsuranceMarketFunction::RegisterRiskTypeV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// Process update for RegisterRiskTypeV1

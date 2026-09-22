@@ -38,6 +38,7 @@ use dwow_promissory_note_contract::validation::{
 };
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::{WithdrawPremiumParamsV1, WithdrawPremiumUpdateV1};
 use crate::{
     INSURANCE_CONTRACT_INFO_TREE, INSURANCE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
@@ -123,7 +124,7 @@ pub fn insurance_market_withdraw_premium_process_instruction_v1(
         params.amount,
         remaining_balance
     );
-    Ok(update.encode())
+    Ok([&[InsuranceMarketFunction::WithdrawPremiumV1 as u8], &update.encode()[..]].concat())
 }
 
 /// Process update for WithdrawPremiumV1

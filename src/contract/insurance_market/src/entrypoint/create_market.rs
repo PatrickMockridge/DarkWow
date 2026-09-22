@@ -32,6 +32,7 @@ use dwow_sdk::{
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use crate::error::InsuranceMarketError;
+use crate::InsuranceMarketFunction;
 use crate::model::{CreateMarketParamsV1, CreateMarketUpdateV1};
 use crate::{INSURANCE_CONTRACT_MARKETS_TREE, INSURANCE_CONTRACT_RISK_TYPES_TREE};
 
@@ -109,7 +110,7 @@ pub fn insurance_market_create_market_process_instruction_v1(
     };
 
     msg!("[insurance_market::create_market] Market created: {:?}", market_id);
-    Ok(update.encode())
+    Ok([&[InsuranceMarketFunction::CreateMarketV1 as u8], &update.encode()[..]].concat())
 }
 
 /// Process update for CreateMarketV1
