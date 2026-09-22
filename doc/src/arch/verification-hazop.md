@@ -1485,15 +1485,17 @@ breaking ties:
   whole.** On 2026-09-22 a full sweep was run —
   `cargo test --release --all-features --workspace --no-fail-fast -j 8`, log preserved at
   `~/baseline_sweep_2026-09-22.log` — and was **stopped at the operator's direction** while still
-  inside the `dwowd` test binary. So: **100 binaries completed** with `1268 passed, 3 failed`, and
-  inside the unfinished binary **108 heavyweight tests ran, 14 failing**. The three completed
-  binaries' causes are recorded verbatim below; **the 14 heavyweight failures have names only**,
-  because panic detail prints in a binary's closing `failures:` section and that binary never
-  finished — do not read a cause into them, and re-run rather than infer.
+  inside the `dwowd` test binary. Parsed with the repository's own harness
+  (`contrib/test_verdicts.sh parse --causes`), the inventory is **1293 ok, 17 FAILED, 12 ignored**,
+  saved as `~/baseline_sweep_2026-09-22.verdicts.tsv` — the first per-test verdict record this
+  repository has had, which is what that script exists for. The three completed binaries' causes are
+  recorded verbatim below; **the heavyweight failures have names only**, because panic detail prints
+  in a binary's closing `failures:` section and that binary never finished — do not read a cause into
+  them, and re-run rather than infer.
   **Two differences from the list above are already established and are the point of measuring.**
   `test_heavyweight_pool_stake` **passes** — the other session's phase-rule work fixed it, so it
   should come off the red list. And `test_heavyweight_slot` **fails**, which the list above does not
-  mention at all: a red heavyweight test nobody had recorded. The 14 names are `auction,
+  mention at all: a red heavyweight test nobody had recorded. The heavyweight failures are `auction,
   bearer_bond, bridge, dao_escrow, drain_protection, escrow, insurance_market, labor_market, purse,
   relayer_endowment, slot, subscription, tender`, and `relayer_lifecycle_heavyweight`.
 
