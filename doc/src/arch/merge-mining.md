@@ -107,14 +107,25 @@ reference to a confirmed Monero block (height + hash), so that reorganizing Dark
 reorganizing Monero back past the anchor point.
 
 **That gadget has never been in effect.** Merge-mined blocks are built with the anchor fields zeroed
-(`bin/dwowd/src/rpc/mm_rpc.rs:630-631` sets `anchor_monero_height = 0` and `anchor_monero_hash = [0; 32]`),
-and `verify_monero_anchor` — the function that would check them — is called by nothing outside its own
-tests. The block does carry the real Monero data, as `PowSource::Monero(MoneroPowData)`; the anchor
-fields are a second, separate claim about the same thing, and nothing fills or checks them.
+(`bin/dwowd/src/rpc/mm_rpc.rs` sets `anchor_monero_height = 0` and `anchor_monero_hash = [0; 32]`), and
+`verify_monero_anchor` — the function that would check a *claimed* height-and-hash pair — is called by
+nothing outside its own tests, because nothing fills those fields: a merge-mined block has no DarkWow
+preimage of its own to bind an anchor to, and the Monero header carries no height to derive one from.
+The block does carry the real Monero data, as `PowSource::Monero(MoneroPowData)`.
 
-Nor is the Monero block's *own* proof-of-work verified anywhere in `dwowd`: the merge-mining path accepts
-the three receipts and trusts that p2pool only submits blocks its colocated monerod has already validated.
-The code says so itself at `mm_rpc.rs:574` (`TODO(HAZOP F3)`).
+**What is checked today, and where.** The Monero block's *identity* is derived from the block's own
+proof (`MoneroPowData::block_hash`) and, when `monerod_url` is configured, checked against a Monero
+node by the **node-local admission policy** (`verify_monero_powdata`, called from the `PowSource::Monero`
+branch of `bin/dwowd/src/block_acceptor.rs`): monerod must know that hash, and report it at least
+`monero_min_confirmations` deep. The policy is node-local and never consensus — the answer depends on
+another chain, so it cannot be a pure function of local data — and it **fails closed on every failure
+to confirm**, transport errors included. With `monerod_url` unset — the default — nothing is consulted,
+the block is admitted as before, and the node logs a warning naming that residual gap rather than
+implying it away.
+
+Nor is the Monero block's *own* proof-of-work verified: the merge-mining path accepts the three receipts
+and trusts that p2pool only submits blocks its colocated monerod has already validated. The code says so
+itself at `mm_rpc.rs:574` (`TODO(HAZOP F3)`).
 
 > **Read that as a block-minting gap, not a finality footnote.** The three receipts prove that our aux
 > hash sits in the coinbase of *some serialized* Monero block: `is_coinbase_valid_merkle_root` recomputes
@@ -124,10 +135,13 @@ The code says so itself at `mm_rpc.rs:574` (`TODO(HAZOP F3)`).
 > work is supposed to have happened on Monero. So "a DarkWow block backed by Monero work" is not enforced
 > anywhere today, and the practical consequence is that a peer who can get a `PowSource::Monero` block
 > relayed can mint blocks. The local fix is impossible: Monero's difficulty is not in the block, so a
-> locally-checked PoW would compare against a submitter-chosen target. The route its own TODO recommends —
-> a `monerod` query — is blocked only on `get_block_by_hash`, which `src/linear/src/monero/rpc.rs` does not
-> yet have. `OBL-C67` carries the plan: derive `anchor_monero_hash` locally, and add that RPC method behind
-> a node-local admission policy.
+> locally-checked PoW would compare against a submitter-chosen target. What the admission policy adds is
+> the *external* check its own TODO recommended — the block the proof describes must exist on the Monero
+> chain — and it is off unless the operator sets `monerod_url`, so the gap is closed for a node that
+> configures it and stated in the log for one that does not.
+
+Configuration flags `--finality-enable-monero` and `--monerod-rpc-url` exist and are wired into
+`FinalityConfig`. See `OBL-C67` in the [verification obligation register](verification-hazop.md).
 
 Configuration flags `--finality-enable-monero` and `--monerod-rpc-url` exist and are wired into
 `FinalityConfig`. See `OBL-C67` in the [verification obligation register](verification-hazop.md).

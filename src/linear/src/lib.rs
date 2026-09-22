@@ -100,7 +100,7 @@ pub use error::LinearError;
 pub use finality::{FinalityConfig, FinalityMode};
 #[cfg(feature = "pow")]
 pub use miner::Miner;
-pub use monero::{get_block_by_height, get_block_count, verify_monero_anchor, MonerodError, MoneroVerifyError};
+pub use monero::{get_block_by_height, get_block_count, verify_monero_anchor, verify_monero_powdata, MonerodError, MoneroVerifyError};
 pub use store::LinearStore;
 pub use supply_chain::{CumulativeSupplyChain, CumulativeSupplyEntry};
 pub use transaction::{Commitment, CoinbaseTransaction, ContractCall, Nullifier, PedersenCoordinate, TokenCommitment, Transaction, TxInput, TxOutput};

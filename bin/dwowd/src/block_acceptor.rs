@@ -197,6 +197,48 @@ pub fn accept_block(
                     block.header.height
                 )));
             }
+
+            // OBL-C67: the node-local admission policy. The receipts above prove only that our aux
+            // hash sits in a coinbase of *some* serialized Monero block, so this asks a Monero node
+            // whether the block the proof describes exists there, at the configured depth.
+            //
+            // It belongs HERE and not in `check_pow_stage`/`check_block_header`/`connect_block`:
+            // the answer depends on another chain, so it is not a pure function of local data and
+            // cannot be a consensus rule (`OBL-C66` makes the same argument for settlement). This
+            // path is the node's own admission decision, reached by all five entry points.
+            //
+            // Fail closed on every failure to confirm, including a transport error — that is the
+            // register's decision ("admits only if monerod confirms"), and the operator opts into
+            // its cost by setting `monerod_url`.
+            let finality = &chain_state.finality_config;
+            match finality.monerod_url.as_deref() {
+                Some(url) => {
+                    dwow_chain::monero::verify_monero_powdata(
+                        monero_data,
+                        Some(url),
+                        finality.monero_min_confirmations,
+                    )
+                    .map_err(|e| {
+                        dwow_core::Error::Custom(format!(
+                            "Block {} rejected by the Monero admission policy: {e}",
+                            block.header.height
+                        ))
+                    })?;
+                }
+                None => {
+                    // The default configuration. The block is admitted exactly as before the policy
+                    // existed, and the residual gap is stated in the log rather than implied away:
+                    // nothing here has checked the Monero chain.
+                    tracing::warn!(
+                        target: "block_acceptor",
+                        "[ACCEPT] Block {} is merge-mined and no `monerod_url` is configured — the \
+                         Monero block it claims was NOT checked against the Monero chain (OBL-C67). \
+                         Its receipts prove coinbase inclusion in some serialized block, which a \
+                         fabricated block can also satisfy. Set `monerod_url` to close this.",
+                        block.header.height
+                    );
+                }
+            }
         }
         _ => {
             let block_hash = block.hash_with_vm(vm.as_ref())

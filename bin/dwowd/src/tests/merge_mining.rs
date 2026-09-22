@@ -323,6 +323,11 @@ fn test_merge_mined_block_acceptance() -> TestResult<()> {
         // with the one derived from its own proof. So the field can no longer be an arbitrary claim —
         // it is either absent, or the derived value. (The height is a different matter: it is not
         // derivable at all, since the Monero header carries no height. See the register row.)
+        //
+        // The whole block is admitted here only because this harness runs the *default* finality
+        // policy — no `monerod_url` — so nothing consults the Monero chain and the residual gap is
+        // logged rather than closed. `test_merge_mined_block_rejected_when_monerod_cannot_confirm_it`
+        // is the same block with the policy switched on; the pair is the control.
         ensure_eq!(block.header.anchor_monero_height, MoneroBlockHeight::new(0),
             "a merge-mined block carries no Monero anchor height — production writes zero, and the \
              Monero header carries no height to derive it from");
@@ -336,6 +341,117 @@ fn test_merge_mined_block_acceptance() -> TestResult<()> {
         // the nullifier batch is handled at a different stage.
         ensure_eq!(stored.header.total_reward, reward,
             "stored block must retain total_reward");
+        Ok(())
+    })
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Test 1b — OBL-C67: the node-local admission policy is CONSULTED, not
+//           merely possessed
+// ═══════════════════════════════════════════════════════════════════════
+//
+// The acceptance test above is the *control*: with the default configuration (`monerod_url` unset)
+// this same block is admitted, because nothing is consulted. This test sets the URL, so the policy
+// runs — and since the port is closed, monerod cannot confirm anything and the policy must refuse.
+//
+// That is what makes it a seating test rather than a policy test: it asserts the *call site* in
+// `block_acceptor` exists and is reached. `verify_monero_powdata`'s own semantics (unknown hash,
+// wrong hash, insufficient depth, transport failure) are covered beside it in `monero::verify`.
+// Without this, the campaign's recurring failure mode applies — a verifier that is correct and has
+// no caller — and it cannot be caught by reading the verifier.
+
+#[test]
+fn test_merge_mined_block_rejected_when_monerod_cannot_confirm_it() -> TestResult<()> {
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    smol::block_on(async {
+        // Port 1 is closed by construction; the policy must treat that as a failure to confirm.
+        let finality = dwow_chain::FinalityConfig {
+            monerod_url: Some("http://127.0.0.1:1/json_rpc".to_string()),
+            ..dwow_chain::FinalityConfig::default()
+        };
+        let har = GenesisHarness::new_without_contracts_with_finality(finality)
+            .map_err(|e| infra("creating the genesis harness", e))?;
+
+        let keys_path = std::env::temp_dir()
+            .join(format!("dwow_mm_policy_{}.toml", std::process::id()));
+        std::fs::write(&keys_path, crate::tests::modules::chain_setup::GENESIS_KEYS_TOML)
+            .map_err(|e| infra("writing the test keys file", e))?;
+        let miner_mgr =
+            crate::accounts::AccountManager::open(&keys_path, Network::Testnet, "node0")
+                .map_err(|e| infra("opening the test account", e))?;
+        let magic_bytes = crate::tests::modules::chain_setup::DRKW_MAGIC;
+
+        let recipient_1 =
+            crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(1))
+                .map_err(|e| infra("deriving the height-1 mining recipient", e))?;
+        crate::init_genesis(&har.chain_state, recipient_1, magic_bytes)
+            .await
+            .map_err(|e| infra("initialising genesis", e))?;
+
+        // The same construction as the acceptance test: production coinbase, real fixture proof.
+        let height = BlockHeight::new(2);
+        let recipient = crate::accounts::MiningRecipient::from_account(&miner_mgr, height)
+            .map_err(|e| infra("deriving the height-2 mining recipient", e))?;
+        let reward = dwow_sdk::blockchain::expected_reward(height);
+        let (coinbase, pow_reward_call, _blind) =
+            crate::registry::model::build_linear_coinbase(
+                recipient, reward, &har.chain_state, height,
+            )
+            .await
+            .map_err(|e| infra("building the linear coinbase", e))?;
+
+        let coinbase_tx = Transaction {
+            version: BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![pow_reward_call],
+            lock_time: 0,
+            nullifiers: vec![coinbase.nullifier],
+            witness: vec![],
+        };
+
+        let pow_data = build_test_monero_powdata()?;
+        let all_txs = vec![coinbase_tx];
+        let merkle_root = compute_merkle_root(&all_txs);
+
+        let prev = har
+            .chain_state
+            .get_latest_block()
+            .map_err(|e| infra("reading the latest block", e))?;
+        let prev_hash = har
+            .chain_state
+            .hash_block_with_cached_vm(&prev)
+            .map_err(|e| infra("hashing the previous block", e))?;
+        let miner = super::harness::miner_for(&all_txs);
+        let header =
+            build_merge_mined_header(prev_hash, height, reward, merkle_root, pow_data, miner)?;
+        let block = Block { header, transactions: all_txs };
+
+        let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+        let rx_cache = randomx::RandomXCache::new(flags, &block.header.randomx_key)
+            .map_err(|e| infra("creating the RandomX cache", format!("{e}")))?;
+        let vm = Arc::new(
+            randomx::RandomXVM::new(flags, Some(rx_cache), None)
+                .map_err(|e| infra("creating the RandomX VM", format!("{e}")))?,
+        );
+
+        let err = crate::block_acceptor::accept_block(
+            &har.chain_state,
+            &block,
+            &[],
+            &vm,
+            BlockTarget::MAX,
+            None,
+        )
+        .expect_err("a merge-mined block must be refused when monerod cannot confirm it");
+
+        let text = format!("{err:?}");
+        ensure!(text.contains("Monero admission policy"),
+            "the rejection must come from the admission policy — that is what proves the acceptor \
+             consults it — but the error was: {text}");
+        ensure_eq!(har.block_height(), BlockHeight::new(1),
+            "the chain must not advance when the policy refuses the block");
         Ok(())
     })
 }

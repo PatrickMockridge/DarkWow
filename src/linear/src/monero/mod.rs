@@ -140,7 +140,7 @@ pub mod rpc;
 mod verify;
 
 pub use rpc::{get_block_by_height, get_block_count, MonerodError};
-pub use verify::{verify_monero_anchor, MoneroVerifyError};
+pub use verify::{verify_monero_anchor, verify_monero_powdata, MoneroVerifyError};
 
 pub type AuxChainHashes = MaxSizeVec<monero::Hash, 128>;
 

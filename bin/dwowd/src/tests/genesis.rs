@@ -56,6 +56,17 @@ pub struct GenesisHarness {
 impl GenesisHarness {
     /// Create the temp sled DB + CChainState shared by both constructors.
     fn new_bare() -> Result<Self> {
+        Self::new_bare_with_finality(FinalityConfig::default())
+    }
+
+    /// As `new_bare`, with a caller-supplied finality policy.
+    ///
+    /// `FinalityConfig` holds the node-local knobs that are *not* consensus — whether to anchor,
+    /// where monerod is, how deep a Monero block must be. `CChainState` takes it by value and stores
+    /// it behind the `Arc`, so a test that must prove the acceptor *consults* the policy (rather
+    /// than merely possessing it) has to supply it here; there is no way to mutate it afterwards, by
+    /// design, since a node's policy is fixed at startup.
+    fn new_bare_with_finality(finality_config: FinalityConfig) -> Result<Self> {
         static GEN_COUNTER: AtomicU32 = AtomicU32::new(0);
         let n = GEN_COUNTER.fetch_add(1, Ordering::Relaxed);
         let db_dir = std::env::temp_dir()
@@ -73,8 +84,6 @@ impl GenesisHarness {
             min_target: BlockTarget::new(1),
             max_target: BlockTarget::MAX,
         };
-        let finality_config = FinalityConfig::default();
-
         let chain_state = CChainState::new(
             db.clone(),
             pow_config.target_block_time,
@@ -96,6 +105,13 @@ impl GenesisHarness {
     /// `accept_block`. Use this for genesis-path tests.
     pub fn new_without_contracts() -> Result<Self> {
         Self::new_bare()
+    }
+
+    /// As `new_without_contracts`, with a caller-supplied finality policy — the constructor the
+    /// merge-mining admission test needs, since it must prove the acceptor consults `monerod_url`
+    /// rather than merely reading a default (OBL-C67).
+    pub fn new_without_contracts_with_finality(finality_config: FinalityConfig) -> Result<Self> {
+        Self::new_bare_with_finality(finality_config)
     }
 
     /// Create a new GenesisHarness with temp sled DB and CChainState.

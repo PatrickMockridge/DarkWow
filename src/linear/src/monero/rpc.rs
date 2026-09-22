@@ -81,6 +81,60 @@ pub fn get_block_by_height(url: &str, height: u64) -> Result<(u64, [u8; 32]), Mo
     Ok((block.height, hash))
 }
 
+/// Fetch a Monero block header by its **hash** from monerod (OBL-C67).
+///
+/// This is the lookup the merge-mining admission policy needs, and it is a different question from
+/// `get_block_by_height`: a merge-mined block commits no Monero height — production writes
+/// `anchor_monero_height` zero and the Monero header carries no height to derive — so the only thing
+/// the DarkWow side can name is the hash it derived from the block's own proof
+/// (`MoneroPowData::block_hash`). Asking "do you know *this* hash?" is therefore the stronger
+/// direction: the lookup key comes from the proof rather than from the submitter.
+///
+/// Returns `(height, hash)` as monerod reports them, so the caller can check the depth against the
+/// height monerod itself reports rather than one the submitter chose.
+///
+/// A hash monerod does not know comes back as an error: monerod answers with a JSON-RPC `error`
+/// object, and `JsonRpcResult` models only `result`, so the parse fails and the caller sees
+/// `MonerodError::JsonRpc` carrying monerod's own message. That is the same shape the height lookup
+/// has, and it is recorded here rather than papered over: the policy that consumes this treats every
+/// failure to confirm as a rejection, so the distinction costs nothing but the log text.
+pub fn get_block_by_hash(url: &str, hash: &[u8; 32]) -> Result<(u64, [u8; 32]), MonerodError> {
+    let request_body = serde_json::to_vec(&json!({
+        "jsonrpc": "2.0",
+        "id": "0",
+        "method": "get_block",
+        "params": { "hash": hex::encode(hash) },
+    }))
+    .map_err(|e| MonerodError::JsonRpc(e.to_string()))?;
+
+    let response = ureq::post(url)
+        .header("Content-Type", "application/json")
+        .send(&request_body)
+        .map_err(|e| MonerodError::Http(e.to_string()))?;
+
+    let body = response
+        .into_body()
+        .read_to_string()
+        .map_err(|e| MonerodError::Http(e.to_string()))?;
+
+    let envelope: JsonRpcResult<GetBlockResponse> =
+        serde_json::from_str(&body).map_err(|e| MonerodError::JsonRpc(e.to_string()))?;
+
+    let block = envelope.result.block_header;
+
+    if block.hash.is_empty() {
+        return Err(MonerodError::BlockNotFound(block.height));
+    }
+
+    let hash_bytes = hex::decode(&block.hash)
+        .map_err(|e| MonerodError::JsonRpc(format!("invalid hash hex: {e}")))?;
+    let hash: [u8; 32] = hash_bytes
+        .try_into()
+        .map_err(|_| MonerodError::JsonRpc("hash not 32 bytes".into()))?;
+
+    Ok((block.height, hash))
+}
+
 /// Fetch the current Monero chain tip height from monerod.
 pub fn get_block_count(url: &str) -> Result<u64, MonerodError> {
     let request_body = serde_json::to_vec(&json!({
@@ -216,5 +270,48 @@ mod tests {
         let url = test_helpers::serve_once(response);
         let err = get_block_count(&url).unwrap_err();
         assert!(matches!(err, MonerodError::JsonRpc(_)));
+    }
+
+    // --- get_block_by_hash (OBL-C67) ------------------------------------------------------------
+
+    fn sample_hash() -> [u8; 32] {
+        let bytes = hex::decode("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")
+            .unwrap();
+        bytes.try_into().unwrap()
+    }
+
+    #[test]
+    fn test_get_block_by_hash_success() {
+        let response = r#"{"result":{"block_header":{"hash":"abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","height":2912484}}}"#;
+        let url = test_helpers::serve_once(response);
+        let (height, hash) = get_block_by_hash(&url, &sample_hash()).unwrap();
+        assert_eq!(height, 2912484, "the height comes from monerod's reply, not from the caller");
+        assert_eq!(hash, sample_hash());
+    }
+
+    #[test]
+    fn test_get_block_by_hash_unknown_hash_is_an_error() {
+        // What monerod answers for a hash it does not know: a JSON-RPC `error` object, which the
+        // `result`-only envelope cannot parse. The policy that consumes this treats it as a
+        // rejection, so the assertion is that it is an error and not a silent `Ok`.
+        let response = r#"{"error":{"code":-5,"message":"Failed to get block header"}}"#;
+        let url = test_helpers::serve_once(response);
+        let err = get_block_by_hash(&url, &sample_hash()).unwrap_err();
+        assert!(matches!(err, MonerodError::JsonRpc(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn test_get_block_by_hash_empty_hash_is_not_found() {
+        let response = r#"{"result":{"block_header":{"hash":"","height":2912484}}}"#;
+        let url = test_helpers::serve_once(response);
+        let err = get_block_by_hash(&url, &sample_hash()).unwrap_err();
+        assert!(matches!(err, MonerodError::BlockNotFound(2912484)), "got {err:?}");
+    }
+
+    #[test]
+    fn test_get_block_by_hash_connection_refused() {
+        let url = "http://127.0.0.1:19999/json_rpc";
+        let err = get_block_by_hash(url, &sample_hash()).unwrap_err();
+        assert!(matches!(err, MonerodError::Http(_)), "got {err:?}");
     }
 }
