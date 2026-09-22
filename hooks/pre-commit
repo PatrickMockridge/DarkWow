@@ -1,155 +1,62 @@
 #!/bin/bash
-# Pre-commit hook to detect missing constrain_equal_base after pubkey derivation
+# Pre-commit check on .zk circuits: a `constrain_equal_base(A, B)` where the prover
+# chooses *both* operands proves nothing — the equality holds for any witness, so the
+# verifier learns nothing from it. That is OBL-Z9's defect.
 #
-# This hook scans .zk files for the vulnerable pattern where public keys are
-# derived via ec_mul_base + ec_get_x/y but NOT constrained with constrain_equal_base.
+# ---------------------------------------------------------------------------
+# This hook used to enforce the OPPOSITE rule, in awk, and was wrong.
 #
-# The correct pattern requires:
-#   1. pub = ec_mul_base(secret, CONSTANT)
-#   2. pub_x = ec_get_x(pub), pub_y = ec_get_y(pub)
-#   3. constrain_equal_base(pub_x, witness_pub_x)  # BINDING
-#   4. constrain_equal_base(pub_y, witness_pub_y)  # BINDING
-#   5. constrain_instance(witness_pub_x)  # EXPOSE
-#   6. constrain_instance(witness_pub_y)  # EXPOSE
+# It required that a value derived by `ec_get_x` be bound by `constrain_equal_base`
+# before being exposed. Read the sound patterns in src/contract/oracle/proof/push_value.zk
+# (which keeps the old form as a comment annotated `-- witness == witness`, line 53) and
+# it is clear the derive-and-expose form is what OBL-Z9's remedy ADOPTED:
 #
-# The vulnerable pattern is missing steps 3-4.
+#   SOUND    pub = ec_mul_base(secret, K); constrain_instance(ec_get_x(pub));
+#   UNSOUND  derived = ec_get_x(ec_mul_base(s, K)); constrain_equal_base(derived, pub_x);
+#            where pub_x is a free witness and neither side is exposed
+#
+# So the old check would have rejected a commit touching proofs/core/{burn,opcodes}.zk for
+# being correct. It never fired only because those files were not edited while it existed.
+# It was also line-anchored, tracked a single pending name, matched by substring, and
+# scanned only staged files.
+#
+# ---------------------------------------------------------------------------
+# The replacement is `scripts/check-pubkey-binding.sh`. It is REPORT-ONLY here, and that
+# is deliberate rather than a quieting: it finds **57** sites of the vacuous-binding shape
+# across twelve contracts (run it to see them), and each needs its circuit *and* its host
+# read together before it is called a defect — a fully private circuit with no host-side
+# use of the value has nothing to forge. Blocking commits on 57 unadjudicated findings
+# would be a gate whose authority is not yet defensible; the sites are promoted to the
+# register as OBL-Z18 instead, and this hook starts failing on them once they are
+# adjudicated. Until then it reports, so the class stops being invisible.
+#
+# The hook does not exit non-zero on findings. It does exit non-zero if the checker itself
+# cannot run, because a check that silently does nothing is worse than no check.
 
-echo "Checking for missing constrain_equal_base pattern..."
+echo "Checking circuit bindings for vacuous constrain_equal_base..."
 
-VULNERABLE=0
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+CHECKER="$REPO_ROOT/scripts/check-pubkey-binding.sh"
 
-# Find all .zk files being committed
-for file in $(git diff --cached --name-only --diff-filter=ACM | grep '\.zk$'); do
-    if [ ! -f "$file" ]; then
-        continue
-    fi
-
-    # Skip if file was just renamed to this name (doesn't exist yet in working dir)
-    if git ls-files --error-unmatch "$file" 2>/dev/null; then
-        # File exists in repo, check its content
-        content=$(cat "$file")
-    else
-        # New file, use the staged version
-        content=$(git show ":$file" 2>/dev/null)
-    fi
-
-    if [ -z "$content" ]; then
-        continue
-    fi
-
-    # Pattern detection:
-    # Look for ec_get_x followed by constrain_instance WITHOUT constrain_equal_base
-    # This regex looks for lines where ec_get_x or ec_get_y result is constrained
-    # but NOT bound via constrain_equal_base
-
-    # Check for the vulnerable pattern: ec_get_x(...); followed by constrain_instance(...)
-    # where there's no constrain_equal_base between them
-
-    # Split into lines for analysis
-    lines=$(echo "$content" | grep -n '.' | cut -d: -f2-)
-
-    # Track line numbers of ec_get_x and ec_get_y calls
-    declare -a get_x_lines
-    declare -a get_y_lines
-
-    # More targeted check: look for constrain_instance of ec_get_x/y results
-    # The pattern is:
-    #   variable = ec_get_x(something)
-    #   ...
-    #   constrain_instance(variable)
-    # WITHOUT a preceding constrain_equal_base(variable, ...)
-
-    # Use awk for multi-line pattern detection (standard AWK compatible)
-    vulnerable_lines=$(echo "$content" | awk '
-    BEGIN { in_circuit = 0; pending_get_x = ""; pending_get_y = "" }
-
-    /circuit "/ { in_circuit = 1; pending_get_x = ""; pending_get_y = "" }
-    /^}/ { in_circuit = 0 }
-
-    # Track ec_get_x assignments
-    /^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]* = ec_get_x/ {
-        if (in_circuit) {
-            # Extract the variable name being assigned using standard AWK
-            # Pattern: whitespace + var_name + = ec_get_x(
-            if (match($0, /^[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*/)) {
-                pending_get_x = substr($0, RSTART, RLENGTH)
-                # Remove leading whitespace
-                gsub(/^[[:space:]]+/, "", pending_get_x)
-            }
-        }
-    }
-
-    # Track ec_get_y assignments
-    /^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]* = ec_get_y/ {
-        if (in_circuit) {
-            if (match($0, /^[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*/)) {
-                pending_get_y = substr($0, RSTART, RLENGTH)
-                gsub(/^[[:space:]]+/, "", pending_get_y)
-            }
-        }
-    }
-
-    # Check for constrain_equal_base on pending variables (this is GOOD - clears the flag)
-    /^[[:space:]]*constrain_equal_base/ {
-        if (in_circuit) {
-            if (pending_get_x != "" && index($0, pending_get_x) > 0) {
-                pending_get_x = ""
-            }
-            if (pending_get_y != "" && index($0, pending_get_y) > 0) {
-                pending_get_y = ""
-            }
-        }
-    }
-
-    # Check for constrain_instance on pending variables (this is BAD - vulnerability!)
-    /^[[:space:]]*constrain_instance/ {
-        if (in_circuit) {
-            if (pending_get_x != "" && index($0, pending_get_x) > 0) {
-                printf "%s: VULNERABLE: %s used in constrain_instance without constrain_equal_base\n", FILENAME, pending_get_x
-                pending_get_x = ""
-                VULNERABLE = 1
-            }
-            if (pending_get_y != "" && index($0, pending_get_y) > 0) {
-                printf "%s: VULNERABLE: %s used in constrain_instance without constrain_equal_base\n", FILENAME, pending_get_y
-                pending_get_y = ""
-                VULNERABLE = 1
-            }
-        }
-    }
-
-    # Reset pending vars when we see new assignments (they are overwritten)
-    /^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]* = ec_mul_base/ { pending_get_x = ""; pending_get_y = "" }
-    /^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]* = ec_mul_var_base/ { pending_get_x = ""; pending_get_y = "" }
-
-    END { exit VULNERABLE }
-    ' 2>&1) || vulnerable_lines="$vulnerable_lines"
-
-    if [ -n "$vulnerable_lines" ] && [ "$vulnerable_lines" != "1" ]; then
-        echo "ERROR: Vulnerable pubkey derivation pattern detected!"
-        echo "$vulnerable_lines"
-        echo ""
-        echo "FIX: Add constrain_equal_base to bind the derived public key to its witness."
-        echo "Example:"
-        echo "  BEFORE (vulnerable):"
-        echo "    pub = ec_mul_base(secret, NULLIFIER_K);"
-        echo "    pub_x = ec_get_x(pub);"
-        echo "    constrain_instance(pub_x);"
-        echo ""
-        echo "  AFTER (sound):"
-        echo "    pub = ec_mul_base(secret, NULLIFIER_K);"
-        echo "    pub_x = ec_get_x(pub);"
-        echo "    constrain_equal_base(pub_x, witness_pub_x);  // BIND"
-        echo "    constrain_instance(witness_pub_x);"
-        echo ""
-        VULNERABLE=1
-    fi
-done
-
-if [ $VULNERABLE -eq 1 ]; then
-    echo "Commit rejected: vulnerable constrain_equal_base pattern detected."
-    echo "Add constrain_equal_base constraints to bind derived public keys to their witnesses."
+if [ ! -x "$CHECKER" ]; then
+    echo "ERROR: $CHECKER is missing or not executable."
+    echo "A check that cannot run must not look like a check that passed."
     exit 1
 fi
 
-echo "No vulnerable patterns detected."
+# Staged .zk files; fall back to the whole corpus when nothing is staged.
+FILES=()
+while IFS= read -r f; do
+    [ -n "$f" ] && [ -f "$REPO_ROOT/$f" ] && FILES+=("$REPO_ROOT/$f")
+done < <(git diff --cached --name-only --diff-filter=ACM | grep '\.zk$' || true)
+
+if [ "${#FILES[@]}" -eq 0 ]; then
+    bash "$CHECKER" --all || true
+else
+    bash "$CHECKER" "${FILES[@]}" || true
+fi
+
+echo ""
+echo "NOTE: reported, not blocking — the finding is OBL-Z18 in doc/src/arch/verification-hazop.md"
+echo "      and its sites need adjudication before this hook can fail on them."
 exit 0
