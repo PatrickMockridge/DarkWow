@@ -163,10 +163,21 @@ fn join_pool_get_metadata_v1(
     params: JoinPoolParamsV1,
 ) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Circuit order: derived_member_id(0), vc_x(1), tx_binding(2), tx_nonce(3), vc_y(4)
+    // Circuit order: derived_member_id, vc_x, tx_binding, tx_nonce, vc_y — note `value_commit_y`
+    // is last, after the tx pair, not beside its x.
+    //
+    // The tx pair was `[zero, zero]` against a circuit that constrains `tx_binding` to
+    // `poseidon_hash(3, tx_commitment, tx_nonce)`; see `create_pool_get_metadata_v1` for the full
+    // note and for why this value is a constant rather than a transaction reference.
     zk_public_inputs.push((
         POOL_STAKE_ZKAS_JOIN_POOL_NS_V2.to_string(),
-        vec![params.derived_member_id, params.value_commit_x, pallas::Base::zero(), pallas::Base::zero(), params.value_commit_y],
+        vec![
+            params.derived_member_id,
+            params.value_commit_x,
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
+            pallas::Base::zero(),
+            params.value_commit_y,
+        ],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -312,10 +323,20 @@ fn process_create_pool_instruction(
         return Err(PoolStakeError::InvalidCoverageRatio.into());
     }
 
-    // Derive pool ID
-    let pool_id = derive_pool_id(wasm::util::get_verifying_block_height()?.get());
+    // The pool's identity is the value its own proof binds.
+    //
+    // `derived_pool_id` is computed in-circuit from the creator's public key, the config hash and
+    // the nonce (`create_pool.zk`), exposed as the third public instance, and published by
+    // `create_pool_get_metadata_v1` — so it is the one identifier here that the proof actually
+    // attests to. It used to be ignored in favour of `derive_pool_id(verifying_block_height)`,
+    // which made three things true at once: the proof-bound id was decorative, no client could
+    // predict the id of the pool it had just created (the height is not known when the proof is
+    // built), and two pools created in the same block could not coexist — the second would hit the
+    // duplicate guard below and be rejected as `PoolNotFound`.
+    let pool_id = params.derived_pool_id;
 
-    // Check pool doesn't already exist (shouldn't happen with unique ID)
+    // Check pool doesn't already exist
+
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
     if wasm::db::db_contains_key(registry_db, &pool_id.to_repr())? {
         return Err(PoolStakeError::PoolNotFound.into());
@@ -1050,12 +1071,6 @@ fn apply_update_pool_config_update(
 // ============================================================================
 // HELPERS
 // ============================================================================
-
-fn derive_pool_id(nonce: u64) -> pallas::Base {
-    use dwow_sdk::crypto::poseidon_hash;
-    use dwow_sdk::pasta::pallas;
-    poseidon_hash([pallas::Base::from(nonce)])
-}
 
 fn derive_stake_id(pool_id: pallas::Base, relayer_id: &[u8; 32], nonce: u64) -> pallas::Base {
     use dwow_sdk::crypto::poseidon_hash;
