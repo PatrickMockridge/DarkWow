@@ -349,21 +349,22 @@ after `genesis.md` and read the corresponding source in `src/contract/<name>/`.
 | Find a contract spec | [Contract Catalog](../contracts.md) |
 | Find a formal proof | [GeneralTheorem.lean](../../../proofs/lean/src/DarkFi/Combinatorial/GeneralTheorem.lean) |
 | Review security audit findings | [Contract Safety](../dev/contracts/safety.md) |
-| Check audit status | [Audit Documents](audit/README.md) |
-| Understand serialization conformance | [Serialization Handover](serialization-conformance-handover.md) |
+| Check what is still open | [Verification Obligation Register](verification-hazop.md) |
 
 ---
 
-## 13. Security Audits & Historical Handover
+## 13. Security Posture
 
-- **[Contract Safety — Audit Finding Status](../dev/contracts/safety.md)** — Verified status
-  of all security audit findings (Red Team + HAZOP + Comprehensive), consolidated and
-  verified against current code as of 2026-08-03. *Start here for current security posture.*
-- **[Audit Documents](audit/README.md)** — Directory index of the three original audit
-  reports (2026-07-31), preserved as historical snapshots with cross-audit contradiction
-  reconciliation.
-  - **[Red Team Findings](audit/red-team-findings.md)** — 47 findings with file:line verification.
-  - **[Red Team HAZOP Analysis](audit/red-team-hazop-analysis.md)** — 9 root cause families, 6 structural changes.
-  - **[Comprehensive Security Audit](audit/comprehensive-security-audit.md)** — ~314 findings, independent methodology.
-- **[Serialization Conformance Handover](serialization-conformance-handover.md)** —
-  Completed remediation of serialize/deserialize anti-patterns across 32 contracts (2026-07-27).
+- **[Contract Safety — Root Causes](../dev/contracts/safety.md)** — the twelve failure classes
+  contract vulnerabilities fall into, each with the rule it yields and the findings that taught
+  it. Every legacy finding-ID scheme maps into these through the alias table at its foot.
+  *Start here for security posture.*
+- **[Verification Obligation Register](verification-hazop.md)** — every property the system
+  must hold, what checks it, and **every open obligation**, including the residue promoted from
+  the HAZOP corpus's remediated documents.
+- **[Contract Safety Checklist](../dev/contracts/checklist.md)** — the operative pre-commit
+  gates, one or more per root cause.
+
+The 2026-07-31 audit reports (Red Team, HAZOP Analysis, Comprehensive) and the HAZOP findings
+documents were removed on 2026-09-22: a resolved finding is a lesson, and their open items are
+now rows in the register. Git history holds the full texts.

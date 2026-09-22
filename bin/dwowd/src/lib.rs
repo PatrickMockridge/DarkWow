@@ -1627,7 +1627,8 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
         // No ZK materials needed: coinbase/uncle/fee-collect are all plaintext.
         // UNVERIFIED(F2-6): needs cargo test -p dwowd --lib
         // The coinbase note binds this recipient's pk_H; the block header's
-        // `miner` field must carry the same key (coinbase-key-binding-hazop.md).
+        // `miner` field must carry the same key (enforced at `block_acceptor.rs`,
+        // genesis exempt — see `doc/src/dev/contracts/safety.md` RC5).
         let miner_pk = recipient.public().to_bytes();
         let prep = match prepare_block(
             &chain_state, &node.mining_state, node.mempool.as_ref(),

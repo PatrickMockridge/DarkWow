@@ -173,7 +173,8 @@ impl DwowNode {
         // No ZK materials needed: coinbase/uncle/fee-collect are all plaintext.
         // UNVERIFIED(F2-7): needs cargo test -p dwowd --lib
         // The coinbase note binds this recipient's pk_H; `header.miner` must
-        // carry the same key (coinbase-key-binding-hazop.md).
+        // carry the same key (enforced at `block_acceptor.rs`, genesis exempt —
+        // see `doc/src/dev/contracts/safety.md` RC5).
         let miner_pk = mining_recipient.public().to_bytes();
         let prep = match crate::prepare_block(
             &chain_state, &self.mining_state, self.mempool.as_ref(),

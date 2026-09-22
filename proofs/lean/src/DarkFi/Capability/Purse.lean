@@ -15,7 +15,8 @@ deposit→withdraw chain collides on the nullifier. Separating the old nonce
 (nullifier) from the new nonce (leaf), with the new nonce strictly increasing,
 makes the chain fresh.
 
-This is the HAZOP vector V2 (l1-write-path-hazop.md). The nullifier is modeled
+This is the HAZOP vector V2, carried as `OBL-C31` in
+`doc/src/arch/verification-hazop.md`. The nullifier is modeled
 as an opaque compression; its injectivity in the nonce is the crypto assumption.
 -/
 

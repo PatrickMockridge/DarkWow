@@ -54,12 +54,7 @@
   - [Transfer Specification](arch/consensus/transfer-spec.md)
   - [Fee Specification](arch/consensus/fee-spec.md)
   - [Merge Mining FFI](arch/consensus/merge-mining-ffi.md)
-  - [HAZID Report](arch/consensus/hazid-report.md)
   - [Node Startup Spec](arch/consensus/node-startup-spec.md)
-  - [Sync Audit HAZOP](arch/consensus/sync-audit-hazop.md)
-  - [Node Sync HAZOP](arch/consensus/node-sync-hazop.md)
-  - [L1 Capability Tests Phase Trace](arch/consensus/l1-capability-tests-phase-trace.md) [HISTORICAL]
-  - [L1 Capability Write-Path Trace](arch/consensus/l1-capability-write-path-trace.md) [HISTORICAL]
 
 ## ZK Primitives
   - [Spend Hooks](arch/zk/spend_hook.md)
@@ -89,27 +84,19 @@
   - [Sync Module](arch/sync.md)
     - [Sync Protocol (ρ-calculus)](arch/sync-protocol.md)
     - [Sync Conformance](arch/sync-conformance.md)
-    - [Sync HAZOP](arch/sync-hazop.md)
     - [Sync Red-Team Audit](arch/sync-red-team-audit.md)
 
 # Risk & Security Considerations
 
 - [Caveat Emptor: Token Economics & Adversarial Analysis](arch/economics-caveat-emptor.md)
 - [Security Analysis: Contract Audit Findings](arch/security-analysis.md)
-- [Upstream Security Hardening Findings](arch/upstream-security-findings.md)
 - [Quantum Threat Assessment](arch/quantum-threat.md)
 - [Contract Trust Model](arch/contract-trust-model.md)
 - [ZK Engineering Posture](arch/zk-engineering-posture.md)
 
 ## Audit Reports
   - [Audit Index](arch/audit/README.md)
-  - [Verification Obligation Register](arch/verification-hazop.md) ← what must be proved, and what checks it
-  - [Comprehensive Security Audit](arch/audit/comprehensive-security-audit.md)
-  - [Red Team Findings](arch/audit/red-team-findings.md)
-  - [Red Team HAZOP Analysis](arch/audit/red-team-hazop-analysis.md)
-  - [L1 Capability Tests Phase HAZOP](arch/audit/l1-capability-tests-phase-hazop.md)
-  - [L1 Write-Path HAZOP](arch/audit/l1-write-path-hazop.md)
-  - [HAZOP: Darkleaf in ContractCall Data](arch/hazop/hazop-darkleaf-in-contractcall-data.md)
+  - [Verification Obligation Register](arch/verification-hazop.md) ← what must be proved, what checks it, and every open obligation
 
 # Contracts
 
@@ -194,7 +181,6 @@
     - [Level 3: Containerized Localnet](dev/testing/level-3-localnet.md)
     - [Level 4: Containerized Devnet Node](dev/testing/level-4-devnet.md)
     - [Build Resource Tuning](dev/testing/build-resource-tuning.md)
-    - [Build Resource HAZOP](dev/testing/build-resource-hazop.md)
     - [Heavyweight Spec](dev/testing/heavyweight-spec.md)
     - [Fee Testing](dev/testing/fee-testing.md)
     - [Production Test Standard](dev/testing/production-test-standard.md)
@@ -206,10 +192,8 @@
 ## Contract Implementation
   - [Contract Developer Journey](dev/contracts/journey.md) ← Start here
   - [Contract Safety Checklist](dev/contracts/checklist.md)
-  - [Contract Safety (Root Causes)](dev/contracts/safety.md)
+  - [Contract Safety (Root Causes)](dev/contracts/safety.md) ← the twelve root causes, and the rule each yields
   - [Contract Standards](dev/contracts/standards.md)
-  - [AuthMint Security Analysis](dev/contracts/auth_mint_security_analysis.md) [HISTORICAL]
-  - [Serialization Conformance Handover](arch/serialization-conformance-handover.md) [HISTORICAL]
   - [Bridge Contract](dev/contracts/bridge.md)
   - [DEX Contract](dev/contracts/dex.md)
   - [Identity Contract](dev/contracts/identity.md)
@@ -286,10 +270,6 @@
   - [Deployooor](spec/contract/deploy/deploy.md)
     - [Concepts](spec/contract/deploy/concepts.md)
     - [Scheme](spec/contract/deploy/scheme.md)
-  - [Vesting (DEPRECATED)](spec/contract/vesting/vesting.md)
-    - [Concepts](spec/contract/vesting/concepts.md)
-    - [Model](spec/contract/vesting/model.md)
-    - [Scheme (DEPRECATED — no corresponding src/contract/vesting/)](spec/contract/vesting/scheme.md)
 
 ## DEP (shelved — upstream legacy documents, not maintained)
 - [DEP 0001: Version Message Info (accepted)](dep/0001.md)

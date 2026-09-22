@@ -23,7 +23,7 @@
 //! Syncs over the unified sync connection (`dwow_chain::sync_connection`),
 //! the same code path the mining/observer node uses. The wallet dials its
 //! configured peers directly — no hostlist, no seed discovery, no ManualSession
-//! divergence. Every connection failure is logged (sync-hazop.md R1/R2/R3).
+//! divergence. Every connection failure is logged (sync-protocol.md §9 S8).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

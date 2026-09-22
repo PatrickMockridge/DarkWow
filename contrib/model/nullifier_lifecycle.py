@@ -462,7 +462,8 @@ def test_full_nullifier_lifecycle():
 # ═══════════════════════════════════════════════════════════════════════════
 # L1 Capability Write-Path — purse/PN nullifier invariants (formal-first)
 # Mirrors proofs/lean/src/DarkFi/Capability/{Purse,PromissoryNote}.lean and
-# doc/src/arch/audit/l1-write-path-hazop.md (V2 purse-nonce-share, V3 PN-nested-chain).
+# doc/src/arch/verification-hazop.md (`OBL-C31`, which carries the l1 write-path
+# vectors V2 purse-nonce-share and V3 PN-nested-chain).
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _h(*args: bytes) -> bytes:

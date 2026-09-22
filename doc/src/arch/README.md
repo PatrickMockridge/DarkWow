@@ -114,12 +114,7 @@ doc/src/arch/
 │   ├── safety.md
 │   ├── merge-mining-ffi.md
 │   ├── node-startup-spec.md
-│   ├── hazid-report.md
-│   ├── sync-audit-hazop.md
-│   ├── node-sync-hazop.md
-│   ├── scaling.md
-│   ├── l1-capability-tests-phase-trace.md  # [HISTORICAL]
-│   └── l1-capability-write-path-trace.md   # [HISTORICAL]
+│   └── scaling.md
 ├── zk/                          # ZK & circuit documents
 │   ├── spend_hook.md
 │   ├── field_arithmetic.md

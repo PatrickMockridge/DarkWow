@@ -3,7 +3,7 @@
 # Report the peak resident set size (and wall-clock) of a command.
 #
 # Why: the build/test parallelism budget is derived from "memory per rustc" and
-# "memory per spawned node" (compile-fragilities-hazop.md F9). This wraps
+# "memory per spawned node" (doc/src/dev/testing/build-resource-tuning.md). This wraps
 # /usr/bin/time -v so those numbers are re-measurable instead of guessed.
 #
 # Usage:

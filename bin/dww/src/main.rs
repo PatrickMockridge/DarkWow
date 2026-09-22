@@ -48,7 +48,7 @@ fn run() -> Result<()> {
     // Install a tracing subscriber so net-layer warn!/error! are visible to the
     // operator. Without this, every connection failure (dial/TLS/magic/version) is
     // silently discarded — the root cause of the silent `peers=0` pipeline failures
-    // (doc/src/arch/sync-hazop.md R1). Defaults to WARN; connection failures emit
+    // (doc/src/arch/sync-protocol.md §9 S8). Defaults to WARN; connection failures emit
     // warn!/error!, so they surface here.
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::WARN)

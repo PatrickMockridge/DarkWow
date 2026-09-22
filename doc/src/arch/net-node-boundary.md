@@ -85,7 +85,7 @@ node.mining_state.sync_state.store(
 
 `mine` gates the miner (L3): a node mines only when it is at or above every
 peer tip AND is either the genesis authority or has at least one sync peer
-(node-sync-hazop.md F1). The result is written atomically to
+(the node-sync HAZOP's F1, whose document is removed; the property holds here). The result is written atomically to
 `mining_state.sync_state` as `SyncState` (§3) — the miner reads it via
 `SyncState::load()` (`lib.rs:1271`).
 
@@ -181,7 +181,7 @@ available at L1 but not yet wired at L2.
 The L1 `ban()`/blacklist is now on DarkWow terms: the wallet uses `BanPolicy::Relaxed`
 (never bans its fixed configured peers), and `HostColor::Black` entries expire after
 `BLACKLIST_EXPIRY_SECS` (recoverable) rather than "for the program duration"
-(`sync-hazop.md` R5).
+(the sync HAZOP's R5, whose document is removed — this is the property it required).
 
 Test F (`test_violator_exclusion_at_boundary`) — deferred until ban()
 wiring is complete.

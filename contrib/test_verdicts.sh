@@ -97,7 +97,8 @@ case "$mode" in
         echo "test_verdicts: running \`cargo test $*\` → $log" >&2
         # No filter, no truncation, no custom timeout: the whole run is the measurement.
         # RAYON_NUM_THREADS defaults to 10; export a lower value (e.g. 4) to bound LLVM
-        # codegen memory on memory-constrained shared hosts (compile-fragilities-hazop.md F4).
+        # codegen memory on memory-constrained shared hosts
+        # (doc/src/dev/testing/build-resource-tuning.md — the budget and its derivation).
         RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-10}" RUST_MIN_STACK=67108864 cargo test "$@" > "$log" 2>&1
         rc=$?
         echo "test_verdicts: cargo exit=$rc" >&2

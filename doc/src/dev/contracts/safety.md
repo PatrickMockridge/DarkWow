@@ -160,6 +160,13 @@ the source, so review reads it as protection, but no input makes it return failu
   RC2.
 * *A placeholder that passes as a value.* `signature: pallas::Base::zero()` compiles wherever a
   signature is expected. A scalar zero is not a signature.
+* *A verified artifact that does not have to be verified.* A VRF proof's output could be read without
+  the proof ever being checked, because "has been verified" was a fact the caller had to remember
+  rather than a property of the value. The repair shape is the type-state one — a `Verified<T>`
+  constructible only by the verifying function, so passing an unverified value where a verified one is
+  required does not compile. The same shape is the structural fix for the bridge's stub verifiers
+  (`OBL-C21`), and it is the reason `verify_*` functions that return `Ok(())` are a code smell: their
+  result is a unit, and a unit cannot carry the fact that the check happened.
 
 **The rule.** **Deny by default: enumerate the conditions that permit access, and reject everything
 else.** A function named `verify_*` must have a reachable `Err`. If step 2 requires step 1 to have
@@ -278,6 +285,10 @@ boundary.
   circuits recompiled with it; the VM synthesizer recognised only four magic constant names. Any
   circuit with a `Base` constant outside those four crashed at keygen. Part of the problem was a
   declaration with no functional purpose — `constrain_instance` already bound the public input.
+* *A shared domain between two different roles.* Schnorr signing used the same domain separator for
+  the nonce and the challenge, which is a Fiat-Shamir violation: the two values play different roles
+  in the transcript and must not be interchangeable. Separate domain constants fixed it. This is the
+  same rule as the 177 circuits — a separator identifies a *purpose*, so two purposes cannot share one.
 
 **The rule.** **Every hash that stands for a typed value carries a domain separator identifying its
 semantic purpose.** `poseidon_hash` is a type-erasure boundary; the domain constant restores the
@@ -530,7 +541,9 @@ guarantee is unlinkability; this class is the ways it leaks.
 * *A secret in a derived trait.* `SecretKey`'s and `Blind<F>`'s derived `Debug`/`Display` printed raw
   field elements. Fixed by manual `<redacted>` impls, `Drop` zeroisation, and gating `Display` behind
   a feature flag — but each such type needs individual audit, which is why a lint matters more than
-  the fix.
+  the fix. The same class, before it was found: `SecretKey` derived `Copy` and had no `Drop`, so key
+  material was duplicated around the stack and never zeroised. A secret type must be neither `Copy`
+  nor printable nor undroppable, and no one of the three is sufficient alone.
 
 **The rule.** **Authorization belongs in nullifiers, not in auxiliary data; and nothing
 identity-derived goes on-chain.** Hash identity material before using it as a key of any kind. Derive
@@ -576,6 +589,11 @@ not the default. A developer who does not read every optional setter gets the in
   `Default` means every deployment starts unprotected and operators must opt in.
 * *A random seed supplied as a constant.* The generic-prover path passed `[0u8; 32]` where the shell's
   random seed belonged, making every `blind:<name>` witness a publicly-known constant.
+* *An AEAD nonce of zeros.* Notes encrypted under a fixed `[0u8; 12]` nonce rather than one derived
+  from the ephemeral public key.
+* *A default key that is public.* `Keypair::default()` set the secret to `42`, so any
+  `unwrap_or_default()` on a keypair produced a private key the whole world holds. The `Default` impl
+  was removed rather than re-seeded — a type for which no safe default exists should have none.
 * *A default password.* A wallet shipped with `"changeme"`.
 
 **The rule.** **`Default::default()` must be the secure configuration.** Opt out for exceptions;

@@ -8,8 +8,7 @@ spec and code disagree, the code is the bug; fix the code, not the spec.
 It is founded in the ρ-calculus (see
 [Type System §0](type-system.md#0--foundational-calculus) and
 [§10 — P2P Network as Replicated Process Nets](type-system.md#10--p2p-network-as-replicated-process-nets)).
-It is the normative spec alongside the HAZOP record in
-[sync-hazop.md](sync-hazop.md). Uses SHALL / MUST / SHALL NOT / MUST NOT per RFC 2119.
+It is the normative spec for the sync rail. Uses SHALL / MUST / SHALL NOT / MUST NOT per RFC 2119.
 
 ---
 
@@ -19,7 +18,8 @@ Sync is a **single, minimal, pull-based chain sync** — one code path for the w
 the observer, and the mining node. It is shaped like Monero's chain sync (connect →
 handshake → pull blocks in batches) and Electrum's simple client pull. Wallet and node
 share this one rail — no divergent session/hostlist/seed/refine/ban P2P slice (the root
-cause of four silent wallet-sync failures; see `sync-hazop.md`).
+cause of four silent wallet-sync failures; the sync HAZOP's R3/R4, now `RC1` and `RC5` in
+`dev/contracts/safety.md`).
 
 Production pattern: Monero's `handle_get_objects`/`handle_get_hashes` batch pull and
 Electrum's client-driven tip query; the single-rail design is DarkWow-specific.
@@ -241,7 +241,8 @@ error** — there is no silent-fail path.
 S8 is load-bearing: the wallet installs a tracing subscriber
 (`bin/dww/src/main.rs`), and the transport logs its failures
 (`src/net/connector.rs`, `transport/{tcp,tls,mod}.rs`, `acceptor.rs`) — a sync failure
-cannot pass silently (`sync-hazop.md` R1/R2).
+cannot pass silently (S8 was the sync HAZOP's R1/R2; their findings documents are
+removed and the root causes are `RC1` and `RC5` in `dev/contracts/safety.md`).
 
 Production pattern: Bitcoin Core's `CheckMagicAndCommand`/message-size guards, geth's
 `discard`-on-oversize, and Monero's `CORE_SYNC_DATA_MAX_SIZE`; S8's no-silent-fail is
@@ -285,7 +286,7 @@ The connection reuses the clean primitives and writes fresh only the hodge-podge
 > The wallet's P2P `ManualSession` (which drives `Peers`/`is_synced()`) still carries the
 > `dwow_core::net` ban/blacklist; on DarkWow terms the wallet sets
 > `BanPolicy::Relaxed` (never bans its configured peers) and the `Black` hostlist now expires
-> after `BLACKLIST_EXPIRY_SECS` (`sync-hazop.md` R5).
+> after `BLACKLIST_EXPIRY_SECS` (the sync HAZOP's R5, whose document is removed).
 
 The wallet's **transaction broadcast** now rides this same `SyncPeer`/`SyncServer` rail
 via a `BroadcastTx` command — the wallet no longer keeps a separate `dwow_core::net::P2p`

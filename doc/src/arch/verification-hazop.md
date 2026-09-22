@@ -12,11 +12,11 @@
 >
 > **What changed on 2026-09-22.** The *root causes* are now stated once: `safety.md` was rewritten
 > around twelve of them, and every legacy scheme — the old `Lesson 1`–`25`, the circuit HAZOP's
-> `RC1`–`RC5`, `hazid-report.md`'s colliding `RC1`–`RC6`, `HAZOP.lean`'s seven patterns, the red-team
-> `RC-A`–`RC-I` — maps into them through the alias table at that document's foot. The *findings
-> documents* whose items are all resolved were removed, and everything they left open was promoted
-> into the section below. So the corpus no longer "stays where it is" for those; the remaining audit
-> documents still do, and are cited here as before.
+> `RC1`–`RC5`, the consensus HAZID report's colliding `RC1`–`RC6`, `HAZOP.lean`'s seven patterns, the
+> red-team `RC-A`–`RC-I` — maps into them through the alias table at that document's foot. The
+> *findings documents* whose items are all resolved were removed, and everything they left open was
+> promoted into the section above. So the corpus no longer "stays where it is" for those; the
+> remaining audit documents still do, and are cited here as before.
 
 ## Method
 
@@ -869,6 +869,46 @@ recorded rather than resolved.
 | OBL-C33 | A per-peer failure score persists across sync passes, so a peer that fails is deprioritised rather than reset each tick | node-sync `F5`, PARTIALLY RESOLVED (`sync-protocol.md` §13.3) | M |
 | OBL-C34 | The fail-closed genesis handshake and its bootstrap path are re-read against the `P2-7` rework before this finding is called closed: the state machine folded `WaitingForGenesis` into `Behind` (`bin/dwowd/src/lib.rs:161-179`) and the peer's genesis is no longer compared in the sync handshake (`linear_genesis_hash` survives only on the merge-mining path), so the analysis describes a handshake that has since changed | daemon-sync `V1`–`V4` | H |
 
+### The consensus HAZID's residue (`OBL-C35`+)
+
+The consensus HAZID report was a *hazard register*, not a findings list: 4 CATASTROPHIC, 12 HIGH and
+18 MEDIUM, each named and each with a status. Its six root causes are `RC1`–`RC12` material now, and
+three hazards it records as RESOLVED stay resolved — `H-C1` (fork selection reconnects through the
+full pipeline), `H-C3` (the exponential reward schedule, `fixed_pow_decay`), `H-H1` (consensus
+atomics are `SeqCst` or `Acquire`/`Release`); `H-H5` (`serde_json` block storage) is closed above.
+Everything else it left open is below, one proposition per hazard, because collapsing 28 named
+hazards into a summary is how a HAZOP ends up with items nobody can find.
+
+| ID | Proposition | HAZID | Sev |
+|---|---|---|---|
+| OBL-C35 | A stratum-mined block is broadcast on accept, as the merge-mining path now does — the stratum path commits locally and peers learn of it only on the 30-second sync poll | `H-C2`, CATASTROPHIC, residual | C |
+| OBL-C36 | No serialization fallback substitutes a zero vector for a dedup hash: a `vec![0u8; 32]` on failure makes duplicate competing blocks acceptable and valid ones droppable | `H-C4` | C |
+| OBL-C37 | `saturating_sub` on block timestamps does not mask a decreasing timestamp as a zero interval | `H-H2` | H |
+| OBL-C38 | A lock poisoned by one panic does not bring down the node — 50+ `.lock().unwrap()` sites have no recovery | `H-H3` | H |
+| OBL-C39 | Every in-memory cache is restored from sled on restart: `uncle_coin_set` never is, so duplicate uncle inclusion is admitted | `H-H4` | H |
+| OBL-C40 | Uncle merge detects duplicate-key conflicts instead of letting the second write silently overwrite the first | `H-H6` | H |
+| OBL-C41 | Mempool transactions are re-inserted on mining error paths in every miner, not only the RPC miner | `H-H7` | H |
+| OBL-C42 | `take_competing_blocks()` follows the fallible work in all four call sites; it is destructive and currently precedes it in three | `H-H8` | H |
+| OBL-C43 | Concurrent stratum logins cannot observe a mismatched template+config pair | `H-H9` | H |
+| OBL-C44 | A reorg re-admits the disconnected block's transactions to the mempool, as Bitcoin Core does | `H-H10` | H |
+| OBL-C45 | The contracts tree and the supply-chain tree reconcile automatically; no `verify_cumulative_supply()` exists and the `get_cumulative_supply` RPC returns stored state unverified | `H-H11` | H |
+| OBL-C46 | The non-ZK template fallback, which produces all-zero cryptographic material, is removed or gated rather than left as dead code in the consensus hot path | `H-H12` | H |
+| OBL-C47 | `Clone` on `PoWConsensus` does not yield independent atomics, and `save_to_batch` does not read `target` outside its lock | `H-M1`, `H-M2` | M |
+| OBL-C48 | Deployooor post-processing participates in duplicate-key detection during merge | `H-M3` | M |
+| OBL-C49 | Malformed ZK metadata is not masked by `unwrap_or_default`, nor overlay failure by `aggregate().unwrap_or_default()` in `accept_block`, nor a WASM `total_supply` failure by `unwrap_or(0)` | `H-M4`, `H-M6`, `H-M14` | M |
+| OBL-C50 | Error variants are matched by type, not by string matching in `TxBackend::get_tx` | `H-M5` | M |
+| OBL-C51 | Cumulative supply does not silently saturate at `u64::MAX` (`saturating_add`), and `compute_reward` does not hide pin-reward overflow (`saturating_sub`) | `H-M7`, `H-M13` | M |
+| OBL-C52 | Competing-block dedup hashes use the block hash, not a header serialization | `H-M8` | M |
+| OBL-C53 | `consensus.load()` failure is not discarded — a node does not start on silently corrupted state | `H-M9` | M |
+| OBL-C54 | Template read/write is not racy between stratum login and submit | `H-M10` | M |
+| OBL-C55 | `mm_jobs` eviction at capacity is FIFO, not clear-all | `H-M11` | M |
+| OBL-C56 | A miner does not mine during a `SYNC_BEHIND` transition (no sync-state TOCTOU) | `H-M12` | M |
+| OBL-C57 | The identity point is not used as a "not initialized" sentinel, conflating that with a validly zero value | `H-M15` | M |
+| OBL-C58 | A Pedersen chain integrity check exists | `H-M16` | M |
+| OBL-C59 | `prev_coin` bridging between the contracts tree and the supply-chain tree is verified | `H-M17` | M |
+| OBL-C60 | `expected_reward` does not truncate u64→u32 (currently safe for ~16,000 years, and a truncation rather than a bound) | `H-M18` | M |
+| OBL-C61 | Two controls the HAZID names as residual: an automated reorg regression test (diverge → heavier peer → converge, covering WASM state and cumulative supply across disconnect/reconnect), and a CI test comparing `expected_reward()` against the spec formula | `H-C1`/`H-C3` residuals | M |
+
 **Closed on re-reading, recorded so they are not re-carried:** `C-6` (coinbase maturity after the sled
 commit) — the check at `src/linear/src/chain_state.rs:1117` now precedes every `apply_batch` at
 `:1340-1349`, all of them inside `connect_block`; `H-3` (`serde_json` for block storage) —
@@ -948,9 +988,10 @@ moved. Ordered by what unblocks the most:
 
 ## Cross-references
 
-* Finding corpus: `dev/contracts/safety.md` (the only partial ledger), `arch/audit/*`,
-  `arch/security-analysis.md`, `arch/hazid-report.md`, `arch/sync-hazop.md`,
-  `arch/consensus/node-sync-hazop.md`, `arch/audit/l1-write-path-hazop.md`
+* Root causes: `dev/contracts/safety.md` (`RC1`–`RC12`, and the alias table mapping every legacy
+  finding-ID scheme into them). The 2026-07-31 audit corpus and the HAZOP findings documents were
+  removed on 2026-09-22; their open items are the `OBL-C16`+ rows above, and their texts are in git
+  history. Remaining: `arch/security-analysis.md`, `arch/audit/README.md`
 * Lean HAZOP register: `proofs/lean/src/DarkFi/HAZOP.lean` + `HAZOP/{Critical,High,Elevated}.lean`
   (the circuit pass, and the assumption pass added alongside it)
 * Assumption boundary: `proofs/lean/src/DarkFi/Axioms.lean`; checker `script/check_lean_axioms.py`

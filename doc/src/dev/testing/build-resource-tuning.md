@@ -140,8 +140,9 @@ recommended method for persistent overrides.
 add a new `cargo build` to a Dockerfile, use `-j ${CARGO_BUILD_JOBS}`, never a
 hardcoded `-j N`.
 
-For a deeper analysis of how these valves interact and why small loosenings cascade,
-see [Build Resource HAZOP](build-resource-hazop.md).
+For a deeper analysis of how these valves interact and why small loosenings cascade, see the
+build-resource HAZOP — removed 2026-09-22; its barriers' status and the one it left unconfigured
+are recorded in the [Verification Obligation Register](../../arch/verification-hazop.md).
 
 ### Method 4: Edit the Dockerfile directly
 

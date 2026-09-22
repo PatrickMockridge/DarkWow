@@ -65,7 +65,9 @@ COMPUTE_SOURCE_HASH = $(shell for f in $(SOURCE_MANIFEST); do echo "$$f $$(sha25
 # This guard is why deployooor broke the genesis pin. Its WASM_SRC includes
 # src/sdk, so an edit there made the WASM out of date; with no guard, and with
 # `all` as this file's default goal, `make test` rebuilt it silently and the
-# genesis merkle root moved. See doc/src/arch/audit/genesis-consensus-audit.md.
+# genesis merkle root moved. See doc/src/arch/verification-hazop.md (the residue
+# table, which carries the genesis/consensus audit's open items) and
+# doc/src/arch/genesis.md for the pinning rule.
 check-source-hash:
 	@if [ -f $(SOURCE_HASH_FILE) ]; then \
 		OLD_HASH=$$(cat $(SOURCE_HASH_FILE)); \

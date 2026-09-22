@@ -1,38 +1,34 @@
 # Security Audit Documents
 
-Three independent audit documents were produced on 2026-07-31. They are preserved here as historical snapshots. Current status of all findings is maintained in [safety.md](../../dev/contracts/safety.md).
+The 2026-07-31 audit corpus lived here: the independent Red Team audit (47 findings), its HAZOP
+root-cause analysis (9 families, 6 structural changes), the Comprehensive Security Audit
+(~314 findings, independent methodology), the two L1 capability write-path HAZOPs, and the
+Genesis & Consensus adversarial audit.
 
-## Document Relationship
+**They were removed on 2026-09-22.** A resolved finding is a lesson, and lessons now live as root
+causes: `RC1`–`RC12` in [Contract Safety](../../dev/contracts/safety.md), with every legacy ID —
+red-team `C-/H-/M-/L-/SC-`, `RC-A`–`RC-I`, the two colliding `RC1–RC6` schemes — mapped in the alias
+table at that document's foot. The items these documents left **open** are rows in the
+[Verification Obligation Register](../verification-hazop.md), which is now the only place an open
+obligation is recorded. Git history holds the full texts.
 
-```
-RED_TEAM_AUDIT (47 findings)
-    │
-    ▼
-HAZOP_ROOT_CAUSE (9 root cause families, 6 structural changes)
-    
-SECURITY_AUDIT (~314 findings, independent methodology)
-```
+## What the corpus is worth remembering
 
-1. **[Red Team Findings](red-team-findings.md)** — Independent adversarial audit. 47 findings (11 CRITICAL, 16 HIGH, 15 MEDIUM, 5 LOW). Every finding verified against source code with exact file paths and line numbers. **Highest-confidence source.**
+**Two independent audits contradicted each other, and the more specific one was right.** The Red
+Team audit and the Comprehensive audit examined the same code within 24 hours by different
+methodologies and disagreed on three points: TLS TOFU pinning (the Comprehensive audit called it
+missing and MITM-able; it was implemented, with a Blake3 fingerprint comparison that rejects on
+mismatch), `SecretKey`'s `Debug` impl (called a full key leak; it was already `<redacted>` — though
+the Comprehensive audit was right that `Display` leaked, by design, for CLI export), and chain-work
+recomputation (called absent; it recomputes in full on startup and validates against the sled cache).
+File:line verification beat breadth on all three.
 
-2. **[Red Team HAZOP Analysis](red-team-hazop-analysis.md)** — Root cause analysis of the 47 Red Team findings. Groups into 9 root cause families (RC-A through RC-I). Proposes 6 structural changes (SC-1 through SC-6). Includes implementation priority matrix: 46 fixes across 5 tiers.
+The generalisation is the reason both kinds of audit are worth running and why neither is
+authoritative alone: **a broad sweep surfaces what a targeted audit never looks at, and a targeted
+audit resolves what a broad sweep can only assert.** When they disagree, read the code — which is
+what settled all three.
 
-3. **[Comprehensive Security Audit](comprehensive-security-audit.md)** — Broader audit: ~314 findings across 7 subsystems, 12 parallel agents. Maps against 23 safety.md lessons and 5 HAZOP root causes. **Independent methodology from the Red Team audit** — some findings contradict the Red Team audit (see below).
-
-4. **[L1 Capability Tests Phase HAZOP](l1-capability-tests-phase-hazop.md)** — HAZOP study of the L1 capability write-path, capability-tests phase.
-
-5. **[L1 Write-Path HAZOP](l1-write-path-hazop.md)** — HAZOP study of the L1 capability write-path.
-
-## Known Contradictions
-
-| Contradiction | Red Team | Security Audit | Resolution |
-|---------------|----------|---------------|------------|
-| TLS TOFU pinning | IMPLEMENTED at `tls.rs:156-173` | H1: missing, MITM-able | **Red Team correct.** Blake3 fingerprint comparison with rejection on mismatch |
-| SecretKey Debug | FIXED — `<redacted>` at `keypair.rs:91-95` | C14: leaks full key material | **Red Team correct on Debug.** Security Audit valid on Display (base58 leak by design for CLI export) |
-| Chain work recomputation | FIXED at `chain_state.rs:168-196` | H7: not recomputed | **Red Team correct.** Full recompute on startup with sled-cache validation |
-
-These contradictions exist because the two audits used independent methodologies on the same codebase within the same 24-hour period. The Red Team audit's file:line verification provides higher confidence for specific claims; the Security Audit's broader sweep caught issues the Red Team did not examine.
-
-## Current Status
-
-As of 2026-08-03, 31+ remediation commits have been applied since these documents were created. See [safety.md](../../dev/contracts/safety.md) for per-finding verified status.
+One finding was withdrawn rather than resolved: the block-size gate was measured against JSON, not
+the binary encoding it was meant to bound, so the finding's premise was wrong rather than the code.
+That is a third failure mode worth naming beside *right* and *wrong* — an audit claim can be
+unfalsifiable as stated. Withdrawn items are recorded as such there, and here.

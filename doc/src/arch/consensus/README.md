@@ -23,16 +23,11 @@
 | Document | Topic |
 |----------|-------|
 | [safety.md](safety.md) | Fee system — cross-stack coordination safety |
-| [hazid-report.md](hazid-report.md) | HAZID analysis of consensus edge cases |
-| [sync-audit-hazop.md](sync-audit-hazop.md) | Miner sync — adversarial audit + HAZOP |
-| [node-sync-hazop.md](node-sync-hazop.md) | Node sync HAZOP + guide-word study |
 
-## Historical Snapshots
-
-| Document | Topic |
-|----------|-------|
-| [l1-capability-tests-phase-trace.md](l1-capability-tests-phase-trace.md) | [HISTORICAL] L1 capability write-path — capability-tests phase delivery trace |
-| [l1-capability-write-path-trace.md](l1-capability-write-path-trace.md) | [HISTORICAL] L1 capability write-path — ρ-calculus trace |
+The consensus HAZID report, the sync HAZOP pair and the two L1 capability traces were removed
+on 2026-09-22. The root causes they identified are `RC1`–`RC12` in
+[Contract Safety](../../dev/contracts/safety.md), and the items they left open are rows in the
+[Verification Obligation Register](../verification-hazop.md).
 
 ## Design Exploration
 

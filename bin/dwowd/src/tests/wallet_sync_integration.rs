@@ -457,7 +457,7 @@ fn test_sync_connection_end_to_end() {
         let refused_url = Url::parse(&format!("tcp+tls://127.0.0.1:{refused}")).unwrap();
         assert!(
             SyncPeer::dial(refused_url, DRKW_MAGIC, None, Duration::from_secs(2)).await.is_err(),
-            "dial to a refused port must return an error (regression for sync-hazop.md R1/R2)"
+            "dial to a refused port must return an error (sync-protocol.md §9 S8: no silent-fail path)"
         );
 
         // Negative: magic mismatch must fail the handshake.

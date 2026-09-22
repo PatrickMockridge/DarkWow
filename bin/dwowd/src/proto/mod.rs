@@ -124,7 +124,8 @@ impl DwowP2pHandler {
 
         // Unified sync connection server — serves GetTip/GetBlocks on a dedicated
         // sync port (inbound + SYNC_PORT_OFFSET), separate from the tx/broadcast P2P
-        // port, so the wallet and node both use the same sync path (sync-hazop.md R3).
+        // port, so the wallet and node both use the same sync path
+        // (doc/src/arch/sync-protocol.md §8, the unified connection).
         // Spawned here (consumed) so the non-Sync PtListener never crosses threads.
         if let (Some(cs), Some(addr)) = (&chain_state, settings.inbound_addrs.first()) {
             let mut sync_addr = addr.clone();
