@@ -109,6 +109,12 @@ run_gate "Lean assumption boundary (axioms/budgets)" \
 
 run_gate "Python: pipeline model"          python3 contrib/model/pipeline_model.py
 run_gate "Python: supply chain model"      python3 contrib/model/supply_chain_model.py
+# The three-chain merge-mining model, whose "CARIBINA rejects the attacker fork" table
+# `doc/src/arch/caribina.md` quotes. It ran nowhere until 2026-09-22, so the table's numbers sat in
+# the docs unchecked while the model's Caribina settlement was measured on the very chain under
+# attack (see OBL-C66 and the finality-widget campaign). It self-verifies: a failing assertion exits
+# 1, so it is a gate and not just a printout.
+run_gate "Python: merge mining model"      python3 contrib/docker/darkwow-testnet/merge_mining_model.py
 
 if [ "$TIER" = "--tier 2" ]; then
     run_gate "Docker test pipeline (native, 2 wallets)" \

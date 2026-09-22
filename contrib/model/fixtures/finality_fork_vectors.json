@@ -1,0 +1,316 @@
+{
+  "spec": "contrib/docker/darkwow-testnet/merge_mining_model.py",
+  "generated_by": "python3 contrib/docker/darkwow-testnet/merge_mining_model.py --emit-fixture",
+  "rule": "A DarkWow block is Caribina-finalized iff its anchor is authentic (the DataItem's signer is the key committed in the block's mined region) AND the Arweave block containing the DataItem has reached `settle_blocks` confirmations, measured in ARWEAVE height.",
+  "consumer": "Stage 3 of the finality-widget campaign. Deliberately unwritten until the Rust predicate exists \u2014 a function added solely to read this file would be a verifier with no caller, which is the defect OBL-C63 records.",
+  "cases": [
+    {
+      "name": "settled_one_block_later",
+      "arweave_height": 5,
+      "settle_blocks": 1,
+      "blocks": [
+        {
+          "height": 1,
+          "arweave_height": 1,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 2,
+          "arweave_height": 2,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 3,
+          "arweave_height": 3,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 4,
+          "arweave_height": 4,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 5,
+          "arweave_height": 5,
+          "authentic": true,
+          "has_anchor": true
+        }
+      ],
+      "expected_finalized_heights": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "note": "Arweave at 5 with settle=1: heights 1..4 settled, 5 pending"
+    },
+    {
+      "name": "nothing_settled_early",
+      "arweave_height": 1,
+      "settle_blocks": 1,
+      "blocks": [
+        {
+          "height": 1,
+          "arweave_height": 1,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 2,
+          "arweave_height": 2,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 3,
+          "arweave_height": 3,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 4,
+          "arweave_height": 4,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 5,
+          "arweave_height": 5,
+          "authentic": true,
+          "has_anchor": true
+        }
+      ],
+      "claimed_darkwow_height": 1000,
+      "expected_finalized_heights": [],
+      "note": "settlement is Arweave's height; no DarkWow height can substitute for it"
+    },
+    {
+      "name": "everything_settles_eventually",
+      "arweave_height": 1000,
+      "settle_blocks": 1,
+      "blocks": [
+        {
+          "height": 1,
+          "arweave_height": 1,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 2,
+          "arweave_height": 2,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 3,
+          "arweave_height": 3,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 4,
+          "arweave_height": 4,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 5,
+          "arweave_height": 5,
+          "authentic": true,
+          "has_anchor": true
+        }
+      ],
+      "expected_finalized_heights": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "note": "given enough Arweave blocks every published authentic anchor settles"
+    },
+    {
+      "name": "forged_anchor_never_settles",
+      "arweave_height": 1000,
+      "settle_blocks": 1,
+      "blocks": [
+        {
+          "height": 1,
+          "arweave_height": 1,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 2,
+          "arweave_height": 2,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 3,
+          "arweave_height": 3,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 4,
+          "arweave_height": 4,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 5,
+          "arweave_height": 5,
+          "authentic": false,
+          "has_anchor": true
+        }
+      ],
+      "expected_finalized_heights": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "note": "an anchor signed by a key the block does not commit confers nothing"
+    },
+    {
+      "name": "unpublished_anchor_never_settles",
+      "arweave_height": 1000,
+      "settle_blocks": 1,
+      "blocks": [
+        {
+          "height": 1,
+          "arweave_height": 1,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 2,
+          "arweave_height": 2,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 3,
+          "arweave_height": 3,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 4,
+          "arweave_height": 4,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 5,
+          "arweave_height": null,
+          "authentic": true,
+          "has_anchor": false
+        }
+      ],
+      "expected_finalized_heights": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "note": "a miner-set transaction id with no Arweave block behind it settles nothing"
+    },
+    {
+      "name": "monero_confirmations_are_separate",
+      "arweave_height": 1000,
+      "settle_blocks": 3,
+      "blocks": [
+        {
+          "height": 1,
+          "arweave_height": 1,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 2,
+          "arweave_height": 2,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 3,
+          "arweave_height": 3,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 4,
+          "arweave_height": 4,
+          "authentic": true,
+          "has_anchor": true
+        },
+        {
+          "height": 5,
+          "arweave_height": 5,
+          "authentic": true,
+          "has_anchor": true
+        }
+      ],
+      "expected_finalized_heights": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "note": "settle_blocks is in Arweave blocks; the Monero gadget counts Monero blocks and is modelled by get_monero_finalized_blocks, not by this table"
+    }
+  ],
+  "superseded_rule_for_contrast": {
+    "rule": "finalized iff `caribina_tx_id is not None` AND `darkwow_height - block.height >= settle_blocks` \u2014 measured on the chain under attack",
+    "arweave_height": 1,
+    "claimed_darkwow_height": 1000,
+    "settle_blocks": 1,
+    "blocks": [
+      {
+        "height": 1,
+        "arweave_height": 1,
+        "authentic": true,
+        "has_anchor": true
+      },
+      {
+        "height": 2,
+        "arweave_height": 2,
+        "authentic": true,
+        "has_anchor": true
+      },
+      {
+        "height": 3,
+        "arweave_height": 3,
+        "authentic": true,
+        "has_anchor": true
+      },
+      {
+        "height": 4,
+        "arweave_height": 4,
+        "authentic": true,
+        "has_anchor": true
+      },
+      {
+        "height": 5,
+        "arweave_height": 5,
+        "authentic": true,
+        "has_anchor": true
+      }
+    ],
+    "would_finalize_heights": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "note": "Recorded because the difference is the finding. Test 18c asserts the live rule does NOT finalize these; if it ever does, the circularity has returned."
+  }
+}

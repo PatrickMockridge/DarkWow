@@ -312,13 +312,26 @@ hashpower:
 | **ANCHOR** (Monero) | 1/5 (20%) | 4 | Accepted (partial) |
 | **CARIBINA** (Arweave) | 0/5 (0%) | 5 | **Rejected** |
 
-> **Read that table as a statement about the model, not about the node.** The model's
-> `get_caribina_finalized_blocks` finalises on `has_caribina and caribina_tx_id is not None` — it assumes
-> the anchor is real — and measures settlement against `current_height`, the very chain the attacker is
-> rewriting. The Rust implements a *weaker* rule than the model (no authentication at all), and the model
-> implements a rule the Rust has no data to support (it carries no real anchor). So the table is not
-> evidence about DarkWow; it is evidence that the model's premise was never checked against the code.
-> Correcting both, and pinning one to the other with a conformance fixture, is `OBL-C63` and `OBL-C66`.
+> **Read that table as a statement about the model, not about the node.** Its numbers were produced by a
+> model whose Caribina settlement was measured against `current_height` — the very chain the attacker is
+> rewriting — and whose anchors were assumed real. That made the CARIBINA column circular: a 51% miner
+> advanced its own anchors toward finality by mining.
+>
+> **That was corrected on 2026-09-22.** Settlement is now counted in **Arweave** blocks against
+> Arweave's own height, advanced by `ArweaveChainState` on wall-clock time, and an anchor must be
+> *authentic* — the key that signed the DataItem has to be the key the block's mined region commits —
+> before it confers anything. The corrected model has tests for both properties plus one that pins the
+> superseded circular rule and asserts the two rules disagree, so the circularity cannot return
+> silently.
+>
+> **The numbers above survived the correction unchanged** (reproduce with
+> `python3 contrib/docker/darkwow-testnet/merge_mining_model.py`, which is now a gate in
+> `scripts/run-all-tests.sh`). That is the useful result: the claim was not an artefact of the
+> circularity — but nothing before this could have told the difference, which is why the correction
+> mattered. What remains untrue is the *node's* half: the Rust still enforces on unverified header
+> fields, so it implements a weaker rule than the corrected model. Closing that is `OBL-C63`–`OBL-C66`;
+> the model's rule is exported for it as
+> `contrib/model/fixtures/finality_fork_vectors.json`.
 
 ## Source Files
 

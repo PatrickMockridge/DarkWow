@@ -28,11 +28,13 @@ Run:
 
 from __future__ import annotations
 
+import json
 import math
 import random
 import sys
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 
 
@@ -106,6 +108,12 @@ ANCHOR_MIN_CONFIRMATIONS: int = 3
 # Arweave block time is ~2 minutes, so an anchor settles after ~1 DarkWow block
 CARIBINA_SETTLE_BLOCKS: int = 1
 
+# Arweave's own block time. Caribina settlement is measured in ARWEAVE blocks against ARWEAVE's
+# height, never in DarkWow blocks against the DarkWow chain's height — see the note on
+# `get_caribina_finalized_blocks`. This constant is what makes the Arweave chain the exogenous
+# clock the security argument needs.
+ARWEAVE_BLOCK_TIME: float = 120.0
+
 
 # ============================================================================
 # PowData enum — header_store.rs:44-49
@@ -176,7 +184,18 @@ class DarkWowBlock:
     anchor_monero_hash: Optional[bytes] = None
     # Caribina fields (Mode C — Arweave)
     caribina_tx_id: Optional[bytes] = None  # 32-byte Arweave TX ID
-    caribina_confirmed: bool = False  # True once Arweave block settles
+    caribina_confirmed: bool = False  # True once the Arweave block containing it settles
+    # The Arweave height the DataItem landed in. Assigned by the ARWEAVE chain, not by the miner:
+    # it is the settlement clock, so a DarkWow adversary cannot choose it. `None` means the
+    # DataItem was never published, and such an anchor confers no finality.
+    caribina_arweave_height: Optional[int] = None
+    # Authorship. `caribina_owner` is the key that signed the DataItem (it travels with the
+    # anchor); `anchor_committed_owner` is the key committed inside the block's PoW-covered
+    # region. Authentic iff they are equal — which is what stops a relaying peer attaching an
+    # anchor to a block it did not mine. Modelled here because the Rust side has no such field
+    # yet; see OBL-C64 and Stage 3 of the finality-widget campaign.
+    caribina_owner: Optional[bytes] = None
+    anchor_committed_owner: Optional[bytes] = None
 
     @property
     def hash_int(self) -> int:
@@ -570,17 +589,71 @@ def get_monero_finalized_blocks(
     return finalized | finalized_ancestors
 
 
+def _superseded_circular_rule_for_contrast(
+    canonical_chain: list[DarkWowBlock],
+    darkwow_height: int,
+    settle_blocks: int = CARIBINA_SETTLE_BLOCKS,
+) -> set[bytes]:
+    """The rule `get_caribina_finalized_blocks` used until 2026-09-22, kept **only** so a test can
+    assert that the two rules disagree.
+
+    It finalizes on `caribina_tx_id is not None` and counts settlement as
+    `darkwow_height - block.height` — i.e. against the chain an adversary is rewriting. It is not
+    called by anything except `test_caribina_finality_is_not_circular` below, which asserts that a
+    long DarkWow chain settles anchors it should not. Do not wire this back in: its whole defect is
+    that a 51% miner advances its own anchors toward finality by mining.
+    """
+    finalized: set[bytes] = set()
+    for block in canonical_chain:
+        if block.has_caribina:
+            if darkwow_height - block.height >= settle_blocks:
+                finalized.add(block.hash)
+    return finalized
+
+
+def caribina_anchor_is_authentic(block: DarkWowBlock) -> bool:
+    """True iff the anchor's signer is the key this block committed.
+
+    Two independent conditions, both necessary:
+
+      * the block names an Arweave transaction (`caribina_tx_id`), so an anchor exists at all; and
+      * the key that signed the DataItem is the key committed in the block's own mined region.
+
+    The second is what makes the anchor *about this block*. Without it a relaying peer can attach
+    an anchor — real, published, signed by anyone — to a block it did not mine, and the block then
+    acquires finality its miner never claimed. `caribina_tx_id is not None` alone, which is what
+    this model used until 2026-09-22, asserts only that the *miner* said so.
+    """
+    return (
+        block.caribina_tx_id is not None
+        and block.caribina_owner is not None
+        and block.anchor_committed_owner is not None
+        and block.caribina_owner == block.anchor_committed_owner
+    )
+
+
 def get_caribina_finalized_blocks(
     canonical_chain: list[DarkWowBlock],
-    current_height: int,
+    arweave_height: int,
     settle_blocks: int = CARIBINA_SETTLE_BLOCKS,
 ) -> set[bytes]:
     """Find blocks finalized by Caribina (Arweave) anchors.
 
-    A block is finalized if it has a Caribina anchor and the Arweave
-    block containing it has settled (current_height - block_height >=
-    settle_blocks). Caribina settlement is much faster than Monero —
-    typically 1 DarkWow block (~2 min) vs 3 Monero blocks (~6 min).
+    A block is finalized iff its anchor is authentic (`caribina_anchor_is_authentic`) and the
+    Arweave block containing the DataItem has settled: `arweave_height -
+    block.caribina_arweave_height >= settle_blocks`.
+
+    **`arweave_height` is Arweave's height, and that is the point.** This function used to take a
+    DarkWow height and count `current_height - block.height`, where `current_height` was
+    `len(canonical_chain)` — the chain under attack. An adversary mining DarkWow therefore advanced
+    its own anchors toward finality, and the model's headline result ("CARIBINA: the attacker's fork
+    is rejected for all 5 blocks") was a consequence of that circularity rather than of the anchoring
+    design. Settlement lives on another chain; if the model measures it on the chain being rewritten,
+    it proves nothing about a 51% attack on that chain.
+
+    The Monero path never had this defect — `get_monero_finalized_blocks` counts confirmations
+    against `current_monero_height`, supplied by the independently-advanced `MoneroChainState` —
+    which is the standard this function now meets.
 
     All ancestors of a finalized block are also finalized.
     """
@@ -588,12 +661,18 @@ def get_caribina_finalized_blocks(
     finalized_ancestors: set[bytes] = set()
 
     for block in canonical_chain:
-        if block.has_caribina and block.caribina_tx_id is not None:
-            confirmations = current_height - block.height
-            if confirmations >= settle_blocks:
-                finalized.add(block.hash)
-                cursor = block.previous_hash
-                finalized_ancestors.add(cursor)
+        if not caribina_anchor_is_authentic(block):
+            continue
+        if block.caribina_arweave_height is None:
+            # Published to nobody: the miner set the field but no Arweave block contains the
+            # DataItem, so there is no settlement clock to count against.
+            continue
+        confirmations = arweave_height - block.caribina_arweave_height
+        if confirmations >= settle_blocks:
+            finalized.add(block.hash)
+            # The direct parent is a finalized ancestor, as in the Monero path: replacing it
+            # would transitively orphan this block.
+            finalized_ancestors.add(block.previous_hash)
 
     return finalized | finalized_ancestors
 
@@ -605,19 +684,20 @@ def get_finalized_blocks(
     min_confirmations: int = ANCHOR_MIN_CONFIRMATIONS,
     # Caribina params
     caribina_enabled: bool = False,
-    current_darkwow_height: int = 0,
+    arweave_height: int = 0,
     caribina_settle_blocks: int = CARIBINA_SETTLE_BLOCKS,
 ) -> set[bytes]:
     """Find all finalized blocks from both finality mechanisms.
 
-    Returns the union of Monero-anchored and Caribina-anchored finalized sets.
+    Returns the union of Monero-anchored and Caribina-anchored finalized sets. Both are measured
+    against chains the DarkWow adversary does not control: Monero's height and Arweave's height.
     """
     finalized = get_monero_finalized_blocks(
         canonical_chain, monero_chain, current_monero_height, min_confirmations,
     )
     if caribina_enabled:
         finalized |= get_caribina_finalized_blocks(
-            canonical_chain, current_darkwow_height, caribina_settle_blocks,
+            canonical_chain, arweave_height, caribina_settle_blocks,
         )
     return finalized
 
@@ -754,6 +834,46 @@ class MoneroChainState:
         if not candidates:
             return None
         return max(candidates, key=lambda b: b.cumulative_difficulty)
+
+
+@dataclass
+class ArweaveChainState:
+    """Tracks the Arweave chain as an EXOGENOUS settlement clock for Caribina.
+
+    Arweave needs no more fidelity than a height, because the only property that matters is one
+    the DarkWow adversary cannot influence: how many Arweave blocks have been produced. That is
+    precisely what the model lacked. `get_caribina_finalized_blocks` used to measure settlement as
+    `len(canonical_chain)` — the height of the chain under attack — so a 51% attacker advanced its
+    own anchors toward finality by mining, and the model's "CARIBINA rejects the attacker fork 0/5"
+    result rested on that circularity.
+
+    The Monero path never had this problem: `MoneroChainState` is advanced by `produce_block` on
+    its own schedule, and finality is counted in Monero blocks. This class gives Caribina the same
+    treatment, which is what makes the two finality layers comparable in the model at all.
+    """
+    current_height: int = 0
+    # How many Arweave blocks the DataItem is queued behind. Turbo bundles are submitted
+    # periodically, so an anchor does not land in the very next Arweave block; 1 models the
+    # documented "~2 minutes" and is the honest optimistic case.
+    publication_delay: int = 1
+
+    def produce_block(self) -> int:
+        """Advance Arweave by one block — driven by Arweave's schedule, never by DarkWow's."""
+        self.current_height += 1
+        return self.current_height
+
+    def advance_to_time(self, timestamp: float) -> None:
+        """Advance the Arweave chain to cover `timestamp` seconds of wall clock.
+
+        This is the exogeneity, made concrete: Arweave produces blocks on its own clock, so the
+        attacker's DarkWow hashpower buys it no settlement.
+        """
+        while self.current_height * ARWEAVE_BLOCK_TIME < timestamp:
+            self.produce_block()
+
+    def publish(self) -> int:
+        """Accept a DataItem and return the Arweave height it will land in."""
+        return self.current_height + self.publication_delay
 
 
 @dataclass
@@ -923,6 +1043,11 @@ class SimulationResult:
     monero_blocks: dict[int, MoneroBlock] = field(default_factory=dict)
     monero_current_height: int = 0
 
+    # Caribina settlement clock — Arweave's own height, carried so that reorg analysis measures
+    # finality against the same exogenous chain the simulation used. Without this the reorg
+    # scenarios would have had to pass a DarkWow height, which is the circularity being removed.
+    arweave_height: int = 0
+
 
 @dataclass
 class ReorgResult:
@@ -975,6 +1100,11 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         timestamp=0.0, difficulty=0, cumulative_difficulty=0,
     )
     monero.blocks[0] = genesis_monero
+
+    # Arweave chain — the exogenous settlement clock for Caribina. Advanced by wall-clock time
+    # (see `ArweaveChainState.advance_to_time`), never by DarkWow mining, which is what makes the
+    # CARIBINA finality result in this model mean something under a 51% attack.
+    arweave = ArweaveChainState()
 
     # Each p2pool gets its own sidechain (different --merge-mine addresses)
     p2pools: list[P2poolChainState] = []
@@ -1083,8 +1213,14 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
                 # Simulated Arweave TX ID (random 32 bytes — in production
                 # this comes from ArDrive Turbo after POSTing the block data)
                 merge_block.caribina_tx_id = bytes(random.randint(0, 255) for _ in range(32))
-                # Mark Caribina anchor as "pending" — it settles after
-                # caribina_settle_blocks confirmations
+                # The Arweave height the DataItem lands in, taken from Arweave's own clock.
+                merge_block.caribina_arweave_height = arweave.publish()
+                # Authorship: this miner signs its own anchor, so the key that signed it is the
+                # key the block commits. A relaying peer attaching an anchor to someone else's
+                # block produces a mismatch here and the anchor is not authentic — the case the
+                # old model could not express at all.
+                merge_block.caribina_owner = p2pool_wallets[pi].encode()
+                merge_block.anchor_committed_owner = p2pool_wallets[pi].encode()
 
             merge_blocks.append(merge_block)
 
@@ -1107,6 +1243,9 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
 
         if config.caribina_enabled or config.consensus_mode == ConsensusMode.CARIBINA:
             native_block.caribina_tx_id = bytes(random.randint(0, 255) for _ in range(32))
+            native_block.caribina_arweave_height = arweave.publish()
+            native_block.caribina_owner = b"native_wallet"
+            native_block.anchor_committed_owner = b"native_wallet"
 
         # ---- Step 4: Fork choice ----
         all_candidates = merge_blocks + [native_block]
@@ -1117,14 +1256,20 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             fork.append_block(candidate, rank)
             forks.append(fork)
 
-        # ---- Check Caribina confirmation for blocks in the canonical chain ----
-        # A Caribina anchor settles after caribina_settle_blocks DarkWow blocks.
-        # Walk back and mark anchors as confirmed once enough height has passed.
+        # ---- Advance the Arweave clock, then derive Caribina confirmation ----
+        # Arweave produces blocks on its own schedule. This is the step the attacker cannot influence,
+        # and therefore the step the finality claim rests on.
+        arweave.advance_to_time(current_time)
+
+        # `caribina_confirmed` is ADVISORY and derived from that same clock. The authoritative rule is
+        # `get_caribina_finalized_blocks`, which recomputes it from the same inputs. The model had two
+        # implementations of this condition before, and they agreed for the wrong reason: the flag was
+        # written from DarkWow's height and the predicate also used DarkWow's height. Both now use
+        # Arweave's, and the function is the one that decides.
         if config.caribina_enabled or config.consensus_mode == ConsensusMode.CARIBINA:
-            current_chain_height = len(canonical_chain)
             for cb in canonical_chain:
-                if cb.has_caribina and not cb.caribina_confirmed:
-                    if current_chain_height - cb.height >= config.caribina_settle_blocks:
+                if cb.has_caribina and cb.caribina_arweave_height is not None and not cb.caribina_confirmed:
+                    if arweave.current_height - cb.caribina_arweave_height >= config.caribina_settle_blocks:
                         cb.caribina_confirmed = True
 
         # If finality is enabled (Monero or Caribina), filter out forks that
@@ -1134,7 +1279,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
                 canonical_chain, monero.blocks, monero.current_height,
                 config.anchor_min_confirmations,
                 caribina_enabled=(config.caribina_enabled or config.consensus_mode == ConsensusMode.CARIBINA),
-                current_darkwow_height=len(canonical_chain),
+                arweave_height=arweave.current_height,
                 caribina_settle_blocks=config.caribina_settle_blocks,
             )
             valid_forks = get_valid_forks(forks, finalized, canonical_chain)
@@ -1217,6 +1362,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
     # Save Monero chain state for post-simulation finality checks
     result.monero_blocks = monero.blocks
     result.monero_current_height = monero.current_height
+    result.arweave_height = arweave.current_height
 
     return result
 
@@ -1306,7 +1452,7 @@ def simulate_reorg_attack(
             canonical_chain, sim_result.monero_blocks, sim_result.monero_current_height,
             anchor_min_confirmations,
             caribina_enabled=caribina_enabled,
-            current_darkwow_height=len(canonical_chain),
+            arweave_height=sim_result.arweave_height,
         )
         result.finalized_blocks = finalized
     else:
@@ -1924,8 +2070,10 @@ def run_verification() -> bool:
         print(f"  PASS: Attacker fork rejected entirely (all targets finalized)")
 
     # ---- Test 18: Caribina finality — basic block finalization ----
-    print("--- Test 18: Caribina finality ---")
-    # Build a chain where every block has a Caribina anchor
+    print("--- Test 18: Caribina finality (exogenous settlement clock) ---")
+    # Build a chain where every block has an authentic Caribina anchor, each landing in the
+    # Arweave block of the same height. `caribina_arweave_height` is what Arweave assigned;
+    # the owner pair is what makes the anchor about this block rather than merely asserted.
     gc_blocks = [DarkWowBlock(height=0, previous_hash=bytes(32), timestamp=0.0,
                   nonce=0, pow_data=PowData.DARK_FI, hash=bytes(32), miner_type="genesis")]
     for h in range(1, 6):
@@ -1933,16 +2081,87 @@ def run_verification() -> bool:
             height=h, previous_hash=gc_blocks[-1].hash, timestamp=h * 120.0,
             nonce=h, pow_data=PowData.DARK_FI, hash=bytes([h]) * 32, miner_type="native",
             caribina_tx_id=bytes([h + 100]) * 32,
+            caribina_arweave_height=h,
+            caribina_owner=b"miner-" + bytes([h]),
+            anchor_committed_owner=b"miner-" + bytes([h]),
         ))
-    # At chain height 5, block 1 (height diff=4) should be finalized (settle_blocks=1)
-    # Block 4 (height diff=1) also finalized. Block 5 (height diff=0) not yet.
+    # With Arweave at height 5 and settle_blocks=1: block h is settled iff 5 - h >= 1, so blocks
+    # 1..4 are finalized and block 5 is not.
     caribina_final = get_caribina_finalized_blocks(gc_blocks, 5, settle_blocks=1)
-    # Block 5 (height=5) has current_height - height = 5-5 = 0 < 1 → not finalized
-    # But its ancestor hash (parent of block 5 = block 4's hash) is in finalized_ancestors
-    assert gc_blocks[1].hash in caribina_final, "Block 1 should be Caribina-finalized (diff=4 >= 1)"
-    assert gc_blocks[4].hash in caribina_final, "Block 4 should be Caribina-finalized (diff=1 >= 1)"
+    assert gc_blocks[1].hash in caribina_final, "Block 1 should be finalized (Arweave diff=4 >= 1)"
+    assert gc_blocks[4].hash in caribina_final, "Block 4 should be finalized (Arweave diff=1 >= 1)"
     assert gc_blocks[5].hash not in caribina_final, "Block 5 should NOT be finalized (diff=0 < 1)"
-    print(f"  PASS: Caribina finality — blocks 1,4 finalized; block 5 pending")
+    print(f"  PASS: Caribina finality — blocks 1..4 finalized; block 5 pending (Arweave height 5)")
+
+    # ---- Test 18a: DarkWow mining does NOT settle an anchor ----
+    print("--- Test 18a: mining does not settle an anchor ---")
+    # The property this test exists for: settlement is a function of ARWEAVE's height, so no amount
+    # of DarkWow mining moves a block toward finality. Under the previous implementation — which
+    # counted `len(canonical_chain) - block.height` — this assertion FAILED, and that failure is the
+    # circularity the model carried: a 51% attacker settled its own anchors by mining.
+    #
+    # The DarkWow chain is held fixed and only the Arweave height varies, in both directions.
+    no_settlement = get_caribina_finalized_blocks(gc_blocks, 1, settle_blocks=1)
+    assert gc_blocks[5].hash not in no_settlement, \
+        "with Arweave at height 1, block 5 cannot be settled no matter how long the DarkWow chain is"
+    assert gc_blocks[1].hash not in no_settlement, \
+        "block 1 published into Arweave block 1 is not yet settled one Arweave block later"
+    fully_settled = get_caribina_finalized_blocks(gc_blocks, 1000, settle_blocks=1)
+    assert gc_blocks[5].hash in fully_settled, \
+        "given enough Arweave blocks every published anchor settles"
+    print(f"  PASS: settlement tracks Arweave's height, not the DarkWow chain's")
+
+    # ---- Test 18b: an anchor not authored by the committed key confers nothing ----
+    print("--- Test 18b: unauthenticated anchors confer no finality ---")
+    # A relaying peer attaching a genuine, published, settled Arweave anchor to a block it did not
+    # mine. Under the previous rule (`caribina_tx_id is not None`) this block was finalized; the
+    # anchor's *author* is what distinguishes it, and the block's own mined region is where the
+    # author is committed.
+    #
+    # The forged block is the TIP, deliberately. The finality set includes the parent of every
+    # finalized block (replacing a parent would transitively orphan the child), so a forged block
+    # *below* the tip appears in the set as an ancestor regardless of its own anchor, and an
+    # assertion on it would fail for a reason unrelated to authentication.
+    forged = list(gc_blocks)
+    forged[5] = DarkWowBlock(
+        height=5, previous_hash=gc_blocks[4].hash, timestamp=600.0, nonce=5,
+        pow_data=PowData.DARK_FI, hash=bytes([5]) * 32, miner_type="native",
+        caribina_tx_id=bytes([205]) * 32,
+        caribina_arweave_height=5,
+        caribina_owner=b"someone-else",                  # signed by a third party...
+        anchor_committed_owner=b"miner-" + bytes([5]),   # ...but the block commits this key
+    )
+    # Given every Arweave block there will ever be, the honest tip settles and the forged one does not.
+    assert gc_blocks[5].hash in get_caribina_finalized_blocks(gc_blocks, 1000, settle_blocks=1), \
+        "control: the honest tip settles once Arweave has advanced far enough"
+    assert forged[5].hash not in get_caribina_finalized_blocks(forged, 1000, settle_blocks=1), \
+        "an anchor signed by a key the block does not commit must confer no finality"
+    assert not caribina_anchor_is_authentic(forged[5]), "the forged anchor must fail authentication"
+    assert caribina_anchor_is_authentic(gc_blocks[5]), "control: the honest anchor must authenticate"
+    print(f"  PASS: a third-party anchor attached to another miner's block is not authentic")
+
+    # ---- Test 18c: the superseded circular rule and the corrected rule disagree ----
+    print("--- Test 18c: the circular rule is gone and cannot return silently ---")
+    # This is the control that makes the correction durable. The old rule counted settlement against
+    # the DarkWow chain, so an attacker (or anyone) mining a long chain settled its own anchors. Here
+    # Arweave sits at height 1 — nothing has settled — while DarkWow is 1000 blocks long.
+    #
+    # If someone reintroduces the circular rule, `get_caribina_finalized_blocks` starts agreeing with
+    # `_superseded_circular_rule_for_contrast` and this test fails, naming the reason. Without it the
+    # two rules look interchangeable on every small fixture, which is how the defect survived the
+    # first time.
+    circular = _superseded_circular_rule_for_contrast(gc_blocks, 1000, settle_blocks=1)
+    corrected = get_caribina_finalized_blocks(gc_blocks, 1, settle_blocks=1)
+    assert gc_blocks[5].hash in circular, \
+        "control: the superseded rule must finalize block 5 on a 1000-block DarkWow chain, or this \
+         test cannot detect its return"
+    assert gc_blocks[5].hash not in corrected, \
+        "with Arweave at height 1 nothing has settled, however long the DarkWow chain is"
+    assert circular != corrected, \
+        "the circular and corrected rules have converged — the circularity is back, or this control \
+         has stopped being meaningful"
+    print(f"  PASS: circular rule finalizes {len(circular)} blocks where the corrected rule finalizes "
+          f"{len(corrected)} — settlement is Arweave's, not DarkWow's")
 
     # ---- Test 19: Caribina finality blocks reorg ----
     print("--- Test 19: Caribina reorg protection ---")
@@ -1965,27 +2184,27 @@ def run_verification() -> bool:
     # ---- Test 20: Caribina faster than Monero anchoring ----
     print("--- Test 20: Caribina settlement speed ---")
     # Monero needs ~3 blocks × 120s = 360s (min_confirmations=3)
-    # Caribina needs ~1 block  × 120s = 120s (settle_blocks=1)
-    # Build a minimal chain to compare settlement
+    # Caribina needs ~1 Arweave block × 120s = 120s (settle_blocks=1)
     settle_chain = [DarkWowBlock(height=0, previous_hash=bytes(32), timestamp=0.0,
                     nonce=0, pow_data=PowData.DARK_FI, hash=bytes(32), miner_type="genesis")]
     settle_chain.append(DarkWowBlock(
         height=1, previous_hash=settle_chain[-1].hash, timestamp=120.0,
         nonce=1, pow_data=PowData.DARK_FI, hash=bytes([1]) * 32, miner_type="native",
         caribina_tx_id=bytes([200]) * 32,
+        caribina_arweave_height=1,
+        caribina_owner=b"miner",
+        anchor_committed_owner=b"miner",
         # Monero anchor would need 3 more Monero blocks (~360s)
         anchor_monero_height=1, anchor_monero_hash=bytes([200]) * 32,
     ))
-    # At chain height 2, Caribina settles (diff=1 >= 1) but Monero may not
+    # One Arweave block after publication, the anchor is settled; one Monero block is not.
     caribina_settled = get_caribina_finalized_blocks(settle_chain, 2, settle_blocks=1)
-    assert settle_chain[1].hash in caribina_settled, "Caribina: block 1 settled at height 2"
-    # Monero needs min_confirmations=3 Monero blocks at ~120s each
-    # If only 1-2 Monero blocks exist, Monero anchor won't be finalized yet
+    assert settle_chain[1].hash in caribina_settled, "Caribina: block 1 settled 1 Arweave block later"
     monero_blocks = {1: MoneroBlock(height=1, hash=bytes([200]) * 32, previous_hash=bytes(32),
                                      timestamp=120.0, difficulty=1000, cumulative_difficulty=1000)}
     monero_settled = get_monero_finalized_blocks(settle_chain, monero_blocks, 2, min_confirmations=3)
     assert settle_chain[1].hash not in monero_settled, "Monero: block 1 NOT settled yet (only 1 confirmation)"
-    print(f"  PASS: Caribina settles at height 2 (1 block); Monero needs ~3 Monero blocks (~360s)")
+    print(f"  PASS: Caribina settles 1 Arweave block later; Monero needs ~3 Monero blocks (~360s)")
 
     # ---- Test 21: Reward conservation under reorg ----
     print("--- Test 21: Reward conservation under reorg ---")
@@ -2037,17 +2256,27 @@ def run_verification() -> bool:
     print("--- Test 23: Caribina protects native miners ---")
     # Key advantage: native miners don't need p2pool to get finality.
     # Build a purely native-miner chain with Caribina anchors.
+    #
+    # `caribina_confirmed` is deliberately NOT set here. This fixture used to set it to True and rely
+    # on that for finality, but the flag is advisory — `get_caribina_finalized_blocks` derives the
+    # condition itself from the Arweave height — so setting it conferred nothing and the test passed
+    # only because the old predicate happened to agree. What confers finality is an authentic anchor
+    # plus an exogenous Arweave height, both set explicitly below.
     native_caribina_chain = [
         DarkWowBlock(height=0, previous_hash=bytes(32), timestamp=0.0,
                      nonce=0, pow_data=PowData.DARK_FI, hash=bytes(32), miner_type="genesis"),
         DarkWowBlock(height=1, previous_hash=bytes(32), timestamp=120.0,
                      nonce=1, pow_data=PowData.DARK_FI, hash=bytes([1]) * 32,
-                     miner_type="native", caribina_tx_id=bytes([200]) * 32, caribina_confirmed=True),
+                     miner_type="native", caribina_tx_id=bytes([200]) * 32,
+                     caribina_arweave_height=1, caribina_owner=b"native",
+                     anchor_committed_owner=b"native"),
         DarkWowBlock(height=2, previous_hash=bytes([1]) * 32, timestamp=240.0,
                      nonce=2, pow_data=PowData.DARK_FI, hash=bytes([2]) * 32,
-                     miner_type="native", caribina_tx_id=bytes([201]) * 32, caribina_confirmed=True),
+                     miner_type="native", caribina_tx_id=bytes([201]) * 32,
+                     caribina_arweave_height=2, caribina_owner=b"native",
+                     anchor_committed_owner=b"native"),
     ]
-    # Block 1 is Caribina-finalized
+    # Block 1 is Caribina-finalized (Arweave advanced past it by settle_blocks)
     nc_finalized = get_caribina_finalized_blocks(native_caribina_chain, 3, settle_blocks=1)
     assert native_caribina_chain[1].hash in nc_finalized, "Native block 1 should be Caribina-finalized"
     # Attacker tries to replace block 1
@@ -2062,9 +2291,164 @@ def run_verification() -> bool:
 
     print()
     print("=" * 72)
-    print("  All verification tests PASSED (23/23)")
+    # 23 numbered tests, with Test 18 carrying four checks rather than one: 18 (settlement against
+    # Arweave's height), 18a (DarkWow mining cannot settle an anchor), 18b (an anchor not authored by
+    # the committed key confers nothing) and 18c (the superseded circular rule and the corrected rule
+    # disagree). 18a–18c are what make this model's CARIBINA result mean anything under a 51% attack —
+    # before 2026-09-22 none of them could be expressed, because settlement was counted on the chain
+    # under attack.
+    print("  All verification tests PASSED (23 tests; Test 18 carries 18/18a/18b/18c)")
     print("=" * 72)
     return True
+
+
+# ============================================================================
+# Cross-language fixture
+# ============================================================================
+
+FIXTURE_PATH = Path(__file__).resolve().parents[2] / "model" / "fixtures" / "finality_fork_vectors.json"
+
+
+def emit_fixture() -> None:
+    """Write the corrected Caribina finality rule as a cross-language vector table.
+
+    **The Rust consumer is not written yet, and that is deliberate.** These vectors describe
+    `caribina_anchor_is_authentic` and settlement-by-Arweave-height; neither has a Rust counterpart
+    until the anchor material rides inside the block. Until then there is nothing for them to conform
+    to — see `OBL-C63`–`OBL-C66` in `doc/src/arch/verification-hazop.md`. Adding a Rust function now
+    purely to consume them would recreate the defect this campaign is about: a verifier with no caller.
+
+    The fixture is emitted from the model rather than transcribed by hand so that the specification
+    and the artefact that pins it cannot drift apart, and it is regenerated by `--emit-fixture`.
+
+    Every vector is stated so a Rust implementation can reproduce it from block heights alone:
+    authenticity here is only ever "the signer equals the committed owner", which the Rust side will
+    express as a byte comparison on a committed field.
+    """
+    def block(height: int, arweave_height: Optional[int], authentic: bool) -> dict:
+        return {
+            "height": height,
+            # The Arweave height the DataItem landed in, as assigned by Arweave. `None` means the
+            # anchor was never published, which settles nothing however far Arweave advances.
+            "arweave_height": arweave_height,
+            # `caribina_owner == anchor_committed_owner`. The Rust side must reject the complement:
+            # an anchor whose signer is not the key the block's mined region commits.
+            "authentic": authentic,
+            "has_anchor": arweave_height is not None,
+        }
+
+    def finalized_heights(arweave_height: int, blocks: list[dict], settle_blocks: int) -> list[int]:
+        """Recompute the rule here from the vector itself, so the fixture states an outcome the model
+        would agree with rather than a number copied from a run."""
+        out = []
+        for b in blocks:
+            if not b["authentic"] or b["arweave_height"] is None:
+                continue
+            if arweave_height - b["arweave_height"] >= settle_blocks:
+                out.append(b["height"])
+        return out
+
+    published = [block(h, h, True) for h in range(1, 6)]
+    one_forged = [block(h, h, True) for h in range(1, 5)] + [block(5, 5, False)]
+    one_unpublished = [block(h, h, True) for h in range(1, 5)] + [block(5, None, True)]
+
+    cases = [
+        {
+            "name": "settled_one_block_later",
+            "arweave_height": 5,
+            "settle_blocks": 1,
+            "blocks": published,
+            "expected_finalized_heights": finalized_heights(5, published, 1),
+            "note": "Arweave at 5 with settle=1: heights 1..4 settled, 5 pending",
+        },
+        {
+            "name": "nothing_settled_early",
+            "arweave_height": 1,
+            "settle_blocks": 1,
+            "blocks": published,
+            # The anti-circularity vector. The DarkWow chain is 5 blocks long and Arweave is at 1;
+            # under the superseded rule this finalized 5 blocks, because it counted DarkWow height.
+            "claimed_darkwow_height": 1000,
+            "expected_finalized_heights": [],
+            "note": "settlement is Arweave's height; no DarkWow height can substitute for it",
+        },
+        {
+            "name": "everything_settles_eventually",
+            "arweave_height": 1000,
+            "settle_blocks": 1,
+            "blocks": published,
+            "expected_finalized_heights": finalized_heights(1000, published, 1),
+            "note": "given enough Arweave blocks every published authentic anchor settles",
+        },
+        {
+            "name": "forged_anchor_never_settles",
+            "arweave_height": 1000,
+            "settle_blocks": 1,
+            "blocks": one_forged,
+            "expected_finalized_heights": finalized_heights(1000, one_forged, 1),
+            "note": "an anchor signed by a key the block does not commit confers nothing",
+        },
+        {
+            "name": "unpublished_anchor_never_settles",
+            "arweave_height": 1000,
+            "settle_blocks": 1,
+            "blocks": one_unpublished,
+            "expected_finalized_heights": finalized_heights(1000, one_unpublished, 1),
+            "note": "a miner-set transaction id with no Arweave block behind it settles nothing",
+        },
+        {
+            "name": "monero_confirmations_are_separate",
+            "arweave_height": 1000,
+            "settle_blocks": 3,
+            "blocks": published,
+            "expected_finalized_heights": finalized_heights(1000, published, 3),
+            "note": "settle_blocks is in Arweave blocks; the Monero gadget counts Monero blocks and "
+                    "is modelled by get_monero_finalized_blocks, not by this table",
+        },
+    ]
+
+    # The contrast the model's own Test 18c relies on, recorded so the fixture shows what the rule
+    # used to be as well as what it is.
+    circular_heights = [
+        b["height"] for b in published if 1000 - b["height"] >= 1 and b["has_anchor"]
+    ]
+    document = {
+        "spec": "contrib/docker/darkwow-testnet/merge_mining_model.py",
+        "generated_by": "python3 contrib/docker/darkwow-testnet/merge_mining_model.py --emit-fixture",
+        "rule": (
+            "A DarkWow block is Caribina-finalized iff its anchor is authentic (the DataItem's signer "
+            "is the key committed in the block's mined region) AND the Arweave block containing the "
+            "DataItem has reached `settle_blocks` confirmations, measured in ARWEAVE height."
+        ),
+        "consumer": (
+            "Stage 3 of the finality-widget campaign. Deliberately unwritten until the Rust predicate "
+            "exists — a function added solely to read this file would be a verifier with no caller, "
+            "which is the defect OBL-C63 records."
+        ),
+        "cases": cases,
+        "superseded_rule_for_contrast": {
+            "rule": (
+                "finalized iff `caribina_tx_id is not None` AND "
+                "`darkwow_height - block.height >= settle_blocks` — measured on the chain under attack"
+            ),
+            "arweave_height": 1,
+            "claimed_darkwow_height": 1000,
+            "settle_blocks": 1,
+            "blocks": published,
+            "would_finalize_heights": circular_heights,
+            "note": (
+                "Recorded because the difference is the finding. Test 18c asserts the live rule does "
+                "NOT finalize these; if it ever does, the circularity has returned."
+            ),
+        },
+    }
+
+    FIXTURE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(FIXTURE_PATH, "w", encoding="utf-8") as fh:
+        json.dump(document, fh, indent=2, sort_keys=False)
+        fh.write("\n")
+    total = sum(len(c["expected_finalized_heights"]) for c in cases)
+    print(f"wrote {FIXTURE_PATH} — {len(cases)} cases, {total} finalized-block expectations")
 
 
 # ============================================================================
@@ -2076,6 +2460,10 @@ def main() -> None:
     if not run_verification():
         print("VERIFICATION FAILED", file=sys.stderr)
         sys.exit(1)
+
+    if "--emit-fixture" in sys.argv:
+        emit_fixture()
+        return
 
     print()
     print()
