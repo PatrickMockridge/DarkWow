@@ -2053,3 +2053,113 @@ impl CreateJobWithMilestonesAndCapabilityParamsV1 {
         })
     }
 }
+
+// ============================================================================
+// The exec → apply bridge
+// ============================================================================
+
+/// The state change an `exec` phase hands to `apply`.
+///
+/// Every one of this contract's fifteen transitions writes exactly one record — the `Job` — plus
+/// at most one replay key (a nullifier or a spent flag). That is what lets *one* struct serve all
+/// fifteen, and `process_update` be a single blind write rather than a per-function dispatch that
+/// re-reads state.
+///
+/// THE PHASE RULE THIS EXISTS TO SATISFY. `src/runtime/vm_runtime.rs:954` runs apply as
+/// `ContractSection::Update`, and no read is permitted in `Update`: `db_get`, `db_contains_key` and
+/// the read-only getters all carry the `[Deploy, Metadata, Exec]` ACL
+/// (`src/runtime/import/db.rs:638`). §B.2.2 states the consequence verbatim — *"An `apply` function
+/// that calls any read-triad function will fail at runtime with `CALLER_ACCESS_DENIED`"* — and that
+/// apply *"SHALL only write state; it SHALL NOT perform validation"*. So every read and every check
+/// moves into `exec`, and the finished record rides across in this struct (register OBL-C72/C73).
+///
+/// This is the same shape `lottery`'s `DrawWinnersUpdateV1` and `auction`'s `CloseAuctionUpdateV1`
+/// already use, and the one the genesis contracts are built around.
+pub struct LaborMarketUpdateV1 {
+    /// Job the transition applies to — the key every `jobs` write uses.
+    pub job_id: pallas::Base,
+    /// The finished `Job`, encoded by exec. `Job::encode` is fallible (`SerializedLen`), so the
+    /// encoding happens where a `?` is available and the bytes cross as data.
+    pub job_bytes: Vec<u8>,
+    /// Nullifier to mark spent, for the five transitions that consume one (`nullifiers` tree).
+    pub spent_nullifier: Option<pallas::Base>,
+    /// Spent flag to mark, for the three that use the `spent_flags` tree.
+    pub spent_flag: Option<pallas::Base>,
+}
+
+impl dwow_serial::Encodable for LaborMarketUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for LaborMarketUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
+impl LaborMarketUpdateV1 {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.job_bytes.len())?;
+        // 32 (job_id) + 4 (job_bytes len) + 1 + 32 (nullifier) + 1 + 32 (flag)
+        let mut b = Vec::with_capacity(102 + self.job_bytes.len());
+        b.extend_from_slice(&self.job_id.to_repr());
+        b.extend_from_slice(&n.to_le_bytes());
+        b.extend_from_slice(&self.job_bytes);
+        for opt in [self.spent_nullifier, self.spent_flag] {
+            match opt {
+                Some(v) => { b.push(1); b.extend_from_slice(&v.to_repr()); }
+                None => b.push(0),
+            }
+        }
+        Ok(b)
+    }
+
+    /// Decode, and read the whole slice.
+    ///
+    /// `process_update` must not accept a short or padded buffer: the bytes here came from exec in
+    /// the same call, so anything other than an exact parse means the bridge is not what it claims
+    /// (invariant I8 / RC12).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 38 {
+            return Err(ContractError::IoError(format!(
+                "LaborMarketUpdateV1: expected at least 38 bytes, got {}", data.len()
+            )));
+        }
+        #[expect(clippy::unwrap_used, reason = "length checked immediately above")]
+        let job_id = pallas::Base::from_repr(data[0..32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("LaborMarketUpdateV1: invalid job_id".into()))?;
+        #[expect(clippy::unwrap_used, reason = "length checked immediately above")]
+        let job_len = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize();
+        let mut pos = 36usize;
+        if pos + job_len > data.len() {
+            return Err(ContractError::IoError("LaborMarketUpdateV1: truncated job_bytes".into()));
+        }
+        let job_bytes = data[pos..pos + job_len].to_vec();
+        pos += job_len;
+        let mut read_opt = |pos: &mut usize| -> Result<Option<pallas::Base>, ContractError> {
+            if *pos >= data.len() {
+                return Err(ContractError::IoError("LaborMarketUpdateV1: truncated option flag".into()));
+            }
+            let present = data[*pos];
+            *pos += 1;
+            match present {
+                0 => Ok(None),
+                1 => {
+                    if *pos + 32 > data.len() {
+                        return Err(ContractError::IoError("LaborMarketUpdateV1: truncated option value".into()));
+                    }
+                    #[expect(clippy::unwrap_used, reason = "length checked immediately above")]
+                    let v = pallas::Base::from_repr(data[*pos..*pos + 32].try_into().unwrap())
+                        .into_option()
+                        .ok_or_else(|| ContractError::IoError("LaborMarketUpdateV1: invalid option value".into()))?;
+                    *pos += 32;
+                    Ok(Some(v))
+                }
+                _ => Err(ContractError::IoError("LaborMarketUpdateV1: option flag not 0 or 1".into())),
+            }
+        };
+        let spent_nullifier = read_opt(&mut pos)?;
+        let spent_flag = read_opt(&mut pos)?;
+        if pos != data.len() {
+            return Err(ContractError::IoError(format!(
+                "LaborMarketUpdateV1: expected {} bytes consumed, {} remaining",
+                data.len(), data.len() - pos
+            )));
+        }
+        Ok(LaborMarketUpdateV1 { job_id, job_bytes, spent_nullifier, spent_flag })
+    }
+}
