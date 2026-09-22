@@ -85,9 +85,16 @@ run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain
 # roulette/settle_bet's payout, proofs/core/lead.zk's sigma1/sigma2 and set_v1.zk's lock/root/key/value.
 # The number here read "33" until 2026-09-22; the gate is the authority and the register's OBL-Z16
 # agrees with the gate, so 33 was stale prose, not a second measurement. Because `run_gate` has no
-# allowlist, this gate alone means no full-gate run can be green until the 15 are adjudicated — each
+# allowlist, a red gate means no full-gate run can be green until its sites are adjudicated — each
 # either derived, bound, or declared free with a reason in script/circuit_free_instances.txt. See
 # doc/src/arch/verification-hazop.md, OBL-Z1 and OBL-Z16.
+#
+# TWO gates are red, not one — measured 2026-09-22 rather than inferred from this comment. The other
+# is `circuit metadata alignment` (gate 2 above): it exits 1 with **19** findings over 19 circuits
+# ("insufficient metadata push counts"), and the register's OBL-Z2 still records that gate as passing
+# on 68 circuit/site pairs, which is stale. That class is the other session's OBL-C78/OBL-C79, so it
+# is named here and not duplicated. A "the full gate is green" claim is therefore two obligations
+# away, not one: 15 unclassified instances and 19 metadata misalignments.
 run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instance-derivation.sh"
 # The documentation index. Also seconds, also needs no build: it checks that every
 # doc is listed and every citation resolves, both directions. The 2026-09 docs
