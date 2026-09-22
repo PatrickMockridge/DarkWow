@@ -128,7 +128,7 @@ pub mod keccak;
 use keccak::{keccak_from_bytes, keccak_to_bytes};
 
 pub mod utils;
-use utils::{create_blockhashing_blob, create_merkle_proof, tree_hash};
+use utils::{cn_fast_hash, create_blockhashing_blob, create_merkle_proof, tree_hash};
 
 pub mod merkle_tree_parameters;
 pub use merkle_tree_parameters::MerkleTreeParameters;
@@ -244,6 +244,26 @@ impl MoneroPowData {
     /// Returns the block hashing blob for the Monero block.
     pub fn to_block_hashing_blob(&self) -> Vec<u8> {
         create_blockhashing_blob(&self.header, &self.merkle_root, u64::from(self.transaction_count))
+    }
+
+    /// The Monero block's **id** — `Keccak-256(VarInt(len) ‖ blockhashing_blob)`.
+    ///
+    /// Monero prefixes the length of the hashing blob when computing the block id but **not** when
+    /// computing the PoW hash, and it uses Keccak for the former and RandomX for the latter. So this is
+    /// the value a peer asks `monerod` about, and the value `anchor_monero_hash` must equal if that field
+    /// is to mean anything.
+    ///
+    /// Derived here rather than trusted from the header (`OBL-C67`). It was assembled inline in
+    /// `bin/explorer/src/rpc.rs` until 2026-09-22 — one place too many for a consensus-adjacent value, and
+    /// the reason the explorer and the anchor field could have disagreed without anything noticing.
+    pub fn block_hash(&self) -> [u8; 32] {
+        let blob = self.to_block_hashing_blob();
+        let mut prefixed = Vec::with_capacity(blob.len() + 9);
+        prefixed.extend_from_slice(&monero::consensus::serialize(&monero::VarInt(blob.len() as u64)));
+        prefixed.extend_from_slice(&blob);
+        let mut out = [0u8; 32];
+        out.copy_from_slice(cn_fast_hash(&prefixed).as_bytes());
+        out
     }
 }
 
@@ -475,7 +495,7 @@ pub fn extract_aux_merkle_root(extra_field: &RawExtraField) -> Result<Option<mon
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     // ── The three merge-mining receipts ─────────────────────────────────
@@ -583,7 +603,11 @@ mod tests {
 
     /// Build `MoneroPowData` from the real testnet block, with the synthetic aux proof the serde test
     /// uses (the real aux hash is not recoverable offline, and Receipt 3 does not depend on it).
-    fn real_block_powdata() -> MoneroPowData {
+    ///
+    /// `pub(crate)` so `validation`'s tests can exercise the anchor-hash check against a real
+    /// merge-mined block rather than a hand-built one — the check only means something if the proof it
+    /// derives from is genuine.
+    pub(crate) fn real_block_powdata() -> MoneroPowData {
         use std::str::FromStr;
 
         let block = monero_block_deserialize(XMR_BLOCK).expect("the testnet fixture must deserialize");
@@ -599,6 +623,33 @@ mod tests {
         let aux_proof = create_merkle_proof(&tx_hashes, &tx_hashes[0])
             .expect("the fixture proof must build");
         MoneroPowData::new(block, seed, aux_proof).expect("the fixture must construct")
+    }
+
+    /// `block_hash` includes the length prefix, and that is the whole difference from a naive Keccak of
+    /// the hashing blob.
+    ///
+    /// Monero prefixes a `VarInt` of the blob length when computing the block **id** but not when
+    /// computing the **PoW hash**, and uses Keccak for the former and RandomX for the latter. The two
+    /// therefore differ, and a verifier that confused them would accept or reject the wrong thing. The
+    /// assertion below pins the distinction rather than the value: a test that asserted only
+    /// "non-zero and stable" would pass against a version that omitted the prefix entirely.
+    #[test]
+    fn monero_block_hash_prefixes_the_blob_length() {
+        let powdata = real_block_powdata();
+        let blob = powdata.to_block_hashing_blob();
+
+        let derived = powdata.block_hash();
+        assert_ne!(derived, [0u8; 32], "a real block's id must not be zero");
+        assert_eq!(derived, powdata.block_hash(), "and it must be deterministic");
+
+        // The same Keccak, on the same blob, *without* the VarInt length prefix. If these ever matched,
+        // the prefix has been dropped and this is no longer the id monerod would report.
+        let without_prefix = cn_fast_hash(&blob);
+        assert_ne!(
+            derived.as_slice(),
+            without_prefix.as_bytes(),
+            "the block id must include the VarInt length prefix; dropping it makes this the wrong hash"
+        );
     }
 
     /// Receipt 3, positive control: a real merge-mined block satisfies its own coinbase proof.

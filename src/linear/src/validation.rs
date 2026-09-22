@@ -84,6 +84,23 @@ pub fn check_pow_stage(block: &Block, block_hash: &Blake3Hash) -> Result<()> {
                 "Monero coinbase Merkle proof invalid".into()
             ));
         }
+
+        // The claimed Monero anchor hash must be the one **derived from this block's own proof**
+        // (OBL-C67). Until 2026-09-22 the field was an independent, unauthenticated claim about the same
+        // block the proof describes, and nothing compared the two — so a peer could assert any Monero
+        // hash it liked. A zero field means "not reported", which is what every production block does
+        // (`mm_rpc.rs` builds merge-mined blocks with both anchor fields zeroed), and is left alone
+        // rather than treated as a mismatch.
+        //
+        // Note what this does *not* establish: that the Monero block is real or on the Monero chain.
+        // The three receipts prove only coinbase-inclusion in *some serialized* block, so this check
+        // makes the field honest about the proof, not the proof honest about Monero. See the row.
+        let claimed = block.header.anchor_monero_hash;
+        if claimed != [0u8; 32] && claimed != monero_data.block_hash() {
+            return Err(LinearError::BlockIsInvalid(
+                "Monero anchor hash does not match the block's own proof".into(),
+            ));
+        }
     } else {
         // spec dispensation: type-system.md §2.3 — blake3::Hash is always
         // 32 bytes; [0..4].try_into() is provably infallible for a fixed 4-byte
@@ -555,6 +572,54 @@ mod tests {
         let flags = randomx::RandomXFlags::get_recommended_flags();
         let cache = randomx::RandomXCache::new(flags, &[0u8; 32]).unwrap();
         randomx::RandomXVM::new(flags, Some(cache), None).unwrap()
+    }
+
+    /// OBL-C67 — a block's claimed Monero anchor hash must be the one derived from its own proof.
+    ///
+    /// The field was an independent, unauthenticated claim about the same block the proof describes, and
+    /// nothing compared the two, so a peer could assert any Monero hash it liked. Three assertions,
+    /// because any two of them alone are satisfied by a rule that is wrong in the third direction:
+    ///
+    ///   * absent is accepted — production writes zero, and that must keep working;
+    ///   * the derived value is accepted — the honest claim;
+    ///   * any other value is rejected — the dishonest one, including plausible-looking values.
+    ///
+    /// The fixture is the real Monero testnet block, because a check that derives a hash is only
+    /// meaningful against a proof that is genuine.
+    #[test]
+    fn claimed_monero_anchor_hash_must_equal_the_derived_one() {
+        let pow_data = crate::monero::tests::real_block_powdata();
+        let derived = pow_data.block_hash();
+
+        let mut block = dummy_block();
+        block.header.pow_source = PowSource::Monero(pow_data);
+
+        // Absent: the production case.
+        block.header.anchor_monero_hash = [0u8; 32];
+        assert!(
+            check_pow_stage(&block, &Blake3Hash::from([0u8; 32])).is_ok(),
+            "an absent claim must be accepted — every production merge-mined block carries one"
+        );
+
+        // The control that makes the rejection meaningful: the derived value must differ from zero,
+        // or "rejected" below would only be testing the absent case.
+        assert_ne!(derived, [0u8; 32], "the derived Monero block id must not be all-zero");
+
+        // Honest: exactly the derived value.
+        block.header.anchor_monero_hash = derived;
+        assert!(
+            check_pow_stage(&block, &Blake3Hash::from([0u8; 32])).is_ok(),
+            "the derived value is the honest claim and must be accepted"
+        );
+
+        // Dishonest: anything else.
+        for wrong in [[0xABu8; 32], [0x01u8; 32], [0xFFu8; 32]] {
+            block.header.anchor_monero_hash = wrong;
+            assert!(
+                check_pow_stage(&block, &Blake3Hash::from([0u8; 32])).is_err(),
+                "a claimed Monero anchor hash that disagrees with the block's own proof must be rejected"
+            );
+        }
     }
 
     #[test]

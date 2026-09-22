@@ -1664,6 +1664,8 @@ mod tests {
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![dwow_chain::Transaction {
                 version: BlockVersion::CURRENT,
@@ -1820,6 +1822,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 fee_window_flags: FeeWindowFlags::default(),
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![tx],
         };
@@ -1913,6 +1917,8 @@ produces = [{ name = "thing" }]
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 fee_window_flags: FeeWindowFlags::default(),
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![tx],
         };
@@ -1994,6 +2000,8 @@ required_barbs = ["Spend","Mine"]
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 fee_window_flags: FeeWindowFlags::default(),
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![tx],
         };
@@ -2114,6 +2122,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 fee_window_flags: FeeWindowFlags::default(),
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![deploy_tx],
         };
@@ -2185,6 +2195,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 fee_window_flags: FeeWindowFlags::default(),
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![call_tx],
         };
@@ -2429,6 +2441,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![
                 Transaction {
@@ -2545,6 +2559,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![dwow_chain::Transaction {
                 version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
@@ -2710,6 +2726,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![
                 // transactions[0] = coinbase (PoWRewardV1, 0x05)

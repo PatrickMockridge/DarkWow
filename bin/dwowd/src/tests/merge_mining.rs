@@ -316,19 +316,19 @@ fn test_merge_mined_block_acceptance() -> TestResult<()> {
             "submitted block must carry PowSource::Monero"
         );
 
-        // OBL-C67 — merge mining does not engage the Monero anchoring gadget. The block is merge-mined
-        // (asserted directly above, so this is not a block that simply lacks Monero data) and yet both
-        // anchor fields are zero, which is what `mm_rpc.rs:630-631` writes for every merge-mined block.
-        // A non-zero `anchor_monero_height` is the sole trigger for `AnchoredBlockConflict`, so zero here
-        // means the gadget confers no finality on any merge-mined block, ever.
-        //
-        // **This test asserts the defect.** Stage 3 derives these fields from `MoneroPowData`; at that
-        // point both assertions invert and the height asserted is the Monero block's own.
+        // OBL-C67 — merge mining still does not engage the Monero anchoring gadget, and these two
+        // assertions stay as they were because production still writes both fields zero
+        // (`mm_rpc.rs`). What changed on 2026-09-22 is that a *non-zero* hash is now checked rather
+        // than trusted: `check_pow_stage` rejects a block whose claimed `anchor_monero_hash` disagrees
+        // with the one derived from its own proof. So the field can no longer be an arbitrary claim —
+        // it is either absent, or the derived value. (The height is a different matter: it is not
+        // derivable at all, since the Monero header carries no height. See the register row.)
         ensure_eq!(block.header.anchor_monero_height, MoneroBlockHeight::new(0),
-            "OBL-C67: a merge-mined block unexpectedly carries a non-zero Monero anchor height — if the \
-             fix has landed, assert the derived height instead. See doc/src/arch/verification-hazop.md");
+            "a merge-mined block carries no Monero anchor height — production writes zero, and the \
+             Monero header carries no height to derive it from");
         ensure_eq!(block.header.anchor_monero_hash, [0u8; 32],
-            "OBL-C67: a merge-mined block unexpectedly carries a non-zero Monero anchor hash");
+            "a merge-mined block carries no Monero anchor hash by default; when one *is* set it must \
+             equal the derived value, which the next test covers");
 
         // Verify the block is properly stored with real coinbase data.
         // nullifier_root is updated by connect_block only when the nullifier
@@ -477,3 +477,4 @@ fn test_merge_mined_block_deterministic() -> TestResult<()> {
         Ok(())
     })
 }
+

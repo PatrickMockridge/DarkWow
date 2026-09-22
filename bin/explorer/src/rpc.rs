@@ -213,21 +213,10 @@ impl ExplBlock {
         let powtype = match &block.header.pow_source {
             PowSource::Native => "DarkFi".to_string(),
             PowSource::Monero(powdata) => {
-                // Calculate the Monero block header hash
-                let mut blockhashing_blob = powdata.to_block_hashing_blob();
-                // Monero prefixes a VarInt of the blob len before getting the
-                // block hash but doesn't do this when getting the PoW hash :)
-                let mut header = vec![];
-                VarInt(blockhashing_blob.len() as u64).consensus_encode(&mut header).unwrap();
-                header.append(&mut blockhashing_blob);
-
-                let mut keccak = Keccak::v256();
-                keccak.update(&header);
-
-                let mut hash = [0u8; 32];
-                keccak.finalize(&mut hash);
-
-                monero_hash = Some(hex::encode(hash));
+                // The Monero block id, computed in one place: `MoneroPowData::block_hash`. It used to be
+                // assembled inline here, which is how the explorer's idea of a Monero block hash could
+                // have drifted from the one `anchor_monero_hash` is checked against (OBL-C67).
+                monero_hash = Some(hex::encode(powdata.block_hash()));
 
                 "Monero".to_string()
             }
