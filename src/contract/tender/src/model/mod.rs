@@ -702,26 +702,49 @@ impl CreateTenderParamsV1 {
 }
 
 /// State update for CreateTenderV1
+///
+/// Carries the encoded `Tender` record, because **exec does not write**: the write set is
+/// section-gated exactly as the read triad is (`contract-wasm-type-system.md` §A.4.7; register
+/// `OBL-C73`), so every `db_set` this contract used to perform in exec now travels the Exec→Apply
+/// bridge and apply re-stores it. `Tender::encode` is variable-length (`String title`), so the
+/// bytes ride behind a `SerializedLen` prefix.
 #[derive(Debug, Clone)]
 pub struct CreateTenderUpdateV1 {
-    /// The created tender ID
+    /// The created tender ID (the store key)
     pub tender_id: TenderId,
+    /// `Tender::encode()`, as exec produced it.
+    pub tender_bytes: Vec<u8>,
 }
 
-impl dwow_serial::Encodable for CreateTenderUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CreateTenderUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateTenderUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CreateTenderUpdateV1 {
-    pub const ENCODED_SIZE: usize = 32;
+    /// 32 + 4, before the tender bytes.
+    pub const FIXED: usize = 36;
 
-    pub fn encode(&self) -> Vec<u8> {
-        self.tender_id.to_repr().to_vec()
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.tender_bytes.len())?;
+        let mut buf = Vec::with_capacity(Self::FIXED + self.tender_bytes.len());
+        buf.extend_from_slice(&self.tender_id.to_repr());
+        buf.extend_from_slice(&n.to_le_bytes());
+        buf.extend_from_slice(&self.tender_bytes);
+        Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 32 {
+        if data.len() < Self::FIXED {
             return Err(ContractError::IoError(format!(
-                "CreateTenderUpdateV1: expected 32 bytes, got {}",
+                "CreateTenderUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED,
+                data.len()
+            )));
+        }
+        let n = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize();
+        if data.len() != Self::FIXED.saturating_add(n) {
+            return Err(ContractError::IoError(format!(
+                "CreateTenderUpdateV1: {} tender bytes do not fit {} total",
+                n,
                 data.len()
             )));
         }
@@ -729,6 +752,7 @@ impl CreateTenderUpdateV1 {
             tender_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("CreateTenderUpdateV1: invalid tender_id".into()))?,
+            tender_bytes: data[Self::FIXED..].to_vec(),
         })
     }
 }
@@ -835,28 +859,51 @@ impl SubmitBidParamsV1 {
 pub struct SubmitBidUpdateV1 {
     /// The tender ID
     pub tender_id: TenderId,
-    /// The submitted bid ID
+    /// The submitted bid ID — also the nullifier key `exec` marked spent.
     pub bid_id: BidId,
+    /// `Bid::encode()`, as exec produced it.
+    pub bid_bytes: Vec<u8>,
+    /// `Tender::encode()` with `bid_count`/`state` advanced, as exec produced it.
+    pub tender_bytes: Vec<u8>,
 }
 
-impl dwow_serial::Encodable for SubmitBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SubmitBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SubmitBidUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SubmitBidUpdateV1 {
-    pub const ENCODED_SIZE: usize = 64;
+    /// 32 + 32 + 4 + 4, before the two records.
+    pub const FIXED: usize = 72;
 
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(64);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let bl = SerializedLen::try_from_len(self.bid_bytes.len())?;
+        let tl = SerializedLen::try_from_len(self.tender_bytes.len())?;
+        let mut b = Vec::with_capacity(Self::FIXED + self.bid_bytes.len() + self.tender_bytes.len());
         b.extend_from_slice(&self.tender_id.to_repr());
         b.extend_from_slice(&self.bid_id.to_repr());
-        b
+        b.extend_from_slice(&bl.to_le_bytes());
+        b.extend_from_slice(&self.bid_bytes);
+        b.extend_from_slice(&tl.to_le_bytes());
+        b.extend_from_slice(&self.tender_bytes);
+        Ok(b)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 64 {
+        if data.len() < Self::FIXED {
             return Err(ContractError::IoError(format!(
-                "SubmitBidUpdateV1: expected 64 bytes, got {}",
-                data.len()
+                "SubmitBidUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED, data.len()
+            )));
+        }
+        let bl = SerializedLen::from_le_bytes(data[64..68].try_into().unwrap()).to_usize();
+        let bid_end = 68usize.saturating_add(bl);
+        if data.len() < bid_end + 4 {
+            return Err(ContractError::IoError("SubmitBidUpdateV1: truncated bid_bytes".into()));
+        }
+        let tl = SerializedLen::from_le_bytes(data[bid_end..bid_end + 4].try_into().unwrap()).to_usize();
+        if data.len() != bid_end + 4 + tl {
+            return Err(ContractError::IoError(format!(
+                "SubmitBidUpdateV1: {} bid and {} tender bytes do not fit {} total",
+                bl, tl, data.len()
             )));
         }
         Ok(SubmitBidUpdateV1 {
@@ -866,6 +913,8 @@ impl SubmitBidUpdateV1 {
             bid_id: pallas::Base::from_repr(data[32..64].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("SubmitBidUpdateV1: invalid bid_id".into()))?,
+            bid_bytes: data[68..bid_end].to_vec(),
+            tender_bytes: data[bid_end + 4..].to_vec(),
         })
     }
 }
@@ -934,26 +983,42 @@ pub struct RevealBidUpdateV1 {
     pub tender_id: TenderId,
     /// The revealed bid ID
     pub bid_id: BidId,
+    /// `Bid::encode()` with the revealed amount applied, as exec produced it.
+    pub bid_bytes: Vec<u8>,
+    /// The reveal nullifier exec marked spent — a different key from the submit nullifier.
+    pub reveal_nullifier: pallas::Base,
 }
 
-impl dwow_serial::Encodable for RevealBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for RevealBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RevealBidUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RevealBidUpdateV1 {
-    pub const ENCODED_SIZE: usize = 64;
+    /// 32 + 32 + 32 + 4, before the bid bytes.
+    pub const FIXED: usize = 100;
 
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(64);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let bl = SerializedLen::try_from_len(self.bid_bytes.len())?;
+        let mut b = Vec::with_capacity(Self::FIXED + self.bid_bytes.len());
         b.extend_from_slice(&self.tender_id.to_repr());
         b.extend_from_slice(&self.bid_id.to_repr());
-        b
+        b.extend_from_slice(&self.reveal_nullifier.to_repr());
+        b.extend_from_slice(&bl.to_le_bytes());
+        b.extend_from_slice(&self.bid_bytes);
+        Ok(b)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 64 {
+        if data.len() < Self::FIXED {
             return Err(ContractError::IoError(format!(
-                "RevealBidUpdateV1: expected 64 bytes, got {}",
-                data.len()
+                "RevealBidUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED, data.len()
+            )));
+        }
+        let bl = SerializedLen::from_le_bytes(data[96..100].try_into().unwrap()).to_usize();
+        if data.len() != Self::FIXED.saturating_add(bl) {
+            return Err(ContractError::IoError(format!(
+                "RevealBidUpdateV1: {} bid bytes do not fit {} total",
+                bl, data.len()
             )));
         }
         Ok(RevealBidUpdateV1 {
@@ -963,6 +1028,10 @@ impl RevealBidUpdateV1 {
             bid_id: pallas::Base::from_repr(data[32..64].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("RevealBidUpdateV1: invalid bid_id".into()))?,
+            reveal_nullifier: pallas::Base::from_repr(data[64..96].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("RevealBidUpdateV1: invalid reveal_nullifier".into()))?,
+            bid_bytes: data[Self::FIXED..].to_vec(),
         })
     }
 }
@@ -1018,29 +1087,45 @@ impl CloseTenderParamsV1 {
 pub struct CloseTenderUpdateV1 {
     /// The closed tender ID
     pub tender_id: TenderId,
+    /// `Tender::encode()` with the closed state applied, as exec produced it.
+    pub tender_bytes: Vec<u8>,
 }
 
-impl dwow_serial::Encodable for CloseTenderUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CloseTenderUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CloseTenderUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CloseTenderUpdateV1 {
-    pub const ENCODED_SIZE: usize = 32;
+    /// 32 + 4, before the tender bytes.
+    pub const FIXED: usize = 36;
 
-    pub fn encode(&self) -> Vec<u8> {
-        self.tender_id.to_repr().to_vec()
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.tender_bytes.len())?;
+        let mut b = Vec::with_capacity(Self::FIXED + self.tender_bytes.len());
+        b.extend_from_slice(&self.tender_id.to_repr());
+        b.extend_from_slice(&n.to_le_bytes());
+        b.extend_from_slice(&self.tender_bytes);
+        Ok(b)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 32 {
+        if data.len() < Self::FIXED {
             return Err(ContractError::IoError(format!(
-                "CloseTenderUpdateV1: expected 32 bytes, got {}",
-                data.len()
+                "CloseTenderUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED, data.len()
+            )));
+        }
+        let n = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize();
+        if data.len() != Self::FIXED.saturating_add(n) {
+            return Err(ContractError::IoError(format!(
+                "CloseTenderUpdateV1: {} tender bytes do not fit {} total",
+                n, data.len()
             )));
         }
         Ok(CloseTenderUpdateV1 {
             tender_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("CloseTenderUpdateV1: invalid tender_id".into()))?,
+            tender_bytes: data[Self::FIXED..].to_vec(),
         })
     }
 }
@@ -1146,14 +1231,26 @@ pub struct SelectWinnerUpdateV1 {
     pub winner_bid_id: BidId,
     /// The job ID in labor market (for tracking)
     pub labor_job_id: Option<pallas::Base>,
+    /// `Tender::encode()` with the winner selected, as exec produced it.
+    pub tender_bytes: Vec<u8>,
+    /// `Bid::encode()` for the winning bid with its awarded state, as exec produced it.
+    pub winner_bid_bytes: Vec<u8>,
 }
 
-impl dwow_serial::Encodable for SelectWinnerUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SelectWinnerUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SelectWinnerUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SelectWinnerUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 65 + match &self.labor_job_id { Some(_) => 32, None => 0 };
+    /// 32 + 32 + 1 (job tag, +32 when present) + 4 + 4, before the two records.
+    pub const FIXED_MIN: usize = 73;
+
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let tl = SerializedLen::try_from_len(self.tender_bytes.len())?;
+        let bl = SerializedLen::try_from_len(self.winner_bid_bytes.len())?;
+        let cap = Self::FIXED_MIN
+            + match &self.labor_job_id { Some(_) => 32, None => 0 }
+            + self.tender_bytes.len()
+            + self.winner_bid_bytes.len();
         let mut b = Vec::with_capacity(cap);
         b.extend_from_slice(&self.tender_id.to_repr());
         b.extend_from_slice(&self.winner_bid_id.to_repr());
@@ -1164,13 +1261,18 @@ impl SelectWinnerUpdateV1 {
                 b.extend_from_slice(&v.to_repr());
             }
         }
-        b
+        b.extend_from_slice(&tl.to_le_bytes());
+        b.extend_from_slice(&self.tender_bytes);
+        b.extend_from_slice(&bl.to_le_bytes());
+        b.extend_from_slice(&self.winner_bid_bytes);
+        Ok(b)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 65 {
+        if data.len() < Self::FIXED_MIN {
             return Err(ContractError::IoError(format!(
-                "SelectWinnerUpdateV1: expected at least 65 bytes, got {}",
+                "SelectWinnerUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED_MIN,
                 data.len()
             )));
         }
@@ -1193,14 +1295,26 @@ impl SelectWinnerUpdateV1 {
             }
             tag => return Err(ContractError::IoError(format!("SelectWinnerUpdateV1: invalid labor_job_id tag {}", tag))),
         };
-        let pos = 64 + advance;
-        if pos != data.len() {
+        let tpos = 64 + advance;
+        let tl = SerializedLen::from_le_bytes(data[tpos..tpos + 4].try_into().unwrap()).to_usize();
+        let bend = tpos.saturating_add(4).saturating_add(tl);
+        if data.len() < bend + 4 {
+            return Err(ContractError::IoError("SelectWinnerUpdateV1: truncated tender_bytes".into()));
+        }
+        let bl = SerializedLen::from_le_bytes(data[bend..bend + 4].try_into().unwrap()).to_usize();
+        if data.len() != bend + 4 + bl {
             return Err(ContractError::IoError(format!(
-                "SelectWinnerUpdateV1: expected {} bytes consumed, {} remaining",
-                data.len(), data.len() - pos
+                "SelectWinnerUpdateV1: {} tender and {} bid bytes do not fit {} total",
+                tl, bl, data.len()
             )));
         }
-        Ok(SelectWinnerUpdateV1 { tender_id, winner_bid_id, labor_job_id })
+        Ok(SelectWinnerUpdateV1 {
+            tender_id,
+            winner_bid_id,
+            labor_job_id,
+            tender_bytes: data[tpos + 4..bend].to_vec(),
+            winner_bid_bytes: data[bend + 4..].to_vec(),
+        })
     }
 }
 
@@ -1255,29 +1369,45 @@ impl CancelTenderParamsV1 {
 pub struct CancelTenderUpdateV1 {
     /// The cancelled tender ID
     pub tender_id: TenderId,
+    /// `Tender::encode()` with the cancelled state applied, as exec produced it.
+    pub tender_bytes: Vec<u8>,
 }
 
-impl dwow_serial::Encodable for CancelTenderUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CancelTenderUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CancelTenderUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CancelTenderUpdateV1 {
-    pub const ENCODED_SIZE: usize = 32;
+    /// 32 + 4, before the tender bytes.
+    pub const FIXED: usize = 36;
 
-    pub fn encode(&self) -> Vec<u8> {
-        self.tender_id.to_repr().to_vec()
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.tender_bytes.len())?;
+        let mut b = Vec::with_capacity(Self::FIXED + self.tender_bytes.len());
+        b.extend_from_slice(&self.tender_id.to_repr());
+        b.extend_from_slice(&n.to_le_bytes());
+        b.extend_from_slice(&self.tender_bytes);
+        Ok(b)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 32 {
+        if data.len() < Self::FIXED {
             return Err(ContractError::IoError(format!(
-                "CancelTenderUpdateV1: expected 32 bytes, got {}",
-                data.len()
+                "CancelTenderUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED, data.len()
+            )));
+        }
+        let n = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize();
+        if data.len() != Self::FIXED.saturating_add(n) {
+            return Err(ContractError::IoError(format!(
+                "CancelTenderUpdateV1: {} tender bytes do not fit {} total",
+                n, data.len()
             )));
         }
         Ok(CancelTenderUpdateV1 {
             tender_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("CancelTenderUpdateV1: invalid tender_id".into()))?,
+            tender_bytes: data[Self::FIXED..].to_vec(),
         })
     }
 }
@@ -1341,26 +1471,39 @@ pub struct RejectBidUpdateV1 {
     pub tender_id: TenderId,
     /// The rejected bid ID
     pub bid_id: BidId,
+    /// `Bid::encode()` with the rejected state applied, as exec produced it.
+    pub bid_bytes: Vec<u8>,
 }
 
-impl dwow_serial::Encodable for RejectBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for RejectBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RejectBidUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RejectBidUpdateV1 {
-    pub const ENCODED_SIZE: usize = 64;
+    /// 32 + 32 + 4, before the bid bytes.
+    pub const FIXED: usize = 68;
 
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(64);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let bl = SerializedLen::try_from_len(self.bid_bytes.len())?;
+        let mut b = Vec::with_capacity(Self::FIXED + self.bid_bytes.len());
         b.extend_from_slice(&self.tender_id.to_repr());
         b.extend_from_slice(&self.bid_id.to_repr());
-        b
+        b.extend_from_slice(&bl.to_le_bytes());
+        b.extend_from_slice(&self.bid_bytes);
+        Ok(b)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 64 {
+        if data.len() < Self::FIXED {
             return Err(ContractError::IoError(format!(
-                "RejectBidUpdateV1: expected 64 bytes, got {}",
-                data.len()
+                "RejectBidUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED, data.len()
+            )));
+        }
+        let bl = SerializedLen::from_le_bytes(data[64..68].try_into().unwrap()).to_usize();
+        if data.len() != Self::FIXED.saturating_add(bl) {
+            return Err(ContractError::IoError(format!(
+                "RejectBidUpdateV1: {} bid bytes do not fit {} total",
+                bl, data.len()
             )));
         }
         Ok(RejectBidUpdateV1 {
@@ -1370,6 +1513,7 @@ impl RejectBidUpdateV1 {
             bid_id: pallas::Base::from_repr(data[32..64].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("RejectBidUpdateV1: invalid bid_id".into()))?,
+            bid_bytes: data[Self::FIXED..].to_vec(),
         })
     }
 }
@@ -1550,27 +1694,45 @@ impl CreateTenderWithCapabilityParamsV1 {
 pub struct CreateTenderWithCapabilityUpdateV1 {
     /// The created tender ID
     pub tender_id: TenderId,
+    /// `Tender::encode()`, as exec produced it.
+    pub tender_bytes: Vec<u8>,
 }
 
+impl dwow_serial::Encodable for CreateTenderWithCapabilityUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CreateTenderWithCapabilityUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CreateTenderWithCapabilityUpdateV1 {
-    pub const ENCODED_SIZE: usize = 32;
+    /// 32 + 4, before the tender bytes.
+    pub const FIXED: usize = 36;
 
-    pub fn encode(&self) -> Vec<u8> {
-        self.tender_id.to_repr().to_vec()
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.tender_bytes.len())?;
+        let mut b = Vec::with_capacity(Self::FIXED + self.tender_bytes.len());
+        b.extend_from_slice(&self.tender_id.to_repr());
+        b.extend_from_slice(&n.to_le_bytes());
+        b.extend_from_slice(&self.tender_bytes);
+        Ok(b)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 32 {
+        if data.len() < Self::FIXED {
             return Err(ContractError::IoError(format!(
-                "CreateTenderWithCapabilityUpdateV1: expected 32 bytes, got {}",
-                data.len()
+                "CreateTenderWithCapabilityUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED, data.len()
+            )));
+        }
+        let n = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize();
+        if data.len() != Self::FIXED.saturating_add(n) {
+            return Err(ContractError::IoError(format!(
+                "CreateTenderWithCapabilityUpdateV1: {} tender bytes do not fit {} total",
+                n, data.len()
             )));
         }
         Ok(CreateTenderWithCapabilityUpdateV1 {
             tender_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("CreateTenderWithCapabilityUpdateV1: invalid tender_id".into()))?,
+            tender_bytes: data[Self::FIXED..].to_vec(),
         })
     }
 }
@@ -1692,26 +1854,51 @@ impl SubmitBidWithCapabilityParamsV1 {
 pub struct SubmitBidWithCapabilityUpdateV1 {
     /// The tender ID
     pub tender_id: TenderId,
-    /// The submitted bid ID
+    /// The submitted bid ID — also the nullifier key `exec` marked spent.
     pub bid_id: BidId,
+    /// `Bid::encode()`, as exec produced it.
+    pub bid_bytes: Vec<u8>,
+    /// `Tender::encode()` with `bid_count`/`state` advanced, as exec produced it.
+    pub tender_bytes: Vec<u8>,
 }
 
+impl dwow_serial::Encodable for SubmitBidWithCapabilityUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SubmitBidWithCapabilityUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SubmitBidWithCapabilityUpdateV1 {
-    pub const ENCODED_SIZE: usize = 64;
+    /// 32 + 32 + 4 + 4, before the two records.
+    pub const FIXED: usize = 72;
 
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(64);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let bl = SerializedLen::try_from_len(self.bid_bytes.len())?;
+        let tl = SerializedLen::try_from_len(self.tender_bytes.len())?;
+        let mut b = Vec::with_capacity(Self::FIXED + self.bid_bytes.len() + self.tender_bytes.len());
         b.extend_from_slice(&self.tender_id.to_repr());
         b.extend_from_slice(&self.bid_id.to_repr());
-        b
+        b.extend_from_slice(&bl.to_le_bytes());
+        b.extend_from_slice(&self.bid_bytes);
+        b.extend_from_slice(&tl.to_le_bytes());
+        b.extend_from_slice(&self.tender_bytes);
+        Ok(b)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 64 {
+        if data.len() < Self::FIXED {
             return Err(ContractError::IoError(format!(
-                "SubmitBidWithCapabilityUpdateV1: expected 64 bytes, got {}",
-                data.len()
+                "SubmitBidWithCapabilityUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED, data.len()
+            )));
+        }
+        let bl = SerializedLen::from_le_bytes(data[64..68].try_into().unwrap()).to_usize();
+        let bid_end = 68usize.saturating_add(bl);
+        if data.len() < bid_end + 4 {
+            return Err(ContractError::IoError("SubmitBidWithCapabilityUpdateV1: truncated bid_bytes".into()));
+        }
+        let tl = SerializedLen::from_le_bytes(data[bid_end..bid_end + 4].try_into().unwrap()).to_usize();
+        if data.len() != bid_end + 4 + tl {
+            return Err(ContractError::IoError(format!(
+                "SubmitBidWithCapabilityUpdateV1: {} bid and {} tender bytes do not fit {} total",
+                bl, tl, data.len()
             )));
         }
         Ok(SubmitBidWithCapabilityUpdateV1 {
@@ -1721,6 +1908,8 @@ impl SubmitBidWithCapabilityUpdateV1 {
             bid_id: pallas::Base::from_repr(data[32..64].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("SubmitBidWithCapabilityUpdateV1: invalid bid_id".into()))?,
+            bid_bytes: data[68..bid_end].to_vec(),
+            tender_bytes: data[bid_end + 4..].to_vec(),
         })
     }
 }

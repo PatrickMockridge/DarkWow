@@ -1,3 +1,4 @@
+
 /* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
@@ -22,6 +23,12 @@
  */
 
 //! Tender contract integration tests
+
+/// A placeholder encoded record. The update structs carry the records exec built, so these
+/// round-trip tests must supply bytes — they exercise the bridge codec, not the records.
+fn rec(seed: u8) -> Vec<u8> {
+    vec![seed; 40]
+}
 
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::pasta::pallas;
@@ -284,6 +291,7 @@ fn test_submit_bid_params_prefixes_are_not_bytes() {
 fn test_create_tender_update_encoding() {
     let update = CreateTenderUpdateV1 {
         tender_id: pallas::Base::from(1),
+        tender_bytes: rec(7),
     };
 
     let encoded = serialize(&update);
@@ -318,6 +326,8 @@ fn test_submit_bid_update_encoding() {
     let update = SubmitBidUpdateV1 {
         tender_id: pallas::Base::from(1),
         bid_id: pallas::Base::from(2),
+        bid_bytes: rec(8),
+        tender_bytes: rec(7),
     };
 
     let encoded = serialize(&update);
@@ -349,6 +359,8 @@ fn test_reveal_bid_update_encoding() {
     let update = RevealBidUpdateV1 {
         tender_id: pallas::Base::from(1),
         bid_id: pallas::Base::from(2),
+        bid_bytes: rec(8),
+        reveal_nullifier: pallas::Base::from(9),
     };
 
     let encoded = serialize(&update);
@@ -376,6 +388,7 @@ fn test_close_tender_params_encoding() {
 fn test_close_tender_update_encoding() {
     let update = CloseTenderUpdateV1 {
         tender_id: pallas::Base::from(1),
+        tender_bytes: rec(7),
     };
 
     let encoded = serialize(&update);
@@ -411,6 +424,8 @@ fn test_select_winner_update_encoding() {
         tender_id: pallas::Base::from(1),
         winner_bid_id: pallas::Base::from(2),
         labor_job_id: Some(pallas::Base::from(3)),
+        tender_bytes: rec(7),
+        winner_bid_bytes: rec(8),
     };
 
     let encoded = serialize(&update);
@@ -439,6 +454,7 @@ fn test_cancel_tender_params_encoding() {
 fn test_cancel_tender_update_encoding() {
     let update = CancelTenderUpdateV1 {
         tender_id: pallas::Base::from(1),
+        tender_bytes: rec(7),
     };
 
     let encoded = serialize(&update);
@@ -468,6 +484,7 @@ fn test_reject_bid_update_encoding() {
     let update = RejectBidUpdateV1 {
         tender_id: pallas::Base::from(1),
         bid_id: pallas::Base::from(2),
+        bid_bytes: rec(8),
     };
 
     let encoded = serialize(&update);

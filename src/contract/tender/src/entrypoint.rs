@@ -154,9 +154,18 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = SelectWinnerParamsV1::decode(&self_.data[1..])?;
             select_winner_get_metadata_v1(cid, call_idx, calls, params)?
         }
-        TenderFunction::CancelTenderV1 => vec![],
-        TenderFunction::RejectBidV1 => vec![],
-        TenderFunction::CreateTenderWithCapabilityV1 => vec![],
+        // Functions without ZK proofs: an **encoded** empty `zk_public_inputs`, not a bare `vec![]`.
+        // The host decodes metadata as `Vec<(String, Vec<Base>)>` (`execution.rs:423`), so a 0-byte
+        // buffer fails that decode and is reported as "contract signalled EMPTY metadata, the
+        // documented rejection signal" — which made these three endpoints uncallable (OBL-C77).
+        TenderFunction::CancelTenderV1
+        | TenderFunction::RejectBidV1
+        | TenderFunction::CreateTenderWithCapabilityV1 => {
+            let zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
         TenderFunction::SubmitBidWithCapabilityV1 => {
             let params = SubmitBidWithCapabilityParamsV1::decode(&self_.data[1..])?;
             submit_bid_with_capability_get_metadata_v1(cid, call_idx, calls, params)?
@@ -518,10 +527,11 @@ fn create_tender_v1(cid: ContractId, params: CreateTenderParamsV1) -> Result<Vec
         required_dag_id: None,
     };
 
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
+    // exec does not write (OBL-C73): the record travels the Exec→Apply bridge and apply re-stores it.
+    let tender_bytes = tender.encode()?;
 
     msg!("[tender::create_tender_v1] Tender created successfully");
-    Ok(CreateTenderUpdateV1 { tender_id: params.tender_id }.encode())
+    Ok(CreateTenderUpdateV1 { tender_id: params.tender_id, tender_bytes }.encode()?)
 }
 
 fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -581,21 +591,17 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> Result<Vec<u8>, 
         created_at: current_block,
     };
 
-    // Store bid
-    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode()?)?;
-
-    // Store nullifier to prevent double submission
-    wasm::db::db_mark_spent(nullifiers_db, &params.bid_id.to_repr())?;
-
-    // Update tender state and count
+    // Update the tender in memory, then carry both records — exec does not write (OBL-C73).
     if tender.state == TenderState::Created {
         tender.state = TenderState::Bidding;
     }
     tender.bid_count += 1;
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
+
+    let bid_bytes = bid.encode()?;
+    let tender_bytes = tender.encode()?;
 
     msg!("[tender::submit_bid_v1] Bid submitted successfully");
-    Ok(SubmitBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }.encode())
+    Ok(SubmitBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id, bid_bytes, tender_bytes }.encode()?)
 }
 
 fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -653,13 +659,12 @@ fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> Result<Vec<u8>, 
     bid.state = BidState::Revealed;
     bid.revealed_amount = Some(params.revealed_amount);
 
-    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode()?)?;
-
-    // Store nullifier to prevent double reveal
-    wasm::db::db_mark_spent(nullifiers_db, &reveal_nullifier.to_repr())?;
+    // Carry the revealed bid — exec does not write (OBL-C73). The reveal nullifier is a separate
+    // key from the submit nullifier, so apply needs it explicitly.
+    let bid_bytes = bid.encode()?;
 
     msg!("[tender::reveal_bid_v1] Bid revealed successfully");
-    Ok(RevealBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }.encode())
+    Ok(RevealBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id, bid_bytes, reveal_nullifier }.encode()?)
 }
 
 fn close_tender_v1(cid: ContractId, params: CloseTenderParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -698,10 +703,10 @@ fn close_tender_v1(cid: ContractId, params: CloseTenderParamsV1) -> Result<Vec<u
 
     // Transition to Revealed state
     tender.state = TenderState::Revealed;
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
+    let tender_bytes = tender.encode()?;
 
     msg!("[tender::close_tender_v1] Tender closed successfully");
-    Ok(CloseTenderUpdateV1 { tender_id: params.tender_id }.encode())
+    Ok(CloseTenderUpdateV1 { tender_id: params.tender_id, tender_bytes }.encode()?)
 }
 
 fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -777,14 +782,16 @@ fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> Result<Vec
     // Update tender
     tender.state = TenderState::Awarded;
     tender.selected_bid_id = Some(params.winner_bid_id);
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
 
     // Update winner bid
     winner_bid.state = BidState::Accepted;
-    wasm::db::db_set(bids_db, &params.winner_bid_id.to_repr(), &winner_bid.encode()?)?;
+
+    // Carry both records — exec does not write (OBL-C73).
+    let tender_bytes = tender.encode()?;
+    let winner_bid_bytes = winner_bid.encode()?;
 
     msg!("[tender::select_winner_v1] Winner selected successfully");
-    Ok(SelectWinnerUpdateV1 { tender_id: params.tender_id, winner_bid_id: params.winner_bid_id, labor_job_id: None }.encode())
+    Ok(SelectWinnerUpdateV1 { tender_id: params.tender_id, winner_bid_id: params.winner_bid_id, labor_job_id: None, tender_bytes, winner_bid_bytes }.encode()?)
 }
 
 fn cancel_tender_v1(cid: ContractId, params: CancelTenderParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -816,10 +823,10 @@ fn cancel_tender_v1(cid: ContractId, params: CancelTenderParamsV1) -> Result<Vec
 
     // Update tender
     tender.state = TenderState::Cancelled;
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
+    let tender_bytes = tender.encode()?;
 
     msg!("[tender::cancel_tender_v1] Tender cancelled successfully");
-    Ok(CancelTenderUpdateV1 { tender_id: params.tender_id }.encode())
+    Ok(CancelTenderUpdateV1 { tender_id: params.tender_id, tender_bytes }.encode()?)
 }
 
 fn reject_bid_v1(cid: ContractId, params: RejectBidParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -868,10 +875,10 @@ fn reject_bid_v1(cid: ContractId, params: RejectBidParamsV1) -> Result<Vec<u8>, 
 
     // Update bid
     bid.state = BidState::Rejected;
-    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode()?)?;
+    let bid_bytes = bid.encode()?;
 
     msg!("[tender::reject_bid_v1] Bid rejected successfully");
-    Ok(RejectBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }.encode())
+    Ok(RejectBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id, bid_bytes }.encode()?)
 }
 
 // ============================================================================
@@ -918,10 +925,10 @@ fn create_tender_with_capability_v1(
         required_dag_id: params.required_dag_id,
     };
 
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
+    let tender_bytes = tender.encode()?;
 
     msg!("[tender::create_tender_with_capability_v1] Tender created successfully");
-    Ok(CreateTenderWithCapabilityUpdateV1 { tender_id: params.tender_id }.encode())
+    Ok(CreateTenderWithCapabilityUpdateV1 { tender_id: params.tender_id, tender_bytes }.encode()?)
 }
 
 fn submit_bid_with_capability_v1(
@@ -998,72 +1005,102 @@ fn submit_bid_with_capability_v1(
         created_at: current_block,
     };
 
-    // Store bid
-    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode()?)?;
-
-    // Store nullifier to prevent double submission
-    wasm::db::db_mark_spent(nullifiers_db, &params.bid_id.to_repr())?;
-
-    // Update tender state and count
+    // Update tender state and count in memory, then carry both records — exec does not write
+    // (OBL-C73).
     if tender.state == TenderState::Created {
         tender.state = TenderState::Bidding;
     }
     tender.bid_count += 1;
-    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode()?)?;
+
+    let bid_bytes = bid.encode()?;
+    let tender_bytes = tender.encode()?;
 
     msg!("[tender::submit_bid_with_capability_v1] Bid submitted successfully");
-    Ok(SubmitBidWithCapabilityUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }.encode())
+    Ok(SubmitBidWithCapabilityUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id, bid_bytes, tender_bytes }.encode()?)
 }
 
 // ============================================================================
 // PROCESS UPDATE
 // ============================================================================
 
-fn process_update(_cid: ContractId, update_data: &[u8]) -> ContractResult {
+fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     let func = TenderFunction::try_from(update_data[0])?;
+    // Every arm is a blind write. The records were built and encoded in exec — exec does not write
+    // and apply does not read (contract-wasm-type-system.md §A.4.7/§B.2.2; register OBL-C72/C73) —
+    // so apply stores the bytes it was handed. These arms used to only log, while exec wrote.
     match func {
         TenderFunction::CreateTenderV1 => {
             let update = CreateTenderUpdateV1::decode(&update_data[1..])?;
+            let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
+            wasm::db::db_set(tenders_db, &update.tender_id.to_repr(), &update.tender_bytes)?;
             msg!("[tender::process_update] CreateTender: {:?}", update.tender_id);
             Ok(())
         }
         TenderFunction::SubmitBidV1 => {
             let update = SubmitBidUpdateV1::decode(&update_data[1..])?;
+            let bids_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_BIDS_TREE)?;
+            let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
+            let nullifiers_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_NULLIFIERS_TREE)?;
+            wasm::db::db_set(bids_db, &update.bid_id.to_repr(), &update.bid_bytes)?;
+            wasm::db::db_mark_spent(nullifiers_db, &update.bid_id.to_repr())?;
+            wasm::db::db_set(tenders_db, &update.tender_id.to_repr(), &update.tender_bytes)?;
             msg!("[tender::process_update] SubmitBid: {:?} {:?}", update.tender_id, update.bid_id);
             Ok(())
         }
         TenderFunction::RevealBidV1 => {
             let update = RevealBidUpdateV1::decode(&update_data[1..])?;
+            let bids_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_BIDS_TREE)?;
+            let nullifiers_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_NULLIFIERS_TREE)?;
+            wasm::db::db_set(bids_db, &update.bid_id.to_repr(), &update.bid_bytes)?;
+            wasm::db::db_mark_spent(nullifiers_db, &update.reveal_nullifier.to_repr())?;
             msg!("[tender::process_update] RevealBid: {:?} {:?}", update.tender_id, update.bid_id);
             Ok(())
         }
         TenderFunction::CloseTenderV1 => {
             let update = CloseTenderUpdateV1::decode(&update_data[1..])?;
+            let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
+            wasm::db::db_set(tenders_db, &update.tender_id.to_repr(), &update.tender_bytes)?;
             msg!("[tender::process_update] CloseTender: {:?}", update.tender_id);
             Ok(())
         }
         TenderFunction::SelectWinnerV1 => {
             let update = SelectWinnerUpdateV1::decode(&update_data[1..])?;
+            let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
+            let bids_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_BIDS_TREE)?;
+            wasm::db::db_set(tenders_db, &update.tender_id.to_repr(), &update.tender_bytes)?;
+            wasm::db::db_set(bids_db, &update.winner_bid_id.to_repr(), &update.winner_bid_bytes)?;
             msg!("[tender::process_update] SelectWinner: {:?} {:?}", update.tender_id, update.winner_bid_id);
             Ok(())
         }
         TenderFunction::CancelTenderV1 => {
             let update = CancelTenderUpdateV1::decode(&update_data[1..])?;
+            let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
+            wasm::db::db_set(tenders_db, &update.tender_id.to_repr(), &update.tender_bytes)?;
             msg!("[tender::process_update] CancelTender: {:?}", update.tender_id);
             Ok(())
         }
         TenderFunction::RejectBidV1 => {
             let update = RejectBidUpdateV1::decode(&update_data[1..])?;
+            let bids_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_BIDS_TREE)?;
+            wasm::db::db_set(bids_db, &update.bid_id.to_repr(), &update.bid_bytes)?;
             msg!("[tender::process_update] RejectBid: {:?} {:?}", update.tender_id, update.bid_id);
             Ok(())
         }
         TenderFunction::CreateTenderWithCapabilityV1 => {
             let update = CreateTenderWithCapabilityUpdateV1::decode(&update_data[1..])?;
+            let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
+            wasm::db::db_set(tenders_db, &update.tender_id.to_repr(), &update.tender_bytes)?;
             msg!("[tender::process_update] CreateTenderWithCapability: {:?}", update.tender_id);
             Ok(())
         }
         TenderFunction::SubmitBidWithCapabilityV1 => {
             let update = SubmitBidWithCapabilityUpdateV1::decode(&update_data[1..])?;
+            let bids_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_BIDS_TREE)?;
+            let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
+            let nullifiers_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_NULLIFIERS_TREE)?;
+            wasm::db::db_set(bids_db, &update.bid_id.to_repr(), &update.bid_bytes)?;
+            wasm::db::db_mark_spent(nullifiers_db, &update.bid_id.to_repr())?;
+            wasm::db::db_set(tenders_db, &update.tender_id.to_repr(), &update.tender_bytes)?;
             msg!("[tender::process_update] SubmitBidWithCapability: {:?} {:?}", update.tender_id, update.bid_id);
             Ok(())
         }
