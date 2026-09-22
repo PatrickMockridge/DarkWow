@@ -1041,6 +1041,8 @@ number; 66 was a pattern-matching artifact.
 | OBL-C72 | The `apply` entrypoint performs blind writes only: no `db_get`, `db_contains_key`, `get_object_size` or `get_object_bytes` is reachable from it, and any value apply needs is computed in `exec` and carried through the update struct | §A.4.7, §B.2.2; `src/runtime/import/db.rs:638`,`:787`,`:1325`,`:1551`; `vm_runtime.rs:954` | C |
 | OBL-C73 | A state write (`db_set`, `db_del`, `merkle_add`, `sparse_merkle_insert_batch`) is not reachable from an `exec`-phase function; all mutation is in `apply` | §A.4.7, §B.2.2; `src/runtime/import/db.rs:358`,`:504`; `merkle.rs:50`; `smt.rs:142` | C |
 | OBL-C74 | Every contract declares in its manifest the barbs each action requires, the capabilities it defines, its note schema and its capability primitives — the declaration `type-system.md` §13 and `ocap.md` §7 make the basis of `wallet_construct` | `manifest.md`; `ocap.md` §7; `contract-wasm-type-system.md` §A.2.2, §A.0.3, §13 | H |
+| OBL-C75 | The id a host uses to key state is the id its circuit derives and `get_metadata` publishes — the host does not independently recompute it from data the client cannot know | `safety.md` RC5 (one fact, two sources of truth); `contract-wasm-type-system.md` §A.1.6, §A.2 | H |
+| OBL-C77 | A metadata arm for a callable non-ZK function returns an **encoded** empty public-input vector, not a bare empty `Vec` | `execution.rs:423`; `native_token/src/entrypoint/mod.rs:922` (`plaintext_call_get_metadata`, the reference); contract-standards.md §3 | H |
 
 **OBL-C72 — read-in-apply. 66 sites, 9 contracts, zero genesis.** §A.4.7 states the rule as a list
 of four denied functions and §B.2.2 supplies the consequence verbatim: *"An `apply` function that
@@ -1098,6 +1100,54 @@ enforces (`entrypoint.rs:670-677`, `OBL-Z17`). `witness_map` is present in 3 of 
 already records that nothing validates it. **Not part of this row, and recorded so it is not read as
 one:** `[[cost_profiles]]` is absent from **all 32** manifests, genesis included — a schema-wide gap
 rather than a genesis/non-genesis one.
+
+**OBL-C75 — a published public input the host does not use.** Found while fixing `pool_stake`'s
+`OBL-C72`/`OBL-C73` sites, and stated separately because it is a different failure: the circuit
+derives an id, `get_metadata` publishes it, and the host then recomputes a *different* id and keys
+state by that. The published input is decorative — the proof binds a value nothing consumes — and
+because the recomputation fed on `get_verifying_block_height()`, **the client could not predict the
+id of the record it had just created**: the height is not known when a proof is built. Three live
+instances, all in `pool_stake`: `CreatePoolV1` ignored `derived_pool_id` and keyed the pool by
+`poseidon_hash([height])`, `JoinPoolV1` ignored `derived_member_id`, and `AllocateCoverageV1` ignored
+`derived_allocation_id`. Two pools created in one block also collapsed onto one key. Fixed
+2026-09-22 by using the proof-bound field in each case and deleting the two `derive_*` helpers, which
+had no other caller.
+
+**The class is bounded, and this is how.** A scan for host-side id derivations that depend on the
+verifying block height — the sharp form of the defect, since a derivation over values the client
+already knows is merely a second source of truth, not unknowable — now finds **one** remaining, and
+it is **dead code**: `game_room/src/model/mod.rs:367 derive_room_id()` with zero call sites. The
+register carries it here rather than in a row of its own because an uncalled function cannot key
+anything; it should be deleted when `game_room` is next touched, not before, so the deletion is not
+mistaken for a behaviour change.
+
+**OBL-C77 — the bare-empty metadata arm, and why it is not a style nit.** `contract-standards.md` §3
+makes an *empty* metadata buffer the documented rejection signal, and the host implements exactly
+that: it decodes the metadata as `Vec<(String, Vec<pallas::Base>)>` (`execution.rs:423`) and, when the
+buffer is zero bytes, reports *"contract signalled EMPTY metadata, which is the documented rejection
+signal"*. So an arm written `F => vec![]` — a bare `Vec`, not an *encoded* empty one — is a function
+that **cannot be called at all**: the host rejects every invocation before exec runs. The correct
+form is what `native_token`'s `plaintext_call_get_metadata` (`entrypoint/mod.rs:922`) does for a
+no-proofs call: encode both empty vectors, so the buffer is a valid 4-byte (or 8-byte) encoding
+rather than nothing. `pool_stake`'s `LeavePoolV1` reached this at runtime
+(`metadata-decode-zkp … contract signalled EMPTY metadata`, block 6) and is fixed.
+
+**Measured scope, separated by reachability, because most of these arms are dead.** Across the tree
+the bare-empty arm appears for:
+
+- **Reachable** — real callable non-ZK functions: `insurance_market` 11 (`CreateMarketV1`,
+  `RegisterRiskTypeV1`, `UnderwriteV1`, `FileClaimV1`, `ResolveClaimV1`, `WithdrawPremiumV1`,
+  `UpdatePremiumV1`, `RetireRiskTypeV1`, `CloseMarketV1`, `DeactivateUnderwriterV1`,
+  `ResolveClaimWithCapabilityV1`), `tender` 3 (`CancelTenderV1`, `RejectBidV1`,
+  `CreateTenderWithCapabilityV1`), `pool_stake` 5 (fixed).
+- **Unreachable by construction** — the `Initialize` arm in `box`, `purse`, `multisig`, `dex`,
+  `otc_swap` and `escrow`. Initialization is the separate `__initialize` entrypoint, so no
+  `ContractCall` ever dispatches to that arm. Recorded because it is the reason three *genesis*
+  contracts (box, purse, multisig) carry the pattern without moving the pin — the arm is dead, not
+  correct. It should still be fixed when each contract is next touched.
+- **Catch-alls needing per-contract determination** — `baccarat` and `darktoshi_dice` write `_ =>
+  vec![]`, so whether any function falls through depends on their enum coverage; that is a read per
+  contract, not a global claim.
 
 **Why these three and not more.** The other candidate classes found in the same pass were left out
 deliberately, because the measurement that produced them is not trustworthy and a row that overstates

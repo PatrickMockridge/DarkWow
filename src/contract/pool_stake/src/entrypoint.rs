@@ -121,12 +121,21 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params= SlashCoverageParamsV1::decode(&self_.data[1..])?;
             slash_coverage_get_metadata_v1(params)?
         }
-        // Functions without ZK proofs: empty metadata
+        // Functions without ZK proofs: an **encoded** empty `zk_public_inputs`, not a bare `vec![]`.
+        // The host decodes the metadata as `Vec<(String, Vec<Base>)>` (`execution.rs:423`) and a
+        // 0-byte buffer fails that decode, which it reports as "contract signalled EMPTY metadata,
+        // the documented rejection signal" — so a raw empty Vec made every non-ZK endpoint
+        // uncallable. This is exactly what the ZK helpers below return for an empty vector.
         PoolStakeFunction::LeavePoolV1
         | PoolStakeFunction::ReleaseCoverageV1
         | PoolStakeFunction::ClaimFeesV1
         | PoolStakeFunction::UpdatePoolConfigV1
-        | PoolStakeFunction::RebalancePoolSharesV1 => vec![],
+        | PoolStakeFunction::RebalancePoolSharesV1 => {
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
     };
 
     wasm::util::set_return_data(&metadata)
@@ -437,12 +446,14 @@ fn process_join_pool_instruction(
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
-    // Generate stake ID
-    let stake_id = derive_stake_id(
-        params.pool_id,
-        &params.relayer_id,
-        wasm::util::get_verifying_block_height()?.get(),
-    );
+    // The stake id is the **proof-bound** `derived_member_id` the circuit computes and get_metadata
+    // publishes (entrypoint.rs:175). This used to be `derive_stake_id(pool_id, relayer_id, height)`,
+    // which (a) disagreed with the published public input, so the proof bound an id nothing used,
+    // and (b) depended on the block height, which the client cannot know when it builds the proof —
+    // so no client could address the stake it had just created. Same defect as CreatePoolV1's
+    // ignored `derived_pool_id`; `derive_stake_id` is now dead and removed.
+    let current_block = wasm::util::get_verifying_block_height()?.get();
+    let stake_id = params.derived_member_id;
 
     // Check stake doesn't already exist
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
@@ -470,14 +481,13 @@ fn process_join_pool_instruction(
     let update = JoinPoolUpdateV1 {
         instance_seed: params.instance_seed,
         stake_id,
-        pool_id: params.pool_id,
         member_pub: params.member_pub,
         relayer_id: params.relayer_id,
         amount: params.amount,
         coverage_contribution,
         pool_share_bp,
-        total_stake: pool.total_stake,
-        member_count: pool.member_count,
+        created_at: current_block,
+        pool,
     };
 
     msg!("[pool_stake::join_pool] Stake {:?} created", stake_id);
@@ -488,24 +498,19 @@ fn apply_join_pool_update(cid: ContractId, update: JoinPoolUpdateV1) -> Contract
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
 
-    // Get and update registry
-    let mut pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &update.pool_id.to_repr())? {
-            Some(data) => PoolStakeRegistry::decode(&data)?,
-            None => return Err(PoolStakeError::PoolNotFound.into()),
-        };
-
-    pool.total_stake = update.total_stake;
-    pool.member_count = update.member_count;
-
-    wasm::db::db_set(registry_db, &update.pool_id.to_repr(), &pool.encode())?;
+    // Re-store the registry exactly as exec left it. Blind write: the read triad is denied in
+    // `Update` (contract-wasm-type-system.md §B.2.2, register OBL-C72), so apply must not read
+    // the record back. Note this also fixes a defect the old read-modify-write hid: exec has
+    // always computed `available_coverage += coverage_contribution`, but the update carried only
+    // `total_stake` and `member_count`, so the pool's available coverage was never written.
+    wasm::db::db_set(registry_db, &update.pool.pool_id.to_repr(), &update.pool.encode())?;
 
     // Create stake
     let stake = PoolMemberStake {
         version: 1,
         instance_seed: update.instance_seed,
         stake_id: update.stake_id,
-        pool_id: update.pool_id,
+        pool_id: update.pool.pool_id,
         member_pub: update.member_pub,
         relayer_id: update.relayer_id,
         original_amount: update.amount,
@@ -513,7 +518,7 @@ fn apply_join_pool_update(cid: ContractId, update: JoinPoolUpdateV1) -> Contract
         coverage_contribution: update.coverage_contribution,
         pool_share_bp: update.pool_share_bp,
         accumulated_fees: 0,
-        created_at: wasm::util::get_verifying_block_height()?.get(),
+        created_at: update.created_at,
         leave_requested_at: None,
         slash_count: 0,
         is_active: true,
@@ -586,11 +591,13 @@ fn process_leave_pool_instruction(
         }
         // Cooldown elapsed — proceed with leave
     } else {
-        // First call — start cooldown
+        // First call — start the cooldown. Starting it is a state write, and exec does not write
+        // (OBL-C73): the updated stake travels in the update and apply stores it. The call
+        // *succeeds*, so the caller learns the cooldown began from a successful call.
         stake.leave_requested_at = Some(current_block);
-        wasm::db::db_set(stakes_db, &params.stake_id.to_repr(), &stake.encode())?;
+        let update = LeavePoolUpdateV1 { stake, payout_amount: 0, unstake_penalty: 0 };
         msg!("[pool_stake::leave_pool] Cooldown started: {} blocks", crate::POOL_STAKE_LEAVE_COOLDOWN_BLOCKS);
-        return Err(PoolStakeError::StakeLocked.into())
+        return wasm::util::set_return_data(&[&[PoolStakeFunction::LeavePoolV1 as u8], &update.encode()[..]].concat())
     }
 
     // Calculate final payout (current_amount - proportional losses)
@@ -611,7 +618,10 @@ fn process_leave_pool_instruction(
     ]);
     validate_child_value_commit(&child_call.data, payout_amount, value_blind)?;
 
-    let update = LeavePoolUpdateV1 { stake_id: params.stake_id, payout_amount, unstake_penalty };
+    stake.is_active = false;
+    stake.current_amount = 0;
+
+    let update = LeavePoolUpdateV1 { stake, payout_amount, unstake_penalty };
 
     msg!("[pool_stake::leave_pool] Payout: {}", payout_amount);
     wasm::util::set_return_data(&[&[PoolStakeFunction::LeavePoolV1 as u8], &update.encode()[..]].concat())
@@ -620,18 +630,10 @@ fn process_leave_pool_instruction(
 fn apply_leave_pool_update(cid: ContractId, update: LeavePoolUpdateV1) -> ContractResult {
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
 
-    // Get and update stake
-    let mut stake: PoolMemberStake =
-        match wasm::db::db_get(stakes_db, &update.stake_id.to_repr())? {
-            Some(data) => PoolMemberStake::decode(&data)?,
-            None => return Err(PoolStakeError::StakeNotFound.into()),
-        };
-
-    stake.is_active = false;
-    stake.current_amount = 0;
-
-    wasm::db::db_set(stakes_db, &update.stake_id.to_repr(), &stake.encode())?;
-    msg!("[pool_stake::leave_pool::update] Stake deactivated");
+    // Re-store the stake exactly as exec left it — blind write, no read (OBL-C72). One path
+    // covers both transitions: the cooldown start and the leave itself.
+    wasm::db::db_set(stakes_db, &update.stake.stake_id.to_repr(), &update.stake.encode())?;
+    msg!("[pool_stake::leave_pool::update] Stake updated");
 
     Ok(())
 }
@@ -656,7 +658,7 @@ fn process_allocate_coverage_instruction(
 
     // Get pool
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
-    let pool: PoolStakeRegistry =
+    let mut pool: PoolStakeRegistry =
         match wasm::db::db_get(registry_db, &params.pool_id.to_repr())? {
             Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
@@ -667,27 +669,31 @@ fn process_allocate_coverage_instruction(
         return Err(PoolStakeError::InsufficientCoverage.into());
     }
 
-    // Generate allocation ID
-    let allocation_id = derive_allocation_id(
-        params.pool_id,
-        &params.withdrawal_nullifier,
-        wasm::util::get_verifying_block_height()?.get(),
-    );
+    // The proof-bound `derived_allocation_id` the circuit computes and get_metadata publishes
+    // (entrypoint.rs:201), for the same reason as the stake id above — the old
+    // `derive_allocation_id(.., height)` disagreed with the public input and was unknowable to the
+    // client. `derive_allocation_id` is now dead and removed.
+    let current_block = wasm::util::get_verifying_block_height()?.get();
+    let allocation_id = params.derived_allocation_id;
 
     // NOTE: contributing_members requires iteration over POOL_STAKE_MEMBERS_TREE.
     // The wasm::db API currently lacks iteration support. Deferred to DB API upgrade
     // (per-pool member index or wasm::db iteration). Proportional payout is skipped.
     let contributing_members = vec![];
 
+    // Move the coverage from available to allocated here, on the record exec carries through —
+    // apply re-stores it rather than reading it back (OBL-C72).
+    pool.available_coverage -= params.amount;
+    pool.allocated_coverage += params.amount;
+
     let update = AllocateCoverageUpdateV1 {
         allocation_id,
-        pool_id: params.pool_id,
         withdrawal_nullifier: params.withdrawal_nullifier,
         amount: params.amount,
         contributing_members,
-        available_coverage: pool.available_coverage - params.amount,
-        allocated_coverage: pool.allocated_coverage + params.amount,
         timeout_height: params.timeout_height,
+        created_at: current_block,
+        pool,
     };
 
     msg!("[pool_stake::allocate_coverage] Allocation {:?} created", allocation_id);
@@ -698,27 +704,18 @@ fn apply_allocate_coverage_update(cid: ContractId, update: AllocateCoverageUpdat
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
     let allocations_db = wasm::db::db_lookup(cid, POOL_STAKE_ALLOCATIONS_TREE)?;
 
-    // Update pool
-    let mut pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &update.pool_id.to_repr())? {
-            Some(data) => PoolStakeRegistry::decode(&data)?,
-            None => return Err(PoolStakeError::PoolNotFound.into()),
-        };
-
-    pool.available_coverage = update.available_coverage;
-    pool.allocated_coverage = update.allocated_coverage;
-
-    wasm::db::db_set(registry_db, &update.pool_id.to_repr(), &pool.encode())?;
+    // Re-store the registry exactly as exec left it — blind write, no read (OBL-C72).
+    wasm::db::db_set(registry_db, &update.pool.pool_id.to_repr(), &update.pool.encode())?;
 
     // Create allocation
     let allocation = CoverageAllocation {
         version: 1,
         allocation_id: update.allocation_id,
-        pool_id: update.pool_id,
+        pool_id: update.pool.pool_id,
         withdrawal_nullifier: update.withdrawal_nullifier,
         amount: update.amount,
         contributing_members: update.contributing_members,
-        created_at: wasm::util::get_verifying_block_height()?.get(),
+        created_at: update.created_at,
         timeout_height: update.timeout_height,
         executed: false,
         slashed: false,
@@ -749,7 +746,7 @@ fn process_release_coverage_instruction(
     msg!("[pool_stake::release_coverage] Releasing allocation {:?}", params.allocation_id);
 
     let allocations_db = wasm::db::db_lookup(cid, POOL_STAKE_ALLOCATIONS_TREE)?;
-    let allocation: CoverageAllocation =
+    let mut allocation: CoverageAllocation =
         match wasm::db::db_get(allocations_db, &params.allocation_id.to_repr())? {
             Some(data) => CoverageAllocation::decode(&data)?,
             None => return Err(PoolStakeError::AllocationNotFound.into()),
@@ -761,7 +758,7 @@ fn process_release_coverage_instruction(
 
     // Get pool to calculate new coverage
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
-    let pool: PoolStakeRegistry =
+    let mut pool: PoolStakeRegistry =
         match wasm::db::db_get(registry_db, &allocation.pool_id.to_repr())? {
             Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
@@ -771,46 +768,35 @@ fn process_release_coverage_instruction(
         return Err(PoolStakeError::Unauthorized.into())
     }
 
+    // Apply both record changes here, on the values exec carries through: apply re-stores them
+    // rather than reading them back (OBL-C72). The allocation is encoded here because it has a
+    // variable-length member list — apply stores the bytes rather than re-encoding the record.
+    let released_amount = allocation.amount;
+    pool.available_coverage += released_amount;
+    pool.allocated_coverage -= released_amount;
+    allocation.executed = true;
+    let allocation_bytes = allocation.encode()?;
+
     let update = ReleaseCoverageUpdateV1 {
         allocation_id: params.allocation_id,
-        released_amount: allocation.amount,
-        available_coverage: pool.available_coverage + allocation.amount,
-        allocated_coverage: pool.allocated_coverage - allocation.amount,
+        released_amount,
+        allocation_bytes,
+        pool,
     };
 
-    wasm::util::set_return_data(&[&[PoolStakeFunction::ReleaseCoverageV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[PoolStakeFunction::ReleaseCoverageV1 as u8], &update.encode()?[..]].concat())
 }
 
 fn apply_release_coverage_update(cid: ContractId, update: ReleaseCoverageUpdateV1) -> ContractResult {
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
     let allocations_db = wasm::db::db_lookup(cid, POOL_STAKE_ALLOCATIONS_TREE)?;
 
-    // Look up allocation to get pool_id
-    let mut allocation: CoverageAllocation =
-        match wasm::db::db_get(allocations_db, &update.allocation_id.to_repr())? {
-            Some(data) => CoverageAllocation::decode(&data)?,
-            None => return Err(PoolStakeError::AllocationNotFound.into()),
-        };
-
-    // Look up pool by pool_id from the allocation
-    let mut pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &allocation.pool_id.to_repr())? {
-            Some(data) => PoolStakeRegistry::decode(&data)?,
-            None => return Err(PoolStakeError::PoolNotFound.into()),
-        };
-
-    pool.available_coverage = update.available_coverage;
-    pool.allocated_coverage = update.allocated_coverage;
-
-    wasm::db::db_set(registry_db, &pool.pool_id.to_repr(), &pool.encode())?;
-
-    // Mark allocation as executed
-    allocation.executed = true;
-
+    // Both are blind writes — no read, no decode (OBL-C72).
+    wasm::db::db_set(registry_db, &update.pool.pool_id.to_repr(), &update.pool.encode())?;
     wasm::db::db_set(
         allocations_db,
         &update.allocation_id.to_repr(),
-        &allocation.encode()?,
+        &update.allocation_bytes,
     )?;
     msg!("[pool_stake::release_coverage::update] Coverage released");
 
@@ -836,7 +822,7 @@ fn process_slash_coverage_instruction(
     );
 
     let allocations_db = wasm::db::db_lookup(cid, POOL_STAKE_ALLOCATIONS_TREE)?;
-    let allocation: CoverageAllocation =
+    let mut allocation: CoverageAllocation =
         match wasm::db::db_get(allocations_db, &params.allocation_id.to_repr())? {
             Some(data) => CoverageAllocation::decode(&data)?,
             None => return Err(PoolStakeError::AllocationNotFound.into()),
@@ -848,7 +834,7 @@ fn process_slash_coverage_instruction(
 
     // Get pool
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
-    let pool: PoolStakeRegistry =
+    let mut pool: PoolStakeRegistry =
         match wasm::db::db_get(registry_db, &allocation.pool_id.to_repr())? {
             Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
@@ -862,16 +848,38 @@ fn process_slash_coverage_instruction(
         return Err(PoolStakeError::InsufficientCoverage.into())
     }
 
+    // Apply all three record changes here, on the values exec carries through: the registry, the
+    // allocation, and each contributing member's slash count. apply re-stores them without reading
+    // (OBL-C72) — the previous apply read all three back. The allocation is encoded here because
+    // its member list is variable-length.
+    pool.total_slashed = pool.total_slashed.saturating_add(params.slash_amount);
+    pool.pool_slash_count = pool.pool_slash_count.saturating_add(1);
+    pool.allocated_coverage -= params.slash_amount;
+    allocation.slashed = true;
+    let allocation_bytes = allocation.encode()?;
+
+    // Track per-member slash counts (Phase 2d hardening)
+    let members_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
+    let mut member_stakes = Vec::with_capacity(allocation.contributing_members.len());
+    for member_id in &allocation.contributing_members {
+        if let Some(data) = wasm::db::db_get(members_db, &member_id.to_repr())? {
+            let mut stake: PoolMemberStake = PoolMemberStake::decode(&data)?;
+            stake.slash_count = stake.slash_count.saturating_add(1);
+            member_stakes.push(stake);
+        }
+    }
+
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let update = SlashCoverageUpdateV1 {
         allocation_id: params.allocation_id,
         slashed_amount: params.slash_amount,
         compensated_user: params.user_pub.x().expect("pk not identity").to_repr(),
-        available_coverage: pool.available_coverage,
-        allocated_coverage: pool.allocated_coverage - params.slash_amount,
+        allocation_bytes,
+        member_stakes,
+        pool,
     };
 
-    wasm::util::set_return_data(&[&[PoolStakeFunction::SlashCoverageV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[PoolStakeFunction::SlashCoverageV1 as u8], &update.encode()?[..]].concat())
 }
 
 fn apply_slash_coverage_update(cid: ContractId, update: SlashCoverageUpdateV1) -> ContractResult {
@@ -879,39 +887,28 @@ fn apply_slash_coverage_update(cid: ContractId, update: SlashCoverageUpdateV1) -
     let members_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
 
-    // Update allocation
-    let mut allocation: CoverageAllocation =
-        match wasm::db::db_get(allocations_db, &update.allocation_id.to_repr())? {
-            Some(data) => CoverageAllocation::decode(&data)?,
-            None => return Err(PoolStakeError::AllocationNotFound.into()),
-        };
-
-    allocation.slashed = true;
-
+    // All blind writes — no reads (OBL-C72).
     wasm::db::db_set(
         allocations_db,
         &update.allocation_id.to_repr(),
-        &allocation.encode()?,
+        &update.allocation_bytes,
     )?;
 
     // Track per-member slash counts (Phase 2d hardening)
-    for member_id in &allocation.contributing_members {
-        if let Some(data) = wasm::db::db_get(members_db, &member_id.to_repr())? {
-            let mut stake: PoolMemberStake = PoolMemberStake::decode(&data)?;
-            stake.slash_count = stake.slash_count.saturating_add(1);
-            wasm::db::db_set(members_db, &member_id.to_repr(), &stake.encode())?;
-        }
+    for stake in &update.member_stakes {
+        wasm::db::db_set(
+            members_db,
+            &stake.stake_id.to_repr(),
+            &stake.encode(),
+        )?;
     }
 
     // Update pool-level slash stats
-    if let Some(pool_data) = wasm::db::db_get(registry_db, &allocation.pool_id.to_repr())? {
-        let mut pool: PoolStakeRegistry = PoolStakeRegistry::decode(&pool_data)?;
-        pool.total_slashed = pool.total_slashed.saturating_add(update.slashed_amount);
-        pool.pool_slash_count = pool.pool_slash_count.saturating_add(1);
-        pool.available_coverage = update.available_coverage;
-        pool.allocated_coverage = update.allocated_coverage;
-        wasm::db::db_set(registry_db, &allocation.pool_id.to_repr(), &pool.encode())?;
-    }
+    wasm::db::db_set(
+        registry_db,
+        &update.pool.pool_id.to_repr(),
+        &update.pool.encode(),
+    )?;
 
     msg!("[pool_stake::slash_coverage::update] Coverage slashed (per-member tracking)");
 
@@ -957,7 +954,7 @@ fn process_claim_fees_instruction(
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
-    let stake: PoolMemberStake =
+    let mut stake: PoolMemberStake =
         match wasm::db::db_get(stakes_db, &params.stake_id.to_repr())? {
             Some(data) => PoolMemberStake::decode(&data)?,
             None => return Err(PoolStakeError::StakeNotFound.into()),
@@ -978,17 +975,17 @@ fn process_claim_fees_instruction(
         return Err(PoolStakeError::NoEarnings.into());
     }
 
+    let claimed_amount = stake.accumulated_fees;
     let value_blind = poseidon_hash([
-        pallas::Base::from(stake.accumulated_fees),
+        pallas::Base::from(claimed_amount),
         stake.pool_id,
     ]);
-    validate_child_value_commit(&child_call.data, stake.accumulated_fees, value_blind)?;
+    validate_child_value_commit(&child_call.data, claimed_amount, value_blind)?;
 
-    let update = ClaimFeesUpdateV1 {
-        stake_id: params.stake_id,
-        claimed_amount: stake.accumulated_fees,
-        remaining_fees: 0,
-    };
+    // Zero the fees here, on the record exec carries through — apply re-stores it (OBL-C72).
+    stake.accumulated_fees = 0;
+
+    let update = ClaimFeesUpdateV1 { stake, claimed_amount };
 
     wasm::util::set_return_data(&[&[PoolStakeFunction::ClaimFeesV1 as u8], &update.encode()[..]].concat())
 }
@@ -996,15 +993,8 @@ fn process_claim_fees_instruction(
 fn apply_claim_fees_update(cid: ContractId, update: ClaimFeesUpdateV1) -> ContractResult {
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
 
-    let mut stake: PoolMemberStake =
-        match wasm::db::db_get(stakes_db, &update.stake_id.to_repr())? {
-            Some(data) => PoolMemberStake::decode(&data)?,
-            None => return Err(PoolStakeError::StakeNotFound.into()),
-        };
-
-    stake.accumulated_fees = update.remaining_fees;
-
-    wasm::db::db_set(stakes_db, &update.stake_id.to_repr(), &stake.encode())?;
+    // Blind write (OBL-C72).
+    wasm::db::db_set(stakes_db, &update.stake.stake_id.to_repr(), &update.stake.encode())?;
     msg!("[pool_stake::claim_fees::update] Fees claimed");
 
     Ok(())
@@ -1025,7 +1015,7 @@ fn process_update_pool_config_instruction(
     msg!("[pool_stake::update_config] Updating pool {:?}", params.pool_id);
 
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
-    let pool: PoolStakeRegistry =
+    let mut pool: PoolStakeRegistry =
         match wasm::db::db_get(registry_db, &params.pool_id.to_repr())? {
             Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
@@ -1035,14 +1025,10 @@ fn process_update_pool_config_instruction(
         return Err(PoolStakeError::Unauthorized.into())
     }
 
-    let max_coverage_ratio = params.max_coverage_ratio.unwrap_or(pool.max_coverage_ratio);
-    let operator_fee_bp = params.operator_fee_bp.unwrap_or(pool.operator_fee_bp);
+    pool.max_coverage_ratio = params.max_coverage_ratio.unwrap_or(pool.max_coverage_ratio);
+    pool.operator_fee_bp = params.operator_fee_bp.unwrap_or(pool.operator_fee_bp);
 
-    let update = UpdatePoolConfigUpdateV1 {
-        pool_id: params.pool_id,
-        max_coverage_ratio,
-        operator_fee_bp,
-    };
+    let update = UpdatePoolConfigUpdateV1 { pool };
 
     wasm::util::set_return_data(&[&[PoolStakeFunction::UpdatePoolConfigV1 as u8], &update.encode()[..]].concat())
 }
@@ -1053,16 +1039,8 @@ fn apply_update_pool_config_update(
 ) -> ContractResult {
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
 
-    let mut pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &update.pool_id.to_repr())? {
-            Some(data) => PoolStakeRegistry::decode(&data)?,
-            None => return Err(PoolStakeError::PoolNotFound.into()),
-        };
-
-    pool.max_coverage_ratio = update.max_coverage_ratio;
-    pool.operator_fee_bp = update.operator_fee_bp;
-
-    wasm::db::db_set(registry_db, &update.pool_id.to_repr(), &pool.encode())?;
+    // Blind write (OBL-C72).
+    wasm::db::db_set(registry_db, &update.pool.pool_id.to_repr(), &update.pool.encode())?;
     msg!("[pool_stake::update_config::update] Pool config updated");
 
     Ok(())
@@ -1071,39 +1049,10 @@ fn apply_update_pool_config_update(
 // ============================================================================
 // HELPERS
 // ============================================================================
-
-fn derive_stake_id(pool_id: pallas::Base, relayer_id: &[u8; 32], nonce: u64) -> pallas::Base {
-    use dwow_sdk::crypto::poseidon_hash;
-    use dwow_sdk::pasta::pallas;
-    // Hash the relayer_id with blake3 to get bytes we can convert to pallas::Base
-    let hashed = blake3::hash(relayer_id);
-    let bytes: [u8; 32] = *hashed.as_bytes();
-    let words: [u64; 4] = [
-        u64::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]]),
-        u64::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]]),
-        u64::from_le_bytes([bytes[16], bytes[17], bytes[18], bytes[19], bytes[20], bytes[21], bytes[22], bytes[23]]),
-        u64::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27], bytes[28], bytes[29], bytes[30], bytes[31]]),
-    ];
-    poseidon_hash([pool_id, pallas::Base::from_raw(words), pallas::Base::from(nonce)])
-}
-
-fn derive_allocation_id(
-    pool_id: pallas::Base,
-    withdrawal_nullifier: &[u8; 32],
-    nonce: u64,
-) -> pallas::Base {
-    use dwow_sdk::crypto::poseidon_hash;
-    use dwow_sdk::pasta::pallas;
-    let hashed = blake3::hash(withdrawal_nullifier);
-    let bytes: [u8; 32] = *hashed.as_bytes();
-    let words: [u64; 4] = [
-        u64::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]]),
-        u64::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]]),
-        u64::from_le_bytes([bytes[16], bytes[17], bytes[18], bytes[19], bytes[20], bytes[21], bytes[22], bytes[23]]),
-        u64::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27], bytes[28], bytes[29], bytes[30], bytes[31]]),
-    ];
-    poseidon_hash([pool_id, pallas::Base::from_raw(words), pallas::Base::from(nonce)])
-}
+// `derive_stake_id` and `derive_allocation_id` were removed: both computed an id from the
+// verifying block height while the circuit derived a different one from its public inputs, so
+// the published public input was decorative and no client could predict the id it would get.
+// The ids now come from the proof-bound params fields. Safety.md RC5 — one fact, one source.
 
 // ============================================================================
 // REBALANCE POOL SHARES (Phase 2d hardening)
@@ -1137,6 +1086,7 @@ fn process_rebalance_pool_shares_instruction(
     let members_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
     let mut total_share_bp: u32 = 0;
     let mut members_rebalanced: u64 = 0;
+    let mut updated_stakes: Vec<PoolMemberStake> = vec![];
 
 	    if params.member_ids.len() > crate::POOL_STAKE_MAX_REBALANCE_MEMBERS {
 	        msg!("[pool_stake::rebalance] Too many members: {} (max {})",
@@ -1161,10 +1111,10 @@ fn process_rebalance_pool_shares_instruction(
 	            .saturating_div(slash_penalty as u64)
 	            .min(u32::MAX as u64) as u32;
 
-	        // Persist updated share to DB
+	        // Adjust the share here and carry the record. exec does not write (OBL-C73) — the old
+	        // code wrote each member straight to the members tree from this loop, and apply was a
+	        // no-op that only logged. apply now re-stores what exec collected.
 	        stake.pool_share_bp = adjusted_bp;
-	        wasm::db::db_set(members_db, &member_id.to_repr(), &stake.encode())?;
-
 	        total_share_bp = total_share_bp.saturating_add(adjusted_bp);
 	        members_rebalanced = members_rebalanced.saturating_add(1);
 
@@ -1172,24 +1122,31 @@ fn process_rebalance_pool_shares_instruction(
             "[pool_stake::rebalance] Member {:?} share: {} -> {} (slash_count: {})",
             member_id, stake.pool_share_bp, adjusted_bp, stake.slash_count
         );
+        updated_stakes.push(stake);
     }
 
     let update = RebalancePoolSharesUpdateV1 {
         pool_id: params.pool_id,
         members_rebalanced,
         total_share_bp,
+        updated_stakes,
     };
 
     msg!("[pool_stake::rebalance] Rebalanced {} members", members_rebalanced);
-    wasm::util::set_return_data(&[&[PoolStakeFunction::RebalancePoolSharesV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[PoolStakeFunction::RebalancePoolSharesV1 as u8], &update.encode()?[..]].concat())
 }
 
 fn apply_rebalance_pool_shares_update(
-    _cid: ContractId,
+    cid: ContractId,
     update: RebalancePoolSharesUpdateV1,
 ) -> ContractResult {
-    // Per-member share adjustments are persisted during the instruction phase.
-    // The update phase confirms the rebalance completed.
+    let members_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
+
+    // Blind writes — the adjusted shares were computed in exec and carried here (OBL-C72/C73).
+    for stake in &update.updated_stakes {
+        wasm::db::db_set(members_db, &stake.stake_id.to_repr(), &stake.encode())?;
+    }
+
     msg!(
         "[pool_stake::rebalance::update] Pool {:?} rebalanced: {} members, total_share_bp: {}",
         update.pool_id, update.members_rebalanced, update.total_share_bp

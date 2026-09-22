@@ -55,6 +55,64 @@ fn make_pubkey(seed: u64) -> PublicKey {
     PublicKey::from_secret(secret)
 }
 
+/// A well-formed `PoolMemberStake` for the update round-trip tests. The update structs now carry
+/// whole records (so apply can re-store them without reading), and these tests exist to prove the
+/// carried record survives the bridge intact.
+fn make_member_stake() -> PoolMemberStake {
+    PoolMemberStake {
+        version: 1,
+        instance_seed: [0u8; 32],
+        stake_id: make_base([1u8; 32]),
+        pool_id: make_base([2u8; 32]),
+        member_pub: make_pubkey(3),
+        relayer_id: [4u8; 32],
+        original_amount: 1_000_000,
+        current_amount: 1_000_000,
+        coverage_contribution: 900_000,
+        pool_share_bp: 2000,
+        accumulated_fees: 0,
+        created_at: 4242,
+        leave_requested_at: None,
+        slash_count: 0,
+        is_active: true,
+    }
+}
+
+/// A well-formed `PoolStakeRegistry`.
+fn make_registry() -> PoolStakeRegistry {
+    PoolStakeRegistry {
+        version: 0,
+        pool_id: make_base([2u8; 32]),
+        owner_pub: make_pubkey(2),
+        total_stake: 1_000_000,
+        available_coverage: 900_000,
+        allocated_coverage: 100_000,
+        member_count: 5,
+        max_coverage_ratio: 10000,
+        operator_fee_bp: 100,
+        created_at: 100,
+        total_slashed: 0,
+        pool_slash_count: 0,
+        is_active: true,
+    }
+}
+
+/// A well-formed `CoverageAllocation` for the same purpose.
+fn make_allocation() -> CoverageAllocation {
+    CoverageAllocation {
+        version: 1,
+        allocation_id: make_base([7u8; 32]),
+        pool_id: make_base([2u8; 32]),
+        withdrawal_nullifier: [8u8; 32],
+        amount: 100_000,
+        contributing_members: vec![],
+        created_at: 4242,
+        timeout_height: 500,
+        executed: false,
+        slashed: false,
+    }
+}
+
 #[test]
 fn test_pool_stake_function_enum_valid() {
     // Test that all function IDs are valid
@@ -299,17 +357,34 @@ fn test_join_pool_params_encoding() {
 
 #[test]
 fn test_join_pool_update_encoding() {
+    // The update carries the finished registry record, so apply can re-store it without a
+    // db_get-in-apply (contract-wasm-type-system.md §B.2.2 / register OBL-C72).
+    let pool = PoolStakeRegistry {
+        version: 0,
+        pool_id: make_base([2u8; 32]),
+        owner_pub: make_pubkey(2),
+        total_stake: 5000000,
+        available_coverage: 4500000,
+        allocated_coverage: 100000,
+        member_count: 5,
+        max_coverage_ratio: 10000,
+        operator_fee_bp: 100,
+        created_at: 100,
+        total_slashed: 0,
+        pool_slash_count: 0,
+        is_active: true,
+    };
+
     let update = JoinPoolUpdateV1 {
         instance_seed: [0u8; 32],
         stake_id: make_base([1u8; 32]),
-        pool_id: make_base([2u8; 32]),
         member_pub: make_pubkey(3),
         relayer_id: [4u8; 32],
         amount: 1000000,
         coverage_contribution: 900000,
         pool_share_bp: 2000,
-        total_stake: 5000000,
-        member_count: 5,
+        created_at: 4242,
+        pool,
     };
 
     let encoded = serialize(&update);
@@ -317,7 +392,11 @@ fn test_join_pool_update_encoding() {
 
     assert_eq!(decoded.stake_id, update.stake_id);
     assert_eq!(decoded.pool_share_bp, 2000);
-    assert_eq!(decoded.member_count, 5);
+    assert_eq!(decoded.created_at, 4242);
+    // The carried record must survive the round trip intact — this is the value apply writes.
+    assert_eq!(decoded.pool.member_count, 5);
+    assert_eq!(decoded.pool.total_stake, 5000000);
+    assert_eq!(decoded.pool.pool_id, update.pool.pool_id);
 }
 
 #[test]
@@ -334,8 +413,14 @@ fn test_leave_pool_params_encoding() {
 
 #[test]
 fn test_leave_pool_update_encoding() {
+    // The update carries the stake with its post-leave state applied, so apply re-stores it
+    // without a db_get-in-apply (OBL-C72). It also carries the cooldown-start transition.
+    let mut stake = make_member_stake();
+    stake.is_active = false;
+    stake.current_amount = 0;
+
     let update = LeavePoolUpdateV1 {
-        stake_id: make_base([1u8; 32]),
+        stake,
         payout_amount: 950000,
         unstake_penalty: 50000,
     };
@@ -343,7 +428,8 @@ fn test_leave_pool_update_encoding() {
     let encoded = serialize(&update);
     let decoded: LeavePoolUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.stake_id, update.stake_id);
+    assert_eq!(decoded.stake.stake_id, update.stake.stake_id);
+    assert!(!decoded.stake.is_active);
     assert_eq!(decoded.payout_amount, 950000);
     assert_eq!(decoded.unstake_penalty, 50000);
 }
@@ -371,15 +457,30 @@ fn test_allocate_coverage_params_encoding() {
 
 #[test]
 fn test_allocate_coverage_update_encoding() {
+    let pool = PoolStakeRegistry {
+        version: 0,
+        pool_id: make_base([2u8; 32]),
+        owner_pub: make_pubkey(2),
+        total_stake: 1000000,
+        available_coverage: 800000,
+        allocated_coverage: 200000,
+        member_count: 5,
+        max_coverage_ratio: 10000,
+        operator_fee_bp: 100,
+        created_at: 100,
+        total_slashed: 0,
+        pool_slash_count: 0,
+        is_active: true,
+    };
+
     let update = AllocateCoverageUpdateV1 {
         allocation_id: make_base([1u8; 32]),
-        pool_id: make_base([2u8; 32]),
         withdrawal_nullifier: [3u8; 32],
         amount: 100000,
         contributing_members: vec![make_base([4u8; 32]), make_base([5u8; 32])],
-        available_coverage: 800000,
-        allocated_coverage: 200000,
         timeout_height: 500,
+        created_at: 4242,
+        pool,
     };
 
     let encoded = serialize(&update);
@@ -387,7 +488,10 @@ fn test_allocate_coverage_update_encoding() {
 
     assert_eq!(decoded.allocation_id, update.allocation_id);
     assert_eq!(decoded.contributing_members.len(), 2);
-    assert_eq!(decoded.available_coverage, 800000);
+    assert_eq!(decoded.created_at, 4242);
+    // The carried record survives the round trip — this is the value apply writes.
+    assert_eq!(decoded.pool.available_coverage, 800000);
+    assert_eq!(decoded.pool.pool_id, update.pool.pool_id);
 }
 
 #[test]
@@ -405,11 +509,19 @@ fn test_release_coverage_params_encoding() {
 
 #[test]
 fn test_release_coverage_update_encoding() {
+    let mut allocation = make_allocation();
+    allocation.executed = true;
+    let allocation_bytes = allocation.encode().unwrap();
+
+    let mut pool = make_registry();
+    pool.available_coverage = 900000;
+    pool.allocated_coverage = 100000;
+
     let update = ReleaseCoverageUpdateV1 {
         allocation_id: make_base([1u8; 32]),
         released_amount: 100000,
-        available_coverage: 900000,
-        allocated_coverage: 100000,
+        allocation_bytes,
+        pool,
     };
 
     let encoded = serialize(&update);
@@ -417,7 +529,10 @@ fn test_release_coverage_update_encoding() {
 
     assert_eq!(decoded.allocation_id, update.allocation_id);
     assert_eq!(decoded.released_amount, 100000);
-    assert_eq!(decoded.available_coverage, 900000);
+    // The carried record survives the bridge; the allocation bytes are the record apply stores.
+    assert_eq!(decoded.pool.available_coverage, 900000);
+    assert_eq!(decoded.pool.pool_id, update.pool.pool_id);
+    assert_eq!(CoverageAllocation::decode(&decoded.allocation_bytes).unwrap().executed, true);
 }
 
 #[test]
@@ -440,19 +555,38 @@ fn test_slash_coverage_params_encoding() {
 
 #[test]
 fn test_slash_coverage_update_encoding() {
+    let mut allocation = make_allocation();
+    allocation.slashed = true;
+    let allocation_bytes = allocation.encode().unwrap();
+
+    let mut member = make_member_stake();
+    member.slash_count = 1;
+
+    let mut pool = make_registry();
+    pool.available_coverage = 800000;
+    pool.allocated_coverage = 0;
+    pool.total_slashed = 100000;
+    pool.pool_slash_count = 1;
+
     let update = SlashCoverageUpdateV1 {
         allocation_id: make_base([1u8; 32]),
         slashed_amount: 100000,
         compensated_user: [2u8; 32],
-        available_coverage: 800000,
-        allocated_coverage: 0,
+        allocation_bytes,
+        member_stakes: vec![member],
+        pool,
     };
 
     let encoded = serialize(&update);
     let decoded: SlashCoverageUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.slashed_amount, 100000);
-    assert_eq!(decoded.available_coverage, 800000);
+    assert_eq!(decoded.pool.available_coverage, 800000);
+    assert_eq!(decoded.pool.pool_slash_count, 1);
+    // The per-member adjustments and the slashed allocation ride the bridge intact.
+    assert_eq!(decoded.member_stakes.len(), 1);
+    assert_eq!(decoded.member_stakes[0].slash_count, 1);
+    assert_eq!(CoverageAllocation::decode(&decoded.allocation_bytes).unwrap().slashed, true);
 }
 
 #[test]
@@ -470,18 +604,18 @@ fn test_claim_fees_params_encoding() {
 
 #[test]
 fn test_claim_fees_update_encoding() {
-    let update = ClaimFeesUpdateV1 {
-        stake_id: make_base([1u8; 32]),
-        claimed_amount: 5000,
-        remaining_fees: 2000,
-    };
+    // Fees zeroed in exec and carried, so apply re-stores rather than reading (OBL-C72).
+    let mut stake = make_member_stake();
+    stake.accumulated_fees = 0;
+
+    let update = ClaimFeesUpdateV1 { stake, claimed_amount: 5000 };
 
     let encoded = serialize(&update);
     let decoded: ClaimFeesUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.stake_id, update.stake_id);
+    assert_eq!(decoded.stake.stake_id, update.stake.stake_id);
     assert_eq!(decoded.claimed_amount, 5000);
-    assert_eq!(decoded.remaining_fees, 2000);
+    assert_eq!(decoded.stake.accumulated_fees, 0);
 }
 
 #[test]
@@ -503,18 +637,18 @@ fn test_update_pool_config_params_encoding() {
 
 #[test]
 fn test_update_pool_config_update_encoding() {
-    let update = UpdatePoolConfigUpdateV1 {
-        pool_id: make_base([1u8; 32]),
-        max_coverage_ratio: 15000,
-        operator_fee_bp: 200,
-    };
+    let mut pool = make_registry();
+    pool.max_coverage_ratio = 15000;
+    pool.operator_fee_bp = 200;
+
+    let update = UpdatePoolConfigUpdateV1 { pool };
 
     let encoded = serialize(&update);
     let decoded: UpdatePoolConfigUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.pool_id, update.pool_id);
-    assert_eq!(decoded.max_coverage_ratio, 15000);
-    assert_eq!(decoded.operator_fee_bp, 200);
+    assert_eq!(decoded.pool.pool_id, update.pool.pool_id);
+    assert_eq!(decoded.pool.max_coverage_ratio, 15000);
+    assert_eq!(decoded.pool.operator_fee_bp, 200);
 }
 
 #[test]

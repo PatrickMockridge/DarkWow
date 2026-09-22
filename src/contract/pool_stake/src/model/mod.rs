@@ -476,38 +476,48 @@ impl dwow_serial::Decodable for JoinPoolParamsV1 { fn decode<D: std::io::Read>(d
 impl JoinPoolParamsV1 { pub const ENCODED_SIZE: usize = 272; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(272); buf.extend_from_slice(&self.instance_seed); buf.extend_from_slice(&self.pool_id.to_repr()); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.extend_from_slice(&self.relayer_id); buf.extend_from_slice(&self.member_pub.to_bytes()); buf.extend_from_slice(&self.asset_id.to_repr()); buf.extend_from_slice(&self.nonce.to_le_bytes()); buf.extend_from_slice(&self.derived_member_id.to_repr()); buf.extend_from_slice(&self.value_commit_x.to_repr()); buf.extend_from_slice(&self.value_commit_y.to_repr()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 272 { return Err(ContractError::IoError(format!("JoinPoolParamsV1: expected 272 bytes, got {}", data.len()))); } Ok(JoinPoolParamsV1 { instance_seed: data[0..32].try_into().unwrap(), pool_id: read_base(&data[32..64])?, amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), relayer_id: data[72..104].try_into().unwrap(), member_pub: PublicKey::from_bytes(data[104..136].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("JoinPoolParamsV1: invalid member_pub: {}", e)))?, asset_id: read_base(&data[136..168])?, nonce: u64::from_le_bytes(data[168..176].try_into().unwrap()), derived_member_id: read_base(&data[176..208])?, value_commit_x: read_base(&data[208..240])?, value_commit_y: read_base(&data[240..272])? }) } }
 
 /// Update returned after joining a pool
+///
+/// `pool` is the **finished** registry record: exec reads it, applies the join, and carries it
+/// whole. Apply re-stores it. It does not read the registry back, because the read triad
+/// (`db_get`, `db_contains_key`, `get_object_size`, `get_object_bytes`) is denied in
+/// `ContractSection::Update` and a read there fails at runtime with `CallerAccessDenied`
+/// (contract-wasm-type-system.md §B.2.2, register `OBL-C72`). `created_at` is carried for the
+/// same reason: `get_verifying_block_height` is `[Deploy, Metadata, Exec]` too.
+///
+/// The idiom is `lottery`'s `DrawWinnersUpdateV1` ("carried lottery record … apply re-stores it
+/// without a db_get-in-apply") and `auction`'s `CloseAuctionUpdateV1`.
 #[derive(Debug, Clone)]
 pub struct JoinPoolUpdateV1 {
     /// Instance seed for per-capability key derivation
     pub instance_seed: [u8; 32],
     pub stake_id: pallas::Base,
-    pub pool_id: pallas::Base,
     pub member_pub: PublicKey,
     pub relayer_id: [u8; 32],
     pub amount: u64,
     pub coverage_contribution: u64,
     pub pool_share_bp: u32,
-    pub total_stake: u64,
-    pub member_count: u64,
+    /// Block height the stake record is stamped with, read in exec.
+    pub created_at: u64,
+    /// The fully-updated registry record (`pool.pool_id` is the store key).
+    pub pool: PoolStakeRegistry,
 }
 
 impl dwow_serial::Encodable for JoinPoolUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for JoinPoolUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl JoinPoolUpdateV1 {
-    pub const ENCODED_SIZE: usize = 196; // 32+32+32+32+32+8+8+4+8+8
+    pub const ENCODED_SIZE: usize = 286; // 32+32+32+32+8+8+4+8 + registry(130)
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.instance_seed);
         buf.extend_from_slice(&self.stake_id.to_repr());
-        buf.extend_from_slice(&self.pool_id.to_repr());
         buf.extend_from_slice(&self.member_pub.to_bytes());
         buf.extend_from_slice(&self.relayer_id);
         buf.extend_from_slice(&self.amount.to_le_bytes());
         buf.extend_from_slice(&self.coverage_contribution.to_le_bytes());
         buf.extend_from_slice(&self.pool_share_bp.to_le_bytes());
-        buf.extend_from_slice(&self.total_stake.to_le_bytes());
-        buf.extend_from_slice(&self.member_count.to_le_bytes());
+        buf.extend_from_slice(&self.created_at.to_le_bytes());
+        buf.extend_from_slice(&self.pool.encode());
         buf
     }
 
@@ -525,28 +535,23 @@ impl JoinPoolUpdateV1 {
             data[32..64].try_into().unwrap(),
         ))
         .ok_or_else(|| ContractError::IoError("JoinPoolUpdateV1: invalid stake_id".into()))?;
-        let pool_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[64..96].try_into().unwrap(),
-        ))
-        .ok_or_else(|| ContractError::IoError("JoinPoolUpdateV1: invalid pool_id".into()))?;
-        let member_pub = PublicKey::from_bytes(data[96..128].try_into().unwrap())?;
-        let relayer_id: [u8; 32] = data[128..160].try_into().unwrap();
-        let amount = u64::from_le_bytes(data[160..168].try_into().unwrap());
-        let coverage_contribution = u64::from_le_bytes(data[168..176].try_into().unwrap());
-        let pool_share_bp = u32::from_le_bytes(data[176..180].try_into().unwrap());
-        let total_stake = u64::from_le_bytes(data[180..188].try_into().unwrap());
-        let member_count = u64::from_le_bytes(data[188..196].try_into().unwrap());
+        let member_pub = PublicKey::from_bytes(data[64..96].try_into().unwrap())?;
+        let relayer_id: [u8; 32] = data[96..128].try_into().unwrap();
+        let amount = u64::from_le_bytes(data[128..136].try_into().unwrap());
+        let coverage_contribution = u64::from_le_bytes(data[136..144].try_into().unwrap());
+        let pool_share_bp = u32::from_le_bytes(data[144..148].try_into().unwrap());
+        let created_at = u64::from_le_bytes(data[148..156].try_into().unwrap());
+        let pool = PoolStakeRegistry::decode(&data[156..156 + PoolStakeRegistry::ENCODED_SIZE])?;
         Ok(JoinPoolUpdateV1 {
             instance_seed,
             stake_id,
-            pool_id,
             member_pub,
             relayer_id,
             amount,
             coverage_contribution,
             pool_share_bp,
-            total_stake,
-            member_count,
+            created_at,
+            pool,
         })
     }
 }
@@ -563,9 +568,17 @@ impl dwow_serial::Decodable for LeavePoolParamsV1 { fn decode<D: std::io::Read>(
 impl LeavePoolParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.stake_id.to_repr().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("LeavePoolParamsV1: expected 32 bytes, got {}", data.len()))); } Ok(LeavePoolParamsV1 { stake_id: read_base(&data[0..32])? }) } }
 
 /// Update returned after leaving a pool
+///
+/// Carries the stake record with its post-leave state already applied, so apply re-stores it
+/// without a db_get-in-apply (OBL-C72). It also carries the **cooldown-start** transition: the old
+/// code wrote `leave_requested_at` in exec and then returned `Err(StakeLocked)`, which is a
+/// write-in-exec (OBL-C73) on a failing path. Starting the cooldown is now a successful call that
+/// returns this update with `stake.leave_requested_at` set.
 #[derive(Debug, Clone)]
 pub struct LeavePoolUpdateV1 {
-    pub stake_id: pallas::Base,
+    /// The stake with its new state applied (`is_active = false, current_amount = 0` on the leave
+    /// path, or `leave_requested_at = Some(height)` on the cooldown-start path).
+    pub stake: PoolMemberStake,
     pub payout_amount: u64,
     pub unstake_penalty: u64,
 }
@@ -573,11 +586,11 @@ pub struct LeavePoolUpdateV1 {
 impl dwow_serial::Encodable for LeavePoolUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for LeavePoolUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl LeavePoolUpdateV1 {
-    pub const ENCODED_SIZE: usize = 48; // 32+8+8
+    pub const ENCODED_SIZE: usize = 239; // stake(223) + 8 + 8
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.stake_id.to_repr());
+        buf.extend_from_slice(&self.stake.encode());
         buf.extend_from_slice(&self.payout_amount.to_le_bytes());
         buf.extend_from_slice(&self.unstake_penalty.to_le_bytes());
         buf
@@ -592,13 +605,10 @@ impl LeavePoolUpdateV1 {
                 data.len()
             )));
         }
-        let stake_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[0..32].try_into().unwrap(),
-        ))
-        .ok_or_else(|| ContractError::IoError("LeavePoolUpdateV1: invalid stake_id".into()))?;
-        let payout_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let unstake_penalty = u64::from_le_bytes(data[40..48].try_into().unwrap());
-        Ok(LeavePoolUpdateV1 { stake_id, payout_amount, unstake_penalty })
+        let stake = PoolMemberStake::decode(&data[0..PoolMemberStake::ENCODED_SIZE])?;
+        let payout_amount = u64::from_le_bytes(data[223..231].try_into().unwrap());
+        let unstake_penalty = u64::from_le_bytes(data[231..239].try_into().unwrap());
+        Ok(LeavePoolUpdateV1 { stake, payout_amount, unstake_penalty })
     }
 }
 
@@ -629,16 +639,20 @@ impl dwow_serial::Decodable for AllocateCoverageParamsV1 { fn decode<D: std::io:
 impl AllocateCoverageParamsV1 { pub const ENCODED_SIZE: usize = 184; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(184); buf.extend_from_slice(&self.pool_id.to_repr()); buf.extend_from_slice(&self.withdrawal_nullifier); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.extend_from_slice(&self.timeout_height.to_le_bytes()); buf.extend_from_slice(&self.member_pub.to_bytes()); buf.extend_from_slice(&self.withdrawal_id.to_repr()); buf.extend_from_slice(&self.nonce.to_le_bytes()); buf.extend_from_slice(&self.derived_allocation_id.to_repr()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 184 { return Err(ContractError::IoError(format!("AllocateCoverageParamsV1: expected 184 bytes, got {}", data.len()))); } Ok(AllocateCoverageParamsV1 { pool_id: read_base(&data[0..32])?, withdrawal_nullifier: data[32..64].try_into().unwrap(), amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), timeout_height: u64::from_le_bytes(data[72..80].try_into().unwrap()), member_pub: PublicKey::from_bytes(data[80..112].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("AllocateCoverageParamsV1: invalid member_pub: {}", e)))?, withdrawal_id: read_base(&data[112..144])?, nonce: u64::from_le_bytes(data[144..152].try_into().unwrap()), derived_allocation_id: read_base(&data[152..184])? }) } }
 
 /// Update returned after allocating coverage
+///
+/// Carries the finished registry record and `created_at` so apply can write both records without
+/// reading either (see `JoinPoolUpdateV1` for the rule and the register row).
 #[derive(Debug, Clone)]
 pub struct AllocateCoverageUpdateV1 {
     pub allocation_id: pallas::Base,
-    pub pool_id: pallas::Base,
     pub withdrawal_nullifier: [u8; 32],
     pub amount: u64,
     pub contributing_members: Vec<pallas::Base>,
-    pub available_coverage: u64,
-    pub allocated_coverage: u64,
     pub timeout_height: u64,
+    /// Block height the allocation record is stamped with, read in exec.
+    pub created_at: u64,
+    /// The fully-updated registry record (`pool.pool_id` is the store key).
+    pub pool: PoolStakeRegistry,
 }
 
 impl dwow_serial::Encodable for AllocateCoverageUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
@@ -646,28 +660,27 @@ impl dwow_serial::Decodable for AllocateCoverageUpdateV1 { fn decode<D: std::io:
 impl AllocateCoverageUpdateV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let n = SerializedLen::try_from_len(self.contributing_members.len())?;
-        let cap = 132 + self.contributing_members.len() * 32;
+        let cap = 222 + self.contributing_members.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.allocation_id.to_repr());
-        buf.extend_from_slice(&self.pool_id.to_repr());
         buf.extend_from_slice(&self.withdrawal_nullifier);
         buf.extend_from_slice(&self.amount.to_le_bytes());
         buf.extend_from_slice(&n.to_le_bytes());
         for m in &self.contributing_members {
             buf.extend_from_slice(&m.to_repr());
         }
-        buf.extend_from_slice(&self.available_coverage.to_le_bytes());
-        buf.extend_from_slice(&self.allocated_coverage.to_le_bytes());
         buf.extend_from_slice(&self.timeout_height.to_le_bytes());
+        buf.extend_from_slice(&self.created_at.to_le_bytes());
+        buf.extend_from_slice(&self.pool.encode());
         Ok(buf)
     }
 
-    /// The floor with no contributing members: 104 + 4 + 24 = 132.
+    /// The floor with no contributing members: 32 + 32 + 8 + 4 + 8 + 8 + 130 = 222.
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 132 {
+        if data.len() < 222 {
             return Err(ContractError::IoError(format!(
-                "AllocateCoverageUpdateV1: expected at least 132 bytes, got {}",
+                "AllocateCoverageUpdateV1: expected at least 222 bytes, got {}",
                 data.len()
             )));
         }
@@ -677,16 +690,10 @@ impl AllocateCoverageUpdateV1 {
         .ok_or_else(|| {
             ContractError::IoError("AllocateCoverageUpdateV1: invalid allocation_id".into())
         })?;
-        let pool_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[32..64].try_into().unwrap(),
-        ))
-        .ok_or_else(|| {
-            ContractError::IoError("AllocateCoverageUpdateV1: invalid pool_id".into())
-        })?;
-        let withdrawal_nullifier: [u8; 32] = data[64..96].try_into().unwrap();
-        let amount = u64::from_le_bytes(data[96..104].try_into().unwrap());
-        let member_count = SerializedLen::from_le_bytes(data[104..108].try_into().unwrap()).to_usize();
-        let expected = member_count.saturating_mul(32).saturating_add(132);
+        let withdrawal_nullifier: [u8; 32] = data[32..64].try_into().unwrap();
+        let amount = u64::from_le_bytes(data[64..72].try_into().unwrap());
+        let member_count = SerializedLen::from_le_bytes(data[72..76].try_into().unwrap()).to_usize();
+        let expected = member_count.saturating_mul(32).saturating_add(222);
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "AllocateCoverageUpdateV1: expected {} bytes for {} members, got {}",
@@ -695,7 +702,7 @@ impl AllocateCoverageUpdateV1 {
         }
         let mut contributing_members = Vec::with_capacity(member_count);
         for i in 0..member_count {
-            let start = 108 + i * 32;
+            let start = 76 + i * 32;
             contributing_members.push(
                 Option::<pallas::Base>::from(pallas::Base::from_repr(
                     data[start..start + 32].try_into().unwrap(),
@@ -708,19 +715,18 @@ impl AllocateCoverageUpdateV1 {
                 })?,
             );
         }
-        let pos = member_count.saturating_mul(32).saturating_add(108);
-        let available_coverage = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
-        let allocated_coverage = u64::from_le_bytes(data[pos + 8..pos + 16].try_into().unwrap());
-        let timeout_height = u64::from_le_bytes(data[pos + 16..pos + 24].try_into().unwrap());
+        let pos = member_count.saturating_mul(32).saturating_add(76);
+        let timeout_height = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        let created_at = u64::from_le_bytes(data[pos + 8..pos + 16].try_into().unwrap());
+        let pool = PoolStakeRegistry::decode(&data[pos + 16..pos + 16 + PoolStakeRegistry::ENCODED_SIZE])?;
         Ok(AllocateCoverageUpdateV1 {
             allocation_id,
-            pool_id,
             withdrawal_nullifier,
             amount,
             contributing_members,
-            available_coverage,
-            allocated_coverage,
             timeout_height,
+            created_at,
+            pool,
         })
     }
 }
@@ -740,34 +746,44 @@ impl dwow_serial::Decodable for ReleaseCoverageParamsV1 { fn decode<D: std::io::
 impl ReleaseCoverageParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(64); buf.extend_from_slice(&self.allocation_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("ReleaseCoverageParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(ReleaseCoverageParamsV1 { allocation_id: read_base(&data[0..32])?, owner_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ReleaseCoverageParamsV1: invalid owner_pub: {}", e)))? }) } }
 
 /// Update returned after releasing coverage
+///
+/// Carries the registry with the coverage moved back, and the allocation already marked executed
+/// **as encoded bytes** — `CoverageAllocation` has a variable-length member list, so apply stores
+/// the bytes exec produced rather than decoding and re-encoding them. Apply reads neither record
+/// (OBL-C72).
 #[derive(Debug, Clone)]
 pub struct ReleaseCoverageUpdateV1 {
     pub allocation_id: pallas::Base,
     pub released_amount: u64,
-    pub available_coverage: u64,
-    pub allocated_coverage: u64,
+    /// `CoverageAllocation::encode()` with `executed = true`, as exec produced it.
+    pub allocation_bytes: Vec<u8>,
+    /// The fully-updated registry record (`pool.pool_id` is the store key).
+    pub pool: PoolStakeRegistry,
 }
 
-impl dwow_serial::Encodable for ReleaseCoverageUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for ReleaseCoverageUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ReleaseCoverageUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ReleaseCoverageUpdateV1 {
-    pub const ENCODED_SIZE: usize = 56; // 32+8+8+8
+    /// 32 + 8 + 4 + 130, before the allocation bytes.
+    pub const FIXED: usize = 174;
 
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let al = SerializedLen::try_from_len(self.allocation_bytes.len())?;
+        let mut buf = Vec::with_capacity(Self::FIXED + self.allocation_bytes.len());
         buf.extend_from_slice(&self.allocation_id.to_repr());
         buf.extend_from_slice(&self.released_amount.to_le_bytes());
-        buf.extend_from_slice(&self.available_coverage.to_le_bytes());
-        buf.extend_from_slice(&self.allocated_coverage.to_le_bytes());
-        buf
+        buf.extend_from_slice(&al.to_le_bytes());
+        buf.extend_from_slice(&self.allocation_bytes);
+        buf.extend_from_slice(&self.pool.encode());
+        Ok(buf)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
+        if data.len() < Self::FIXED {
             return Err(ContractError::IoError(format!(
-                "ReleaseCoverageUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE,
+                "ReleaseCoverageUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED,
                 data.len()
             )));
         }
@@ -778,9 +794,18 @@ impl ReleaseCoverageUpdateV1 {
             ContractError::IoError("ReleaseCoverageUpdateV1: invalid allocation_id".into())
         })?;
         let released_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let available_coverage = u64::from_le_bytes(data[40..48].try_into().unwrap());
-        let allocated_coverage = u64::from_le_bytes(data[48..56].try_into().unwrap());
-        Ok(ReleaseCoverageUpdateV1 { allocation_id, released_amount, available_coverage, allocated_coverage })
+        let alloc_len = SerializedLen::from_le_bytes(data[40..44].try_into().unwrap()).to_usize();
+        let pool_start = 44usize.saturating_add(alloc_len);
+        if data.len() != pool_start.saturating_add(PoolStakeRegistry::ENCODED_SIZE) {
+            return Err(ContractError::IoError(format!(
+                "ReleaseCoverageUpdateV1: {} allocation bytes do not fit {} total",
+                alloc_len,
+                data.len()
+            )));
+        }
+        let allocation_bytes = data[44..pool_start].to_vec();
+        let pool = PoolStakeRegistry::decode(&data[pool_start..pool_start + PoolStakeRegistry::ENCODED_SIZE])?;
+        Ok(ReleaseCoverageUpdateV1 { allocation_id, released_amount, allocation_bytes, pool })
     }
 }
 
@@ -807,36 +832,54 @@ impl dwow_serial::Decodable for SlashCoverageParamsV1 { fn decode<D: std::io::Re
 impl SlashCoverageParamsV1 { pub const ENCODED_SIZE: usize = 144; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(144); buf.extend_from_slice(&self.allocation_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf.extend_from_slice(&self.slash_amount.to_le_bytes()); buf.extend_from_slice(&self.user_pub.to_bytes()); buf.extend_from_slice(&self.nonce.to_le_bytes()); buf.extend_from_slice(&self.derived_slash_id.to_repr()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 144 { return Err(ContractError::IoError(format!("SlashCoverageParamsV1: expected 144 bytes, got {}", data.len()))); } Ok(SlashCoverageParamsV1 { allocation_id: read_base(&data[0..32])?, owner_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SlashCoverageParamsV1: invalid owner_pub: {}", e)))?, slash_amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), user_pub: PublicKey::from_bytes(data[72..104].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SlashCoverageParamsV1: invalid user_pub: {}", e)))?, nonce: u64::from_le_bytes(data[104..112].try_into().unwrap()), derived_slash_id: read_base(&data[112..144])? }) } }
 
 /// Update returned after slashing coverage
+///
+/// Carries every record apply must write — the allocation (already marked slashed, as encoded
+/// bytes), the member stakes whose slash counts advanced, and the registry — so apply reads
+/// nothing (OBL-C72). The order of `member_stakes` matches the members exec resolved.
 #[derive(Debug, Clone)]
 pub struct SlashCoverageUpdateV1 {
     pub allocation_id: pallas::Base,
     pub slashed_amount: u64,
     pub compensated_user: [u8; 32],
-    pub available_coverage: u64,
-    pub allocated_coverage: u64,
+    /// `CoverageAllocation::encode()` with `slashed = true`, as exec produced it.
+    pub allocation_bytes: Vec<u8>,
+    /// The member stakes to re-store, with `slash_count` already advanced.
+    pub member_stakes: Vec<PoolMemberStake>,
+    /// The fully-updated registry record (`pool.pool_id` is the store key).
+    pub pool: PoolStakeRegistry,
 }
 
-impl dwow_serial::Encodable for SlashCoverageUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for SlashCoverageUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SlashCoverageUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SlashCoverageUpdateV1 {
-    pub const ENCODED_SIZE: usize = 88; // 32+8+32+8+8
+    /// 32 + 8 + 32 + 4 + 4 + 130, before the allocation bytes and the member stakes.
+    pub const FIXED: usize = 210;
 
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let al = SerializedLen::try_from_len(self.allocation_bytes.len())?;
+        let n = SerializedLen::try_from_len(self.member_stakes.len())?;
+        let mut buf = Vec::with_capacity(
+            Self::FIXED + self.allocation_bytes.len() + self.member_stakes.len() * PoolMemberStake::ENCODED_SIZE,
+        );
         buf.extend_from_slice(&self.allocation_id.to_repr());
         buf.extend_from_slice(&self.slashed_amount.to_le_bytes());
         buf.extend_from_slice(&self.compensated_user);
-        buf.extend_from_slice(&self.available_coverage.to_le_bytes());
-        buf.extend_from_slice(&self.allocated_coverage.to_le_bytes());
-        buf
+        buf.extend_from_slice(&al.to_le_bytes());
+        buf.extend_from_slice(&self.allocation_bytes);
+        buf.extend_from_slice(&n.to_le_bytes());
+        for s in &self.member_stakes {
+            buf.extend_from_slice(&s.encode());
+        }
+        buf.extend_from_slice(&self.pool.encode());
+        Ok(buf)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
+        if data.len() < Self::FIXED {
             return Err(ContractError::IoError(format!(
-                "SlashCoverageUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE,
+                "SlashCoverageUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED,
                 data.len()
             )));
         }
@@ -848,14 +891,36 @@ impl SlashCoverageUpdateV1 {
         })?;
         let slashed_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
         let compensated_user: [u8; 32] = data[40..72].try_into().unwrap();
-        let available_coverage = u64::from_le_bytes(data[72..80].try_into().unwrap());
-        let allocated_coverage = u64::from_le_bytes(data[80..88].try_into().unwrap());
+        let alloc_len = SerializedLen::from_le_bytes(data[72..76].try_into().unwrap()).to_usize();
+        let members_len_pos = 76usize.saturating_add(alloc_len);
+        let n = SerializedLen::from_le_bytes(
+            data[members_len_pos..members_len_pos + 4].try_into().unwrap(),
+        )
+        .to_usize();
+        let members_start = members_len_pos + 4;
+        let pool_start = members_start.saturating_add(n.saturating_mul(PoolMemberStake::ENCODED_SIZE));
+        if data.len() != pool_start.saturating_add(PoolStakeRegistry::ENCODED_SIZE) {
+            return Err(ContractError::IoError(format!(
+                "SlashCoverageUpdateV1: {} allocation bytes and {} members do not fit {} total",
+                alloc_len, n, data.len()
+            )));
+        }
+        let allocation_bytes = data[76..members_len_pos].to_vec();
+        let mut member_stakes = Vec::with_capacity(n);
+        for i in 0..n {
+            let start = members_start + i * PoolMemberStake::ENCODED_SIZE;
+            member_stakes.push(PoolMemberStake::decode(
+                &data[start..start + PoolMemberStake::ENCODED_SIZE],
+            )?);
+        }
+        let pool = PoolStakeRegistry::decode(&data[pool_start..pool_start + PoolStakeRegistry::ENCODED_SIZE])?;
         Ok(SlashCoverageUpdateV1 {
             allocation_id,
             slashed_amount,
             compensated_user,
-            available_coverage,
-            allocated_coverage,
+            allocation_bytes,
+            member_stakes,
+            pool,
         })
     }
 }
@@ -875,23 +940,25 @@ impl dwow_serial::Decodable for ClaimFeesParamsV1 { fn decode<D: std::io::Read>(
 impl ClaimFeesParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(64); buf.extend_from_slice(&self.stake_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("ClaimFeesParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(ClaimFeesParamsV1 { stake_id: read_base(&data[0..32])?, owner_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ClaimFeesParamsV1: invalid owner_pub: {}", e)))? }) } }
 
 /// Update returned after claiming fees
+///
+/// Carries the stake with `accumulated_fees` already zeroed, so apply re-stores it without a
+/// db_get-in-apply (OBL-C72).
 #[derive(Debug, Clone)]
 pub struct ClaimFeesUpdateV1 {
-    pub stake_id: pallas::Base,
+    /// The stake record with `accumulated_fees` set to zero.
+    pub stake: PoolMemberStake,
     pub claimed_amount: u64,
-    pub remaining_fees: u64,
 }
 
 impl dwow_serial::Encodable for ClaimFeesUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ClaimFeesUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ClaimFeesUpdateV1 {
-    pub const ENCODED_SIZE: usize = 48; // 32+8+8
+    pub const ENCODED_SIZE: usize = 231; // stake(223) + 8
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.stake_id.to_repr());
+        buf.extend_from_slice(&self.stake.encode());
         buf.extend_from_slice(&self.claimed_amount.to_le_bytes());
-        buf.extend_from_slice(&self.remaining_fees.to_le_bytes());
         buf
     }
 
@@ -904,13 +971,10 @@ impl ClaimFeesUpdateV1 {
                 data.len()
             )));
         }
-        let stake_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[0..32].try_into().unwrap(),
-        ))
-        .ok_or_else(|| ContractError::IoError("ClaimFeesUpdateV1: invalid stake_id".into()))?;
-        let claimed_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let remaining_fees = u64::from_le_bytes(data[40..48].try_into().unwrap());
-        Ok(ClaimFeesUpdateV1 { stake_id, claimed_amount, remaining_fees })
+        let stake = PoolMemberStake::decode(&data[0..PoolMemberStake::ENCODED_SIZE])?;
+        let claimed_amount =
+            u64::from_le_bytes(data[PoolMemberStake::ENCODED_SIZE..Self::ENCODED_SIZE].try_into().unwrap());
+        Ok(ClaimFeesUpdateV1 { stake, claimed_amount })
     }
 }
 
@@ -933,44 +997,26 @@ impl dwow_serial::Decodable for UpdatePoolConfigParamsV1 { fn decode<D: std::io:
 impl UpdatePoolConfigParamsV1 { pub const ENCODED_SIZE: usize = 74; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(74); buf.extend_from_slice(&self.pool_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf.push(self.max_coverage_ratio.is_some() as u8); if let Some(v) = self.max_coverage_ratio { buf.extend_from_slice(&v.to_le_bytes()); } buf.push(self.operator_fee_bp.is_some() as u8); if let Some(v) = self.operator_fee_bp { buf.extend_from_slice(&v.to_le_bytes()); } buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 74 { return Err(ContractError::IoError(format!("UpdatePoolConfigParamsV1: expected 74 bytes, got {}", data.len()))); } let pool_id = read_base(&data[0..32])?; let owner_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("UpdatePoolConfigParamsV1: invalid owner_pub: {}", e)))?; let has_mcr = data[64] != 0; let max_coverage_ratio = if has_mcr { Some(u32::from_le_bytes(data[65..69].try_into().unwrap())) } else { None }; let has_ofb = data[69] != 0; let operator_fee_bp = if has_ofb { Some(u32::from_le_bytes(data[70..74].try_into().unwrap())) } else { None }; Ok(UpdatePoolConfigParamsV1 { pool_id, owner_pub, max_coverage_ratio, operator_fee_bp }) } }
 
 /// Update returned after updating pool config
+///
+/// Carries the registry with the new config applied, so apply re-stores it without a
+/// db_get-in-apply (OBL-C72).
 #[derive(Debug, Clone)]
 pub struct UpdatePoolConfigUpdateV1 {
-    pub pool_id: pallas::Base,
-    pub max_coverage_ratio: u32,
-    pub operator_fee_bp: u32,
+    /// The registry record with the new `max_coverage_ratio` / `operator_fee_bp` applied.
+    pub pool: PoolStakeRegistry,
 }
 
 impl dwow_serial::Encodable for UpdatePoolConfigUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdatePoolConfigUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UpdatePoolConfigUpdateV1 {
-    pub const ENCODED_SIZE: usize = 40; // 32+4+4
+    pub const ENCODED_SIZE: usize = 130; // registry
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.pool_id.to_repr());
-        buf.extend_from_slice(&self.max_coverage_ratio.to_le_bytes());
-        buf.extend_from_slice(&self.operator_fee_bp.to_le_bytes());
-        buf
+        self.pool.encode()
     }
 
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "UpdatePoolConfigUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE,
-                data.len()
-            )));
-        }
-        let pool_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[0..32].try_into().unwrap(),
-        ))
-        .ok_or_else(|| {
-            ContractError::IoError("UpdatePoolConfigUpdateV1: invalid pool_id".into())
-        })?;
-        let max_coverage_ratio = u32::from_le_bytes(data[32..36].try_into().unwrap());
-        let operator_fee_bp = u32::from_le_bytes(data[36..40].try_into().unwrap());
-        Ok(UpdatePoolConfigUpdateV1 { pool_id, max_coverage_ratio, operator_fee_bp })
+        Ok(UpdatePoolConfigUpdateV1 { pool: PoolStakeRegistry::decode(data)? })
     }
 }
 
@@ -993,30 +1039,43 @@ pub struct RebalancePoolSharesParamsV1 {
 impl RebalancePoolSharesParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.member_ids.len())?; let cap = 68 + self.member_ids.len() * 32; let mut buf = Vec::with_capacity(cap); buf.extend_from_slice(&self.pool_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf.extend_from_slice(&n.to_le_bytes()); for m in &self.member_ids { buf.extend_from_slice(&m.to_repr()); } Ok(buf) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 68 { return Err(ContractError::IoError("RebalancePoolSharesParamsV1: too short".into())); } let pool_id = read_base(&data[0..32])?; let owner_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RebalancePoolSharesParamsV1: invalid owner_pub: {}", e)))?; let count = SerializedLen::from_le_bytes(data[64..68].try_into().unwrap()).to_usize(); let expected = count.saturating_mul(32).saturating_add(68); if data.len() != expected { return Err(ContractError::IoError(format!("RebalancePoolSharesParamsV1: expected {} bytes, got {}", expected, data.len()))); } let mut member_ids = Vec::with_capacity(count); for i in 0..count { member_ids.push(read_base(&data[68+i*32..68+(i+1)*32])?); } Ok(RebalancePoolSharesParamsV1 { pool_id, owner_pub, member_ids }) } }
 
 /// Update returned after rebalancing pool shares
+///
+/// Carries the member stakes with their new share already applied, so apply re-stores them without
+/// a db_get-in-apply (OBL-C72). The old code wrote each member's new share straight from exec,
+/// which is a write-in-exec (OBL-C73).
 #[derive(Debug, Clone)]
 pub struct RebalancePoolSharesUpdateV1 {
     pub pool_id: pallas::Base,
     pub members_rebalanced: u64,
     pub total_share_bp: u32,
+    /// The member stakes to re-store, with `pool_share_bp` already adjusted.
+    pub updated_stakes: Vec<PoolMemberStake>,
 }
 
 impl RebalancePoolSharesUpdateV1 {
-    pub const ENCODED_SIZE: usize = 44; // 32+8+4
+    /// 32 + 8 + 4 + 4, before the member stakes.
+    pub const FIXED: usize = 48;
 
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.updated_stakes.len())?;
+        let mut buf =
+            Vec::with_capacity(Self::FIXED + self.updated_stakes.len() * PoolMemberStake::ENCODED_SIZE);
         buf.extend_from_slice(&self.pool_id.to_repr());
         buf.extend_from_slice(&self.members_rebalanced.to_le_bytes());
         buf.extend_from_slice(&self.total_share_bp.to_le_bytes());
-        buf
+        buf.extend_from_slice(&n.to_le_bytes());
+        for s in &self.updated_stakes {
+            buf.extend_from_slice(&s.encode());
+        }
+        Ok(buf)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
+        if data.len() < Self::FIXED {
             return Err(ContractError::IoError(format!(
-                "RebalancePoolSharesUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE,
+                "RebalancePoolSharesUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED,
                 data.len()
             )));
         }
@@ -1028,6 +1087,21 @@ impl RebalancePoolSharesUpdateV1 {
         })?;
         let members_rebalanced = u64::from_le_bytes(data[32..40].try_into().unwrap());
         let total_share_bp = u32::from_le_bytes(data[40..44].try_into().unwrap());
-        Ok(RebalancePoolSharesUpdateV1 { pool_id, members_rebalanced, total_share_bp })
+        let n = SerializedLen::from_le_bytes(data[44..48].try_into().unwrap()).to_usize();
+        let expected = n.saturating_mul(PoolMemberStake::ENCODED_SIZE).saturating_add(Self::FIXED);
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "RebalancePoolSharesUpdateV1: expected {} bytes for {} members, got {}",
+                expected, n, data.len()
+            )));
+        }
+        let mut updated_stakes = Vec::with_capacity(n);
+        for i in 0..n {
+            let start = Self::FIXED + i * PoolMemberStake::ENCODED_SIZE;
+            updated_stakes.push(PoolMemberStake::decode(
+                &data[start..start + PoolMemberStake::ENCODED_SIZE],
+            )?);
+        }
+        Ok(RebalancePoolSharesUpdateV1 { pool_id, members_rebalanced, total_share_bp, updated_stakes })
     }
 }
