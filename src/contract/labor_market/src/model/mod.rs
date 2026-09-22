@@ -1451,8 +1451,17 @@ pub struct ConfirmMilestoneParamsV1 {
 impl dwow_serial::Encodable for ConfirmMilestoneParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ConfirmMilestoneParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl ConfirmMilestoneParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+208); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.milestone_index.to_le_bytes()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.payment_release.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 240 {
+impl ConfirmMilestoneParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+204); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.milestone_index.to_le_bytes()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.payment_release.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        // The layout is `len(4) + proof(proof_len) + 204`, so the true minimum is 208 — which is what
+        // this error message has always said, and what the tail guard below counts
+        // (`job_id(32)+milestone_index(4)+emp_x(32)+emp_y(32)+payment_release(8)+
+        // spent_nullifier(32)+tx_binding(32)+tx_nonce(32) = 204`).
+        //
+        // It read `240` until 2026-09-22, 32 bytes too high, which refused every encoding whose proof
+        // is shorter than 32 bytes — including the one `encode` above produces for a short proof, so
+        // the decoder rejected its own output. Found by `test_confirm_milestone_params_encoding`
+        // (211-byte params), which had been failing since `fecb3deb45` raised this constant.
+        if data.len() < 208 {
             return Err(ContractError::IoError(format!(
                 "ConfirmMilestoneParamsV1: expected at least 208 bytes, got {}",
                 data.len()
