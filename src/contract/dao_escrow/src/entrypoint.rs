@@ -1401,19 +1401,22 @@ fn vote_claim_v1(
             no_votes: proposal.no_votes,
             passed: false,
             expired: true,
+            // No vote is recorded on this path (the early return is above the double-vote check),
+            // so `apply` must not spend the nullifier here — it gates on `expired`.
+            vote_nullifier: params.capability_proof.nullifier.inner(),
         };
         wasm::util::set_return_data(&[&[DaoEscrowFunction::VoteClaimV1 as u8], &update.encode()[..]].concat())?;
         return Ok(())
     }
 
-    // Check for double-vote via nullifier, then store it to prevent re-use
+    // Check for double-vote via nullifier. The read stays here — `↓nullify` is an `exec` barb
+    // (contract-wasm-type-system.md §A.2.1) — but the *write* moves to apply, carried in the update.
     let nullifiers_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE)?;
     let vote_nullifier = params.capability_proof.nullifier.inner();
     if wasm::db::db_contains_key(nullifiers_db, &vote_nullifier.to_repr())? {
         msg!("[dao_escrow::vote_claim_v1] ERROR: Already voted");
         return Err(DaoEscrowError::AlreadyVoted.into());
     }
-    wasm::db::db_mark_spent(nullifiers_db, &vote_nullifier.to_repr())?;
 
     // Count vote — MultiSig delegation: each SignV1 = one vote
     let (yes_votes, no_votes) = match params.vote {
@@ -1430,6 +1433,7 @@ fn vote_claim_v1(
         no_votes,
         passed: false,
         expired: false,
+        vote_nullifier,
     };
 
     msg!("[dao_escrow::vote_claim_v1] Vote recorded: {:?}", params.claim_id);
@@ -1439,6 +1443,15 @@ fn vote_claim_v1(
 /// VoteClaimV1 apply - update vote tally and proposal state
 fn vote_claim_apply_v1(cid: ContractId, update: model::VoteClaimUpdateV1) -> ContractResult {
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
+
+    // Spend the voter's nullifier here, not in exec. Gated on `expired`: the auto-expiry path
+    // returns before the double-vote check, so no vote was recorded and nothing should be spent.
+    if !update.expired {
+        let nullifiers_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE)?;
+        wasm::db::db_mark_spent(nullifiers_db, &update.vote_nullifier.to_repr())?;
+    } else {
+        msg!("[dao_escrow::vote_claim_apply_v1] Expired path: nullifier not spent");
+    }
 
     let proposal_data = wasm::db::db_get(proposals_db, &update.claim_id.to_bytes())?;
     if let Some(data) = proposal_data {
