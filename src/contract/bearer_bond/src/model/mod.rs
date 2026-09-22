@@ -1314,18 +1314,67 @@ impl CoverageReport {
 }
 
 /// State update for ProveCoverageV1.
+///
+/// Carries the series record whenever the report voids it. `apply_prove_coverage` used to read the
+/// series back with a `db_get` to decide, but the read triad is denied in `ContractSection::Update`
+/// (register OBL-C72), so the read and the void decision happen in exec and the finished record
+/// travels here.
 #[derive(Debug, Clone)]
 pub struct ProveCoverageUpdateV1 {
     pub report: CoverageReport,
+    /// `BondSeriesInfo::encode()` with a `Voided` status, when this report voids the series.
+    pub voided_series_bytes: Option<Vec<u8>>,
 }
 
 impl ProveCoverageUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
-        self.report.encode()
+        let mut b =
+            Vec::with_capacity(CoverageReport::ENCODED_SIZE + 1 + BondSeriesInfo::ENCODED_SIZE);
+        b.extend_from_slice(&self.report.encode());
+        match &self.voided_series_bytes {
+            None => b.push(0u8),
+            Some(v) => {
+                b.push(1u8);
+                b.extend_from_slice(v);
+            }
+        }
+        b
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let report = CoverageReport::decode(data)?;
-        Ok(ProveCoverageUpdateV1 { report })
+        if data.len() < CoverageReport::ENCODED_SIZE + 1 {
+            return Err(ContractError::IoError(format!(
+                "ProveCoverageUpdateV1: expected at least {} bytes, got {}",
+                CoverageReport::ENCODED_SIZE + 1,
+                data.len()
+            )));
+        }
+        let report = CoverageReport::decode(&data[0..CoverageReport::ENCODED_SIZE])?;
+        let voided_series_bytes = match data[CoverageReport::ENCODED_SIZE] {
+            0 => {
+                if data.len() != CoverageReport::ENCODED_SIZE + 1 {
+                    return Err(ContractError::IoError(format!(
+                        "ProveCoverageUpdateV1: {} trailing bytes after a report with no voided series",
+                        data.len() - CoverageReport::ENCODED_SIZE - 1
+                    )));
+                }
+                None
+            }
+            1 => {
+                if data.len() != CoverageReport::ENCODED_SIZE + 1 + BondSeriesInfo::ENCODED_SIZE {
+                    return Err(ContractError::IoError(
+                        "ProveCoverageUpdateV1: truncated voided_series".into(),
+                    ));
+                }
+                Some(data[CoverageReport::ENCODED_SIZE + 1..].to_vec())
+            }
+            tag => {
+                return Err(ContractError::IoError(format!(
+                    "ProveCoverageUpdateV1: invalid voided_series tag {}",
+                    tag
+                )))
+            }
+        };
+        Ok(ProveCoverageUpdateV1 { report, voided_series_bytes })
     }
 }

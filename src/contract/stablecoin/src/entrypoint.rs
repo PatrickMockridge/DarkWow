@@ -1714,6 +1714,18 @@ fn process_redeem_stable_instruction(
         pallas::Base::from(total_debt),
     ]);
 
+    // ↓nullify: reject a replay here, in exec. This check used to live in apply, where it both
+    // performed validation in the phase that may not validate (§B.2.2: apply "SHALL only write
+    // state; it SHALL NOT perform validation") and issued a `db_contains_key` the ACL denies in
+    // `Update` (register OBL-C72) — so it could never have run. Apply still performs the
+    // `db_mark_spent`; the check moves to where the other contracts put it
+    // (`native_token`, `promissory_note`).
+    let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &redeem_nullifier.to_repr())? {
+        msg!("[stablecoin::process_redeem_stable_instruction] Error: Duplicate redeem nullifier");
+        return Err(StablecoinError::DuplicateNullifier.into())
+    }
+
     let receipt_coin_bytes = serialize(child_call);
 
     let receipt_coin: [u8; 32] = receipt_coin_bytes.as_slice().try_into().map_err(|_| {
@@ -1738,12 +1750,8 @@ fn process_redeem_stable_instruction(
 fn apply_redeem_stable_update(cid: ContractId, update: RedeemStableUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
 
-    // Check for duplicate redemption — don't trust instruction phase writes
-    if wasm::db::db_contains_key(nullifiers_db, &update.redeem_nullifier.to_repr())? {
-        msg!("[stablecoin::process_update] ERROR: Duplicate redeem nullifier");
-        return Err(StablecoinError::DuplicateNullifier.into())
-    }
-
+    // The duplicate check now runs in exec, where validation belongs and where a read is permitted
+    // (§B.2.2, OBL-C72). Apply marks and nothing else.
     wasm::db::db_mark_spent(nullifiers_db, &update.redeem_nullifier.to_repr())?;
 
     // Persist new totals (exec computes, apply writes)

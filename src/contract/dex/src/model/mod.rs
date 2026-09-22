@@ -366,6 +366,89 @@ pub struct SetTransparencyLevelParams {
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SetTransparencyLevelParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(161); b.push(self.level as u8); b.extend_from_slice(&self.gov_pub_x.to_repr()); b.extend_from_slice(&self.gov_pub_y.to_repr()); b.extend_from_slice(&self.gov_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 161 { return Err(ContractError::IoError(format!("SetTransparencyLevelParams: expected 161 bytes, got {}", data.len()))); } let level = TransparencyLevel::try_from(data[0])?; let gov_pub_x = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SetTransparencyLevelParams: invalid gov_pub_x".into()))?; let gov_pub_y = Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SetTransparencyLevelParams: invalid gov_pub_y".into()))?; let gov_nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(data[65..97].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SetTransparencyLevelParams: invalid gov_nullifier".into()))?; let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[97..129].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SetTransparencyLevelParams: invalid tx_binding".into()))?; let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[129..161].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SetTransparencyLevelParams: invalid tx_nonce".into()))?; Ok(SetTransparencyLevelParams { level, gov_pub_x, gov_pub_y, gov_nullifier, tx_binding, tx_nonce }) } }
 
+/// State update for `SetTransparencyLevelV1`.
+///
+/// Both writes this endpoint performs — the governance nullifier and the new level — travel here,
+/// because exec does not write (register OBL-C73). The apply arm used to log "handled in
+/// process_instruction", which was the defect stated plainly: exec wrote and apply did nothing.
+#[derive(Debug, Clone)]
+pub struct SetTransparencyLevelUpdateV1 {
+    /// Governance nullifier to mark spent.
+    pub gov_nullifier: pallas::Base,
+    /// The new transparency level, as written to the config key.
+    pub level: u8,
+}
+
+impl SetTransparencyLevelUpdateV1 {
+    pub const ENCODED_SIZE: usize = 33;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.gov_nullifier.to_repr());
+        b.push(self.level);
+        b
+    }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "SetTransparencyLevelUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        Ok(SetTransparencyLevelUpdateV1 {
+            gov_nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[0..32].try_into().unwrap(),
+            ))
+            .ok_or_else(|| {
+                ContractError::IoError("SetTransparencyLevelUpdateV1: invalid gov_nullifier".into())
+            })?,
+            level: data[32],
+        })
+    }
+}
+
+/// State update for `UpdateConfigV1`.
+///
+/// Carries the governance nullifier and the two configuration values, for the same reason as
+/// `SetTransparencyLevelUpdateV1`.
+#[derive(Debug, Clone)]
+pub struct UpdateConfigUpdateV1 {
+    /// Governance nullifier to mark spent.
+    pub gov_nullifier: pallas::Base,
+    pub timeout: u32,
+    pub fee: u64,
+}
+
+impl UpdateConfigUpdateV1 {
+    pub const ENCODED_SIZE: usize = 44;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.gov_nullifier.to_repr());
+        b.extend_from_slice(&self.timeout.to_le_bytes());
+        b.extend_from_slice(&self.fee.to_le_bytes());
+        b
+    }
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "UpdateConfigUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        Ok(UpdateConfigUpdateV1 {
+            gov_nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[0..32].try_into().unwrap(),
+            ))
+            .ok_or_else(|| {
+                ContractError::IoError("UpdateConfigUpdateV1: invalid gov_nullifier".into())
+            })?,
+            timeout: u32::from_le_bytes(data[32..36].try_into().unwrap()),
+            fee: u64::from_le_bytes(data[36..44].try_into().unwrap()),
+        })
+    }
+}
+
 /// Set full transparency configuration parameters
 ///
 /// Allows governance to change transparency level AND parameters post-deployment.

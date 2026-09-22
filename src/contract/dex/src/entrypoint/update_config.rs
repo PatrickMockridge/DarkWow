@@ -31,9 +31,8 @@ use dwow_serial::Encodable;
 
 use crate::{
     error::DexError,
-    model::UpdateConfigParams,
-    DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_FEE,
-    DEX_CONTRACT_NULLIFIERS_TREE, DEX_CONTRACT_TIMEOUT,
+    model::{UpdateConfigParams, UpdateConfigUpdateV1},
+    DEX_CONTRACT_NULLIFIERS_TREE,
     DEX_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2,
 };
 
@@ -51,22 +50,21 @@ pub(crate) fn dex_update_config_process_instruction_v1(
     msg!("[UpdateConfigV1] Updating config: timeout={}, fee={}", params.timeout, params.fee);
 
     // Verify ZK proof authorizes this config update (governance key holder)
-    let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, DEX_CONTRACT_NULLIFIERS_TREE)?;
     if wasm::db::db_contains_key(nullifiers_db, &params.gov_nullifier.to_repr())? {
         return Err(DexError::NotAuthorized.into());
     }
-    // Record nullifier for replay protection
-    wasm::db::db_mark_spent(nullifiers_db, &params.gov_nullifier.to_repr())?;
 
-    // Update timeout in config
-    wasm::db::db_set(config_db, DEX_CONTRACT_TIMEOUT, &params.timeout.to_le_bytes())?;
+    // exec does not write (register OBL-C73): the nullifier mark and both config writes travel in
+    // the update, and apply performs them.
+    let update = UpdateConfigUpdateV1 {
+        gov_nullifier: params.gov_nullifier,
+        timeout: params.timeout,
+        fee: params.fee,
+    };
 
-    // Update fee in config
-    wasm::db::db_set(config_db, DEX_CONTRACT_FEE, &params.fee.to_le_bytes())?;
-
-    msg!("[UpdateConfigV1] Configuration updated successfully");
-    Ok(vec![])
+    msg!("[UpdateConfigV1] Configuration update prepared");
+    Ok(update.encode())
 }
 
 /// Get metadata for UpdateConfigV1 ZK proof verification

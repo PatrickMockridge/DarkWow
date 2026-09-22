@@ -653,43 +653,33 @@ fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> Result<Vec<u
         )
     };
 
+    // Apply the new usage to the record here and carry it: apply may not read it back (register
+    // OBL-C72).
+    let mut subscription = subscription;
+    subscription.period_uses = period_uses;
+    subscription.last_access_block = last_access_block;
+    subscription.uses_remaining = uses_remaining;
+
     let update = UpdateUsageUpdateV1 {
         subscription_id: params.subscription_id,
         period_uses,
         last_access_block,
         uses_remaining,
         is_new_period,
+        subscription_bytes: subscription.encode(),
     };
 
     msg!("[subscription::update_usage_v1] Usage update prepared for: {:?}", params.subscription_id);
-    Ok(update.encode())
+    update.encode()
 }
 
 /// UpdateUsageV1 apply - write updated usage to subscription
 fn update_usage_apply_v1(cid: ContractId, update: UpdateUsageUpdateV1) -> ContractResult {
     let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
 
-    // Get current subscription
-    let sub_bytes = wasm::db::db_get(subs_db, &update.subscription_id.to_bytes())?;
-    let mut subscription: Subscription = match sub_bytes {
-        Some(data) => Subscription::decode(&data)?,
-        None => {
-            msg!("[subscription::update_usage_apply_v1] ERROR: Subscription not found");
-            return Err(ContractError::Custom(1).into())
-        }
-    };
-
-    // Update usage fields
-    subscription.period_uses = update.period_uses;
-    subscription.last_access_block = update.last_access_block;
-    subscription.uses_remaining = update.uses_remaining;
-
-    let sub_data = subscription.encode();
-    wasm::db::db_set(
-        subs_db,
-        &update.subscription_id.to_bytes(),
-        &sub_data,
-    )?;
+    // Blind write: exec read the subscription, applied the usage fields, and carried the finished
+    // record (register OBL-C72). The read this function used to perform could never succeed.
+    wasm::db::db_set(subs_db, &update.subscription_id.to_bytes(), &update.subscription_bytes)?;
 
     msg!("[subscription::update_usage_apply_v1] Usage updated for: {:?}", update.subscription_id);
     Ok(())
@@ -752,50 +742,83 @@ fn dao_control_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tr
         );
     }
 
-    // Convert params to action for update
-    let action = match params {
-        DaoControlParamsV1::UpdatePlan(plan) => DaoControlAction::PlanUpdated(plan.id),
+    // Convert params to action, and build the records apply will store. exec reads and modifies
+    // them here because apply may not read (register OBL-C72).
+    let (action, plan, slashed_subscription) = match params {
+        DaoControlParamsV1::UpdatePlan(plan) => {
+            // The whole plan arrives in the params, so exec stores it and apply writes it. This
+            // action previously persisted the plan nowhere: exec did not write and apply's arm
+            // said "nothing to do here".
+            let key = plan.id;
+            (DaoControlAction::PlanUpdated(key), Some((key, plan.encode())), None)
+        }
         DaoControlParamsV1::SetPlanActive { plan_id, active } => {
-            DaoControlAction::PlanStatusChanged { plan_id, active }
+            let plans_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_PLANS_TREE)?;
+            let bytes = match wasm::db::db_get(plans_db, &plan_id.to_le_bytes())? {
+                Some(data) => {
+                    let mut p = Plan::decode(&data)?;
+                    p.active = active;
+                    p.encode()
+                }
+                None => {
+                    msg!("[subscription::dao_control_v1] ERROR: Plan not found");
+                    return Err(ContractError::Custom(1).into())
+                }
+            };
+            (DaoControlAction::PlanStatusChanged { plan_id, active }, Some((plan_id, bytes)), None)
         }
         DaoControlParamsV1::EmergencyPause { pause, reason: _ } => {
-            DaoControlAction::EmergencyPauseToggled(pause)
+            (DaoControlAction::EmergencyPauseToggled(pause), None, None)
         }
         DaoControlParamsV1::EndowmentWithdraw { amount, recipient } => {
-            DaoControlAction::EndowmentWithdrawn { amount, recipient }
+            (DaoControlAction::EndowmentWithdrawn { amount, recipient }, None, None)
         }
         DaoControlParamsV1::Slash { subscription_id, reason: _ } => {
-            DaoControlAction::SubscriptionSlashed(subscription_id)
+            let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
+            let bytes = match wasm::db::db_get(subs_db, &subscription_id.to_bytes())? {
+                Some(data) => {
+                    let mut s = Subscription::decode(&data)?;
+                    s.state = SubscriptionState::Cancelled;
+                    s.encode()
+                }
+                None => {
+                    msg!("[subscription::dao_control_v1] ERROR: Subscription not found");
+                    return Err(ContractError::Custom(1).into())
+                }
+            };
+            (
+                DaoControlAction::SubscriptionSlashed(subscription_id),
+                None,
+                Some((subscription_id, bytes)),
+            )
         }
     };
 
-    let update = DaoControlUpdateV1 { action };
+    let update = DaoControlUpdateV1 { action, plan, slashed_subscription };
 
     msg!("[subscription::dao_control_v1] DAO control action prepared");
-    Ok(update.encode())
+    update.encode()
 }
 
 /// DaoControlV1 apply - execute DAO governance action
 fn dao_control_apply_v1(cid: ContractId, update: DaoControlUpdateV1) -> ContractResult {
-    match update.action {
+    // Any record this action stores travels in the update (register OBL-C72): apply writes it and
+    // reads nothing. The two reads this function used to perform — the plan for
+    // `PlanStatusChanged` and the subscription for `SubscriptionSlashed` — could never succeed.
+    if let Some((plan_id, bytes)) = &update.plan {
+        let plans_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_PLANS_TREE)?;
+        wasm::db::db_set(plans_db, &plan_id.to_le_bytes(), bytes)?;
+    }
+    if let Some((sub_id, bytes)) = &update.slashed_subscription {
+        let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
+        wasm::db::db_set(subs_db, &sub_id.to_bytes(), bytes)?;
+    }
+
+    match &update.action {
         DaoControlAction::PlanUpdated(plan_id) => {
-            // The plan was already updated during instruction, nothing to do here
-            msg!("[subscription::dao_control_apply_v1] Plan updated: {}", plan_id);
+            msg!("[subscription::dao_control_apply_v1] Plan stored: {}", plan_id);
         }
         DaoControlAction::PlanStatusChanged { plan_id, active } => {
-            let plans_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_PLANS_TREE)?;
-            let plan_bytes = wasm::db::db_get(plans_db, &plan_id.to_le_bytes())?;
-            let mut plan: Plan = match plan_bytes {
-                Some(data) => Plan::decode(&data)?,
-                None => {
-                    msg!("[subscription::dao_control_apply_v1] ERROR: Plan not found");
-                    return Err(ContractError::Custom(1).into())
-                }
-            };
-            plan.active = active;
-            let mut plan_data = vec![];
-            dwow_serial::Encodable::encode(&plan, &mut plan_data).map_err(|e| ContractError::IoError(e.to_string()))?;
-            wasm::db::db_set(plans_db, &plan_id.to_le_bytes(), &plan_data)?;
             msg!("[subscription::dao_control_apply_v1] Plan {} active status: {}", plan_id, active);
         }
         DaoControlAction::EmergencyPauseToggled(pause) => {
@@ -807,19 +830,6 @@ fn dao_control_apply_v1(cid: ContractId, update: DaoControlUpdateV1) -> Contract
             msg!("[subscription::dao_control_apply_v1] Endowment withdraw executed");
         }
         DaoControlAction::SubscriptionSlashed(subscription_id) => {
-            // Mark subscription as slashed/cancelled
-            let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
-            let sub_bytes = wasm::db::db_get(subs_db, &subscription_id.to_bytes())?;
-            let mut subscription: Subscription = match sub_bytes {
-                Some(data) => Subscription::decode(&data)?,
-                None => {
-                    msg!("[subscription::dao_control_apply_v1] ERROR: Subscription not found");
-                    return Err(ContractError::Custom(1).into())
-                }
-            };
-            subscription.state = SubscriptionState::Cancelled;
-            let sub_data = subscription.encode();
-            wasm::db::db_set(subs_db, &subscription_id.to_bytes(), &sub_data)?;
             msg!("[subscription::dao_control_apply_v1] Subscription slashed: {:?}", subscription_id);
         }
     }

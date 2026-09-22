@@ -332,7 +332,8 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
         }
     }
 
-    // Create update data
+    // Create update data. The timestamp is read here — apply may not read (register OBL-C72).
+    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
     let update = DepositUpdateV1 {
         commitment: params.commitment,
         recipient_pub: params.recipient_pub,
@@ -340,6 +341,7 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
         chain: params.chain,
         external_block_hash: params.external_block_hash,
         amount: params.amount,
+        timestamp: get_current_timestamp(info_db)?,
     };
 
     Ok(update.encode())
@@ -619,13 +621,15 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
         return Err(BridgeError::DoubleSpend.into())
     }
 
-    // Create update data
+    // Create update data. The timestamp is read here — apply may not read (register OBL-C72).
+    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
     let update = WithdrawUpdateV1 {
         nullifier: params.nullifier,
         recipient_hash: params.recipient_hash,
         amount: params.amount,
         timeout_height: params.timeout_height,
         feed_mode: params.feed_mode,
+        timestamp: get_current_timestamp(info_db)?,
     };
 
     Ok(update.encode())
@@ -678,7 +682,7 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
         chain: update.chain.clone(),
         external_height: 0,
         claimed: false,
-        registered_at: get_current_timestamp(info_db)?,
+        registered_at: update.timestamp,
     };
     wasm::db::db_set(deposits_db, &build_deposit_key(&update.commitment.to_bytes()), &deposit.encode())?;
 
@@ -703,7 +707,7 @@ fn apply_withdraw_update(cid: ContractId, update: WithdrawUpdateV1) -> ContractR
         amount: update.amount,
         executed: false,
         external_tx_hash: None,
-        withdrawn_at: get_current_timestamp(info_db)?,
+        withdrawn_at: update.timestamp,
     };
     wasm::db::db_set(withdrawals_db, &build_withdrawal_key(&update.nullifier.to_bytes()), &withdrawal.encode())?;
 
@@ -717,6 +721,10 @@ fn apply_withdraw_update(cid: ContractId, update: WithdrawUpdateV1) -> ContractR
 // ============================================================================
 
 /// Update data for deposit
+///
+/// `timestamp` is carried because `apply_deposit_update` used to read it with a `db_get` — the read
+/// triad is denied in `ContractSection::Update` (register OBL-C72), so exec reads it and the value
+/// travels here.
 #[derive(Debug, Clone)]
 pub struct DepositUpdateV1 {
     pub commitment: dwow_sdk::crypto::IntentCommitment,
@@ -725,23 +733,26 @@ pub struct DepositUpdateV1 {
     pub chain: ExternalChain,
     pub external_block_hash: [u8; 32],
     pub amount: u64,
+    /// The bridge's recorded current timestamp, read in exec.
+    pub timestamp: u64,
 }
 
 impl DepositUpdateV1 {
-    pub const ENCODED_SIZE: usize = 113;
+    pub const ENCODED_SIZE: usize = 121;
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(113);
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.commitment.to_bytes());
         b.extend_from_slice(&self.recipient_pub.to_bytes());
         b.extend_from_slice(&self.bridge_nonce.to_le_bytes());
         b.push(self.chain as u8);
         b.extend_from_slice(&self.external_block_hash);
         b.extend_from_slice(&self.amount.to_le_bytes());
+        b.extend_from_slice(&self.timestamp.to_le_bytes());
         b
     }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 113 { return Err(ContractError::IoError(format!("DepositUpdateV1: expected 113 bytes, got {}", data.len()))); }
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("DepositUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(DepositUpdateV1 {
             commitment: dwow_sdk::crypto::IntentCommitment::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DepositUpdateV1: invalid commitment: {}", e)))?,
             recipient_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DepositUpdateV1: invalid recipient_pub: {}", e)))?,
@@ -749,11 +760,14 @@ impl DepositUpdateV1 {
             chain: ExternalChain::try_from(data[72])?,
             external_block_hash: data[73..105].try_into().unwrap(),
             amount: u64::from_le_bytes(data[105..113].try_into().unwrap()),
+            timestamp: u64::from_le_bytes(data[113..121].try_into().unwrap()),
         })
     }
 }
 
 /// Update data for withdrawal
+///
+/// `timestamp` for the same reason as `DepositUpdateV1`.
 #[derive(Debug, Clone)]
 pub struct WithdrawUpdateV1 {
     pub nullifier: dwow_sdk::crypto::IntentNullifier,
@@ -761,28 +775,32 @@ pub struct WithdrawUpdateV1 {
     pub amount: u64,
     pub timeout_height: u64,
     pub feed_mode: u8,
+    /// The bridge's recorded current timestamp, read in exec.
+    pub timestamp: u64,
 }
 
 impl WithdrawUpdateV1 {
-    pub const ENCODED_SIZE: usize = 81;
+    pub const ENCODED_SIZE: usize = 89;
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(81);
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.recipient_hash);
         b.extend_from_slice(&self.amount.to_le_bytes());
         b.extend_from_slice(&self.timeout_height.to_le_bytes());
         b.push(self.feed_mode);
+        b.extend_from_slice(&self.timestamp.to_le_bytes());
         b
     }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 81 { return Err(ContractError::IoError(format!("WithdrawUpdateV1: expected 81 bytes, got {}", data.len()))); }
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("WithdrawUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(WithdrawUpdateV1 {
             nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("WithdrawUpdateV1: invalid nullifier: {}", e)))?,
             recipient_hash: data[32..64].try_into().unwrap(),
             amount: u64::from_le_bytes(data[64..72].try_into().unwrap()),
             timeout_height: u64::from_le_bytes(data[72..80].try_into().unwrap()),
             feed_mode: data[80],
+            timestamp: u64::from_le_bytes(data[81..89].try_into().unwrap()),
         })
     }
 }

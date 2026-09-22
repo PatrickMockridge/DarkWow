@@ -30,9 +30,8 @@ use dwow_serial::Encodable;
 
 use crate::{
     error::DexError,
-    model::SetTransparencyLevelParams,
-    DEX_CONTRACT_CONFIG_TREE,
-    DEX_CONTRACT_NULLIFIERS_TREE, DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY,
+    model::{SetTransparencyLevelParams, SetTransparencyLevelUpdateV1},
+    DEX_CONTRACT_NULLIFIERS_TREE,
     DEX_CONTRACT_ZKAS_SET_TRANSPARENCY_NS_V2,
 };
 
@@ -50,19 +49,21 @@ pub(crate) fn dex_set_transparency_level_process_instruction_v1(
     msg!("[SetTransparencyLevelV1] Setting transparency level to: {:?}", params.level);
 
     // Verify ZK proof authorizes this operation (governance key holder)
-    let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, DEX_CONTRACT_NULLIFIERS_TREE)?;
     if wasm::db::db_contains_key(nullifiers_db, &params.gov_nullifier.to_repr())? {
         return Err(DexError::NotAuthorized.into());
     }
-    // Record nullifier for replay protection
-    wasm::db::db_mark_spent(nullifiers_db, &params.gov_nullifier.to_repr())?;
 
-    // Update transparency level in config
-    wasm::db::db_set(config_db, DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY, &[params.level as u8])?;
+    // exec does not write (register OBL-C73). The nullifier mark and the config write both travel
+    // in the update; apply performs them. This used to return `Ok(vec![])` after writing both
+    // here, so the host denied those writes and the endpoint could never commit state.
+    let update = SetTransparencyLevelUpdateV1 {
+        gov_nullifier: params.gov_nullifier,
+        level: params.level as u8,
+    };
 
-    msg!("[SetTransparencyLevelV1] Transparency level updated successfully");
-    Ok(vec![])
+    msg!("[SetTransparencyLevelV1] Transparency level update prepared");
+    Ok(update.encode())
 }
 
 /// Get metadata for SetTransparencyLevelV1 ZK proof verification

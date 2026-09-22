@@ -400,6 +400,8 @@ fn test_verify_access_params_encoding() {
 fn test_dao_control_update_encoding() {
     let update = DaoControlUpdateV1 {
         action: DaoControlAction::PlanUpdated(1),
+        plan: Some((1, vec![7u8; 99])),
+        slashed_subscription: None,
     };
 
     let encoded = serialize(&update);
@@ -447,6 +449,7 @@ fn test_update_usage_update_encoding() {
         last_access_block: 50010,
         uses_remaining: 95,
         is_new_period: false,
+        subscription_bytes: vec![9u8; 264],
     };
 
     let encoded = serialize(&update);
@@ -457,6 +460,8 @@ fn test_update_usage_update_encoding() {
     assert_eq!(decoded.last_access_block, update.last_access_block);
     assert_eq!(decoded.uses_remaining, update.uses_remaining);
     assert_eq!(decoded.is_new_period, update.is_new_period);
+    // The carried record survives the bridge — this is the value apply writes.
+    assert_eq!(decoded.subscription_bytes, update.subscription_bytes);
 }
 
 #[test]
@@ -467,6 +472,7 @@ fn test_update_usage_new_period_encoding() {
         last_access_block: 100000,
         uses_remaining: 100,
         is_new_period: true,
+        subscription_bytes: vec![9u8; 264],
     };
 
     let encoded = serialize(&update);

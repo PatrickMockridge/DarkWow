@@ -727,6 +727,10 @@ pub struct UpdateUsageUpdateV1 {
     pub uses_remaining: u64,
     /// Whether this was a period reset
     pub is_new_period: bool,
+    /// `Subscription::encode()` with the usage fields applied, as exec produced it. Carried so
+    /// apply re-stores the record rather than reading it back — the read triad is denied in
+    /// `ContractSection::Update` (register OBL-C72). Variable-length, so length-prefixed.
+    pub subscription_bytes: Vec<u8>,
 }
 
 /// Parameters for `Subscription::DaoControlV1`
@@ -776,6 +780,14 @@ impl DaoControlParamsV1 {
 pub struct DaoControlUpdateV1 {
     /// The DAO action performed
     pub action: DaoControlAction,
+    /// The plan this action stores or modifies, as `(plan_id, Plan::encode())`. Carried because
+    /// apply may not read a record back to modify it (register OBL-C72) — and because `UpdatePlan`
+    /// previously persisted the plan nowhere at all: exec did not write and apply's arm reported
+    /// "nothing to do here", so the action was a silent no-op.
+    pub plan: Option<(u32, Vec<u8>)>,
+    /// The subscription this action slashes, as `(id, Subscription::encode())` with the cancelled
+    /// state applied.
+    pub slashed_subscription: Option<(SubscriptionId, Vec<u8>)>,
 }
 
 /// Actions resulting from DAO control
@@ -1299,32 +1311,35 @@ impl RenewUpdateV1 {
     }
 }
 
-impl dwow_serial::Encodable for UpdateUsageUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for UpdateUsageUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdateUsageUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl UpdateUsageUpdateV1 {
-    /// Fixed canonical byte size: subscription_id(32) + period_uses(8) +
-    /// last_access_block(8) + uses_remaining(8) + is_new_period(1) = 57
-    pub const ENCODED_SIZE: usize = 57;
+    /// Fixed prefix: subscription_id(32) + period_uses(8) + last_access_block(8) +
+    /// uses_remaining(8) + is_new_period(1) + record length(4) = 61
+    pub const FIXED: usize = 61;
 
     /// Encode to canonical bytes (ρ-calculus: quote).
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.subscription_bytes.len())?;
+        let mut b = Vec::with_capacity(Self::FIXED + self.subscription_bytes.len());
         b.extend_from_slice(&self.subscription_id.to_bytes());
         b.extend_from_slice(&self.period_uses.to_le_bytes());
         b.extend_from_slice(&self.last_access_block.to_le_bytes());
         b.extend_from_slice(&self.uses_remaining.to_le_bytes());
         b.push(self.is_new_period as u8);
-        b
+        b.extend_from_slice(&n.to_le_bytes());
+        b.extend_from_slice(&self.subscription_bytes);
+        Ok(b)
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
+        if data.len() < Self::FIXED {
             return Err(ContractError::IoError(format!(
-                "UpdateUsageUpdateV1: expected {} bytes, got {}",
-                Self::ENCODED_SIZE,
+                "UpdateUsageUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED,
                 data.len()
             )));
         }
@@ -1336,6 +1351,14 @@ impl UpdateUsageUpdateV1 {
         let uses_remaining =
             u64::from_le_bytes(data[48..56].try_into().unwrap());
         let is_new_period = data[56] != 0;
+        let n = SerializedLen::from_le_bytes(data[57..61].try_into().unwrap()).to_usize();
+        if data.len() != Self::FIXED.saturating_add(n) {
+            return Err(ContractError::IoError(format!(
+                "UpdateUsageUpdateV1: {} record bytes do not fit {} total",
+                n,
+                data.len()
+            )));
+        }
 
         Ok(UpdateUsageUpdateV1 {
             subscription_id,
@@ -1343,23 +1366,104 @@ impl UpdateUsageUpdateV1 {
             last_access_block,
             uses_remaining,
             is_new_period,
+            subscription_bytes: data[Self::FIXED..].to_vec(),
         })
     }
 }
 
-impl dwow_serial::Encodable for DaoControlUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for DaoControlUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for DaoControlUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl DaoControlUpdateV1 {
     /// Encode to canonical bytes (ρ-calculus: quote).
-    pub fn encode(&self) -> Vec<u8> {
-        self.action.encode()
+    ///
+    /// Layout: `plan` carrier, `slashed_subscription` carrier, then the action (variable length,
+    /// last so its own decoder sees exactly its bytes).
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let mut b = Vec::new();
+        match &self.plan {
+            None => b.push(0u8),
+            Some((id, bytes)) => {
+                let n = SerializedLen::try_from_len(bytes.len())?;
+                b.push(1u8);
+                b.extend_from_slice(&id.to_le_bytes());
+                b.extend_from_slice(&n.to_le_bytes());
+                b.extend_from_slice(bytes);
+            }
+        }
+        match &self.slashed_subscription {
+            None => b.push(0u8),
+            Some((id, bytes)) => {
+                let n = SerializedLen::try_from_len(bytes.len())?;
+                b.push(1u8);
+                b.extend_from_slice(&id.to_bytes());
+                b.extend_from_slice(&n.to_le_bytes());
+                b.extend_from_slice(bytes);
+            }
+        }
+        b.extend_from_slice(&self.action.encode());
+        Ok(b)
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "each slice length checked before use")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        let mut pos = 0usize;
+
+        let plan = match data.first().copied() {
+            Some(0) => {
+                pos += 1;
+                None
+            }
+            Some(1) => {
+                pos += 1;
+                if data.len() < pos + 8 {
+                    return Err(ContractError::IoError("DaoControlUpdateV1: truncated plan header".into()));
+                }
+                let id = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
+                let n = SerializedLen::from_le_bytes(data[pos + 4..pos + 8].try_into().unwrap()).to_usize();
+                pos += 8;
+                if data.len() < pos.saturating_add(n) {
+                    return Err(ContractError::IoError("DaoControlUpdateV1: truncated plan bytes".into()));
+                }
+                let bytes = data[pos..pos + n].to_vec();
+                pos += n;
+                Some((id, bytes))
+            }
+            _ => return Err(ContractError::IoError("DaoControlUpdateV1: invalid plan tag".into())),
+        };
+
+        let slashed_subscription = match data.get(pos).copied() {
+            Some(0) => {
+                pos += 1;
+                None
+            }
+            Some(1) => {
+                pos += 1;
+                if data.len() < pos + 36 {
+                    return Err(ContractError::IoError("DaoControlUpdateV1: truncated subscription header".into()));
+                }
+                let id = SubscriptionId::decode(&data[pos..pos + 32])?;
+                let n = SerializedLen::from_le_bytes(data[pos + 32..pos + 36].try_into().unwrap()).to_usize();
+                pos += 36;
+                if data.len() < pos.saturating_add(n) {
+                    return Err(ContractError::IoError("DaoControlUpdateV1: truncated subscription bytes".into()));
+                }
+                let bytes = data[pos..pos + n].to_vec();
+                pos += n;
+                Some((id, bytes))
+            }
+            _ => {
+                return Err(ContractError::IoError(
+                    "DaoControlUpdateV1: invalid slashed_subscription tag".into(),
+                ))
+            }
+        };
+
         Ok(DaoControlUpdateV1 {
-            action: DaoControlAction::decode(data)?,
+            action: DaoControlAction::decode(&data[pos..])?,
+            plan,
+            slashed_subscription,
         })
     }
 }

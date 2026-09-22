@@ -1070,13 +1070,32 @@ fn prove_coverage_v1(
     // Auto-void the series if coverage falls below minimum.
     // This enables EmergencyUnstakeV1. Previously, prove_coverage_v1
     // rejected sub-100% reports, making emergency unstake unreachable.
+    //
+    // The series is read and voided **here**, in exec: apply may not read (the read triad is denied
+    // in `ContractSection::Update`; register OBL-C72), and the old code did both the read and the
+    // void in apply. The finished record travels in the update.
     let is_voided = validation::is_coverage_voided(&report);
-    if is_voided {
+    let voided_series_bytes = if is_voided {
         msg!("[prove_coverage_v1] Coverage ratio {} bps < {} bps — voiding series {:?}",
             params.coverage_ratio_bps, validation::MIN_COVERAGE_RATIO_BPS, params.series_asset_id);
-    }
+        let series_key = params.series_asset_id.to_repr();
+        match wasm::db::db_get(bonds_info_db, &series_key)? {
+            Some(series_bytes) => {
+                let mut series_info = BondSeriesInfo::decode(&series_bytes)?;
+                if series_info.status == SeriesStatus::Active {
+                    series_info.status = SeriesStatus::Voided;
+                    Some(series_info.encode())
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
 
-    let update = ProveCoverageUpdateV1 { report };
+    let update = ProveCoverageUpdateV1 { report, voided_series_bytes };
     let mut return_data = vec![BearerBondFunction::ProveCoverageV1 as u8];
     return_data.extend_from_slice(&update.encode());
     wasm::util::set_return_data(&return_data)
@@ -1241,22 +1260,16 @@ fn apply_prove_coverage(cid: ContractId, update: ProveCoverageUpdateV1) -> Contr
     let key = [&update.report.series_asset_id.to_repr()[..], &update.report.report_block.to_le_bytes()[..]].concat();
     wasm::db::db_set(bonds_info_db, &key, &update.report.encode())?;
 
-    // Auto-void the series if coverage falls below minimum.
-    // Enables EmergencyUnstakeV1 by filing a sub-100% report.
-    if validation::is_coverage_voided(&update.report) {
+    // The auto-void decision and the series read both happen in exec now (OBL-C72); apply re-stores
+    // the record exec prepared. This also removes the silent-failure path the old `if let Ok(..)`
+    // chain had: a corrupt or missing series was indistinguishable from "not voided".
+    if let Some(series_bytes) = &update.voided_series_bytes {
         let series_key = update.report.series_asset_id.to_repr();
-        if let Ok(Some(series_bytes)) = wasm::db::db_get(bonds_info_db, &series_key) {
-            if let Ok(mut series_info) = BondSeriesInfo::decode(&series_bytes) {
-                if series_info.status == SeriesStatus::Active {
-                    series_info.status = SeriesStatus::Voided;
-                    wasm::db::db_set(bonds_info_db, &series_key, &series_info.encode())?;
-                    msg!("[apply_prove_coverage] Series {:?} auto-voided: coverage {} bps < {} bps",
-                        update.report.series_asset_id,
-                        update.report.coverage_ratio_bps,
-                        validation::MIN_COVERAGE_RATIO_BPS);
-                }
-            }
-        }
+        wasm::db::db_set(bonds_info_db, &series_key, series_bytes)?;
+        msg!("[apply_prove_coverage] Series {:?} auto-voided: coverage {} bps < {} bps",
+            update.report.series_asset_id,
+            update.report.coverage_ratio_bps,
+            validation::MIN_COVERAGE_RATIO_BPS);
     }
 
     msg!("[apply_prove_coverage] Coverage report stored: series={:?}, block={}, ratio={} bps",

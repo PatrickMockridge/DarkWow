@@ -38,7 +38,7 @@
 //! 4. **CancelSwap**: Either party can cancel (triggers refund)
 
 use dwow_sdk::{
-    crypto::{ContractId, PROMISSORY_NOTE_CONTRACT_ID},
+    crypto::{pasta_prelude::PrimeField, ContractId, PROMISSORY_NOTE_CONTRACT_ID},
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg,
@@ -49,11 +49,12 @@ use dwow_serial::deserialize;
 use crate::{
     model::{
         AcceptSwapUpdateV1, CancelSwapUpdateV1, CreateSwapUpdateV1, ExecuteSwapUpdateV1,
-        SetTransparencyLevelParams, UpdateConfigParams,
+        SetTransparencyLevelParams, SetTransparencyLevelUpdateV1, UpdateConfigParams,
+        UpdateConfigUpdateV1,
     },
-    DexFunction, DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_INFO_TREE,
+    DexFunction, DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_FEE, DEX_CONTRACT_INFO_TREE,
     DEX_CONTRACT_NULLIFIERS_TREE, DEX_CONTRACT_PARTICIPANTS_TREE,
-    DEX_CONTRACT_SWAPS_TREE,
+    DEX_CONTRACT_SWAPS_TREE, DEX_CONTRACT_TIMEOUT, DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY,
     PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
@@ -290,11 +291,24 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             dex_cancel_swap_process_update_v1(cid, update)
         }
         DexFunction::UpdateConfigV1 => {
-            msg!("[dex::process_update] UpdateConfigV1 handled in process_instruction");
+            // Both arms below used to log "handled in process_instruction" — which was exactly the
+            // defect: exec performed the writes, and the host denies a write in exec (OBL-C73).
+            let update = UpdateConfigUpdateV1::decode(&update_data[1..])?;
+            let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
+            let nullifiers_db = wasm::db::db_lookup(cid, DEX_CONTRACT_NULLIFIERS_TREE)?;
+            wasm::db::db_mark_spent(nullifiers_db, &update.gov_nullifier.to_repr())?;
+            wasm::db::db_set(config_db, DEX_CONTRACT_TIMEOUT, &update.timeout.to_le_bytes())?;
+            wasm::db::db_set(config_db, DEX_CONTRACT_FEE, &update.fee.to_le_bytes())?;
+            msg!("[dex::process_update] UpdateConfigV1 applied");
             Ok(())
         }
         DexFunction::SetTransparencyLevelV1 => {
-            msg!("[dex::process_update] SetTransparencyLevelV1 handled in process_instruction");
+            let update = SetTransparencyLevelUpdateV1::decode(&update_data[1..])?;
+            let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
+            let nullifiers_db = wasm::db::db_lookup(cid, DEX_CONTRACT_NULLIFIERS_TREE)?;
+            wasm::db::db_mark_spent(nullifiers_db, &update.gov_nullifier.to_repr())?;
+            wasm::db::db_set(config_db, DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY, &[update.level])?;
+            msg!("[dex::process_update] SetTransparencyLevelV1 applied");
             Ok(())
         }
         DexFunction::ExecuteSwapFeeV1 => {

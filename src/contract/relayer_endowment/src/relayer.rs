@@ -237,29 +237,48 @@ impl RegisterFeeScheduleParams {
 }
 
 /// Register fee schedule update.
+///
+/// Carries the **finished** `RelayerInfo` (with `fee_schedule_id` set) so apply can re-store it
+/// without a `db_get`. Apply must not read — the read triad is denied in `ContractSection::Update`
+/// (`contract-wasm-type-system.md` §A.4.7/§B.2.2; register OBL-C72) — so the record is read and
+/// modified in exec and travels the Exec→Apply bridge. `RelayerInfo::encode` is variable-length
+/// (the fee schedule is optional), so the bytes carry a `SerializedLen` prefix.
 #[derive(Debug, Clone)]
 pub struct RegisterFeeScheduleUpdateV1 {
     pub relayer_pub: PublicKey,
     pub fee_schedule_id: [u8; 32],
+    /// `RelayerInfo::encode()` with `fee_schedule_id` applied, as exec produced it.
+    pub relayer_info_bytes: Vec<u8>,
 }
 
 impl RegisterFeeScheduleUpdateV1 {
-    pub const ENCODED_SIZE: usize = 64;
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+    /// 32 + 32 + 4, before the record.
+    pub const FIXED: usize = 68;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.relayer_info_bytes.len())?;
+        let mut b = Vec::with_capacity(Self::FIXED + self.relayer_info_bytes.len());
         b.extend_from_slice(&self.relayer_pub.to_bytes());
         b.extend_from_slice(&self.fee_schedule_id);
-        b
+        b.extend_from_slice(&n.to_le_bytes());
+        b.extend_from_slice(&self.relayer_info_bytes);
+        Ok(b)
     }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!("RegisterFeeScheduleUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        if data.len() < Self::FIXED {
+            return Err(ContractError::IoError(format!("RegisterFeeScheduleUpdateV1: expected at least {} bytes, got {}", Self::FIXED, data.len())));
+        }
+        let n = SerializedLen::from_le_bytes(data[64..68].try_into().unwrap()).to_usize();
+        if data.len() != Self::FIXED.saturating_add(n) {
+            return Err(ContractError::IoError(format!(
+                "RegisterFeeScheduleUpdateV1: {} record bytes do not fit {} total", n, data.len()
+            )));
         }
         Ok(RegisterFeeScheduleUpdateV1 {
             relayer_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap())
                 .map_err(|e| ContractError::IoError(format!("RegisterFeeScheduleUpdateV1: invalid relayer_pub: {}", e)))?,
             fee_schedule_id: data[32..64].try_into().unwrap(),
+            relayer_info_bytes: data[Self::FIXED..].to_vec(),
         })
     }
 }
@@ -363,16 +382,22 @@ pub fn process_register_fee_schedule(
 
     let relayers_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_RELAYERS_TREE)?;
     let relayer_key = compute_relayer_key(&params.relayer_pub);
-    if wasm::db::db_get(relayers_db, &relayer_key)?.is_none() {
+    let Some(relayer_data) = wasm::db::db_get(relayers_db, &relayer_key)? else {
         msg!("[relayer_endowment::RegisterFeeScheduleV1] ERROR: Relayer not registered");
         return Err(RelayerEndowmentError::RelayerNotRegistered.into());
-    }
+    };
+
+    // Apply the change here, on the record, and carry it — exec does not write and apply does not
+    // read (OBL-C72/C73).
+    let mut info = RelayerInfo::decode(&relayer_data)?;
+    info.fee_schedule_id = Some(params.fee_schedule_id);
 
     let update = RegisterFeeScheduleUpdateV1 {
         relayer_pub: params.relayer_pub,
         fee_schedule_id: params.fee_schedule_id,
+        relayer_info_bytes: info.encode(),
     };
-    Ok(update.encode())
+    update.encode()
 }
 
 /// Apply RegisterFeeSchedule update.
@@ -380,13 +405,8 @@ pub fn apply_register_fee_schedule(cid: ContractId, update: RegisterFeeScheduleU
     let relayers_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_RELAYERS_TREE)?;
     let relayer_key = compute_relayer_key(&update.relayer_pub);
 
-    let Some(relayer_data) = wasm::db::db_get(relayers_db, &relayer_key)? else {
-        return Err(RelayerEndowmentError::RelayerNotRegistered.into());
-    };
-
-    let mut info = RelayerInfo::decode(&relayer_data)?;
-    info.fee_schedule_id = Some(update.fee_schedule_id);
-    wasm::db::db_set(relayers_db, &relayer_key, &info.encode())?;
+    // Blind write: the record was read and modified in exec (OBL-C72).
+    wasm::db::db_set(relayers_db, &relayer_key, &update.relayer_info_bytes)?;
 
     msg!("[relayer_endowment::apply] Fee schedule registered for {:?}", update.relayer_pub);
     Ok(())
