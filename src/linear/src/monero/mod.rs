@@ -478,6 +478,178 @@ pub fn extract_aux_merkle_root(extra_field: &RawExtraField) -> Result<Option<mon
 mod tests {
     use super::*;
 
+    // ── The three merge-mining receipts ─────────────────────────────────
+    //
+    // Receipts 1 and 3 (`extract_aux_merkle_root`, `is_coinbase_valid_merkle_root`) had **no test at
+    // all** until 2026-09-22: grep found them called only from `validation.rs:82`,
+    // `block_acceptor.rs:194` and `mm_rpc.rs:509`/`:561`, never from a `#[cfg(test)]` block. They are the
+    // whole security argument for merge mining — Receipt 1 says the Monero coinbase committed to *our*
+    // aux merkle root, Receipt 3 says the proof's coinbase really is that block's coinbase — so a defect
+    // in either is a defect in the claim that a DarkWow block is backed by Monero work.
+    //
+    // The only existing coverage was `test_monero_powdata_serde`, which is `#[cfg(feature = "async")]`
+    // and exercises them incidentally, in the default feature set not at all.
+
+    /// The real Monero testnet block used by the serde test: height 2912484, merge-mined DarkFi.
+    const XMR_BLOCK: &str = "1010f881efca0644a1185eeccb2629b316ec0d41659111299ad1b736a3b0d8eac8bbc6384dc5c84bb6010002a0e2b10101ffe4e1b1010180e0a596bb1103f1d23951bd28ce2bfad791f2350e2ac348e4620e19af3418653a1839cc5c8f2be14a010b204d874ed5087b649c711dd4479434a85dbf7e9bdfae26f5bc785964d4b45c0204751b43e10321082d5f403be836d45d026fbaa2a8e4b4a9d0d821f29d709321f8d764f32d446fa80000";
+    const XMR_SEED: &str = "f1d23951bd28ce2bfad791f2350e2ac348e4620e19af3418653a1839cc5c8f2b";
+
+    /// A merge-mining sub-field in the wire form **this crate's parser** expects.
+    ///
+    /// Tag `0x3`, then a `u8` size, then a `VarInt` depth, then the 32-byte merkle root. That is three
+    /// fields before the hash, not two: the arm at `monero` crate `blockdata/transaction.rs:846` reads
+    /// `Decodable::consensus_decode::<u8>` into a discarded `_size`, then a `VarInt`, then the `Hash`.
+    /// The first version of this helper emitted `[0x03, depth, hash]`, so the `VarInt` read began inside
+    /// the hash bytes (whose first byte `0xAA` has the continuation bit set), the sub-field failed to
+    /// parse, and the extraction returned `Ok(None)` — the positive control below caught it. Documented
+    /// rather than left as a magic byte string, because the next reader will make the same assumption.
+    ///
+    /// A depth below 128 is a single `VarInt` byte. `size` is ignored by the parser; 1 matches what the
+    /// real merge-mined testnet block carries.
+    fn merge_mining_subfield(depth: u8, root: [u8; 32]) -> Vec<u8> {
+        let mut v = vec![0x03, 0x01, depth];
+        v.extend_from_slice(&root);
+        v
+    }
+
+    /// Receipt 1, against a real merge-mined block: the aux merkle root is recovered from the Monero
+    /// coinbase's `tx_extra`.
+    ///
+    /// This block really does carry a DarkFi merge-mining tag, so it is the strongest positive control
+    /// available offline — and it is the one the merge-mining path itself depends on, since
+    /// `mm_submit_solution` compares the submitted aux proof's root against exactly this value
+    /// (`mm_rpc.rs:508-541`).
+    #[test]
+    fn extract_aux_merkle_root_recovers_the_root_from_a_real_merge_mined_block() {
+        let block = monero_block_deserialize(XMR_BLOCK).expect("the testnet fixture must deserialize");
+
+        match extract_aux_merkle_root_from_block(&block) {
+            Ok(Some(root)) => {
+                assert_ne!(root, monero::Hash::null(),
+                    "a real merge-mining tag must carry a non-zero aux merkle root");
+            }
+            other => panic!(
+                "expected the real block's merge-mining tag to yield a root, got {:?} — if this block \
+                 has no MM tag the Receipt 1 tests below have no positive control",
+                other
+            ),
+        }
+    }
+
+    /// Receipt 1's extraction, on inputs built here: the returned root is the tag's own hash, an empty
+    /// extra field yields no root, and two tags are refused.
+    ///
+    /// The ambiguity case is the one worth having. `mm_submit_solution` takes the *submitted* aux hash
+    /// and its proof and checks them against the root extracted here, so a coinbase carrying two tags
+    /// would let a submitter choose which one to satisfy. The code refuses that, and nothing tested it.
+    /// The cost of the refusal being absent is not a crash but a weakened receipt — the kind of defect
+    /// that leaves every existing test green.
+    #[test]
+    fn extract_aux_merkle_root_handles_absent_and_ambiguous_tags() {
+        // No tag at all.
+        let empty = RawExtraField(vec![]);
+        assert!(
+            matches!(extract_aux_merkle_root(&empty), Ok(None)),
+            "an extra field with no sub-fields must yield no aux root"
+        );
+
+        // A non-merge-mining sub-field only: tag 0x0 (padding) with a zero length.
+        let padding_only = RawExtraField(vec![0x00, 0x00]);
+        assert!(
+            matches!(extract_aux_merkle_root(&padding_only), Ok(None)),
+            "a padding-only extra field must yield no aux root"
+        );
+
+        // Exactly one tag: the root comes back byte-identical to what was embedded.
+        let root = [0xAAu8; 32];
+        let one = RawExtraField(merge_mining_subfield(1, root));
+        match extract_aux_merkle_root(&one) {
+            Ok(Some(extracted)) => assert_eq!(
+                extracted.to_bytes(), root,
+                "the extracted root must be the tag's own hash, not some other field's"
+            ),
+            other => panic!("expected the embedded root, got {:?}", other),
+        }
+
+        // Two tags: refused, because a submitter could otherwise satisfy whichever one suited them.
+        let mut two = merge_mining_subfield(1, [0xAAu8; 32]);
+        two.extend_from_slice(&merge_mining_subfield(1, [0xBBu8; 32]));
+        let ambiguous = RawExtraField(two);
+        assert!(
+            extract_aux_merkle_root(&ambiguous).is_err(),
+            "two merge-mining tags must be refused rather than resolved by picking one"
+        );
+    }
+
+    /// Build `MoneroPowData` from the real testnet block, with the synthetic aux proof the serde test
+    /// uses (the real aux hash is not recoverable offline, and Receipt 3 does not depend on it).
+    fn real_block_powdata() -> MoneroPowData {
+        use std::str::FromStr;
+
+        let block = monero_block_deserialize(XMR_BLOCK).expect("the testnet fixture must deserialize");
+        let seed = FixedByteArray::from_bytes(&hex::decode(XMR_SEED).expect("seed is hex"))
+            .expect("seed fits the fixed array");
+        let tx_hashes = [
+            "d96756959949db23764592fea0bfe88c790e1fd131dabb676948b343aa9ecc24",
+            "77d1a87df131c36da4832a7ec382db9b8fe947576a60ec82cc1c66a220f6ee42",
+        ]
+        .iter()
+        .map(|h| monero::Hash::from_str(h).expect("fixture hash is hex"))
+        .collect::<Vec<_>>();
+        let aux_proof = create_merkle_proof(&tx_hashes, &tx_hashes[0])
+            .expect("the fixture proof must build");
+        MoneroPowData::new(block, seed, aux_proof).expect("the fixture must construct")
+    }
+
+    /// Receipt 3, positive control: a real merge-mined block satisfies its own coinbase proof.
+    ///
+    /// This is the check `block_acceptor.rs:194` runs on every merge-mined block and the check
+    /// `validation.rs:82` runs on the competing-fork path. If it did not hold for a real block, every
+    /// merge-mined block would be rejected — so the assertion is load-bearing in both directions, and
+    /// the negatives below only mean something because this passes.
+    #[test]
+    fn is_coinbase_valid_merkle_root_accepts_a_real_merge_mined_block() {
+        let powdata = real_block_powdata();
+        assert!(
+            powdata.is_coinbase_valid_merkle_root(),
+            "a real merge-mined block must satisfy its own coinbase merkle proof — if this fails, the \
+             acceptance path rejects genuinely valid blocks"
+        );
+    }
+
+    /// Receipt 3, negative controls: tampering with either the coinbase's extra field or the claimed
+    /// merkle root must break the receipt.
+    ///
+    /// The two mutations attack the two halves of the check — the reconstructed coinbase hash and the
+    /// root it is proved against — so a version of the function that compared only one of them would be
+    /// caught by whichever control it ignored. `coinbase_tx_extra` is the field an attacker would
+    /// actually choose: it is raw bytes from a peer, and it is what carries the merge-mining tag.
+    #[test]
+    fn is_coinbase_valid_merkle_root_rejects_tampering() {
+        let honest = real_block_powdata();
+        assert!(honest.is_coinbase_valid_merkle_root(), "control: the untampered data must verify");
+
+        // Tamper the coinbase's extra field.
+        let mut extra_tampered = real_block_powdata();
+        assert!(
+            !extra_tampered.coinbase_tx_extra.0.is_empty(),
+            "control: the fixture's extra field must be non-empty, or the mutation below is a no-op"
+        );
+        extra_tampered.coinbase_tx_extra.0[0] ^= 0xFF;
+        assert!(
+            !extra_tampered.is_coinbase_valid_merkle_root(),
+            "a coinbase whose extra field does not match its prefix hash must be rejected"
+        );
+
+        // Claim a different merkle root.
+        let mut root_tampered = real_block_powdata();
+        root_tampered.merkle_root = monero::Hash::null();
+        assert!(
+            !root_tampered.is_coinbase_valid_merkle_root(),
+            "a coinbase proof against the wrong merkle root must be rejected"
+        );
+    }
+
     // Test that both sync and async serialization formats match.
     // We do some hacks because Monero lib doesn't do async.
     #[test]

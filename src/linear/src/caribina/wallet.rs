@@ -60,13 +60,56 @@ impl CaribinaWallet {
 mod tests {
     use super::*;
 
+    /// Per-block key cycling: repeated generation must keep producing fresh keys.
+    ///
+    /// This test used to be named `test_keygen_is_fast_and_deterministic` while asserting the opposite
+    /// of "deterministic" — that two generations *differ*. The name is what a reader trusts, so the
+    /// assertion was right and the name was wrong; renamed here rather than left to read as a claim
+    /// about reproducibility that nothing checks.
+    ///
+    /// Two keys differing is a weak form of the cycling property the design depends on ("no address
+    /// reuse, no tracking"): with 64 generations it is a birthday-collision test over a 2^256 space, so
+    /// a keygen that reused a seed, ignored the CSPRNG, or hashed a counter would fail it.
     #[test]
-    fn test_keygen_is_fast_and_deterministic() {
-        let w1 = CaribinaWallet::generate();
-        let w2 = CaribinaWallet::generate();
-        // Different wallets should have different keys
-        assert_ne!(w1.public_key(), w2.public_key());
-        assert_eq!(w1.public_key().len(), 32);
+    fn test_keygen_cycles_to_distinct_keys() {
+        let keys: std::collections::HashSet<[u8; 32]> = (0..64)
+            .map(|_| CaribinaWallet::generate().public_key())
+            .collect();
+        assert_eq!(keys.len(), 64, "per-block key cycling must not repeat a public key");
+        assert!(keys.iter().all(|k| k.len() == 32));
+    }
+
+    /// The owner field arrives from a fetched DataItem, so `verify` must reject a malformed key rather
+    /// than panic or default to something that verifies.
+    ///
+    /// `VerifyingKey::from_bytes` fails on a point that is not on the curve, and `verify` maps that to
+    /// `false`. Nothing above exercises it: `test_verify_wrong_key_fails` uses a *valid* key that simply
+    /// is not the signer's. A malformed owner is the case a peer chooses, and it is the only thing
+    /// standing between a fetched DataItem and a panicking or defaulting verifier.
+    ///
+    /// **The first version of this test asserted on `[0xFF; 32]` and failed its own control**: that
+    /// pattern decompresses to a *valid* Ed25519 point (`VerifyingKey::from_bytes` accepts non-canonical
+    /// `y` encodings, and the sign bit is the only thing signed). The assertion would have passed anyway,
+    /// because the signature was not made by that key — a green test proving nothing, which is the exact
+    /// failure this control exists to catch. The search below is therefore not decoration: it locates a
+    /// genuinely invalid point rather than assuming one is "obviously" invalid.
+    #[test]
+    fn test_verify_rejects_a_malformed_public_key() {
+        let wallet = CaribinaWallet::generate();
+        let message = b"owner field fuzz";
+        let sig = wallet.sign(message);
+        assert!(CaribinaWallet::verify(&wallet.public_key(), message, &sig),
+            "positive control: the real owner verifies");
+
+        let malformed = (0u8..=255)
+            .map(|b| [b; 32])
+            .find(|k| ed25519_dalek::VerifyingKey::from_bytes(k).is_err())
+            .expect("some uniform byte pattern must fail to decompress, or there is nothing to test");
+
+        assert!(
+            !CaribinaWallet::verify(&malformed, message, &sig),
+            "a public key that is not a point on the curve must be rejected, not accepted"
+        );
     }
 
     #[test]

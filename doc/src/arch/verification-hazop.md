@@ -941,6 +941,20 @@ means reading `PowSource`. They are worth keeping adjacent to this residue rathe
 `C69` is the merge-mining half of the same question ("what authenticates a block's claim about an
 external chain?"), and it is the more severe of the two.
 
+**A coverage gap found alongside them, now closed, recorded because it bears on how much these rows can
+be trusted.** Merge mining's security argument is three receipts, and two of them had **no test in any
+feature configuration**: `extract_aux_merkle_root` (Receipt 1) and `is_coinbase_valid_merkle_root` with
+`check_coinbase_path` (Receipt 3) were reachable only from `validation.rs:82`, `block_acceptor.rs:194`
+and `mm_rpc.rs:509`/`:561`. The one test that touched them, `test_monero_powdata_serde`, is
+`#[cfg(feature = "async")]` and exercised them incidentally. Four tests were added on 2026-09-22:
+Receipt 1 against the real merge-mined testnet block plus absent-tag and **two-tag ambiguity** controls
+(the second matters because `mm_submit_solution` compares the submitted proof against the extracted root,
+so a coinbase carrying two tags would let a submitter choose which to satisfy — the code refuses that,
+and nothing had checked it); and Receipt 3 with a positive control on the real block plus two negatives
+that attack its two halves separately. The positive control passing is itself a result: it establishes
+that the coinbase-hash reconstruction — prefix keccak state, `tx_extra`, the null `RctSigBase` and a null
+hash — is correct for a real Monero block, which nothing had verified.
+
 | ID | Proposition | Source | Sev |
 |---|---|---|---|
 | OBL-C63 | Finality is conferred by a *verified* anchor, not by a header field the relaying peer chooses. `chain_state.rs:1011` and `:1546` raise `AnchoredBlockConflict` on `anchor_tx_id != 0 \|\| anchor_monero_height != 0` alone, and every verifier above is dead code outside tests, so a node enforces finality on claims it never authenticates. The direction that matters is not only "an attacker cannot reorg past an anchor" but its mirror: **a block that asserts an anchor it cannot prove confers no finality at all**, because otherwise the same free field is a chain-freeze primitive available to any peer with one accepted block and no hashpower | `chain_state.rs:1011`, `:1546`; `caribina/verify.rs:41`; `finality.rs:122`,`:136` | C |
