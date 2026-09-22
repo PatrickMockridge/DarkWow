@@ -99,12 +99,24 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     msg!("[tender::init_contract] Tender contract initialized successfully");
 
-    let _create_tender_v1_bincode = include_bytes!("../proof/create_tender.zk.bin");
-    let _reveal_bid_v1_bincode = include_bytes!("../proof/reveal_bid.zk.bin");
-    let _select_winner_v1_bincode = include_bytes!("../proof/select_winner.zk.bin");
-    let _submit_bid_v1_bincode = include_bytes!("../proof/submit_bid.zk.bin");
-    let _submit_bid_with_capability_v1_bincode =
+    // Register the V2 circuits (domain separation, HAZOP RC3).
+    //
+    // These five `include_bytes!` used to bind to `_`-prefixed variables and stop there: the bytes
+    // were read into the artifact and never handed to `zkas_db_set`, so no circuit was registered
+    // at all. The namespaces `get_metadata` pushes are the V2 ones (`CreateTenderV2`, `RevealBidV2`,
+    // `SelectWinnerV2`, `SubmitBidV2`, `SubmitBidWithCapabilityV2`) and each `.zk` carries that
+    // identity string, so registering them is all that was missing — no rename, no metadata change.
+    let create_tender_v2_bincode = include_bytes!("../proof/create_tender.zk.bin");
+    wasm::db::zkas_db_set(&create_tender_v2_bincode[..])?;
+    let reveal_bid_v2_bincode = include_bytes!("../proof/reveal_bid.zk.bin");
+    wasm::db::zkas_db_set(&reveal_bid_v2_bincode[..])?;
+    let select_winner_v2_bincode = include_bytes!("../proof/select_winner.zk.bin");
+    wasm::db::zkas_db_set(&select_winner_v2_bincode[..])?;
+    let submit_bid_v2_bincode = include_bytes!("../proof/submit_bid.zk.bin");
+    wasm::db::zkas_db_set(&submit_bid_v2_bincode[..])?;
+    let submit_bid_with_capability_v2_bincode =
         include_bytes!("../proof/submit_bid_with_capability.zk.bin");
+    wasm::db::zkas_db_set(&submit_bid_with_capability_v2_bincode[..])?;
 
     Ok(())
 }

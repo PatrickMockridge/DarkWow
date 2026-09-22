@@ -79,10 +79,21 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         wasm::db::db_init(cid, POOL_STAKE_ALLOCATIONS_TREE)?;
     }
 
-    let _allocate_coverage_v1_bincode = include_bytes!("../proof/allocate_coverage.zk.bin");
-    let _create_pool_v1_bincode = include_bytes!("../proof/create_pool.zk.bin");
-    let _join_pool_v1_bincode = include_bytes!("../proof/join_pool.zk.bin");
-    let _slash_coverage_v1_bincode = include_bytes!("../proof/slash_coverage.zk.bin");
+    // Register the V2 circuits (domain separation, HAZOP RC3).
+    //
+    // These four `include_bytes!` used to bind to `_`-prefixed variables and stop there: the
+    // bytes were read into the artifact and never handed to `zkas_db_set`, so no circuit was
+    // registered at all. The namespaces `get_metadata` pushes are the V2 ones (`CreatePoolV2`,
+    // `JoinPoolV2`, `AllocateCoverageV2`, `SlashCoverageV2`) and each `.zk` carries that identity
+    // string, so registering them is all that was missing — no rename, no metadata change.
+    let allocate_coverage_v2_bincode = include_bytes!("../proof/allocate_coverage.zk.bin");
+    wasm::db::zkas_db_set(&allocate_coverage_v2_bincode[..])?;
+    let create_pool_v2_bincode = include_bytes!("../proof/create_pool.zk.bin");
+    wasm::db::zkas_db_set(&create_pool_v2_bincode[..])?;
+    let join_pool_v2_bincode = include_bytes!("../proof/join_pool.zk.bin");
+    wasm::db::zkas_db_set(&join_pool_v2_bincode[..])?;
+    let slash_coverage_v2_bincode = include_bytes!("../proof/slash_coverage.zk.bin");
+    wasm::db::zkas_db_set(&slash_coverage_v2_bincode[..])?;
 
     Ok(())
 }
@@ -293,7 +304,7 @@ fn process_create_pool_instruction(
     };
 
     msg!("[pool_stake::create_pool] Pool {:?} created", pool_id);
-    wasm::util::set_return_data(&update.encode())
+    wasm::util::set_return_data(&[&[PoolStakeFunction::CreatePoolV1 as u8], &update.encode()[..]].concat())
 }
 
 fn apply_create_pool_update(cid: ContractId, update: CreatePoolUpdateV1) -> ContractResult {
@@ -422,7 +433,7 @@ fn process_join_pool_instruction(
     };
 
     msg!("[pool_stake::join_pool] Stake {:?} created", stake_id);
-    wasm::util::set_return_data(&update.encode())
+    wasm::util::set_return_data(&[&[PoolStakeFunction::JoinPoolV1 as u8], &update.encode()[..]].concat())
 }
 
 fn apply_join_pool_update(cid: ContractId, update: JoinPoolUpdateV1) -> ContractResult {
@@ -555,7 +566,7 @@ fn process_leave_pool_instruction(
     let update = LeavePoolUpdateV1 { stake_id: params.stake_id, payout_amount, unstake_penalty };
 
     msg!("[pool_stake::leave_pool] Payout: {}", payout_amount);
-    wasm::util::set_return_data(&update.encode())
+    wasm::util::set_return_data(&[&[PoolStakeFunction::LeavePoolV1 as u8], &update.encode()[..]].concat())
 }
 
 fn apply_leave_pool_update(cid: ContractId, update: LeavePoolUpdateV1) -> ContractResult {
@@ -632,7 +643,7 @@ fn process_allocate_coverage_instruction(
     };
 
     msg!("[pool_stake::allocate_coverage] Allocation {:?} created", allocation_id);
-    wasm::util::set_return_data(&update.encode()?)
+    wasm::util::set_return_data(&[&[PoolStakeFunction::AllocateCoverageV1 as u8], &update.encode()?[..]].concat())
 }
 
 fn apply_allocate_coverage_update(cid: ContractId, update: AllocateCoverageUpdateV1) -> ContractResult {
@@ -719,7 +730,7 @@ fn process_release_coverage_instruction(
         allocated_coverage: pool.allocated_coverage - allocation.amount,
     };
 
-    wasm::util::set_return_data(&update.encode())
+    wasm::util::set_return_data(&[&[PoolStakeFunction::ReleaseCoverageV1 as u8], &update.encode()[..]].concat())
 }
 
 fn apply_release_coverage_update(cid: ContractId, update: ReleaseCoverageUpdateV1) -> ContractResult {
@@ -812,7 +823,7 @@ fn process_slash_coverage_instruction(
         allocated_coverage: pool.allocated_coverage - params.slash_amount,
     };
 
-    wasm::util::set_return_data(&update.encode())
+    wasm::util::set_return_data(&[&[PoolStakeFunction::SlashCoverageV1 as u8], &update.encode()[..]].concat())
 }
 
 fn apply_slash_coverage_update(cid: ContractId, update: SlashCoverageUpdateV1) -> ContractResult {
@@ -931,7 +942,7 @@ fn process_claim_fees_instruction(
         remaining_fees: 0,
     };
 
-    wasm::util::set_return_data(&update.encode())
+    wasm::util::set_return_data(&[&[PoolStakeFunction::ClaimFeesV1 as u8], &update.encode()[..]].concat())
 }
 
 fn apply_claim_fees_update(cid: ContractId, update: ClaimFeesUpdateV1) -> ContractResult {
@@ -985,7 +996,7 @@ fn process_update_pool_config_instruction(
         operator_fee_bp,
     };
 
-    wasm::util::set_return_data(&update.encode())
+    wasm::util::set_return_data(&[&[PoolStakeFunction::UpdatePoolConfigV1 as u8], &update.encode()[..]].concat())
 }
 
 fn apply_update_pool_config_update(
@@ -1128,7 +1139,7 @@ fn process_rebalance_pool_shares_instruction(
     };
 
     msg!("[pool_stake::rebalance] Rebalanced {} members", members_rebalanced);
-    wasm::util::set_return_data(&update.encode())
+    wasm::util::set_return_data(&[&[PoolStakeFunction::RebalancePoolSharesV1 as u8], &update.encode()[..]].concat())
 }
 
 fn apply_rebalance_pool_shares_update(
