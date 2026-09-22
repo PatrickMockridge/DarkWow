@@ -318,7 +318,7 @@ impl DwowNode {
             ),
             id,         // JSON-RPC request id (u16 → integer)
             client_id,  // stratum client id (string)
-            blob,       // hex-encoded 260-byte mining blob (string)
+            blob,       // hex-encoded 292-byte mining blob (string)
             job_id,     // "linear-job-{height}" (string)
             target,     // pool difficulty (decimal string)
             seed_hash,  // hex-encoded RandomX key (string)

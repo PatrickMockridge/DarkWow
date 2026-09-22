@@ -23,7 +23,8 @@
 
 //! Proof-of-Work consensus for the linear blockchain.
 //!
-//! Every block carries a 260-byte mining blob (see `BlockHeader::to_mining_blob`)
+//! Every block carries a 292-byte mining blob (see `BlockHeader::to_mining_blob`;
+//! it was 260 until `anchor_owner` was appended, `OBL-C64`)
 //! that is hashed with RandomX. The first 4 bytes of the hash, interpreted as a
 //! little-endian u32, must be `<= target` for the block to be valid.
 //! Higher target = easier mining (more hashes pass).
@@ -204,17 +205,23 @@ impl PoWConsensus {
         let start = timestamps.len() - n;
         let mut total_interval = 0u64;
         for i in start + 1..timestamps.len() {
-            total_interval +=
-                // Decreasing timestamps violate causality. checked_sub surfaces
-                // the violation rather than silently masking it as zero-interval.
-                // A zero interval is substituted (same behavior as before) but the
-                // anomaly is logged so operators can detect timestamp manipulation.
-                timestamps[i].get().checked_sub(timestamps[i - 1].get()).unwrap_or_else(|| {
-                    tracing::warn!(target: "dwow_chain::consensus",
-                        "Decreasing timestamp in adjustment window: {} < {}",
-                        timestamps[i], timestamps[i - 1]);
-                    0
-                });
+            let Some(interval) = timestamps[i].get().checked_sub(timestamps[i - 1].get()) else {
+                // A decreasing pair violates causality — and substituting `0` for the interval, which
+                // this did until 2026-09-22 (`OBL-C37`), biases the adjustment in the *miner's* favour:
+                // a zero interval drags `avg_interval` down, `ratio_scaled` up, and the target **easier**.
+                // The anomaly was logged and then acted upon. So the adjustment is **abandoned** instead:
+                // the target stays exactly where it was, which is the conservative answer and the only one
+                // a miner cannot profit from.
+                //
+                // Reachable, not merely defensive: `validation::check_block_timestamp` requires a
+                // timestamp above the *median* of the last 11, which does not exclude one below its own
+                // parent — a parent above the median with a child between the two passes validation.
+                tracing::warn!(target: "dwow_chain::consensus",
+                    "Decreasing timestamp in adjustment window: {} < {} — leaving the target unchanged",
+                    timestamps[i], timestamps[i - 1]);
+                return BlockTarget::new(self.target.load(Ordering::Acquire));
+            };
+            total_interval += interval;
         }
         let count = (n - 1) as u64;
 
@@ -442,17 +449,20 @@ impl PoWConsensus {
         max_target: BlockTarget,
     ) -> BlockTarget {
         let n = timestamps.len().min(10);
-        // HAZOP M-2 fix: unify with adjust_target — use checked_sub with
-        // anomaly logging instead of silently saturating decreasing timestamps.
+        // Unifies with `adjust_target`, including the 2026-09-22 change (`OBL-C37`): a decreasing pair
+        // abandons the adjustment rather than contributing a zero interval, because a zero interval makes
+        // the target *easier* and is therefore worth engineering. Both paths must agree or the same window
+        // would produce different targets depending on which one a caller used.
         let start = timestamps.len() - n;
         let mut total_interval = 0u64;
         for i in (start + 1)..timestamps.len() {
-            total_interval += timestamps[i].get().checked_sub(timestamps[i - 1].get()).unwrap_or_else(|| {
+            let Some(interval) = timestamps[i].get().checked_sub(timestamps[i - 1].get()) else {
                 tracing::warn!(target: "dwow_chain::consensus",
-                    "Decreasing timestamp in compute_adjustment: {} < {}",
+                    "Decreasing timestamp in compute_adjustment: {} < {} — leaving the target unchanged",
                     timestamps[i], timestamps[i - 1]);
-                0
-            });
+                return current_target;
+            };
+            total_interval += interval;
         }
         let count = (n - 1) as u64;
         let avg_interval = if count > 0 {
@@ -714,21 +724,41 @@ mod tests {
         assert_eq!(a, b, "compute_adjustment must be deterministic");
     }
 
-    /// Failure mode: compute_adjustment with decreasing timestamps
-    /// uses checked_sub to avoid panic and substitutes zero.
+    /// OBL-C37 — a decreasing timestamp **abandons** the adjustment instead of biasing it.
+    ///
+    /// A zero interval drags `avg_interval` down and the target **easier**, so substituting zero for an
+    /// impossible interval is an invitation to engineer one. The target must come back untouched.
+    ///
+    /// **This test was strengthened, not written.** It asserted only that the result was a validly clamped
+    /// target, which the *defective* behaviour also satisfied — so it passed either way and would have
+    /// passed against a rule that made the chain easier on nonsense input. Verified by reverting the fix:
+    /// the assertion below then fails, because `0x00FFFFFF` is adjusted upward.
     #[test]
-    fn test_compute_adjustment_decreasing_timestamps_no_panic() {
-        // Decreasing timestamps (violate causality) should not panic
+    fn test_compute_adjustment_decreasing_timestamps_leaves_the_target_unchanged() {
+        let current = BlockTarget::new(0x00FFFFFF);
         let timestamps: Vec<BlockTimestamp> = vec![
             BlockTimestamp::new(1000), BlockTimestamp::new(900), BlockTimestamp::new(800),
             BlockTimestamp::new(700), BlockTimestamp::new(600), BlockTimestamp::new(500),
             BlockTimestamp::new(400), BlockTimestamp::new(300), BlockTimestamp::new(200),
             BlockTimestamp::new(100), BlockTimestamp::new(0),
         ];
-        let result = PoWConsensus::compute_adjustment(&timestamps, BlockTarget::new(0x00FFFFFF), 120, BlockTarget::new(0x0000FFFF), BlockTarget::new(0x0FFFFFFF));
-        // Must still produce a valid clamped target
-        assert!(result.get() >= 0x0000FFFF);
-        assert!(result.get() <= 0x0FFFFFFF);
+        let result = PoWConsensus::compute_adjustment(
+            &timestamps, current, 120, BlockTarget::new(0x0000FFFF), BlockTarget::new(0x0FFFFFFF));
+
+        assert_eq!(
+            result, current,
+            "OBL-C37: a window containing a decreasing timestamp must leave the target exactly as it was. \
+             Adjusting on it biases the difficulty in the miner's favour — a substituted zero interval \
+             makes the target easier."
+        );
+
+        // Positive control: a *well-formed* window that is too fast must still move the target, or this
+        // rule would be indistinguishable from "never adjust".
+        let fast: Vec<BlockTimestamp> = (0..11).map(|i| BlockTimestamp::new(i * 30)).collect();
+        let moved = PoWConsensus::compute_adjustment(
+            &fast, current, 120, BlockTarget::new(0x0000FFFF), BlockTarget::new(0x0FFFFFFF));
+        assert_ne!(moved, current, "control: 30s blocks against a 120s target must harden the target");
+        assert!(moved.get() < current.get(), "and hardening means a *lower* target");
     }
 
     /// Failure mode: window-based average with fewer than 11 timestamps uses

@@ -283,7 +283,7 @@ pub struct UncleProof {
 
 impl BlockHeader {
     /// Serialize the header to a compact binary blob for mining and hashing.
-    /// Format (260 bytes total):
+    /// Format (292 bytes total; 260 until `anchor_owner` was appended, `OBL-C64`):
     ///   [previous(32)][version(1)][target(4)][reserved(2)][nonce(4)]
     ///   [height(8)][merkle_root(32)][timestamp(8)][uncle_merkle_root(32)]
     ///   [total_reward(8)][randomx_key(32)][commitment_merkle_root(32)][nullifier_root(32)]
@@ -550,7 +550,7 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> ([u8; 32], Vec<UncleProof>) 
     }
 
     // Leaf hash MUST match verify_uncle_proof() — both use to_mining_blob() for the
-    // canonical, fixed-length (260-byte) representation. JSON is variable-length
+    // canonical, fixed-length (292-byte) representation. JSON is variable-length
     // and non-canonical (whitespace, key ordering) and cannot be used for proofs.
     let leaves: Vec<blake3::Hash> = uncles
         .iter()
@@ -1656,7 +1656,7 @@ mod tests {
     /// Sentinel: mining blob byte-level stability (Change 4 prerequisite).
     ///
     /// Constructs a BlockHeader with known field values and verifies
-    /// `to_mining_blob()` produces a 260-byte output matching a hardcoded
+    /// `to_mining_blob()` produces a 292-byte output matching a hardcoded
     /// reference. This test gates the consensus newtype migration (BlockTarget,
     /// BlockReward) — the blob MUST be byte-identical before and after the
     /// migration. A single-byte difference breaks ALL block hashes, PoW
