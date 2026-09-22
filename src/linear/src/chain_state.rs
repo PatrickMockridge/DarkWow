@@ -668,6 +668,45 @@ impl CChainState {
         self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).get(nullifier).copied()
     }
 
+    /// The coinbase-maturity rule (`COINBASE_MATURITY`, HAZOP `C-6`), as a predicate over this
+    /// chain's own per-nullifier creation heights (`OBL-C10`).
+    ///
+    /// Extracted from `connect_block` on 2026-09-23 **so that a test can call it**: reaching it
+    /// through the block path requires a fully valid block — RandomX, merkle root, timestamps — which
+    /// is why a rule enforced on every block was pinned by no test. `connect_block` calls this, so
+    /// what a test exercises is the production rule rather than a copy of it.
+    ///
+    /// Two properties are deliberate and were argued for in the register: it is the **only** copy —
+    /// `block_acceptor`'s duplicate pre-commit loop was removed (`P2-1`), so this guards direct
+    /// `connect_block` callers that bypass the acceptor as well — and it reads a **per-nullifier
+    /// height** rather than looking the value up in the commitment set, because a commitment-set
+    /// lookup would be a second source of truth for maturity (hazid `RC5` class; `P2-9` Item 4
+    /// considered and rejected it).
+    ///
+    /// A nullifier with no recorded creation height is not this rule's business: it is either a plain
+    /// spend, which the replay gate below judges, or a claim this chain has not seen.
+    fn check_coinbase_maturity(&self, block: &Block, height: BlockHeight) -> Result<()> {
+        for tx in &block.transactions {
+            // Coinbase transactions create coins rather than spending them, detected through the
+            // shared classifier (native token contract + PoWRewardV1 0x05) rather than a re-derived
+            // predicate.
+            if tx.is_pow_reward_coinbase_tx() {
+                continue;
+            }
+            for nullifier in &tx.nullifiers {
+                if let Some(created_at) = self.nullifier_height(nullifier) {
+                    if height.saturating_sub(created_at) < crate::COINBASE_MATURITY {
+                        return Err(LinearError::BlockIsInvalid(format!(
+                            "Immature coinbase spend at height {}: nullifier created at {}, needs {} blocks maturity",
+                            height, created_at, crate::COINBASE_MATURITY
+                        )));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Record a nullifier with its height and kind.
     ///
     /// The two layers of the Representation Faithfulness Law (§type-system 0.1):
@@ -1117,42 +1156,11 @@ impl CChainState {
         };
 
         // --- Coinbase maturity enforcement (Phase 3c) ---
-        // CRITICAL: MUST precede the sled commit closure (C-6 fix).
-        // Previously ran after the commit — an immature spend was persisted
-        // irreversibly to sled before the error was returned. Now checked
-        // BEFORE any state hits disk. This is the ONLY copy of the check:
-        // block_acceptor's duplicate pre-commit loop was removed (P2-1) —
-        // this survivor runs pre-sled-commit AND guards direct connect_block
-        // callers that bypass the acceptor.
-        // P2-9 (Item 4): commitment-set-based maturity tracking was considered
-        // and REJECTED — it would reintroduce a second source of truth for
-        // coinbase maturity (hazid RC5 class; the V.9 fix below deliberately
-        // replaced the commitment_set lookup with per-nullifier heights).
-        // This single-layer per-nullifier check (HAZOP C-6) stays authoritative.
-        for tx in &block.transactions {
-            // Skip coinbase transactions (they create coins, don't spend).
-            // Detected via the shared coinbase classifier — native token
-            // contract + PoWRewardV1 (0x05). The contract-id half of this
-            // predicate was ported from the deleted block_acceptor copy.
-            if tx.is_pow_reward_coinbase_tx() {
-                continue;
-            }
-            for nullifier in &tx.nullifiers {
-                // Check if this nullifier was created by a coinbase output.
-                // The nullifier's creation height is stored in nullifier_set.
-                if let Some(created_at) = self.nullifier_height(nullifier) {
-                    // V.9 fix: use nullifier's own height for maturity, not commitment_set lookup.
-                    if height.saturating_sub(created_at) < crate::COINBASE_MATURITY {
-                        return Err(LinearError::BlockIsInvalid(
-                            format!(
-                                "Immature coinbase spend at height {}: nullifier created at {}, needs {} blocks maturity",
-                                height, created_at, crate::COINBASE_MATURITY
-                            )
-                        ));
-                    }
-                }
-            }
-        }
+        // CRITICAL: MUST precede the sled commit closure (C-6 fix) — an immature spend must never
+        // reach disk. The *rule* lives in `check_coinbase_maturity` below, extracted on 2026-09-23 so
+        // that a test can call it (OBL-C10); what stays here is the ordering, which is the point of
+        // this call site.
+        self.check_coinbase_maturity(block, block_height)?;
 
         // Wrap batch-build + commit in a closure. Any error rolls back
         // in-memory consensus — covers serde failures (which the old
@@ -2288,6 +2296,59 @@ mod tests {
         // After spending: has_nullifier detects the replay.
         assert!(cs.has_nullifier(&nf),
             "has_nullifier must detect a spent nullifier (the ↓nullify barb)");
+    }
+
+    /// `OBL-C10` — the coinbase-maturity rule, which was enforced before every sled commit and pinned
+    /// by nothing. It is called *directly* here, which is what the extraction exists for: driving it
+    /// through `connect_block` needs a fully valid block, and that is why the gap existed.
+    ///
+    /// Three cases, because two of them fail to distinguish a working rule from a broken one: an
+    /// immature spend must be refused, a mature one must be **admitted** (a predicate that rejected
+    /// everything would pass the first case), and a nullifier the chain has never seen as a claim must
+    /// be left to the replay gate rather than refused here.
+    #[test]
+    fn test_coinbase_maturity_refuses_an_immature_spend() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        let spend_of = |nf: Nullifier| {
+            let mut block = dr_block(1, BlockTarget::MAX, blake3::hash(b"genesis"), 0);
+            block.transactions = vec![crate::Transaction {
+                version: BlockVersion::CURRENT,
+                inputs: vec![],
+                outputs: vec![],
+                contract_calls: vec![],
+                lock_time: 0,
+                nullifiers: vec![nf],
+                witness: vec![],
+            }];
+            block
+        };
+
+        // A *claim* at height 1 — the only kind of nullifier that can be immature (`is_spend = false`
+        // is what puts it in `nullifier_set` rather than in `spent_nullifiers`).
+        let claimed = Nullifier::from_bytes([0x3A; 32]).expect("canonical, non-zero");
+        cs.track_nullifier(claimed, BlockHeight::new(1), false);
+        assert_eq!(cs.nullifier_height(&claimed), Some(BlockHeight::new(1)));
+
+        // One block short of maturity: refused, with both heights named.
+        let immature_height = BlockHeight::new(crate::COINBASE_MATURITY);
+        let err = cs
+            .check_coinbase_maturity(&spend_of(claimed), immature_height)
+            .expect_err("a spend one block short of maturity must be refused");
+        let text = format!("{err:?}");
+        assert!(text.contains("Immature coinbase spend"), "got {text}");
+
+        // The control: at maturity it is admitted.
+        let mature_height = BlockHeight::new(crate::COINBASE_MATURITY + 1);
+        cs.check_coinbase_maturity(&spend_of(claimed), mature_height)
+            .expect("a spend exactly at maturity must be admitted");
+
+        // And a nullifier with no recorded creation height is not this rule's business.
+        let stranger = Nullifier::from_bytes([0x3B; 32]).expect("canonical, non-zero");
+        cs.check_coinbase_maturity(&spend_of(stranger), BlockHeight::new(1))
+            .expect("an unknown nullifier is the replay gate's business, not maturity's");
     }
 
     /// `OBL-C8` — the consensus replay gate itself, which was enforced on every block and **pinned by
