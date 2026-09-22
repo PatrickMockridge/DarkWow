@@ -225,10 +225,12 @@ the bridge contract (`BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS`).
 - `monero_min_confirmations` default: 3 (~6 minutes on Monero)
 
 Two things to know before using these. The flag bits are **not** consulted to decide *whether* to
-verify — `should_enforce` ignores them entirely in the default `Always` mode — and they are excluded
-from the mining blob, so a relaying peer sets them freely. And the Monero anchor fields are never
-populated in production (`mm_rpc.rs:630-631`), so `FINALITY_MONERO` has never been set on a real block.
-See `OBL-C63`–`OBL-C67`.
+enforce — `should_enforce` reads only the mode and, in `Signaled` mode, the `FINALITY_SIGNALED` bit — and
+they are excluded from the mining blob, so a relaying peer sets them freely; since 2026-09-22 they also do
+not confer finality, which now requires a verified Caribina anchor proof. And the Monero anchor fields
+are never populated in production (`mm_rpc.rs:630-631`), so `FINALITY_MONERO` has never been set on a real
+block. See `OBL-C67` (open, and a block-minting gap rather than a finality one), `OBL-C66`
+(settlement, accepted-with-reason) and `OBL-C63` (closed).
 
 ## See Also
 

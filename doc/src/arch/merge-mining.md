@@ -116,6 +116,19 @@ Nor is the Monero block's *own* proof-of-work verified anywhere in `dwowd`: the 
 the three receipts and trusts that p2pool only submits blocks its colocated monerod has already validated.
 The code says so itself at `mm_rpc.rs:574` (`TODO(HAZOP F3)`).
 
+> **Read that as a block-minting gap, not a finality footnote.** The three receipts prove that our aux
+> hash sits in the coinbase of *some serialized* Monero block: `is_coinbase_valid_merkle_root` recomputes
+> the coinbase hash from submitter-supplied fields and compares it against a root the submitter also
+> supplied. A fabricated five-field header with any transaction list and the merge-mining tag in the
+> coinbase passes all three — and merge-mined blocks **skip native PoW verification entirely**, because the
+> work is supposed to have happened on Monero. So "a DarkWow block backed by Monero work" is not enforced
+> anywhere today, and the practical consequence is that a peer who can get a `PowSource::Monero` block
+> relayed can mint blocks. The local fix is impossible: Monero's difficulty is not in the block, so a
+> locally-checked PoW would compare against a submitter-chosen target. The route its own TODO recommends —
+> a `monerod` query — is blocked only on `get_block_by_hash`, which `src/linear/src/monero/rpc.rs` does not
+> yet have. `OBL-C67` carries the plan: derive `anchor_monero_hash` locally, and add that RPC method behind
+> a node-local admission policy.
+
 Configuration flags `--finality-enable-monero` and `--monerod-rpc-url` exist and are wired into
 `FinalityConfig`. See `OBL-C67` in the [verification obligation register](verification-hazop.md).
 
