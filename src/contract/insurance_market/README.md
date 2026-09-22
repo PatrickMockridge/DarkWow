@@ -264,5 +264,5 @@ cargo test -p darkfi_insurance_market_contract
 - [Identity Contract](../identity/README.md) - O-Cap authorization primitive
 - [Insurance Market Architecture](../../doc/src/arch/insurance_market.md) - Detailed O-Cap coverage
 - [O-Cap Architecture](../../doc/src/arch/ocap.md) - The O-Cap paradigm
-- [Prediction Market](../../doc/src/arch/prediction_market.md) - Risk probability pricing
-- [Money Contract](../../doc/src/arch/money.md) - Value transfer integration
+- [Risk Market Ecosystem](../../../doc/src/contract/risk_market_ecosystem.md) - Risk probability pricing
+- [Promissory Note](../../../doc/src/contract/promissory_note.md) - Value transfer integration

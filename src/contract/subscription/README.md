@@ -348,5 +348,5 @@ Would require a different architecture:
 
 - [Subscription Architecture Doc](../../../doc/src/arch/subscription.md)
 - [DAO-Escrow Contract](../../../src/contract/dao_escrow/README.md)
-- [DAO Contract](../../../doc/src/arch/dao.md)
+- [DAO Escrow Contract](../../../doc/src/contract/dao_escrow.md)
 - [Composability Pattern](../../../doc/src/arch/composability.md)

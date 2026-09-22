@@ -167,7 +167,7 @@ The theoretical basis. Read in this order.
   is detected, and the findings that taught it. *RC2: every
   `constrain_instance` must have a visible derivation. Design constraints: the
   L1 complexity ceilings.*
-- **[Contract Standards](../contract-standards.md)** — minimum standards and
+- **[Contract Standards](../dev/contracts/contract-standards.md)** — minimum standards and
   best practices.
 - **[Contract Catalog](../contracts.md)** — all 32 contracts with manifests.
 
@@ -227,7 +227,7 @@ Every change MUST preserve them. Source document and section in parentheses.
   operation combinations across C contracts is `∏(nᵢ+1) − 1` — exponential in C, and still a
   product under o-cap isolation, because state isolation does not divide the ways to combine.
   Shared mutable state *additionally* merges state into a product.
-  ([combinations](../proofs/lean/src/DarkFi/Combinatorial/Combinations.lean);
+  ([combinations](../../../proofs/lean/src/DarkFi/Combinatorial/Combinations.lean);
   [contract-wasm-type-system.md §C.7](contract-wasm-type-system.md))
 - **Nullifier is unified across all L1 contracts.** Contract-local Nullifier
   definitions prohibited. Zero-element rejected at construction.

@@ -228,7 +228,7 @@ cargo test --package dwowd test_dex_heavyweight
 
 **Why the stack limit?** halo2's polynomial arithmetic uses deep recursion. Building multiple proving keys (4 circuits for DEX, 4 for PromissoryNote) exceeds the default ~8MB stack.
 
-See [Pipeline Documentation](../../doc/src/arch/pipeline.md) for full details.
+See [Contract Deployment Pipeline](../doc/src/arch/dwowd_contract_pipeline.md) for full details.
 
 ### ContractHarness Trait
 

@@ -352,7 +352,8 @@ functions (65%), 19 gaps. Multiple tests skipped `accept_block` entirely.
   `submit_single_call_block()` in `block_submission.rs` (PR-6)
 - Genesis deploy rejection added: `deploy()` rejects 9 known genesis names (RG-7)
 - Uniform runner created: `ContractTestSpec`, `EndpointSpec`, `run_heavyweight_test()`
-- Design document: `uniform-runner-design.md` (now merged into this document)
+- Design document: merged into this document — the standalone uniform-runner design
+  note was folded in here and no longer exists separately
 
 ### Phase 2 — Harness Standardization (Partial, 2026-08-05)
 

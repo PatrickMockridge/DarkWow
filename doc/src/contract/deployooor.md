@@ -41,7 +41,7 @@ struct DeployParamsV1 {
 ```
 
 `singleton` and `singleton_name` carry the genesis singleton rule — see the `singleton`
-tree under [Database Trees](#database-trees) below, and [Genesis](genesis.md).
+tree under [Database Trees](#database-trees) below, and [Genesis](../arch/genesis.md).
 
 The `ContractId` is derived from the deployer's public key via Poseidon hash:
 `ContractId = derive_public(public_key)`.

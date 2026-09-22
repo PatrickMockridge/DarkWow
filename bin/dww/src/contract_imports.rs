@@ -109,7 +109,7 @@ static CLIENT_REGISTRY: OnceLock<ContractClientRegistry> = OnceLock::new();
 ///       manifests. Without this, manifest discovery is impossible.
 ///       Not per-contract business logic.
 ///
-/// Per wallet-capability-kernel.md: zero per-contract special cases
+/// Per the wallet-capability-kernel rule: zero per-contract special cases
 /// beyond these two infrastructure contracts.
 pub fn get_client_registry() -> &'static ContractClientRegistry {
     CLIENT_REGISTRY.get_or_init(|| {

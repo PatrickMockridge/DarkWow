@@ -3,10 +3,10 @@
 # Compile target for docs
 RUST_TARGET = $(shell rustc -Vv | grep '^host: ' | cut -d' ' -f2)
 
-DARKFID_JSONRPC = src/clients/darkfid_jsonrpc.md
+DWOWD_JSONRPC = src/clients/dwowd_jsonrpc.md
 
 JSONRPC = \
-	$(DARKFID_JSONRPC)
+	$(DWOWD_JSONRPC)
 
 all: $(JSONRPC)
 	./generate_seminar_ics.py --table > src/dev/seminars.md

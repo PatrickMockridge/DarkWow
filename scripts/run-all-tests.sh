@@ -73,6 +73,11 @@ run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain
 # presence); this is the only one that asks whether an exposed public input is *determined*.
 # It is currently RED with 33 untriaged sites — see doc/src/arch/verification-hazop.md, OBL-Z1.
 run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instance-derivation.sh"
+# The documentation index. Also seconds, also needs no build: it checks that every
+# doc is listed and every citation resolves, both directions. The 2026-09 docs
+# clean-up removed 25 documents and repointed ~30 referrers by hand; this is what
+# keeps that from silently un-happening.
+run_gate "documentation index"            bash "$SCRIPT_DIR/check-doc-index.sh"
 
 run_gate "build contract ZK circuits"     "$SCRIPT_DIR/build-contract-zk.sh"
 run_gate "pre-build guard (dwowd + wallet + 32 contracts→wasm32)" \
