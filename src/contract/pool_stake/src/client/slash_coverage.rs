@@ -50,8 +50,9 @@ pub struct SlashCoverageV1PublicInputs {
 
 impl SlashCoverageV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        // Only constrain_instance values (derived_slash_id is the sole public instance)
-        vec![self.derived_slash_id, self.tx_binding, self.tx_nonce]
+        // Circuit order (`slash_coverage.zk`): tx_binding, tx_nonce, derived_slash_id.
+        // Was `[derived_slash_id, tx_binding, tx_nonce]` — transposed. See `create_pool.rs`.
+        vec![self.tx_binding, self.tx_nonce, self.derived_slash_id]
     }
 }
 
@@ -87,6 +88,12 @@ impl SlashCoverageV1CallData {
         }
     }
 
+    /// The circuit's `tx_binding = poseidon_hash(3, tx_commitment, tx_nonce)`. Was a literal
+    /// `Base::zero()` written as both the public input and the witness. See `create_pool.rs`.
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
+    }
+
     pub fn compute_public_inputs(&self) -> SlashCoverageV1PublicInputs {
         let derived_slash_id = poseidon_hash([
             pallas::Base::from(4),
@@ -103,7 +110,7 @@ impl SlashCoverageV1CallData {
             slashed_to_pub_y: self.slashed_to_pub_y,
             nonce: pallas::Base::from(self.nonce),
             derived_slash_id,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -119,7 +126,7 @@ impl SlashCoverageV1CallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }

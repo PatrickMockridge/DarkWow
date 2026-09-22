@@ -51,8 +51,10 @@ pub struct AllocateCoverageV1PublicInputs {
 
 impl AllocateCoverageV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        // Only constrain_instance values (derived_allocation_id is the sole public instance)
-        vec![self.derived_allocation_id, self.tx_binding, self.tx_nonce]
+        // Circuit order (`allocate_coverage.zk`): tx_binding, tx_nonce, derived_allocation_id.
+        // Was `[derived_allocation_id, tx_binding, tx_nonce]` — transposed against the circuit and
+        // the host. See `create_pool.rs` for the full note.
+        vec![self.tx_binding, self.tx_nonce, self.derived_allocation_id]
     }
 }
 
@@ -91,6 +93,13 @@ impl AllocateCoverageV1CallData {
         }
     }
 
+    /// The circuit's `tx_binding = poseidon_hash(3, tx_commitment, tx_nonce)`. Was a literal
+    /// `Base::zero()` written as both the public input and the witness, which the circuit's
+    /// `constrain_equal_base` cannot satisfy. See `create_pool.rs`.
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
+    }
+
     pub fn compute_public_inputs(&self) -> AllocateCoverageV1PublicInputs {
         let derived_allocation_id = poseidon_hash([
             pallas::Base::from(4),
@@ -109,7 +118,7 @@ impl AllocateCoverageV1CallData {
             withdrawal_id: self.withdrawal_id,
             nonce: pallas::Base::from(self.nonce),
             derived_allocation_id,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -126,7 +135,7 @@ impl AllocateCoverageV1CallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }

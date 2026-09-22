@@ -136,10 +136,23 @@ fn create_pool_get_metadata_v1(
     params: CreatePoolParamsV1,
 ) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Circuit order: tx_binding(0), tx_nonce(1), derived_pool_id(2)
+    // Circuit order: tx_binding, tx_nonce, derived_pool_id.
+    //
+    // `tx_binding` was a bare `Base::zero()` here, while `create_pool.zk` constrains its witness to
+    // equal `poseidon_hash(3, tx_commitment, tx_nonce)`. Both cannot hold, so the proof was
+    // unsatisfiable — the CreatePoolV2 rejection this contract's suite died on.
+    //
+    // The value below is the same one the client's `CreatePoolV1CallData::compute_tx_binding`
+    // derives from its `tx_commitment`/`tx_nonce`, which default to zero — so this is a *constant
+    // binding*, consistent on both sides but carrying no transaction identity. That state is
+    // deliberate and recorded in `doc/src/arch/verification-hazop.md`: nothing in this repository
+    // validates `tx_nonce`, and the client builds the proof before the transaction exists, so the
+    // binding cannot reference it. Do not read this as a derivation.
+    let tx_binding =
+        poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
     zk_public_inputs.push((
         POOL_STAKE_ZKAS_CREATE_POOL_NS_V2.to_string(),
-        vec![pallas::Base::zero(), pallas::Base::zero(), params.derived_pool_id],
+        vec![tx_binding, pallas::Base::zero(), params.derived_pool_id],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -167,7 +180,15 @@ fn allocate_coverage_get_metadata_v1(
     // Circuit order: tx_binding(0), tx_nonce(1), derived_allocation_id(2)
     zk_public_inputs.push((
         POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V2.to_string(),
-        vec![pallas::Base::zero(), pallas::Base::zero(), params.derived_allocation_id],
+        // Circuit order: tx_binding, tx_nonce, derived_allocation_id. The binding was a bare zero
+        // against a circuit that constrains it to `poseidon_hash(3, tx_commitment, tx_nonce)`; see
+        // `create_pool_get_metadata_v1` for the full note and for what this constant does and does
+        // not mean.
+        vec![
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
+            pallas::Base::zero(),
+            params.derived_allocation_id,
+        ],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -181,7 +202,13 @@ fn slash_coverage_get_metadata_v1(
     // Circuit order: tx_binding(0), tx_nonce(1), derived_slash_id(2)
     zk_public_inputs.push((
         POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V2.to_string(),
-        vec![pallas::Base::zero(), pallas::Base::zero(), params.derived_slash_id],
+        // Circuit order: tx_binding, tx_nonce, derived_slash_id — same correction as
+        // `create_pool_get_metadata_v1`.
+        vec![
+            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
+            pallas::Base::zero(),
+            params.derived_slash_id,
+        ],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;

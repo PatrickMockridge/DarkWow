@@ -49,8 +49,13 @@ pub struct CreatePoolV1PublicInputs {
 
 impl CreatePoolV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        // Only constrain_instance values (derived_pool_id is the sole public instance)
-        vec![self.derived_pool_id, self.tx_binding, self.tx_nonce]
+        // Circuit order (`create_pool.zk`, the `constrain_instance` sequence):
+        //   tx_binding, tx_nonce, derived_pool_id
+        // This was `[derived_pool_id, tx_binding, tx_nonce]` — transposed. The proof is created
+        // against this vector and the verifier uses the host's, so the two disagreed in *position*
+        // and no proof could verify. `check-circuit-metadata-alignment.sh` compares counts and
+        // cannot see it; print the circuit before changing this again.
+        vec![self.tx_binding, self.tx_nonce, self.derived_pool_id]
     }
 }
 
@@ -76,6 +81,14 @@ impl CreatePoolV1CallData {
         Self { creator_pub_x: cx, creator_pub_y: cy, pool_config_hash, nonce, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 
+    /// The circuit's `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` with
+    /// `DOMAIN_TX_BINDING = witness_base(3)`. This was a literal `Base::zero()` written as **both**
+    /// the public input and the witness, while the circuit constrains the witness to equal this
+    /// hash — so the proof was unsatisfiable, not merely unbound.
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
+    }
+
     pub fn compute_public_inputs(&self) -> CreatePoolV1PublicInputs {
         let derived_pool_id = poseidon_hash([
             pallas::Base::from(4),
@@ -90,7 +103,7 @@ impl CreatePoolV1CallData {
             pool_config_hash: self.pool_config_hash,
             nonce: pallas::Base::from(self.nonce),
             derived_pool_id,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -105,7 +118,7 @@ impl CreatePoolV1CallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }
