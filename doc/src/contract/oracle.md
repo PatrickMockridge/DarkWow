@@ -281,7 +281,7 @@ ZK circuits. This is tracked in the [Security Analysis](../arch/security-analysi
 **Future**: When `SchnorrVerify` is implemented, circuits will be able to:
 ```zk
 # In ZK circuit:
-is_valid = schnorr_verify(oracle_pubkey, message, signature);
+is_valid = schnorr_verify(oracle_commitment, message, signature);
 constrain_instance(is_valid);
 ```
 
@@ -292,7 +292,10 @@ src/contract/oracle/
 ├── proof/
 │   ├── register_oracle.zk
 │   ├── push_value.zk
-│   └── attest_value.zk
+│   ├── push_value_commitment.zk
+│   ├── attest_value.zk
+│   ├── aggregate.zk
+│   └── set_oracle_active.zk
 ├── src/
 │   ├── lib.rs
 │   ├── entrypoint.rs

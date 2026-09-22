@@ -33,6 +33,7 @@
   - [O-Cap & Composable Privacy](arch/ocap.md)
   - [Risk & Governance Specification](arch/risk-and-governance.md)
   - [Privacy Model](arch/privacy.md) ← L1/L2, architectural principles, encode/decode boundaries
+  - [Privacy Model — the public amounts, and why](arch/privacy-model.md) ← normative on the plaintext emission/fee caveat
   - [Type System](arch/type-system.md) ← ρ-calculus + Authorization Inversion Theorem
   - [Contract WASM Type System](arch/contract-wasm-type-system.md) ← Entrypoint types, barbs, state system
   - [Capability Composition](arch/composition.md)
@@ -179,6 +180,7 @@
     - [Python Contract Simulations](dev/testing/python-simulations.md)
     - [Level 2: Heavyweight Tests](dev/testing/level-2-heavyweight.md)
     - [Level 3: Containerized Localnet](dev/testing/level-3-localnet.md)
+    - [Level 3 Readiness Specification](dev/testing/l3-readiness-spec.md) ← normative: when L3 may run, and what a passing run proves
     - [Level 4: Containerized Devnet Node](dev/testing/level-4-devnet.md)
     - [Build Resource Tuning](dev/testing/build-resource-tuning.md)
     - [Heavyweight Spec](dev/testing/heavyweight-spec.md)

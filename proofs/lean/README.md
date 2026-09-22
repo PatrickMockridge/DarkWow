@@ -231,9 +231,9 @@ on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
 
 ## What Is NOT Proved (Honest Scope)
 
-- **The tree does not currently compile.** This is the first item because it dominates the
-  others: `lake build DarkFi` reports errors in twelve modules, and any claim below about what
-  "is proved" is a claim about the sources' intent, not about a verified build. Run the build.
+- **Nothing below is a claim about a build you have not run.** `lake build DarkFi` completes clean
+  as of 2026-09-22 (no errors, no warnings — see "What the build currently says" above), but the
+  build is what makes every statement below true, so run it before quoting any of them.
 - **Halo2 constraint system semantics are not modeled.** We prove properties of the
   mathematical functions the opcodes implement, not that the Halo2 gate/region/
   copy-constraint system correctly implements those functions.

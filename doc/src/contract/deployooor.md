@@ -35,8 +35,13 @@ struct DeployParamsV1 {
     wasm_bincode: Vec<u8>,    // The WASM binary
     public_key: PublicKey,    // Deployer's public key
     ix: Vec<u8>,              // Deployment payload (init params or ContractMetadata)
+    singleton: bool,          // Reject if another contract claims `singleton_name`
+    singleton_name: String,   // Logical name for the singleton check
 }
 ```
+
+`singleton` and `singleton_name` carry the genesis singleton rule — see the `singleton`
+tree under [Database Trees](#database-trees) below, and [Genesis](genesis.md).
 
 The `ContractId` is derived from the deployer's public key via Poseidon hash:
 `ContractId = derive_public(public_key)`.

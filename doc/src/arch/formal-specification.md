@@ -12,7 +12,7 @@ architectural commitments:
 
 1. **No DAO governance** — OCap (object capability) model instead of token-weighted voting
 2. **No premine** — every DRKW minted via PoW
-3. **Partially formalized** — the zkVM opcode and capability-type models are written in Lean 4 and several properties are proved there. Not all: the 120-circuit Orchard-class check is a **manual audit** (the `Circuits/` Lean files are comment-only), a number of opcode properties are **assumptions** listed in `proofs/lean/src/DarkFi/Axioms.lean`, and the tree's `lake build DarkFi` target currently reports errors. Read `arch/zk/opcodes.md` for the corrected per-layer status rather than this summary.
+3. **Partially formalized** — the zkVM opcode and capability-type models are written in Lean 4 and several properties are proved there. Not all: the Orchard-class instance-derivation check is **not** a Lean theorem — `proofs/lean/src/DarkFi/Circuits/` contains no declarations, and the check is mechanized over the circuit *sources* by `script/circuit_instance_derivation.py` instead. A number of properties are **assumptions** listed in `proofs/lean/src/DarkFi/Axioms.lean`, and `lake build DarkFi` completes clean (verified 2026-09-22: no errors, no warnings). Read `arch/zk/opcodes.md` for the per-layer status rather than this summary.
 4. **No overlay/DAG consensus** — deterministic uncle-Merkle chain with linear blocks
 
 ## Genesis
@@ -105,12 +105,12 @@ All nine genesis contracts — see [Genesis Contracts](genesis.md).
 - [Oracle](../contract/oracle.md) — data feed with ZK-proof authentication
 - [Relayer Endowment](../contract/relayer_endowment.md) — relayer funding and deployment
 
-## Testing — 29/29 Coverage
+## Testing — 32/32 Coverage
 
-Every contract has both lightweight and heavyweight tests:
+Every deployable contract has both lightweight and heavyweight tests:
 
-- **Lightweight** (29 tests): deploy contract via Deployooor, verify manifest storage
-- **Heavyweight** (29 tests): deploy, build ZK proofs, execute through dwowd runtime
+- **Lightweight** (32 tests): deploy contract via Deployooor, verify manifest storage
+- **Heavyweight** (32 tests): deploy, build ZK proofs, execute through dwowd runtime
 - **Python model** (71 tests): wallet specification — parse_args, load_config, manifest lifecycle, trust resolution, WASM verification
 
 See [Testing Overview](../dev/testing/overview.md) for the full taxonomy.

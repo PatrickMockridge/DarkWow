@@ -335,7 +335,7 @@ can only be finalized within the transaction they were collected for.
 
 | Type | Discriminant (u8) | Structure |
 |------|-------------------|-----------|
-| `group_capability` | 0x00 | `(group_id, creator_pubkey, nonce)` — holder can manage the group |
+| `group_capability` | 0x00 | `(group_id, member_commitments, threshold, tx_binding, tx_nonce)` — holder can manage the group |
 | `partial_signature` | 0x01 | `(nullifier, group_id, message_hash)` — consumed by FinalizeV1 |
 | `approval` | 0x02 | `(approval_commit, group_id, message_hash)` — composable by other contracts |
 

@@ -48,7 +48,7 @@ DeployParamsV1 {
 
 `DeployParamsV1::ix` is part of every deployment payload but was previously unused.
 It passes through to the contract's `__initialize` function — contracts that ignore
-their init payload (25 of 28) see the metadata bytes as a no-op. This means metadata
+their init payload (25 of 32) see the metadata bytes as a no-op. This means metadata
 requires zero changes to existing contracts and zero extra transactions.
 
 ## Types
@@ -171,7 +171,9 @@ attests "contract X is safe," that attestation is a cryptographically verifiable
 that the wallet can check before removing the `[UNVERIFIED]` marker.
 
 **Location:** `src/contract/attestation/`
-**Functions:** CreateAttestationV1, MakeClaimV1, VerifyClaimV1, ConsumeClaimV1, RevokeClaimV1
+**Functions:** CreateAttestationV1, RevokeAttestationV1, ExpireAttestationV1, CreateClaimV1,
+VerifyClaimV1, ConsumeClaimV1, ValidateClaimV1, CheckNotRevokedV1, DelegateAttestationV1,
+VerifyChainV1, UpdateDelegationV1, AttestSlashV1, CommitFeeScheduleV1
 
 ### Identity Contract
 
@@ -183,8 +185,9 @@ stablecoins"). The wallet can check that attestations come from issuers with mat
 credentials.
 
 **Location:** `src/contract/identity/`
-**Functions:** RegisterIssuerV1, IssueCredentialV1, RevokeCredentialV1,
-VerifyCapabilityV1, CreateClaimV1, RegisterCapabilityV1, IssueCapabilityV1, RevokeCapabilityV1
+**Functions:** InitializeV1 (0x00), IssueCredentialV1 (0x01), RevokeCredentialV1 (0x02),
+RegisterCapabilityV1 (0x04), IssueCapabilityV1 (0x05), VerifyCapabilityV1 (0x06),
+RevokeCapabilityV1 (0x07), RegisterIssuerV1 (0x08). `0x03` is unassigned.
 
 ### Insurance Market Contract
 
@@ -194,8 +197,12 @@ if the underwriter attests to a contract that later proves faulty, the bond is
 slashable. This moves attestations from reputation-only to capital-guaranteed.
 
 **Location:** `src/contract/insurance_market/`
-**Functions:** ProposeCoverV1, UnderwriteCoverV1, PurchaseCoverV1, SubmitClaimV1,
-ArbitrateClaimV1, WithdrawCoverV1
+**Functions:** InitializeV1 (0x00), RegisterRiskTypeV1 (0x01), CreateMarketV1 (0x02),
+UnderwriteV1 (0x03), PurchaseCoverageV1 (0x04), FileClaimV1 (0x05), ResolveClaimV1 (0x06),
+WithdrawPremiumV1 (0x07), UpdatePremiumV1 (0x08), UnderwriteWithCapabilityV1 (0x09),
+PurchaseCoverageWithCapabilityV1 (0x0a), PurchaseCoverageWithDAGV1 (0x0b),
+ResolveClaimWithCapabilityV1 (0x0c), DeactivateUnderwriterV1 (0x0d), CloseMarketV1 (0x0e),
+RetireRiskTypeV1 (0x0f)
 
 ### Escrow Contract
 
@@ -206,7 +213,8 @@ enables adversarial attestation markets — anyone can challenge a bad attestati
 profit from exposing fraud.
 
 **Location:** `src/contract/escrow/`
-**Functions:** CreateEscrowV1, FundEscrowV1, ClaimEscrowV1, RefundEscrowV1
+**Functions:** InitializeV1 (0x00), CreateEscrowV1 (0x01), FundV1 (0x02), ClaimV1 (0x03),
+RefundV1 (0x04), CancelV1 (0x05)
 
 ### DAO-Escrow Contract
 
@@ -217,8 +225,12 @@ community-verified. The DAO's vote becomes a collective attestation with the
 endowment's economic weight behind it.
 
 **Location:** `src/contract/dao_escrow/`
-**Functions:** ProposeMembershipV1, VoteOnMembershipV1, ProposeV1, VoteV1,
-ExecuteV1, ContributeV1, ClaimRefundV1, MintV1
+**Functions:** InitializeV1 (0x00), UpdateV1 (0x01), PayPremiumV1 (0x02), WithdrawV1 (0x03),
+EndowmentWithdrawV1 (0x04), TreasurySpendV1 (0x05), EnableDrainProtectionV1 (0x06),
+ProposeClaimV1 (0x07), VoteClaimV1 (0x08), ExecuteClaimV1 (0x09),
+RegisterCapabilityRequirementV1 (0x0a), VerifyMemberCapabilityV1 (0x0b), ResolveDisputeV1 (0x0c),
+CancelClaimV1 (0x0d), SetGovernanceConfigV1 (0x0e), SetGovernanceActiveV1 (0x0f),
+DeactivateCapabilityRequirementV1 (0x10)
 
 ### Composition Path (Deferred)
 

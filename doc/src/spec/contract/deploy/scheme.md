@@ -7,7 +7,7 @@ Let $ℙₚ$ be defined as in the section [Pallas and Vesta](../../crypto-scheme
 This function initializes a smart contract deployment.
 
 * Wallet builder: `src/contract/deployooor/src/client/deploy_v1.rs`
-* WASM VM code: `src/contract/deployooor/src/entrypoint/deploy_v1.rs`
+* WASM VM code: `src/contract/deployooor/src/entrypoint/deploy.rs`
 
 ### Function Params
 
@@ -16,7 +16,13 @@ $$ \begin{aligned}
   \t{Params}_\t{Deploy}.WASM &∈ \t𝔹^* \\
   \t{Params}_\t{Deploy}.PK &∈ ℙₚ \\
   \t{Params}_\t{Deploy}.IX &∈ 𝔹^* \\
+  \t{Params}_\t{Deploy}.SINGLETON &∈ \{0, 1\} \\
+  \t{Params}_\t{Deploy}.NAME &∈ \t{String} \\
 \end{aligned} $$
+
+`SINGLETON` and `NAME` carry the genesis singleton rule: when `SINGLETON = 1`, a
+deployment whose `NAME` is already claimed by another contract is rejected. It exists so
+critical ecosystem infrastructure — promissory note replicas — cannot be name-squatted.
 
 ```rust
 {{#include ../../../../../src/sdk/src/deploy.rs:deploy-deploy-params}}
@@ -38,7 +44,7 @@ signature public key.
 This function finalizes the smart contract state definition.
 
 * Wallet builder: `src/contract/deployooor/src/client/lock_v1.rs`
-* WASM VM code: `src/contract/deployooor/src/entrypoint/lock_v1.rs`
+* WASM VM code: `src/contract/deployooor/src/entrypoint/lock.rs`
 
 ### Function Params
 
