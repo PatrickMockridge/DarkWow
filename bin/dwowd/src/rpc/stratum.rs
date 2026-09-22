@@ -699,6 +699,18 @@ impl DwowNode {
                     mp.mark_mined(&tx_hashes).await;
                 }
 
+                // Broadcast the accepted block to peers (OBL-C35 / HAZID H-C2).
+                //
+                // This path committed blocks locally and never propagated them, so the network
+                // learned of a stratum-mined block only when a peer's 30-second poll happened to
+                // fetch it. Merge mining (`rpc/mm_rpc.rs`) and both other miner paths already
+                // broadcast; stratum was the last one that did not. The uncles travel with the
+                // block, as they do on the built-in miner's path (`rpc/miner.rs`) rather than as
+                // the empty vector `mm_rpc` passes — they are the ones this block's template
+                // carried, loaded above for `accept_block`.
+                crate::proto::linear_broadcast::broadcast_block(
+                    &self.p2p_handler.p2p, block.clone(), uncles.clone()).await;
+
                 // Push new mining job to all connected miners
                 if let Some(ref publisher) = *self.mining_state.linear_stratum_publisher.lock().await {
                     if let Some(ref recipient_config) = *self.mining_state.linear_recipient_config.lock().await {
