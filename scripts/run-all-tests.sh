@@ -101,6 +101,16 @@ run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instan
 # clean-up removed 25 documents and repointed ~30 referrers by hand; this is what
 # keeps that from silently un-happening.
 run_gate "documentation index"            bash "$SCRIPT_DIR/check-doc-index.sh"
+# The register's own convention, guarded. Four times the register has been wrong about its own
+# bookkeeping and only a human reading a diff noticed — including three markers written on 2026-09-22
+# with words the register does not use ("STALE", "CONFIRMED") or with no status word at all. This is
+# the mechanical check for that class: a row whose last cell opens with an ALL-CAPS word must open it
+# with a status from the register's stated vocabulary. Narrow by construction (last cell only, bold
+# span only, ALL-CAPS only) so it cannot cry wolf, which is why it is green today while ten rows still
+# carry no marker at all — it guards the form of a marker, not the existence of one.
+# Negative-controlled before wiring, per the OBL-Z18 lesson: a copy of the register with a coined
+# marker appended as OBL-C23's last cell fails the check; the register itself passes.
+run_gate "register status markers"        bash "$SCRIPT_DIR/register-status.sh" --check
 
 run_gate "build contract ZK circuits"     "$SCRIPT_DIR/build-contract-zk.sh"
 run_gate "pre-build guard (dwowd + wallet + 32 contracts→wasm32)" \

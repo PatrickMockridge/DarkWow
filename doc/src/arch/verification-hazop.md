@@ -870,6 +870,16 @@ already cost three mis-counts).** A row's status is one of these words, in bold,
 - **`PROVED`** / **`MECHANIZED`** / **`DEFINITIONAL`** — about the model rather than the code:
   a theorem; a checker; or a statement true by construction that no proof can close.
 
+**The form is now guarded, and this is the second time the guard was needed before it existed.** Three
+markers written on 2026-09-22 used words this note does not list — "STALE" and "CONFIRMED" — or carried
+no status word at all, and each was caught by a human reading a diff rather than by anything
+mechanical. `scripts/register-status.sh --check` now fails such a row: it examines the last cell of
+every row, and if that cell opens with an ALL-CAPS word the word must be one of the tokens above.
+Narrow on purpose — last cell, bold span, ALL-CAPS only — so it cannot cry wolf, and negative-controlled
+before it was wired into `run-all-tests.sh`: a copy of this file with a coined marker appended to
+`OBL-C23`'s last cell fails it, the file itself passes. It guards the *form* of a marker, not the
+existence of one; the ten rows that still carry none are listed by the same script in report mode.
+
 Two rules learned the hard way, both already broken once above. **A marker must be greppable**: write
 `CLOSED 2026-09-22`, not "CLOSED by reading", because the second form is invisible to the grep that
 counts closures (`OBL-C10`). **A fix recorded only in prose is not recorded**: if a paragraph below a
