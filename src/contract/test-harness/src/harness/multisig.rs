@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey, SecretKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, Nullifier},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -57,13 +57,43 @@ impl MultiSigHarness {
         Self { create_group_zkbin: cg_zk, create_group_pk: cg_pk, finalize_zkbin: fi_zk, finalize_pk: fi_pk, sign_zkbin: si_zk, sign_pk: si_pk }
     }
 
-    pub fn create_group(&self, threshold: u8, members: Vec<PublicKey>) -> Result<CreateGroupResult> {
-        // Store the first member's secret for sign() to use consistently
-        let first_pk = members[0];
-        let (fx, fy) = first_pk.xy().expect("pk not identity");
+    /// The member commitment a secret opens: `H(DOMAIN_MEMBER_COMMITMENT, secret)` with
+    /// `DOMAIN_MEMBER_COMMITMENT = witness_base(4) = 4`.
+    pub fn member_commitment(member_secret: pallas::Base) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(4u64), member_secret])
+    }
+
+    /// The group id a set of member commitments derives, so a caller can address the group before
+    /// creating it. Delegates to the contract's own derivation.
+    pub fn group_id(threshold: u8, member_commitments: &[pallas::Base]) -> pallas::Base {
+        dwow_multisig_contract::model::MultiSigGroup::derive_group_id(
+            member_commitments[0], threshold, member_commitments.len() as u8,
+        ).inner()
+    }
+
+    /// A member's signature nullifier for a message:
+    /// `H(DOMAIN_NULLIFIER, secret, group_id, message_hash)` with `DOMAIN_NULLIFIER = witness_base(1) = 1`.
+    pub fn signer_nullifier(
+        member_secret: pallas::Base,
+        group_id: pallas::Base,
+        message_hash: pallas::Base,
+    ) -> Nullifier {
+        let nf = poseidon_hash([pallas::Base::from(1u64), member_secret, group_id, message_hash]);
+        Nullifier::from_bytes(nf.to_repr()).expect("poseidon output is a valid non-zero nullifier")
+    }
+
+    pub fn create_group(
+        &self,
+        threshold: u8,
+        member_commitments: Vec<pallas::Base>,
+    ) -> Result<CreateGroupResult> {
         let t = pallas::Base::from(threshold as u64);
-        let n = pallas::Base::from(members.len() as u64);
-        let group_id = poseidon_hash([fx, fy, t, n]);
+        let n = pallas::Base::from(member_commitments.len() as u64);
+        // The same derivation the contract stores, called rather than re-implemented so the two
+        // cannot drift.
+        let group_id = dwow_multisig_contract::model::MultiSigGroup::derive_group_id(
+            member_commitments[0], threshold, member_commitments.len() as u8,
+        ).inner();
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
@@ -82,7 +112,7 @@ impl MultiSigHarness {
         }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
 
         let params = dwow_multisig_contract::model::CreateGroupParamsV1 {
-            pubkeys: members, threshold,
+            member_commitments, threshold,
             proof: proof.as_ref().to_vec(), tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x01u8];
@@ -91,19 +121,24 @@ impl MultiSigHarness {
     }
 
     pub fn sign(&self, group_id: pallas::Base, message_hash: pallas::Base, signer_secret: pallas::Base) -> Result<SignResult> {
-        let signer_pub = PublicKey::from_secret(SecretKey::from_base(signer_secret));
-        let (sx, sy) = signer_pub.xy().expect("pk not identity");
+        let member_commitment = Self::member_commitment(signer_secret);
+        let nullifier = Self::signer_nullifier(signer_secret, group_id, message_hash);
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
 
         let witnesses = vec![
             Witness::Base(Value::known(group_id)), Witness::Base(Value::known(message_hash)),
-            Witness::Base(Value::known(signer_secret)), Witness::Base(Value::known(sx)),
-            Witness::Base(Value::known(sy)), Witness::Base(Value::known(tx_commitment)),
+            Witness::Base(Value::known(signer_secret)),
+            Witness::Base(Value::known(tx_commitment)),
             Witness::Base(Value::known(tx_nonce)),
         ];
-        let public_inputs = vec![tx_binding, tx_nonce, group_id, message_hash];
+        // constrain_instance order: group_id, message_hash, member_commitment, nullifier,
+        // tx_binding, tx_nonce
+        let public_inputs = vec![
+            group_id, message_hash, member_commitment, nullifier.inner(),
+            tx_binding, tx_nonce,
+        ];
 
         let proof = if dwow_multisig_contract::deterministic_zk_enabled() {
             Proof::create(&self.sign_pk, &[ZkCircuit::new(witnesses, &self.sign_zkbin)], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
@@ -111,22 +146,27 @@ impl MultiSigHarness {
             Proof::create(&self.sign_pk, &[ZkCircuit::new(witnesses, &self.sign_zkbin)], &public_inputs, OsRng)
         }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
 
-        let signer_pub = PublicKey::from_secret(SecretKey::from_base(signer_secret));
         let params = dwow_multisig_contract::model::SignParamsV1 {
             group_id: dwow_multisig_contract::model::GroupId(group_id),
             message_hash,
-            signer_pub,
+            member_commitment,
+            nullifier: nullifier.inner(),
             proof: proof.as_ref().to_vec(), tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x02u8];
         call_data.extend_from_slice(&params.encode()?);
-        Ok(SignResult { call_data, proof })
+        Ok(SignResult { call_data, proof, nullifier })
     }
 
-    pub fn finalize(&self, group_id: pallas::Base, message_hash: pallas::Base) -> Result<FinalizeResult> {
-        let threshold = pallas::Base::from(1u64);
-        let signature_count = pallas::Base::from(1u64);
-        // Circuit: DOMAIN_COIN_COMMIT = witness_base(4) = 4
+    /// Build a `FinalizeV1` call over the approvals the caller names. The contract checks each one
+    /// against the signature records it can see; see `entrypoint/mod.rs`.
+    pub fn finalize(
+        &self,
+        group_id: pallas::Base,
+        message_hash: pallas::Base,
+        approvals: Vec<Nullifier>,
+    ) -> Result<FinalizeResult> {
+        // Circuit: DOMAIN_COMMITMENT = witness_base(4) = 4
         let approval_commit = poseidon_hash([pallas::Base::from(4u64), group_id, message_hash]);
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
@@ -134,12 +174,11 @@ impl MultiSigHarness {
 
         let witnesses = vec![
             Witness::Base(Value::known(group_id)), Witness::Base(Value::known(message_hash)),
-            Witness::Base(Value::known(threshold)), Witness::Base(Value::known(signature_count)),
             Witness::Base(Value::known(approval_commit)), Witness::Base(Value::known(tx_commitment)),
             Witness::Base(Value::known(tx_nonce)),
         ];
-        // constrain_instance order: tx_binding, tx_nonce, group_id, message_hash
-        let public_inputs = vec![tx_binding, tx_nonce, group_id, message_hash];
+        // constrain_instance order: group_id, message_hash, approval_commit, tx_binding, tx_nonce
+        let public_inputs = vec![group_id, message_hash, approval_commit, tx_binding, tx_nonce];
 
         let proof = if dwow_multisig_contract::deterministic_zk_enabled() {
             Proof::create(&self.finalize_pk, &[ZkCircuit::new(witnesses, &self.finalize_zkbin)], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
@@ -149,7 +188,8 @@ impl MultiSigHarness {
 
         let params = dwow_multisig_contract::model::FinalizeParamsV1 {
             group_id: dwow_multisig_contract::model::GroupId(group_id),
-            message_hash, proof: proof.as_ref().to_vec(), tx_binding, tx_nonce,
+            message_hash, approval_commit, approvals,
+            proof: proof.as_ref().to_vec(), tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x03u8];
         call_data.extend_from_slice(&params.encode()?);
@@ -169,5 +209,5 @@ impl super::ContractHarness for MultiSigHarness {
 }
 
 pub struct CreateGroupResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof, pub group_id: pallas::Base }
-pub struct SignResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct SignResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof, pub nullifier: Nullifier }
 pub struct FinalizeResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }

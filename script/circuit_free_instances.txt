@@ -66,13 +66,13 @@ src/contract/dex/proof/execute_swap_fee.zk : fee : host: none — dex entrypoint
 src/contract/slot/proof/settle_bet.zk : payout : host: slot entrypoint.rs:596-607 `let payout = crate::model::calculate_payout(spin.bet_value, &wins, spin.house_edge); ... if params.payout != payout { "Payout mismatch" }`
 
 # --- multisig group creation: every instance value is the host's own arithmetic -------------
-# None of these three come from the prover. `group_id` is derived from the first pubkey and the
-# key count, `threshold` is bounds-checked, and the value that must equal the circuit's
-# `total_keys` witness is `params.pubkeys.len()` — a length the host counted itself, not a field
-# the prover supplies (`CreateGroupParamsV1` has no total_keys member at all).
-src/contract/multisig/proof/create_group.zk : group_id : host: multisig entrypoint/mod.rs:86 `poseidon_hash([fx, fy, t, n])` from first pubkey xy and key count; not taken from params
-src/contract/multisig/proof/create_group.zk : threshold : host: multisig entrypoint/mod.rs:260 rejects `params.threshold == 0 || params.threshold as usize > params.pubkeys.len()` (MultiSigError::InvalidThreshold)
-src/contract/multisig/proof/create_group.zk : total_keys : host: multisig entrypoint/mod.rs:80 supplies `n = pallas::Base::from(params.pubkeys.len() as u64)`; the proof's witness must match a length the host counted
+# None of these three come from the prover. `group_id` is derived from the first member
+# commitment and the member count, `threshold` is bounds-checked, and the value that must equal
+# the circuit's `total_keys` witness is the deduplicated member count — a length the host counted
+# itself, not a field the prover supplies (`CreateGroupParamsV1` has no total_keys member at all).
+src/contract/multisig/proof/create_group.zk : group_id : host: multisig entrypoint/mod.rs:93 `MultiSigGroup::derive_group_id(first_commitment, threshold, total_keys)` over the deduplicated member list; not taken from params
+src/contract/multisig/proof/create_group.zk : threshold : host: multisig entrypoint/mod.rs:274 rejects `params.threshold == 0 || params.threshold as usize > params.member_commitments.len()`, re-checked against the deduplicated count at :288 (MultiSigError::InvalidThreshold)
+src/contract/multisig/proof/create_group.zk : total_keys : host: multisig entrypoint/mod.rs:92 supplies `n = pallas::Base::from(total_keys as u64)` where `total_keys` is the deduplicated member count the host computed at :291; the proof's witness must match a length the host counted
 
 # --- stablecoin: the reported totals are checked against the config DB ----------------------
 # governance_report.zk's ratio and interest checks are arithmetic over `total_collateral`,
@@ -157,10 +157,27 @@ src/contract/tender/proof/select_winner.zk : tender_id : host: tender entrypoint
 src/contract/tender/proof/select_winner.zk : winner_bid_id : host: tender entrypoint.rs:730 `db_get(bids_db, &params.winner_bid_id.to_repr())?` -> "Winner bid not found", then :740 rejects `winner_bid.tender_id != params.tender_id`
 src/contract/tender/proof/submit_bid_with_capability.zk : required_capability_id : host: tender entrypoint.rs:961 rejects `params.required_capability_id != tender.required_capability`
 src/contract/labor_market/proof/accept_job_with_capability.zk : capability_id : host: labor_market entrypoint.rs:1613-1644 requires exactly one child call, of function 0x06 (`Identity::VerifyCapabilityV1`), whose `contract_id` matches the configured Identity contract — a real on-chain capability check, the only one in the repository
-src/contract/multisig/proof/sign.zk : group_id : host: multisig entrypoint/mod.rs:296 `db_contains_key(groups_db, group_id)` and :298 `db_get(...).ok_or(GroupNotFound)?`
-src/contract/multisig/proof/sign.zk : message_hash : host: multisig entrypoint/mod.rs:319 the signer's nullifier is `poseidon_hash([group_id, message_hash, pk_x, pk_y])`, checked unspent at :324 — so the message is bound into the nullifier the host deduplicates on
-src/contract/multisig/proof/finalize.zk : group_id : host: multisig entrypoint/mod.rs:335 `db_get(groups_db, &params.group_id.to_bytes())?.ok_or(GroupNotFound)?`
-src/contract/multisig/proof/finalize.zk : message_hash : host: multisig entrypoint/mod.rs:348 recomputes the per-key nullifier from `message_hash` and counts the consumed ones against `group.threshold` (:356)
+# --- multisig sign/finalize: RETIRED 2026-09-22 — the entries had become dead text -----------
+# Four lines stood here, declaring `group_id` and `message_hash` free in `sign.zk` and
+# `finalize.zk`. The OBL-Z11 remedy made all four dead, and one of them *wrong*:
+#
+#   sign.zk : message_hash
+#     read "the signer's nullifier is `poseidon_hash([group_id, message_hash, pk_x, pk_y])`,
+#     checked unspent at :324". That nullifier no longer exists. It was recomputable from the
+#     group's public keys, which is exactly what let a non-member spend a member's nullifier; the
+#     nullifier is now `H(DOMAIN_NULLIFIER, signer_secret, group_id, message_hash)`, derived from a
+#     secret the host does not hold. A reader who trusted the old line would have believed the
+#     group's public keys still determined who could sign.
+#
+# All four are now classified before the manifest is consulted, because `group_id` and
+# `message_hash` both feed exposed derivations — the nullifier in `sign.zk`, and `approval_commit`
+# in `finalize.zk` — so the checker reports them "redundant" rather than reading the manifest.
+#
+# The host mechanisms they described are still there, and are now load-bearing:
+#   entrypoint/mod.rs:301  `db_get(groups_db, params.group_id)` -> GroupNotFound
+#   entrypoint/mod.rs:307  `group.member_commitments.contains(&params.member_commitment)` -> NotAMember
+#   entrypoint/mod.rs:317  `db_contains_key(nullifiers_db, nf)` -> DuplicateNullifier
+#   entrypoint/mod.rs:347  each approval must name a signature record for *this* group and message
 src/contract/oracle/proof/attest_value.zk : predicate : host: oracle entrypoint.rs:409 `if params.predicate > 2` -> `OracleError::InvalidPredicate`
 bin/darkirc/proof/rlnv2-diff-signal.zk : epoch : host: darkirc irc/client.rs:631 the verifier computes `epoch = closest_epoch(event.timestamp)` itself and supplies it as a public input (:647), so a proof over another epoch does not verify
 

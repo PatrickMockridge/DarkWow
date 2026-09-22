@@ -84,12 +84,14 @@ MultiSig supports two configurations:
 
 | Mode | Capability holder set | Capability exercise attribution | Use case |
 |------|-----------------|------------------|----------|
-| **Absolute privacy** | Public key list on-chain | Keys known to group, nullifier opaque to chain | Trade union ballot, corporate board vote, independence referendum |
+| **Absolute privacy** | Member commitment list on-chain | Members know each other, nullifier opaque to chain | Trade union ballot, corporate board vote, independence referendum |
 | **Contextual privacy** | Group created off-chain, nullifiers submitted by delegates | Neither holder set nor exercise visible | Whistleblower protection, dissident coordination, human rights monitoring |
 
 In absolute privacy mode, the capability holders know each other — like a union
 local, a housing cooperative, or a parliamentary committee. The chain sees the
-public keys but cannot connect any individual nullifier to any individual key.
+commitments but cannot connect any individual nullifier to any individual member:
+the nullifier is derived from the member's secret, and the commitment it must open
+is hiding.
 
 In contextual privacy mode, even the holder set is hidden. A delegate submits
 partial signatures on behalf of capability holders without revealing who
@@ -150,31 +152,44 @@ MultiSig is that vote.
 |-----------|--------|---------|---------------|
 | `InitializeV1` | 0x00 | — | Initialize MultiSig contract state |
 | `CreateGroupV1` | 0x01 | `create_group.zk` | Group parameters valid: threshold ≥ 1, ≤ N. Produces group_capability. |
-| `SignV1` | 0x02 | `sign.zk` | Key holder proves key ownership: pubkey = secret·G. Produces partial_signature. |
+| `SignV1` | 0x02 | `sign.zk` | Member proves knowledge of a secret that opens one of the group's member commitments, and derives the signature's nullifier from it. Produces partial_signature. |
 | `FinalizeV1` | 0x03 | `finalize.zk` | Threshold partial signatures collected for a message. Consumes them, produces approval capability. |
 
 ## Privacy Properties
 
-- **Capability holder set public** — pubkeys are stored on-chain (the group IS its holder set)
-- **Capability exercise hidden** — which specific key holders exercised their capability is not revealed on-chain (nullifiers are opaque)
+- **Capability holder set public** — the group stores one *commitment* per member,
+  `H(DOMAIN_MEMBER_COMMITMENT, member_secret)`, not a key. The set is on-chain as pseudonyms.
+- **Capability exercise hidden** — which member exercised their capability is not revealed
+  on-chain. This property was *claimed* before it was true: the nullifier used to be
+  `poseidon_hash(group_id, message_hash, pk_x, pk_y)`, which anyone could recompute from the
+  group's public key list and the block's own call data, so every observer could see exactly
+  which member had signed. It is now `H(DOMAIN_NULLIFIER, member_secret, group_id, message_hash)`,
+  derived from a secret the chain does not hold and not derivable from the stored commitments.
 - **Approval unlinkable** — the approval capability commitment reveals only that SOME threshold was met, not which group or message
-- **Double-exercise prevention** via nullifier: `poseidon_hash(group_id, message_hash, signer_pubkey)`
+- **Double-exercise prevention** via nullifier: `H(DOMAIN_NULLIFIER, member_secret, group_id, message_hash)`.
+  Bound to the group *and* the message, so one member's signature cannot be replayed onto another
+  message, and two members signing the same message stay distinct.
+
+**A member's commitment is not bound to the group.** Making it `H(DOMAIN, secret, group_id)` would
+be circular — `group_id` is derived from the first commitment. The consequence is recorded rather
+than hidden: a member's commitment is *identical in every group they join*, so two groups with an
+overlapping member can be linked by that shared pseudonym. Members who must not be linked across
+groups should use a distinct secret per group.
 
 ## Data Model
 
 ```
 MultiSigGroup = {
-    group_id:   poseidon_hash(pubkeys || threshold),
-    pubkeys:    [P_1, P_2, ..., P_N],   // compressed public keys
-    threshold:  M,                        // required signatures
-    total_keys: N,                        // total key holders
+    group_id:            H(first_commitment, threshold, total_keys),
+    member_commitments:  [C_1, C_2, ..., C_N],  // H(4, secret_i), field elements
+    threshold:           M,                      // required signatures
+    total_keys:          N,                      // total members
 }
 
 PartialSignature = {
     group_id:       Group reference,
     message_hash:   H(msg),
-    signer_pubkey:  P_i,
-    nullifier:      poseidon_hash(group_id, message_hash, P_i),
+    nullifier:      H(DOMAIN_NULLIFIER, member_secret, group_id, message_hash),
 }
 
 ApprovalCapability = {
@@ -198,10 +213,10 @@ ApprovalCapability = {
 
 | Symbol | Meaning |
 |--------|---------|
-| `G` | Pallas curve generator |
 | `H(x)` | Poseidon hash of field elements |
-| `P_i` | Public key of capability holder i |
-| `GID` | Group identifier: H(P_1.x, P_1.y, ..., P_N.x, P_N.y, M) |
+| `C_i` | Member commitment of capability holder i: `H(4, sk_i)` |
+| `C0` | The first member commitment, `C_1` |
+| `GID` | Group identifier: `H(C0, M, N)` |
 | `MH` | Message hash: H(msg_bytes) |
 | `tx_hash` | Transaction commitment |
 | `tx_nonce` | Transaction nonce |
@@ -210,7 +225,7 @@ ApprovalCapability = {
 
 **Public inputs (exposed via `constrain_instance`):**
 ```
-GID = H(P_1.x, P_1.y, ..., P_N.x, P_N.y, M)
+GID = H(C0, M, N)
 tx_binding = H(tx_hash, tx_nonce)
 ```
 
@@ -225,7 +240,7 @@ tx_binding = H(tx_hash, tx_nonce)
 
 **State transition:**
 ```
-groups[GID] ← (pubkeys = [P_1..P_N], threshold = M, total_keys = N)
+groups[GID] ← (member_commitments = [C_1..C_N], threshold = M, total_keys = N)
 ```
 
 ### SignV1 — Partial Signature
@@ -234,23 +249,34 @@ groups[GID] ← (pubkeys = [P_1..P_N], threshold = M, total_keys = N)
 ```
 GID = group being signed for
 MH  = message hash
+C_i = H(4, sk_i)
+nullifier_i = H(1, sk_i, GID, MH)
 tx_binding = H(tx_hash, tx_nonce)
 ```
 
 **Constraints:**
 ```
-1. Key ownership:       P_i = sk_i · NULLIFIER_K
-2. tx_binding = H(tx_hash, tx_nonce)
-3. constrain_instance(GID)
-4. constrain_instance(MH)
+1. member_commitment = H(DOMAIN_MEMBER_COMMITMENT, signer_secret)
+2. nullifier         = H(DOMAIN_NULLIFIER, signer_secret, GID, MH)
+3. tx_binding = H(tx_hash, tx_nonce)
+4. constrain_instance(GID)
+5. constrain_instance(MH)
+6. constrain_instance(C_i)
+7. constrain_instance(nullifier_i)
 ```
 
 **State transition:**
 ```
-nullifier_i = H(GID, MH, P_i.x, P_i.y)
-signatures[nullifier_i] ← (group_id = GID, message_hash = MH, signer_pubkey = P_i)
-nullifiers[nullifier_i] ← ∅   (double-sign prevention)
+require C_i ∈ group.member_commitments       -- or NotAMember
+require nullifiers[nullifier_i] unspent      -- or DuplicateNullifier
+signatures[nullifier_i] ← (group_id = GID, message_hash = MH, nullifier = nullifier_i)
+nullifiers[nullifier_i] ← spent marker
 ```
+
+Note what is *absent*: the group's commitments no longer determine the nullifier. That is the
+whole point of the change — while they did, anyone could compute every member's nullifier for a
+message straight from the public group record, which is what let a non-member name a member's key
+and spend it.
 
 ### FinalizeV1 — Threshold Finalization
 
@@ -258,31 +284,40 @@ nullifiers[nullifier_i] ← ∅   (double-sign prevention)
 ```
 GID = group being finalized for
 MH  = message hash
+approval_commit = H(4, GID, MH)
 tx_binding = H(tx_hash, tx_nonce)
 ```
 
 **Constraints:**
 ```
-1. approval_commit = H(GID, MH)
+1. approval_commit = H(DOMAIN_COMMITMENT, GID, MH)
 2. tx_binding = H(tx_hash, tx_nonce)
 3. constrain_instance(GID)
 4. constrain_instance(MH)
+5. constrain_instance(approval_commit)
 ```
 
 **State transition (WASM entrypoint, not ZK circuit):**
 ```
 signatures_db ← lookup signatures tree
 collected ← []
-for each P_i in group.pubkeys:
-    nullifier_i = H(GID, MH, P_i.x, P_i.y)
-    if signatures_db contains nullifier_i:
-        collected.append(nullifier_i)
+for each nullifier in params.approvals:
+    if already in collected: skip          -- one approval counts once
+    sig ← signatures_db[nullifier]         -- or InsufficientSignatures
+    require sig.group_id == GID and sig.message_hash == MH
+    collected.append(nullifier)
 
 assert len(collected) ≥ group.threshold
 
 for each nullifier in collected:
-    signatures[nullifier] ← consumed marker
+    signatures[nullifier] ← deleted
 ```
+
+The approvals are **named by the caller** rather than recomputed from the group, because a
+nullifier is now derived from a secret the host does not hold. That makes every entry a claim to
+check rather than a fact: each must name a signature record that exists, and that record must be
+for *this* group and *this* message. Nothing can be fabricated — a nullifier only enters the
+signatures tree through a `SignV1` that passed the membership and proof checks.
 
 ### Transaction Binding
 

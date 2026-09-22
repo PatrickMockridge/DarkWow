@@ -1,11 +1,10 @@
 //! ContractTestSpec for multisig. Spec: heavyweight-spec.md §5.6.
 //! HAZOP remediation: 3-of-5 group, threshold enforcement, replay protection.
+//! OBL-Z11: the signer is bound to the group by a member commitment, so a non-member naming a
+//! member's identity cannot sign — there is a rejection endpoint for exactly that.
 
 use dwow_contract_test_harness::harness::{ContractHarness, MultiSigHarness};
-use dwow_sdk::crypto::{
-    MULTISIG_CONTRACT_ID, PublicKey, SecretKey,
-    pasta_prelude::PrimeField, poseidon_hash,
-};
+use dwow_sdk::crypto::{MULTISIG_CONTRACT_ID, pasta_prelude::PrimeField};
 use dwow_sdk::pasta::pallas;
 
 use crate::tests::blockchain::HeavyweightPipeline;
@@ -26,28 +25,27 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
         pallas::Base::from(6u64),
         pallas::Base::from(7u64),
     ];
-    let pubkeys: Vec<PublicKey> = secrets.iter()
-        .map(|&s| PublicKey::from_secret(SecretKey::from_base(s)))
+    // The group stores commitments, not keys: H(DOMAIN_MEMBER_COMMITMENT, secret).
+    let members: Vec<pallas::Base> = secrets.iter()
+        .map(|&s| MultiSigHarness::member_commitment(s))
         .collect();
     let threshold: u8 = 3;
-    let members = pubkeys.clone();
     let message_hash = pallas::Base::from(42u64);
 
-    // Pre-compute group_id
-    let (fx, fy) = pubkeys[0].xy().expect("pk not identity");
-    let t = pallas::Base::from(threshold as u64);
-    let n = pallas::Base::from(pubkeys.len() as u64);
-    let group_id = poseidon_hash([fx, fy, t, n]);
+    let group_id = MultiSigHarness::group_id(threshold, &members);
     let gid_bytes = group_id.to_repr().to_vec();
 
-    // Pre-compute nullifier for member 1 (used in verify_state — cloned per closure)
-    let nf1 = {
-        let (px, py) = pubkeys[0].xy().expect("pk");
-        poseidon_hash([group_id, message_hash, px, py])
-    };
-    let nf1_bytes = nf1.to_repr().to_vec();
-    let nf1b2 = nf1_bytes.clone();
+    // Member 0's nullifier for this message — the signature record the tree must hold, and the one
+    // finalize must delete.
+    let nf0 = MultiSigHarness::signer_nullifier(secrets[0], group_id, message_hash);
+    let nf0_bytes = nf0.to_bytes().to_vec();
+    let nf0b2 = nf0_bytes.clone();
     let gb2 = gid_bytes.clone();
+
+    // The approvals each finalize names. The host can no longer recompute these — they are derived
+    // from secrets it does not have — so it checks each against the signature records instead.
+    let nf1 = MultiSigHarness::signer_nullifier(secrets[1], group_id, message_hash);
+    let nf2 = MultiSigHarness::signer_nullifier(secrets[2], group_id, message_hash);
 
     ContractTestSpec {
         name: "multisig",
@@ -87,7 +85,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({
-                    let nb = nf1_bytes.clone();
+                    let nb = nf0_bytes.clone();
                     let c = cid;
                     move |chain| {
                         let result = chain.query_contract_state(c, "signatures", &nb)?;
@@ -117,7 +115,24 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.finalize(group_id, message_hash)?;
+                    let r = h.finalize(group_id, message_hash, vec![nf0, nf1])?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                }),
+            },
+            // MUST REJECT: OBL-Z11's attack, end to end. Secret 99 is in no group. The proof is
+            // real — it opens the commitment H(DOMAIN_MEMBER_COMMITMENT, 99) — but that commitment
+            // is not one the group holds, so the host refuses. Before this fix the attacker did not
+            // even need a proof over their own secret: they named a member's *public key*, which is
+            // in the group record, and the nullifier recorded was that member's. Repeating over the
+            // members forged threshold approval outright; if this endpoint ever flips to Success,
+            // that is back.
+            EndpointSpec {
+                name: "SignV1_non_member", is_zk: true,
+                expectation: EndpointExpectation::Rejection,
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new(move || {
+                    let r = h.sign(group_id, message_hash, pallas::Base::from(99u64))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
@@ -137,7 +152,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({
-                    let nb = nf1_bytes.clone();
+                    let nb = nf0b2.clone();
                     let c = cid;
                     move |chain| {
                         let result = chain.query_contract_state(c, "signatures", &nb)?;
@@ -146,7 +161,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                     }
                 })),
                 generate: Box::new(move || {
-                    let r = h.finalize(group_id, message_hash)?;
+                    let r = h.finalize(group_id, message_hash, vec![nf0, nf1, nf2])?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },

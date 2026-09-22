@@ -12,11 +12,11 @@ pub enum MultiSigError {
     #[error("Invalid threshold: must be >= 1 and <= total keys")]
     InvalidThreshold,
 
-    #[error("Empty key list")]
-    EmptyKeyList,
+    #[error("Empty member list")]
+    EmptyMemberList,
 
-    #[error("Public key not in group")]
-    KeyNotInGroup,
+    #[error("Signer is not a member of the group")]
+    NotAMember,
 
     #[error("Duplicate partial signature")]
     DuplicateNullifier,
@@ -35,8 +35,8 @@ impl From<MultiSigError> for ContractError {
             MultiSigError::GroupNotFound => Self::Custom(1),
             MultiSigError::GroupAlreadyExists => Self::Custom(2),
             MultiSigError::InvalidThreshold => Self::Custom(3),
-            MultiSigError::EmptyKeyList => Self::Custom(4),
-            MultiSigError::KeyNotInGroup => Self::Custom(5),
+            MultiSigError::EmptyMemberList => Self::Custom(4),
+            MultiSigError::NotAMember => Self::Custom(5),
             MultiSigError::DuplicateNullifier => Self::Custom(6),
             MultiSigError::InsufficientSignatures => Self::Custom(7),
             MultiSigError::InvalidFunction => Self::Custom(8),

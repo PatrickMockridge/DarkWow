@@ -26,17 +26,19 @@
 //! Tests data model encode/decode round-trips without ZK proofs.
 
 use dwow_multisig_contract::model::{CreateGroupParamsV1, SignParamsV1, FinalizeParamsV1, GroupId};
-use dwow_sdk::crypto::{Keypair, SecretKey};
+use dwow_sdk::crypto::{pasta_prelude::PrimeField, Nullifier};
 use dwow_sdk::pasta::pallas;
 
-fn dummy_pubkey() -> dwow_sdk::crypto::PublicKey {
-    Keypair::new(SecretKey::from_base(pallas::Base::from(42))).public
+/// A stand-in member commitment. These are field elements now, not keys — the fixtures only need
+/// three distinct ones.
+fn dummy_commitment(n: u64) -> pallas::Base {
+    pallas::Base::from(n)
 }
 
 #[test]
 fn test_create_group_params_roundtrip() {
     let params = CreateGroupParamsV1 {
-        pubkeys: vec![dummy_pubkey(); 3],
+        member_commitments: vec![dummy_commitment(7), dummy_commitment(8), dummy_commitment(9)],
         threshold: 2,
         proof: vec![1u8, 2, 3, 4],
         tx_binding: pallas::Base::from(99u64),
@@ -49,7 +51,7 @@ fn test_create_group_params_roundtrip() {
     let decoded = CreateGroupParamsV1::decode(&encoded)
         .expect("round-trip must succeed");
     assert_eq!(decoded.threshold, params.threshold);
-    assert_eq!(decoded.pubkeys.len(), params.pubkeys.len());
+    assert_eq!(decoded.member_commitments.len(), params.member_commitments.len());
     assert_eq!(decoded.proof, params.proof);
 
     assert_eq!(params.encode().unwrap(), encoded, "encode must be deterministic");
@@ -60,7 +62,8 @@ fn test_sign_params_roundtrip() {
     let params = SignParamsV1 {
         group_id: GroupId(pallas::Base::from(42u64)),
         message_hash: pallas::Base::from(12345u64),
-        signer_pub: dummy_pubkey(),
+        member_commitment: dummy_commitment(7),
+        nullifier: dummy_commitment(11),
         proof: vec![1u8, 2, 3, 4],
         tx_binding: pallas::Base::from(99u64),
         tx_nonce: pallas::Base::from(88u64),
@@ -83,6 +86,11 @@ fn test_finalize_params_roundtrip() {
     let params = FinalizeParamsV1 {
         group_id: GroupId(pallas::Base::from(42u64)),
         message_hash: pallas::Base::from(12345u64),
+        approval_commit: dummy_commitment(13),
+        approvals: vec![
+            Nullifier::from_bytes(dummy_commitment(21).to_repr()).unwrap(),
+            Nullifier::from_bytes(dummy_commitment(22).to_repr()).unwrap(),
+        ],
         proof: vec![5u8, 6, 7, 8],
         tx_binding: pallas::Base::from(99u64),
         tx_nonce: pallas::Base::from(88u64),

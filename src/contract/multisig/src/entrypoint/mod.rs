@@ -1,6 +1,8 @@
 use dwow_sdk::{
     blockchain::SerializedLen,
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, Nullifier, PublicKey},
+    // `PublicKey` is still needed: `get_metadata` encodes an empty `Vec<PublicKey>` as the
+    // Schnorr-signature prohibition stub (contract-standards.md §3). No key is ever put in it.
+    crypto::{pasta_prelude::PrimeField, ContractId, Nullifier, PublicKey},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, wasm,
@@ -70,21 +72,25 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize CreateGroupParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let t = pallas::Base::from(params.threshold as u64);
-            let n = pallas::Base::from(params.pubkeys.len() as u64);
-            // Both of these were reachable panics on attacker-supplied params: `pubkeys` may be
-            // empty (`pk_count` comes off the wire and may be 0), and a decoded `PublicKey` may be
-            // the identity point, because the derived `Decodable` builds the point directly rather
-            // than going through `from_bytes` (sdk/src/crypto/keypair.rs
-            // `decoded_public_key_can_be_the_identity`).
-            let first_pk = params.pubkeys.first().ok_or_else(|| {
-                ContractError::IoError("CreateGroupParamsV1: pubkeys is empty".to_string())
+            // Deduplicated the same way `process_instruction` deduplicates, so the `group_id`
+            // pushed here is the one that will actually be stored. Before this the two sides could
+            // disagree — this arm hashed the *raw* count while exec hashed the deduplicated one —
+            // and nothing caught it, because `group_id` is a bare witness in `create_group.zk` that
+            // the circuit relates to nothing.
+            let mut commitments: Vec<pallas::Base> = Vec::with_capacity(params.member_commitments.len());
+            for c in &params.member_commitments {
+                if !commitments.contains(c) {
+                    commitments.push(*c);
+                }
+            }
+            let first = *commitments.first().ok_or_else(|| {
+                ContractError::IoError("CreateGroupParamsV1: member_commitments is empty".to_string())
             })?;
-            let Some((fx, fy)) = first_pk.xy() else {
-                return Err(ContractError::IoError(
-                    "CreateGroupParamsV1: first pubkey is the identity point".to_string(),
-                ))
-            };
-            let group_id = poseidon_hash([fx, fy, t, n]);
+            let total_keys = u8::try_from(commitments.len()).map_err(|_| {
+                ContractError::IoError("CreateGroupParamsV1: too many members for total_keys".to_string())
+            })?;
+            let n = pallas::Base::from(total_keys as u64);
+            let group_id = MultiSigGroup::derive_group_id(first, params.threshold, total_keys).inner();
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_inputs.push((MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V2.to_string(), vec![
                 params.tx_binding, params.tx_nonce, group_id, t, n,
@@ -100,7 +106,9 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = SignParamsV1::decode(payload)?;
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_inputs.push((MULTISIG_CONTRACT_ZKAS_SIGN_NS_V2.to_string(), vec![
-                params.tx_binding, params.tx_nonce, params.group_id.inner(), params.message_hash,
+                params.group_id.inner(), params.message_hash,
+                params.member_commitment, params.nullifier,
+                params.tx_binding, params.tx_nonce,
             ]));
             let sigs: Vec<PublicKey> = vec![];
             let mut meta = vec![];
@@ -114,7 +122,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_inputs.push((MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V2.to_string(), vec![
-                params.tx_binding, params.tx_nonce, params.group_id.inner(), params.message_hash,
+                params.group_id.inner(), params.message_hash, params.approval_commit,
+                params.tx_binding, params.tx_nonce,
             ]));
             let sigs: Vec<PublicKey> = vec![];
             let mut meta = vec![];
@@ -133,13 +142,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 // Per §10.5: re-lift validation SHALL use named constructors (from_bytes).
 
 fn encode_create_group_update_v1(update: &CreateGroupUpdateV1) -> Result<Vec<u8>, ContractError> {
-    let n = SerializedLen::try_from_len(update.pubkeys.len())?;
-    let mut buf = Vec::with_capacity(39 + update.pubkeys.len() * 32);
+    let n = SerializedLen::try_from_len(update.member_commitments.len())?;
+    let mut buf = Vec::with_capacity(39 + update.member_commitments.len() * 32);
     buf.push(MultiSigFunction::CreateGroupV1 as u8);
     buf.extend_from_slice(&update.group_id.to_bytes());
     buf.extend_from_slice(&n.to_le_bytes());
-    for pk in &update.pubkeys {
-        buf.extend_from_slice(&pk.to_bytes());
+    for c in &update.member_commitments {
+        buf.extend_from_slice(&c.to_repr());
     }
     buf.push(update.threshold);
     buf.push(update.total_keys);
@@ -154,23 +163,26 @@ fn decode_create_group_update_v1(data: &[u8]) -> Result<CreateGroupUpdateV1, Con
     }
     let group_id = GroupId::from_bytes(&read_field::<32>(data, 0)?)
         .ok_or_else(|| ContractError::IoError("CreateGroupUpdateV1: invalid GroupId".into()))?;
-    let pk_count = SerializedLen::from_le_bytes(read_field::<4>(data, 32)?).to_usize();
-    let pk_end = 36 + pk_count * 32;
-    if data.len() < pk_end + 2 {
+    let count = SerializedLen::from_le_bytes(read_field::<4>(data, 32)?).to_usize();
+    let members_end = 36 + count * 32;
+    if data.len() < members_end + 2 {
         return Err(ContractError::IoError(format!(
-            "CreateGroupUpdateV1: expected {} bytes for {} pubkeys, got {}", pk_end + 2, pk_count, data.len()
+            "CreateGroupUpdateV1: expected {} bytes for {} member commitments, got {}",
+            members_end + 2, count, data.len()
         )));
     }
-    let mut pubkeys = Vec::with_capacity(pk_count);
-    for i in 0..pk_count {
+    let mut member_commitments = Vec::with_capacity(count);
+    for i in 0..count {
         let start = 36 + i * 32;
-        let pk = PublicKey::from_bytes(read_field::<32>(data, start)?)
-            .map_err(|e| ContractError::IoError(format!("CreateGroupUpdateV1: invalid PublicKey[{}]: {e}", i)))?;
-        pubkeys.push(pk);
+        let c = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, start)?))
+            .ok_or_else(|| ContractError::IoError(format!(
+                "CreateGroupUpdateV1: invalid member commitment[{}]", i
+            )))?;
+        member_commitments.push(c);
     }
-    let threshold = read_byte(data, pk_end)?;
-    let total_keys = read_byte(data, pk_end + 1)?;
-    Ok(CreateGroupUpdateV1 { group_id, pubkeys, threshold, total_keys })
+    let threshold = read_byte(data, members_end)?;
+    let total_keys = read_byte(data, members_end + 1)?;
+    Ok(CreateGroupUpdateV1 { group_id, member_commitments, threshold, total_keys })
 }
 
 fn encode_sign_update_v1(update: &SignUpdateV1) -> Vec<u8> {
@@ -258,76 +270,64 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     match func {
         MultiSigFunction::CreateGroupV1 => {
             let params = CreateGroupParamsV1::decode(payload)?;
-            if params.pubkeys.is_empty() { return Err(MultiSigError::EmptyKeyList.into()); }
-            if params.threshold == 0 || params.threshold as usize > params.pubkeys.len() {
+            if params.member_commitments.is_empty() { return Err(MultiSigError::EmptyMemberList.into()); }
+            if params.threshold == 0 || params.threshold as usize > params.member_commitments.len() {
                 return Err(MultiSigError::InvalidThreshold.into());
             }
-            // Deduplicate public keys — duplicate keys would let a single
-            // signer count multiple times toward the threshold, bypassing the
-            // multisig security model. Nullifier-based signature tracking in
-            // FinalizeV1 provides partial protection (duplicate keys produce
-            // identical nullifiers which SignV1 rejects), but dedup at creation
+            // Deduplicate member commitments — a duplicate would let one member count twice
+            // toward the threshold. The nullifier dedup in SignV1 catches the same thing from the
+            // other side (one secret produces one nullifier per message), but dedup at creation
             // time is defense-in-depth.
-            let mut pubkeys = Vec::with_capacity(params.pubkeys.len());
-            for b in &params.pubkeys {
-                if !pubkeys.contains(b) {
-                    pubkeys.push(*b);
+            let mut member_commitments = Vec::with_capacity(params.member_commitments.len());
+            for c in &params.member_commitments {
+                if !member_commitments.contains(c) {
+                    member_commitments.push(*c);
                 }
             }
             // Re-validate threshold against deduplicated count
-            if params.threshold as usize > pubkeys.len() {
+            if params.threshold as usize > member_commitments.len() {
                 return Err(MultiSigError::InvalidThreshold.into());
             }
             // `total_keys` is a `u8` field, so the count has to fit: `try_from`
             // with an error path rather than a truncating `as`
-            // (contract-wasm-type-system.md §A.4.5). A key count the field cannot
+            // (contract-wasm-type-system.md §A.4.5). A member count the field cannot
             // represent also makes the threshold meaningless, so it is the same
             // invariant violation.
-            let total_keys = u8::try_from(pubkeys.len())
+            let total_keys = u8::try_from(member_commitments.len())
                 .map_err(|_| MultiSigError::InvalidThreshold)?;
             let group_id = MultiSigGroup::derive_group_id(
-                pubkeys.first().ok_or(MultiSigError::EmptyKeyList)?,
+                *member_commitments.first().ok_or(MultiSigError::EmptyMemberList)?,
                 params.threshold,
                 total_keys,
-            )?;
+            );
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
             if wasm::db::db_contains_key(groups_db, &group_id.to_bytes())? {
                 return Err(MultiSigError::GroupAlreadyExists.into());
             }
             wasm::util::set_return_data(&encode_create_group_update_v1(&CreateGroupUpdateV1 {
-                group_id, pubkeys, threshold: params.threshold, total_keys,
+                group_id, member_commitments, threshold: params.threshold, total_keys,
             })?)?;
         }
         MultiSigFunction::SignV1 => {
             let params = SignParamsV1::decode(payload)?;
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
-            if !wasm::db::db_contains_key(groups_db, &params.group_id.to_bytes())? {
-                return Err(MultiSigError::GroupNotFound.into());
-            }
-            // HAZOP H-4 fix: verify signer is a group member
             let data = wasm::db::db_get(groups_db, &params.group_id.to_bytes())?
                 .ok_or(MultiSigError::GroupNotFound)?;
             let group = MultiSigGroup::decode(&data)?;
-            if !group.pubkeys.iter().any(|pk| pk == &params.signer_pub) {
+            // The signer is bound to the proof: `params.member_commitment` is an instance the
+            // circuit derives from `signer_secret`, so a caller who names a commitment they cannot
+            // open cannot produce a proof over it. This check is what OBL-Z11 was missing — it
+            // used to compare a caller-typed *public key* against the group, which anyone could
+            // copy out of the group record.
+            if !group.member_commitments.contains(&params.member_commitment) {
                 msg!("[multisig::SignV1] Error: signer is not a member of the group");
-                return Err(MultiSigError::KeyNotInGroup.into());
+                return Err(MultiSigError::NotAMember.into());
             }
-            // Nullifier binds signer pubkey to prevent collision across signers
-            // Must match FinalizeV1 lookup: poseidon_hash([group_id, msg_hash, pk_x, pk_y])
-            //
-            // The `#[expect]` here read "PublicKey constructor rejects identity"; what actually
-            // holds is the membership check above — `signer_pub` equals one of `group.pubkeys`,
-            // and those were built by `CreateGroupParamsV1::decode`, which uses
-            // `PublicKey::from_bytes`. The constructor is not the reason, and this is a typed
-            // error now so that neither reason has to be relied on.
-            let Some((pk_x, pk_y)) = params.signer_pub.xy() else {
-                return Err(ContractError::IoError(
-                    "SignV1: signer public key is the identity point".to_string(),
-                ))
-            };
-            let nf_base = poseidon_hash([params.group_id.inner(), params.message_hash, pk_x, pk_y]);
-            let nullifier = Nullifier::from_bytes(nf_base.to_repr()).map_err(|e| {
-                ContractError::IoError(format!("SignV1: nullifier from poseidon output: {e}"))
+            // `params.nullifier` is proof-bound for the same reason, and bound in-circuit to
+            // (signer_secret, group_id, message_hash) — so one member's signature cannot be lifted
+            // onto another message, and two members signing the same message stay distinct.
+            let nullifier = Nullifier::from_bytes(params.nullifier.to_repr()).map_err(|e| {
+                ContractError::IoError(format!("SignV1: invalid nullifier: {e}"))
             })?;
             let nullifiers_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(nullifiers_db, &nullifier.to_bytes())? {
@@ -345,30 +345,43 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 .ok_or(MultiSigError::GroupNotFound)?;
             let group = MultiSigGroup::decode(&data)?;
             let sigs_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_SIGNATURES_TREE)?;
+            // The approvals are named by the caller rather than recomputed from the group's keys,
+            // because a member's nullifier is derived from their secret and the host cannot derive
+            // it. That makes every entry a claim to check, not a fact: each must name a signature
+            // record that exists, and that record must be for *this* group and *this* message.
+            // A repeat of a nullifier already counted is one approval, not two.
             let mut consumed: Vec<Nullifier> = Vec::new();
-            for pk in &group.pubkeys {
-                // As in SignV1, the invariant is `CreateGroupParamsV1::decode`'s use of
-                // `PublicKey::from_bytes`, not the constructor — and neither is relied on now.
-                let Some((x, y)) = pk.xy() else {
-                    return Err(ContractError::IoError(
-                        "FinalizeV1: group contains the identity point".to_string(),
-                    ))
-                };
-                let nf = poseidon_hash([params.group_id.inner(), params.message_hash, x, y]);
-                if wasm::db::db_contains_key(sigs_db, &nf.to_repr())? {
-                    let consumed_nf = Nullifier::from_bytes(nf.to_repr()).map_err(|e| {
-                        ContractError::IoError(format!("FinalizeV1: nullifier from poseidon output: {e}"))
-                    })?;
-                    consumed.push(consumed_nf);
+            for nf in &params.approvals {
+                if consumed.contains(nf) {
+                    continue;
                 }
+                let record = match wasm::db::db_get(sigs_db, &nf.to_bytes())? {
+                    Some(r) => r,
+                    None => {
+                        // Each of these three paths returns the same error code, so each states its
+                        // own cause: without this a rejection says only "InsufficientSignatures"
+                        // and a reader cannot tell a forged approval from a short one.
+                        msg!("[multisig::FinalizeV1] Error: approval names no signature record");
+                        return Err(MultiSigError::InsufficientSignatures.into());
+                    }
+                };
+                let sig = PartialSignature::decode(&record)?;
+                if sig.group_id != params.group_id || sig.message_hash != params.message_hash {
+                    msg!("[multisig::FinalizeV1] Error: approval is a signature for a different group or message");
+                    return Err(MultiSigError::InsufficientSignatures.into());
+                }
+                consumed.push(*nf);
             }
             if consumed.len() < group.threshold as usize {
+                msg!(
+                    "[multisig::FinalizeV1] Error: {} distinct approval(s), threshold is {}",
+                    consumed.len(), group.threshold
+                );
                 return Err(MultiSigError::InsufficientSignatures.into());
             }
-            let approval_commit = poseidon_hash([params.group_id.inner(), params.message_hash]);
             wasm::util::set_return_data(&encode_finalize_update_v1(&FinalizeUpdateV1 {
                 group_id: params.group_id, message_hash: params.message_hash,
-                approval_commit,
+                approval_commit: params.approval_commit,
                 consumed_nullifiers: consumed,
             })?)?;
         }
@@ -400,7 +413,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let u = decode_create_group_update_v1(update_payload)?;
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
             let group = MultiSigGroup {
-                version: 1, group_id: u.group_id, pubkeys: u.pubkeys,
+                version: 1, group_id: u.group_id, member_commitments: u.member_commitments,
                 threshold: u.threshold, total_keys: u.total_keys,
             };
             wasm::db::db_set(groups_db, &u.group_id.to_bytes(), &group.encode()?)?;

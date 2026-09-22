@@ -489,6 +489,12 @@ cross-contract child calls. Manifest dependencies unsubstantiated by code.
 - SignV1: real ZK proof, verify partial signature stored
 - FinalizeV1: real ZK proof, verify approval capability produced
 - Nullifier replay on FinalizeV1
+- **A rejection SHALL be exercised for OBL-Z11**: a signer whose secret opens a commitment the
+  group does not hold must be refused with `NotAMember` (custom 5). Before the fix a non-member did
+  not even need their own secret — they named a member's *public key*, which the group record
+  publishes, and the nullifier recorded was that member's. Repeating over the members forged
+  threshold approval outright, so a suite that only drives the happy path cannot distinguish the
+  fixed contract from the broken one.
 
 ### 5.7 DeFi Capability Primitive — promissory_note
 

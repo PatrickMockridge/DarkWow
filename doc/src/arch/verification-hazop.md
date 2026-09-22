@@ -353,7 +353,7 @@ to 139. All 180 contain at least one `constrain_instance`; 122 use `constrain_eq
 
 | ID | Proposition | Enforced at | Checked today by | Sev |
 |---|---|---|---|---|
-| OBL-Z1 | For every circuit and every `constrain_instance(X)`: `X` is either a pure opcode expression over witness bindings, or bound by `constrain_equal_base(derived, X)` before the expose, or **redundant** with another exposed determination, or a **declared** free witness | every `.zk` under `src/contract/*/proof/`, `proofs/core/`, `bin/darkirc/proof/` | **mechanized** — `script/circuit_instance_derivation.py`, gated by `scripts/check-circuit-instance-derivation.sh`. As measured 2026-09-21, of **894** instances over **181** circuits: 363 derived, 200 bound, 54 derived-inline, 222 redundant, 40 declared free, **15 unclassified** — down from 33 after the 2026-09-20 triage, which added the entries with a readable host mechanism in `script/circuit_free_instances.txt` and left the ones that have none (OBL-Z16). The figures in this row are re-run rather than recalled; the gate is the authority and the counts move whenever a circuit does | C |
+| OBL-Z1 | For every circuit and every `constrain_instance(X)`: `X` is either a pure opcode expression over witness bindings, or bound by `constrain_equal_base(derived, X)` before the expose, or **redundant** with another exposed determination, or a **declared** free witness | every `.zk` under `src/contract/*/proof/`, `proofs/core/`, `bin/darkirc/proof/` | **mechanized** — `script/circuit_instance_derivation.py`, gated by `scripts/check-circuit-instance-derivation.sh`. As measured 2026-09-22, of **897** instances over **181** circuits: 365 derived, 201 bound, 54 derived-inline, 226 redundant, 36 declared free, **15 unclassified** — down from 33 after the 2026-09-20 triage, which added the entries with a readable host mechanism in `script/circuit_free_instances.txt` and left the ones that have none (OBL-Z16). The figures in this row are re-run rather than recalled; the gate is the authority and the counts move whenever a circuit does | C |
 | OBL-Z2 | Each circuit's public-input metadata matches its `constrain_instance` set — **position for position**, not merely in count | `scripts/check-circuit-metadata-alignment.sh` vs the entrypoint's `zk_inputs.push` | the script, now **three-way** (circuit / metadata / client `to_vec`) and covering **11** contracts. Two blind spots closed on 2026-09-20: entrypoints at `src/entrypoint.rs` and `src/entrypoint/mod.rs` are now found (oracle and bearer_bond were skipped), and the namespace is resolved by the circuit's identity string rather than its file name — which had been reporting `native_token/fee` and `set_transparency_level` as missing pushes that are present. It was **FAILING** on `bearer_bond/blind_output` (7 `constrain_instance`, 5 pushed) and `bearer_bond/redeem` (8 vs 6); both were repaired on 2026-09-20 (OBL-Z15), the declared-exception list `script/circuit_metadata_exceptions.txt` is empty, and the gate now passes on all **68** circuit/site pairs it walks | C |
 | OBL-Z3 | Every `poseidon_hash` call in a circuit is domain-separated, and by the *right* constant | `scripts/check-circuit-domain-separation.sh` | the script checks that *some* `DOMAIN_`/`witness_base` prefix is present, never that it is the correct one for the hash's purpose | H |
 | OBL-Z4 | A pubkey derived by `ec_mul_base` + `ec_get_x/y` is bound by `constrain_equal_base` before being exposed | `hooks/pre-commit` | the hook — line-anchored, single-assignment, staged files only, and it cannot see an inline `constrain_instance(ec_get_x(pk))` | C |
@@ -378,7 +378,7 @@ The check itself is small and compiles: require exactly one child call, whose fu
 **CLOSED 2026-09-21 (`e65147af92`), by the point-exposed shape rather than commitment + nullifier.** The reporter pair is now `constrain_instance`d, so the circuit's equality is against the verifier's values instead of a witness the prover picks; `InitializeParams` carries `governance_pub_x/y` and `init_contract` stores them under `GOVERNANCE_PUBKEY_KEY` — which until then was defined, imported, and never written or read, so the remedy as first written had nothing to compare against; and `process_governance_report_instruction` rejects a report whose reporter is not that point. Exposing a point is not the reverted static-key repair: that repair put a *registration* key into every operation's instance vector and correlated a principal's whole history, whereas this is the one call that is *about* attribution, compared against the deployer's own authority. The spec fixture had to declare its reporter as the authority, which is the check working. | ~~M~~ C→closed |
 | OBL-Z9 | A circuit whose purpose is to authorize an actor actually constrains the prover to that actor — by whatever the address model says identifies them, **not** by disclosing a static key | `oracle/proof/{push_value,attest_value,push_value_commitment,aggregate,set_oracle_active}.zk`; `multisig/proof/{sign,finalize}.zk` | **CLOSED for `oracle` 2026-09-21; `multisig` still FAILS.** The circuits constrained `constrain_equal_base(ec_get_x(ec_mul_base(secret, K)), pub_x)` where `pub_x` was a **witness the circuit never exposes** — an equality between two prover-chosen values, holding for *any* secret — and the entrypoint could not check either, because `PushValueParamsV1` carried no key. The oracle half now registers a hiding commitment `H(witness_base(4), oracle_secret, oracle_id)` in place of a public key, re-derives and exposes it on every operation, and the host compares it against the stored record; the four push/attest circuits additionally consume a per-operation nullifier. **Nothing static is disclosed**, which is the whole point of the remedy — see "The constraint on any fix" below. `multisig/proof/sign.zk` is untouched: its `params.signer_pub` is still instruction data the proof does not bind, so a non-member can still claim a member's key — see OBL-Z11 | C |
 | OBL-Z10 | Every oracle state change is authorized by the registered operator | `oracle/src/entrypoint.rs` (`push_value_v1`, `attest_value_v1`, `aggregate_v1`); `oracle/proof/*.zk` | **CLOSED 2026-09-21.** Following OBL-Z9: `push_value_v1` looked the oracle up, checked `is_active`, and did `oracle.value = params.value` — nothing else — and `set_oracle_active_v1` had **no circuit at all** (*"Non-ZK function, no public inputs"*), its only check being `oracle.oracle_pub != params.oracle_pub`, on a prover-supplied copy of a **public** key, which anyone could pass to deactivate any feed. Now every state-changing arm calls `authorize_oracle`, which requires the exposed `oracle_commitment` to equal the stored record (`NotAuthorized`) and, for the four push/attest arms, the operation's nullifier to be unspent (`DuplicateNullifier`). `set_oracle_active` gained a circuit. Verified by two rejection endpoints in `tests::heavyweight_oracle` — the verbatim causes are in the "Done for `oracle`" note below | C |
-| OBL-Z11 | A signer's nullifier is spendable only by that signer | `multisig/src/entrypoint/mod.rs:292-331`; `multisig/proof/sign.zk` | **FAILS.** The membership check `group.pubkeys.iter().any(|pk| pk == &params.signer_pub)` is real and correct — but `params.signer_pub` is instruction data the proof does not bind. The nullifier is `poseidon_hash([group_id, msg_hash, pk_x, pk_y])` built from that same claimed key, so a non-member can claim any member's key, pass the check, and spend that member's nullifier for the message — blocking the member from signing it | C |
+| OBL-Z11 | A signer's nullifier is spendable only by that signer | `multisig/src/entrypoint/mod.rs`; `multisig/proof/sign.zk` | **CLOSED 2026-09-22**, and it was more severe than this row first recorded. It read "a non-member can claim any member's key, pass the check, and spend that member's nullifier for the message — blocking the member from signing it". Blocking was the *lesser* consequence: the attacker repeats over the group's other members, every claim passes because the check compares a caller-typed key against the stored list, and `FinalizeV1` counts the recorded nullifiers toward the threshold. **A non-member could forge threshold approval outright.** The group now stores a hiding commitment per member (`H(witness_base(4), member_secret)`), `sign.zk` derives and exposes it along with `nullifier = H(witness_base(1), member_secret, group_id, message_hash)`, and the host checks the commitment against the group's set and the nullifier unspent. `FinalizeV1` can no longer recompute a member's nullifier — it is derived from a secret the host does not hold — so it now takes the approvals from the caller and verifies each against a signature record for *this* group and message | C |
 
 #### The constraint on any fix: no static key, in or out
 
@@ -474,6 +474,52 @@ proof itself verified, and the refusal is the host's, not the verifier's):
 `scripts/check-circuit-instance-derivation.sh` stays red on its 15 pre-existing instances and added
 none; the five dead `oracle_id` manifest entries were retired, since the id is now inside an exposed
 determination and the checker reads the manifest only for bare-witness exposes.
+
+**Done for `multisig`, 2026-09-22** (OBL-Z11). The same shape, with two differences worth stating.
+
+1. `MultiSigGroup.pubkeys: Vec<PublicKey>` → `member_commitments: Vec<pallas::Base>`, and the same
+   swap in `CreateGroupParamsV1`, `CreateGroupUpdateV1` and `SignParamsV1`. The record layout is
+   unchanged in shape — N × 32 bytes — so the encode/decode offsets are the same fields.
+2. `derive_group_id` hashes the first *commitment* rather than the first *key*:
+   `H(commitment_0, threshold, total_keys)`. It has to: the commitment cannot depend on
+   `group_id`, because `group_id` is derived from it. **The consequence is recorded rather than
+   hidden** — a member's commitment is therefore identical in every group they join, so two groups
+   with an overlapping member are linkable by that shared pseudonym. A member who must not be
+   linked across groups should use a distinct secret per group. This is the one property the
+   oracle's version of the remedy does not share, because there the commitment *is* bound to its
+   id.
+3. `sign.zk` derives and exposes `member_commitment = H(witness_base(4), member_secret)` and
+   `nullifier = H(witness_base(1), member_secret, group_id, message_hash)`.
+4. **`FinalizeV1` had to change shape.** It counted approvals by iterating the group's keys and
+   recomputing each member's nullifier. That is impossible now — the nullifier comes from a secret
+   the host does not hold — so the params carry the approvals and the host verifies each one
+   against a signature record that exists, is for *this* group, and is for *this* message. An
+   approval repeated in the list counts once. Nothing can be fabricated: a nullifier reaches the
+   signatures tree only through a `SignV1` that passed the proof and membership checks.
+5. `finalize.zk` exposed `approval_commit`, which also repaired a live inconsistency: the circuit
+   computed `H(witness_base(4), group_id, message_hash)` while the entrypoint computed
+   `H(group_id, message_hash)` with no domain prefix, and because the value was never exposed
+   nothing compared them. The circuit's dead `threshold`/`signature_count` witnesses were removed —
+   neither was used or exposed.
+
+**Evidence.** `tests::heavyweight_multisig` PASS. Verbatim from the run's `DWOW_TEST_LOGS=1`
+output, both after the proof's public inputs verified:
+
+    [multisig::SignV1] Error: signer is not a member of the group
+    [DIAG] reconstructed error: Custom(5)      -- NotAMember, the OBL-Z11 attack
+    Block 5 rejected at local height 4: ... fn_code=0x01
+
+    [DIAG] reconstructed error: Custom(7)      -- InsufficientSignatures, 2 approvals vs threshold 3
+    Block 5 rejected at local height 4: ... fn_code=0x01
+
+A third rejection, `Custom(2)` (`GroupAlreadyExists`), is the runner's own §3.6 replay check: it
+re-submits `spec.endpoints[first_zk_index()]`, which for multisig is `CreateGroupV1`. Expected, and
+listed here so the next reader does not read it as a symptom.
+
+`scripts/check-circuit-metadata-alignment.sh` PASS (70 pairs). The derivation gate stays red on its
+15 pre-existing instances and added none; the four dead `multisig` manifest entries were retired,
+and one of them — `sign.zk : message_hash`, which described the old nullifier — had become *wrong*
+rather than merely stale.
 
 **Where the pieces are** (surveyed 2026-09-20, before any of the above was written):
 
