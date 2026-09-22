@@ -78,7 +78,16 @@ run_gate "circuit metadata alignment"     bash "$SCRIPT_DIR/check-circuit-metada
 run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain-separation.sh"
 # OBL-Z1: the Orchard-class rule. The other two circuit gates are structural (counts, prefix
 # presence); this is the only one that asks whether an exposed public input is *determined*.
-# It is currently RED with 33 untriaged sites — see doc/src/arch/verification-hazop.md, OBL-Z1.
+# It is currently RED, and it is BLOCKING: re-measured 2026-09-22, it exits 1 on **15** unclassified
+# instances over 181 circuits / 897 `constrain_instance` sites — oracle/aggregate's min_result and
+# max_result, insurance_market's two `required_capability_id`, bridge/withdraw's token_minimum,
+# labor_market's attestation_id and milestone_payment_amount, oracle/attest_value's threshold,
+# roulette/settle_bet's payout, proofs/core/lead.zk's sigma1/sigma2 and set_v1.zk's lock/root/key/value.
+# The number here read "33" until 2026-09-22; the gate is the authority and the register's OBL-Z16
+# agrees with the gate, so 33 was stale prose, not a second measurement. Because `run_gate` has no
+# allowlist, this gate alone means no full-gate run can be green until the 15 are adjudicated — each
+# either derived, bound, or declared free with a reason in script/circuit_free_instances.txt. See
+# doc/src/arch/verification-hazop.md, OBL-Z1 and OBL-Z16.
 run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instance-derivation.sh"
 # The documentation index. Also seconds, also needs no build: it checks that every
 # doc is listed and every citation resolves, both directions. The 2026-09 docs
