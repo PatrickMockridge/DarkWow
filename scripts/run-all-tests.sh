@@ -67,6 +67,13 @@ for arg in "$@"; do
 done
 
 # Static circuit audits first — they are seconds, and they need no build.
+#
+# Artifact freshness goes before everything that builds, deliberately. `make test` has
+# `contracts` as a prerequisite, so a stale .source_hash fails inside the build with a
+# bare "WARNING: ... is stale" naming one contract and no indication of how many others
+# share the cause — and because src/sdk/** is in every contract's SOURCE_MANIFEST, one
+# sdk edit makes all 32 stale. This gate names all of them in one command.
+run_gate "contract artifact freshness"    bash "$SCRIPT_DIR/check-artifact-freshness.sh"
 run_gate "circuit metadata alignment"     bash "$SCRIPT_DIR/check-circuit-metadata-alignment.sh"
 run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain-separation.sh"
 # OBL-Z1: the Orchard-class rule. The other two circuit gates are structural (counts, prefix
