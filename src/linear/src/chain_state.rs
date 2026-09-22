@@ -2290,6 +2290,138 @@ mod tests {
             "has_nullifier must detect a spent nullifier (the ↓nullify barb)");
     }
 
+    /// `OBL-C8` — the consensus replay gate itself, which was enforced on every block and **pinned by
+    /// no test**: the error string at `:1208` appeared only at its own definition, and the tests above
+    /// exercise `has_nullifier`/`track_nullifier` rather than the gate that uses them.
+    ///
+    /// Both halves are driven through `connect_block` — deliberately the consensus path and not
+    /// `accept_block`, because the gate's doc calls itself the one that also "guards direct
+    /// `connect_block` callers that bypass the acceptor".
+    #[test]
+    fn test_connect_block_rejects_duplicate_spend_nullifier() {
+        use crate::{compute_merkle_root, Miner};
+
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        let nf_spent = Nullifier::from_bytes([0x2A; 32]).expect("canonical, non-zero");
+        let nf_repeated = Nullifier::from_bytes([0x2B; 32]).expect("canonical, non-zero");
+
+        // A block at `height` extending `previous`, carrying one transaction per supplied nullifier.
+        // Nothing else about the block matters to the gate: with no uncles the supply invariant is
+        // `total_reward == expected_reward(height)`, and target MAX passes the header check.
+        //
+        // The merkle root must cover the transactions — a first version of this test reused the empty
+        // tree's root and `connect_block` refused the block with `MerkleRootMismatch`, which is the
+        // check doing its job.
+        let block_at = |height: BlockHeight, previous: blake3::Hash, target: BlockTarget, nfs: &[Nullifier]| {
+            let transactions: Vec<crate::Transaction> = nfs
+                .iter()
+                .map(|nf| crate::Transaction {
+                    version: BlockVersion::CURRENT,
+                    inputs: vec![],
+                    outputs: vec![],
+                    contract_calls: vec![],
+                    lock_time: 0,
+                    nullifiers: vec![*nf],
+                    witness: vec![],
+                })
+                .collect();
+            let merkle_root = compute_merkle_root(&transactions);
+            Block {
+            header: BlockHeader {
+                version: BlockVersion::CURRENT,
+                previous,
+                merkle_root,
+                timestamp: BlockTimestamp::new(height.get()),
+                target,
+                nonce: 0,
+                height,
+                uncle_merkle_root: [0u8; 32],
+                total_reward: dwow_sdk::blockchain::expected_reward(height),
+                randomx_key: Miner::derive_key_from_height(height),
+                miner: [0u8; 32],
+                commitment_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: MoneroBlockHeight::new(0),
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
+                pow_source: PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
+                fee_window_flags: FeeWindowFlags::default(),
+            },
+            transactions,
+            }
+        };
+
+        // Height 1: an empty block, so the chain has a tip to extend.
+        let h1 = BlockHeight::new(1);
+        let block1 = block_at(h1, blake3::hash(b"genesis"), BlockTarget::MAX, &[]);
+        cs.connect_block(&block1, &[], None, None, None).expect("height 1 connects");
+        assert_eq!(cs.get_height(), h1);
+        let tip = cs.hash_block_with_cached_vm(&block1).expect("tip hash");
+
+        // The gate lives in the canonical path, so each attempt must be a block the chain will
+        // actually *connect* — and getting there cost four iterations, each of which is worth
+        // recording because none of them is about the rule under test:
+        //
+        //   * a block carrying transactions needs a merkle root over them (`MerkleRootMismatch`),
+        //   * a non-genesis block needs WASM batches present even when the test bypasses WASM —
+        //     `connect_block` refuses `None` with "WASM execution MUST precede connect_block for
+        //     non-genesis blocks", so the test passes empty ones,
+        //   * it declares its own target, and the chain's expected difficulty moves after the first
+        //     block, so the test *asks* for it via the same `get_next_work_required` the validator
+        //     uses (`InvalidTarget` otherwise),
+        //   * and a block at the *tip's own height* is treated as a competing block and diverted
+        //     (`InvalidPreviousHash`, "competing block previous … != canonical parent"), which is
+        //     also why no earlier in-crate test could reach this gate: every one of them drives
+        //     height 1 only.
+        let expected_target = |height: BlockHeight| {
+            cs.consensus
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get_next_work_required(&cs.store, height)
+                .expect("the chain can state the target it requires")
+        };
+
+        // Height 2 spends `nf_spent` for the first time — a legitimate block that records the spend.
+        let h2 = BlockHeight::new(2);
+        let block2 = block_at(h2, tip, expected_target(h2), &[nf_spent]);
+        cs.connect_block(&block2, &[], Some(sled::Batch::default()), Some(sled::Batch::default()), None)
+            .expect("a block spending a fresh nullifier connects");
+        assert!(cs.has_nullifier(&nf_spent), "the spend is now recorded by the gate's own set");
+        let tip2 = cs.hash_block_with_cached_vm(&block2).expect("tip hash");
+
+        // Height 3, first attempt: the SAME nullifier again — the ACROSS-BLOCKS half of the gate.
+        let h3 = BlockHeight::new(3);
+        let replay = block_at(h3, tip2, expected_target(h3), &[nf_spent]);
+        let err = cs
+            .connect_block(&replay, &[], Some(sled::Batch::default()), Some(sled::Batch::default()), None)
+            .expect_err("a replayed spend nullifier must be refused");
+        assert!(
+            format!("{err:?}").contains("duplicate spend nullifier"),
+            "the refusal must be the replay gate's own error, got {err:?}"
+        );
+        assert_eq!(cs.get_height(), h2, "a refused block must not advance the chain");
+
+        // Height 3, second attempt: two transactions carrying the SAME fresh nullifier — the
+        // WITHIN-ONE-BLOCK half, a different insert (`block_nfs.insert`) reaching the same error.
+        let target3 = expected_target(h3);
+        let within = block_at(h3, tip2, target3, &[nf_repeated, nf_repeated]);
+        let err = cs
+            .connect_block(&within, &[], Some(sled::Batch::default()), Some(sled::Batch::default()), None)
+            .expect_err("a nullifier repeated within one block must be refused");
+        assert!(
+            format!("{err:?}").contains("duplicate spend nullifier"),
+            "got {err:?}"
+        );
+        assert_eq!(cs.get_height(), h2, "and the chain must still not have advanced");
+    }
+
     /// L3: Uncle merkle root determinism — the same set of uncles MUST
     /// produce the same merkle root every time.
     #[test]
