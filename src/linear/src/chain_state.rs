@@ -697,13 +697,32 @@ impl CChainState {
         if !blocks.is_empty() {
             let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
             for b in &blocks {
-                // Dedup hash: deterministic dwow_serial binary encoding.
-                let header_bytes = dwow_serialize(&b.header);
-                let h = blake3::hash(&header_bytes);
-                seen.remove(&h);
+                seen.remove(&Self::competing_dedup_key(b));
             }
         }
         blocks
+    }
+
+    /// The key `competing_seen` is indexed by: `blake3` over the deterministic `dwow_serial` encoding of
+    /// the block header.
+    ///
+    /// **One function, so the key cannot disagree with itself** — which it did until 2026-09-22
+    /// (`OBL-C52`). The three paths that *insert* into the set used `hash_with_vm` (RandomX over the
+    /// mining blob) while the three that *remove* from it used this serialization, so
+    /// `take_competing_blocks` and `prune_competing` removed entries that had never been added and the
+    /// insert's key stayed behind forever. The visible effect was that a block legitimately re-submitted
+    /// after being taken as an uncle was silently dropped as a duplicate instead of stored.
+    ///
+    /// The serialization form is the one to standardise on, for three reasons: it needs no RandomX VM,
+    /// so the insert paths lose a hash and a VM lock (and `store_competing_block` no longer needs the
+    /// `pow` feature for anything but its signature); the three removing paths cannot get a VM at all;
+    /// and `uncles_by_height`'s own storage key (`:1148`) is already this exact expression, so it is the
+    /// convention this struct had already settled on everywhere except the one place it mattered.
+    ///
+    /// The header is sufficient to distinguish competing blocks: it carries `merkle_root`, which commits
+    /// the transaction set, so two blocks differing only in their transactions do not collide.
+    fn competing_dedup_key(block: &Block) -> Blake3Hash {
+        blake3::hash(&dwow_serialize(&block.header))
     }
 
     /// Read-only peek at the competing blocks at `height` (does NOT remove them).
@@ -773,7 +792,7 @@ impl CChainState {
         let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
         let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
         for b in &blocks {
-            seen.insert(blake3::hash(&dwow_serialize(&b.header)));
+            seen.insert(Self::competing_dedup_key(b));
         }
         competing.entry(height).or_default().extend(blocks);
     }
@@ -791,7 +810,7 @@ impl CChainState {
         competing.retain(|&height, blocks| {
             if height < cutoff {
                 for b in blocks {
-                    seen.remove(&blake3::hash(&dwow_serialize(&b.header)));
+                    seen.remove(&Self::competing_dedup_key(b));
                 }
                 false
             } else {
@@ -887,7 +906,11 @@ impl CChainState {
             }
             // H5 fix: cap competing blocks per height at crate::MAX_COMPETING_BLOCKS
             // H7: Dedup by hash — reject duplicate competing blocks
-            let block_hash = block.hash_with_vm(&*guard)?;
+            //
+            // The key comes from `competing_dedup_key`, not from `hash_with_vm`: the removals
+            // (`take_competing_blocks`, `prune_competing`) cannot get a VM, and while the two sides used
+            // different keys a re-submitted block was silently dropped (OBL-C52).
+            let block_hash = Self::competing_dedup_key(block);
             drop(guard); // Release VM lock before acquiring other locks
             {
                 let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
@@ -963,9 +986,7 @@ impl CChainState {
                 // is always stored as a competing block, never reorged.
 
                 // H5 fix: cap competing blocks per height
-                let block_hash = block.hash_with_vm(
-                    &*vm.lock().unwrap_or_else(|e| e.into_inner())
-                )?;
+                let block_hash = Self::competing_dedup_key(block);
                 let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
                 if !seen.contains(&block_hash) {
                     seen.insert(block_hash);
@@ -1600,10 +1621,10 @@ impl CChainState {
     /// `accept_block` can store it BEFORE WASM execution.
     #[cfg(feature = "pow")]
     pub fn store_competing_block(&self, block: &Block, height: BlockHeight) -> Result<()> {
-        let vm = self.get_vm(block.header.randomx_key)?;
-        let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
-        let block_hash = block.hash_with_vm(&*guard)?;
-        drop(guard);
+        // No VM: the dedup key is the header serialization, and nothing else here hashes. That is also
+        // why this method's `pow` feature gate is now spurious — it was needed for `hash_with_vm` — and
+        // a later pass can drop it once the callers are checked (OBL-C52).
+        let block_hash = Self::competing_dedup_key(block);
         let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
         if !seen.contains(&block_hash) {
             seen.insert(block_hash);
@@ -2347,6 +2368,64 @@ mod tests {
     /// Build a minimal empty-tx block for detect_reorg tests. PoW is NOT
     /// validated by detect_reorg/store_competing_block, so `nonce`/`target` are
     /// free knobs for forcing Heavier vs Lighter (chain_work = u32::MAX/target).
+    /// OBL-C52 — a competing block that was taken as an uncle can be stored again.
+    ///
+    /// The dedup set was indexed two different ways: the inserts keyed on `hash_with_vm` (RandomX over the
+    /// mining blob) while `take_competing_blocks` removed the `blake3(serialize(header))` key. So the take
+    /// removed an entry that had never been added, the insert's key stayed in the set forever, and a block
+    /// re-submitted after being taken was **silently dropped as a duplicate** rather than stored — it
+    /// returned `CompetingStored` without storing anything, which is indistinguishable to the caller from
+    /// success. A miner that re-offered a block it had legitimately taken as an uncle would lose it.
+    ///
+    /// This is the sequence the miner's own path performs — peek, take, and (on the next height) offer
+    /// blocks again — so the test is the real shape rather than a synthetic one.
+    #[test]
+    fn competing_block_can_be_re_stored_after_being_taken() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+        let height = BlockHeight::new(1);
+        let block = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 7);
+
+        // Store it, and confirm it is actually there — a store that stored nothing would make the
+        // assertion below pass for the wrong reason.
+        cs.store_competing_block(&block, height).unwrap();
+        assert_eq!(cs.peek_competing_blocks(height).len(), 1, "the block must be stored");
+
+        // Take it, as the miner's path does before building an uncle merkle root.
+        let taken = cs.take_competing_blocks(height);
+        assert_eq!(taken.len(), 1, "the take must return the block");
+        assert!(cs.peek_competing_blocks(height).is_empty(), "and must empty the slot");
+
+        // Re-submit the same block. Before the fix this was silently dropped.
+        cs.store_competing_block(&block, height).unwrap();
+        assert_eq!(
+            cs.peek_competing_blocks(height).len(),
+            1,
+            "OBL-C52 (fixed): a block re-submitted after being taken must be stored again, not dropped \
+             as a duplicate — the dedup set's insert and remove keys must be the same function"
+        );
+
+        // And the dedup still works: the *same* block a third time is a genuine duplicate and is dropped,
+        // so the fix did not simply disable the set.
+        cs.store_competing_block(&block, height).unwrap();
+        assert_eq!(
+            cs.peek_competing_blocks(height).len(),
+            1,
+            "control: a genuine duplicate must still be refused — otherwise this test would pass against \
+             a dedup set that does nothing"
+        );
+
+        // A *different* block at the same height is not a duplicate.
+        let other = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 8);
+        cs.store_competing_block(&other, height).unwrap();
+        assert_eq!(
+            cs.peek_competing_blocks(height).len(),
+            2,
+            "a distinct competing block at the same height must be stored"
+        );
+    }
+
     /// Attach a genuine Caribina anchor proof to a block, exactly as the miner's path must.
     ///
     /// Three steps, and the order matters: the owner is committed **first** (it is inside the mining
