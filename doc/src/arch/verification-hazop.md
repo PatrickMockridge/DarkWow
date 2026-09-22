@@ -1536,6 +1536,24 @@ breaking ties:
   single test with that variable set**, and it is the same trap this register already records for
   heavyweight tests: a contract's explanation is not kept unless it is asked for.
 
+  **The re-run was made, 2026-09-23** (`DWOW_TEST_LOGS=1`, same single test, 5m08s / 28 core-minutes),
+  and it changes the question rather than answering it — which is the result. With contract logs on,
+  the timeline is: `commit_spin` commits a spin at bet 1000 and reports *"settle at block 11"*, then
+  `reveal_spin` succeeds — *"Revealing spin …"*, *"revealed"*, *"Reveal confirmed"* — and only
+  afterwards does an exec of the same function return the error. **The contract prints no `msg!` on the
+  failing path**, so no log configuration can name the condition: the diagnosis has to come from the
+  source, and that is what the run bought. From the source: `Custom(20)` is
+  `SlotError::InvalidChildCall` (`slot/src/error.rs:110`), dispatch maps `0x02` to
+  `reveal_spin_process_instruction_v1` (`entrypoint.rs:203`), and **that function has no
+  `InvalidChildCall` site at all** — the variant's only three raise sites are `commit_spin`
+  (`:307`/`:313`), `settle_spin` (`:552`/`:558`) and `cancel_spin` (`:673`/`:679`). So the failing exec
+  returned an error its own code path cannot raise directly. Three explanations survive reading, and the
+  next step is bounded and textual: **a nested or child path propagating it** (read
+  `reveal_spin_process_instruction_v1` to its end and every helper it calls), **a mistaken mapping**
+  (check the enum against the sites), or **a framing mismatch where the selector the host prints is not
+  the byte the contract dispatches on** — the class the other session's phase work keeps meeting. No
+  guess is recorded in place of the third.
+
   What is known is uneven, and 2026-09-22 narrowed it twice. `insurance_market::UnderwriteV1`'s halo2
   synthesis error is OBL-Z16 arriving as a runtime symptom. `purse::WithdrawV1` fails its own
   post-condition ("nullifier must exist after withdrawal"). **`bridge`'s recorded cause was wrong**:
