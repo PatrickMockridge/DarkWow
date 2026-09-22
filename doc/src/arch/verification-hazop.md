@@ -980,6 +980,20 @@ field; the `skip` is gone and the fail-open `_ => PowSource::Native` arm is now 
 behavioural test is the Stage 4 integration test the row names, since the lock scope is not observable
 without a stub Turbo server. `OBL-C72` — recorded, not fixed: it describes a verification *practice*.
 
+**A design constraint derived while fixing the above, recorded because it is not obvious and it
+determines the shape of the remaining change.** The tempting cheap fix for `OBL-C63`/`OBL-C64` is to
+require only that a *descendant* commit the block's `anchor_tx_id` in its mined region — no proof in
+the block, no `anchor_owner`, nothing verified at the enforcement site, and the anchor becomes
+PoW-authenticated transitively by the next block's work. **That fix is unsound, and not marginally.**
+`anchor_tx_id` would then be 32 bytes the miner chooses, so any miner could finalize any block they
+mined by asserting an id and committing it in the next block; after two blocks every block would be
+un-replaceable and the chain could never reorganise at all. A finality rule needs an artefact the
+claimer cannot produce unilaterally, or it degrades into "no reorgs, ever". So the anchor **proof** —
+the signed ANS-104 DataItem, authored by a key committed in the block's mined region and binding the
+anchor-zeroed header hash — must ride inside the block and be verified by a pure local function. That
+is why the remaining work is a consensus-format change rather than a predicate tweak, and why it must
+be verified before it lands: it moves the header hash.
+
 **One further defect, recorded but not opened as a finality row.** `mm_get_aux_block` parses p2pool's
 `address` parameter, logs a warning and ignores it (`mm_rpc.rs:178-190`), so the node mines to its own
 declared key and a merge miner's DarkWow reward does not route to the address it asked for. That is a
