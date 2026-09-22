@@ -3,9 +3,18 @@ MANUAL AUDIT DOCUMENTATION — NOT FORMAL PROOFS
 This file contains structured vulnerability findings / circuit audit
 results. It contains ZERO Lean theorems with non-trivial proofs.
 All defs return String or List values for programmatic consumption.
+
+The circuit paths and counts in `riskMatrix` and `summary` are a *snapshot* of the
+2026 audit; circuit inventories move and this file does not. The normative sources are:
+
+  * root causes          — doc/src/dev/contracts/safety.md, RC1-RC12
+  * open obligations     — doc/src/arch/verification-hazop.md (the register)
+
+Each patternN_* below names the root cause it is an instance of. The names are stable
+because the register's alias table cites them; only the strings change.
 -/
 /-
-# HAZOP Tabletop — All 120 ZK Circuits Risk Matrix
+# HAZOP Tabletop — Circuit Risk Matrix
 
 Three independent domain-expert agents (Alice-defender, Mallory-attacker, Eve-eavesdropper,
 Sybil-replay, Olivia-insider) performed HAZOP-style threat analysis.
@@ -26,7 +35,8 @@ Threshold for deeper Lean 4 verification: Risk >= 30
 ## Cross-Cutting HAZOP Patterns (All 3 Agents Agreed)
 
 These 7 patterns recur across multiple circuits and are the root cause of
-nearly all findings above the LOW threshold.
+nearly all findings above the LOW threshold. Seven names, seven instances — but
+four root causes: RC1 (patterns 4), RC2 (1, 2, 6, 7), RC3 (5), RC4 (3).
 -/
 
 import DarkFi.HAZOP.Critical
@@ -115,7 +125,7 @@ in-circuit from witnesses (poseidon_hash, ec_mul, merkle_root, etc.)
 rather than being a free witness.
 -/
 def pattern1_free_instance : String :=
-  "constrain_instance(X) without in-circuit derivation of X"
+  "constrain_instance(X) without in-circuit derivation of X  [RC2]"
 
 /--
 Pattern 2: zero_cond Merkle bypass
@@ -129,7 +139,7 @@ Circuits affected: burn_v1 (PN), burn_v1 (NT), deposit_v1 (bridge)
 Fix: Add less_than_strict(ZERO, value) before zero_cond.
 -/
 def pattern2_zero_cond : String :=
-  "zero_cond(value, commitment) returns 0 when value=0; Merkle proof vacuous"
+  "zero_cond(value, commitment) returns 0 when value=0; Merkle proof vacuous  [RC2]"
 
 /--
 Pattern 3: Field division ≠ integer division
@@ -145,7 +155,7 @@ Circuits affected: DEX fee/slippage, labor milestone_payment,
 Fix: Use cross-multiplication (a < b*c) instead of division (a/b < c).
 -/
 def pattern3_field_div : String :=
-  "base_div produces field elements; cross-multiplication avoids this"
+  "base_div produces field elements; cross-multiplication avoids this  [RC4]"
 
 /--
 Pattern 4: Capability predicate bypass
@@ -162,7 +172,7 @@ Fix: The contract MUST verify the capability proof's provenance through
 the child-call mechanism. The circuit provides no defense.
 -/
 def pattern4_capability_bypass : String :=
-  "capability_predicate_result = 1 is free witness; provenance unverified"
+  "capability_predicate_result = 1 is free witness; provenance unverified  [RC1]"
 
 /--
 Pattern 5: Nullifier collision across circuits
@@ -176,7 +186,7 @@ Circuits affected: labor confirm_delivery, milestone_payment, refund
 Fix: Add a domain separator to each nullifier: H(action_tag, job_id, secret).
 -/
 def pattern5_nullifier_collision : String :=
-  "H(job_id, secret) identical across circuits; one action blocks others"
+  "H(job_id, secret) identical across circuits; one action blocks others  [RC3]"
 
 /--
 Pattern 6: bool_check on u64 values — semantic ambiguity
@@ -193,7 +203,7 @@ Requires investigation: Is bool_check used as a "field element well-formedness"
 check (non-standard semantics) or as a standard boolean constraint?
 -/
 def pattern6_bool_check_u64 : String :=
-  "bool_check on u64 restricts to 0 or 1; verify bool_check semantics"
+  "bool_check on u64 restricts to 0 or 1; verify bool_check semantics  [RC2]"
 
 /--
 Pattern 7: Missing range checks on critical values
@@ -210,7 +220,7 @@ Fix: Add range_check(64, value) for all values that represent real-world
 quantities.
 -/
 def pattern7_missing_range : String :=
-  "No range_check on values representing block heights or amounts"
+  "No range_check on values representing block heights or amounts  [RC2]"
 
 -- ===========================================================================
 -- HAZOP VERIFICATION SUMMARY
@@ -218,28 +228,25 @@ def pattern7_missing_range : String :=
 
 def summary : IO Unit := do
   IO.println "=== HAZOP Tabletop — Risk Matrix Summary ==="
-  IO.println s!"Total circuits analyzed: 120"
-  IO.println s!"CRITICAL findings (Risk >= 60): 4"
-  IO.println s!"HIGH findings (Risk 40-59): 5"
-  IO.println s!"ELEVATED findings (Risk 30-39): 6"
-  IO.println s!"MODERATE findings (Risk 20-29): 7"
-  IO.println s!"LOW findings (Risk < 20): remaining"
+  IO.println "This is a 2026 snapshot. The circuit inventory and per-circuit status are"
+  IO.println "in doc/src/arch/verification-hazop.md, which is the authority; do not read"
+  IO.println "a circuit count from here."
   IO.println ""
-  IO.println "Cross-cutting patterns identified: 7"
-  IO.println "  1. Free witness constrain_instance (Orchard-class)"
-  IO.println "  2. zero_cond Merkle bypass"
-  IO.println "  3. Field division ≠ integer division"
-  IO.println "  4. Capability predicate bypass"
-  IO.println "  5. Nullifier collision across circuits"
-  IO.println "  6. bool_check on u64 values"
-  IO.println "  7. Missing range checks on critical values"
+  IO.println s!"Findings recorded in this matrix (Risk >= 20): {riskMatrix.length}"
+  IO.println ""
+  IO.println "Cross-cutting patterns identified: 7, over 4 root causes"
+  IO.println "  1. Free witness constrain_instance (Orchard-class)   [RC2]"
+  IO.println "  2. zero_cond Merkle bypass                            [RC2]"
+  IO.println "  3. Field division ≠ integer division                  [RC4]"
+  IO.println "  4. Capability predicate bypass                        [RC1]"
+  IO.println "  5. Nullifier collision across circuits                [RC3]"
+  IO.println "  6. bool_check on u64 values                           [RC2]"
+  IO.println "  7. Missing range checks on critical values             [RC2]"
   IO.println ""
   IO.println "Threat actors: Alice(defender), Mallory(attacker), Eve(eavesdropper)"
   IO.println "               Sybil(replay), Olivia(insider)"
   IO.println ""
-  IO.println "Deeper Lean 4 verification: 15 circuits (Risk >= 30)"
-  IO.println "  CRITICAL: 4 circuits — full constraint modeling + soundness theorems"
-  IO.println "  HIGH: 5 circuits — targeted vulnerability proofs"
-  IO.println "  ELEVATED: 6 circuits — constraint gap documentation + counterexamples"
+  IO.println "Root causes: doc/src/dev/contracts/safety.md RC1-RC12"
+  IO.println "Open obligations: doc/src/arch/verification-hazop.md"
 
 end HAZOP
