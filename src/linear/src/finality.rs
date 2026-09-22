@@ -452,4 +452,88 @@ mod tests {
         assert!(cfg.should_verify_monero_anchor(flags::FINALITY_SIGNALED));
         assert!(cfg.should_verify_monero_anchor(flags::FINALITY_MONERO | flags::FINALITY_SIGNALED));
     }
+
+    /// OBL-C65 — enforcement must never outrun verification.
+    ///
+    /// `should_enforce` decides whether a block's anchor is treated as binding, and
+    /// `should_verify_anchor`/`should_verify_monero_anchor` decide whether that anchor is checked. They
+    /// are computed from unrelated conditions, so a configuration exists that enforces without
+    /// verifying — and a node in that state can be driven into `AnchoredBlockConflict` by any peer that
+    /// sets an anchor field, because the field is outside the mining blob (`OBL-C64`).
+    ///
+    /// The input space is finite (3 modes × 2 × 2 enablements × 8 flag values), so this is exhaustive
+    /// rather than sampled. **This test asserts the defect**, deliberately: Stage 3 replaces the two
+    /// assertions below with `assert!(violations.is_empty(), ...)`, and the failure text says so.
+    #[test]
+    fn test_enforcement_never_outruns_verification() {
+        let modes = [FinalityMode::Native, FinalityMode::Always, FinalityMode::Signaled];
+        let flag_values = [
+            0u8,
+            flags::FINALITY_CARIBNIA,
+            flags::FINALITY_MONERO,
+            flags::FINALITY_SIGNALED,
+            flags::FINALITY_CARIBNIA | flags::FINALITY_MONERO,
+            flags::FINALITY_CARIBNIA | flags::FINALITY_SIGNALED,
+            flags::FINALITY_MONERO | flags::FINALITY_SIGNALED,
+            flags::FINALITY_CARIBNIA | flags::FINALITY_MONERO | flags::FINALITY_SIGNALED,
+        ];
+
+        let mut violations = Vec::new();
+        for mode in modes {
+            for caribina_enabled in [false, true] {
+                for monero_enabled in [false, true] {
+                    for f in flag_values {
+                        let cfg = FinalityConfig {
+                            mode,
+                            caribina_enabled,
+                            monero_enabled,
+                            ..Default::default()
+                        };
+                        if cfg.should_enforce(f)
+                            && !cfg.should_verify_anchor(f)
+                            && !cfg.should_verify_monero_anchor(f)
+                        {
+                            violations.push((mode, caribina_enabled, monero_enabled, f));
+                        }
+                    }
+                }
+            }
+        }
+
+        // The shape of the defect, stated exactly: a violation occurs when the node enforces — Always,
+        // or Signaled with the signal bit — while having *neither* anchor kind enabled to verify. The
+        // predicate is a conjunction, not a disjunction; a disjunction here would be satisfied by every
+        // violation trivially and would assert nothing.
+        assert!(
+            violations.iter().all(|(mode, caribina, monero, f)| {
+                !*caribina
+                    && !*monero
+                    && (*mode == FinalityMode::Always
+                        || (*mode == FinalityMode::Signaled
+                            && f & flags::FINALITY_SIGNALED != 0))
+            }),
+            "a violation exists outside the documented shape — the defect has grown, not shrunk: \
+             {violations:?}"
+        );
+
+        // The concrete configuration `--finality-disable-caribina` produces, in the default mode.
+        // This is not a hypothetical: `bin/dwowd/src/main.rs:187-189` sets exactly this field.
+        let disabled = FinalityConfig {
+            mode: FinalityMode::Always,
+            caribina_enabled: false,
+            ..Default::default()
+        };
+        assert!(
+            disabled.should_enforce(0) && !disabled.should_verify_anchor(0),
+            "OBL-C65 appears fixed: a node with Caribina disabled no longer enforces it"
+        );
+
+        // ASSERTS THE DEFECT. Stage 3: replace this with `assert!(violations.is_empty(), ...)`.
+        assert!(
+            !violations.is_empty(),
+            "OBL-C65 appears fixed — every enforcing configuration now also verifies. \
+             Flip this assertion to `assert!(violations.is_empty(), ...)` and the one above to its \
+             negation; see doc/src/arch/verification-hazop.md."
+        );
+    }
 }

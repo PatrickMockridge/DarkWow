@@ -102,9 +102,22 @@ See [Merge Mining Setup](../testnet/merge-mining.md) for the complete step-by-st
 
 ## Finality & Consensus
 
-DarkWow uses a **Monero anchoring finality gadget**: each DarkWow block embeds a reference to a confirmed Monero block (height + hash). This provides an additional security layer — to reorganize the DarkWow chain, an attacker must also reorganize the Monero chain back past the anchor point.
+DarkWow's design calls for a **Monero anchoring finality gadget**: each DarkWow block would embed a
+reference to a confirmed Monero block (height + hash), so that reorganizing DarkWow would also require
+reorganizing Monero back past the anchor point.
 
-The Monero anchor is verified during P2P block propagation (`bin/dwowd/src/proto/linear_broadcast.rs`). Configuration flags: `--finality-enable-monero`, `--monerod-rpc-url`.
+**That gadget has never been in effect.** Merge-mined blocks are built with the anchor fields zeroed
+(`bin/dwowd/src/rpc/mm_rpc.rs:630-631` sets `anchor_monero_height = 0` and `anchor_monero_hash = [0; 32]`),
+and `verify_monero_anchor` — the function that would check them — is called by nothing outside its own
+tests. The block does carry the real Monero data, as `PowSource::Monero(MoneroPowData)`; the anchor
+fields are a second, separate claim about the same thing, and nothing fills or checks them.
+
+Nor is the Monero block's *own* proof-of-work verified anywhere in `dwowd`: the merge-mining path accepts
+the three receipts and trusts that p2pool only submits blocks its colocated monerod has already validated.
+The code says so itself at `mm_rpc.rs:574` (`TODO(HAZOP F3)`).
+
+Configuration flags `--finality-enable-monero` and `--monerod-rpc-url` exist and are wired into
+`FinalityConfig`. See `OBL-C67` in the [verification obligation register](verification-hazop.md).
 
 ### Finality Configuration
 

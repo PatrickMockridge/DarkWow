@@ -71,7 +71,10 @@ const SEED_HASH: &str =
 
 /// Build a `MoneroPowData` from the real testnet block, using a synthetic
 /// aux-chain merkle proof (same pattern as `test_monero_powdata_serde`).
-fn build_test_monero_powdata() -> TestResult<MoneroPowData> {
+///
+/// `pub(crate)` so `tests::wire_format` can exercise the P2P codec against a block that actually
+/// carries a merge-mining proof — which is the only way to observe `OBL-C69`.
+pub(crate) fn build_test_monero_powdata() -> TestResult<MoneroPowData> {
     let block = monero_block_deserialize(XMR_BLOCK)
         .map_err(|e| infra("deserializing the Monero block", format!("{e}")))?;
     let seed = FixedByteArray::from_bytes(
@@ -297,14 +300,33 @@ fn test_merge_mined_block_acceptance() -> TestResult<()> {
             "stored block height must be 2");
 
         // Verify PowSource is Monero on the SUBMITTED block (pre-commit).
-        // NOTE: connect_block stores blocks via serde_json::to_vec, but
-        // PowSource + MoneroPowData lack Serialize/Deserialize impls — the
-        // Monero variant does not survive the sled roundtrip (pre-existing
-        // bug, tracked separately). Verify on the pre-commit block instead.
+        //
+        // NOTE (corrected 2026-09-22): this comment used to say that connect_block stores blocks via
+        // serde_json::to_vec and that the Monero variant therefore does not survive the sled roundtrip.
+        // Both halves were wrong. `chain_state.rs` contains zero occurrences of `serde_json` and stores
+        // via `dwow_serialize` (`:1135`), whose `Encodable for BlockHeader` is hand-written in
+        // `src/linear/src/serial_sync.rs:116` and encodes the `pow_source` discriminator explicitly — so
+        // the stored roundtrip is sound. The real loss is on the P2P wire, whose codec *is* serde_json
+        // and whose `BlockHeader` has `pow_source` declared `#[serde(skip)]` (OBL-C69). The stale note
+        // named the wrong subsystem and hid the defect for as long as it stood.
         ensure!(
             matches!(block.header.pow_source, PowSource::Monero(_)),
             "submitted block must carry PowSource::Monero"
         );
+
+        // OBL-C67 — merge mining does not engage the Monero anchoring gadget. The block is merge-mined
+        // (asserted directly above, so this is not a block that simply lacks Monero data) and yet both
+        // anchor fields are zero, which is what `mm_rpc.rs:630-631` writes for every merge-mined block.
+        // A non-zero `anchor_monero_height` is the sole trigger for `AnchoredBlockConflict`, so zero here
+        // means the gadget confers no finality on any merge-mined block, ever.
+        //
+        // **This test asserts the defect.** Stage 3 derives these fields from `MoneroPowData`; at that
+        // point both assertions invert and the height asserted is the Monero block's own.
+        ensure_eq!(block.header.anchor_monero_height, MoneroBlockHeight::new(0),
+            "OBL-C67: a merge-mined block unexpectedly carries a non-zero Monero anchor height — if the \
+             fix has landed, assert the derived height instead. See doc/src/arch/verification-hazop.md");
+        ensure_eq!(block.header.anchor_monero_hash, [0u8; 32],
+            "OBL-C67: a merge-mined block unexpectedly carries a non-zero Monero anchor hash");
 
         // Verify the block is properly stored with real coinbase data.
         // nullifier_root is updated by connect_block only when the nullifier

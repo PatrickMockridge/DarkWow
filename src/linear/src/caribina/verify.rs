@@ -218,4 +218,72 @@ mod tests {
         assert_eq!(encoded.len(), 43);
         assert!(encoded.chars().all(|c| c == 'A'));
     }
+
+    /// The tolerance boundary itself, on both sides.
+    ///
+    /// The comparison is `ts_diff > tolerance_secs`, so the boundary is *inclusive*: exactly 1800
+    /// seconds passes and 1801 fails. The tests above pin 29 and 31 minutes, which leaves the operator
+    /// free to become `>=` without any test noticing — a one-second window is not a security boundary,
+    /// but an unpinned comparison in a consensus-adjacent predicate is how the next one gets introduced.
+    #[test]
+    fn test_payload_timestamp_tolerance_boundary_is_inclusive() {
+        let hash = [1u8; 32];
+        let ts: u64 = 1_000_000;
+        let height = BlockHeight::new(42);
+        let tolerance = TIMESTAMP_TOLERANCE_MINUTES * 60;
+
+        let payload_at = |stored: u64| {
+            let mut p = Vec::new();
+            p.extend_from_slice(&hash);
+            p.extend_from_slice(&stored.to_le_bytes());
+            p.extend_from_slice(&height.to_le_bytes());
+            p
+        };
+
+        assert!(
+            verify_payload(&payload_at(ts + tolerance as u64), &hash, ts, height).is_ok(),
+            "exactly {tolerance}s apart must be within tolerance (the comparison is `>`)"
+        );
+        assert!(
+            verify_payload(&payload_at(ts + tolerance as u64 + 1), &hash, ts, height).is_err(),
+            "one second past the tolerance must be rejected"
+        );
+        // Symmetry: the window is on the absolute difference, so an earlier stored timestamp behaves
+        // the same way. Asserted because `(a as i64 - b as i64).abs()` is only symmetric while neither
+        // operand's cast wraps.
+        assert!(
+            verify_payload(&payload_at(ts - tolerance as u64), &hash, ts, height).is_ok(),
+            "an earlier stored timestamp within tolerance must be accepted"
+        );
+    }
+
+    /// OBL-C66 — "the Arweave block containing this anchor has settled" is not established by anything.
+    ///
+    /// `verify_payload` is the whole of what this module verifies, and it takes only the anchor's own
+    /// payload and the DarkWow block's fields. The timestamp it compares against is the one the
+    /// anchoring miner embedded, so the ±30-minute window is satisfied by construction; no Arweave block
+    /// height, Arweave block hash or confirmation depth participates. `verify_anchor` fetches the
+    /// DataItem by ID — which shows the DataItem *exists at a URL*, not when Arweave confirmed it.
+    ///
+    /// **This test asserts the defect**, and it is written as the positive statement so that Stage 3's
+    /// fix has an assertion to invert: once a settle policy exists, a payload whose containing Arweave
+    /// block has not reached the configured depth must be rejected, and this test must fail.
+    #[test]
+    fn test_payload_verifies_with_no_arweave_settlement_input() {
+        // Composed entirely locally. Nothing here has ever been near Arweave.
+        let hash = [0x5Au8; 32];
+        let block_timestamp: u64 = 1_700_000_000;
+        let height = BlockHeight::new(9_000);
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&hash);
+        payload.extend_from_slice(&block_timestamp.to_le_bytes());
+        payload.extend_from_slice(&height.to_le_bytes());
+
+        assert!(
+            verify_payload(&payload, &hash, block_timestamp, height).is_ok(),
+            "OBL-C66 appears fixed: a locally-composed payload no longer verifies, so something now \
+             consults Arweave settlement. Invert this assertion; see \
+             doc/src/arch/verification-hazop.md"
+        );
+    }
 }

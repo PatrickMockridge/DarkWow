@@ -191,14 +191,19 @@ XMR/USD price is used for collateral valuation:
 | `src/linear/src/block.rs` | BlockHeader with Monero anchor fields |
 | `src/linear/src/finality.rs` | FinalityConfig (Monero anchoring config + flag bits) |
 | `src/linear/src/monero/mod.rs` | Monero module root (re-exports) |
-| `src/linear/src/monero/verify.rs` | `verify_monero_anchor()` — dual-mode verification |
+| `src/linear/src/monero/verify.rs` | `verify_monero_anchor()` — dual-mode verification, **called by nothing outside its own tests** (`OBL-C63`) |
 | `src/linear/src/monero/rpc.rs` | monerod JSON-RPC client (`get_block`, `get_block_count`) |
-| `bin/dwowd/src/proto/linear_broadcast.rs` | P2P block broadcast with Monero anchor verification |
 | `bin/dwowd/src/main.rs` | CLI flags: `--finality-enable-monero`, `--monerod-rpc-url` |
 | `src/contract/bridge/src/model/mod.rs` | DepositParams, XmrDepositProof |
 | `src/contract/bridge/src/entrypoint.rs` | Bridge contract implementation |
 | `src/contract/stablecoin/src/model/mod.rs` | CollateralType, CollateralPool |
-| `bin/xmr_relayer/src/withdrawal.rs` | Withdrawal handling + timeout |
+
+The P2P row this table used to carry — `bin/dwowd/src/proto/linear_broadcast.rs`, "P2P block broadcast
+with Monero anchor verification" — described code that does not exist: that file contains no occurrence
+of `anchor`, `finality` or `verify_monero_anchor`. The row was removed on 2026-09-22 rather than
+corrected in place, because there is no such component to name. `bin/xmr_relayer/src/withdrawal.rs`
+was likewise listed here and the directory does not exist; withdrawal handling and its timeout live in
+the bridge contract (`BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS`).
 
 ### Constants
 
@@ -212,11 +217,18 @@ XMR/USD price is used for collateral valuation:
 - `STABLECOIN_XMR_USD_PRICE_FALLBACK`: ~$150
 
 **Finality:**
-- `FINALITY_CARIBNIA`: 0x01 flag bit (Arweave anchor present)
+- `FINALITY_CARIBNIA`: 0x01 flag bit (Arweave anchor present) — the constant is spelled
+  `CARIBNIA` in `src/linear/src/finality.rs:54`, transposing two letters
 - `FINALITY_MONERO`: 0x02 flag bit (Monero anchor present)
 - `FINALITY_SIGNALED`: 0x04 flag bit (finality enforcement required)
 - `MAX_PLAUSIBLE_MONERO_HEIGHT`: 5,000,000 blocks (lightweight plausibility cap)
 - `monero_min_confirmations` default: 3 (~6 minutes on Monero)
+
+Two things to know before using these. The flag bits are **not** consulted to decide *whether* to
+verify — `should_enforce` ignores them entirely in the default `Always` mode — and they are excluded
+from the mining blob, so a relaying peer sets them freely. And the Monero anchor fields are never
+populated in production (`mm_rpc.rs:630-631`), so `FINALITY_MONERO` has never been set on a real block.
+See `OBL-C63`–`OBL-C67`.
 
 ## See Also
 

@@ -63,8 +63,8 @@ the spec.
 | Uncle Merkle consensus (RandomX PoW) | [IMPLEMENTED] | `src/linear/` |
 | Exponential reward schedule | [IMPLEMENTED] | `src/sdk/src/blockchain.rs` |
 | Pedersen uncle coinbase split | [IMPLEMENTED] | `src/linear/src/chain_state.rs` |
-| Caribina (Arweave) anchoring finality | [IMPLEMENTED] | `src/linear/src/caribina/` |
-| Monero merge-mining + anchoring | [IMPLEMENTED] | `src/linear/src/monero/` |
+| Caribina (Arweave) anchoring finality | [IMPLEMENTED] — anchors are published; the verifier is dead code outside tests (`OBL-C63`) | `src/linear/src/caribina/` |
+| Monero merge-mining + anchoring | [IMPLEMENTED] — merge mining is live; the anchoring gadget has never been switched on (`OBL-C67`) | `src/linear/src/monero/` |
 | nullifier_root block header verification | [IMPLEMENTED] | `src/linear/src/chain_state.rs` |
 | Supply audit (Pedersen mass balance) | [IMPLEMENTED] | `src/linear/src/proof_of_token_balance.rs` |
 | 9 genesis contracts | [IMPLEMENTED] | `src/contract/<name>/` |

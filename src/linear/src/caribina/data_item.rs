@@ -411,4 +411,193 @@ mod tests {
         assert!(item.verify_signature());
         assert_eq!(item.raw_data(), b"block_hash_data");
     }
+
+    /// The binary layout, field by field, against ANS-104 rather than against our own writer.
+    ///
+    /// Every test above round-trips an item this module produced, so a layout error that is consistent
+    /// between writer and reader is invisible to all of them — including an offset that is shifted by a
+    /// byte, since our reader would compute the same shifted offset. This test asserts the offsets
+    /// directly, which is the only form that can catch a symmetric mistake.
+    #[test]
+    fn test_data_item_layout_matches_ans104() {
+        let wallet = CaribinaWallet::generate();
+        let tags = vec![Tag { name: "A".to_string(), value: "b".to_string() }];
+        let mut item = DataItem::new_with_tags(b"payload!", &tags);
+        item.sign(&wallet);
+        let b = item.as_bytes();
+
+        // ANS-104 field order: type, signature, owner, target-present, anchor-present, tag count,
+        // tag bytes, data.
+        assert_eq!(&b[0..2], &SIGNATURE_TYPE.to_le_bytes(), "signature type is a u16 LE at byte 0");
+        assert_eq!(b.len(), HEADER_LENGTH + serialize_tags(&tags).len() + b"payload!".len());
+
+        assert_eq!(b[2..66].len(), SIGNATURE_LENGTH, "signature slot is bytes 2..66");
+        assert!(b[2..66].iter().any(|&x| x != 0), "a signed item must have a non-zero signature");
+        assert_eq!(b[66..98], wallet.public_key(), "owner is the raw public key at bytes 66..98");
+        assert_eq!(b[98], 0, "target presence is 0");
+        assert_eq!(b[99], 0, "anchor presence is 0");
+        assert_eq!(read_u64_le(&b[100..108]), 1, "tag count is a u64 LE at bytes 100..108");
+        assert_eq!(
+            read_u64_le(&b[108..116]) as usize,
+            serialize_tags(&tags).len(),
+            "tag byte length is a u64 LE at bytes 108..116"
+        );
+        assert_eq!(item.raw_tags(), serialize_tags(&tags), "the tag area is the serialized tags");
+
+        // The header is 116 bytes by construction; the constant must agree with the field arithmetic.
+        assert_eq!(2 + SIGNATURE_LENGTH + OWNER_LENGTH + 1 + 1 + 8 + 8, HEADER_LENGTH);
+        assert_eq!(HEADER_LENGTH, 116);
+    }
+
+    /// The deepHash must cover the owner field, not only the data.
+    ///
+    /// `raw_owner()` feeds `compute_signature_data`, but nothing above varies the owner after signing:
+    /// `test_verify_wrong_key_fails` in `wallet.rs` swaps the verifying key, which is a different thing
+    /// from changing the *signed* bytes. If the owner were dropped from the signed list, every test here
+    /// would still pass and the owner field would be free to rewrite.
+    #[test]
+    fn test_data_item_deep_hash_covers_the_owner_field() {
+        let wallet = CaribinaWallet::generate();
+        let mut item = DataItem::new(b"owner coverage");
+        item.sign(&wallet);
+        assert!(item.verify_signature(), "positive control: the untouched item verifies");
+
+        item.bytes[66] ^= 0xFF;
+        assert!(
+            !item.verify_signature(),
+            "the owner is part of the signed data — flipping one byte must break the signature"
+        );
+    }
+
+    /// The deepHash must cover the serialized tags, not only count them.
+    #[test]
+    fn test_data_item_deep_hash_covers_the_tag_bytes() {
+        let wallet = CaribinaWallet::generate();
+        let tags = vec![Tag { name: "App-Name".to_string(), value: "caribina".to_string() }];
+        let mut item = DataItem::new_with_tags(b"tag coverage", &tags);
+        item.sign(&wallet);
+        assert!(item.verify_signature(), "positive control: the untouched tagged item verifies");
+
+        // The tag area starts at HEADER_LENGTH; flipping its last byte must break the signature.
+        let tag_area_len = serialize_tags(&tags).len();
+        item.bytes[HEADER_LENGTH + tag_area_len - 1] ^= 0xFF;
+        assert!(
+            !item.verify_signature(),
+            "the tag bytes are part of the signed data — flipping one must break the signature"
+        );
+    }
+
+    /// `deserialize` is the only path from untrusted bytes into a `DataItem`, so its rejections matter
+    /// as much as its acceptances.
+    #[test]
+    fn test_data_item_deserialize_rejects_wrong_type_and_truncation() {
+        let wallet = CaribinaWallet::generate();
+        let mut item = DataItem::new(b"gateway bytes");
+        item.sign(&wallet);
+        let good = item.as_bytes().to_vec();
+
+        assert!(DataItem::deserialize(&good).is_some(), "positive control: a real item deserializes");
+
+        let mut wrong_type = good.clone();
+        wrong_type[0] = 3;
+        assert!(
+            DataItem::deserialize(&wrong_type).is_none(),
+            "signature type 3 is not Ed25519 and must be rejected"
+        );
+
+        for len in [0, 1, HEADER_LENGTH - 2, HEADER_LENGTH - 1] {
+            assert!(
+                DataItem::deserialize(&good[..len]).is_none(),
+                "a {len}-byte buffer cannot hold a {HEADER_LENGTH}-byte header and must be rejected"
+            );
+        }
+        assert!(
+            DataItem::deserialize(&good[..HEADER_LENGTH]).is_some(),
+            "exactly HEADER_LENGTH bytes is a valid empty-payload item, so the bound is inclusive"
+        );
+    }
+
+    /// OBL-C71 — a `DataItem` decoded from untrusted bytes must not panic its verifier.
+    ///
+    /// `deserialize` validates the length and the signature type and nothing else. Two accessors then
+    /// slice using `tag_bytes`, an unvalidated `u64` read straight out of the buffer, and **which of
+    /// them panics first depends on `tag_count`** — a detail worth stating, because `raw_tags` returns
+    /// early on a zero count, so a buffer that lies only about `tag_bytes` reaches `raw_data` instead:
+    ///
+    ///   * `tag_count == 0` → `raw_tags` returns empty without slicing; `raw_data` slices
+    ///     `bytes[116 + tag_bytes..]` and panics (`data_item.rs:149`).
+    ///   * `tag_count != 0` → `raw_tags` slices `bytes[116..116 + tag_bytes]` and panics first (`:214`).
+    ///
+    /// Both cases are exercised below, because a fix that guarded only one would otherwise pass.
+    /// A `tag_bytes` near `u64::MAX` also overflows the `usize` addition in `data_start`, which panics
+    /// in debug and silently wraps in release — in release `raw_data` then returns the wrong region, so
+    /// the payload comparison reads attacker-chosen bytes. That case is not asserted here; the two
+    /// above are enough to establish the defect and a third would only vary the arithmetic.
+    ///
+    /// Written with `catch_unwind` rather than as documentation, so the panic is *observed*: today the
+    /// closures return `Err`, and the assertions say so. Stage 3 makes them return normally with the
+    /// item rejected, at which point the `is_err()` assertions invert to `is_ok()`.
+    ///
+    /// The panic messages this prints are expected — the test harness captures them per-test.
+    #[test]
+    fn test_data_item_hostile_tag_bytes_do_not_panic_the_verifier() {
+        let wallet = CaribinaWallet::generate();
+        let mut item = DataItem::new(b"hostile tags");
+        item.sign(&wallet);
+
+        // Positive control: an honest item verifies and reads its payload without panicking.
+        let honest = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            item.verify_signature() && item.raw_data() == b"hostile tags"
+        }));
+        assert_eq!(
+            honest.ok(),
+            Some(true),
+            "control: an honest item must verify and read its payload — if this fails the assertions \
+             below prove nothing about hostile input"
+        );
+
+        // A hostile tag length, with the tag count left at zero: reaches `raw_data`.
+        let mut hostile_zero_count = item.as_bytes().to_vec();
+        hostile_zero_count[108..116].copy_from_slice(&1000u64.to_le_bytes());
+        let zero_count = DataItem::deserialize(&hostile_zero_count)
+            .expect("deserialize accepts this: the buffer is long enough and the type byte is 2");
+        assert_eq!(read_u64_le(&zero_count.bytes[100..108]), 0, "control: the tag count is still zero");
+
+        let verify = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            zero_count.verify_signature()
+        }));
+        assert!(
+            verify.is_err(),
+            "OBL-C71 appears fixed: `verify_signature` no longer panics on a hostile `tag_bytes` with \
+             a zero tag count. Invert this to `assert!(verify.is_ok())` and assert the item is rejected \
+             instead. See doc/src/arch/verification-hazop.md"
+        );
+
+        let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            zero_count.raw_data().len()
+        }));
+        assert!(
+            read.is_err(),
+            "OBL-C71 appears fixed: `raw_data` no longer panics on a hostile `tag_bytes`. Invert this \
+             to `assert!(read.is_ok())` and assert the payload is rejected instead. See \
+             doc/src/arch/verification-hazop.md"
+        );
+
+        // The same lie, now with a non-zero tag count: reaches `raw_tags` first.
+        let mut hostile_nonzero_count = item.as_bytes().to_vec();
+        hostile_nonzero_count[100..108].copy_from_slice(&1u64.to_le_bytes());
+        hostile_nonzero_count[108..116].copy_from_slice(&1000u64.to_le_bytes());
+        let nonzero_count = DataItem::deserialize(&hostile_nonzero_count)
+            .expect("deserialize accepts this too");
+
+        let tags = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            nonzero_count.raw_tags().len()
+        }));
+        assert!(
+            tags.is_err(),
+            "OBL-C71 appears fixed: `raw_tags` no longer panics on a hostile `tag_bytes` with a \
+             non-zero tag count. Invert this to `assert!(tags.is_ok())`. See \
+             doc/src/arch/verification-hazop.md"
+        );
+    }
 }

@@ -142,7 +142,11 @@ Status values: `"OK"` (accepted), `"rejected"` (PoW invalid), `"stale"`
 3. **Height check** — reject if `submitted_height != current_height + 1`
 4. **PoW verify** — reconstruct block with found nonce, hash with RandomX,
    check `u32_le(hash[0..4]) <= target`
-5. **Anchor** — if Caribina enabled, anchor to Arweave (best-effort, non-blocking)
+5. **Anchor** — if Caribina enabled, anchor to Arweave. **Not non-blocking on this
+   path**: `anchor_block` is called synchronously while `linear_submit_lock` is still held
+   (`rpc/stratum.rs:561`, guard taken at `:348`), so one slow ArDrive Turbo POST serialises every
+   stratum submission for up to its 30-second timeout each. The built-in miner does this correctly, in
+   a detached `smol::unblock` task (`rpc/miner.rs:293-307`). See `OBL-C68`
 6. **Accept** — `block_acceptor::accept_block()` (single unified path). On
    `BlockConnectOutcome::CanonicalExtension`, record the block time
    (`last_block_time.set_now()`) and remove the mined transactions from the

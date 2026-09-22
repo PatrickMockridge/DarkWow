@@ -2407,6 +2407,76 @@ mod tests {
         assert!(matches!(cs.detect_reorg(&ext).unwrap(), ReorgSignal::None));
     }
 
+    /// OBL-C63 — finality is conferred by a header field, and nothing verifies it.
+    ///
+    /// Two facts asserted together, because either alone is satisfied by a rule that is wrong in the
+    /// other direction:
+    ///   * a canonical block carrying an arbitrary 32-byte `anchor_tx_id` — with no Arweave object
+    ///     anywhere in existence — blocks a strictly heavier chain; the guard at `:1011` consults no
+    ///     verifier; and
+    ///   * `anchor_monero_height` with a **zero** `anchor_monero_hash` does the same, because the hash is
+    ///     absent from the predicate at `:1012` and `:1548`.
+    /// The unanchored case runs first as the positive control: if the guard blocked reorgs regardless of
+    /// the anchor fields, both assertions would hold for a reason unrelated to anchors.
+    ///
+    /// **This test asserts the defect.** Stage 3 makes enforcement conditional on a verified anchor, at
+    /// which point the two blocking assertions invert — an unverifiable anchor confers no finality — and
+    /// the control stays as it is.
+    #[test]
+    fn test_finality_conferred_without_any_anchor_verification() {
+        let open = || {
+            let db = sled::Config::new().temporary(true).open().unwrap();
+            CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+                FinalityConfig::default()).unwrap()
+        };
+        // A competing parent at height 1 plus an extension at height 2 is strictly heavier than a
+        // one-block canonical chain, so absent finality the reorg must be signalled.
+        let heavier_fork = |cs: &CChainState| {
+            let parent = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 1);
+            cs.store_competing_block(&parent, BlockHeight::new(1)).unwrap();
+            let parent_hash = cs.hash_block_with_cached_vm(&parent).unwrap();
+            dr_block(2, BlockTarget::MAX, parent_hash, 0)
+        };
+
+        // Positive control: no anchor, so the heavier chain wins.
+        let cs = open();
+        seed_canonical(&cs, dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0));
+        let ext = heavier_fork(&cs);
+        assert!(
+            !matches!(cs.detect_reorg(&ext).unwrap(), ReorgSignal::None),
+            "control: an unanchored canonical tip must be reorged by a heavier fork — if this fails, \
+             the assertions below prove nothing about anchors"
+        );
+
+        // (a) an arbitrary anchor_tx_id, with nothing behind it.
+        for anchor in [[1u8; 32], [0xFFu8; 32]] {
+            let cs = open();
+            let mut canonical = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0);
+            canonical.header.anchor_tx_id = anchor;
+            seed_canonical(&cs, canonical);
+            let ext = heavier_fork(&cs);
+            assert!(
+                matches!(cs.detect_reorg(&ext).unwrap(), ReorgSignal::None),
+                "OBL-C63: anchor_tx_id {anchor:?} has no Arweave object behind it and is not verified, \
+                 yet it blocks a heavier fork. If the fix has landed, invert this assertion — an \
+                 unverifiable anchor must confer no finality. See doc/src/arch/verification-hazop.md"
+            );
+        }
+
+        // (b) a Monero height with a zero hash.
+        let cs = open();
+        let mut canonical = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0);
+        canonical.header.anchor_monero_height = MoneroBlockHeight::new(3_000_000);
+        canonical.header.anchor_monero_hash = [0u8; 32];
+        seed_canonical(&cs, canonical);
+        let ext = heavier_fork(&cs);
+        assert!(
+            matches!(cs.detect_reorg(&ext).unwrap(), ReorgSignal::None),
+            "OBL-C63: anchor_monero_height alone blocks a heavier fork, because anchor_monero_hash is \
+             not in the enforcement predicate at chain_state.rs:1012 and :1548"
+        );
+    }
+
     #[test]
     fn test_detect_reorg_heavier() {
         let db = sled::Config::new().temporary(true).open().unwrap();

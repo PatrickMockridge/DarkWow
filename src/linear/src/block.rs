@@ -1140,6 +1140,119 @@ mod tests {
         assert_eq!(blob1, blob2);
     }
 
+    /// OBL-C64 — the four finality fields are not authenticated by the work that produced the block.
+    ///
+    /// Proof-of-work is `RandomX(to_mining_blob())`, and `to_mining_blob()` carries none of
+    /// `anchor_tx_id`, `anchor_monero_height`, `anchor_monero_hash` or `finality_flags`. So a single
+    /// RandomX solution corresponds to *every* header that differs only in those fields: the solution
+    /// cannot distinguish them, and a relaying peer can vary them at no cost. The chain's dedup key is
+    /// the blob hash (`hash_with_vm`, `chain_state.rs:890`), so those variants are one block to the
+    /// dedup set and many blocks to any code path that serializes the header — the two identities
+    /// disagree, which is the other half of this finding and of OBL-C52.
+    ///
+    /// **This test asserts the defect.** Stage 3 moves the anchor material into the mined region, at
+    /// which point the assertion below inverts: a change to committed anchor material must change the
+    /// blob.
+    #[test]
+    fn test_finality_fields_are_not_authenticated_by_pow() {
+        let base = BlockHeader {
+            version: BlockVersion::CURRENT,
+            previous: blake3::hash(b"parent"),
+            merkle_root: blake3::hash(b"txs"),
+            timestamp: BlockTimestamp::new(1000),
+            target: BlockTarget::new(0x0000_FFFF),
+            nonce: 42,
+            height: BlockHeight::new(1),
+            uncle_merkle_root: [0u8; 32],
+            total_reward: BlockReward::new(100_000_000),
+            randomx_key: [0u8; 32],
+            miner: [0x22; 32],
+            commitment_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: MoneroBlockHeight::new(0),
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
+            pow_source: PowSource::Native,
+        };
+        let blob = base.to_mining_blob();
+
+        let variants = [
+            ([0xAB; 32], MoneroBlockHeight::new(0), [0u8; 32], 0),
+            ([0xCD; 32], MoneroBlockHeight::new(0), [0u8; 32], 0),
+            ([0u8; 32], MoneroBlockHeight::new(3_000_000), [0u8; 32], 0),
+            ([0u8; 32], MoneroBlockHeight::new(0), [0xEE; 32], 0),
+            ([0u8; 32], MoneroBlockHeight::new(0), [0u8; 32], 0x04),
+            ([0xFF; 32], MoneroBlockHeight::new(3_000_000), [0xFF; 32], 0x07),
+        ];
+        for (tx_id, monero_height, monero_hash, flags) in variants {
+            let mut h = base.clone();
+            h.anchor_tx_id = tx_id;
+            h.anchor_monero_height = monero_height;
+            h.anchor_monero_hash = monero_hash;
+            h.finality_flags = flags;
+            assert_eq!(
+                h.to_mining_blob(),
+                blob,
+                "OBL-C64: a variant differing only in finality fields changed the mining blob. If the \
+                 fix has landed, invert this assertion to `assert_ne!` — the fields must then be \
+                 authenticated by PoW. See doc/src/arch/verification-hazop.md"
+            );
+        }
+    }
+
+    /// OBL-C69 — the serde serialization of `BlockHeader` silently discards `pow_source`.
+    ///
+    /// `pow_source` is declared `#[serde(default = "PowSource::native", skip)]`, so it is not written,
+    /// and deserialization reconstructs `PowSource::Native` — a merge-mined block is reclassified as
+    /// native. That is not merely data loss: the merge-mining path skips native PoW verification
+    /// precisely *because* the header was never hashed by xmrig, so the downgraded block asserts a PoW
+    /// claim it cannot satisfy. `src/linear/src/serial_sync.rs:135-146` carries the correct codec, which
+    /// encodes the discriminator explicitly — so two serializations of one consensus field exist and
+    /// only the hand-written one preserves it.
+    ///
+    /// **This test asserts the defect.** Stage 3 adds real `Serialize`/`Deserialize` for `PowSource`
+    /// and drops the `skip`, at which point this assertion inverts.
+    #[test]
+    fn test_serde_serialization_of_header_drops_pow_source() {
+        let header = BlockHeader {
+            version: BlockVersion::CURRENT,
+            previous: blake3::hash(b"parent"),
+            merkle_root: blake3::hash(b"txs"),
+            timestamp: BlockTimestamp::new(1000),
+            target: BlockTarget::new(0x0000_FFFF),
+            nonce: 7,
+            height: BlockHeight::new(1),
+            uncle_merkle_root: [0u8; 32],
+            total_reward: BlockReward::new(100_000_000),
+            randomx_key: [0u8; 32],
+            miner: [0x22; 32],
+            commitment_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: MoneroBlockHeight::new(0),
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
+            pow_source: PowSource::Native,
+        };
+
+        let json = serde_json::to_string(&header).expect("BlockHeader is Serialize");
+        assert!(
+            !json.contains("pow_source"),
+            "OBL-C69 appears fixed: `pow_source` is now present in the serde encoding. Invert this \
+             assertion to `assert!(json.contains(\"pow_source\"), ...)`. See \
+             doc/src/arch/verification-hazop.md"
+        );
+
+        // The decode side is what makes it a *downgrade* rather than an omission: the attribute's
+        // `default = "PowSource::native"` restores `Native`. That side is not asserted here, because it
+        // cannot be reached without constructing a `MoneroPowData` — parsing a real Monero testnet block
+        // is what `bin/dwowd/src/tests/merge_mining.rs` exists for, and the round-trip assertion belongs
+        // with that fixture. Stage 3 adds it there once `PowSource` is serializable.
+    }
+
     /// L1-FW-5a: fee_window_flags excluded from mining blob + len invariant.
     /// Partition B — PoW/wire boundary. Flags are set after mining, must not
     /// touch the PoW hash. Pattern: test_mining_blob_excludes_anchor.
