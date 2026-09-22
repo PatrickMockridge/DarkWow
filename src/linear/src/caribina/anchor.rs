@@ -7,11 +7,11 @@
 
 use std::time::Duration;
 
-use dwow_sdk::blockchain::BlockHeight;
 use serde::Deserialize;
 
 use super::data_item::DataItem;
 use super::wallet::CaribinaWallet;
+use crate::block::BlockHeader;
 
 /// ArDrive Turbo upload endpoint
 pub const TURBO_UPLOAD_URL: &str = "https://upload.ardrive.io/v1/tx/arweave";
@@ -42,41 +42,41 @@ pub enum AnchorError {
     InvalidResponse(String),
 }
 
-/// Anchor block data to Arweave and return the transaction ID.
+/// Build the signed ANS-104 DataItem that *is* a block's Caribina anchor proof.
 ///
-/// Creates a new Ed25519 wallet, builds and signs a DataItem containing
-/// `block_hash || timestamp || height`, and POSTs it to ArDrive Turbo.
-/// Returns the data item ID (32-byte SHA-256 hash) which serves as the
-/// permanent Arweave reference.
+/// **Pure** — no network. This is the half that consensus depends on: the bytes it returns go into
+/// `header.caribina_anchor`, and `caribina::verify_anchor_proof` accepts or rejects them locally.
+/// Publication is [`publish_anchor_proof`], and it is deliberately separate, because a block's
+/// finality must not depend on whether an HTTP POST succeeded on the miner's machine.
 ///
-/// The wallet is cycled on every call — no address reuse, no tracking.
-///
-/// Returns `None` if anchoring fails (network error, Turbo rejection)
-/// so that mining can proceed without the anchor.
-pub fn anchor_block(
-    block_hash: &[u8; 32],
-    timestamp: u64,
-    height: BlockHeight,
-) -> Option<[u8; 32]> {
-    // Build anchor payload: block_hash || timestamp || height
+/// The payload binds `anchor_commitment(header)` — a hash over the header with its post-mining
+/// fields zeroed, so it can be computed before the proof it is about exists (see that function) —
+/// plus the block's height and timestamp. `anchor_owner` must already be set on `header` and must be
+/// `wallet`'s public key, or the proof will not verify: that equality is what makes the anchor the
+/// miner's claim rather than anyone's.
+pub fn build_anchor_proof(header: &BlockHeader, wallet: &CaribinaWallet) -> Vec<u8> {
+    let commitment = super::verify::anchor_commitment(header);
+
     let mut payload = Vec::with_capacity(48);
-    payload.extend_from_slice(block_hash);
-    payload.extend_from_slice(&timestamp.to_le_bytes());
-    payload.extend_from_slice(&height.to_le_bytes());
+    payload.extend_from_slice(&commitment);
+    payload.extend_from_slice(&header.timestamp.get().to_le_bytes());
+    payload.extend_from_slice(&header.height.to_le_bytes());
 
-    // Build and sign DataItem
-    let wallet = CaribinaWallet::generate();
     let mut item = DataItem::new(&payload);
-    item.sign(&wallet);
-    let binary = item.as_bytes();
+    item.sign(wallet);
+    item.as_bytes().to_vec()
+}
 
-    // POST to ArDrive Turbo (blocking for now; async later)
-    let response = post_to_turbo(binary)?;
-
-    // Parse the ID from base64url to raw bytes
-    let id = base64url_to_bytes(&response.id)?;
-
-    Some(id)
+/// Publish an already-built anchor proof to ArDrive Turbo. Best-effort, and *only* that.
+///
+/// Returns the Arweave transaction id on success and `None` on any failure — network, Turbo
+/// rejection, malformed response — so a miner can proceed with an unanchored block. That failure
+/// costs the block its finality and nothing else: the block is still valid, and
+/// `verify_anchor_proof` will return `false` for it, which is the honest outcome rather than a
+/// silently-claimed anchor.
+pub fn publish_anchor_proof(proof: &[u8]) -> Option<[u8; 32]> {
+    let response = post_to_turbo(proof)?;
+    base64url_to_bytes(&response.id)
 }
 
 /// POST raw DataItem bytes to ArDrive Turbo.

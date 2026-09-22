@@ -980,6 +980,48 @@ field; the `skip` is gone and the fail-open `_ => PowSource::Native` arm is now 
 behavioural test is the Stage 4 integration test the row names, since the lock scope is not observable
 without a stub Turbo server. `OBL-C76` — recorded, not fixed: it describes a verification *practice*.
 
+**Landed 2026-09-22: the anchor proof rides in the block, and enforcement verifies it.** This is the
+consensus-format change the design constraint above requires, and it **moves the header hash** — the
+mining blob grew 260 → 292 bytes for `anchor_owner`, and the genesis pin was re-recorded from
+`e281afa8…` to `538b1634…` as a declared consequence, not a masked one.
+
+- **`OBL-C63` — CLOSED.** Both enforcement sites (`chain_state.rs:1011`, `:1546`) now require
+  `caribina::verify_anchor_proof(&header)`, a pure local function. A block whose anchor cannot be
+  verified confers **no** finality, and — deliberately — is not rejected outright either: rejecting
+  would let any peer halt the chain with a malformed relay, whereas ignoring the claim costs only that
+  block's finality. That asymmetry is what removes the free chain-freeze. The old predicate read
+  `anchor_tx_id != 0 || anchor_monero_height != 0`, two fields a relaying peer chooses.
+- **`OBL-C64` — CLOSED for the field that matters.** `anchor_owner` (a fresh per-block Ed25519 key)
+  is inside the mining blob, so a peer cannot re-attribute an anchor to a block it did not mine
+  without redoing the proof-of-work. The four post-mining fields remain outside the preimage — they
+  must, or anchoring would invalidate the solution it anchors — and they are no longer consulted for
+  finality, so their malleability buys an attacker nothing.
+- **`OBL-C65` — CLOSED by construction, and the wrong invariant deleted.** `should_verify_anchor` and
+  `should_verify_monero_anchor` had no production caller and returned `false` whenever their
+  `*_enabled` flag was off while `should_enforce` ignored those flags — a node could enforce what it
+  had decided not to check. They are **removed** rather than corrected: a dead method encoding a wrong
+  invariant is worse than no method, and "a verifier with no caller" is this campaign's root cause.
+  Enforcement and verification are now literally the same call.
+- **`OBL-C66` — still open, and now precisely scoped.** An anchor is *verified*; Arweave *settlement*
+  is not checked at all. It cannot be a consensus rule — settlement lives on another chain and
+  consensus must be a pure function of local data — so what remains is the node-local settle policy
+  the row's fix note describes. Recorded as open rather than quietly implied to be done.
+- **`OBL-C67` — still open.** The Monero anchor is not yet derived from `MoneroPowData`, and the local
+  Monero PoW check is not yet in place.
+- **Anchoring is now real on both miner paths.** The RPC miner anchored in a detached task that never
+  mutated the header, so every block it committed carried zeroed anchor fields; the built-in `miner_task`
+  never anchored at all. Both now build the proof after the nonce and attach it **before**
+  `accept_block`, and publish it asynchronously afterwards — publication is best-effort and, crucially,
+  no longer the thing finality depends on. Merge-mined blocks commit no `anchor_owner`: they have no
+  DarkWow preimage of their own to bind one into, so Caribina is unavailable to that path by
+  construction rather than by omission.
+- **Tests.** `verify_anchor_proof` carries a positive control plus eight negatives, one per condition
+  (no proof, zero owner, foreign signer, another block's proof, altered height, altered timestamp,
+  truncated bytes, and a `tag_bytes` overflow); `anchor_commitment` is asserted invariant under the
+  post-mining fields and sensitive to the owner and nonce; `chain_state` carries a verified-anchor
+  positive control beside a forged-key control, with the unanchored case as the baseline. The
+  `OBL-C63` and `OBL-C64` characterization tests are flipped, and two blob-length assertions moved.
+
 **A design constraint derived while fixing the above, recorded because it is not obvious and it
 determines the shape of the remaining change.** The tempting cheap fix for `OBL-C63`/`OBL-C64` is to
 require only that a *descendant* commit the block's `anchor_tx_id` in its mined region — no proof in

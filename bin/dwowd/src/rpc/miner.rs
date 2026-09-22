@@ -35,9 +35,8 @@ use dwow_core::{
     },
 };
 use tinyjson::JsonValue;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
-use dwow_chain::caribina::anchor_block;
 use dwow_sdk::blockchain::BlockTarget;
 use crate::error::{server_error, RpcError};
 use crate::{proto::linear_broadcast::broadcast_block, DwowNode};
@@ -200,7 +199,10 @@ impl DwowNode {
         let consensus = dwow_chain::PoWConsensus::new(120, target, BlockTarget::new(1), BlockTarget::MAX);
         let miner = dwow_chain::Miner::new(std::sync::Arc::new(consensus));
 
-        let mined_block = match miner.mine(&mining_vm, previous, height, all_txs, target, miner_pk, &prep.uncles) {
+        // The per-block Caribina anchor keypair. Generated before mining because its public half goes
+        // into the mined region, and kept because its secret signs the proof after the nonce is found.
+        let anchor_wallet = dwow_chain::caribina::CaribinaWallet::generate();
+        let mined_block = match miner.mine(&mining_vm, previous, height, all_txs, target, miner_pk, anchor_wallet.public_key(), &prep.uncles) {
             Ok(block) => block,
             Err(e) => {
                 error!(target: "dwowd::rpc::miner", "Mining failed: {}", e);
@@ -225,6 +227,31 @@ impl DwowNode {
 
         #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
         let block_hash = format!("{}", chain_state.hash_block_with_cached_vm(&mined_block).expect("hash failed"));
+
+        // Build and attach the Caribina anchor proof **before** accept.
+        //
+        // This used to happen after apply and broadcast, in a detached background task, and it never
+        // mutated the header — so every block the built-in miner committed carried zeroed anchor
+        // fields and conferred no finality, while `caribina.md` claimed Caribina "protects native
+        // miners". The proof must be attached before `accept_block` because `chain_state`'s
+        // enforcement requires a *verified* proof (OBL-C63); publishing stays asynchronous, since
+        // finality no longer depends on the POST.
+        let mut mined_block = mined_block;
+        let anchor_proof = {
+            let fc = &chain_state.finality_config;
+            if fc.should_anchor() {
+                let proof = dwow_chain::caribina::build_anchor_proof(&mined_block.header, &anchor_wallet);
+                mined_block.header.caribina_anchor = Some(proof.clone());
+                mined_block.header.finality_flags = fc.mine_flags();
+                debug_assert!(
+                    dwow_chain::caribina::verify_anchor_proof(&mined_block.header),
+                    "a proof this node just built must verify, or no native-mined block is ever final"
+                );
+                Some(proof)
+            } else {
+                None
+            }
+        };
 
         // Accept block — single unified path (block_acceptor::accept_block).
         // Uses the mining_vm created above for PoW verification.
@@ -274,34 +301,26 @@ impl DwowNode {
         // Broadcast the mined block to peers
         broadcast_block(&self.p2p_handler.p2p, mined_block.clone(), prep.uncles.clone()).await;
 
-        // Anchor to Arweave via Caribina — best-effort, passive, background.
-        // This is a fork-choice tiebreaker for honest miners during re-org
-        // attacks, not a consensus gate. The anchor happens after apply and
-        // broadcast so mining is never blocked by Arweave latency.
-        let fc = chain_state.finality_config.clone();
-        let block_hash_bytes = {
-            #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
-            let hash = chain_state.hash_block_with_cached_vm(&mined_block).expect("hash failed");
-            let mut bytes = [0u8; 32];
-            bytes.copy_from_slice(hash.as_bytes());
-            bytes
-        };
-        let anchor_ts = mined_block.header.timestamp;
-        let anchor_height = height;
-        if fc.should_anchor() {
+        // Publish the anchor proof to Arweave — best-effort, and asynchronous.
+        //
+        // Only *publication* is deferred now. The proof itself is already in the block (above), so
+        // finality does not depend on this succeeding, and mining must not be blocked by Arweave
+        // latency: a failure here costs the external anchor and nothing else.
+        if let Some(proof) = anchor_proof {
+            let anchor_height = height;
             let anchor_block_hash = block_hash.clone();
             smol::spawn(async move {
-                match smol::unblock(move || {
-                    anchor_block(&block_hash_bytes, anchor_ts.get(), anchor_height)
-                }).await {
+                match smol::unblock(move || dwow_chain::caribina::publish_anchor_proof(&proof)).await {
                     Some(tx_id) => {
                         info!(target: "dwowd::rpc::miner",
-                            "Caribina anchor confirmed: tx={} block={} height={}",
+                            "Caribina anchor published: tx={} block={} height={}",
                             hex::encode(tx_id), anchor_block_hash, anchor_height);
                     }
                     None => {
-                        info!(target: "dwowd::rpc::miner",
-                            "Caribina anchor skipped (Turbo/network unavailable)");
+                        warn!(target: "dwowd::rpc::miner",
+                            "Block {} is anchored but not published — Arweave publication failed; \
+                             finality is local-only until it is re-published",
+                            anchor_height);
                     }
                 }
             }).detach();

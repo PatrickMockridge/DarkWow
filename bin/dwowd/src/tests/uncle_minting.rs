@@ -131,6 +131,8 @@ async fn build_chain() -> TestResult<(Arc<dwow_chain::CChainState>, crate::accou
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
         pow_source: PowSource::Native,
+        anchor_owner: [0u8; 32],
+        caribina_anchor: None,
     };
     let block_2 = Block { header: header_2, transactions: vec![coinbase_tx_2] };
     let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;

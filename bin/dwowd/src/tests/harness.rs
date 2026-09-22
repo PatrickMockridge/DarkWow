@@ -127,6 +127,8 @@ pub fn build_test_header(
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
         pow_source: PowSource::Native,
+        anchor_owner: [0u8; 32],
+        caribina_anchor: None,
     })
 }
 
@@ -344,6 +346,8 @@ pub fn build_test_block_with_uncles(
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         },
         transactions: txs,
     })

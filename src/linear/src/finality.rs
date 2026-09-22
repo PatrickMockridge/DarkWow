@@ -109,41 +109,25 @@ impl FinalityConfig {
         self.mode != FinalityMode::Native && self.monero_enabled
     }
 
-    /// Returns true if the node should enforce anchors on received blocks
+    /// Returns true if the node should enforce anchors on received blocks.
+    ///
+    /// This is only half the decision. Whether an anchor is *enforced* is decided at the two
+    /// enforcement sites in `chain_state.rs`, and since 2026-09-22 those require
+    /// `caribina::verify_anchor_proof` to succeed — enforcement **is** verification, not a second
+    /// condition that could disagree with it (OBL-C65).
+    ///
+    /// `should_verify_anchor` and `should_verify_monero_anchor` used to sit here and were the defect:
+    /// both returned `false` whenever their `*_enabled` flag was off, while this function ignored
+    /// those flags entirely, so a node could enforce anchors it had decided not to check. They had no
+    /// production caller in either direction, and the fix is not a corrected predicate but their
+    /// removal — a dead method encoding a wrong invariant is worse than no method, and a
+    /// "verifier with no caller" is the shape this whole campaign exists to remove.
     pub fn should_enforce(&self, block_flags: u8) -> bool {
         match self.mode {
             FinalityMode::Native => false,
             FinalityMode::Always => true,
             FinalityMode::Signaled => block_flags & flags::FINALITY_SIGNALED != 0,
         }
-    }
-
-    /// Returns true if the node should verify anchor proofs on received blocks
-    pub fn should_verify_anchor(&self, block_flags: u8) -> bool {
-        if !self.caribina_enabled {
-            return false;
-        }
-        if self.mode == FinalityMode::Native {
-            return false;
-        }
-        if self.mode == FinalityMode::Signaled {
-            return block_flags & flags::FINALITY_SIGNALED != 0;
-        }
-        true
-    }
-
-    /// Returns true if the node should verify Monero anchors on received blocks
-    pub fn should_verify_monero_anchor(&self, block_flags: u8) -> bool {
-        if !self.monero_enabled {
-            return false;
-        }
-        if self.mode == FinalityMode::Native {
-            return false;
-        }
-        if self.mode == FinalityMode::Signaled {
-            return block_flags & flags::FINALITY_SIGNALED != 0;
-        }
-        true
     }
 
     /// Returns the flags to set on a newly mined block
@@ -257,45 +241,6 @@ mod tests {
         assert!(!signaled_cfg.should_enforce(flags::FINALITY_CARIBNIA));
         assert!(signaled_cfg.should_enforce(flags::FINALITY_SIGNALED));
         assert!(signaled_cfg.should_enforce(flags::FINALITY_CARIBNIA | flags::FINALITY_SIGNALED));
-    }
-
-    #[test]
-    fn test_should_verify_anchor() {
-        // caribina disabled → always false regardless of mode
-        let cfg = FinalityConfig {
-            mode: FinalityMode::Always,
-            caribina_enabled: false,
-            ..Default::default()
-        };
-        assert!(!cfg.should_verify_anchor(flags::FINALITY_CARIBNIA));
-
-        // Native mode → always false
-        let cfg = FinalityConfig {
-            mode: FinalityMode::Native,
-            caribina_enabled: true,
-            ..Default::default()
-        };
-        assert!(!cfg.should_verify_anchor(flags::FINALITY_CARIBNIA));
-
-        // Always mode + caribina enabled → true
-        let cfg = FinalityConfig {
-            mode: FinalityMode::Always,
-            caribina_enabled: true,
-            ..Default::default()
-        };
-        assert!(cfg.should_verify_anchor(flags::FINALITY_CARIBNIA));
-        assert!(cfg.should_verify_anchor(0)); // Always ignores flags
-
-        // Signaled mode → only when SIGNALED bit set
-        let cfg = FinalityConfig {
-            mode: FinalityMode::Signaled,
-            caribina_enabled: true,
-            ..Default::default()
-        };
-        assert!(!cfg.should_verify_anchor(0));
-        assert!(!cfg.should_verify_anchor(flags::FINALITY_CARIBNIA));
-        assert!(cfg.should_verify_anchor(flags::FINALITY_SIGNALED));
-        assert!(cfg.should_verify_anchor(flags::FINALITY_CARIBNIA | flags::FINALITY_SIGNALED));
     }
 
     #[test]
@@ -414,126 +359,60 @@ mod tests {
         assert!(!cfg.should_anchor_monero());
     }
 
-    #[test]
-    fn test_should_verify_monero_anchor() {
-        // monero disabled -> always false regardless of mode
-        let cfg = FinalityConfig {
-            mode: FinalityMode::Always,
-            monero_enabled: false,
-            ..Default::default()
-        };
-        assert!(!cfg.should_verify_monero_anchor(flags::FINALITY_MONERO));
+    // `test_should_verify_monero_anchor` was removed with `should_verify_monero_anchor` itself
+    // (OBL-C65): it had no production caller and encoded the wrong invariant — see the method's
+    // deletion note. The Monero side's real invariant is now "enforcement requires the derived
+    // Monero anchor", asserted where that decision is made.
 
-        // Native mode -> always false
-        let cfg = FinalityConfig {
-            mode: FinalityMode::Native,
-            monero_enabled: true,
-            ..Default::default()
-        };
-        assert!(!cfg.should_verify_monero_anchor(flags::FINALITY_MONERO));
-
-        // Always mode + monero enabled -> true
-        let cfg = FinalityConfig {
-            mode: FinalityMode::Always,
-            monero_enabled: true,
-            ..Default::default()
-        };
-        assert!(cfg.should_verify_monero_anchor(flags::FINALITY_MONERO));
-        assert!(cfg.should_verify_monero_anchor(0)); // Always ignores flags
-
-        // Signaled mode -> only when SIGNALED bit set
-        let cfg = FinalityConfig {
-            mode: FinalityMode::Signaled,
-            monero_enabled: true,
-            ..Default::default()
-        };
-        assert!(!cfg.should_verify_monero_anchor(0));
-        assert!(!cfg.should_verify_monero_anchor(flags::FINALITY_MONERO));
-        assert!(cfg.should_verify_monero_anchor(flags::FINALITY_SIGNALED));
-        assert!(cfg.should_verify_monero_anchor(flags::FINALITY_MONERO | flags::FINALITY_SIGNALED));
-    }
-
-    /// OBL-C65 — enforcement must never outrun verification.
+    /// OBL-C65 — enforcement never outruns verification.
     ///
-    /// `should_enforce` decides whether a block's anchor is treated as binding, and
-    /// `should_verify_anchor`/`should_verify_monero_anchor` decide whether that anchor is checked. They
-    /// are computed from unrelated conditions, so a configuration exists that enforces without
-    /// verifying — and a node in that state can be driven into `AnchoredBlockConflict` by any peer that
-    /// sets an anchor field, because the field is outside the mining blob (`OBL-C64`).
+    /// **This test was replaced rather than flipped, because the fix removed the thing it tested.**
+    /// `should_enforce` used to be paired with `should_verify_anchor` /
+    /// `should_verify_monero_anchor`: two predicates computed from unrelated conditions, so a
+    /// configuration existed that enforced anchors it had decided not to check — and any peer could
+    /// then drive a node into `AnchoredBlockConflict` by setting a field. The resolution was not a
+    /// corrected predicate but the removal of both (see `should_enforce`'s doc), so the invariant is
+    /// no longer a property of `FinalityConfig` at all.
     ///
-    /// The input space is finite (3 modes × 2 × 2 enablements × 8 flag values), so this is exhaustive
-    /// rather than sampled. **This test asserts the defect**, deliberately: Stage 3 replaces the two
-    /// assertions below with `assert!(violations.is_empty(), ...)`, and the failure text says so.
+    /// It is instead a property of the two call sites, and it holds by construction: both call
+    /// `caribina::verify_anchor_proof` directly, so "enforced" and "verified" are the same call and
+    /// cannot disagree. That is asserted where it lives — the positive control and the forged-key
+    /// control in `chain_state::tests::test_finality_conferred_without_any_anchor_verification`, and
+    /// the eight negative controls in `caribina::verify::tests`.
+    ///
+    /// What can still be checked here is that the *decision* to enforce is a function of the mode and
+    /// the block's own flags, and nothing else — no `*_enabled` flag can suppress enforcement while
+    /// leaving enforcement in place elsewhere, which was the shape of the old bug.
     #[test]
-    fn test_enforcement_never_outruns_verification() {
-        let modes = [FinalityMode::Native, FinalityMode::Always, FinalityMode::Signaled];
+    fn test_enforce_decision_depends_only_on_mode_and_flags() {
         let flag_values = [
             0u8,
             flags::FINALITY_CARIBNIA,
             flags::FINALITY_MONERO,
             flags::FINALITY_SIGNALED,
-            flags::FINALITY_CARIBNIA | flags::FINALITY_MONERO,
             flags::FINALITY_CARIBNIA | flags::FINALITY_SIGNALED,
-            flags::FINALITY_MONERO | flags::FINALITY_SIGNALED,
-            flags::FINALITY_CARIBNIA | flags::FINALITY_MONERO | flags::FINALITY_SIGNALED,
+            0x07,
         ];
-
-        let mut violations = Vec::new();
-        for mode in modes {
+        for mode in [FinalityMode::Native, FinalityMode::Always, FinalityMode::Signaled] {
             for caribina_enabled in [false, true] {
                 for monero_enabled in [false, true] {
                     for f in flag_values {
-                        let cfg = FinalityConfig {
-                            mode,
-                            caribina_enabled,
-                            monero_enabled,
-                            ..Default::default()
+                        let cfg = FinalityConfig { mode, caribina_enabled, monero_enabled, ..Default::default() };
+                        // The `*_enabled` flags gate *anchoring*, not enforcement; a node that enforces
+                        // must decide that from the mode, and the verified proof then decides the rest.
+                        let expected = match mode {
+                            FinalityMode::Native => false,
+                            FinalityMode::Always => true,
+                            FinalityMode::Signaled => f & flags::FINALITY_SIGNALED != 0,
                         };
-                        if cfg.should_enforce(f)
-                            && !cfg.should_verify_anchor(f)
-                            && !cfg.should_verify_monero_anchor(f)
-                        {
-                            violations.push((mode, caribina_enabled, monero_enabled, f));
-                        }
+                        assert_eq!(
+                            cfg.should_enforce(f), expected,
+                            "should_enforce must depend only on mode and flags — an enablement flag \
+                             leaking into it is how enforcement came to outrun verification (OBL-C65)"
+                        );
                     }
                 }
             }
         }
-
-        // The shape of the defect, stated exactly: a violation occurs when the node enforces — Always,
-        // or Signaled with the signal bit — while having *neither* anchor kind enabled to verify. The
-        // predicate is a conjunction, not a disjunction; a disjunction here would be satisfied by every
-        // violation trivially and would assert nothing.
-        assert!(
-            violations.iter().all(|(mode, caribina, monero, f)| {
-                !*caribina
-                    && !*monero
-                    && (*mode == FinalityMode::Always
-                        || (*mode == FinalityMode::Signaled
-                            && f & flags::FINALITY_SIGNALED != 0))
-            }),
-            "a violation exists outside the documented shape — the defect has grown, not shrunk: \
-             {violations:?}"
-        );
-
-        // The concrete configuration `--finality-disable-caribina` produces, in the default mode.
-        // This is not a hypothetical: `bin/dwowd/src/main.rs:187-189` sets exactly this field.
-        let disabled = FinalityConfig {
-            mode: FinalityMode::Always,
-            caribina_enabled: false,
-            ..Default::default()
-        };
-        assert!(
-            disabled.should_enforce(0) && !disabled.should_verify_anchor(0),
-            "OBL-C65 appears fixed: a node with Caribina disabled no longer enforces it"
-        );
-
-        // ASSERTS THE DEFECT. Stage 3: replace this with `assert!(violations.is_empty(), ...)`.
-        assert!(
-            !violations.is_empty(),
-            "OBL-C65 appears fixed — every enforcing configuration now also verifies. \
-             Flip this assertion to `assert!(violations.is_empty(), ...)` and the one above to its \
-             negation; see doc/src/arch/verification-hazop.md."
-        );
     }
 }

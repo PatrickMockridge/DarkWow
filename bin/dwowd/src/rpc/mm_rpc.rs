@@ -626,7 +626,15 @@ impl DwowNode {
             // are not validated pre-commit; the WASM execution recomputes them.
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
+            // A merge-mined block commits no anchor *author*: there is no DarkWow preimage of its
+            // own to bind one into — its proof-of-work is Monero's, and the blob is never hashed.
+            // Caribina anchoring is therefore unavailable to this path by construction, not by
+            // omission; a merge-mined block is unanchored and confers no Caribina finality.
+            anchor_owner: [0u8; 32],
             anchor_tx_id: [0u8; 32],
+            caribina_anchor: None,
+            // The Monero anchor is *derived* from the `PowSource::Monero` proof below, not read from
+            // these fields, so they stay zero (OBL-C67). Setting them by hand would confer nothing.
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
@@ -829,7 +837,9 @@ mod tests {
             miner: [0xDD; 32],
             commitment_merkle_root: [0xEE; 32],
             nullifier_root: [0xFF; 32],
+            anchor_owner: [0u8; 32],
             anchor_tx_id: [0u8; 32],
+            caribina_anchor: None,
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,

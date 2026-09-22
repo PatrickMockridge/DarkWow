@@ -64,6 +64,8 @@ fn block_broadcast_wire_golden() {
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
             fee_window_flags: dwow_chain::fee_window::FeeWindowFlags::default(),
         },
         transactions: vec![],
@@ -141,6 +143,8 @@ fn block_broadcast_wire_carries_pow_source() {
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
         pow_source: PowSource::Monero(monero_data),
+        anchor_owner: [0u8; 32],
+        caribina_anchor: None,
         fee_window_flags: dwow_chain::fee_window::FeeWindowFlags::default(),
     };
     let block = Block { header, transactions: vec![] };
@@ -197,7 +201,9 @@ fn block_size_measurement_is_sensitive_to_the_monero_proof() {
             miner: [0u8; 32],
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
+            anchor_owner: [0u8; 32],
             anchor_tx_id: [0u8; 32],
+            caribina_anchor: None,
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,

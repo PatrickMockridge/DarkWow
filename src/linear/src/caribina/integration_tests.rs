@@ -34,7 +34,7 @@ use std::io::Read;
 use dwow_sdk::blockchain::BlockHeight;
 
 use crate::caribina::{
-    anchor::{anchor_block, TURBO_UPLOAD_URL},
+    anchor::{publish_anchor_proof, TURBO_UPLOAD_URL},
     data_item::DataItem,
     verify::{verify_anchor, VerifyError},
     wallet::CaribinaWallet,
@@ -94,8 +94,8 @@ fn test_wallet_cycling_yields_distinct_tx_ids_for_one_payload() {
     // Identical payload, identical height, identical timestamp — only the cycled key differs.
     let hash = [0xAAu8; 32];
 
-    let id1 = anchor_block(&hash, ts, BlockHeight::new(1)).expect("first anchor should succeed");
-    let id2 = anchor_block(&hash, ts, BlockHeight::new(1)).expect("second anchor should succeed");
+    let id1 = publish_test_anchor(&hash, ts, BlockHeight::new(1)).expect("first anchor should succeed");
+    let id2 = publish_test_anchor(&hash, ts, BlockHeight::new(1)).expect("second anchor should succeed");
 
     assert_ne!(id1, id2, "cycled keys must produce distinct TX IDs for the same payload");
 }
@@ -111,7 +111,7 @@ fn test_verify_not_found() {
     }
 }
 
-/// `anchor_block` degrades to `None` instead of panicking or failing the block.
+/// `publish_anchor_proof` degrades to `None` instead of panicking or failing the block.
 ///
 /// The earlier form asserted `assert_eq!(id.len(), 32)` on a value whose type is already `[u8; 32]` —
 /// the compiler folds that to `true`, so the test asserted nothing at all and would have passed against a
@@ -122,10 +122,10 @@ fn test_verify_not_found() {
 #[ignore]
 fn test_anchor_block_does_not_panic() {
     // Returns Some(id) if Turbo is reachable, None otherwise. Both are correct; neither may panic.
-    let result = anchor_block(&[0u8; 32], 0, BlockHeight::new(0));
+    let result = publish_test_anchor(&[0u8; 32], 0, BlockHeight::new(0));
     match result {
         Some(id) => assert_ne!(id, [0u8; 32], "a successful anchor must not report the zero id"),
-        None => eprintln!("  Turbo unreachable — anchor_block degraded to None, which is the contract"),
+        None => eprintln!("  Turbo unreachable — publish_anchor_proof degraded to None, which is the contract"),
     }
 }
 
@@ -243,6 +243,27 @@ fn test_timestamp_tolerance_integration() {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Build a 48-byte proof payload and publish it — the test-side equivalent of
+/// `build_anchor_proof` + `publish_anchor_proof`, without needing a whole block header.
+///
+/// These tests exercise the Arweave plumbing (Turbo POST, gateway fetch, signature check), not block
+/// semantics, so a synthetic commitment is the right input. The block-shaped path is covered by the
+/// hermetic tests and `chain_state`'s anchor controls.
+fn publish_test_anchor(
+    commitment: &[u8; 32],
+    timestamp: u64,
+    height: BlockHeight,
+) -> Option<[u8; 32]> {
+    let wallet = CaribinaWallet::generate();
+    let mut payload = Vec::with_capacity(48);
+    payload.extend_from_slice(commitment);
+    payload.extend_from_slice(&timestamp.to_le_bytes());
+    payload.extend_from_slice(&height.to_le_bytes());
+    let mut item = DataItem::new(&payload);
+    item.sign(&wallet);
+    publish_anchor_proof(item.as_bytes())
+}
+
 /// POST a test anchor to ArDrive Turbo and return (hash, timestamp, height, tx_id).
 fn post_test_anchor() -> ([u8; 32], u64, BlockHeight, [u8; 32]) {
     let mut hash = [0u8; 32];
@@ -258,8 +279,8 @@ fn post_test_anchor() -> ([u8; 32], u64, BlockHeight, [u8; 32]) {
         .as_secs();
     let height = BlockHeight::new(1);
 
-    let tx_id = anchor_block(&hash, timestamp, height)
-        .expect("anchor_block should succeed — network and Turbo must be available");
+    let tx_id = publish_test_anchor(&hash, timestamp, height)
+        .expect("publishing should succeed — network and Turbo must be available");
     assert_ne!(tx_id, [0u8; 32], "TX ID should be non-zero");
 
     (hash, timestamp, height, tx_id)

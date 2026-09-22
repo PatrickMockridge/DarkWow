@@ -332,6 +332,8 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: crate::PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         }
     }
 

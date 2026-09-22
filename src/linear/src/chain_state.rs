@@ -103,7 +103,7 @@ use blake3::Hash as Blake3Hash;
 use randomx::{RandomXCache, RandomXFlags, RandomXVM};
 use sled::transaction::Transactional;
 use tracing::info;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp};
 use dwow_sdk::crypto::{pedersen_commitment_u64, Blind, MerkleNode, MerkleTree};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::{ff::FromUniformBytes, Group, GroupEncoding};
@@ -113,7 +113,7 @@ use dwow_serial::deserialize as dwow_deserialize;
 
 use crate::{
     Block, Commitment, CumulativeSupplyChain, FinalityConfig, LinearError, LinearStore,
-    Nullifier, PoWConsensus, Result, UncleBlock, validation,
+    Nullifier, PoWConsensus, Result, UncleBlock, caribina, validation,
 };
 
 /// How long the tip can be stale before the node considers itself
@@ -1007,10 +1007,17 @@ impl CChainState {
         }
 
         // --- Finality: anchored block conflict ---
+        //
+        // Finality is conferred by a **verified anchor proof**, not by a header field (OBL-C63/C64).
+        // Until 2026-09-22 this read `anchor_tx_id != 0 || anchor_monero_height != 0` — two fields the
+        // relaying peer chooses and nothing authenticates, outside the mined region — so any peer could
+        // make a block permanently un-replaceable for free. `verify_anchor_proof` is a pure local
+        // function: it checks the carried ANS-104 DataItem's signature, that its signer is the
+        // `anchor_owner` this block's proof-of-work commits, and that its payload binds this block's
+        // own commitment. No network, no VM, no flag.
         if let Ok(existing) = self.store.get_block(block_height) {
             if self.finality_config.should_enforce(existing.header.finality_flags)
-                && (existing.header.anchor_tx_id != [0u8; 32]
-                    || existing.header.anchor_monero_height != MoneroBlockHeight::new(0))
+                && caribina::verify_anchor_proof(&existing.header)
             {
                 return Err(LinearError::AnchoredBlockConflict);
             }
@@ -1542,11 +1549,14 @@ impl CChainState {
         let Some(uncle_parent) = uncle_parent else { return Ok(ReorgSignal::None) };
 
         // Heaviest-chain comparison (the single fork-selection decision point).
+        //
+        // Same predicate as the connect path above, and for the same reason: a *verified* anchor
+        // proof, not a field. The two sites must agree — a block that `connect_block` treats as
+        // un-replaceable cannot be one `detect_reorg` is willing to reorg away.
         let canonical_block = self.get_block(current_height)?;
         let canonical_finalized = self.finality_config.should_enforce(
             canonical_block.header.finality_flags,
-        ) && (canonical_block.header.anchor_tx_id != [0u8; 32]
-            || canonical_block.header.anchor_monero_height != MoneroBlockHeight::new(0));
+        ) && caribina::verify_anchor_proof(&canonical_block.header);
         if canonical_finalized {
             return Ok(ReorgSignal::None);
         }
@@ -1957,6 +1967,7 @@ mod tests {
                 commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
+                anchor_owner: [0u8; 32], caribina_anchor: None,
             fee_window_flags: FeeWindowFlags::default(),
             },
             transactions: vec![],
@@ -2005,6 +2016,7 @@ mod tests {
                 commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
+                anchor_owner: [0u8; 32], caribina_anchor: None,
             fee_window_flags: FeeWindowFlags::default(),
             },
             transactions: vec![],
@@ -2057,6 +2069,7 @@ mod tests {
                     commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                     anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                     anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
+                    anchor_owner: [0u8; 32], caribina_anchor: None,
             fee_window_flags: FeeWindowFlags::default(),
                 },
                 transactions: vec![],
@@ -2146,6 +2159,8 @@ mod tests {
                 finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
                 pow_source: crate::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![],
         };
@@ -2186,6 +2201,7 @@ mod tests {
                     commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                     anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                     anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
+                    anchor_owner: [0u8; 32], caribina_anchor: None,
             fee_window_flags: FeeWindowFlags::default(),
                 },
                 transactions: vec![],
@@ -2269,6 +2285,7 @@ mod tests {
                 commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
+                anchor_owner: [0u8; 32], caribina_anchor: None,
             fee_window_flags: FeeWindowFlags::default(),
             },
             transactions: vec![],
@@ -2330,6 +2347,34 @@ mod tests {
     /// Build a minimal empty-tx block for detect_reorg tests. PoW is NOT
     /// validated by detect_reorg/store_competing_block, so `nonce`/`target` are
     /// free knobs for forcing Heavier vs Lighter (chain_work = u32::MAX/target).
+    /// Attach a genuine Caribina anchor proof to a block, exactly as the miner's path must.
+    ///
+    /// Three steps, and the order matters: the owner is committed **first** (it is inside the mining
+    /// preimage, so it must exist before mining), then the commitment is taken over the header — which
+    /// zeroes the anchor fields, so the proof can bind a header that carries itself — and only then is
+    /// the DataItem signed and attached.
+    ///
+    /// Used as the positive control for the enforcement predicate: a test that only ever asserts "no
+    /// finality" would pass against a guard that always returned `false`.
+    fn attach_anchor_proof(block: &mut Block) {
+        let wallet = crate::caribina::CaribinaWallet::generate();
+        block.header.anchor_owner = wallet.public_key();
+
+        let commitment = crate::caribina::anchor_commitment(&block.header);
+        let mut payload = Vec::with_capacity(48);
+        payload.extend_from_slice(&commitment);
+        payload.extend_from_slice(&block.header.timestamp.get().to_le_bytes());
+        payload.extend_from_slice(&block.header.height.to_le_bytes());
+
+        let mut item = crate::caribina::DataItem::new(&payload);
+        item.sign(&wallet);
+        block.header.caribina_anchor = Some(item.as_bytes().to_vec());
+        assert!(
+            crate::caribina::verify_anchor_proof(&block.header),
+            "the helper must produce a proof the verifier accepts, or every test using it is vacuous"
+        );
+    }
+
     fn dr_block(height: u64, target: BlockTarget, previous: blake3::Hash, nonce: u32) -> Block {
         Block {
             header: BlockHeader {
@@ -2351,6 +2396,8 @@ mod tests {
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
                 fee_window_flags: FeeWindowFlags::default(),
             },
             transactions: vec![],
@@ -2394,10 +2441,15 @@ mod tests {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
             FinalityConfig::default()).unwrap();
-        // FinalityConfig::default() is Always mode; a canonical tip that carries
-        // an anchor must never be reorged, even by a heavier competing chain.
+        // FinalityConfig::default() is Always mode; a canonical tip that carries a **verified**
+        // anchor must never be reorged, even by a heavier competing chain.
+        //
+        // This used to set `anchor_tx_id = [1u8; 32]` — a bare field with nothing behind it — which
+        // is what made the guard a free chain-freeze rather than a finality rule (OBL-C63). The
+        // assertion is unchanged; the mechanism is now a real proof, via the same helper the OBL-C63
+        // positive control uses.
         let mut canonical = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0);
-        canonical.header.anchor_tx_id = [1u8; 32];
+        attach_anchor_proof(&mut canonical);
         seed_canonical(&cs, canonical);
 
         let parent = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 1);
@@ -2448,7 +2500,7 @@ mod tests {
              the assertions below prove nothing about anchors"
         );
 
-        // (a) an arbitrary anchor_tx_id, with nothing behind it.
+        // (a) an arbitrary anchor_tx_id, with nothing behind it: NO finality.
         for anchor in [[1u8; 32], [0xFFu8; 32]] {
             let cs = open();
             let mut canonical = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0);
@@ -2456,14 +2508,16 @@ mod tests {
             seed_canonical(&cs, canonical);
             let ext = heavier_fork(&cs);
             assert!(
-                matches!(cs.detect_reorg(&ext).unwrap(), ReorgSignal::None),
-                "OBL-C63: anchor_tx_id {anchor:?} has no Arweave object behind it and is not verified, \
-                 yet it blocks a heavier fork. If the fix has landed, invert this assertion — an \
-                 unverifiable anchor must confer no finality. See doc/src/arch/verification-hazop.md"
+                !matches!(cs.detect_reorg(&ext).unwrap(), ReorgSignal::None),
+                "OBL-C63 (fixed): anchor_tx_id {anchor:?} has no Arweave object behind it and nothing \
+                 verifies it, so it must confer no finality — the heavier chain must win. It used to \
+                 block the reorg, which is the free chain-freeze the fix removed."
             );
         }
 
-        // (b) a Monero height with a zero hash.
+        // (b) a Monero height with a zero hash: likewise no finality. The Monero anchor is now
+        // *derived* from `PowSource::Monero(MoneroPowData)` rather than read from these fields, so
+        // setting them by hand confers nothing at all.
         let cs = open();
         let mut canonical = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0);
         canonical.header.anchor_monero_height = MoneroBlockHeight::new(3_000_000);
@@ -2471,10 +2525,38 @@ mod tests {
         seed_canonical(&cs, canonical);
         let ext = heavier_fork(&cs);
         assert!(
-            matches!(cs.detect_reorg(&ext).unwrap(), ReorgSignal::None),
-            "OBL-C63: anchor_monero_height alone blocks a heavier fork, because anchor_monero_hash is \
-             not in the enforcement predicate at chain_state.rs:1012 and :1548"
+            !matches!(cs.detect_reorg(&ext).unwrap(), ReorgSignal::None),
+            "the Monero anchor is derived from the Monero proof, not from these fields — setting them \
+             by hand must confer no finality"
         );
+
+        // (c) THE POSITIVE CONTROL FOR THE FIX: a real, verified anchor proof does block it. Without
+        // this, an enforcement predicate that simply returned false would satisfy (a) and (b).
+        for forged in [false, true] {
+            let cs = open();
+            let mut canonical = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0);
+            attach_anchor_proof(&mut canonical);
+            if forged {
+                // Same shape, but the DataItem is signed by a key the block does not commit.
+                canonical.header.anchor_owner = [0x11; 32];
+            }
+            seed_canonical(&cs, canonical);
+            let ext = heavier_fork(&cs);
+            let verdict = cs.detect_reorg(&ext).unwrap();
+            if forged {
+                assert!(
+                    !matches!(verdict, ReorgSignal::None),
+                    "an anchor signed by a key the block does not commit must confer no finality — this \
+                     is what stops a peer publishing an anchor for somebody else's block (OBL-C63/A5)"
+                );
+            } else {
+                assert!(
+                    matches!(verdict, ReorgSignal::None),
+                    "a verified anchor proof must block a heavier fork — this is the premise, and if it \
+                     fails the guard is inert rather than fixed"
+                );
+            }
+        }
     }
 
     #[test]

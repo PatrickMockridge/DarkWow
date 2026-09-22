@@ -724,6 +724,8 @@ mod tests {
                 finality_flags: 0,
                 fee_window_flags: FeeWindowFlags::default(),
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             };
 
             let block = dwow_chain::Block { header, transactions: vec![tx] };
@@ -921,6 +923,8 @@ mod tests {
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             };
 
             let block = dwow_chain::Block { header, transactions: vec![tx] };
@@ -1241,6 +1245,8 @@ mod tests {
                     anchor_monero_hash: [0u8; 32],
                     finality_flags: 0,
                     pow_source: dwow_chain::PowSource::Native,
+                    anchor_owner: [0u8; 32],
+                    caribina_anchor: None,
                 },
                 transactions: vec![],
             };

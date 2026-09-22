@@ -28,7 +28,7 @@ use std::{
 use async_trait::async_trait;
 use smol::lock::MutexGuard;
 use tinyjson::JsonValue;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use dwow_core::{
     rpc::{
@@ -256,10 +256,16 @@ impl DwowNode {
             total_reward: template.value,
             randomx_key,
             miner: template.miner,
+            // The per-block anchor key, from the same template the submit path reads. It MUST appear
+            // here as well as there: it is inside the mining blob, so a value that differed between
+            // this blob and the submitted header would make the found nonce fail PoW verification.
+            anchor_owner: template.anchor_wallet.public_key(),
             // Zeroed roots (see submit path); recomputed by WASM execution.
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
+            // No proof yet — it is built at submit, after the nonce is known.
+            caribina_anchor: None,
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
@@ -336,7 +342,6 @@ impl DwowNode {
         }
 
         use crate::registry::model::generate_linear_block_template;
-        use dwow_chain::caribina::anchor_block;
 
         info!(
             target: "dwowd::rpc::rpc_stratum::stratum_submit",
@@ -486,11 +491,17 @@ impl DwowNode {
             total_reward: template.as_ref().map(|t| t.value).unwrap_or(reward),
             randomx_key,
             miner: template.as_ref().map(|t| t.miner).unwrap_or([0u8; 32]),
+            // Same source as the login blob's: both read the live template, so the value xmrig
+            // hashed and the value submitted agree.
+            anchor_owner: template.as_ref().map(|t| t.anchor_wallet.public_key()).unwrap_or([0u8; 32]),
             // Zeroed roots match the built-in miner path (lib.rs): header roots
             // are not validated pre-commit; the WASM execution recomputes them.
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
+            // Built below, once the nonce is known and PoW has been verified: the proof binds the
+            // header minus its post-mining fields, so it cannot exist before the nonce does.
+            caribina_anchor: None,
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
@@ -553,49 +564,99 @@ impl DwowNode {
             }
         }
 
-        // Anchor to Arweave via Caribina (best-effort)
+        // Build the Caribina anchor proof, then publish it best-effort.
+        //
+        // **Order matters, and it changed on 2026-09-22.** The proof is built first — a pure,
+        // local, infallible step — and *attached to the header* before `accept_block`, because
+        // `chain_state`'s enforcement requires a verified proof to confer finality (OBL-C63).
+        // Publication is then attempted separately: it is a network call that may fail, and a block
+        // whose publication failed is still valid, merely unanchored. Previously this block set only
+        // `anchor_tx_id` — a field nothing now consults — so an anchored block was indistinguishable
+        // from an unanchored one.
         {
             let fc = &chain_state.finality_config;
             if fc.should_anchor() {
-                #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
-                let block_hash = chain_state.hash_block_with_cached_vm(&block).expect("hash failed");
-                let mut block_hash_bytes = [0u8; 32];
-                block_hash_bytes.copy_from_slice(block_hash.as_bytes());
+                // The template's per-block key, whose public half the header already commits.
+                let anchor_wallet = {
+                    let tmpl = self.mining_state.current_linear_template.lock().await;
+                    tmpl.as_ref().map(|t| t.anchor_wallet.clone())
+                };
+                if let Some(wallet) = anchor_wallet {
+                    if block.header.anchor_owner == wallet.public_key() {
+                        block.header.caribina_anchor = Some(
+                            dwow_chain::caribina::build_anchor_proof(&block.header, &wallet),
+                        );
+                        block.header.finality_flags = fc.mine_flags();
+                        debug_assert!(
+                            dwow_chain::caribina::verify_anchor_proof(&block.header),
+                            "a proof this node just built must verify — if not, the miner and the \
+                             verifier disagree about the commitment and no block will ever be final"
+                        );
+                    } else {
+                        // The live template moved between login and submit, so this block commits an
+                        // owner we no longer hold the key for. Anchoring it would need the old
+                        // template's key; leaving it unanchored is the honest outcome, and the
+                        // submission will be rejected as stale by `accept_block` in any case.
+                        info!(
+                            target: "dwowd::rpc::rpc_stratum::stratum_submit",
+                            "[RPC-STRATUM] Block {} commits anchor_owner {:?} but the live template \
+                             holds a different key — leaving it unanchored",
+                            block.header.height, block.header.anchor_owner
+                        );
+                    }
+                }
+            }
+        }
+
+        // Publish the proof to Arweave (best-effort), with the submission lock released.
+        {
+            let fc = &chain_state.finality_config;
+            if fc.should_anchor() {
+                let proof = block.header.caribina_anchor.clone();
+                if let Some(proof) = proof {
+                let proof_len = proof.len();
 
                 // Release the submission lock for the network call (OBL-C68).
                 //
-                // The lock exists to serialise RandomX VM access, and `hash_block_with_cached_vm` above
-                // needs it — but `anchor_block` touches no VM. It performs a blocking HTTP POST with a
-                // 30-second end-to-end deadline (`ureq`'s `timeout_global`, which the crate documents as
-                // covering DNS through response body), and holding the lock across it serialised *every*
-                // other stratum submission behind one stuck anchor while also blocking the async executor
+                // The lock exists to serialise RandomX VM access, and the hashing above needed it —
+                // but publishing touches no VM. It performs a blocking HTTP POST with a 30-second
+                // end-to-end deadline (`ureq`'s `timeout_global`, which the crate documents as covering
+                // DNS through response body), and holding the lock across it serialised *every* other
+                // stratum submission behind one stuck anchor while also blocking the async executor
                 // thread. Do not move this call back inside the lock.
                 //
-                // Releasing it here is safe: between the drop and the re-acquire only `anchor_block` and
-                // local mutation of `block` run, and a submission that interleaves is rejected by
+                // Releasing it here is safe: between the drop and the re-acquire only the POST and a
+                // local `anchor_tx_id` assignment run, and a submission that interleaves is rejected by
                 // `accept_block`'s own height check — the same outcome serialisation would have produced.
                 drop(submit_guard);
 
-                match anchor_block(&block_hash_bytes, block.header.timestamp.get(), block.header.height) {
+                match dwow_chain::caribina::publish_anchor_proof(&proof) {
                     Some(tx_id) => {
+                        // Informational: the id is a convenience handle for looking the DataItem up on
+                        // a gateway. It is *not* what confers finality — `caribina_anchor` above is.
                         block.header.anchor_tx_id = tx_id;
-                        block.header.finality_flags = fc.mine_flags();
                         info!(
                             target: "dwowd::rpc::rpc_stratum::stratum_submit",
-                            "[RPC-STRATUM] Anchored block {} to Arweave",
-                            block_hash
+                            "[RPC-STRATUM] Published anchor proof for block {} (tx {})",
+                            block.header.height, hex::encode(tx_id)
                         );
                     }
                     None => {
-                        info!(
+                        // The block keeps its proof, and therefore its finality; only the Arweave
+                        // publication is missing. Logged at warn because it is a real degradation of
+                        // the external anchor, not a routine skip.
+                        warn!(
                             target: "dwowd::rpc::rpc_stratum::stratum_submit",
-                            "[RPC-STRATUM] Arweave anchor skipped (network/turbo unavailable)"
+                            "[RPC-STRATUM] Block {} is anchored but not published ({} bytes) — Arweave \
+                             publication failed; finality is local-only until it is re-published",
+                            block.header.height, proof_len
                         );
                     }
                 }
 
                 // Re-take it before `accept_block`, which needs the VM.
                 submit_guard = self.mining_state.linear_submit_lock.lock().await;
+                }
             }
         }
 
@@ -678,10 +739,14 @@ impl DwowNode {
                                     total_reward: new_template.value,
                                     randomx_key: new_randomx_key,
                                     miner: new_template.miner,
+                                    // The refreshed template's own anchor key — a new block gets a new
+                                    // one, and the submit path will read whichever template is live.
+                                    anchor_owner: new_template.anchor_wallet.public_key(),
                                     // Zeroed roots (see submit path); recomputed by WASM execution.
                                     commitment_merkle_root: [0u8; 32],
                                     nullifier_root: [0u8; 32],
                                     anchor_tx_id: [0u8; 32],
+                                    caribina_anchor: None,
                                     anchor_monero_height: MoneroBlockHeight::new(0),
                                     anchor_monero_hash: [0u8; 32],
                                     finality_flags: 0,

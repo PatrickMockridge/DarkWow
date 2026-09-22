@@ -115,6 +115,8 @@ fn test_wallet_address_roundtrip_and_transfer() {
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: dwow_chain::PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
         let block_2 = dwow_chain::Block { header: header_2, transactions: vec![coinbase_tx_2] };
         let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
@@ -275,6 +277,8 @@ fn test_transfer_receive_decrypt() {
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: dwow_chain::PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
         let block_2 = dwow_chain::Block { header: header_2, transactions: vec![coinbase_tx_2] };
         let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
@@ -352,6 +356,8 @@ fn test_transfer_receive_decrypt() {
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![dwow_chain::Transaction {
                 version: dwow_sdk::blockchain::BlockVersion::CURRENT,
@@ -466,6 +472,8 @@ fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: dwow_chain::PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
         let block_2 = dwow_chain::Block { header: header_2, transactions: vec![coinbase_tx_2] };
         let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;

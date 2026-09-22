@@ -13,8 +13,19 @@ use rand::RngCore;
 ///
 /// Uses Arweave signature type 2 (Ed25519/Curve25519).
 /// Public key = 32 bytes, signature = 64 bytes.
+///
+/// `Clone` because a block template carries one per block, and `Debug` is implemented by hand to
+/// print the public key only: a per-block signing key must not reach a log line, and
+/// `LinearBlockTemplate` derives `Debug` and is logged at template refresh.
+#[derive(Clone)]
 pub struct CaribinaWallet {
     signing_key: SigningKey,
+}
+
+impl std::fmt::Debug for CaribinaWallet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CaribinaWallet(owner={})", hex::encode(self.public_key()))
+    }
 }
 
 impl CaribinaWallet {

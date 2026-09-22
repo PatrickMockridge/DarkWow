@@ -189,6 +189,8 @@ fn test_wallet_integration() {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: dwow_chain::PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
 
         let block_2 = dwow_chain::Block { header, transactions: vec![tx] };
@@ -292,6 +294,8 @@ fn test_wallet_integration() {
                     anchor_monero_hash: [0u8; 32],
                     finality_flags: 0,
                     pow_source: dwow_chain::PowSource::Native,
+                    anchor_owner: [0u8; 32],
+                    caribina_anchor: None,
                 },
                 transactions: vec![Transaction {
                     version: BlockVersion::CURRENT,
@@ -612,6 +616,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![Transaction {
                 version: BlockVersion::CURRENT,
@@ -808,6 +814,8 @@ required_barbs = ["Spend","Mine"]
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![Transaction {
                 version: BlockVersion::CURRENT,
@@ -1070,6 +1078,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![Transaction {
                 version: BlockVersion::CURRENT,
@@ -1189,6 +1199,8 @@ required_barbs = ["Spend","Mine"]
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![Transaction {
                 version: BlockVersion::CURRENT,
@@ -1359,6 +1371,8 @@ fn test_wallet_coinbase_scan_only() {
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
 
         let block_2 = Block { header: header_2, transactions: vec![coinbase_tx_2] };
@@ -1801,6 +1815,8 @@ required_barbs = ["Spend","Mine"]
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![Transaction {
                 version: BlockVersion::CURRENT,
@@ -2158,6 +2174,8 @@ fn test_canonical_call_failure_rejects_block() {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
 
         let block_2 = Block { header: header_2, transactions: txs };

@@ -578,9 +578,12 @@ async fn build_genesis_block(
         total_reward: genesis_reward,
         randomx_key: Miner::derive_key_from_height(genesis_height),
         miner: [0u8; 32],
+        // Genesis is unanchored and never mined for PoW, so it commits no anchor author.
+        anchor_owner: [0u8; 32],
         commitment_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         anchor_tx_id,
+        caribina_anchor: None,
         anchor_monero_height: MoneroBlockHeight::new(0),
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
@@ -1680,7 +1683,10 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
             height, target, all_txs.len());
         let miner_consensus = dwow_chain::PoWConsensus::new(120, target, BlockTarget::new(1), BlockTarget::MAX);
         let miner = Miner::new(std::sync::Arc::new(miner_consensus));
-        let mut mined_block = match miner.mine(&vm, previous, height, all_txs, target, miner_pk, &uncles) {
+        // Per-block Caribina anchor key: generated before mining because its public half is inside
+        // the mined region, kept because its secret signs the proof after the nonce is found.
+        let anchor_wallet = dwow_chain::caribina::CaribinaWallet::generate();
+        let mut mined_block = match miner.mine(&vm, previous, height, all_txs, target, miner_pk, anchor_wallet.public_key(), &uncles) {
             Ok(b) => {
                 info!(target: "dwowd::miner_task",
                     "Block {} mined with nonce {}", height, b.header.nonce);
@@ -1721,6 +1727,27 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
         {
             mined_block.header.fee_window_flags = fee_window_flags;
         }
+
+        // Build and attach the Caribina anchor proof — also after mining and before accept, for the
+        // same reason as the flags above: the proof binds this header, and `chain_state`'s enforcement
+        // requires a *verified* proof to confer finality (OBL-C63). This task never anchored at all
+        // before 2026-09-22, so a block the daemon mined itself was never final.
+        let anchor_proof = {
+            let fc = &chain_state.finality_config;
+            if fc.should_anchor() {
+                let proof =
+                    dwow_chain::caribina::build_anchor_proof(&mined_block.header, &anchor_wallet);
+                mined_block.header.caribina_anchor = Some(proof.clone());
+                mined_block.header.finality_flags = fc.mine_flags();
+                debug_assert!(
+                    dwow_chain::caribina::verify_anchor_proof(&mined_block.header),
+                    "a proof this node just built must verify, or no self-mined block is ever final"
+                );
+                Some(proof)
+            } else {
+                None
+            }
+        };
 
         // Check again after mining — peer may have sent a block while we hashed
         if chain_state.get_height() >= height {

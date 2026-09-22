@@ -164,6 +164,8 @@ fn test_promissory_note_capability_scan() {
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![Transaction {
                 version: BlockVersion::CURRENT,
@@ -320,6 +322,8 @@ fn test_box_send_receive() {
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![Transaction {
                 version: BlockVersion::CURRENT,
@@ -1048,6 +1052,8 @@ fn test_box_transfer_to_new_owner_wallet_driven() {
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             },
             transactions: vec![Transaction {
                 version: BlockVersion::CURRENT,

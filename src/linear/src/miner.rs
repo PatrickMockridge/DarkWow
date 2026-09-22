@@ -57,6 +57,7 @@ impl Miner {
         txs: Vec<Transaction>,
         target: BlockTarget,
         miner: [u8; 32],
+        anchor_owner: [u8; 32],
         uncles: &[super::UncleBlock],
     ) -> super::Result<Block> {
         self.running.store(true, Ordering::SeqCst);
@@ -74,6 +75,11 @@ impl Miner {
             block.header.nonce = nonce;
             block.header.randomx_key = Self::derive_key_from_height(height);
             block.header.miner = miner;
+            // Set before the PoW check, not after: `anchor_owner` is inside the mining blob, so it has
+            // to be part of the preimage the nonce is searched against. Setting it afterwards would
+            // change the blob and invalidate the solution — which is exactly the property that makes
+            // the anchor's author unforgeable (OBL-C64).
+            block.header.anchor_owner = anchor_owner;
 
             if self.consensus.verify_proof(&block, vm)? {
                 return Ok(block)

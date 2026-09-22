@@ -135,6 +135,12 @@ impl Encodable for BlockHeader {
         len += self.anchor_monero_hash.encode(s)?;
         len += self.finality_flags.encode(s)?;
         len += self.pow_source.encode(s)?;
+        // Appended 2026-09-22. This codec has no length prefix and `fee_window_flags` is already
+        // a decode-only default below, so an older decoder reading this stream would stop early
+        // rather than fail cleanly — which is consistent with the network-format break the
+        // `anchor_owner` mining-blob change already declares.
+        len += self.anchor_owner.encode(s)?;
+        len += self.caribina_anchor.encode(s)?;
         Ok(len)
     }
 }
@@ -231,6 +237,8 @@ impl Decodable for BlockHeader {
         let anchor_monero_hash = Decodable::decode(d)?;
         let finality_flags = Decodable::decode(d)?;
         let pow_source = PowSource::decode(d)?;
+        let anchor_owner = Decodable::decode(d)?;
+        let caribina_anchor = Decodable::decode(d)?;
         Ok(Self {
             version, previous, merkle_root, timestamp, target, nonce, height,
             uncle_merkle_root, total_reward, randomx_key, miner, commitment_merkle_root,
@@ -238,6 +246,8 @@ impl Decodable for BlockHeader {
             finality_flags,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source,
+            anchor_owner,
+            caribina_anchor,
         })
     }
 }
@@ -316,6 +326,8 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
         let uncle = UncleBlock {
             header,

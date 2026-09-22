@@ -6,9 +6,10 @@
 
 use std::io::Read;
 
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, MoneroBlockHeight};
 
 use super::data_item::DataItem;
+use crate::block::BlockHeader;
 
 /// Default Arweave gateway for verification.
 pub const ARWEAVE_GATEWAY: &str = "https://ardrive.net";
@@ -79,6 +80,65 @@ pub fn verify_anchor(
     verify_payload(raw, expected_hash, expected_timestamp, expected_height)
 }
 
+/// The commitment a block's Caribina anchor proof must bind.
+///
+/// A blake3 hash over the header's canonical serialization with the **post-mining fields
+/// zeroed** — the fields a miner sets *after* the nonce is found, and which are therefore
+/// outside the mined region: `anchor_tx_id`, `caribina_anchor`, `anchor_monero_*` and
+/// `finality_flags`. Zeroing them is what lets the miner compute this before it has an anchor
+/// and lets a verifier recompute the identical value from a header that carries one.
+///
+/// Deliberately the same serialization-based identity `chain_state.rs` already uses for one
+/// side of its competing-block bookkeeping (`blake3::hash(&dwow_serialize(&header))`), rather
+/// than RandomX over the mining blob: it is a pure function of the header with no VM, so anchor
+/// verification needs no RandomX and the enforcement sites need no VM either.
+pub fn anchor_commitment(header: &BlockHeader) -> [u8; 32] {
+    let mut canonical = header.clone();
+    canonical.anchor_tx_id = [0u8; 32];
+    canonical.caribina_anchor = None;
+    canonical.anchor_monero_height = MoneroBlockHeight::new(0);
+    canonical.anchor_monero_hash = [0u8; 32];
+    canonical.finality_flags = 0;
+    blake3::hash(&dwow_serial::serialize(&canonical)).into()
+}
+
+/// Verify a block's Caribina anchor proof — entirely locally, no network.
+///
+/// Four conditions, all necessary, and each one closes a way a peer could otherwise manufacture
+/// finality for a block it did not mine:
+///
+///   1. the block carries an anchor proof at all;
+///   2. it commits a non-zero `anchor_owner`, which is inside the mined region, so a relayer
+///      cannot swap it without redoing the proof-of-work;
+///   3. the DataItem's signature is valid **and its signer is that committed owner** — the
+///      signature is self-consistent for any key, so without this comparison an attacker could
+///      publish an anchor under their own key for someone else's block;
+///   4. the signed payload binds this block's [`anchor_commitment`], its height and its
+///      timestamp, so an anchor published for a *different* block cannot be reused here.
+///
+/// Returns `false` rather than erroring: an unverifiable anchor confers no finality, and a
+/// malformed proof from a peer must not be able to halt the chain by being rejected outright.
+pub fn verify_anchor_proof(header: &BlockHeader) -> bool {
+    let Some(bytes) = header.caribina_anchor.as_ref() else {
+        return false;
+    };
+    if header.anchor_owner == [0u8; 32] {
+        return false;
+    }
+    let Some(item) = DataItem::deserialize(bytes) else {
+        return false;
+    };
+    if !item.verify_signature() || item.owner() != header.anchor_owner {
+        return false;
+    }
+    // The payload's embedded timestamp is the block's own, so the ±30-minute window below is
+    // satisfied by construction for a block-carried proof. It is kept because `verify_payload`
+    // is shared with the gateway-fetch path, where the comparison is against a *fetched*
+    // artifact's time and does carry weight.
+    verify_payload(item.raw_data(), &anchor_commitment(header), header.timestamp.get(), header.height)
+        .is_ok()
+}
+
 /// Verify that the embedded payload matches the expected block.
 fn verify_payload(
     payload: &[u8],
@@ -127,6 +187,157 @@ fn bytes_to_base64url(bytes: &[u8; 32]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::wallet::CaribinaWallet;
+
+    /// A header carrying a *genuine* anchor proof, as the miner's path must produce it.
+    ///
+    /// The order is the design: the owner is committed first (it is in the mining preimage), then the
+    /// commitment is taken over the header — which zeroes the anchor fields, so the proof can bind a
+    /// header that carries itself — and only then is the DataItem signed and attached.
+    fn header_with_anchor() -> (BlockHeader, CaribinaWallet) {
+        let wallet = CaribinaWallet::generate();
+        let mut header = test_header();
+        header.anchor_owner = wallet.public_key();
+
+        let commitment = anchor_commitment(&header);
+        let mut payload = Vec::with_capacity(48);
+        payload.extend_from_slice(&commitment);
+        payload.extend_from_slice(&header.timestamp.get().to_le_bytes());
+        payload.extend_from_slice(&header.height.to_le_bytes());
+
+        let mut item = DataItem::new(&payload);
+        item.sign(&wallet);
+        header.caribina_anchor = Some(item.as_bytes().to_vec());
+        (header, wallet)
+    }
+
+    fn test_header() -> BlockHeader {
+        BlockHeader {
+            version: dwow_sdk::blockchain::BlockVersion::CURRENT,
+            previous: blake3::hash(b"parent"),
+            merkle_root: blake3::hash(b"txs"),
+            timestamp: dwow_sdk::blockchain::BlockTimestamp::new(1_700_000_000),
+            target: dwow_sdk::blockchain::BlockTarget::new(0x0000_FFFF),
+            nonce: 7,
+            height: BlockHeight::new(1234),
+            uncle_merkle_root: [0u8; 32],
+            total_reward: dwow_sdk::blockchain::BlockReward::new(100_000_000),
+            randomx_key: [0u8; 32],
+            miner: [0x22; 32],
+            anchor_owner: [0u8; 32],
+            commitment_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+            caribina_anchor: None,
+            anchor_monero_height: MoneroBlockHeight::new(0),
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+            fee_window_flags: crate::fee_window::FeeWindowFlags::default(),
+            pow_source: crate::PowSource::Native,
+        }
+    }
+
+    /// A3 — the anchor proof verifies locally, with no network and no VM.
+    ///
+    /// This is the property that lets the enforcement sites be pure functions. The old verifier
+    /// (`verify_anchor`) could only check a proof by *fetching* it from a gateway, which is why no
+    /// consensus path could ever call it — and why finality ended up enforced on an unverified field
+    /// instead (OBL-C63).
+    #[test]
+    fn test_anchor_proof_verifies_without_network() {
+        let (header, _wallet) = header_with_anchor();
+        assert!(
+            verify_anchor_proof(&header),
+            "a genuine proof must verify from the header alone — no gateway, no RandomX VM"
+        );
+    }
+
+    /// A negative control for every check inside the verifier, each attacking one condition.
+    ///
+    /// Each case must *fail*, and the positive control above must pass, or a verifier that simply
+    /// returned `false` would satisfy all of them.
+    #[test]
+    fn test_anchor_proof_rejects_each_tampering() {
+        // No proof at all.
+        let mut bare = test_header();
+        bare.anchor_owner = [0x33; 32];
+        assert!(!verify_anchor_proof(&bare), "a block with no proof must confer no finality");
+
+        // A6: no committed owner, so nothing to authenticate against.
+        let (mut unowned, _) = header_with_anchor();
+        unowned.anchor_owner = [0u8; 32];
+        assert!(!verify_anchor_proof(&unowned), "a zero owner is not a committed author");
+
+        // A5: the proof is genuine but the block commits a *different* owner — the forgery a peer
+        // would attempt, publishing an anchor under its own key for somebody else's block.
+        let (mut foreign, _) = header_with_anchor();
+        foreign.anchor_owner = [0x44; 32];
+        assert!(!verify_anchor_proof(&foreign), "a proof signed by a key the block does not commit must fail");
+
+        // A4: the anchor is swapped for another block's genuine proof.
+        let (other, _) = header_with_anchor();
+        let (mut swapped, _) = header_with_anchor();
+        swapped.caribina_anchor = other.caribina_anchor;
+        assert!(!verify_anchor_proof(&swapped), "another block's proof must not be reusable here");
+
+        // A4: the block's own committed fields were altered after the proof was made, so the payload
+        // no longer binds it. The height is the cheapest such field to change.
+        let (mut reheighted, _) = header_with_anchor();
+        reheighted.height = BlockHeight::new(1235);
+        assert!(!verify_anchor_proof(&reheighted), "the payload must bind this block, including its height");
+
+        let (mut retimestamped, _) = header_with_anchor();
+        retimestamped.timestamp = dwow_sdk::blockchain::BlockTimestamp::new(1_700_000_001);
+        assert!(
+            !verify_anchor_proof(&retimestamped),
+            "the payload must bind this block's timestamp"
+        );
+
+        // A1-adjacent: malformed proof bytes must be rejected, not panic — the path a peer chooses.
+        let (mut garbage, _) = header_with_anchor();
+        garbage.caribina_anchor = Some(vec![0xFFu8; 8]);
+        assert!(!verify_anchor_proof(&garbage), "a truncated proof must be rejected");
+
+        let (mut hostile, _) = header_with_anchor();
+        let mut crafted = vec![0u8; 116];
+        crafted[0] = 2; // valid signature type
+        crafted[108..116].copy_from_slice(&u64::MAX.to_le_bytes()); // tag length past the end
+        hostile.caribina_anchor = Some(crafted);
+        assert!(
+            !verify_anchor_proof(&hostile),
+            "a proof whose declared tag area overflows its buffer must be rejected, not panic (OBL-C71)"
+        );
+    }
+
+    /// The commitment is invariant under the fields a miner sets *after* mining, and sensitive to the
+    /// one it commits before. That is what lets the miner compute the proof's payload before it has an
+    /// anchor, and what makes `anchor_owner` an authenticator rather than a label.
+    #[test]
+    fn test_anchor_commitment_binds_the_owner_but_not_the_post_mining_fields() {
+        let base = test_header();
+        let commitment = anchor_commitment(&base);
+
+        let mut post = base.clone();
+        post.anchor_tx_id = [0xAB; 32];
+        post.caribina_anchor = Some(vec![1, 2, 3]);
+        post.finality_flags = 0x07;
+        post.anchor_monero_height = MoneroBlockHeight::new(9_000);
+        post.anchor_monero_hash = [0xCD; 32];
+        assert_eq!(
+            anchor_commitment(&post),
+            commitment,
+            "post-mining fields must not affect the commitment, or the miner could not compute it \
+             before publishing the anchor it is about to attach"
+        );
+
+        let mut owned = base.clone();
+        owned.anchor_owner = [0x01; 32];
+        assert_ne!(anchor_commitment(&owned), commitment, "the committed owner must bind the commitment");
+
+        let mut mined = base.clone();
+        mined.nonce = 8;
+        assert_ne!(anchor_commitment(&mined), commitment, "the PoW nonce must bind the commitment");
+    }
 
     #[test]
     fn test_payload_verify_success() {

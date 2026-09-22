@@ -91,6 +91,21 @@ pub struct BlockHeader {
     /// header". Covered by PoW; used to AEAD-encrypt uncle notes to the uncle miner.
     #[serde(default)]
     pub miner: [u8; 32],
+    /// The key that authored this block's Caribina anchor — a **fresh per-block Ed25519
+    /// public key**, inside `to_mining_blob()` and therefore COVERED BY POW.
+    ///
+    /// This is what makes an anchor the *miner's* claim rather than anyone's. Without a
+    /// PoW-committed owner, any peer could publish a valid DataItem binding any block and
+    /// finality would become unconditional — every block final one block later, no reorgs
+    /// ever. With it, forging an anchor for a block requires the secret key that block
+    /// commits, and swapping the owner changes the mining preimage.
+    ///
+    /// Deliberately **not** `header.miner`: that is the reward recipient `pk_H`, a
+    /// long-lived consensus key, and signing an Arweave DataItem with it would publish
+    /// signatures under a key the chain depends on to a third party. Per-block generation
+    /// also preserves the address-cycling property the design calls for.
+    #[serde(default)]
+    pub anchor_owner: [u8; 32],
     /// Root of the commitment Merkle tree after this block.
     ///
     /// RESERVED — always `[0u8; 32]` in every production block-construction path;
@@ -108,8 +123,25 @@ pub struct BlockHeader {
     pub nullifier_root: [u8; 32],
     /// Caribina Arweave anchor TX ID (SHA-256 of ANS-104 DataItem signature).
     /// [0u8; 32] means no anchor (genesis blocks, bootstrapping, or anchor failure).
+    ///
+    /// **No longer consulted for finality** (2026-09-22). Enforcement now requires the
+    /// verified anchor *proof* in `caribina_anchor` below. The field is kept because it
+    /// carries a second, unrelated thing: the genesis block's **network magic** lives in
+    /// its first four bytes (`bin/dwowd/src/lib.rs:566`) and
+    /// `bin/dwowd/src/task/consensus_linear.rs:383` validates it to reject a wrong-network
+    /// genesis during sync. Deriving it from the DataItem would break that; leaving it as
+    /// a free field is safe precisely because nothing decides finality by reading it now.
     #[serde(default)]
     pub anchor_tx_id: [u8; 32],
+    /// The signed ANS-104 DataItem that is this block's Caribina anchor *proof*, carried
+    /// whole so verification is a pure local function.
+    ///
+    /// Outside the mining blob, and it does not need to be inside it: its authenticity
+    /// comes from `anchor_owner` (PoW-committed) and from the payload binding
+    /// `caribina::anchor_commitment(self)`, not from PoW coverage of the proof bytes.
+    /// `None` means no anchor, which is valid and simply confers no finality.
+    #[serde(default)]
+    pub caribina_anchor: Option<Vec<u8>>,
     /// Monero p2pool anchor block height (0 = no anchor)
     #[serde(default = "MoneroBlockHeight::serde_default")]
     pub anchor_monero_height: MoneroBlockHeight,
@@ -255,13 +287,16 @@ impl BlockHeader {
     ///   [previous(32)][version(1)][target(4)][reserved(2)][nonce(4)]
     ///   [height(8)][merkle_root(32)][timestamp(8)][uncle_merkle_root(32)]
     ///   [total_reward(8)][randomx_key(32)][commitment_merkle_root(32)][nullifier_root(32)]
-    ///   [pow_source_disc(1)][miner(32)]  — 0 = Native, 1 = Monero (MoneroPowData NOT included)
+    ///   [pow_source_disc(1)][miner(32)][anchor_owner(32)]
+    ///   — 0 = Native, 1 = Monero (MoneroPowData NOT included)
     /// Nonce is at byte offset 39 (matches xmrig's hardcoded Monero rx/0 offset).
-    /// anchor_tx_id, anchor_monero_height, anchor_monero_hash, and finality_flags
-    /// are excluded — they are set after PoW is found and are not covered by the
-    /// mining hash.
+    /// anchor_tx_id, caribina_anchor, anchor_monero_height, anchor_monero_hash and
+    /// finality_flags are excluded — they are set after PoW is found and are not covered
+    /// by the mining hash. `anchor_owner` is the exception among the anchor fields and is
+    /// inside deliberately: it is generated *before* mining (it must be in the preimage
+    /// xmrig hashes) and is what authenticates the anchor. See its field doc.
     pub fn to_mining_blob(&self) -> Vec<u8> {
-        let mut blob = Vec::with_capacity(260);
+        let mut blob = Vec::with_capacity(Self::MINING_BLOB_LEN);
         blob.extend_from_slice(self.previous.as_bytes());            // 0..32
         blob.push(self.version.get());                                // 32
         blob.extend_from_slice(&self.target.to_le_bytes()); // 33..37
@@ -281,6 +316,7 @@ impl BlockHeader {
         };
         blob.push(disc);                                              // 227
         blob.extend_from_slice(&self.miner);                          // 228..260
+        blob.extend_from_slice(&self.anchor_owner);                   // 260..292
         blob
     }
 
@@ -297,8 +333,18 @@ impl BlockHeader {
     /// each call site.
     pub const POW_SOURCE_OFFSET: usize = 227;
 
+    /// The byte offset of `anchor_owner` within the mining blob (bytes 260..292),
+    /// immediately after `miner`.
+    pub const ANCHOR_OWNER_OFFSET: usize = 260;
+
     /// The expected length of the mining blob.
-    pub const MINING_BLOB_LEN: usize = 260;
+    ///
+    /// 260 until 2026-09-22, when `anchor_owner` was appended (bytes 260..292). This is a
+    /// **consensus-format change**: the preimage RandomX hashes grew, so every block mined
+    /// before it fails PoW against the new layout and the chain resets. `NONCE_OFFSET` (39)
+    /// and `POW_SOURCE_OFFSET` (227) are unchanged, which matters because
+    /// `bin/dwowd/src/rpc/stratum.rs` sends `"reserved_offset": 39` to xmrig.
+    pub const MINING_BLOB_LEN: usize = 292;
 }
 
 /// Block - a single block in the linear chain
@@ -686,9 +732,11 @@ pub fn create_block_with_uncles(
             total_reward,
             randomx_key: [0u8; 32], // Placeholder - miner sets actual key
             miner: [0u8; 32],       // Placeholder - miner sets reward public key (pk_H)
+            anchor_owner: [0u8; 32], // Set by the template before mining; must be in the blob
             commitment_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32], // No Caribina anchor (set by miner after anchoring)
+            caribina_anchor: None,   // No anchor proof until the miner publishes one
             anchor_monero_height: MoneroBlockHeight::new(0), // No Monero anchor (set by miner after anchoring)
             anchor_monero_hash: [0u8; 32], // No Monero anchor
             finality_flags: 0,
@@ -741,6 +789,8 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
 
         };
         let uncle = UncleBlock { header: uncle_header, transactions: vec![], pin_accepted: false, pin_confirmed: BlockReward::new(0) };
@@ -778,6 +828,8 @@ mod tests {
                 finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
 
             };
             uncles.push(UncleBlock { header, transactions: vec![], pin_accepted: false, pin_confirmed: BlockReward::new(0) });
@@ -821,6 +873,8 @@ mod tests {
                 finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
                 pow_source: PowSource::Native,
+                anchor_owner: [0u8; 32],
+                caribina_anchor: None,
             };
             uncles.push(UncleBlock {
                 header,
@@ -885,6 +939,8 @@ mod tests {
                         finality_flags: 0,
                         fee_window_flags: FeeWindowFlags::default(),
                         pow_source: PowSource::Native,
+                        anchor_owner: [0u8; 32],
+                        caribina_anchor: None,
                     };
                     UncleBlock {
                         header,
@@ -954,6 +1010,8 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
 
         };
         // Pin mechanism: pin_accepted=true means the uncle accepts the pin.
@@ -990,6 +1048,8 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
 
         };
         let uncle = UncleBlock { header: header.clone(), transactions: vec![], pin_accepted: false, pin_confirmed: BlockReward::new(0) };
@@ -1121,12 +1181,14 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
 
         };
 
         let blob1 = header.to_mining_blob();
-        assert_eq!(blob1.len(), 260);
-        assert_eq!(BlockHeader::MINING_BLOB_LEN, 260);
+        assert_eq!(blob1.len(), 292);
+        assert_eq!(BlockHeader::MINING_BLOB_LEN, 292);
 
         // Pin the offsets that outside code reads the blob by. When the `miner`
         // field was added the blob grew 228 -> 260, and the len/offset literals
@@ -1135,32 +1197,49 @@ mod tests {
         // here means the next layout change is a compile error, not a mystery.
         assert_eq!(BlockHeader::NONCE_OFFSET, 39);
         assert_eq!(BlockHeader::POW_SOURCE_OFFSET, 227);
+        assert_eq!(BlockHeader::ANCHOR_OWNER_OFFSET, 260);
         assert_eq!(blob1[BlockHeader::POW_SOURCE_OFFSET], 0,
             "native PoW writes discriminator 0 at POW_SOURCE_OFFSET");
-        assert_eq!(&blob1[BlockHeader::POW_SOURCE_OFFSET + 1..], &header.miner,
-            "the miner pubkey is the tail of the blob, right after the discriminator");
+        assert_eq!(&blob1[BlockHeader::POW_SOURCE_OFFSET + 1..BlockHeader::ANCHOR_OWNER_OFFSET],
+            &header.miner,
+            "the miner pubkey sits right after the discriminator");
+        assert_eq!(&blob1[BlockHeader::ANCHOR_OWNER_OFFSET..], &header.anchor_owner,
+            "anchor_owner is the tail of the blob, and being in the blob is the whole point: \
+             it is what makes the anchor's author unforgeable (OBL-C64)");
 
-        // Setting anchor_tx_id must not change the mining blob
+        // The finality fields the miner sets *after* finding the nonce must not change the
+        // blob, or the PoW solution would be invalidated by anchoring. `anchor_owner` above is
+        // the deliberate exception — it is set before mining.
         header.anchor_tx_id = [0xAB; 32];
+        header.finality_flags = 0x07;
+        header.anchor_monero_height = MoneroBlockHeight::new(3_000_000);
+        header.anchor_monero_hash = [0xCD; 32];
         let blob2 = header.to_mining_blob();
-        assert_eq!(blob1, blob2);
+        assert_eq!(blob1, blob2, "post-mining anchor fields must not touch the mining preimage");
+
+        // And the converse, which is the property the fix added: changing the *owner* does
+        // change the blob, so a relayer cannot re-attribute an anchor without redoing PoW.
+        header.anchor_owner = [0xEF; 32];
+        assert_ne!(blob1, header.to_mining_blob(),
+            "anchor_owner is PoW-covered — swapping it must change the preimage (OBL-C64)");
     }
 
-    /// OBL-C64 — the four finality fields are not authenticated by the work that produced the block.
+    /// OBL-C64 — the anchor's *author* is authenticated by the work that produced the block, while the
+    /// post-mining finality fields stay outside the preimage.
     ///
-    /// Proof-of-work is `RandomX(to_mining_blob())`, and `to_mining_blob()` carries none of
-    /// `anchor_tx_id`, `anchor_monero_height`, `anchor_monero_hash` or `finality_flags`. So a single
-    /// RandomX solution corresponds to *every* header that differs only in those fields: the solution
-    /// cannot distinguish them, and a relaying peer can vary them at no cost. The chain's dedup key is
-    /// the blob hash (`hash_with_vm`, `chain_state.rs:890`), so those variants are one block to the
-    /// dedup set and many blocks to any code path that serializes the header — the two identities
-    /// disagree, which is the other half of this finding and of OBL-C52.
+    /// **This test was the characterization test for the defect and is now the regression control**, and
+    /// the distinction it draws is the design. `anchor_owner` is inside `to_mining_blob()`, so a relaying
+    /// peer cannot re-attribute an anchor to a different key without redoing the proof-of-work — which is
+    /// what stops anyone publishing an anchor for a block they did not mine. The four fields the miner
+    /// sets *after* finding the nonce (`anchor_tx_id`, `anchor_monero_height`, `anchor_monero_hash`,
+    /// `finality_flags`) remain outside it, because they must not invalidate the PoW solution; they are
+    /// no longer consulted for finality, which is why their malleability no longer buys an attacker
+    /// anything (see `chain_state.rs`'s enforcement, which requires a verified proof instead).
     ///
-    /// **This test asserts the defect.** Stage 3 moves the anchor material into the mined region, at
-    /// which point the assertion below inverts: a change to committed anchor material must change the
-    /// blob.
+    /// The earlier version of this test asserted that *all* of them were invariant, i.e. that none was
+    /// authenticated — the defect. It failed when `anchor_owner` was added, as it was written to.
     #[test]
-    fn test_finality_fields_are_not_authenticated_by_pow() {
+    fn test_anchor_owner_is_pow_covered_but_post_mining_fields_are_not() {
         let base = BlockHeader {
             version: BlockVersion::CURRENT,
             previous: blake3::hash(b"parent"),
@@ -1181,6 +1260,8 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
         let blob = base.to_mining_blob();
 
@@ -1201,10 +1282,29 @@ mod tests {
             assert_eq!(
                 h.to_mining_blob(),
                 blob,
-                "OBL-C64: a variant differing only in finality fields changed the mining blob. If the \
-                 fix has landed, invert this assertion to `assert_ne!` — the fields must then be \
-                 authenticated by PoW. See doc/src/arch/verification-hazop.md"
+                "a variant differing only in post-mining anchor fields must leave the mining preimage \
+                 alone, or anchoring would invalidate the PoW solution it is anchoring"
             );
+        }
+
+        // The authenticated case: the owner is in the preimage.
+        let mut owned = base.clone();
+        owned.anchor_owner = [0xAA; 32];
+        let owned_blob = owned.to_mining_blob();
+        assert_ne!(owned_blob, blob, "anchor_owner must be PoW-covered");
+        assert_eq!(
+            &owned_blob[BlockHeader::ANCHOR_OWNER_OFFSET..],
+            &[0xAA; 32],
+            "and it is the tail of the blob, at ANCHOR_OWNER_OFFSET"
+        );
+
+        // Two owners never share a preimage, which is what makes the owner an authenticator rather
+        // than a label. Asserted over several values because a single pair could collide by accident
+        // of the layout (e.g. if the field were written at the wrong offset, overwriting `miner`).
+        for owner in [[0x01; 32], [0x7F; 32], [0xFF; 32]] {
+            let mut h = base.clone();
+            h.anchor_owner = owner;
+            assert_ne!(h.to_mining_blob(), owned_blob, "distinct owners, distinct preimages");
         }
     }
 
@@ -1244,6 +1344,8 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
 
         let json = serde_json::to_string(&header).expect("BlockHeader is Serialize");
@@ -1290,10 +1392,12 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
 
         let blob_zero = header.to_mining_blob();
-        assert_eq!(blob_zero.len(), 260);
+        assert_eq!(blob_zero.len(), 292);
 
         // Setting fee_window_flags must not change the mining blob
         header.fee_window_flags = FeeWindowFlags::pack(
@@ -1332,6 +1436,8 @@ mod tests {
                 WindowSignalling::encode_cm(0x00),
             ),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
 
         // JSON roundtrip preserves flags
@@ -1374,6 +1480,8 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
 
         };
         assert_eq!(header.anchor_tx_id, [0u8; 32]);
@@ -1402,6 +1510,8 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
 
         };
 
@@ -1438,6 +1548,8 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
 
         };
 
@@ -1490,6 +1602,8 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
 
         };
 
@@ -1526,6 +1640,8 @@ mod tests {
             finality_flags: 0x02,
             fee_window_flags: FeeWindowFlags::default(), // FINALITY_MONERO
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
 
         let json = serde_json::to_string(&header).unwrap();
@@ -1572,10 +1688,14 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
 
         let blob = header.to_mining_blob();
-        assert_eq!(blob.len(), 260, "Mining blob length changed — would fork the chain");
+        // The newtypes' byte positions are what this test is about; the length moved 260 -> 292
+        // for `anchor_owner`, which is a deliberate consensus-format change, not a newtype slip.
+        assert_eq!(blob.len(), 292, "Mining blob length changed — would fork the chain");
 
         // Verify specific byte offsets for the fields being migrated to newtypes.
         // These MUST remain byte-identical after BlockTarget and BlockReward are
@@ -1638,6 +1758,8 @@ mod tests {
             finality_flags: 0,
             fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
+            anchor_owner: [0u8; 32],
+            caribina_anchor: None,
         };
 
         let json = serde_json::to_string(&header)

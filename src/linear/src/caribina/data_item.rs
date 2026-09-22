@@ -138,6 +138,17 @@ impl DataItem {
         &self.bytes[2..66]
     }
 
+    /// The signer's public key (the ANS-104 `owner` field), as a fixed array.
+    ///
+    /// Public because block-level verification has to compare it against the key the block
+    /// commits in its mined region: an anchor is authentic only when the key that signed it
+    /// is the key the block's proof-of-work covers.
+    pub fn owner(&self) -> [u8; 32] {
+        let mut pk = [0u8; 32];
+        pk.copy_from_slice(self.raw_owner());
+        pk
+    }
+
     /// Get the raw owner (public key) field.
     fn raw_owner(&self) -> &[u8] {
         &self.bytes[66..98]

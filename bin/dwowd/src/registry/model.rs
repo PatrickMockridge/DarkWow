@@ -84,6 +84,21 @@ pub struct LinearBlockTemplate {
     /// Miner's reward public key (pk_H) — set into `BlockHeader.miner`.
     /// Spec: uncle_merkle.md §Uncle Minting & Maturity — "Miner identity in the header".
     pub miner: [u8; 32],
+    /// Fresh per-block **Ed25519** keypair that will author this block's Caribina anchor. Its public
+    /// half is set into `BlockHeader.anchor_owner`; the secret signs the DataItem at submit time.
+    ///
+    /// Generated here, at template time, and not later, because `anchor_owner` has to be inside the
+    /// mining blob xmrig hashes — the header at submit must carry the same value the stratum login
+    /// handed out, or the submitted nonce does not reproduce the advertised preimage. That is also
+    /// what makes the anchor unforgeable: a peer cannot attach a proof to a block whose
+    /// `anchor_owner` it cannot sign under, and cannot change the field without redoing PoW.
+    ///
+    /// Deliberately distinct from `miner` above: that is the long-lived pallas reward key, and
+    /// signing an Arweave DataItem with it would publish signatures under a consensus key to a third
+    /// party. A fresh key per block also preserves the address cycling the design calls for.
+    /// `CaribinaWallet`'s `Debug` prints only the public key, so this does not leak via the template's
+    /// derived `Debug`.
+    pub anchor_wallet: dwow_chain::caribina::CaribinaWallet,
     /// Transactions included in this block template (drained from mempool at generation time)
     pub transactions: Vec<dwow_chain::Transaction>,
     /// Merkle root of the transactions (included in mining blob)
@@ -696,6 +711,8 @@ pub async fn generate_linear_block_template(
         value: effective_value,
         pow_reward_call_data: pow_reward_call.data.clone(),
         miner: recipient_config.recipient.public().to_bytes(),
+        // Per-block anchor key, generated once here so the login blob and the submit header agree.
+        anchor_wallet: dwow_chain::caribina::CaribinaWallet::generate(),
         transactions,
         merkle_root,
         uncles,
