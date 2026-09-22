@@ -1504,6 +1504,21 @@ breaking ties:
   - `thread 'test_confirm_milestone_params_encoding' panicked at src/contract/labor_market/tests/integration.rs:480:67: called \`Result::unwrap()\` on an \`Err\` value: Custom { kind: Other, error: "IO error: ConfirmMilestoneParamsV1: expected at least 208 bytes, got 211" }` — the regression `fecb3deb45` introduced by raising a decode guard to 240; **fixed the same day**, see that commit.
   - `thread 'governance_report_accepts_the_outstanding_ratio' panicked at src/contract/test-harness/tests/stablecoin_governance_report.rs:153:38: the honest ratio must prove and verify: "verification: InvalidProof"` — a governance-report circuit that cannot prove its own honest case. **This one is in no row**, and it is a genesis-adjacent contract; it needs its own finding.
 
+  **`test_heavyweight_slot`, measured 2026-09-23** — the entry above never mentioned it, so its cause
+  was captured rather than inherited: one targeted run on the already-built binary
+  (`cargo test --release -p dwowd --all-features test_heavyweight_slot`, 6m26s wall / 56 core-minutes —
+  longer than the estimate, and recorded because the next person will want the real figure), and it
+  fails at **height 11** on `fn_code=0x02` — `RevealSpinV1` (`src/contract/slot/src/lib.rs:63-69`) —
+  with the contract rejecting its own call:
+  `Error: Custom("accept_block at height 11: canonical call failed at exec for tx 083f1cc2… call_idx=0 fn_code=0x02 (contract 21LYoife…): ContractError(Custom(20))")`.
+  Heights 9 and 10 pass, so it is a specific late transition rather than a setup failure.
+  **The reason is not known, and the register says why rather than guessing**: the run was made without
+  `DWOW_TEST_LOGS=1`, so the contract's own `msg!` lines — the ones that would name which check returned
+  exit code 20 — were discarded. The harness log ends at "submitting to accept_block" and the test
+  output carries only `[DIAG] raw WASM exit code: 20 (0x14)`. **The next step is one re-run of the same
+  single test with that variable set**, and it is the same trap this register already records for
+  heavyweight tests: a contract's explanation is not kept unless it is asked for.
+
   What is known is uneven, and 2026-09-22 narrowed it twice. `insurance_market::UnderwriteV1`'s halo2
   synthesis error is OBL-Z16 arriving as a runtime symptom. `purse::WithdrawV1` fails its own
   post-condition ("nullifier must exist after withdrawal"). **`bridge`'s recorded cause was wrong**:
