@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{PublicKey},
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -38,6 +38,7 @@ use rand::SeedableRng;
 /// AcceptJobV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct AcceptJobV1PublicInputs {
+    pub spent_nullifier: pallas::Base,
     pub job_id: pallas::Base,
     pub worker_pub_x: pallas::Base,
     pub worker_pub_y: pallas::Base,
@@ -46,8 +47,14 @@ pub struct AcceptJobV1PublicInputs {
 }
 
 impl AcceptJobV1PublicInputs {
+    /// Order must match `accept_job.zk`'s `constrain_instance` sequence exactly:
+    ///   spent_nullifier, job_id, worker_pub_x, worker_pub_y, tx_binding, tx_nonce
+    /// `spent_nullifier` led the circuit but was absent here, so the proof committed to a
+    /// five-element vector against a six-instance circuit (register OBL-C78). Print the circuit
+    /// before changing this again.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
+            self.spent_nullifier,
             self.job_id,
             self.worker_pub_x,
             self.worker_pub_y,
@@ -83,12 +90,31 @@ impl AcceptJobV1CallData {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.worker_public.xy().expect("pk not identity");
         AcceptJobV1PublicInputs {
+            spent_nullifier: self.compute_spent_nullifier(),
             job_id: self.job_id,
             worker_pub_x: ix,
             worker_pub_y: iy,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
         }
+    }
+
+    /// `AcceptJobV2` derives `spent_nullifier = poseidon_hash(1, 7, job_id, worker_secret)` and
+    /// constrains it at instance 1. Domain 1 = `NULLIFIER`, tag 7 = the circuit's `ACCEPT_TAG`.
+    /// The client must compute the same value: it is also the key this call's replay protection
+    /// marks spent, and the host cannot derive it from public data (register OBL-C78).
+    pub fn compute_spent_nullifier(&self) -> pallas::Base {
+        poseidon_hash([
+            pallas::Base::from(1u64),
+            pallas::Base::from(7u64),
+            self.job_id,
+            self.worker_secret,
+        ])
+    }
+
+    /// `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`, domain 3, instance 5.
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -103,7 +129,7 @@ impl AcceptJobV1CallData {
             Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }

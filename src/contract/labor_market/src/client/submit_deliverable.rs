@@ -38,23 +38,28 @@ use rand::SeedableRng;
 /// SubmitDeliverableV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct SubmitDeliverableV1PublicInputs {
+    pub spent_nullifier: pallas::Base,
     pub job_id: pallas::Base,
-    pub claim_id: pallas::Base,
     pub worker_pub_x: pallas::Base,
     pub worker_pub_y: pallas::Base,
-    pub spent_nullifier: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl SubmitDeliverableV1PublicInputs {
+    /// Order must match `submit_deliverable.zk`'s `constrain_instance` sequence exactly:
+    ///   spent_nullifier, job_id, worker_pub_x, worker_pub_y, tx_binding, tx_nonce
+    /// `spent_nullifier` sat at position 5 where the circuit leads with it, and `claim_id` was
+    /// published although the circuit constrains no such instance — a seven-element vector against
+    /// a six-instance circuit (register OBL-C78). `claim_id` remains in the params, where exec
+    /// needs it to validate the attestation child; being needed by exec is not being a public
+    /// input. Print the circuit before changing this again.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
+            self.spent_nullifier,
             self.job_id,
-            self.claim_id,
             self.worker_pub_x,
             self.worker_pub_y,
-            self.spent_nullifier,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -68,49 +73,64 @@ pub struct SubmitDeliverableV1CallData {
     // Public inputs
     pub worker_public: PublicKey,
     pub job_id: pallas::Base,
-    pub claim_id: pallas::Base,
-    pub deadline_block: pallas::Base,
-    pub current_block: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl SubmitDeliverableV1CallData {
+    /// `claim_id`, `deadline_block` and `current_block` used to be taken here and threaded
+    /// straight into `to_witnesses` — where the circuit declares no such witnesses, so they were
+    /// three of the four extra entries that made the witness vector the wrong length (register
+    /// OBL-C78). The deadline is not a witness at all: `SubmitDeliverableV2` constrains no
+    /// deadline, and the params carry none, so no deadline check exists on this path. `claim_id`
+    /// stays in the params, where exec needs it to validate the attestation child — needed by exec
+    /// is not the same as being a public input or a witness.
     pub fn new(
         worker_secret: pallas::Base,
         worker_public: PublicKey,
         job_id: pallas::Base,
-        claim_id: pallas::Base,
-        deadline_block: pallas::Base,
-        current_block: pallas::Base,
     ) -> Self {
         Self {
             worker_secret,
             worker_public,
             job_id,
-            claim_id,
-            deadline_block,
-            current_block,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
     }
 
     /// Compute nullifier from job_id and worker_secret
+    /// `SubmitDeliverableV2` derives `spent_nullifier = poseidon_hash(1, 5, job_id, worker_secret)`
+    /// and constrains it at instance 1. Domain 1 = `NULLIFIER`, tag 5 = the circuit's
+    /// `SUBMIT_TAG`.
+    ///
+    /// This was `poseidon_hash([job_id, worker_secret])` — **no domain and no tag**, so the value
+    /// could not equal the circuit's instance and the proof was unsatisfiable; it also violated
+    /// `RC3` (every `poseidon_hash` prepends a domain constant). Two defects in one line, and the
+    /// instance mismatch is the one that killed the suite (register OBL-C78).
     pub fn compute_nullifier(&self) -> pallas::Base {
-        poseidon_hash([self.job_id, self.worker_secret])
+        poseidon_hash([
+            pallas::Base::from(1u64),
+            pallas::Base::from(5u64),
+            self.job_id,
+            self.worker_secret,
+        ])
+    }
+
+    /// `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`, domain 3, instance 5.
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
     }
 
     pub fn compute_public_inputs(&self) -> SubmitDeliverableV1PublicInputs {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.worker_public.xy().expect("pk not identity");
         SubmitDeliverableV1PublicInputs {
+            spent_nullifier: self.compute_nullifier(),
             job_id: self.job_id,
-            claim_id: self.claim_id,
             worker_pub_x: ix,
             worker_pub_y: iy,
-            spent_nullifier: self.compute_nullifier(),
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -118,21 +138,19 @@ impl SubmitDeliverableV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.worker_public.xy().expect("pk not identity");
+        // Must match `submit_deliverable.zk`'s `witness` block exactly:
+        //   job_id, worker_secret, worker_pub_x, worker_pub_y, tx_commitment, tx_nonce, tx_binding
+        // `spent_nullifier` is derived in-circuit from job_id + worker_secret, so it is an
+        // instance, not a witness. `claim_id`, `deadline_block` and `current_block` were supplied
+        // here and are declared nowhere — the vector was ten entries against seven (OBL-C78).
         vec![
-            // Must match circuit witness order:
-            // job_id, claim_id, worker_secret, worker_pub_x, worker_pub_y,
-            // deadline_block, current_block
-            // (spent_nullifier is computed by the circuit, not provided as witness)
             Witness::Base(Value::known(self.job_id)),
-            Witness::Base(Value::known(self.claim_id)),
             Witness::Base(Value::known(self.worker_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            Witness::Base(Value::known(self.deadline_block)),
-            Witness::Base(Value::known(self.current_block)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }

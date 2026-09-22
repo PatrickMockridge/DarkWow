@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::PublicKey,
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -79,6 +79,16 @@ impl CreateJobV1CallData {
         }
     }
 
+    /// `CreateJobV2` constrains `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment,
+    /// tx_nonce)` with `DOMAIN_TX_BINDING = witness_base(3)`, and publishes it as instance 4. This
+    /// was a literal `Base::zero()` written as **both** the public input and the witness, while the
+    /// circuit constrains the witness to equal this hash — so the proof was unsatisfiable, not
+    /// merely unbound (register OBL-C78). The genesis form is `purse/src/entrypoint.rs:75`; the
+    /// worked template is `pool_stake/src/client/create_pool.rs:88-90`.
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
+    }
+
     pub fn compute_public_inputs(&self) -> CreateJobV1PublicInputs {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.employer_public.xy().expect("pk not identity");
@@ -86,7 +96,7 @@ impl CreateJobV1CallData {
             employer_pub_x: ix,
             employer_pub_y: iy,
             attestation_id: self.attestation_id,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -103,7 +113,7 @@ impl CreateJobV1CallData {
             Witness::Base(Value::known(self.attestation_id)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }

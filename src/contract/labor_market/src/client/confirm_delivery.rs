@@ -38,21 +38,26 @@ use rand::SeedableRng;
 /// ConfirmDeliveryV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct ConfirmDeliveryV1PublicInputs {
+    pub spent_nullifier: pallas::Base,
     pub job_id: pallas::Base,
     pub employer_pub_x: pallas::Base,
     pub employer_pub_y: pallas::Base,
-    pub spent_nullifier: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl ConfirmDeliveryV1PublicInputs {
+    /// Order must match `confirm_delivery.zk`'s `constrain_instance` sequence exactly:
+    ///   spent_nullifier, job_id, employer_pub_x, employer_pub_y, tx_binding, tx_nonce
+    /// The count already matched, but `spent_nullifier` sat at position 4 where the circuit leads
+    /// with it — a right-length vector in the wrong order, which a count check cannot see and
+    /// which no proof can survive (register OBL-C78).
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
+            self.spent_nullifier,
             self.job_id,
             self.employer_pub_x,
             self.employer_pub_y,
-            self.spent_nullifier,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -81,20 +86,33 @@ impl ConfirmDeliveryV1CallData {
         }
     }
 
-    /// Compute nullifier from job_id and employer_secret
+    /// `ConfirmDeliveryV2` derives `spent_nullifier = poseidon_hash(1, 4, job_id,
+    /// employer_secret)` and constrains it at instance 1. Domain 1 = `NULLIFIER`, tag 4 = the
+    /// circuit's `CONFIRM_TAG`. This was `poseidon_hash([job_id, employer_secret])` — no domain,
+    /// no tag — so it could not equal the circuit's instance and violated `RC3`.
     pub fn compute_nullifier(&self) -> pallas::Base {
-        poseidon_hash([self.job_id, self.employer_secret])
+        poseidon_hash([
+            pallas::Base::from(1u64),
+            pallas::Base::from(4u64),
+            self.job_id,
+            self.employer_secret,
+        ])
+    }
+
+    /// `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`, domain 3, instance 5.
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
     }
 
     pub fn compute_public_inputs(&self) -> ConfirmDeliveryV1PublicInputs {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.employer_public.xy().expect("pk not identity");
         ConfirmDeliveryV1PublicInputs {
+            spent_nullifier: self.compute_nullifier(),
             job_id: self.job_id,
             employer_pub_x: ix,
             employer_pub_y: iy,
-            spent_nullifier: self.compute_nullifier(),
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -112,7 +130,7 @@ impl ConfirmDeliveryV1CallData {
             Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }

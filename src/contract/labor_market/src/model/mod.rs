@@ -489,17 +489,28 @@ pub struct CreateJobParamsV1 {
     pub payment_commit_x: pallas::Base,
     /// Payment commitment y coordinate
     pub payment_commit_y: pallas::Base,
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])`, computed by the client.
+    ///
+    /// Carried rather than recomputed host-side: `get_metadata` is a pure echo (checklist, "Metadata
+    /// is a pure echo" — `metadata[i] == proof_instance[i]`), so the value the proof is verified
+    /// against must arrive through params. This is the genesis convention — `box:70` and `purse:75`
+    /// read `p.tx_binding` the same way. `CreateJobV2` constrains it at instance 4 (register
+    /// OBL-C78).
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce, `CreateJobV2` instance 5. Published so the verifier's instance vector
+    /// matches the circuit's `constrain_instance` list position for position.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for CreateJobParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateJobParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateJobParamsV1 {
-    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(236+self.proof.len()); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.push(self.delivery_type); b.extend_from_slice(&self.payment_amount.to_le_bytes()); b.extend_from_slice(&self.payment_token.to_repr()); b.extend_from_slice(&self.payment_commit_x.to_repr()); b.extend_from_slice(&self.payment_commit_y.to_repr()); Ok(b) }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(301+self.proof.len()); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.push(self.delivery_type); b.extend_from_slice(&self.payment_amount.to_le_bytes()); b.extend_from_slice(&self.payment_token.to_repr()); b.extend_from_slice(&self.payment_commit_x.to_repr()); b.extend_from_slice(&self.payment_commit_y.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 237 {
+        if data.len() < 301 {
             return Err(ContractError::IoError(format!(
-                "CreateJobParamsV1: expected at least 237 bytes, got {}",
+                "CreateJobParamsV1: expected at least 301 bytes, got {}",
                 data.len()
             )));
         }
@@ -510,8 +521,8 @@ impl CreateJobParamsV1 {
         }
         let proof = data[pos..pos+proof_len].to_vec();
         pos += proof_len;
-        // job_id(32)+emp_x(32)+emp_y(32)+attestation_id(32)+delivery_type(1)+payment_amount(8)+payment_token(32)+pc_x(32)+pc_y(32) = 233
-        if pos + 233 > data.len() {
+        // job_id(32)+emp_x(32)+emp_y(32)+attestation_id(32)+delivery_type(1)+payment_amount(8)+payment_token(32)+pc_x(32)+pc_y(32)+tx_binding(32)+tx_nonce(32) = 297
+        if pos + 297 > data.len() {
             return Err(ContractError::IoError("CreateJobParamsV1: truncated fixed fields".into()));
         }
         let job_id = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
@@ -546,6 +557,14 @@ impl CreateJobParamsV1 {
             .into_option()
             .ok_or_else(|| ContractError::IoError("CreateJobParamsV1: invalid payment_commit_y".into()))?;
         pos += 32;
+        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("CreateJobParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("CreateJobParamsV1: invalid tx_nonce".into()))?;
+        pos += 32;
 
         if pos != data.len() {
             return Err(ContractError::IoError(format!(
@@ -565,6 +584,8 @@ impl CreateJobParamsV1 {
             payment_token,
             payment_commit_x,
             payment_commit_y,
+            tx_binding,
+            tx_nonce,
         })
     }
 }
@@ -580,15 +601,25 @@ pub struct AcceptJobParamsV1 {
     pub worker_pub_x: pallas::Base,
     /// Worker's public key y coordinate
     pub worker_pub_y: pallas::Base,
+    /// Nullifier the circuit derives: `poseidon_hash(1, 7, job_id, worker_secret)`.
+    ///
+    /// `AcceptJobV2` constrains it at instance 1, and it is also the key this call's replay
+    /// protection marks spent. Carried rather than recomputed because `get_metadata` is a pure echo
+    /// and the value depends on a witness the host never sees (register OBL-C78).
+    pub spent_nullifier: pallas::Base,
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])`, instance 5.
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce, instance 6.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for AcceptJobParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AcceptJobParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl AcceptJobParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+96); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 100 {
+impl AcceptJobParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+192); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 196 {
             return Err(ContractError::IoError(format!(
-                "AcceptJobParamsV1: expected at least 100 bytes, got {}",
+                "AcceptJobParamsV1: expected at least 196 bytes, got {}",
                 data.len()
             )));
         }
@@ -599,7 +630,7 @@ impl AcceptJobParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> 
         }
         let proof = data[pos..pos+proof_len].to_vec();
         pos += proof_len;
-        if pos + 96 > data.len() {
+        if pos + 192 > data.len() {
             return Err(ContractError::IoError("AcceptJobParamsV1: truncated fixed fields".into()));
         }
         let job_id = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
@@ -614,13 +645,25 @@ impl AcceptJobParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> 
             .into_option()
             .ok_or_else(|| ContractError::IoError("AcceptJobParamsV1: invalid worker_pub_y".into()))?;
         pos += 32;
+        let spent_nullifier = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("AcceptJobParamsV1: invalid spent_nullifier".into()))?;
+        pos += 32;
+        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("AcceptJobParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("AcceptJobParamsV1: invalid tx_nonce".into()))?;
+        pos += 32;
         if pos != data.len() {
             return Err(ContractError::IoError(format!(
                 "AcceptJobParamsV1: expected {} bytes consumed, {} remaining",
                 data.len(), data.len() - pos
             )));
         }
-        Ok(AcceptJobParamsV1 { proof, job_id, worker_pub_x, worker_pub_y })
+        Ok(AcceptJobParamsV1 { proof, job_id, worker_pub_x, worker_pub_y, spent_nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -639,15 +682,19 @@ pub struct SubmitDeliverableParamsV1 {
     pub worker_pub_y: pallas::Base,
     /// Nullifier for preventing double-submission
     pub spent_nullifier: pallas::Base,
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])`, `SubmitDeliverableV2` instance 5.
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce, instance 6.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for SubmitDeliverableParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SubmitDeliverableParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl SubmitDeliverableParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+160); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 164 {
+impl SubmitDeliverableParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+224); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 228 {
             return Err(ContractError::IoError(format!(
-                "SubmitDeliverableParamsV1: expected at least 164 bytes, got {}",
+                "SubmitDeliverableParamsV1: expected at least 228 bytes, got {}",
                 data.len()
             )));
         }
@@ -658,7 +705,7 @@ impl SubmitDeliverableParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, Contrac
         }
         let proof = data[pos..pos+proof_len].to_vec();
         pos += proof_len;
-        if pos + 160 > data.len() {
+        if pos + 224 > data.len() {
             return Err(ContractError::IoError("SubmitDeliverableParamsV1: truncated fixed fields".into()));
         }
         let job_id = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
@@ -681,13 +728,21 @@ impl SubmitDeliverableParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, Contrac
             .into_option()
             .ok_or_else(|| ContractError::IoError("SubmitDeliverableParamsV1: invalid spent_nullifier".into()))?;
         pos += 32;
+        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("SubmitDeliverableParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("SubmitDeliverableParamsV1: invalid tx_nonce".into()))?;
+        pos += 32;
         if pos != data.len() {
             return Err(ContractError::IoError(format!(
                 "SubmitDeliverableParamsV1: expected {} bytes consumed, {} remaining",
                 data.len(), data.len() - pos
             )));
         }
-        Ok(SubmitDeliverableParamsV1 { proof, job_id, claim_id, worker_pub_x, worker_pub_y, spent_nullifier })
+        Ok(SubmitDeliverableParamsV1 { proof, job_id, claim_id, worker_pub_x, worker_pub_y, spent_nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -706,15 +761,19 @@ pub struct SubmitGitDeliverableParamsV1 {
     pub worker_pub_y: pallas::Base,
     /// Nullifier for preventing double-submission
     pub spent_nullifier: pallas::Base,
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])`, `SubmitGitDeliverableV2` instance 5.
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce, instance 6.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for SubmitGitDeliverableParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SubmitGitDeliverableParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl SubmitGitDeliverableParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+160); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 164 {
+impl SubmitGitDeliverableParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+224); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 228 {
             return Err(ContractError::IoError(format!(
-                "SubmitGitDeliverableParamsV1: expected at least 164 bytes, got {}",
+                "SubmitGitDeliverableParamsV1: expected at least 228 bytes, got {}",
                 data.len()
             )));
         }
@@ -725,7 +784,7 @@ impl SubmitGitDeliverableParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, Cont
         }
         let proof = data[pos..pos+proof_len].to_vec();
         pos += proof_len;
-        if pos + 160 > data.len() {
+        if pos + 224 > data.len() {
             return Err(ContractError::IoError("SubmitGitDeliverableParamsV1: truncated fixed fields".into()));
         }
         let job_id = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
@@ -748,13 +807,21 @@ impl SubmitGitDeliverableParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, Cont
             .into_option()
             .ok_or_else(|| ContractError::IoError("SubmitGitDeliverableParamsV1: invalid spent_nullifier".into()))?;
         pos += 32;
+        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("SubmitGitDeliverableParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("SubmitGitDeliverableParamsV1: invalid tx_nonce".into()))?;
+        pos += 32;
         if pos != data.len() {
             return Err(ContractError::IoError(format!(
                 "SubmitGitDeliverableParamsV1: expected {} bytes consumed, {} remaining",
                 data.len(), data.len() - pos
             )));
         }
-        Ok(SubmitGitDeliverableParamsV1 { proof, job_id, claim_id, worker_pub_x, worker_pub_y, spent_nullifier })
+        Ok(SubmitGitDeliverableParamsV1 { proof, job_id, claim_id, worker_pub_x, worker_pub_y, spent_nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -771,15 +838,19 @@ pub struct ConfirmDeliveryParamsV1 {
     pub employer_pub_y: pallas::Base,
     /// Nullifier for release authorization
     pub spent_nullifier: pallas::Base,
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])`, `ConfirmDeliveryV2` instance 5.
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce, instance 6.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for ConfirmDeliveryParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ConfirmDeliveryParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl ConfirmDeliveryParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+128); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 132 {
+impl ConfirmDeliveryParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+192); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 196 {
             return Err(ContractError::IoError(format!(
-                "ConfirmDeliveryParamsV1: expected at least 132 bytes, got {}",
+                "ConfirmDeliveryParamsV1: expected at least 196 bytes, got {}",
                 data.len()
             )));
         }
@@ -790,7 +861,7 @@ impl ConfirmDeliveryParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractE
         }
         let proof = data[pos..pos+proof_len].to_vec();
         pos += proof_len;
-        if pos + 128 > data.len() {
+        if pos + 192 > data.len() {
             return Err(ContractError::IoError("ConfirmDeliveryParamsV1: truncated fixed fields".into()));
         }
         let job_id = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
@@ -809,13 +880,21 @@ impl ConfirmDeliveryParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractE
             .into_option()
             .ok_or_else(|| ContractError::IoError("ConfirmDeliveryParamsV1: invalid spent_nullifier".into()))?;
         pos += 32;
+        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("ConfirmDeliveryParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("ConfirmDeliveryParamsV1: invalid tx_nonce".into()))?;
+        pos += 32;
         if pos != data.len() {
             return Err(ContractError::IoError(format!(
                 "ConfirmDeliveryParamsV1: expected {} bytes consumed, {} remaining",
                 data.len(), data.len() - pos
             )));
         }
-        Ok(ConfirmDeliveryParamsV1 { proof, job_id, employer_pub_x, employer_pub_y, spent_nullifier })
+        Ok(ConfirmDeliveryParamsV1 { proof, job_id, employer_pub_x, employer_pub_y, spent_nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -834,15 +913,28 @@ pub struct DisputeParamsV1 {
     pub dao_escrow_bulla: pallas::Base,
     /// Nullifier for dispute
     pub spent_nullifier: pallas::Base,
+    /// Hash of the dispute reason, `DisputeV2` instance 5.
+    ///
+    /// The circuit derives `spent_nullifier = poseidon_hash(1, 9, job_id, disputer_secret,
+    /// dispute_reason_hash)` and constrains *this* value as its fifth instance. The host used to
+    /// publish `dao_escrow_bulla` in that position instead — a value the circuit constrains
+    /// nowhere — so the verifier used a different vector than the proof committed to (register
+    /// OBL-C78). `dao_escrow_bulla` remains a param because exec records it on the job; being
+    /// needed by exec is not being a public input.
+    pub dispute_reason_hash: pallas::Base,
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])`, instance 6.
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce, instance 7.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for DisputeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for DisputeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl DisputeParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+160); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.disputer_pub_x.to_repr()); b.extend_from_slice(&self.disputer_pub_y.to_repr()); b.extend_from_slice(&self.dao_escrow_bulla.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 164 {
+impl DisputeParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+256); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.disputer_pub_x.to_repr()); b.extend_from_slice(&self.disputer_pub_y.to_repr()); b.extend_from_slice(&self.dao_escrow_bulla.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.dispute_reason_hash.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 260 {
             return Err(ContractError::IoError(format!(
-                "DisputeParamsV1: expected at least 164 bytes, got {}",
+                "DisputeParamsV1: expected at least 260 bytes, got {}",
                 data.len()
             )));
         }
@@ -853,7 +945,7 @@ impl DisputeParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { 
         }
         let proof = data[pos..pos+proof_len].to_vec();
         pos += proof_len;
-        if pos + 160 > data.len() {
+        if pos + 256 > data.len() {
             return Err(ContractError::IoError("DisputeParamsV1: truncated fixed fields".into()));
         }
         let job_id = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
@@ -876,13 +968,25 @@ impl DisputeParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { 
             .into_option()
             .ok_or_else(|| ContractError::IoError("DisputeParamsV1: invalid spent_nullifier".into()))?;
         pos += 32;
+        let dispute_reason_hash = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("DisputeParamsV1: invalid dispute_reason_hash".into()))?;
+        pos += 32;
+        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("DisputeParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("DisputeParamsV1: invalid tx_nonce".into()))?;
+        pos += 32;
         if pos != data.len() {
             return Err(ContractError::IoError(format!(
                 "DisputeParamsV1: expected {} bytes consumed, {} remaining",
                 data.len(), data.len() - pos
             )));
         }
-        Ok(DisputeParamsV1 { proof, job_id, disputer_pub_x, disputer_pub_y, dao_escrow_bulla, spent_nullifier })
+        Ok(DisputeParamsV1 { proof, job_id, disputer_pub_x, disputer_pub_y, dao_escrow_bulla, spent_nullifier, dispute_reason_hash, tx_binding, tx_nonce })
     }
 }
 
@@ -905,15 +1009,19 @@ pub struct RefundParamsV1 {
     pub refund_amount: u64,
     /// Nullifier for refund authorization
     pub spent_nullifier: pallas::Base,
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])`, `RefundV2` instance 6.
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce, instance 7.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for RefundParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RefundParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl RefundParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+152); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.milestone_count.to_le_bytes()); b.extend_from_slice(&self.completed_payment.to_le_bytes()); b.extend_from_slice(&self.refund_amount.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 156 {
+impl RefundParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+216); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.milestone_count.to_le_bytes()); b.extend_from_slice(&self.completed_payment.to_le_bytes()); b.extend_from_slice(&self.refund_amount.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 220 {
             return Err(ContractError::IoError(format!(
-                "RefundParamsV1: expected at least 156 bytes, got {}",
+                "RefundParamsV1: expected at least 220 bytes, got {}",
                 data.len()
             )));
         }
@@ -925,7 +1033,7 @@ impl RefundParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { l
         let proof = data[pos..pos+proof_len].to_vec();
         pos += proof_len;
         // job_id(32)+emp_x(32)+emp_y(32)+milestone_count(8)+completed_payment(8)+refund_amount(8)+spent_nullifier(32)=152
-        if pos + 152 > data.len() {
+        if pos + 216 > data.len() {
             return Err(ContractError::IoError("RefundParamsV1: truncated fixed fields".into()));
         }
         let job_id = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
@@ -950,13 +1058,21 @@ impl RefundParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { l
             .into_option()
             .ok_or_else(|| ContractError::IoError("RefundParamsV1: invalid spent_nullifier".into()))?;
         pos += 32;
+        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("RefundParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("RefundParamsV1: invalid tx_nonce".into()))?;
+        pos += 32;
         if pos != data.len() {
             return Err(ContractError::IoError(format!(
                 "RefundParamsV1: expected {} bytes consumed, {} remaining",
                 data.len(), data.len() - pos
             )));
         }
-        Ok(RefundParamsV1 { proof, job_id, employer_pub_x, employer_pub_y, milestone_count, completed_payment, refund_amount, spent_nullifier })
+        Ok(RefundParamsV1 { proof, job_id, employer_pub_x, employer_pub_y, milestone_count, completed_payment, refund_amount, spent_nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -1060,6 +1176,14 @@ pub struct CreateJobWithMilestonesParamsV1 {
     pub milestone_count: u32,
     /// Milestone definitions (payment amounts, deadlines)
     pub milestones: Vec<Milestone>,
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])`, `CreateJobV2` instance 4.
+    ///
+    /// This function dispatches to the `CreateJobV2` circuit (there is no separate
+    /// `CreateJobWithMilestonesV2`), so it publishes that circuit's instance vector and must carry
+    /// the same tx pair (register OBL-C78).
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce, instance 5.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for CreateJobWithMilestonesParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
@@ -1068,7 +1192,7 @@ impl CreateJobWithMilestonesParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let milestones_cap: usize = self.milestones.iter().map(|m| m.encode().len()).sum();
         let n = SerializedLen::try_from_len(self.proof.len())?;
-        let mut b = Vec::with_capacity(4 + self.proof.len() + 245 + milestones_cap);
+        let mut b = Vec::with_capacity(4 + self.proof.len() + 309 + milestones_cap);
         b.extend_from_slice(&n.to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.job_id.to_repr());
@@ -1085,14 +1209,16 @@ impl CreateJobWithMilestonesParamsV1 {
         for m in &self.milestones {
             b.extend_from_slice(&m.encode());
         }
+        b.extend_from_slice(&self.tx_binding.to_repr());
+        b.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(b)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 250 {
+        if data.len() < 314 {
             return Err(ContractError::IoError(format!(
-                "CreateJobWithMilestonesParamsV1: expected at least 250 bytes, got {}",
+                "CreateJobWithMilestonesParamsV1: expected at least 314 bytes, got {}",
                 data.len()
             )));
         }
@@ -1157,6 +1283,17 @@ impl CreateJobWithMilestonesParamsV1 {
             milestones.push(Milestone::decode(&data[pos..pos+m_len])?);
             pos += m_len;
         }
+        if pos + 64 > data.len() {
+            return Err(ContractError::IoError("CreateJobWithMilestonesParamsV1: truncated tx pair".into()));
+        }
+        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("CreateJobWithMilestonesParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("CreateJobWithMilestonesParamsV1: invalid tx_nonce".into()))?;
+        pos += 32;
         if pos != data.len() {
             return Err(ContractError::IoError(format!(
                 "CreateJobWithMilestonesParamsV1: expected {} bytes consumed, {} remaining",
@@ -1177,6 +1314,8 @@ impl CreateJobWithMilestonesParamsV1 {
             deadline_block,
             milestone_count: milestone_count.get(),
             milestones,
+            tx_binding,
+            tx_nonce,
         })
     }
 }
@@ -1198,6 +1337,14 @@ pub struct SubmitMilestoneDeliverableParamsV1 {
     pub worker_pub_y: pallas::Base,
     /// Nullifier for preventing double-submission
     pub spent_nullifier: pallas::Base,
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])`, `SubmitDeliverableV2` instance 5.
+    ///
+    /// This function dispatches to the `SubmitDeliverableV2` circuit (there is no separate
+    /// milestone-submit circuit), so it publishes that circuit's instance vector and must carry
+    /// the same tx pair (register OBL-C78).
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce, instance 6.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for SubmitMilestoneDeliverableParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
@@ -1205,7 +1352,7 @@ impl dwow_serial::Decodable for SubmitMilestoneDeliverableParamsV1 { fn decode<D
 impl SubmitMilestoneDeliverableParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let n = SerializedLen::try_from_len(self.proof.len())?;
-        let mut b = Vec::with_capacity(4 + self.proof.len() + 164);
+        let mut b = Vec::with_capacity(4 + self.proof.len() + 228);
         b.extend_from_slice(&n.to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.job_id.to_repr());
@@ -1214,14 +1361,16 @@ impl SubmitMilestoneDeliverableParamsV1 {
         b.extend_from_slice(&self.worker_pub_x.to_repr());
         b.extend_from_slice(&self.worker_pub_y.to_repr());
         b.extend_from_slice(&self.spent_nullifier.to_repr());
+        b.extend_from_slice(&self.tx_binding.to_repr());
+        b.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(b)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 168 {
+        if data.len() < 232 {
             return Err(ContractError::IoError(format!(
-                "SubmitMilestoneDeliverableParamsV1: expected at least 168 bytes, got {}",
+                "SubmitMilestoneDeliverableParamsV1: expected at least 232 bytes, got {}",
                 data.len()
             )));
         }
@@ -1232,8 +1381,8 @@ impl SubmitMilestoneDeliverableParamsV1 {
         }
         let proof = data[pos..pos+proof_len].to_vec();
         pos += proof_len;
-        // job_id(32)+milestone_index(4)+claim_id(32)+worker_pub_x(32)+worker_pub_y(32)+spent_nullifier(32)=164
-        if pos + 164 > data.len() {
+        // job_id(32)+milestone_index(4)+claim_id(32)+worker_pub_x(32)+worker_pub_y(32)+spent_nullifier(32)+tx_binding(32)+tx_nonce(32)=228
+        if pos + 228 > data.len() {
             return Err(ContractError::IoError("SubmitMilestoneDeliverableParamsV1: truncated fixed fields".into()));
         }
         let job_id = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
@@ -1258,13 +1407,21 @@ impl SubmitMilestoneDeliverableParamsV1 {
             .into_option()
             .ok_or_else(|| ContractError::IoError("SubmitMilestoneDeliverableParamsV1: invalid spent_nullifier".into()))?;
         pos += 32;
+        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("SubmitMilestoneDeliverableParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("SubmitMilestoneDeliverableParamsV1: invalid tx_nonce".into()))?;
+        pos += 32;
         if pos != data.len() {
             return Err(ContractError::IoError(format!(
                 "SubmitMilestoneDeliverableParamsV1: expected {} bytes consumed, {} remaining",
                 data.len(), data.len() - pos
             )));
         }
-        Ok(SubmitMilestoneDeliverableParamsV1 { proof, job_id, milestone_index, claim_id, worker_pub_x, worker_pub_y, spent_nullifier })
+        Ok(SubmitMilestoneDeliverableParamsV1 { proof, job_id, milestone_index, claim_id, worker_pub_x, worker_pub_y, spent_nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -1285,15 +1442,19 @@ pub struct ConfirmMilestoneParamsV1 {
     pub payment_release: u64,
     /// Nullifier for release authorization
     pub spent_nullifier: pallas::Base,
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])`, `MilestonePaymentV2` instance 6.
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce, instance 7.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for ConfirmMilestoneParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ConfirmMilestoneParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl ConfirmMilestoneParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+164); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.milestone_index.to_le_bytes()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.payment_release.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 144 {
+impl ConfirmMilestoneParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+208); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.milestone_index.to_le_bytes()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.payment_release.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 240 {
             return Err(ContractError::IoError(format!(
-                "ConfirmMilestoneParamsV1: expected at least 144 bytes, got {}",
+                "ConfirmMilestoneParamsV1: expected at least 208 bytes, got {}",
                 data.len()
             )));
         }
@@ -1304,8 +1465,8 @@ impl ConfirmMilestoneParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, Contract
         }
         let proof = data[pos..pos+proof_len].to_vec();
         pos += proof_len;
-        // job_id(32)+milestone_index(4)+emp_x(32)+emp_y(32)+payment_release(8)+spent_nullifier(32)=140
-        if pos + 140 > data.len() {
+        // job_id(32)+milestone_index(4)+emp_x(32)+emp_y(32)+payment_release(8)+spent_nullifier(32)+tx_binding(32)+tx_nonce(32)=204
+        if pos + 204 > data.len() {
             return Err(ContractError::IoError("ConfirmMilestoneParamsV1: truncated fixed fields".into()));
         }
         let job_id = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
@@ -1328,13 +1489,21 @@ impl ConfirmMilestoneParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, Contract
             .into_option()
             .ok_or_else(|| ContractError::IoError("ConfirmMilestoneParamsV1: invalid spent_nullifier".into()))?;
         pos += 32;
+        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("ConfirmMilestoneParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("ConfirmMilestoneParamsV1: invalid tx_nonce".into()))?;
+        pos += 32;
         if pos != data.len() {
             return Err(ContractError::IoError(format!(
                 "ConfirmMilestoneParamsV1: expected {} bytes consumed, {} remaining",
                 data.len(), data.len() - pos
             )));
         }
-        Ok(ConfirmMilestoneParamsV1 { proof, job_id, milestone_index, employer_pub_x, employer_pub_y, payment_release, spent_nullifier })
+        Ok(ConfirmMilestoneParamsV1 { proof, job_id, milestone_index, employer_pub_x, employer_pub_y, payment_release, spent_nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -1355,6 +1524,13 @@ pub struct InitiateDisputeParamsV1 {
     pub dao_escrow_bulla: pallas::Base,
     /// Nullifier for dispute
     pub spent_nullifier: pallas::Base,
+    /// Hash of the dispute reason, `DisputeV2` instance 5 — this function dispatches to the
+    /// `DisputeV2` circuit (register OBL-C78).
+    pub dispute_reason_hash: pallas::Base,
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])`, instance 6.
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce, instance 7.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for InitiateDisputeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
@@ -1362,7 +1538,7 @@ impl dwow_serial::Decodable for InitiateDisputeParamsV1 { fn decode<D: std::io::
 impl InitiateDisputeParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let n = SerializedLen::try_from_len(self.proof.len())?;
-        let mut b = Vec::with_capacity(4 + self.proof.len() + 164);
+        let mut b = Vec::with_capacity(4 + self.proof.len() + 260);
         b.extend_from_slice(&n.to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.job_id.to_repr());
@@ -1371,14 +1547,17 @@ impl InitiateDisputeParamsV1 {
         b.extend_from_slice(&self.disputer_pub_y.to_repr());
         b.extend_from_slice(&self.dao_escrow_bulla.to_repr());
         b.extend_from_slice(&self.spent_nullifier.to_repr());
+        b.extend_from_slice(&self.dispute_reason_hash.to_repr());
+        b.extend_from_slice(&self.tx_binding.to_repr());
+        b.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(b)
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 168 {
+        if data.len() < 264 {
             return Err(ContractError::IoError(format!(
-                "InitiateDisputeParamsV1: expected at least 168 bytes, got {}",
+                "InitiateDisputeParamsV1: expected at least 264 bytes, got {}",
                 data.len()
             )));
         }
@@ -1390,7 +1569,7 @@ impl InitiateDisputeParamsV1 {
         let proof = data[pos..pos+proof_len].to_vec();
         pos += proof_len;
         // job_id(32)+milestone_index(4)+disp_x(32)+disp_y(32)+dao(32)+spent_nullifier(32)=164
-        if pos + 164 > data.len() {
+        if pos + 260 > data.len() {
             return Err(ContractError::IoError("InitiateDisputeParamsV1: truncated fixed fields".into()));
         }
         let job_id = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
@@ -1415,13 +1594,25 @@ impl InitiateDisputeParamsV1 {
             .into_option()
             .ok_or_else(|| ContractError::IoError("InitiateDisputeParamsV1: invalid spent_nullifier".into()))?;
         pos += 32;
+        let dispute_reason_hash = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("InitiateDisputeParamsV1: invalid dispute_reason_hash".into()))?;
+        pos += 32;
+        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("InitiateDisputeParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("InitiateDisputeParamsV1: invalid tx_nonce".into()))?;
+        pos += 32;
         if pos != data.len() {
             return Err(ContractError::IoError(format!(
                 "InitiateDisputeParamsV1: expected {} bytes consumed, {} remaining",
                 data.len(), data.len() - pos
             )));
         }
-        Ok(InitiateDisputeParamsV1 { proof, job_id, milestone_index, disputer_pub_x, disputer_pub_y, dao_escrow_bulla, spent_nullifier })
+        Ok(InitiateDisputeParamsV1 { proof, job_id, milestone_index, disputer_pub_x, disputer_pub_y, dao_escrow_bulla, spent_nullifier, dispute_reason_hash, tx_binding, tx_nonce })
     }
 }
 
@@ -1594,13 +1785,21 @@ pub struct AcceptJobWithCapabilityParamsV1 {
     pub capability_proof: Vec<u8>,
     /// Capability secret (proves ownership)
     pub capability_secret: [u8; 32],
+    /// Nullifier the circuit derives: `poseidon_hash(1, 8, job_id, worker_secret)`,
+    /// `AcceptJobWithCapabilityV2` instance 1. Also the key this call's replay protection marks
+    /// spent (register OBL-C78).
+    pub spent_nullifier: pallas::Base,
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])`, instance 6.
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce, instance 7.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for AcceptJobWithCapabilityParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AcceptJobWithCapabilityParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl AcceptJobWithCapabilityParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+4+self.capability_proof.len()+160); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.required_capability_id.to_repr()); b.extend_from_slice(&SerializedLen::try_from_len(self.capability_proof.len())?.to_le_bytes()); b.extend_from_slice(&self.capability_proof); b.extend_from_slice(&self.capability_secret); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 171 {
+impl AcceptJobWithCapabilityParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+4+self.capability_proof.len()+256); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.required_capability_id.to_repr()); b.extend_from_slice(&SerializedLen::try_from_len(self.capability_proof.len())?.to_le_bytes()); b.extend_from_slice(&self.capability_proof); b.extend_from_slice(&self.capability_secret); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 267 {
             return Err(ContractError::IoError(format!(
                 "AcceptJobWithCapabilityParamsV1: expected at least 171 bytes, got {}",
                 data.len()
@@ -1651,13 +1850,25 @@ impl AcceptJobWithCapabilityParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, C
         let mut capability_secret = [0u8; 32];
         capability_secret.copy_from_slice(&data[pos..pos+32]);
         pos += 32;
+        let spent_nullifier = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("AcceptJobWithCapabilityParamsV1: invalid spent_nullifier".into()))?;
+        pos += 32;
+        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("AcceptJobWithCapabilityParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("AcceptJobWithCapabilityParamsV1: invalid tx_nonce".into()))?;
+        pos += 32;
         if pos != data.len() {
             return Err(ContractError::IoError(format!(
                 "AcceptJobWithCapabilityParamsV1: expected {} bytes consumed, {} remaining",
                 data.len(), data.len() - pos
             )));
         }
-        Ok(AcceptJobWithCapabilityParamsV1 { proof, job_id, worker_pub_x, worker_pub_y, required_capability_id, capability_proof, capability_secret })
+        Ok(AcceptJobWithCapabilityParamsV1 { proof, job_id, worker_pub_x, worker_pub_y, required_capability_id, capability_proof, capability_secret, spent_nullifier, tx_binding, tx_nonce })
     }
 }
 

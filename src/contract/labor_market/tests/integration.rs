@@ -240,6 +240,8 @@ fn test_create_job_params_encoding() {
         payment_token: pallas::Base::from(1),
         payment_commit_x: pallas::Base::from(5),
         payment_commit_y: pallas::Base::from(6),
+        tx_binding: pallas::Base::from(7),
+        tx_nonce: pallas::Base::from(8),
     };
 
     let encoded = serialize(&params);
@@ -257,6 +259,9 @@ fn test_accept_job_params_encoding() {
         job_id: pallas::Base::from(1),
         worker_pub_x: pallas::Base::from(2),
         worker_pub_y: pallas::Base::from(3),
+        spent_nullifier: pallas::Base::from(4),
+        tx_binding: pallas::Base::from(5),
+        tx_nonce: pallas::Base::from(6),
     };
 
     let encoded = serialize(&params);
@@ -275,6 +280,8 @@ fn test_submit_deliverable_params_encoding() {
         worker_pub_x: pallas::Base::from(3),
         worker_pub_y: pallas::Base::from(4),
         spent_nullifier: pallas::Base::from(5),
+        tx_binding: pallas::Base::from(6),
+        tx_nonce: pallas::Base::from(7),
     };
 
     let encoded = serialize(&params);
@@ -294,6 +301,8 @@ fn test_submit_git_deliverable_params_encoding() {
         worker_pub_x: pallas::Base::from(3),
         worker_pub_y: pallas::Base::from(4),
         spent_nullifier: pallas::Base::from(5),
+        tx_binding: pallas::Base::from(6),
+        tx_nonce: pallas::Base::from(7),
     };
 
     let encoded = serialize(&params);
@@ -311,6 +320,8 @@ fn test_confirm_delivery_params_encoding() {
         employer_pub_x: pallas::Base::from(2),
         employer_pub_y: pallas::Base::from(3),
         spent_nullifier: pallas::Base::from(4),
+        tx_binding: pallas::Base::from(5),
+        tx_nonce: pallas::Base::from(6),
     };
 
     let encoded = serialize(&params);
@@ -329,6 +340,9 @@ fn test_dispute_params_encoding() {
         disputer_pub_y: pallas::Base::from(3),
         dao_escrow_bulla: pallas::Base::from(4),
         spent_nullifier: pallas::Base::from(5),
+        dispute_reason_hash: pallas::Base::from(6),
+        tx_binding: pallas::Base::from(7),
+        tx_nonce: pallas::Base::from(8),
     };
 
     let encoded = serialize(&params);
@@ -349,6 +363,8 @@ fn test_refund_params_encoding() {
         completed_payment: 500,
         refund_amount: 500,
         spent_nullifier: pallas::Base::from(4),
+        tx_binding: pallas::Base::from(5),
+        tx_nonce: pallas::Base::from(6),
     };
 
     let encoded = serialize(&params);
@@ -412,6 +428,8 @@ fn test_create_job_with_milestones_params_encoding() {
                 completed_at_block: None,
             },
         ],
+        tx_binding: pallas::Base::from(7),
+        tx_nonce: pallas::Base::from(8),
     };
 
     let encoded = serialize(&params);
@@ -432,6 +450,8 @@ fn test_submit_milestone_deliverable_params_encoding() {
         worker_pub_x: pallas::Base::from(3),
         worker_pub_y: pallas::Base::from(4),
         spent_nullifier: pallas::Base::from(5),
+        tx_binding: pallas::Base::from(6),
+        tx_nonce: pallas::Base::from(7),
     };
 
     let encoded = serialize(&params);
@@ -452,6 +472,8 @@ fn test_confirm_milestone_params_encoding() {
         employer_pub_y: pallas::Base::from(3),
         payment_release: 1000,
         spent_nullifier: pallas::Base::from(4),
+        tx_binding: pallas::Base::from(5),
+        tx_nonce: pallas::Base::from(6),
     };
 
     let encoded = serialize(&params);
@@ -472,6 +494,9 @@ fn test_initiate_dispute_params_encoding() {
         disputer_pub_y: pallas::Base::from(3),
         dao_escrow_bulla: pallas::Base::from(4),
         spent_nullifier: pallas::Base::from(5),
+        dispute_reason_hash: pallas::Base::from(6),
+        tx_binding: pallas::Base::from(7),
+        tx_nonce: pallas::Base::from(8),
     };
 
     let encoded = serialize(&params);
@@ -517,6 +542,9 @@ fn test_accept_job_with_capability_params_encoding() {
         required_capability_id: pallas::Base::from(10),
         capability_proof: vec![4, 5, 6],
         capability_secret: [7u8; 32],
+        spent_nullifier: pallas::Base::from(11),
+        tx_binding: pallas::Base::from(12),
+        tx_nonce: pallas::Base::from(13),
     };
 
     let encoded = serialize(&params);

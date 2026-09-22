@@ -38,23 +38,30 @@ use rand::SeedableRng;
 /// MilestonePaymentV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct MilestonePaymentV1PublicInputs {
+    pub spent_nullifier: pallas::Base,
     pub job_id: pallas::Base,
     pub employer_pub_x: pallas::Base,
     pub employer_pub_y: pallas::Base,
     pub milestone_payment_amount: pallas::Base,
-    pub spent_nullifier: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl MilestonePaymentV1PublicInputs {
+    /// Order must match `milestone_payment.zk`'s `constrain_instance` sequence exactly:
+    ///   spent_nullifier, job_id, employer_pub_x, employer_pub_y, milestone_payment_amount,
+    ///   tx_binding, tx_nonce
+    /// `spent_nullifier` sat at position 5 where the circuit leads with it (register OBL-C78).
+    /// This is the circuit `ConfirmMilestoneV1` must be dispatched to; the host published
+    /// `ConfirmDeliveryV2` for it instead, so the proof below was for a namespace the verifier
+    /// never looked at (see `get_metadata`).
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
+            self.spent_nullifier,
             self.job_id,
             self.employer_pub_x,
             self.employer_pub_y,
             self.milestone_payment_amount,
-            self.spent_nullifier,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -69,51 +76,61 @@ pub struct MilestonePaymentV1CallData {
     pub employer_secret: pallas::Base,
     // Public inputs
     pub employer_public: PublicKey,
-    pub last_milestone_block: pallas::Base,
-    pub current_block: pallas::Base,
-    pub deadline_block: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl MilestonePaymentV1CallData {
+    /// `last_milestone_block`, `current_block` and `deadline_block` used to be taken here and
+    /// threaded into `to_witnesses`, where `milestone_payment.zk` declares none of them — three of
+    /// the eight extra entries (register OBL-C78). None of the three is an instance either, and
+    /// the params carry none of them, so this call proves nothing about the deadline despite the
+    /// exec comment claiming the deadline is what authorises the release.
     pub fn new(
         job_id: pallas::Base,
         milestone_payment_amount: pallas::Base,
         employer_secret: pallas::Base,
         employer_public: PublicKey,
-        last_milestone_block: pallas::Base,
-        current_block: pallas::Base,
-        deadline_block: pallas::Base,
     ) -> Self {
         Self {
             job_id,
             milestone_payment_amount,
             employer_secret,
             employer_public,
-            last_milestone_block,
-            current_block,
-            deadline_block,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
     }
 
     /// Compute nullifier from job_id and employer_secret
+    /// `MilestonePaymentV2` derives `spent_nullifier = poseidon_hash(1, 2, job_id,
+    /// employer_secret)` and constrains it at instance 1. Domain 1 = `NULLIFIER`, tag 2 = the
+    /// circuit's `MILESTONE_TAG`. This was `poseidon_hash([job_id, employer_secret])` — no domain,
+    /// no tag — so it could not equal the circuit's instance and violated `RC3`.
     pub fn compute_nullifier(&self) -> pallas::Base {
-        poseidon_hash([self.job_id, self.employer_secret])
+        poseidon_hash([
+            pallas::Base::from(1u64),
+            pallas::Base::from(2u64),
+            self.job_id,
+            self.employer_secret,
+        ])
+    }
+
+    /// `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`, domain 3, instance 6.
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
     }
 
     pub fn compute_public_inputs(&self) -> MilestonePaymentV1PublicInputs {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.employer_public.xy().expect("pk not identity");
         MilestonePaymentV1PublicInputs {
+            spent_nullifier: self.compute_nullifier(),
             job_id: self.job_id,
             employer_pub_x: ix,
             employer_pub_y: iy,
             milestone_payment_amount: self.milestone_payment_amount,
-            spent_nullifier: self.compute_nullifier(),
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
         }
     }
@@ -121,24 +138,24 @@ impl MilestonePaymentV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.employer_public.xy().expect("pk not identity");
+        // Must match `milestone_payment.zk`'s `witness` block exactly:
+        //   job_id, employer_secret, employer_pub_x, employer_pub_y, milestone_payment_amount,
+        //   tx_commitment, tx_nonce, tx_binding
+        // This vector listed its public inputs AGAIN as private witnesses and repeated
+        // `employer_pub_x`/`employer_pub_y`/`milestone_payment_amount` twice over — sixteen
+        // entries against eight (register OBL-C78). `spent_nullifier` is derived in-circuit, so it
+        // is an instance, not a witness. `last_milestone_block`, `current_block` and
+        // `deadline_block` are declared nowhere; the deadline is not a witness, so this circuit
+        // does not prove it passed.
         vec![
-            // Public inputs as witnesses
             Witness::Base(Value::known(self.job_id)),
-            Witness::Base(Value::known(ix)),
-            Witness::Base(Value::known(iy)),
-            Witness::Base(Value::known(self.milestone_payment_amount)),
-            Witness::Base(Value::known(self.compute_nullifier())),
-            // Private inputs
-            Witness::Base(Value::known(self.milestone_payment_amount)),
             Witness::Base(Value::known(self.employer_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            Witness::Base(Value::known(self.last_milestone_block)),
-            Witness::Base(Value::known(self.current_block)),
-            Witness::Base(Value::known(self.deadline_block)),
+            Witness::Base(Value::known(self.milestone_payment_amount)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }

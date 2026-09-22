@@ -38,11 +38,11 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("SubmitDeliverableV1", true, Box::new(move || {
-                let r = h.submit_deliverable(worker_secret, worker_pub, job_id, claim_id, 5000, 200).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.submit_deliverable(worker_secret, worker_pub, job_id, claim_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("SubmitGitDeliverableV1", true, Box::new(move || {
-                let r = h.submit_git_deliverable(worker_secret, worker_pub, job_id, claim_id, 5000, 200).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.submit_git_deliverable(worker_secret, worker_pub, job_id, claim_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("ConfirmDeliveryV1", true, Box::new(move || {
@@ -58,11 +58,11 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("AcceptJobWithCapabilityV1", true, Box::new(move || {
-                let r = h.accept_job_with_capability(worker_secret, worker_pub, job_id, pallas::Base::from(1u64), pallas::Base::from(99u64), pallas::Base::from(1u64), cap_proof.clone(), cap_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.accept_job_with_capability(worker_secret, worker_pub, job_id, pallas::Base::from(1u64), cap_proof.clone(), cap_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("ConfirmMilestoneV1", true, Box::new(move || {
-                let r = h.confirm_milestone(employer_secret, employer_pub, job_id, 1, 1000, 1000, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.confirm_milestone(employer_secret, employer_pub, job_id, 1, 1000, 1000).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
         ],

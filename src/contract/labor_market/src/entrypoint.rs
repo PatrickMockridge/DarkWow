@@ -161,13 +161,19 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let metadata = match func {
         LaborMarketFunction::CreateJobV1 => {
             let params = CreateJobParamsV1::decode(&self_.data[1..])?;
-            // Circuit constrain_instance (3): employer_pub_x, employer_pub_y, attestation_id
+            // Circuit `CreateJobV2` constrain_instance (5), in order: employer_pub_x,
+            // employer_pub_y, attestation_id, tx_binding, tx_nonce. The tx pair was missing
+            // entirely, so the vector the verifier used was shorter than the circuit's instance
+            // list and no proof could verify (register OBL-C78). Both are now carried in params —
+            // get_metadata is a pure echo, so the host publishes them rather than recomputing.
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V2.to_string(),
                 vec![
                     params.employer_pub_x,
                     params.employer_pub_y,
                     params.attestation_id,
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             )];
             let mut metadata = vec![];
@@ -176,12 +182,19 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::AcceptJobV1 => {
             let params = AcceptJobParamsV1::decode(&self_.data[1..])?;
+            // Circuit `AcceptJobV2` constrain_instance (6), in order: spent_nullifier, job_id,
+            // worker_pub_x, worker_pub_y, tx_binding, tx_nonce. `spent_nullifier` led the circuit
+            // and was published nowhere, and the tx pair was missing too — the verifier's vector
+            // was three short (register OBL-C78).
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_ACCEPT_JOB_NS_V2.to_string(),
                 vec![
+                    params.spent_nullifier,
                     params.job_id,
                     params.worker_pub_x,
                     params.worker_pub_y,
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             )];
             let mut metadata = vec![];
@@ -190,14 +203,19 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::SubmitDeliverableV1 => {
             let params = SubmitDeliverableParamsV1::decode(&self_.data[1..])?;
+            // Circuit `SubmitDeliverableV2` constrain_instance (6), in order: spent_nullifier,
+            // job_id, worker_pub_x, worker_pub_y, tx_binding, tx_nonce. `spent_nullifier` sat at
+            // position 5 where the circuit leads with it, `claim_id` was published although no
+            // such instance exists, and the tx pair was missing (register OBL-C78).
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V2.to_string(),
                 vec![
+                    params.spent_nullifier,
                     params.job_id,
-                    params.claim_id,
                     params.worker_pub_x,
                     params.worker_pub_y,
-                    params.spent_nullifier,
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             )];
             let mut metadata = vec![];
@@ -206,14 +224,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::SubmitGitDeliverableV1 => {
             let params = SubmitGitDeliverableParamsV1::decode(&self_.data[1..])?;
+            // Circuit `SubmitGitDeliverableV2` constrain_instance (6), in order: spent_nullifier,
+            // job_id, worker_pub_x, worker_pub_y, tx_binding, tx_nonce (register OBL-C78).
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_SUBMIT_GIT_DELIVERABLE_NS_V2.to_string(),
                 vec![
+                    params.spent_nullifier,
                     params.job_id,
-                    params.claim_id,
                     params.worker_pub_x,
                     params.worker_pub_y,
-                    params.spent_nullifier,
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             )];
             let mut metadata = vec![];
@@ -222,13 +243,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::ConfirmDeliveryV1 => {
             let params = ConfirmDeliveryParamsV1::decode(&self_.data[1..])?;
+            // Circuit `ConfirmDeliveryV2` constrain_instance (6), in order: spent_nullifier,
+            // job_id, employer_pub_x, employer_pub_y, tx_binding, tx_nonce (register OBL-C78).
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V2.to_string(),
                 vec![
+                    params.spent_nullifier,
                     params.job_id,
                     params.employer_pub_x,
                     params.employer_pub_y,
-                    params.spent_nullifier,
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             )];
             let mut metadata = vec![];
@@ -237,14 +262,21 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::DisputeV1 => {
             let params = DisputeParamsV1::decode(&self_.data[1..])?;
+            // Circuit `DisputeV2` constrain_instance (7), in order: spent_nullifier, job_id,
+            // disputer_pub_x, disputer_pub_y, dispute_reason_hash, tx_binding, tx_nonce.
+            // `dao_escrow_bulla` used to occupy the position the circuit gives to
+            // `dispute_reason_hash` — a different value in the slot the verifier reads (register
+            // OBL-C78).
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_DISPUTE_NS_V2.to_string(),
                 vec![
+                    params.spent_nullifier,
                     params.job_id,
                     params.disputer_pub_x,
                     params.disputer_pub_y,
-                    params.dao_escrow_bulla,
-                    params.spent_nullifier,
+                    params.dispute_reason_hash,
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             )];
             let mut metadata = vec![];
@@ -253,18 +285,21 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::RefundV1 => {
             let params = RefundParamsV1::decode(&self_.data[1..])?;
-            // Circuit constrain_instance (7): job_id, employer_pub_x, employer_pub_y,
-            //   milestone_count, completed_payment, refund_amount, spent_nullifier
+            // Circuit `RefundV2` constrain_instance (7), in order: spent_nullifier, job_id,
+            // employer_pub_x, employer_pub_y, refund_amount, tx_binding, tx_nonce.
+            // `milestone_count` and `completed_payment` were published here and are `range_check`ed
+            // as *witnesses* — bounded, but not constrained as instances, so publishing them put
+            // two values of unknown meaning in the slots the verifier reads (register OBL-C78).
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_REFUND_NS_V2.to_string(),
                 vec![
+                    params.spent_nullifier,
                     params.job_id,
                     params.employer_pub_x,
                     params.employer_pub_y,
-                    pallas::Base::from(params.milestone_count),
-                    pallas::Base::from(params.completed_payment),
                     pallas::Base::from(params.refund_amount),
-                    params.spent_nullifier,
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             )];
             let mut metadata = vec![];
@@ -272,18 +307,30 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         LaborMarketFunction::CancelV1 => {
-            // CancelV1 has no ZK circuit
-            vec![]
+            // CancelV1 has no ZK circuit, so there is nothing to publish — but the empty vector
+            // must still be ENCODED. A bare `vec![]` is a zero-byte buffer, which the host reads as
+            // "contract signalled EMPTY metadata, the documented rejection signal"
+            // (`execution.rs:423`), so this endpoint could not be called at all (register OBL-C77).
+            // The form is `native_token::plaintext_call_get_metadata`
+            // (`entrypoint/mod.rs:922`), the reference for a call with no proofs.
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            let mut m = vec![];
+            zk_public_inputs.encode(&mut m)?;
+            m
         }
         LaborMarketFunction::CreateJobWithMilestonesV1 => {
             let params = CreateJobWithMilestonesParamsV1::decode(&self_.data[1..])?;
-            // Circuit constrain_instance (3): employer_pub_x, employer_pub_y, attestation_id
+            // Dispatches to `CreateJobV2` (no separate milestone-create circuit exists), so it
+            // publishes that circuit's instance vector, constrain_instance (5): employer_pub_x,
+            // employer_pub_y, attestation_id, tx_binding, tx_nonce (register OBL-C78).
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V2.to_string(),
                 vec![
                     params.employer_pub_x,
                     params.employer_pub_y,
                     params.attestation_id,
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             )];
             let mut metadata = vec![];
@@ -292,14 +339,18 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::SubmitMilestoneV1 => {
             let params = SubmitMilestoneDeliverableParamsV1::decode(&self_.data[1..])?;
+            // Dispatches to `SubmitDeliverableV2`, constrain_instance (6), in order: spent_nullifier,
+            // job_id, worker_pub_x, worker_pub_y, tx_binding, tx_nonce. Same shape as
+            // `SubmitDeliverableV1` above and the same defect (register OBL-C78).
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V2.to_string(),
                 vec![
+                    params.spent_nullifier,
                     params.job_id,
-                    params.claim_id,
                     params.worker_pub_x,
                     params.worker_pub_y,
-                    params.spent_nullifier,
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             )];
             let mut metadata = vec![];
@@ -308,13 +359,25 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::ConfirmMilestoneV1 => {
             let params = ConfirmMilestoneParamsV1::decode(&self_.data[1..])?;
+            // Circuit `MilestonePaymentV2` constrain_instance (7), in order: spent_nullifier,
+            // job_id, employer_pub_x, employer_pub_y, milestone_payment_amount, tx_binding,
+            // tx_nonce. `payment_release` is the amount field.
+            //
+            // This arm published `ConfirmDeliveryV2` — a DIFFERENT circuit — so the host verified
+            // this call against a namespace whose proof was never supplied, while the client built
+            // a `MilestonePaymentV2` proof (`client/milestone_payment.rs`). That mismatch is the
+            // recorded "`milestone_payment`'s circuit is registered by no dispatch path"
+            // (OBL-Z16); the circuit shipped, the client used it, and the host looked elsewhere.
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V2.to_string(),
+                crate::LABOR_CONTRACT_ZKAS_MILESTONE_PAYMENT_NS_V2.to_string(),
                 vec![
+                    params.spent_nullifier,
                     params.job_id,
                     params.employer_pub_x,
                     params.employer_pub_y,
-                    params.spent_nullifier,
+                    pallas::Base::from(params.payment_release),
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             )];
             let mut metadata = vec![];
@@ -323,14 +386,20 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::InitiateDisputeV1 => {
             let params = InitiateDisputeParamsV1::decode(&self_.data[1..])?;
+            // Dispatches to `DisputeV2`, constrain_instance (7), in order: spent_nullifier,
+            // job_id, disputer_pub_x, disputer_pub_y, dispute_reason_hash, tx_binding, tx_nonce.
+            // Same shape as `DisputeV1` above and the same defect: `dao_escrow_bulla` occupied the
+            // slot the circuit gives to `dispute_reason_hash` (register OBL-C78).
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_DISPUTE_NS_V2.to_string(),
                 vec![
+                    params.spent_nullifier,
                     params.job_id,
                     params.disputer_pub_x,
                     params.disputer_pub_y,
-                    params.dao_escrow_bulla,
-                    params.spent_nullifier,
+                    params.dispute_reason_hash,
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             )];
             let mut metadata = vec![];
@@ -339,19 +408,32 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         // O-Cap enabled functions
         LaborMarketFunction::CreateJobWithCapabilityV1 => {
-            // No circuit exists yet — deferred to v1.1
-            vec![]
+            // No circuit exists yet — deferred to v1.1. Encoded, not bare: a bare `vec![]` is a
+            // zero-byte buffer, which the host reads as the documented rejection signal, making
+            // this endpoint uncallable (register OBL-C77). See
+            // `native_token::plaintext_call_get_metadata` (`entrypoint/mod.rs:922`).
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            let mut m = vec![];
+            zk_public_inputs.encode(&mut m)?;
+            m
         }
         LaborMarketFunction::AcceptJobWithCapabilityV1 => {
             let params = AcceptJobWithCapabilityParamsV1::decode(&self_.data[1..])?;
             // Circuit constrain_instance (4): job_id, worker_pub_x, worker_pub_y, required_capability_id
+            // Circuit `AcceptJobWithCapabilityV2` constrain_instance (7), in order:
+            // spent_nullifier, job_id, worker_pub_x, worker_pub_y, capability_id, tx_binding,
+            // tx_nonce. `spent_nullifier` was published nowhere and the tx pair was missing
+            // (register OBL-C78).
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V2.to_string(),
                 vec![
+                    params.spent_nullifier,
                     params.job_id,
                     params.worker_pub_x,
                     params.worker_pub_y,
                     params.required_capability_id,
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             )];
             let mut metadata = vec![];
@@ -359,8 +441,14 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         LaborMarketFunction::CreateJobWithMilestonesAndCapabilityV1 => {
-            // No circuit exists yet — deferred to v1.1
-            vec![]
+            // No circuit exists yet — deferred to v1.1. Encoded, not bare: a bare `vec![]` is a
+            // zero-byte buffer, which the host reads as the documented rejection signal, making
+            // this endpoint uncallable (register OBL-C77). See
+            // `native_token::plaintext_call_get_metadata` (`entrypoint/mod.rs:922`).
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            let mut m = vec![];
+            zk_public_inputs.encode(&mut m)?;
+            m
         }
     };
 

@@ -233,6 +233,8 @@ impl LaborMarketHarness {
             payment_token,
             payment_commit_x,
             payment_commit_y,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x00];
@@ -260,6 +262,9 @@ impl LaborMarketHarness {
             job_id: public_inputs.job_id,
             worker_pub_x: public_inputs.worker_pub_x,
             worker_pub_y: public_inputs.worker_pub_y,
+            spent_nullifier: public_inputs.spent_nullifier,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x01];
@@ -275,17 +280,8 @@ impl LaborMarketHarness {
         worker_public: PublicKey,
         job_id: pallas::Base,
         claim_id: pallas::Base,
-        deadline_block: u64,
-        current_block: u64,
     ) -> Result<SubmitDeliverableResult, Box<dyn std::error::Error>> {
-        let input = SubmitDeliverableV1CallData::new(
-            worker_secret,
-            worker_public,
-            job_id,
-            claim_id,
-            pallas::Base::from(deadline_block),
-            pallas::Base::from(current_block),
-        );
+        let input = SubmitDeliverableV1CallData::new(worker_secret, worker_public, job_id);
         let (proof, public_inputs) = submit_deliverable_v1_proof(
             &self.submit_deliverable_zkbin,
             &self.submit_deliverable_pk,
@@ -295,10 +291,12 @@ impl LaborMarketHarness {
         let params = SubmitDeliverableParamsV1 {
             proof: proof.as_ref().to_vec(),
             job_id: public_inputs.job_id,
-            claim_id: public_inputs.claim_id,
+            claim_id,
             worker_pub_x: public_inputs.worker_pub_x,
             worker_pub_y: public_inputs.worker_pub_y,
             spent_nullifier: public_inputs.spent_nullifier,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x02];
@@ -314,17 +312,8 @@ impl LaborMarketHarness {
         worker_public: PublicKey,
         job_id: pallas::Base,
         claim_id: pallas::Base,
-        deadline_block: u64,
-        current_block: u64,
     ) -> Result<SubmitGitDeliverableResult, Box<dyn std::error::Error>> {
-        let input = SubmitGitDeliverableV1CallData::new(
-            worker_secret,
-            worker_public,
-            job_id,
-            claim_id,
-            pallas::Base::from(deadline_block),
-            pallas::Base::from(current_block),
-        );
+        let input = SubmitGitDeliverableV1CallData::new(worker_secret, worker_public, job_id);
         let (proof, public_inputs) = submit_git_deliverable_v1_proof(
             &self.submit_git_deliverable_zkbin,
             &self.submit_git_deliverable_pk,
@@ -334,10 +323,12 @@ impl LaborMarketHarness {
         let params = SubmitGitDeliverableParamsV1 {
             proof: proof.as_ref().to_vec(),
             job_id: public_inputs.job_id,
-            claim_id: public_inputs.claim_id,
+            claim_id,
             worker_pub_x: public_inputs.worker_pub_x,
             worker_pub_y: public_inputs.worker_pub_y,
             spent_nullifier: public_inputs.spent_nullifier,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x03];
@@ -366,6 +357,8 @@ impl LaborMarketHarness {
             employer_pub_x: public_inputs.employer_pub_x,
             employer_pub_y: public_inputs.employer_pub_y,
             spent_nullifier: public_inputs.spent_nullifier,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x04];
@@ -401,8 +394,11 @@ impl LaborMarketHarness {
             job_id: public_inputs.job_id,
             disputer_pub_x: public_inputs.disputer_pub_x,
             disputer_pub_y: public_inputs.disputer_pub_y,
-            dao_escrow_bulla: public_inputs.dao_escrow_bulla,
+            dao_escrow_bulla,
             spent_nullifier: public_inputs.spent_nullifier,
+            dispute_reason_hash: public_inputs.dispute_reason_hash,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x05];
@@ -451,6 +447,8 @@ impl LaborMarketHarness {
             completed_payment,
             refund_amount,
             spent_nullifier: public_inputs.spent_nullifier,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x06];
@@ -467,8 +465,6 @@ impl LaborMarketHarness {
         worker_public: PublicKey,
         job_id: pallas::Base,
         required_capability_id: pallas::Base,
-        capability_nullifier: pallas::Base,
-        capability_predicate_result: pallas::Base,
         capability_proof: Vec<u8>,
         capability_secret: [u8; 32],
     ) -> Result<AcceptJobWithCapabilityResult, Box<dyn std::error::Error>> {
@@ -477,8 +473,6 @@ impl LaborMarketHarness {
             worker_public,
             job_id,
             required_capability_id,
-            capability_nullifier,
-            capability_predicate_result,
         );
         let (proof, public_inputs) = accept_job_with_capability_v1_proof(
             &self.accept_job_with_capability_zkbin,
@@ -494,6 +488,9 @@ impl LaborMarketHarness {
             required_capability_id: public_inputs.required_capability_id,
             capability_proof,
             capability_secret,
+            spent_nullifier: public_inputs.spent_nullifier,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x0d];
@@ -512,18 +509,12 @@ impl LaborMarketHarness {
         milestone_index: u32,
         milestone_payment_amount: u64,
         payment_release: u64,
-        last_milestone_block: pallas::Base,
-        current_block: pallas::Base,
-        deadline_block: pallas::Base,
     ) -> Result<ConfirmMilestoneResult, Box<dyn std::error::Error>> {
         let input = MilestonePaymentV1CallData::new(
             job_id,
             pallas::Base::from(milestone_payment_amount),
             employer_secret,
             employer_public,
-            last_milestone_block,
-            current_block,
-            deadline_block,
         );
         let (proof, public_inputs) = milestone_payment_v1_proof(
             &self.milestone_payment_zkbin,
@@ -539,6 +530,8 @@ impl LaborMarketHarness {
             employer_pub_y: public_inputs.employer_pub_y,
             payment_release,
             spent_nullifier: public_inputs.spent_nullifier,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x0a];

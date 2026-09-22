@@ -1000,13 +1000,13 @@ fn test_recruitment_pipeline_call_data() -> std::result::Result<(), Box<dyn std:
         let claim_id = pallas::Base::from(200u64);
 
         let submit = lm_harness.submit_deliverable(
-            worker_secret, worker_pub, job_id, claim_id, 1000, 50,
+            worker_secret, worker_pub, job_id, claim_id,
         )?;
         assert!(!submit.call_data.is_empty());
         println!("  submit_deliverable: call_data={}B", submit.call_data.len());
 
         let git_deliverable = lm_harness.submit_git_deliverable(
-            worker_secret, worker_pub, job_id, claim_id, 1000, 50,
+            worker_secret, worker_pub, job_id, claim_id,
         )?;
         assert!(!git_deliverable.call_data.is_empty());
         println!("  submit_git_deliverable: call_data={}B", git_deliverable.call_data.len());
