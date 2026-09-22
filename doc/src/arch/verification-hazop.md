@@ -5,11 +5,18 @@
 > that the Lean work in `proofs/lean/` is written against — the obligation set is derived from the
 > *system*, not from the existing Lean files.
 
-> **What this is not.** It does not reconcile the existing HAZOP corpus. There are ~7 independent
-> finding-ID schemes in this repository (`V1`–`V7` means four different things in four documents;
-> `C1` means six), >500 raw findings, and only `dev/contracts/safety.md` as a partial ledger.
-> Those stay where they are and are *cited* here. Merging them would rewrite many audit documents
-> and add nothing to what gets proved.
+> **What this is not.** It does not merge the raw findings. This repository accumulated ~7 independent
+> finding-ID schemes (`V1`–`V7` means four different things in four documents; `C1` means four, one of
+> them an unwrap-audit tier), >500 raw findings, and only `dev/contracts/safety.md` as a ledger.
+> Rewriting every audit document to one ID space would add nothing to what gets proved.
+>
+> **What changed on 2026-09-22.** The *root causes* are now stated once: `safety.md` was rewritten
+> around twelve of them, and every legacy scheme — the old `Lesson 1`–`25`, the circuit HAZOP's
+> `RC1`–`RC5`, `hazid-report.md`'s colliding `RC1`–`RC6`, `HAZOP.lean`'s seven patterns, the red-team
+> `RC-A`–`RC-I` — maps into them through the alias table at that document's foot. The *findings
+> documents* whose items are all resolved were removed, and everything they left open was promoted
+> into the section below. So the corpus no longer "stays where it is" for those; the remaining audit
+> documents still do, and are cited here as before.
 
 ## Method
 
@@ -824,6 +831,63 @@ primitives it was supposed to separate, and nothing checked.** OBL-T3's five-way
 regression guard.
 
 ---
+
+## Surface 1 continued — residues promoted from the remediated corpus (`OBL-C16`+)
+
+The HAZOP findings documents were removed on 2026-09-22: a resolved finding is a lesson, and lessons
+live as root causes in `dev/contracts/safety.md`. What could not go were the items those documents
+left **open** — `hazop-completion` and `no-partial-hazop-completion` forbid deferring an item into
+silence, so each one is promoted here, where a proposition has a home and a status. The rows use the
+code surface's numbering because that is what they are; two ZK-surface items the corpus also left open
+(`H-13`/`M-11`/`M-15`/`L-3`/`L-4`) are already `OBL-Z16`'s, and the red-team families `RC-A`–`RC-I`
+are the root-cause map now stated once in `safety.md`.
+
+**What each row's status means.** *verified 2026-09-22* means the code was read and the proposition is
+false today. *carried* means the source document's own status is reproduced without re-verification —
+the honest label, not a claim of currency. Where a source document was itself stale, the disparity is
+recorded rather than resolved.
+
+| ID | Proposition | Carried from | Sev |
+|---|---|---|---|
+| OBL-C16 | No `ContractId::ZERO` guard leaves a check disabled by default: an unconfigured contract ID is a hard `Err`, not a skipped validation | `H-11` (red-team, HIGH); `RC-F` (structural fix `SC-6`, PARTIAL) | C |
+| OBL-C17 | The WASM non-deterministic-feature scanner rejects threads and atomics (`0xFE`), with Rust-stdlib-aware filtering rather than by being disabled | `H-7` (red-team, HIGH); red-team `RC-I` | H |
+| OBL-C18 | Chain traversal in `get_next_work_required` is bounded, or the cache that makes it O(1) exists | `M-1` (red-team, MEDIUM) | M |
+| OBL-C19 | A call that exceeds its wall-clock budget is terminated, not merely warned about | `M-13` (red-team, MEDIUM) | M |
+| OBL-C20 | Public-input ordering is verified by parse-and-compare, not by count | `M-5` (red-team, MEDIUM); partially `OBL-Z2`, which now compares position for position across 68 pairs | M |
+| OBL-C21 | Bridge verification is real cryptography at every chain, not a shape check: Monero DLEq, Ethereum MPT, Zcash Groth16, Aztec PLONK all verify rather than returning "not yet implemented" | `C-1`, `C-3`, `C-4` (red-team, CRITICAL, all PARTIAL); `RC-A`'s structural fix `SC-1` (`Verified<T>`) not implemented | C |
+| OBL-C22 | Reorg recursion (`perform_reorg`) has a depth cap | `M8` (sync-audit) | H |
+| OBL-C23 | The client handshake read has a timeout | `M7.3` (sync-audit) | M |
+| OBL-C24 | `disconnect_block` reverses every tree that `connect_block` writes — the classification predicates in the two paths compared explicitly, not inferred from the uncle-note path alone | genesis-consensus open item 4; `M7` (sync-audit) — the same defect recorded from two directions | C |
+| OBL-C25 | The cumulative-supply overlay is re-derived by the host rather than passively mirrored | `M10` (sync-audit) | H |
+| OBL-C26 | `uncle_commitment_set` is reconstructible after a restart — persisted, or derived on demand. A restart cannot currently reconstruct it | genesis-consensus open item 3 | H |
+| OBL-C27 | `stored_uncle_hashes` compares keys without zero-padding ambiguity: correct only while every key is a 32-byte blake3 hash, which is a fragile invariant rather than an enforced one | genesis-consensus open item 5 | M |
+| OBL-C28 | `competing_seen` cannot grow unbounded from network input | genesis-consensus open item 6 | M |
+| OBL-C29 | The genesis filter modes (`Off`/`Relaxed`/`Strict`) and the Path-B tie-breaker are implemented in Rust, or the Python model is amended — they are specified and absent | genesis-consensus open item 1 | H |
+| OBL-C30 | `compute_reward`/`verify_uncle_split` signatures agree between the model and the Rust; the connect path's one-element slice is equivalent but reads oddly | genesis-consensus open item 2 | M |
+| OBL-C31 | The generic-prover write path enforces the derived-rule DAG at parse time — a forward reference or a cycle is a parse error, not an unhandled case | l1-write-path `V1`–`V4` (the DAG extension); `V5`–`V7` already applied | H |
+| OBL-C32 | `Message::BARBS` is enforced, or the net-layer quarantine is lifted with the reason recorded | sync-hazop `D3`, DEFERRED | M |
+| OBL-C33 | A per-peer failure score persists across sync passes, so a peer that fails is deprioritised rather than reset each tick | node-sync `F5`, PARTIALLY RESOLVED (`sync-protocol.md` §13.3) | M |
+| OBL-C34 | The fail-closed genesis handshake and its bootstrap path are re-read against the `P2-7` rework before this finding is called closed: the state machine folded `WaitingForGenesis` into `Behind` (`bin/dwowd/src/lib.rs:161-179`) and the peer's genesis is no longer compared in the sync handshake (`linear_genesis_hash` survives only on the merge-mining path), so the analysis describes a handshake that has since changed | daemon-sync `V1`–`V4` | H |
+
+**Closed on re-reading, recorded so they are not re-carried:** `C-6` (coinbase maturity after the sled
+commit) — the check at `src/linear/src/chain_state.rs:1117` now precedes every `apply_batch` at
+`:1340-1349`, all of them inside `connect_block`; `H-3` (`serde_json` for block storage) —
+`chain_state.rs` no longer imports it, and the surviving `serde_json` in `src/linear/src/sync_connection.rs`
+is the deliberate sync wire format with a documented size cap, decoded before hashing, so it is not a
+determinism obligation; coinbase key-binding `V1`–`V4` — the miner fills the field (`src/linear/src/miner.rs:76`)
+and the acceptor checks it (`bin/dwowd/src/block_acceptor.rs:341`, genesis exempt, `block.rs:682`'s
+placeholder surviving only on the genesis and test paths); l1-capability-tests `V1`–`V5` — the
+deterministic `cargo test --lib --no-run --message-format=json-render-diagnostics` selection replaced the
+`find 'dwowd-*'` glob, and `pipeline_spec.py:641-651` models `phase_98` including the `--list` smoke
+check.
+
+**Process items, not obligations.** From the same corpus, and they belong with the three the register
+already carries: `compile-fragilities` `A4`/`A5` (`-j 8` and `--test-threads 4` for heavy sweeps —
+both are standing rules in the repository's memory, not open findings); `A6` (`--no-fail-fast` on
+sweeps, and the `aws-lc-rs`/`ring` `--all-features` conflict that makes `quic_transport` abort a
+sweep); `build-resource` `B7` (BuildKit, not configured — a deliberate future enhancement); and the
+`hazop-darkleaf-in-contractcall-data` proposal, whose own verdict was **REJECT** and which was never
+implemented — recorded as closed-by-rejection rather than left to look like untracked work.
 
 ## What this register implies
 

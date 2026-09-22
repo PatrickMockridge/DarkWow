@@ -434,8 +434,9 @@ overwrite is never safe for value-bearing state.
 follow it. For every `take_*`/`remove`/`delete`, list the fallible operations that follow it. For
 every merge of concurrent write sets, state what happens on a duplicate key.
 
-**Taught by.** Old `RC-B`; HAZID RC4; lesson 19. The unresolved residue — coinbase maturity
-checked after the sled commit — is carried as an open obligation in the register.
+**Taught by.** Old `RC-B`; HAZID RC4; lesson 19 — and the coinbase-maturity instance of it is now
+*closed*: the check at `src/linear/src/chain_state.rs:1117` precedes every `apply_batch` at
+`:1340-1349`, both inside `connect_block`. The register records the closure so it is not re-carried.
 
 ---
 
