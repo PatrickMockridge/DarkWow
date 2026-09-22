@@ -1105,13 +1105,12 @@ impl RuntimeBackend for TxBackend {
                 let data = dwow_serial::serialize(&tx);
                 Ok(Some(data))
             }
-            Err(e) => {
-                if e.to_string().contains("TransactionNotFound") {
-                    Ok(None)
-                } else {
-                    Err(Error::Custom(e.to_string()))
-                }
-            }
+            // "Not found" is decided by the error's *type*, not by its rendered message. These are
+            // the variants the store itself throws (`store.rs:120-123`), and matching on the text
+            // meant that rewording an `#[error(...)]` string would silently turn a missing
+            // transaction into a hard error — with no compile error to catch it (OBL-C50).
+            Err(crate::LinearError::TransactionNotFound(_)) => Ok(None),
+            Err(e) => Err(Error::Custom(e.to_string())),
         }
     }
 
@@ -1137,13 +1136,9 @@ impl RuntimeBackend for TxBackend {
     fn get_block_hash_by_height(&self, height: BlockHeight) -> dwow_core::Result<Option<Vec<u8>>> {
         match self.store.get_block(height) {
             Ok(block) => Ok(Some(block.hash_with_vm(&self.vm).map_err(|e| dwow_core::Error::Custom(format!("hash: {e}")))?.as_bytes().to_vec())),
-            Err(e) => {
-                if e.to_string().contains("BlockNotFound") {
-                    Ok(None)
-                } else {
-                    Err(Error::Custom(e.to_string()))
-                }
-            }
+            // Same rule as `get_tx` above: the typed variant, not the message (OBL-C50).
+            Err(crate::LinearError::BlockNotFound(_)) => Ok(None),
+            Err(e) => Err(Error::Custom(e.to_string())),
         }
     }
 
