@@ -63,7 +63,7 @@ doc/book/
 # Built binaries that live beside their crate rather than at the root (the root-level names are
 # covered above; these are the same programs built in place).
 /bin/dwowd/dwowd
-/bin/dww/dow_wallet
+/bin/dww/dwow_wallet
 
 # Ad-hoc compiler output
 a.out
