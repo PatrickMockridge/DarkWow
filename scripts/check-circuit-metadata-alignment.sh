@@ -34,11 +34,22 @@
 # metadata 1, client 3 — none of them equal) is what this check is for: every
 # pairwise count matched nothing because no pair was ever compared.
 #
-# Contracts covered: the genesis set, plus the PN-issuing contracts from
-# `doc/src/contract/` that carry the governance-ratio circuits (dex, stablecoin,
-# bearer_bond). Entrypoints are discovered under `src/entrypoint.rs`,
-# `src/entrypoint/mod.rs` and `src/entrypoint/*.rs` — the original glob found
-# only the last, which is why `oracle` and `bearer_bond` were SKIPped.
+# Contracts covered: EVERY contract with a `proof/` directory.
+#
+# This used to be a hardcoded allowlist of eleven names, and that was the gate's
+# worst defect (OBL-C79). The list was called `GENESIS` while containing three
+# non-genesis contracts, and it examined 11 of 32 contracts while printing
+# `PASS` — silently, with no coverage line. Every one of the six broken-proof
+# contracts (`dao_escrow`, `drain_protection`, `subscription`, `insurance_market`,
+# `labor_market`, `tender`) was outside it, which is why their instance vectors
+# disagreed with their circuits for as long as they did: the check that exists to
+# catch exactly that could not see them. Enumeration is now by directory
+# presence, the covered set is printed, and the circuit-free contracts are named
+# rather than omitted, so a future allowlist cannot return quietly.
+#
+# Entrypoints are discovered under `src/entrypoint.rs`, `src/entrypoint/mod.rs`
+# and `src/entrypoint/*.rs` — the original glob found only the last, which is why
+# `oracle` and `bearer_bond` were SKIPped.
 #
 # THE CLIENT SIDE, AND WHAT THIS CHECK CANNOT SEE. The client's vector is
 # resolved by file name, or by CLIENT_ALIASES where the proof-building code
@@ -47,12 +58,24 @@
 # reported AMBIGUOUS rather than guessed at, because choosing the vector whose
 # count matches would make the check pass by construction.
 #
-# It compares COUNTS, not values. Two vectors of the same length can still
-# disagree position-for-position — `bearer_bond/redeem` was reported OK as
-# "8, 8, 8" while the circuit exposed `[coin, x, y, token_commit, value,
-# tx_binding, tx_nonce, spend_hook]`, its metadata pushed a different 8 and its
-# client a third order. That defect (`script/circuit_metadata_exceptions.txt`,
-# OBL-Z15) is declared rather than detected.
+# COUNTS are the hard check. ORDER is a WARN (added with OBL-C79), because the
+# invariant this gate's header states is three-way equality of order, and only the
+# count half was ever mechanized:
+#
+#   `bearer_bond/redeem` was reported OK as "8, 8, 8" while the circuit exposed
+#   `[coin, x, y, token_commit, value, tx_binding, tx_nonce, spend_hook]`, its
+#   metadata pushed a different 8 and its client a third order. That defect
+#   (`script/circuit_metadata_exceptions.txt`, OBL-Z15) was declared rather than
+#   detected.
+#
+# The order comparison names each position whose metadata expression does not
+# mention the circuit's variable there. It is a WARN and not a FAIL because the
+# mapping from a circuit variable to a Rust expression is a heuristic — a push may
+# legitimately compute its element (`pallas::Base::from(params.milestone_count)`)
+# or reach it through a helper — and a false FAIL would block work that is
+# correct. A WARN that names the position is what makes the recorded order
+# defects (``spent_nullifier`` in the wrong position; tender's `submit_bid`
+# transposition) visible without inventing a name-mapping layer first.
 #
 # Exit 0: every circuit's counts agree, or the circuit is a declared exception
 # Exit 1: mismatch found and undeclared
@@ -62,15 +85,38 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-REPO_ROOT="$REPO_ROOT" python3 - <<'PYEOF'
+REPO_ROOT="$REPO_ROOT" python3 - "$@" <<'PYEOF'
 import os, re, sys, glob
 
 repo = os.environ["REPO_ROOT"]
-# Genesis contracts (the ones whose circuits ship with the chain) plus the
-# PN-issuing contracts whose circuits carry the governance ratio.
-GENESIS = ["native_token", "box", "purse", "promissory_note", "identity",
-           "attestation", "oracle", "multisig",
-           "dex", "stablecoin", "bearer_bond"]
+
+# The contracts in scope, ENUMERATED rather than listed. A hardcoded allowlist
+# here is what hid 21 of 32 contracts behind a PASS (OBL-C79); a contract is in
+# scope if and only if it ships circuits. `CIRCUIT_FREE` is named in the output
+# rather than omitted, so the gate's coverage is always on screen and an
+# accidental shrink of the covered set cannot pass unremarked.
+CONTRACT_ROOT = os.path.join(repo, "src", "contract")
+ALL_CONTRACTS = sorted(
+    os.path.basename(d) for d in glob.glob(os.path.join(CONTRACT_ROOT, "*"))
+    if os.path.isdir(d))
+
+def circuits_of(contract_name):
+    return sorted(glob.glob(os.path.join(CONTRACT_ROOT, contract_name, "proof", "*.zk")))
+
+COVERED = [c for c in ALL_CONTRACTS if circuits_of(c)]
+CIRCUIT_FREE = [c for c in ALL_CONTRACTS if not circuits_of(c)]
+FULL_COVERED = list(COVERED)
+
+# Optional single-contract mode for iterating on one repair: `… <contract>`. It narrows the walk,
+# never the definition of scope — the contract must be one the enumeration already found, so this
+# cannot be used to point the gate at a hand-picked set and call the result a pass.
+if len(sys.argv) > 1:
+    wanted = sys.argv[1]
+    if wanted not in COVERED:
+        print(f"FAIL: `{wanted}` is not a contract with a `proof/` directory. Known: "
+              f"{', '.join(COVERED)}", file=sys.stderr)
+        sys.exit(1)
+    COVERED = [wanted]
 
 def strip_line_comments(src):
     # Rust `//` comments. Mandatory: several vecs carry trailing inline
@@ -92,46 +138,86 @@ def split_top(s):
         parts.append(cur.strip())
     return parts
 
-def extract_push_vecs(src):
-    """Every `push((<NS>.to_string(), <expr containing vec![...]>))` -> [(ns, value_count)].
+def circuit_instance_order(zk_src):
+    """The circuit's `constrain_instance` variables, in declared order.
 
-    The public-input vector is not always written immediately after the NS: `oracle`'s
-    `register_oracle` arm wraps it in a block that does the `xy()` extraction first
-    (`entrypoint.rs:135-147`), so an adjacency-based match reported that circuit as having no
-    push at all. This walks the whole `push(...)` call instead and takes the balanced
-    `vec![...]` inside it.
+    The *order* is the invariant the header states and the counts alone cannot express: a
+    verifier reads its public inputs positionally, so a vector of the right length in the wrong
+    order is still a disagreement. Comments are already stripped by `strip_zk_comments`, so a
+    `.zk` whose prose mentions `constrain_instance` (seven circuits in `labor_market` do) does not
+    contribute a phantom entry.
+    """
+    return [m.group(1).strip() for m in
+            re.finditer(r'constrain_instance\(\s*([^)]+?)\s*\)', zk_src)]
+
+def push_vec_order_diff(instance_order, elements):
+    """[(position, circuit_var, metadata_expr)] for each element not naming its circuit variable.
+
+    A heuristic, deliberately: the push may compute its element
+    (`pallas::Base::from(params.milestone_count)`) or reach it through a helper, so the test is
+    "does this expression mention the circuit's variable" rather than equality of identifiers.
+    Reported as a WARN, so a miss costs a line of output and never a blocked build.
+    """
+    diffs = []
+    for idx, (var, expr) in enumerate(zip(instance_order, elements)):
+        if var not in expr:
+            diffs.append((idx + 1, var, expr))
+    return diffs
+
+def extract_push_vecs(src):
+    """Every `<NS>.to_string(), vec![...]` pair -> [(ns, [element_expr])], in source order.
+
+    Returns the element EXPRESSIONS, not a bare count: the count is `len(elements)`, and keeping
+    the expressions is what lets the order check read the same parse as the count check. Two
+    walks of the same call would be two sources of truth for one fact — the RC5 shape.
+
+    `None` as the second item means the vector is not a literal (`stablecoin` carries
+    `params.zk_public_inputs` for eight of its operations, so no static count exists). Recorded
+    rather than dropped, so the caller can WARN about it by name instead of reporting "no push at
+    all".
+
+    ANCHORED ON THE NS, NOT ON THE `push`. The original walked every `push((<NS>.to_string(), … ))`
+    call. That is only one of the two idioms in the tree: `dao_escrow` and `game_room` write
+
+        let zk_public_inputs = vec![(
+            crate::DAO_ESCROW_ZKAS_INIT_NS_V2.to_string(),
+            vec![…],
+        )];
+
+    and never call `push` at all, so seven of `dao_escrow`'s circuits and twelve of
+    `game_room`'s were reported as "no metadata push carries <NS>" for vectors sitting in plain
+    sight. The invariant is not the call shape — it is that a namespace constant is followed by
+    its vector — so that is what this anchors on. It also subsumes two earlier special cases:
+    the constant may be path-qualified (`crate::…`, the form every non-genesis contract uses),
+    and the vector need not be adjacent to the NS (`oracle`'s `register_oracle` arm does the
+    `xy()` extraction first, `entrypoint.rs:135-147`), because the search resumes at the NS and
+    takes the next `vec![` rather than requiring it on the same line.
     """
     results = []
-    for m in re.finditer(r'push\(\s*\(\s*([A-Z0-9_]+)\s*\.to_string\(\s*\)\s*,', src):
+    for m in re.finditer(
+            r'(?:[A-Za-z_][A-Za-z0-9_]*::)*([A-Z0-9_]+)\s*\.to_string\(\s*\)\s*,', src):
         ns = m.group(1)
-        # Walk to the end of the `push(` call: balance parentheses from the call's open paren.
-        open_paren = src.index('(', m.start() + len('push'))
-        depth = 0; j = open_paren
-        while j < len(src):
-            if src[j] == '(': depth += 1
-            elif src[j] == ')':
-                depth -= 1
-                if depth == 0:
-                    break
-            j += 1
-        call = src[open_paren:j]
-        vec = re.search(r'vec!\[', call)
+        # What follows the comma decides it: `vec![…]` is the literal, anything else means the
+        # caller supplies the vector (`stablecoin`: `params.zk_public_inputs`). Searching forward
+        # for the *next* `vec![` instead would silently bind an unrelated literal further down the
+        # file and report its count as this circuit's — a wrong number, not a missing one, which is
+        # the worse failure. Requiring the literal to be the immediate next token keeps the
+        # `None` case honest.
+        after = src[m.end():]
+        vec_start = m.end() + (len(after) - len(after.lstrip()))
+        vec = re.compile(r'vec!\s*\[').match(src, vec_start)
         if vec is None:
-            # A push whose vector is not a literal — `stablecoin` carries
-            # `params.zk_public_inputs` for eight of its operations, so the vector is supplied by
-            # the caller and no static count exists. Recorded as `None` rather than dropped, so
-            # the caller can WARN about it by name instead of reporting "no push at all".
             results.append((ns, None))
             continue
         i = vec.end()
         depth = 1; k = i
-        while k < len(call) and depth > 0:
-            if call[k] == "[": depth += 1
-            elif call[k] == "]": depth -= 1
+        while k < len(src) and depth > 0:
+            if src[k] == "[": depth += 1
+            elif src[k] == "]": depth -= 1
             k += 1
         if depth > 0:
             continue  # malformed vec literal — not our corpus
-        results.append((ns, len(split_top(call[i:k - 1]))))
+        results.append((ns, split_top(src[i:k - 1])))
     return results
 
 METADATA_EXCEPTIONS = os.path.join(repo, "script", "circuit_metadata_exceptions.txt")
@@ -271,22 +357,40 @@ def client_to_vec_count(contract_dir, circuit_name, contract_name=""):
 
 metadata_exceptions = load_metadata_exceptions()
 excused = []
+order_warnings = []
 
 print("=== Circuit-Metadata Alignment Check ===")
 print("")
+# The scope, stated rather than assumed. A gate that reports PASS must also report what it did
+# not look at; omitting this is what let 21 contracts sit outside the check (OBL-C79).
+print(f"Covered: {len(FULL_COVERED)} of {len(ALL_CONTRACTS)} contracts "
+      f"({sum(len(circuits_of(c)) for c in FULL_COVERED)} circuits)"
+      + (f" — narrowed to `{COVERED[0]}` for this run" if len(COVERED) != len(FULL_COVERED) else ""))
+if CIRCUIT_FREE:
+    print(f"Circuit-free, no `proof/` directory (not checked): {', '.join(CIRCUIT_FREE)}")
+print("")
 passes = 0
 failures = 0
-for contract_name in GENESIS:
+# Every circuit in scope must reach a verdict line. This set is reconciled against the enumerated
+# scope at the end, so a future `continue` cannot drop a circuit silently — the failure mode that
+# let 21 contracts sit outside this check (OBL-C79).
+seen = set()
+failed_circuits = set()
+for contract_name in COVERED:
     proof_dir = f"{repo}/src/contract/{contract_name}/proof"
-    if not os.path.isdir(proof_dir):
-        continue
     contract_dir = f"{repo}/src/contract/{contract_name}"
-    # `src/entrypoint.rs` (oracle), `src/entrypoint/mod.rs` and
-    # `src/entrypoint/*.rs` (dex, bearer_bond). The original glob found only the
-    # third form, so those contracts were SKIPped entirely.
+    # Discovered by what the file DOES, not where it sits. The glob alone
+    # (`src/entrypoint.rs` + `src/entrypoint/*.rs`) missed `game_room`, whose
+    # `get_metadata` is in `src/lib.rs:236` — so all twelve of its circuits were
+    # reported as having no metadata vector while the vectors sat in plain sight
+    # (`lib.rs:330-332`). A path pattern is an allowlist wearing a disguise: it
+    # enumerates where the code is expected to live, and the gate then cannot see
+    # it anywhere else. The files that define `get_metadata` are found by saying so.
     entrypoint_files = sorted(set(
         glob.glob(f"{contract_dir}/src/entrypoint.rs") +
-        glob.glob(f"{contract_dir}/src/entrypoint/*.rs")))
+        glob.glob(f"{contract_dir}/src/entrypoint/*.rs") +
+        [f for f in glob.glob(f"{contract_dir}/src/**/*.rs", recursive=True)
+         if "fn get_metadata" in open(f).read()]))
     if not entrypoint_files:
         entrypoint_src = ""
     else:
@@ -297,8 +401,10 @@ for contract_name in GENESIS:
 
     for zk_file in sorted(glob.glob(f"{proof_dir}/*.zk")):
         circuit_name = os.path.basename(zk_file)[:-3]
+        seen.add((contract_name, circuit_name))
         zk_src = strip_zk_comments(open(zk_file).read())
-        circuit_count = len(re.findall(r'constrain_instance\(', zk_src))
+        instance_order = circuit_instance_order(zk_src)
+        circuit_count = len(instance_order)
         client_count = client_to_vec_count(contract_dir, circuit_name, contract_name)
         identity = circuit_identity(zk_src)
 
@@ -314,26 +420,46 @@ for contract_name in GENESIS:
         # drifted, or the constant lives outside `src/`).
         ns_name = ns_table.get(identity) if identity else None
         if ns_name is not None:
-            matched = [(ns, n) for (ns, n) in pushes if ns == ns_name]
+            matched = [(ns, elems) for (ns, elems) in pushes if ns == ns_name]
         else:
             pattern = re.compile(rf'ZKAS_{circuit_name.upper()}_NS(_V[0-9]+)?$')
-            matched = [(ns, n) for (ns, n) in pushes if pattern.search(ns)]
+            matched = [(ns, elems) for (ns, elems) in pushes if pattern.search(ns)]
         if not matched:
-            print(f"FAIL: {contract_name}/{circuit_name} — circuit has {circuit_count} "
-                  f"constrain_instance but no metadata push carries "
-                  f"{ns_name or 'ZKAS_' + circuit_name.upper() + '_NS'}"
-                  f"{'' if identity else ' (circuit declares no identity string)'}")
-            failures += 1
+            # Distinguish "the namespace never appears" from "it appears, but the vector is built
+            # somewhere this line cannot see". `game_room` passes five of its namespaces as an
+            # ARGUMENT — `identity_get_metadata_v1(params.room_id, …, GAME_ROOM_ZKAS_FOLD_NS_V2)?`
+            # (`lib.rs:270-290`) — so the vector is inside the shared helper and its count is no
+            # more statically visible here than `stablecoin`'s caller-supplied
+            # `params.zk_public_inputs`. Reporting those as defects would be five false findings
+            # against correct code; a WARN that names the reason is what the gate does elsewhere
+            # for exactly this situation. A namespace that is referenced NOWHERE is a real
+            # absence — the metadata function has no arm for the circuit at all.
+            referenced = ns_name is not None and re.search(rf'\b{re.escape(ns_name)}\b',
+                                                           entrypoint_src)
+            label = ns_name or 'ZKAS_' + circuit_name.upper() + '_NS'
+            if referenced:
+                print(f"WARN: {contract_name}/{circuit_name} — {circuit_count} constrain_instance; "
+                      f"the vector for {label} is built elsewhere (the namespace is passed to a "
+                      f"builder or supplied by the caller), so the count is not statically "
+                      f"checkable here")
+                passes += 1
+            else:
+                print(f"FAIL: {contract_name}/{circuit_name} — circuit has {circuit_count} "
+                      f"constrain_instance but no metadata push carries {label}"
+                      f"{'' if identity else ' (circuit declares no identity string)'}")
+                failures += 1
+                failed_circuits.add((contract_name, circuit_name))
             continue
-        if all(n is None for _, n in matched):
+        if all(elems is None for _, elems in matched):
             print(f"WARN: {contract_name}/{circuit_name} — {circuit_count} constrain_instance, but "
                   f"the metadata push for {matched[0][0]} is not a literal vector (the caller "
                   f"supplies it), so the count is not statically checkable")
             passes += 1
             continue
-        matched = [(ns, n) for ns, n in matched if n is not None]
+        matched = [(ns, elems) for ns, elems in matched if elems is not None]
         excuse = metadata_exceptions.get(f"{contract_name}/{circuit_name}")
-        for ns, n in matched:
+        for ns, elems in matched:
+            n = len(elems)
             if n < circuit_count:
                 if excuse is not None:
                     excused.append((f"{contract_name}/{circuit_name}", circuit_count, n, excuse))
@@ -341,6 +467,7 @@ for contract_name in GENESIS:
                     print(f"FAIL: {contract_name}/{circuit_name} — {circuit_count} constrain_instance "
                           f"vs {n} pushed values ({ns})")
                     failures += 1
+                    failed_circuits.add((contract_name, circuit_name))
             elif client_count is None:
                 print(f"OK:   {contract_name}/{circuit_name} — {circuit_count} constrain_instance, "
                       f"{n} metadata pushes ({ns}; no client to_vec found)")
@@ -350,10 +477,20 @@ for contract_name in GENESIS:
                       f"constrain_instance vs client to_vec {client_count}: the proof would be "
                       f"created over a different public-input vector than the verifier uses")
                 failures += 1
+                failed_circuits.add((contract_name, circuit_name))
             else:
                 print(f"OK:   {contract_name}/{circuit_name} — {circuit_count} constrain_instance, "
                       f"{n} metadata pushes, {client_count} client public inputs ({ns})")
                 passes += 1
+
+        # ORDER, as a WARN (OBL-C79). Only meaningful against the longest matching push, and only
+        # when there are at least as many pushed values as instances — a count mismatch is already
+        # a FAIL above and would make the positional comparison read noise.
+        for ns, elems in matched:
+            if len(elems) < circuit_count:
+                continue
+            for pos, var, expr in push_vec_order_diff(instance_order, elems):
+                order_warnings.append((f"{contract_name}/{circuit_name}", pos, var, expr, ns))
 
 if AMBIGUOUS:
     print("")
@@ -361,6 +498,27 @@ if AMBIGUOUS:
         print(f"WARN: {contract_name}/{circuit_name} — {rel} carries {n} `to_vec` impls and no "
               f"alias names the circuit's; the client vector is NOT checked. Add a CLIENT_ALIASES "
               f"entry (file, impl type).")
+if order_warnings:
+    uniq = sorted(set(order_warnings))
+    by_circuit = {}
+    for label, pos, var, expr, ns in uniq:
+        by_circuit.setdefault(label, []).append((pos, var, expr))
+    hardcoded = sum(1 for _, _, _, expr, _ in uniq if re.fullmatch(r'[A-Za-z_:]*Base::zero\(\)', expr.strip()))
+    print("")
+    print(f"Order warnings: {len(uniq)} position(s) across {len(by_circuit)} circuit(s). The count")
+    print("agrees, but the circuit's variable at that position is not what the metadata expression")
+    print("there supplies — a transposition, or a hardcoded substitute. ADVISORY, not blocking:")
+    print(f"{hardcoded} of them push a literal `Base::zero()` where the circuit names a variable")
+    print("(the constant-binding class the register already records); the rest are order or")
+    print("derived-value differences. Read with the circuit in hand before acting on one.")
+    for label in sorted(by_circuit):
+        rows = by_circuit[label]
+        print(f"  {label} ({len(rows)}):")
+        for pos, var, expr in rows[:4]:
+            shown = expr if len(expr) <= 52 else expr[:49] + "..."
+            print(f"    instance {pos}: constrains `{var}` vs pushes `{shown}`")
+        if len(rows) > 4:
+            print(f"    … and {len(rows) - 4} more position(s)")
 print("")
 if excused:
     print(f"Declared exceptions ({len(excused)} row(s) over "
@@ -369,13 +527,43 @@ if excused:
         print(f"  {label}: circuit {circuit_count}, metadata {pushed} — {reason}")
     print("")
 print("---")
+print(f"Covered: {len(COVERED)} of {len(ALL_CONTRACTS)} contracts")
 print(f"Passed: {passes}  Failed: {failures}")
 
+# Scope reconciliation, and the reason this gate can be trusted to report a PASS. The check is
+# only as good as the set it walks, so the set it walked is compared against the set it declared,
+# and a shortfall is a FAILURE rather than a footnote. Without this, a `continue` added later
+# would shrink coverage invisibly — which is exactly how the eleven-name allowlist read as green
+# while covering a third of the tree (OBL-C79).
+declared = {(c, os.path.basename(z)[:-3]) for c in COVERED for z in circuits_of(c)}
+unexamined = sorted(declared - seen)
+
+if unexamined:
+    print("")
+    print(f"FAIL: {len(unexamined)} circuit(s) were in scope but never reached a verdict — the")
+    print("gate's coverage is not what it claims:")
+    for contract_name, circuit_name in unexamined:
+        print(f"  {contract_name}/{circuit_name}")
+    sys.exit(1)
+
+if not COVERED:
+    print("")
+    print("FAIL: no contract with a `proof/` directory was found — the enumeration is broken.")
+    sys.exit(1)
+
 if failures == 0:
-    print("PASS: All circuits have matching metadata push counts")
+    print(f"PASS: All {len(seen)} circuits across {len(COVERED)} contracts have matching metadata "
+          f"push counts")
+    if order_warnings:
+        print(f"      ({len(set(order_warnings))} order warning(s) above are advisory, not blocking.)")
     sys.exit(0)
 else:
-    print(f"FAIL: {failures} circuit(s) have insufficient metadata push counts")
+    # "findings", not "circuits": one circuit can be reached by more than one namespace push (two
+    # functions of the same contract share a circuit — `labor_market`'s `CreateJobV1` and
+    # `CreateJobWithMilestonesV1` both use `CREATE_JOB_NS_V2`), and each is reported separately.
+    # Calling thirteen findings "thirteen circuits" would overstate the defect count by four.
+    print(f"FAIL: {failures} finding(s) over {len(failed_circuits)} circuit(s) — insufficient "
+          f"metadata push counts")
     print("")
     print("Root cause: a circuit's constrain_instance order must match the metadata")
     print("function's zk_inputs.push() order position-for-position (privacy.md §5.3).")
