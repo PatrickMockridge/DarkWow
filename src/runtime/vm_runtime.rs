@@ -1064,3 +1064,73 @@ impl Runtime {
         out
     }
 }
+
+/// `OBL-C17` — the non-determinism scanner, which was enforced on every instantiation and had no
+/// test at all.
+///
+/// The rule the row states is that the scanner rejects threads and atomics (`0xFE`); the function
+/// also rejects SIMD (`0xFD`) and **deliberately allows scalar floats** (`0x8A..=0xBF`), because they
+/// are IEEE-754 deterministic within a backend. That last part is why the acceptance control below is
+/// not optional: without it, a scanner that rejected every module would pass the rejection tests and
+/// look correct. (The call site's comment claims floats and bulk memory are rejected; the function's
+/// own doc says otherwise, and the doc is the accurate one — recorded in the register rather than
+/// fixed, since a comment-only edit to a runtime file is not worth the diff.)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A minimal but well-formed module whose single function body is `body`, after the locals
+    /// declaration. The type and function sections are present so the code section has something to
+    /// refer to — `parse_all` is a streaming parser and the scanner only looks at code-section
+    /// entries, but a module it cannot walk to the code section would make these tests vacuous.
+    fn module_with_body(body: &[u8]) -> Vec<u8> {
+        let mut full = vec![0x00]; // no locals
+        full.extend_from_slice(body);
+        full.push(0x0B); // end
+
+        let mut out = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00]; // \0asm, version 1
+        out.extend_from_slice(&[0x01, 0x04, 0x01, 0x60, 0x00, 0x00]); // type section: () -> ()
+        out.extend_from_slice(&[0x03, 0x02, 0x01, 0x00]); // function section: one func, type 0
+        out.push(0x0A); // code section
+        out.push((1 + 1 + full.len()) as u8); // section size (all sizes here are < 128)
+        out.push(0x01); // one function body
+        out.push(full.len() as u8);
+        out.extend_from_slice(&full);
+        out
+    }
+
+    #[test]
+    fn scanner_rejects_threads_and_atomics() {
+        // `0xFE` is the threads/atomics prefix; the operands are give the reader something to advance
+        // past, though the scanner refuses at the prefix byte before reading the operator.
+        let module = module_with_body(&[0xFE, 0x00, 0x00, 0x00, 0x00]);
+        let err = Runtime::reject_nondeterministic_features(&module).unwrap_err();
+        let text = format!("{err:?}");
+        assert!(text.contains("threads/atomics"), "got {text}");
+    }
+
+    #[test]
+    fn scanner_rejects_simd() {
+        let module = module_with_body(&[0xFD, 0x00, 0x00, 0x00, 0x00]);
+        let err = Runtime::reject_nondeterministic_features(&module).unwrap_err();
+        let text = format!("{err:?}");
+        assert!(text.contains("SIMD"), "got {text}");
+    }
+
+    #[test]
+    fn scanner_accepts_scalar_floats() {
+        // The control for the two rejections above: `0x92` is `f32.add`, a scalar float opcode the
+        // function documents as deliberately permitted.
+        let module = module_with_body(&[0x92]);
+        assert!(
+            Runtime::reject_nondeterministic_features(&module).is_ok(),
+            "scalar floats are deterministic within a backend and must not be rejected"
+        );
+    }
+
+    #[test]
+    fn scanner_accepts_an_empty_module() {
+        let module = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
+        assert!(Runtime::reject_nondeterministic_features(&module).is_ok());
+    }
+}
