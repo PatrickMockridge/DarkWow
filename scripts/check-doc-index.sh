@@ -125,8 +125,23 @@ for ext in SCAN_EXT:
 SKIP_DIRS = ("/.git/", "/target/", "/doc/book/", "/.lake/", "/vendor/", "/node_modules/", "/plans/")
 scan_files = [p for p in scan_files if not any(d in p for d in SKIP_DIRS)]
 
-# --------------------------------------------------- 5. OBL ids resolve
-defined_obl = set(re.findall(r'\|\s*(OBL-[CZT]\d+)\s*\|', register))
+# --------------------------------------------- 5a. OBL ids are unique
+# A set for `defined_obl` below would collapse a duplicate silently, and this gate
+# already scans for the class of defect a duplicate creates: a renumbering (or, here,
+# two agents minting ids concurrently) that nothing verified. Two rows sharing an id
+# means a citation resolves to either proposition, which is worse than a dangling one.
+obl_row_re = re.compile(r'^\|\s*(OBL-[CZT]\d+)\s*\|', re.M)
+row_at = {}
+for m in obl_row_re.finditer(register):
+    row_at.setdefault(m.group(1), []).append(register[:m.start()].count("\n") + 1)
+for obl_id, lines in sorted(row_at.items()):
+    if len(lines) > 1:
+        problems.append(
+            f"{register_rel}:{lines[0]}: {obl_id} is defined by {len(lines)} rows "
+            f"(lines {', '.join(str(l) for l in lines)}) — an id must name one proposition"
+        )
+
+defined_obl = set(obl_row_re.findall(register))
 cited = collections.defaultdict(list)
 for path in scan_files:
     for m in re.finditer(r'\bOBL-[CZT]\d+\b', slurp(path)):
