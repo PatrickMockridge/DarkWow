@@ -157,7 +157,20 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         DaoEscrowFunction::VerifyMemberCapabilityV1 => verify_member_cap_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::ResolveDisputeV1 => resolve_dispute_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::SetGovernanceConfigV1 => set_governance_config_get_metadata(cid, call_idx, &calls),
-        _ => Ok(vec![]),
+        // The ten non-ZK functions below fall here. They must return an **encoded** empty
+        // `zk_public_inputs`, not a bare `vec![]`: the host decodes the metadata as
+        // `Vec<(String, Vec<Base>)>` (`execution.rs:423`), so a 0-byte buffer fails that decode and
+        // is reported as "contract signalled EMPTY metadata, the documented rejection signal" —
+        // which made every one of them uncallable (register OBL-C77). The functions are
+        // `UpdateV1`, `WithdrawV1`, `EndowmentWithdrawV1`, `TreasurySpendV1`,
+        // `EnableDrainProtectionV1`, `ExecuteClaimV1`, `RegisterCapabilityRequirementV1`,
+        // `CancelClaimV1`, `SetGovernanceActiveV1`, `DeactivateCapabilityRequirementV1`.
+        _ => {
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            let mut m = vec![];
+            zk_public_inputs.encode(&mut m)?;
+            Ok(m)
+        }
     }?;
 
     wasm::util::set_return_data(&metadata)
@@ -407,6 +420,8 @@ fn initialize_v1(cid: ContractId, params: model::InitializeParamsV1) -> Contract
         bulla: endowment_bulla,
         owner_pubkey: params.owner_pubkey,
         bulla_blind: params.bulla_blind,
+        // Read here — apply may not (register OBL-C72).
+        created_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
     msg!("[dao_escrow::initialize_v1] Endowment initialized: {:?}", endowment_bulla);
@@ -438,7 +453,7 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
         fee_config: None,
         min_premium: 0,
         max_members: u64::MAX,
-        created_at: wasm::util::get_verifying_block_height()?.get(),
+        created_at: update.created_at,
         bulla_blind: update.bulla_blind,
         paused: false,
         drain_protection_enabled: false,
@@ -535,6 +550,14 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
     // wasm::zk::verify_zk_proof(cid, crate::DAO_ESCROW_ZKAS_PREMIUM_NS)?;
 
     // Calculate fee split based on mode (simplified - all to endowment)
+    // The endowment is re-read and carried, and the membership timestamp is read here: apply may
+    // not read either (register OBL-C72).
+    let mut endowment = model::DaoEscrow::decode(
+        &endowment_data.ok_or(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?,
+    )?;
+    // The apply used to perform this increment after re-reading the record; it happens here now.
+    endowment.member_count += 1;
+
     // Create update — Purse::DepositV1 child call handles balance
     let update = model::PayPremiumUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
@@ -544,10 +567,12 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
         member_pubkey: params.member_pubkey,
         asset_id: params.asset_id,
         expiry: params.expiry,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
+        endowment_bytes: endowment.encode(),
     };
 
     msg!("[dao_escrow::pay_premium_v1] Premium processed: {:?}", params.membership_note);
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::PayPremiumV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[DaoEscrowFunction::PayPremiumV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// PayPremiumV1 apply - store membership note and update endowment
@@ -564,20 +589,15 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
         value: update.amount,
         asset_id: update.asset_id,
         expiry: update.expiry,
-        created_at: wasm::util::get_verifying_block_height()?.get(),
+        created_at: update.created_at,
     };
 
     wasm::db::db_set(membership_db, &update.membership_note.to_bytes(), &membership.encode())?;
 
-    // Update endowment totals
-    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
-    if let Some(data) = endowment_data {
-        let mut endowment = model::DaoEscrow::decode(&data)?;
-        // Purse::DepositV1 child call handles balance update.
-        // endowment_purse_id is the Purse instance reference, not a raw counter.
-        endowment.member_count += 1;
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &endowment.encode())?;
-    }
+    // Blind write. Both values this used to read — the block height for `created_at` and the
+    // endowment record — now arrive in the update (register OBL-C72). Purse::DepositV1 child call
+    // handles the balance; `endowment_purse_id` is the Purse instance reference, not a counter.
+    wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &update.endowment_bytes)?;
 
     msg!("[dao_escrow::pay_premium_apply_v1] Membership stored: {:?}", update.membership_note);
     Ok(())
@@ -668,22 +688,21 @@ if false {
         dao_escrow_bulla: params.dao_escrow_bulla,
         value: params.value,
         amount: params.value, // Purse::WithdrawV1 verifies balance >= amount
+        // Carried so apply re-stores it instead of reading it back (OBL-C72).
+        endowment_bytes: endowment.encode(),
     };
 
     msg!("[dao_escrow::withdraw_v1] Withdrawal processed: {}", params.value);
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::WithdrawV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[DaoEscrowFunction::WithdrawV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// WithdrawV1 apply - update endowment totals
 fn withdraw_apply_v1(cid: ContractId, update: model::WithdrawUpdateV1) -> ContractResult {
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
 
-    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
-    if let Some(data) = endowment_data {
-        let endowment = model::DaoEscrow::decode(&data)?;
-        // Purse handles balance update: endowment_purse_id is the instance reference
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &endowment.encode())?;
-    }
+    // Blind write — the record was read in exec and carried here (OBL-C72). Purse handles the
+    // balance; `endowment_purse_id` is the instance reference.
+    wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &update.endowment_bytes)?;
 
     msg!("[dao_escrow::withdraw_apply_v1] Endowment updated: new total = {}", update.amount);
     Ok(())
@@ -704,13 +723,21 @@ fn enable_drain_protection_v1(
         return Err(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()).into())
     }
 
+    // Apply the association here and carry the record — apply may not read it (OBL-C72).
+    let mut endowment = model::DaoEscrow::decode(
+        &endowment_data.ok_or(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?,
+    )?;
+    endowment.drain_protection_bulla = Some(params.drain_protection_bulla);
+    endowment.drain_protection_enabled = true;
+
     let update = model::EnableDrainProtectionUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
         drain_protection_bulla: params.drain_protection_bulla,
+        endowment_bytes: endowment.encode(),
     };
 
     msg!("[dao_escrow::enable_drain_protection_v1] Drain protection update prepared");
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::EnableDrainProtectionV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[DaoEscrowFunction::EnableDrainProtectionV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// EnableDrainProtectionV1 apply
@@ -720,13 +747,8 @@ fn enable_drain_protection_apply_v1(
 ) -> ContractResult {
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
 
-    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
-    if let Some(data) = endowment_data {
-        let mut endowment = model::DaoEscrow::decode(&data)?;
-        endowment.drain_protection_enabled = true;
-        endowment.drain_protection_bulla = Some(update.drain_protection_bulla);
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &endowment.encode())?;
-    }
+    // Blind write — exec applied both flag changes and carried the record (OBL-C72).
+    wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &update.endowment_bytes)?;
 
     msg!("[dao_escrow::enable_drain_protection_apply_v1] Drain protection enabled");
     Ok(())
@@ -827,6 +849,7 @@ if false {
         claim_id: params.claim_id,
         value: params.value,
         amount: params.value, // Purse verifies balance
+        endowment_bytes: endowment.encode(),
     };
 
     msg!(
@@ -834,7 +857,7 @@ if false {
         params.value,
         params.recipient_pubkey
     );
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::EndowmentWithdrawV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[DaoEscrowFunction::EndowmentWithdrawV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// EndowmentWithdrawV1 apply - update endowment totals
@@ -844,12 +867,8 @@ fn endowment_withdraw_apply_v1(
 ) -> ContractResult {
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
 
-    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
-    if let Some(data) = endowment_data {
-        let endowment = model::DaoEscrow::decode(&data)?;
-        // Purse handles balance update: endowment_purse_id is the instance reference
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &endowment.encode())?;
-    }
+    // Blind write (OBL-C72). Purse handles the balance; `endowment_purse_id` is the instance ref.
+    wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &update.endowment_bytes)?;
 
     msg!(
         "[dao_escrow::endowment_withdraw_apply_v1] Endowment updated: new total = {}",
@@ -961,6 +980,7 @@ if false {
         proposal_id: params.proposal_id,
         value: params.value,
         amount: params.value, // Purse verifies balance
+        endowment_bytes: endowment.encode(),
     };
 
     msg!(
@@ -968,7 +988,7 @@ if false {
         params.value,
         params.recipient_pubkey
     );
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::TreasurySpendV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[DaoEscrowFunction::TreasurySpendV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// TreasurySpendV1 apply - update treasury totals
@@ -978,12 +998,8 @@ fn treasury_spend_apply_v1(
 ) -> ContractResult {
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
 
-    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
-    if let Some(data) = endowment_data {
-        let endowment = model::DaoEscrow::decode(&data)?;
-        // Purse handles treasury balance: treasury_purse_id is the instance reference
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &endowment.encode())?;
-    }
+    // Blind write (OBL-C72). Purse handles the treasury balance; `treasury_purse_id` is the ref.
+    wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &update.endowment_bytes)?;
 
     msg!(
         "[dao_escrow::treasury_spend_apply_v1] Treasury updated: new total = {}",
@@ -1382,7 +1398,7 @@ fn vote_claim_v1(
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
     let proposal_data = wasm::db::db_get(proposals_db, &params.claim_id.to_bytes())?
         .ok_or_else(|| DaoEscrowError::ClaimNotFound("Claim not found".to_string()))?;
-    let proposal = model::Proposal::decode(&proposal_data)?;
+    let mut proposal = model::Proposal::decode(&proposal_data)?;
 
     // Verify proposal is pending
     if proposal.state != model::ProposalState::Pending {
@@ -1404,8 +1420,15 @@ fn vote_claim_v1(
             // No vote is recorded on this path (the early return is above the double-vote check),
             // so `apply` must not spend the nullifier here — it gates on `expired`.
             vote_nullifier: params.capability_proof.nullifier.inner(),
+            // Still carried: apply may not read it (OBL-C72). The apply sets `Expired` on this
+            // path, so exec applies that here too.
+            proposal_bytes: {
+                let mut p = proposal;
+                p.state = model::ProposalState::Expired;
+                p.encode()
+            },
         };
-        wasm::util::set_return_data(&[&[DaoEscrowFunction::VoteClaimV1 as u8], &update.encode()[..]].concat())?;
+        wasm::util::set_return_data(&[&[DaoEscrowFunction::VoteClaimV1 as u8], &update.encode()?[..]].concat())?;
         return Ok(())
     }
 
@@ -1426,6 +1449,11 @@ fn vote_claim_v1(
 
     // MultiSig: threshold verification via FinalizeV1 child call
 
+    // Apply the tally to the proposal here and carry it — apply may not read it (OBL-C72).
+    proposal.yes_votes = yes_votes;
+    proposal.no_votes = no_votes;
+    let proposal_bytes = proposal.encode();
+
     let update = model::VoteClaimUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
         claim_id: params.claim_id,
@@ -1434,10 +1462,11 @@ fn vote_claim_v1(
         passed: false,
         expired: false,
         vote_nullifier,
+        proposal_bytes,
     };
 
     msg!("[dao_escrow::vote_claim_v1] Vote recorded: {:?}", params.claim_id);
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::VoteClaimV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[DaoEscrowFunction::VoteClaimV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// VoteClaimV1 apply - update vote tally and proposal state
@@ -1453,20 +1482,9 @@ fn vote_claim_apply_v1(cid: ContractId, update: model::VoteClaimUpdateV1) -> Con
         msg!("[dao_escrow::vote_claim_apply_v1] Expired path: nullifier not spent");
     }
 
-    let proposal_data = wasm::db::db_get(proposals_db, &update.claim_id.to_bytes())?;
-    if let Some(data) = proposal_data {
-        let mut proposal = model::Proposal::decode(&data)?;
-        proposal.yes_votes = update.yes_votes;
-        proposal.no_votes = update.no_votes;
-
-        if update.expired {
-            proposal.state = model::ProposalState::Expired;
-        } else if false {
-            proposal.state = model::ProposalState::Approved;
-        }
-
-        wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &proposal.encode())?;
-    }
+    // Blind write — the tally and the expired state were applied in exec and carried here
+    // (OBL-C72), so the record is no longer read back.
+    wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &update.proposal_bytes)?;
 
     msg!("[dao_escrow::vote_claim_apply_v1] Vote tally updated");
     Ok(())
@@ -1547,21 +1565,23 @@ if false {
         proposal_id: params.proposal_id,
         value: params.value,
         state: model::ProposalState::Executed,
+        // Apply the state change here and carry the record — apply may not read it (OBL-C72).
+        proposal_bytes: {
+            let mut p = proposal;
+            p.state = model::ProposalState::Executed;
+            p.encode()
+        },
     };
 
     msg!("[dao_escrow::execute_claim_v1] Claim executed");
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::ExecuteClaimV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[DaoEscrowFunction::ExecuteClaimV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// ExecuteClaimV1 apply - mark proposal as executed
 fn execute_claim_apply_v1(cid: ContractId, update: model::ExecuteClaimUpdateV1) -> ContractResult {
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
-    let proposal_data = wasm::db::db_get(proposals_db, &update.proposal_id.inner().to_repr())?;
-    if let Some(data) = proposal_data {
-        let mut proposal = model::Proposal::decode(&data)?;
-        proposal.state = update.state;
-        wasm::db::db_set(proposals_db, &update.proposal_id.inner().to_repr(), &proposal.encode())?;
-    }
+    // Blind write — the state was applied in exec and carried here (OBL-C72).
+    wasm::db::db_set(proposals_db, &update.proposal_id.inner().to_repr(), &update.proposal_bytes)?;
 
     msg!("[dao_escrow::execute_claim_apply_v1] Proposal marked as executed");
     Ok(())
@@ -1747,6 +1767,15 @@ if false {
         .map(|a| a.attestation_id)
         .collect();
 
+    // Prevent double-resolution here, in exec: apply may not read (§B.2.2 forbids validation in
+    // apply, and the ACL denies `db_contains_key` in `Update` — register OBL-C72), so the check it
+    // used to perform could never have run.
+    let disputes_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_DISPUTES_TREE)?;
+    if wasm::db::db_contains_key(disputes_db, &dispute_id.to_repr())? {
+        msg!("[dao_escrow::resolve_dispute_v1] ERROR: Dispute already resolved");
+        return Err(DaoEscrowError::InvalidNullifier.into());
+    }
+
     let update = model::ResolveDisputeUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
         dispute_id,
@@ -1764,13 +1793,8 @@ if false {
 fn resolve_dispute_apply_v1(cid: ContractId, update: model::ResolveDisputeUpdateV1) -> ContractResult {
     let disputes_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_DISPUTES_TREE)?;
 
-    // Prevent double-resolution: check if dispute_id already exists
-    if wasm::db::db_contains_key(disputes_db, &update.dispute_id.to_repr())? {
-        msg!("[dao_escrow::resolve_dispute_apply_v1] ERROR: Dispute already resolved");
-        return Err(DaoEscrowError::InvalidNullifier.into());
-    }
-
-    // Store minimal resolution record keyed by dispute_id
+    // The double-resolution check now runs in exec, where validation belongs and where a read is
+    // permitted (§B.2.2, OBL-C72). Apply stores and nothing else.
     let resolution_data = update.encode()?;
     wasm::db::db_set(disputes_db, &update.dispute_id.to_repr(), &resolution_data)?;
     msg!("[dao_escrow::resolve_dispute_apply_v1] Dispute resolution stored");
@@ -1810,21 +1834,23 @@ fn cancel_claim_v1(
         dao_escrow_bulla: params.dao_escrow_bulla,
         claim_id: params.claim_id,
         state: model::ProposalState::Cancelled,
+        // Apply the state change here and carry the record — apply may not read it (OBL-C72).
+        proposal_bytes: {
+            let mut p = proposal;
+            p.state = model::ProposalState::Cancelled;
+            p.encode()
+        },
     };
 
     msg!("[dao_escrow::cancel_claim_v1] Claim cancelled");
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::CancelClaimV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[DaoEscrowFunction::CancelClaimV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// CancelClaimV1 apply - update proposal state to cancelled
 fn cancel_claim_apply_v1(cid: ContractId, update: model::CancelClaimUpdateV1) -> ContractResult {
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
-    let proposal_data = wasm::db::db_get(proposals_db, &update.claim_id.to_bytes())?;
-    if let Some(data) = proposal_data {
-        let mut proposal = model::Proposal::decode(&data)?;
-        proposal.state = update.state;
-        wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &proposal.encode())?;
-    }
+    // Blind write — the state was applied in exec and carried here (OBL-C72).
+    wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &update.proposal_bytes)?;
 
     msg!("[dao_escrow::cancel_claim_apply_v1] Proposal cancelled");
     Ok(())
@@ -1871,9 +1897,14 @@ fn deactivate_capability_requirement_v1(
         return Err(DaoEscrowError::CapabilityExpired.into());
     }
 
+    // Apply the deactivation here and carry the record: apply may not read it back (OBL-C72).
+    let mut requirement = requirement;
+    requirement.active = false;
+
     let update = model::DeactivateCapabilityRequirementUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
         role: params.role.clone(),
+        requirement_bytes: requirement.encode()?,
     };
 
     msg!("[dao_escrow::deactivate_capability_requirement_v1] Capability requirement deactivation computed");
@@ -1886,13 +1917,8 @@ fn deactivate_capability_requirement_apply_v1(
     update: model::DeactivateCapabilityRequirementUpdateV1,
 ) -> ContractResult {
     let caps_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE)?;
-    let req_data = wasm::db::db_get(caps_db, &update.role)?
-        .ok_or_else(|| DaoEscrowError::CapabilityRequirementNotRegistered(
-            String::from_utf8_lossy(&update.role).to_string()
-        ))?;
-    let mut requirement = model::CapabilityRequirement::decode(&req_data)?;
-    requirement.active = false;
-    wasm::db::db_set(caps_db, &update.role, &requirement.encode()?)?;
+    // Blind write — the requirement was read and deactivated in exec and carried here (OBL-C72).
+    wasm::db::db_set(caps_db, &update.role, &update.requirement_bytes)?;
     msg!("[dao_escrow::deactivate_capability_requirement_apply_v1] Capability requirement deactivation written");
     Ok(())
 }

@@ -270,6 +270,7 @@ fn test_initialize_update_encoding() {
         bulla: DaoEscrowBulla(pallas::Base::from(1)),
         owner_pubkey: make_pubkey(1),
         bulla_blind: make_blind(42),
+        created_at: 4242,
     };
 
     let encoded = serialize(&update);
@@ -333,6 +334,8 @@ fn test_pay_premium_update_encoding() {
         member_pubkey: make_pubkey(1),
         asset_id: AssetId::from_base(pallas::Base::one()),
         expiry: 100000,
+        created_at: 4242,
+        endowment_bytes: vec![7u8; 330],
     };
 
     let encoded = serialize(&update);
@@ -368,6 +371,7 @@ fn test_withdraw_update_encoding() {
         dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(1)),
         value: 500,
         amount: 9500,
+        endowment_bytes: vec![7u8; 330],
     };
 
     let encoded = serialize(&update);
@@ -397,6 +401,7 @@ fn test_enable_drain_protection_update_encoding() {
     let update = EnableDrainProtectionUpdateV1 {
         dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(1)),
         drain_protection_bulla: DaoEscrowBulla(pallas::Base::from(2)),
+        endowment_bytes: vec![7u8; 330],
     };
 
     let encoded = serialize(&update);
