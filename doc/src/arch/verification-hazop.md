@@ -929,50 +929,146 @@ sweep); `build-resource` `B7` (BuildKit, not configured — a deliberate future 
 `hazop-darkleaf-in-contractcall-data` proposal, whose own verdict was **REJECT** and which was never
 implemented — recorded as closed-by-rejection rather than left to look like untracked work.
 
+## Verified 2026-09-22: what these rows actually are
+
+Every row added or already present was re-read against the code before a remediation campaign was
+planned against it. **Twenty-two are satisfied** and need no fix; five rest on premises that have
+moved; one is worse than its row said. Recording this is the point — a campaign that starts by
+fixing things that are already fixed is the failure mode this register exists to prevent.
+
+**Satisfied, with the evidence.** `OBL-C18` — the cached `target[H-1]` fast path
+(`src/linear/src/consensus.rs:359`, the "M-1 fix") bounds the traversal by `TIMESTAMP_WINDOW`, not by
+genesis. `OBL-C20` — `scripts/check-circuit-metadata-alignment.sh` compares position-for-position,
+three ways. `OBL-C23` — `HANDSHAKE_TIMEOUT = 15s` (`src/linear/src/sync_connection.rs:70`, carrying
+the `M7.3` reference). `OBL-C24` — `disconnect_block` reverses all ten trees `connect_block` writes,
+including `uncles`/`uncles_by_height` ("M7 — symmetric") and `contracts` via the per-block undo batch.
+`OBL-C34` — the handshake now **admits** a peer presenting no genesis, validating it downstream
+against the pin (`sync_connection.rs:441-455`); this is precisely the bootstrap path the daemon-sync
+analysis said was missing, so that finding is closed. `OBL-C36` — no zero-vector fallback survives;
+`OBL-C38` — `chain_state.rs` has **0** `.lock().unwrap()` and 66 poison-recovering sites (note: 7 bare
+ones remain elsewhere in `bin/dwowd`, which is a *different* site set); `OBL-C39` — `uncle_coin_set`
+is gone, uncle dedup is sled-backed via `stored_uncle_hashes()`; `OBL-C40` — `execution.rs:656-682`
+rejects uncle-vs-uncle key collisions; `OBL-C41` — four `miner_task` error paths re-insert mempool
+transactions; `OBL-C46` — the non-ZK fallback no longer exists, the template is plaintext by design;
+`OBL-C47` — `Clone for PoWConsensus` builds fresh atomics and `save_to_batch` reads under `Acquire`;
+`OBL-C48` — `execution.rs:717-748` detects Deployooor duplicate keys; `OBL-C49` (M-4, M-14) and
+`OBL-C51` (M-13) — metadata decode failures now carry `fail_stage`, `total_supply` uses a typed
+conversion, and `block.rs:612` uses `checked_sub` with a supply-invariant error; `OBL-C59` —
+`prev_coin` no longer exists (the concern folds into `OBL-C45`); `OBL-C60` —
+`expected_reward(height: BlockHeight)` is u64 throughout. On the other surfaces: `OBL-Z15`
+(`circuit_metadata_exceptions.txt` is empty; `bearer_bond_commitment_vectors.rs` pins the values),
+`OBL-T3` (all five barb representations agree), `OBL-T6` (`Capability/Inversion.lean:101`, proved and
+one-directional), `OBL-T10` (zero code occurrences of `native_decide`/`ofReduceBool`/`trustCompiler`).
+
+**Premises that moved, so the rows must not be read as written.** `OBL-C17` —
+`reject_nondeterministic_features` is **not** a no-op; it is live at
+`src/runtime/vm_runtime.rs:354`, so the question is now whether `0xFE` alone is covered.
+`OBL-C22` — `perform_reorg` no longer exists; reorg is `reorg_to_heavier_chain`
+(`bin/dwowd/src/task/consensus_linear.rs:137`), so the depth-cap question must be re-asked of it.
+`OBL-C42` — **downgraded from "three of four call sites" to one of three**: `prepare_block` takes
+last, and the other two add a compensating `put_competing_blocks` recovery, so data is no longer lost
+even though the take still precedes the fallible work. `OBL-C29` — **better than "absent"**: Path A is
+implemented, Path B is deferred *with its reason recorded in the Rust* (a plurality vote over peer
+tips is a multi-peer decision a single connection cannot make), and what remains absent is the
+`Off`/`Relaxed`/`Strict` mode parameterization and the Path-B vote itself.
+`OBL-C31` — **downgraded to partial**: a forward-referenced derived operand is no longer unhandled
+(`prover_impl.rs:487` errors on it), but nothing enforces the DAG *at parse time* as the row requires.
+
+**One row is worse than recorded.** `OBL-C52` is not merely "dedup uses a header serialization" — the
+two sides of the same set **disagree**. Insert uses `block.hash_with_vm()` (`chain_state.rs:890`,
+`:966`); take, put and prune use `blake3::hash(&dwow_serialize(&b.header))` (`:700`, `:776`, `:794`).
+So `take_competing_blocks` removes the wrong key, the block-hash entry survives, `put_competing_blocks`
+inserts a second key, and a legitimately re-submitted block is dedup-rejected. That is a live
+correctness bug in the competing-block path.
+
+**Stale prose in three rows, corrected here.** `OBL-Z5` — `script/circuit_free_instances.txt` holds
+**36** entries, not 43; the five whose mechanism is *absent* are confirmed as the dex fee and
+bearer_bond's four coverage-report quantities. `OBL-Z6` — the cited
+`src/sdk/src/crypto/sinsemilla.rs` **does not exist**; Sinsemilla lives at
+`src/sdk/src/crypto/constants/sinsemilla.rs`, `merkle_node.rs` and `src/zk/vm.rs`. `OBL-Z16` — the
+residue list now names `stablecoin`'s `report_timestamp` and `attest_value`'s `attestation_id`, both
+since classified, so the live sites are the two `insurance_market` ones. `OBL-T5` and `OBL-T9` — the
+counts moved with `oracleOperatorType`: **14** capability resources, not 12 or 13, and 17 primitives,
+not 16.
+
 ## What this register implies
 
-Rewritten 2026-09-20, after the campaign that repaired the governance ratios. The old list opened
-with "OBL-Z1 has no check at all"; it has one now, and three of the four obligations it named have
-moved. Ordered by what unblocks the most:
+Rewritten **2026-09-22**, after the docs clean-up promoted the remediated corpus's residue into this
+register and every row was re-read against the code (see "Verified 2026-09-22" above — twenty-two
+rows were already satisfied). Ordered by what unblocks the most, with severity breaking ties:
 
-1. **OBL-Z17 — the capability check verifies nothing, and five contracts treat it as an
-   authorization primitive.** The largest open item, and the only one where a documented mechanism is
-   entirely absent rather than partial: `VerifyCapabilityV1` proves a predicate over some credential
-   and then sets `verified: true` unconditionally, so every capability gate in the repository is
-   decorative. Its four-part remedy is in the entry. It touches genesis `identity`, so it is a
-   campaign with a re-roll — and **the `insurance_market` vectors must not be repaired before it**
-   (see the closing note on Surface 2).
-2. **OBL-Z16 — 18 instances a prover can parametrise away**, two of them live through OBL-Z17. Most
-   are inert; the class is what matters, and the repair per site is small once the site is read.
-3. **OBL-C5 and OBL-C3 are the supply chain**, and both are only partly proved: the Lean
+1. **OBL-C35, C52, C36-class: the consensus wrong-block and lost-block defects.** These are the
+   highest severity in the register and among the smallest to fix. `OBL-C35` — `stratum_submit`
+   commits a mined block and never broadcasts it, so peers learn only on the 30-second poll; the
+   merge-mining path already does it correctly (`rpc/mm_rpc.rs:736`). `OBL-C52` — the two sides of the
+   competing-block dedup set use *different keys*, so the take removes the wrong entry and a
+   legitimately re-submitted block is rejected. Neither needs a build, a circuit, or a re-roll.
+2. **OBL-C21 — the Bridge's cross-chain verification.** The largest item in the register. Two of five
+   chains (Monero DLEq, Litecoin Merkle) are **already written and have never been compiled**, because
+   no build enables `bridge-verify`; Ethereum MPT needs the traversal its RLP decoder is missing; Zcash
+   Groth16 and Aztec PLONK need a pairing dependency that does not exist in this tree. The live
+   vulnerability is narrower than the row's framing: with the feature off, an Ethereum deposit is
+   accepted when its proof is merely *non-empty* (`entrypoint.rs:320-333`), which is RC1's shape.
+3. **OBL-Z17 — the capability check's remaining half is *possession*.** Stage 1 and Stage 2 landed
+   2026-09-21: the predicate is proved, and the proof is about a credential an issuer actually signed
+   (schema, issuer, threshold and commitment are all checked against the stored record). What remains
+   is that the credential is a *box* and nothing consumes it — issuance emits no `Box::Put`, and
+   verification requires no `Box::Take`. It is plumbing before it is a check: no fixture has a real
+   box in the tree with a real merkle path, so the host check that *is* possession turns a passing
+   flow red today. Touches genesis `identity` and `box`.
+4. **OBL-Z16 — 15 instances a prover can parametrise away**, two of them live (both
+   `insurance_market`'s `with_capability` circuits, which expose a `required_capability_id` nothing
+   verifies). The other thirteen are inert or prover-parametrised and the repair per site is small
+   once read. `OBL-Z1` — the same rule as a checker — stands at **897 instances over 181 circuits,
+   15 unclassified**.
+5. **OBL-C16 — 72 `ContractId::ZERO` guards across 20 contracts**, every one of them fail-open: an
+   unconfigured contract id skips the validation instead of rejecting. All non-genesis (verified:
+   zero such sites in any genesis contract), so no re-roll.
+6. **OBL-C5 and OBL-C3 are the supply chain**, and both are only partly proved: the Lean
    `SupplyChain` theorems are structural inductions that hold *for any* `reward`, conditional on the
    Pedersen assumptions. Making `reward` a definition transcribed from `blockchain.rs` and proving
    non-increase plus the tail floor is what turns them into statements about the real schedule.
    `reward_monotone` remains an assumption; the odd case is the obstruction, and `Emission.lean`
    states precisely why the current lemma does not reach it.
-4. **OBL-Z6 is a model error, not a gap.** The Lean merkle model substituted the wrong primitive for
-   Sinsemilla; correcting it is a prerequisite for anything built on `compute_merkle_root`. (OBL-Z7
-   closed in the model — the SMT really does use Poseidon.)
-5. **OBL-T7 is still a name, not a proof.** `NoFreeInstances` is uninterpreted and unconsumed. The
-   checker now certifies most circuits (OBL-Z1: 872 instances, 19 open) and the opcode semantics
-   partly exist (`BaseDivGadget.lean`, budget 2), but the step from "the checker walked the `.zk`
-   text" to "the compiled circuit has this property" is OBL-Z12, and it is open.
+7. **OBL-Z6 and OBL-Z12 are Lean models, not code changes.** Z6 wants Sinsemilla formalized in place
+   of the model's substitution (`HashOps.lean:189`) — the deployed `vm.rs` already uses the real
+   primitive. Z12 wants the comparison chip's semantics modelled so "253-bit comparison plus
+   `range_check`" implies the integer reading over `ZMod p`. Neither needs `src/zk/vm.rs` edited.
+8. **OBL-T7 is still a name, not a proof.** `NoFreeInstances` is carried as a hypothesis of
+   `capabilityType_of_circuitDerivable` but no theorem discharges it; interpreting it needs a Lean
+   model of Halo2 constraint-system semantics, the PCS and Fiat–Shamir. Related and next: `OBL-T9` —
+   the barb alphabet does not separate the types it claims to (13 of 14 resources subsumed, and
+   `purse_deposit`/`purse_withdrawal` have identical barb sets) — which touches all five
+   representations including `src/sdk/src/capability.rs` and so carries a re-roll.
+9. **`OBL-Z3`, `OBL-Z4`, `OBL-Z8` are gates that check the wrong thing** — domain *presence* rather
+   than correctness, a hook that cannot see an inline `constrain_instance(ec_get_x(pk))`, and a
+   validator that checks structural validity rather than whether the committed `.zk.bin` matches the
+   current `.zk` source. All three are shell and Python, with no build impact.
 
 **And three things that are not obligations but process**, all learned on 2026-09-20:
 
-* **the heavyweight pipeline is red on sixteen tests**, and now visible: `cargo test --workspace`
-  runs ~30 of them and `test_heavyweight_{auction, bridge, dao_escrow, drain_protection, escrow,
-  insurance_market, labor_market, pool_stake, purse, relayer_endowment, subscription, tender,
-  bearer_bond}` plus `relayer_lifecycle_heavyweight`, `recruitment_pipeline_call_data` and
-  `test_pipeline` fail. Their causes are the ones this register already carries — auction and
-  bridge are the deferred contracts whose clients still build V1-shaped public inputs for V2
-  circuits, `insurance_market::UnderwriteV1` fails with a halo2 synthesis error, which is OBL-Z16's
-  finding arriving as a runtime symptom, and `purse::WithdrawV1` fails its own post-condition
-  ("nullifier must exist after withdrawal"). `test_heavyweight_dex` passes, which is how we know
-  the repaired dex circuits still register. **These could not be seen before**: `make test` stopped
-  at the contract build, and the contract build stopped on artifacts whose recorded hashes did not
-  match their sources. So "pre-existing" is inferred from each failure matching a recorded cause,
-  not from a before-and-after run — the before was not obtainable;
+* **the heavyweight pipeline was red on sixteen tests as of 2026-09-20**, and now visible:
+  `cargo test --workspace` runs ~30 of them and `test_heavyweight_{auction, bridge, dao_escrow,
+  drain_protection, escrow, insurance_market, labor_market, pool_stake, purse, relayer_endowment,
+  subscription, tender, bearer_bond}` plus `relayer_lifecycle_heavyweight`,
+  `recruitment_pipeline_call_data` and `test_pipeline` fail. **These could not be seen before**:
+  `make test` stopped at the contract build, and the contract build stopped on artifacts whose
+  recorded hashes did not match their sources. So "pre-existing" is *inferred* from each failure
+  matching a recorded cause, not from a before-and-after run — the before was not obtainable. Treat
+  the causes below as hypotheses to re-derive, not as measurements, and do not inherit the count.
+
+  What is known is uneven, and 2026-09-22 narrowed it twice. `insurance_market::UnderwriteV1`'s halo2
+  synthesis error is OBL-Z16 arriving as a runtime symptom. `purse::WithdrawV1` fails its own
+  post-condition ("nullifier must exist after withdrawal"). **`bridge`'s recorded cause was wrong**:
+  it is not blocked at `metadata-decode-zkp` — that gate was fixed by the `SerializedLen` work — and
+  the current source cannot produce the `Custom(5)` the test reports on `WithdrawV1`, since no
+  `InvalidMerkleProof` site exists on that path. The gitignored `.wasm` is timestamped three minutes
+  *older* than the last source commit, so the first step there is a rebuild, not a diagnosis. **The
+  "clients still build V1-shaped public inputs" cause for auction and dao_escrow is unverified**, and
+  one candidate explanation is now ruled out: every live `_V2` namespace constant resolves to a
+  circuit that exists (there are **124 dead *legacy* constants** across 24 contracts, which is
+  misleading but not this). Three bridge test artifacts are stale for independent reasons — see
+  Stage 3 of the remediation plan:
 
 * nineteen of the repository's contract artifacts were stale for a day — committed `.source_hash`
   files that no longer matched committed sources — which made `make test` unrunnable from any clone
