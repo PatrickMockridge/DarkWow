@@ -45,18 +45,22 @@ pub fn insurance_market_close_market_process_instruction_v1(
     let markets_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_MARKETS_TREE)?;
     let market_bytes =
         wasm::db::db_get(markets_db, &params.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let market: crate::model::InsuranceMarket = crate::model::InsuranceMarket::decode(&market_bytes)?;
+    let mut market: crate::model::InsuranceMarket = crate::model::InsuranceMarket::decode(&market_bytes)?;
 
     if !market.active {
         return Err(InsuranceMarketError::MarketNotActive.into())
     }
 
+    // Apply the close here and carry the record: apply may not read it back (register OBL-C72).
+    market.active = false;
+
     let update = CloseMarketUpdateV1 {
         market_id: params.market_id,
+        market_bytes: market.encode(),
     };
 
     msg!("[insurance_market::close_market] Market closed: {:?}", params.market_id);
-    Ok([&[InsuranceMarketFunction::CloseMarketV1 as u8], &update.encode()[..]].concat())
+    Ok([&[InsuranceMarketFunction::CloseMarketV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// Process update for CloseMarketV1
@@ -66,14 +70,11 @@ pub fn insurance_market_close_market_process_update_v1(
 ) -> Result<(), ContractError> {
     let markets_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_MARKETS_TREE)?;
 
-    let market_bytes =
-        wasm::db::db_get(markets_db, &update.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let mut market = crate::model::InsuranceMarket::decode(&market_bytes)?;
-    market.active = false;
+    // Blind write — exec applied the close and carried the record (register OBL-C72).
     wasm::db::db_set(
         markets_db,
         &update.market_id.to_repr(),
-        &market.encode(),
+        &update.market_bytes,
     )?;
 
     msg!("[insurance_market::close_market::update] Market {:?} closed", update.market_id);

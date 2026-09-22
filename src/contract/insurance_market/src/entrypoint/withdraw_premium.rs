@@ -112,11 +112,16 @@ pub fn insurance_market_withdraw_premium_process_instruction_v1(
 
     let remaining_balance = underwriter.earned_premiums - params.amount;
 
+    // Apply the new balance here and carry the record — apply may not read it (OBL-C72).
+    let mut underwriter = underwriter;
+    underwriter.earned_premiums = remaining_balance;
+
     // Create the update
     let update = WithdrawPremiumUpdateV1 {
         underwriter_id: params.underwriter_id,
         amount: params.amount,
         remaining_balance,
+        underwriter_bytes: underwriter.encode(),
     };
 
     msg!(
@@ -124,7 +129,7 @@ pub fn insurance_market_withdraw_premium_process_instruction_v1(
         params.amount,
         remaining_balance
     );
-    Ok([&[InsuranceMarketFunction::WithdrawPremiumV1 as u8], &update.encode()[..]].concat())
+    Ok([&[InsuranceMarketFunction::WithdrawPremiumV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// Process update for WithdrawPremiumV1
@@ -134,15 +139,11 @@ pub fn insurance_market_withdraw_premium_process_update_v1(
 ) -> Result<(), ContractError> {
     let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
 
-    // Update underwriter's earned premiums
-    let underwriter_bytes =
-        wasm::db::db_get(underwriters_db, &update.underwriter_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let mut underwriter = crate::model::Underwriter::decode(&underwriter_bytes)?;
-    underwriter.earned_premiums = update.remaining_balance;
+    // Blind write — exec applied the new balance and carried the record (OBL-C72).
     wasm::db::db_set(
         underwriters_db,
         &update.underwriter_id.to_repr(),
-        &underwriter.encode(),
+        &update.underwriter_bytes,
     )?;
 
     // In production: trigger Money::TokenMint to transfer the premium to underwriter

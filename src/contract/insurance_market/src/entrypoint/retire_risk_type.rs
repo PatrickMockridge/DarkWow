@@ -45,18 +45,22 @@ pub fn insurance_market_retire_risk_type_process_instruction_v1(
     let risk_types_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_RISK_TYPES_TREE)?;
     let risk_type_bytes =
         wasm::db::db_get(risk_types_db, &params.risk_type_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let risk_type = crate::model::RiskType::decode(&risk_type_bytes)?;
+    let mut risk_type = crate::model::RiskType::decode(&risk_type_bytes)?;
 
     if !risk_type.active {
         return Err(InsuranceMarketError::MarketNotActive.into())
     }
 
+    // Apply the retirement here and carry the record — apply may not read it (OBL-C72).
+    risk_type.active = false;
+
     let update = RetireRiskTypeUpdateV1 {
         risk_type_id: params.risk_type_id,
+        risk_type_bytes: risk_type.encode()?,
     };
 
     msg!("[insurance_market::retire_risk_type] Risk type retired: {:?}", params.risk_type_id);
-    Ok([&[InsuranceMarketFunction::RetireRiskTypeV1 as u8], &update.encode()[..]].concat())
+    Ok([&[InsuranceMarketFunction::RetireRiskTypeV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// Process update for RetireRiskTypeV1
@@ -66,14 +70,11 @@ pub fn insurance_market_retire_risk_type_process_update_v1(
 ) -> Result<(), ContractError> {
     let risk_types_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_RISK_TYPES_TREE)?;
 
-    let risk_type_bytes =
-        wasm::db::db_get(risk_types_db, &update.risk_type_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let mut risk_type = crate::model::RiskType::decode(&risk_type_bytes)?;
-    risk_type.active = false;
+    // Blind write — exec applied the retirement and carried the record (OBL-C72).
     wasm::db::db_set(
         risk_types_db,
         &update.risk_type_id.to_repr(),
-        &risk_type.encode()?,
+        &update.risk_type_bytes,
     )?;
 
     msg!("[insurance_market::retire_risk_type::update] Risk type {:?} retired", update.risk_type_id);

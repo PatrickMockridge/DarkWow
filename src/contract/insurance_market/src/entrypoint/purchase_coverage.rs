@@ -121,7 +121,7 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
     let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
     let underwriter_bytes =
         wasm::db::db_get(underwriters_db, &params.underwriter_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let underwriter = crate::model::Underwriter::decode(&underwriter_bytes)?;
+    let mut underwriter = crate::model::Underwriter::decode(&underwriter_bytes)?;
 
     if !underwriter.active {
         return Err(InsuranceMarketError::UnauthorizedUnderwriter.into())
@@ -172,6 +172,11 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
     let starts_at = current_block;
     let expires_at = starts_at + market.coverage_period;
 
+    // Apply the underwriter's increments here — apply used to do both after re-reading the record
+    // (register OBL-C72).
+    underwriter.earned_premiums += premium;
+    underwriter.coverage_sold += params.coverage_amount;
+
     // Create the update
     let update = PurchaseCoverageUpdateV1 {
         coverage_id,
@@ -183,6 +188,7 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
         starts_at,
         expires_at,
         buyer_nullifier: params.buyer_nullifier,
+        underwriter_bytes: underwriter.encode(),
     };
 
     msg!(
@@ -190,7 +196,7 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
         coverage_id,
         premium
     );
-    Ok([&[InsuranceMarketFunction::PurchaseCoverageV1 as u8], &update.encode()[..]].concat())
+    Ok([&[InsuranceMarketFunction::PurchaseCoverageV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// Process update for PurchaseCoverageV1
@@ -223,16 +229,12 @@ pub fn insurance_market_purchase_coverage_process_update_v1(
         &coverage.encode(),
     )?;
 
-    // Update underwriter's earned premiums and coverage sold
-    let underwriter_bytes =
-        wasm::db::db_get(underwriters_db, &update.underwriter_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let mut underwriter = crate::model::Underwriter::decode(&underwriter_bytes)?;
-    underwriter.earned_premiums += update.premium_paid;
-    underwriter.coverage_sold += update.amount; // Track coverage sold
+    // Blind write — exec applied the premium and coverage-sold increments and carried the record
+    // (register OBL-C72).
     wasm::db::db_set(
         underwriters_db,
         &update.underwriter_id.to_repr(),
-        &underwriter.encode(),
+        &update.underwriter_bytes,
     )?;
 
     // Record buyer nullifier for replay protection

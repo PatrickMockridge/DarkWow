@@ -146,6 +146,12 @@ pub fn insurance_market_purchase_coverage_with_capability_process_instruction_v1
     let expires_at = starts_at + market.coverage_period;
 
     // Create the update
+    // Apply the underwriter's increments here — apply used to do both after re-reading the record
+    // (register OBL-C72).
+    let mut underwriter = underwriter;
+    underwriter.earned_premiums += premium;
+    underwriter.coverage_sold += params.coverage_amount;
+
     let update = PurchaseCoverageWithCapabilityUpdateV1 {
         coverage_id,
         market_id: params.market_id,
@@ -157,6 +163,7 @@ pub fn insurance_market_purchase_coverage_with_capability_process_instruction_v1
         expires_at,
         required_capability_id,
         buyer_nullifier: params.buyer_nullifier,
+        underwriter_bytes: underwriter.encode(),
     };
 
     msg!(
@@ -166,7 +173,7 @@ pub fn insurance_market_purchase_coverage_with_capability_process_instruction_v1
         required_capability_id
     );
     Ok([&[InsuranceMarketFunction::PurchaseCoverageWithCapabilityV1 as u8],
-        &update.encode()[..]].concat())
+        &update.encode()?[..]].concat())
 }
 
 /// Process update for PurchaseCoverageWithCapabilityV1
@@ -199,16 +206,11 @@ pub fn insurance_market_purchase_coverage_with_capability_process_update_v1(
         &coverage.encode(),
     )?;
 
-    // Update underwriter's earned premiums and coverage sold
-    let underwriter_bytes =
-        wasm::db::db_get(underwriters_db, &update.underwriter_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let mut underwriter = crate::model::Underwriter::decode(&underwriter_bytes)?;
-    underwriter.earned_premiums += update.premium_paid;
-    underwriter.coverage_sold += update.amount; // Track coverage sold
+    // Blind write — exec applied the increments and carried the record (register OBL-C72).
     wasm::db::db_set(
         underwriters_db,
         &update.underwriter_id.to_repr(),
-        &underwriter.encode(),
+        &update.underwriter_bytes,
     )?;
 
     // Record buyer nullifier for replay protection

@@ -139,18 +139,29 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             purchase_coverage_with_dag_get_metadata_v1(params)?
         }
-        InsuranceMarketFunction::InitializeV1 => vec![],
-        InsuranceMarketFunction::RegisterRiskTypeV1 => vec![],
-        InsuranceMarketFunction::CreateMarketV1 => vec![],
-        InsuranceMarketFunction::UnderwriteV1 => vec![],
-        InsuranceMarketFunction::FileClaimV1 => vec![],
-        InsuranceMarketFunction::ResolveClaimV1 => vec![],
-        InsuranceMarketFunction::WithdrawPremiumV1 => vec![],
-        InsuranceMarketFunction::UpdatePremiumV1 => vec![],
-        InsuranceMarketFunction::ResolveClaimWithCapabilityV1 => vec![],
-        InsuranceMarketFunction::DeactivateUnderwriterV1 => vec![],
-        InsuranceMarketFunction::CloseMarketV1 => vec![],
-        InsuranceMarketFunction::RetireRiskTypeV1 => vec![],
+        // These arms used to return a bare `vec![]`. The host decodes metadata as
+        // `Vec<(String, Vec<Base>)>` (`execution.rs:423`) and reads a 0-byte buffer as the
+        // documented rejection signal, so every one of them was uncallable (register OBL-C77):
+        // the returned value must be an *encoded* empty vector. `InitializeV1` is grouped with the
+        // rest for uniformity; it is unreachable through the call path because initialization uses
+        // the separate `__initialize` entrypoint.
+        InsuranceMarketFunction::InitializeV1
+        | InsuranceMarketFunction::RegisterRiskTypeV1
+        | InsuranceMarketFunction::CreateMarketV1
+        | InsuranceMarketFunction::UnderwriteV1
+        | InsuranceMarketFunction::FileClaimV1
+        | InsuranceMarketFunction::ResolveClaimV1
+        | InsuranceMarketFunction::WithdrawPremiumV1
+        | InsuranceMarketFunction::UpdatePremiumV1
+        | InsuranceMarketFunction::ResolveClaimWithCapabilityV1
+        | InsuranceMarketFunction::DeactivateUnderwriterV1
+        | InsuranceMarketFunction::CloseMarketV1
+        | InsuranceMarketFunction::RetireRiskTypeV1 => {
+            let zk_public_inputs: Vec<(String, Vec<dwow_sdk::pasta::pallas::Base>)> = vec![];
+            let mut m = vec![];
+            zk_public_inputs.encode(&mut m)?;
+            m
+        }
     };
 
     wasm::util::set_return_data(&metadata)

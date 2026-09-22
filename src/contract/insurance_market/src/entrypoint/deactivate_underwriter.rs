@@ -45,7 +45,7 @@ pub fn insurance_market_deactivate_underwriter_process_instruction_v1(
     let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
     let underwriter_bytes =
         wasm::db::db_get(underwriters_db, &params.underwriter_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let underwriter = crate::model::Underwriter::decode(&underwriter_bytes)?;
+    let mut underwriter = crate::model::Underwriter::decode(&underwriter_bytes)?;
 
     if underwriter.owner != params.owner {
         return Err(InsuranceMarketError::UnauthorizedUnderwriter.into())
@@ -55,13 +55,17 @@ pub fn insurance_market_deactivate_underwriter_process_instruction_v1(
         return Err(InsuranceMarketError::MarketNotActive.into())
     }
 
+    // Apply the deactivation here and carry the record — apply may not read it (OBL-C72).
+    underwriter.active = false;
+
     let update = DeactivateUnderwriterUpdateV1 {
         underwriter_id: params.underwriter_id,
+        underwriter_bytes: underwriter.encode(),
     };
 
     msg!("[insurance_market::deactivate_underwriter] Underwriter deactivated: {:?}", params.underwriter_id);
     Ok([&[InsuranceMarketFunction::DeactivateUnderwriterV1 as u8],
-        &update.encode()[..]].concat())
+        &update.encode()?[..]].concat())
 }
 
 /// Process update for DeactivateUnderwriterV1
@@ -71,14 +75,11 @@ pub fn insurance_market_deactivate_underwriter_process_update_v1(
 ) -> Result<(), ContractError> {
     let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
 
-    let underwriter_bytes =
-        wasm::db::db_get(underwriters_db, &update.underwriter_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let mut underwriter = crate::model::Underwriter::decode(&underwriter_bytes)?;
-    underwriter.active = false;
+    // Blind write — exec applied the deactivation and carried the record (OBL-C72).
     wasm::db::db_set(
         underwriters_db,
         &update.underwriter_id.to_repr(),
-        &underwriter.encode(),
+        &update.underwriter_bytes,
     )?;
 
     msg!("[insurance_market::deactivate_underwriter::update] Underwriter {:?} deactivated", update.underwriter_id);

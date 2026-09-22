@@ -90,6 +90,14 @@ pub fn insurance_market_file_claim_process_instruction_v1(
         return Err(InsuranceMarketError::ClaimAlreadyResolved.into())
     }
 
+    // Read the coverage here and mark it — apply may not read it (OBL-C72).
+    let coverages_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_COVERAGES_TREE)?;
+    let coverage_raw =
+        wasm::db::db_get(coverages_db, &params.coverage_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let mut coverage = crate::model::Coverage::decode(&coverage_raw)?;
+    coverage.claim_id = Some(claim_id);
+    let coverage_bytes = coverage.encode();
+
     // Create the update
     let update = FileClaimUpdateV1 {
         claim_id,
@@ -99,10 +107,11 @@ pub fn insurance_market_file_claim_process_instruction_v1(
         state: crate::model::ClaimState::Filed,
         created_at: current_block,
         oracle_signature: params.oracle_signature,
+        coverage_bytes,
     };
 
     msg!("[insurance_market::file_claim] Claim filed: {:?}", claim_id);
-    Ok([&[InsuranceMarketFunction::FileClaimV1 as u8], &update.encode()[..]].concat())
+    Ok([&[InsuranceMarketFunction::FileClaimV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// Process update for FileClaimV1
@@ -135,15 +144,11 @@ pub fn insurance_market_file_claim_process_update_v1(
         &claim.encode()?,
     )?;
 
-    // Update coverage to mark claim in progress
-    let coverage_bytes =
-        wasm::db::db_get(coverages_db, &update.coverage_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let mut coverage = crate::model::Coverage::decode(&coverage_bytes)?;
-    coverage.claim_id = Some(update.claim_id);
+    // Mark the coverage claim in progress — blind write, exec read and updated it (OBL-C72).
     wasm::db::db_set(
         coverages_db,
         &update.coverage_id.to_repr(),
-        &coverage.encode(),
+        &update.coverage_bytes,
     )?;
 
     msg!(

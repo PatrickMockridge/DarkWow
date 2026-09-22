@@ -103,6 +103,37 @@ pub fn insurance_market_resolve_claim_with_capability_process_instruction_v1(
 
     let current_block = wasm::util::get_verifying_block_height()?.get();
 
+    // Apply all three record changes here — apply used to re-read each one to modify it
+    // (register OBL-C72).
+    let mut claim = claim;
+    claim.payout = payout;
+    claim.state = if params.is_valid {
+        crate::model::ClaimState::Paid
+    } else {
+        crate::model::ClaimState::Rejected
+    };
+    claim.attestation = vec![];
+    claim.oracle_signature = params.oracle_signature;
+    claim.resolved_at = current_block;
+
+    let mut coverage = coverage;
+    coverage.state = if params.is_valid {
+        crate::model::CoverageState::Claimed
+    } else {
+        crate::model::CoverageState::Active
+    };
+
+    let underwriter_bytes = if slash_amount > 0 {
+        let mut underwriter = underwriter;
+        underwriter.bond_amount = underwriter.bond_amount.saturating_sub(slash_amount);
+        underwriter.claims_paid += payout;
+        underwriter.slash_count += 1;
+        underwriter.performance_score = underwriter.performance_score.saturating_sub(100);
+        Some(underwriter.encode())
+    } else {
+        None
+    };
+
     // Create the update
     let update = ResolveClaimWithCapabilityUpdateV1 {
         claim_id: params.claim_id,
@@ -112,6 +143,9 @@ pub fn insurance_market_resolve_claim_with_capability_process_instruction_v1(
         slash_amount,
         resolved_at: current_block,
         oracle_signature: params.oracle_signature,
+        claim_bytes: claim.encode()?,
+        coverage_bytes: coverage.encode(),
+        underwriter_bytes,
     };
 
     msg!(
@@ -121,7 +155,7 @@ pub fn insurance_market_resolve_claim_with_capability_process_instruction_v1(
         slash_amount
     );
     Ok([&[InsuranceMarketFunction::ResolveClaimWithCapabilityV1 as u8],
-        &update.encode()[..]].concat())
+        &update.encode()?[..]].concat())
 }
 
 /// Process update for ResolveClaimWithCapabilityV1
@@ -133,65 +167,31 @@ pub fn insurance_market_resolve_claim_with_capability_process_update_v1(
     let coverages_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_COVERAGES_TREE)?;
     let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
 
-    // Update claim
-    let claim_bytes =
-        wasm::db::db_get(claims_db, &update.claim_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let mut claim = crate::model::Claim::decode(&claim_bytes)?;
-    claim.payout = update.payout_amount;
-    claim.state = if update.is_valid {
-        crate::model::ClaimState::Paid
-    } else {
-        crate::model::ClaimState::Rejected
-    };
-    claim.attestation = vec![]; // Would be stored from params
-    claim.oracle_signature = update.oracle_signature;
-    claim.resolved_at = update.resolved_at;
+    // Blind writes — exec applied the claim, coverage and (when slashing) underwriter changes and
+    // carried all three (register OBL-C72).
     wasm::db::db_set(
         claims_db,
         &update.claim_id.to_repr(),
-        &claim.encode()?,
+        &update.claim_bytes,
     )?;
 
-    // Update coverage state
-    let coverage_bytes =
-        wasm::db::db_get(coverages_db, &update.coverage_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let mut coverage = crate::model::Coverage::decode(&coverage_bytes)?;
-    coverage.state = if update.is_valid {
-        crate::model::CoverageState::Claimed
-    } else {
-        crate::model::CoverageState::Active // Can file again
-    };
     wasm::db::db_set(
         coverages_db,
         &update.coverage_id.to_repr(),
-        &coverage.encode(),
+        &update.coverage_bytes,
     )?;
 
-    // Update underwriter if slash occurred
-    if update.slash_amount > 0 {
-        let underwriter_bytes =
-            wasm::db::db_get(underwriters_db, &coverage.underwriter_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-        let mut underwriter = crate::model::Underwriter::decode(&underwriter_bytes)?;
-
-        // Slash the bond
-        underwriter.bond_amount = underwriter.bond_amount.saturating_sub(update.slash_amount);
-        underwriter.claims_paid += update.payout_amount;
-        underwriter.slash_count += 1;
-
-        // Update performance score (penalize for claims)
-        let new_score = underwriter.performance_score.saturating_sub(100);
-        underwriter.performance_score = new_score;
-
+    if let Some(underwriter_bytes) = &update.underwriter_bytes {
+        let coverage = crate::model::Coverage::decode(&update.coverage_bytes)?;
         wasm::db::db_set(
             underwriters_db,
             &coverage.underwriter_id.to_repr(),
-            &underwriter.encode(),
+            underwriter_bytes,
         )?;
 
         msg!(
-            "[insurance_market::resolve_claim_with_cap::update] Underwriter slashed: {:?}, new bond: {}",
-            coverage.underwriter_id,
-            underwriter.bond_amount
+            "[insurance_market::resolve_claim_with_cap::update] Underwriter slashed: {:?}",
+            coverage.underwriter_id
         );
     }
 

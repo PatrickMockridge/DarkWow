@@ -128,14 +128,40 @@ pub fn insurance_market_underwrite_process_instruction_v1(
     let underwriter_id =
         derive_underwriter_id(params.market_id, &params.underwriter, params.bond_amount);
 
-    // Check if underwriter already exists
-    let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
-    if wasm::db::db_contains_key(underwriters_db, &underwriter_id.to_repr())? {
-        // Update existing underwriter's bond
-        msg!("[insurance_market::underwrite] Updating existing underwriter");
-    }
-
     let current_block = wasm::util::get_verifying_block_height()?.get();
+
+    // Build both records here. apply used to read the underwriter (or construct it) and read the
+    // market back after the block was accepted — reads the ACL denies in `Update` (register
+    // OBL-C72).
+    let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
+    let underwriter = if wasm::db::db_contains_key(underwriters_db, &underwriter_id.to_repr())? {
+        msg!("[insurance_market::underwrite] Updating existing underwriter");
+        let bytes = wasm::db::db_get(underwriters_db, &underwriter_id.to_repr())?
+            .ok_or(ContractError::DbGetEmpty)?;
+        let mut existing = crate::model::Underwriter::decode(&bytes)?;
+        existing.bond_amount += params.bond_amount;
+        existing.coverage_provided += params.coverage_limit;
+        existing
+    } else {
+        crate::model::Underwriter {
+            version: 1,
+            id: underwriter_id,
+            owner: params.underwriter,
+            market_id: params.market_id,
+            bond_amount: params.bond_amount,
+            coverage_provided: params.coverage_limit,
+            coverage_sold: 0,
+            earned_premiums: 0,
+            claims_paid: 0,
+            slash_count: 0,
+            performance_score: 10000, // Start at perfect score
+            active: true,
+            created_at: current_block,
+        }
+    };
+
+    let mut market = market;
+    market.coverage_sold += params.coverage_limit;
 
     let value_blind = poseidon_hash([
         pallas::Base::from(params.bond_amount),
@@ -151,10 +177,12 @@ pub fn insurance_market_underwrite_process_instruction_v1(
         bond_amount: params.bond_amount,
         coverage_provided: params.coverage_limit,
         created_at: current_block,
+        underwriter_bytes: underwriter.encode(),
+        market_bytes: market.encode(),
     };
 
     msg!("[insurance_market::underwrite] Underwriter registered: {:?}", underwriter_id);
-    Ok([&[InsuranceMarketFunction::UnderwriteV1 as u8], &update.encode()[..]].concat())
+    Ok([&[InsuranceMarketFunction::UnderwriteV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// Process update for UnderwriteV1
@@ -165,59 +193,18 @@ pub fn insurance_market_underwrite_process_update_v1(
     let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
     let markets_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_MARKETS_TREE)?;
 
-    // Check if underwriter exists (update case)
-    let existing: Option<crate::model::Underwriter> =
-        if wasm::db::db_contains_key(underwriters_db, &update.underwriter_id.to_repr())? {
-            let bytes =
-                wasm::db::db_get(underwriters_db, &update.underwriter_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-            Some(crate::model::Underwriter::decode(&bytes)?)
-        } else {
-            None
-        };
+    // Blind writes — exec built the underwriter (new or updated) and advanced the market's
+    // coverage_sold, and carried both (register OBL-C72).
+    wasm::db::db_set(
+        underwriters_db,
+        &update.underwriter_id.to_repr(),
+        &update.underwriter_bytes,
+    )?;
 
-    if let Some(mut underwriter) = existing {
-        // Update existing underwriter
-        underwriter.bond_amount += update.bond_amount;
-        underwriter.coverage_provided += update.coverage_provided;
-        wasm::db::db_set(
-            underwriters_db,
-            &update.underwriter_id.to_repr(),
-            &underwriter.encode(),
-        )?;
-    } else {
-        // Create new underwriter
-        let underwriter = crate::model::Underwriter {
-            version: 1,
-            id: update.underwriter_id,
-            owner: update.owner,
-            market_id: update.market_id,
-            bond_amount: update.bond_amount,
-            coverage_provided: update.coverage_provided,
-            coverage_sold: 0,
-            earned_premiums: 0,
-            claims_paid: 0,
-            slash_count: 0,
-            performance_score: 10000, // Start at perfect score
-            active: true,
-            created_at: update.created_at,
-        };
-
-        wasm::db::db_set(
-            underwriters_db,
-            &update.underwriter_id.to_repr(),
-            &underwriter.encode(),
-        )?;
-    }
-
-    // Update market coverage sold
-    let market_bytes =
-        wasm::db::db_get(markets_db, &update.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let mut market = crate::model::InsuranceMarket::decode(&market_bytes)?;
-    market.coverage_sold += update.coverage_provided;
     wasm::db::db_set(
         markets_db,
         &update.market_id.to_repr(),
-        &market.encode(),
+        &update.market_bytes,
     )?;
 
     msg!(
