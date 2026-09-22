@@ -51,12 +51,25 @@ while IFS= read -r f; do
 done < <(git diff --cached --name-only --diff-filter=ACM | grep '\.zk$' || true)
 
 if [ "${#FILES[@]}" -eq 0 ]; then
-    bash "$CHECKER" --all || true
+    OUT="$(bash "$CHECKER" --all 2>&1 || true)"
 else
-    bash "$CHECKER" "${FILES[@]}" || true
+    OUT="$(bash "$CHECKER" "${FILES[@]}" 2>&1 || true)"
 fi
 
-echo ""
-echo "NOTE: reported, not blocking — the finding is OBL-Z18 in doc/src/arch/verification-hazop.md"
-echo "      and its sites need adjudication before this hook can fail on them."
+# Summarised, not dumped. The full list is 57 lines across 12 contracts and printing it on
+# every commit is how a hook gets disabled — and a disabled hook is worse than a quiet one.
+if printf '%s' "$OUT" | grep -q 'PASS:'; then
+    echo "OK: no vacuous bindings."
+else
+    # Trust the checker's own tally rather than re-counting: its FIX text also contains
+    # the string, so a grep here is off by one.
+    N="$(printf '%s' "$OUT" | sed -n 's/^FAIL: \([0-9]*\) vacuous binding.*/\1/p' | head -1)"
+    N="${N:-some}"
+    echo ""
+    echo "REPORTED, NOT BLOCKING: $N known vacuous-binding candidate(s) (OBL-Z18)."
+    echo "  These need their circuit *and* host read together before they can be called"
+    echo "  defects — some are structurally flagged while the property is held elsewhere."
+    echo "  To see them:  scripts/check-pubkey-binding.sh"
+    echo "  Register row: doc/src/arch/verification-hazop.md (OBL-Z18)"
+fi
 exit 0
