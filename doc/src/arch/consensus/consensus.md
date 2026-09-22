@@ -558,25 +558,32 @@ freely (`OBL-C64`). The `0x01` constant is spelled `CARIBNIA` — two letters tr
 
 ### Caribina (Arweave) Anchoring
 
-**Status: anchoring is implemented and live; verification is implemented and not wired in.** When
-Caribina is enabled (`caribina_enabled: true`) and mode is not Native, each mined block is anchored to
-Arweave via the ANS-104 DataItem protocol. The Arweave transaction ID is stored in
-`header.anchor_tx_id`. Anchoring is best-effort — if the Arweave network or turbo service is
-unavailable, the block is still valid but carries no anchor.
+**Status: anchoring and verification are both live and wired (2026-09-22).** When Caribina is enabled
+(`caribina_enabled: true`) and mode is not Native, the miner commits a fresh per-block Ed25519 public key
+into the block's **mined region** (`header.anchor_owner`), signs an ANS-104 DataItem binding
+`anchor_commitment(header)`, attaches it to the block (`header.caribina_anchor`) **before** acceptance,
+and publishes it to Arweave asynchronously. Publication is best-effort: if Arweave or turbo is
+unavailable the block keeps its finality and loses only the external anchor, which is logged as a
+degradation.
 
-`src/linear/src/caribina/verify.rs` fetches the DataItem and checks its signature and payload, but
-nothing in `bin/dwowd` calls it; the P2P path has no anchor code at all. What *is* live is the
-enforcement guard below, which reads the header fields without consulting any of that. See `OBL-C63`.
+Verification is `src/linear/src/caribina/verify.rs::verify_anchor_proof` — **pure and local**, so both
+enforcement sites call it. It checks the signature, that the signer is the committed `anchor_owner`, and
+that the payload binds this block's commitment, height and timestamp. The gateway-fetch path
+(`verify_anchor`) remains the opt-in live-conformance arm rather than a consensus input. See `OBL-C63`
+(closed) and `OBL-C66` (settlement accepted-with-reason).
 
 ### Monero (p2pool) Anchoring
 
-**Status: merge mining is implemented and live; this anchoring gadget has never been in effect.** The
-design anchors a DarkWow block to a Monero block via p2pool merge mining, storing the Monero block
-height and hash in `header.anchor_monero_height` and `header.anchor_monero_hash`. **Production never
-writes either field** — `bin/dwowd/src/rpc/mm_rpc.rs:630-631` builds every merge-mined block with
-`MoneroBlockHeight::new(0)` and `[0u8; 32]`. The real Monero data does travel, as
-`PowSource::Monero(MoneroPowData)`; the anchor fields are a separate, unauthenticated claim about the
-same thing. See `OBL-C67`.
+**Status: merge mining is implemented and live; this anchoring gadget has never been in effect, and the
+Monero block's own proof-of-work is not checked anywhere.** The design anchors a DarkWow block to a Monero
+block via p2pool merge mining, storing the Monero block height and hash in `header.anchor_monero_height`
+and `header.anchor_monero_hash`. **Production never writes either field** — and two of the three things
+the design assumed are not derivable at all: the Monero `BlockHeader` carries no height and no difficulty,
+so neither the height nor a locally-checked PoW can come from the proof. The real Monero data does travel,
+as `PowSource::Monero(MoneroPowData)`; the anchor fields are a separate, unauthenticated claim about the
+same thing. See `OBL-C67` — which also records that this is a **block-minting** hole, not only a finality
+one, because the three receipts prove coinbase-inclusion in *some serialized* block and merge-mined blocks
+skip native PoW entirely.
 
 `verify_monero_anchor` supports two modes, and neither is called by anything outside its own tests:
 - **Lightweight plausibility** (default): accepts any block with non-zero
@@ -602,26 +609,27 @@ CLI overrides: `--finality-mode native|always|signaled`,
 
 ### How Anchoring Provides Finality
 
-1. Miner produces a block with PoW
-2. Miner (or daemon) submits the block hash to Arweave as an ANS-104 DataItem
-3. The Arweave transaction ID is stored in `block.header.anchor_tx_id`
-4. Any block whose `anchor_tx_id` is non-zero is treated as **final**
+1. Miner produces a block with PoW, having already committed a fresh `anchor_owner` into the mined region
+2. The miner signs an ANS-104 DataItem binding `anchor_commitment(header)`, its height and its timestamp
+3. The signed DataItem is attached to the block as `header.caribina_anchor`, **before** acceptance
+4. Every node recomputes `verify_anchor_proof(header)` — locally — and a block carrying a verified proof
+   is treated as **final**
 5. Any fork that conflicts with it is rejected by nodes running `mode = Always`
+6. Publication to Arweave happens afterwards, asynchronously, and is not what confers finality
 
-**Steps 1–3 are. Step 4 skips a step.** As written above, 4 follows from 3 by an unstated implication —
-that a non-zero `anchor_tx_id` means a confirmed Arweave transaction. Nothing establishes that: no code
-confirms the transaction (the payload's timestamp is compared, not the Arweave block; `OBL-C66`), no
-code verifies the DataItem (`OBL-C63`), and the field is outside the mining blob, so any peer can set it
-(`OBL-C64`). The honest statement of the current behaviour is: **a block that *claims* an anchor becomes
-un-replaceable, and every verifier that would authenticate the claim is uncalled.**
+**What is established, and what is not.** Displacing an anchored block requires producing a different
+block whose committed `anchor_owner` is the same, or a proof under that same committed key binding the
+same commitment — i.e. it requires either a collision in the commitment or the block author's secret key
+— because `anchor_owner` is inside the proof-of-work preimage and the DataItem's signer is compared to it.
+That is a property of the code, and it is proved by the controls named under `OBL-C63`.
 
-The closing claim — "to reorganize a finalized block an attacker would need to reorganize Arweave" —
-therefore does not follow from the code, and it is not the achievable form of the property either.
-Reorganizing Arweave is not what the guard requires; the guard requires only that the replacement block
-not assert an anchor. The property that *can* be established, and that this section will state once the
-fixes land, is that displacing an anchored block requires producing another block whose committed anchor
-material collides or whose anchor is forged under a key committed in the block's mined region. Until
-then, read `OBL-C63`–`OBL-C66`.
+What is **not** established is that the Arweave block containing the DataItem has *settled*. Settlement
+is not checked and cannot be: it lives on another chain, and consensus must be a pure function of local
+data. The claim "to reorganize a finalized block an attacker would need to reorganize Arweave" is
+therefore not the shape of the property — the guard requires no such thing. The honest statement is that
+the anchor proves *publication*, permanently attributably (the adversary in scope cannot delete a
+DataItem), and that settlement depth is Arweave's business. `OBL-C66` records this as accepted-with-reason
+rather than open, so the gap between "settled" and "published" is stated rather than implied.
 
 ## Current State (July 2026)
 

@@ -20,12 +20,20 @@ Caribina adds a completely independent finality path:
 
 - **Free**: ArDrive Turbo accepts small uploads (< 100KB) from unfunded wallets
 - **Trivial key cycling**: Per-block Ed25519 key generation takes microseconds
-- **Fast settlement**: Arweave blocks finalize in ~2 minutes (1 DarkWow block)
-  vs ~6 minutes for Monero anchoring (3 Monero blocks)
 - **No infrastructure**: Just an HTTP POST to ArDrive Turbo
 
 An attacker who controls RandomX hashpower cannot forge Arweave timestamps.
 Arweave uses proof-of-storage consensus — a completely different mechanism.
+
+> **Settlement is not checked, by design (2026-09-22).** Earlier text here advertised "settlement in
+> ~2 minutes (1 DarkWow block)" and the docs described settlement as what makes a block final. Nothing
+> checks it, and it cannot be a consensus rule: settlement lives on another chain, and consensus must be
+> a pure function of local data — the same reason `verify_monero_anchor` is uncallable from consensus.
+> What the anchor actually establishes is **publication**: the miner committed a key inside the block's
+> mined region, signed a DataItem binding that block, and published it. That is the property the 51%
+> argument needs, because the adversary in scope cannot delete a DataItem. Settlement depth — whether
+> Arweave has buried it — is Arweave's own business and this chain does not read it. `OBL-C66` records
+> this as **accepted-with-reason** rather than open, so the gap is stated rather than implied.
 
 ## How It Works
 
@@ -33,32 +41,36 @@ Arweave uses proof-of-storage consensus — a completely different mechanism.
 Miner finds block at height H with hash B
     │
     ▼
-1. Generate fresh Ed25519 keypair (microseconds)
-2. Build ANS-104 DataItem containing: block_hash || timestamp || height
-3. Sign DataItem with the fresh key
-4. POST signed DataItem to https://upload.ardrive.io/v1/tx/arweave
-5. Receive TX ID (32-byte SHA-256 of signature)
-6. Set anchor_tx_id in block header
-7. Broadcast block
+1. Generate fresh Ed25519 keypair (microseconds) — its public half becomes `anchor_owner`
+2. Commit `anchor_owner` into the **mined region**, then find the nonce
+3. Build an ANS-104 DataItem binding `anchor_commitment(header) || height || timestamp`
+4. Sign it with that fresh key
+5. Attach the signed DataItem to the block as `header.caribina_anchor`
+6. Accept the block — the proof is already in it
+7. Broadcast
     │
     ▼
-Other nodes verify:
-   a. Fetch TX by ID from Arweave gateway (GET {ARWEAVE_GATEWAY}/{tx_id})
-   b. Check: stored data contains correct block_hash + height + timestamp
-   c. Check: the payload's own timestamp is within ±30 min of the block timestamp
-   d. Check: Ed25519 signature is valid
-   e. If all pass → block is final (cannot be reorganized)
+Other nodes verify, **locally**:
+   a. The block carries an anchor proof at all
+   b. It commits a non-zero `anchor_owner`
+   c. The DataItem's signature is valid AND its signer is that committed owner
+   d. Its payload binds `anchor_commitment(header)`, the height and the timestamp
+   e. If all pass → the block is final (cannot be reorganized)
+    │
+    ▼
+Publication (asynchronous, and not a dependency):
+   f. POST the DataItem to https://upload.ardrive.io/v1/tx/arweave
+   g. If it fails, the block keeps its finality and logs a degradation
 ```
 
-> **Steps (a)–(d) are implemented in `src/linear/src/caribina/verify.rs` and are not called anywhere in
-> `bin/dwowd`.** `verify_anchor` is reachable only from `caribina/integration_tests.rs`. What is live is
-> step (e)'s *enforcement* — see "Fork Choice with Caribina" below — which reads the header fields
-> without consulting any of this. Read `OBL-C63`–`OBL-C66` in the
-> [verification obligation register](verification-hazop.md) before relying on this section.
->
-> Note also that (c) is weaker than "the Arweave block containing the DataItem has settled": it compares
-> the payload's timestamp — which the anchoring miner chose — against the block's, and never fetches the
-> Arweave block. Settlement is not established by any code (`OBL-C66`).
+**Steps (a)–(d) are `caribina::verify_anchor_proof`, called from both enforcement sites** — pure, local,
+no gateway and no RandomX VM, which is why consensus can call it. The `c` check is the one that makes the
+anchor *the miner's*: an Ed25519 signature is self-consistent under any key, so a proof is only evidence
+about a block if its signer is the key that block's mined region commits.
+
+The gateway path (`verify_anchor`, steps that would `GET` the DataItem by id) still exists and is the
+**opt-in live-conformance arm**, not a consensus input. It is not needed for verification, because the
+proof travels with the block.
 
 ## ANS-104 DataItem Format
 
@@ -111,39 +123,56 @@ Forks → [Finality Filter: drop forks conflicting with finalized blocks]
          Best fork becomes canonical
 ```
 
-A block with `anchor_tx_id != [0u8; 32]` is considered anchored. Once the Arweave
-block containing it settles (default: 1 DarkWow block), the block is **final** and
-cannot be replaced by any competing fork — even one with superior PoW rank.
+A block is anchored when it carries a **verified anchor proof**: `header.anchor_owner` (a fresh per-block
+Ed25519 key, inside the mined region) signed a DataItem that binds `anchor_commitment(header)`, and that
+DataItem rides in the block as `header.caribina_anchor`. Such a block is **final** and cannot be replaced
+by any competing fork — even one with superior PoW rank.
 
-The finality check in `connect_block()` (`src/linear/src/chain_state.rs:1011`), verbatim:
+The finality check in `connect_block()` (`src/linear/src/chain_state.rs:1011`), verbatim — **as of
+2026-09-22**, the same predicate appearing at `:1546` in `detect_reorg` so the two sites cannot disagree:
 ```rust
 if self.finality_config.should_enforce(existing.header.finality_flags)
-    && (existing.header.anchor_tx_id != [0u8; 32]
-        || existing.header.anchor_monero_height != MoneroBlockHeight::new(0))
+    && caribina::verify_anchor_proof(&existing.header)
 { return Err(LinearError::AnchoredBlockConflict); }
 ```
 
-Two consequences of that predicate are worth naming where the code is quoted, because they are what
-`OBL-C63` and `OBL-C64` are about. It consults **no proof**: `should_enforce` is a function of the mode
-and the block's own flags, and nothing here calls `verify_anchor`. And `anchor_monero_hash` is absent
-from it, so a Monero height with a zero hash is enough to trigger enforcement.
+`verify_anchor_proof` is a **pure local function** — no network, no RandomX VM — so it can be called from
+consensus. It requires four things, each closing a way a peer could manufacture finality for a block it
+did not mine:
+
+1. the block carries an anchor proof at all;
+2. it commits a non-zero `anchor_owner`, which is **inside the mined region**, so a relaying peer cannot
+   swap it without redoing the proof-of-work;
+3. the DataItem's signature is valid **and its signer is that committed owner** — a signature is
+   self-consistent for any key, so without this comparison anyone could publish an anchor under their own
+   key for somebody else's block;
+4. its payload binds `anchor_commitment(header)`, the block's height and its timestamp, so a proof
+   published for a *different* block cannot be reused here.
+
+An unverifiable anchor confers **no** finality and — deliberately — does **not** reject the block:
+rejecting would let any peer halt the chain with a malformed relay, whereas ignoring the claim costs only
+that block's finality. Before this, the predicate read `anchor_tx_id != 0 || anchor_monero_height != 0`,
+two fields the relaying peer chooses and nothing authenticated, outside the mined region — so any peer
+could make a block permanently un-replaceable for free. That was `OBL-C63` and `OBL-C64`.
 
 ## Integration Points
 
 | Component | What it does | Status |
 |-----------|-------------|--------|
-| **Miner** (`bin/dwowd/src/rpc/miner.rs`) | Anchors after PoW, in a detached background task, before broadcast | live |
-| **Stratum** (`bin/dwowd/src/rpc/stratum.rs`) | Anchors after PoW verification, before insert — synchronously and under `linear_submit_lock` | live, blocks submissions (`OBL-C68`) |
-| **P2P Handler** (`bin/dwowd/src/proto/linear_broadcast.rs`) | — | **does not exist**: the file contains zero occurrences of `anchor` or `finality`. This row claimed the opposite until 2026-09-22 (`OBL-C63`) |
-| **Blockchain** (`src/linear/src/chain_state.rs`) | Rejects insertion of a block claiming an anchor — without verifying the claim | live, unverified (`OBL-C63`) |
-| **Verification** (`src/linear/src/caribina/verify.rs`) | Fetches the DataItem, checks the signature and the payload | **dead code outside tests** (`OBL-C63`) |
-| **BlockHeader** (`src/linear/src/block.rs`) | Carries `anchor_tx_id: [u8; 32]` (zero = no anchor), plus `anchor_monero_height`, `anchor_monero_hash`, `finality_flags` | live |
+| **Miner process** (`bin/dwowd/src/lib.rs` `miner_task`) | Builds the proof after the nonce and attaches it **before** `accept_block`; publishes asynchronously | live (2026-09-22) |
+| **Miner RPC** (`bin/dwowd/src/rpc/miner.rs`) | Same shape. Before this it anchored in a detached task that never touched the header, so every block it committed was unanchored | live (2026-09-22) |
+| **Stratum** (`bin/dwowd/src/rpc/stratum.rs`) | Builds and attaches the proof after PoW verification and before insert; publishes with `linear_submit_lock` **released** | live (`OBL-C68` fixed) |
+| **P2P Handler** (`bin/dwowd/src/proto/linear_broadcast.rs`) | — | **does not exist**: zero occurrences of `anchor` or `finality`. This row claimed the opposite until 2026-09-22 |
+| **Blockchain** (`src/linear/src/chain_state.rs`) | Rejects insertion of a block carrying a **verified** anchor proof, at two sites that share one predicate | live, verified (2026-09-22) |
+| **Verification** (`src/linear/src/caribina/verify.rs`) | `verify_anchor_proof` — pure and local, called from both enforcement sites. `verify_anchor` (gateway fetch) remains the opt-in live-conformance arm | live |
+| **BlockHeader** (`src/linear/src/block.rs`) | Carries `anchor_owner: [u8; 32]` (**inside** the mined region) and `caribina_anchor: Option<Vec<u8>>`; still carries `anchor_tx_id`, `anchor_monero_height`, `anchor_monero_hash`, `finality_flags` | live |
 
-The four finality fields are **excluded from the mining blob** — `anchor_tx_id` is set after PoW is
-found, so the block hash does not change after anchoring. That has a consequence the earlier text did
-not draw out: proof-of-work is over the blob, so it authenticates none of those four fields, and one
-PoW solution admits unlimited distinct headers differing only in them. A relaying peer can strip, swap
-or invent an anchor at no cost. See `OBL-C64`.
+**What is inside the mining blob and what is not, and why.** `anchor_owner` is inside it, because it is
+generated *before* mining and is what authenticates the anchor: a relayer cannot re-attribute a proof
+without redoing the proof-of-work. The other fields are outside it, because they are set *after* the nonce
+is found and must not invalidate the solution they annotate. That is safe now because nothing decides
+finality from them — the enforcement predicate above reads the verified proof, and `anchor_tx_id` carries
+the genesis network magic rather than a finality signal.
 
 ## Finality Flow
 
@@ -157,19 +186,21 @@ sequenceDiagram
 
     Miner->>dwowd: Submit PoW solution
     dwowd->>dwowd: Verify PoW, assemble block
-    dwowd->>ArDrive: POST ANS-104 DataItem (hash || timestamp || height)
-    ArDrive-->>dwowd: TX ID (32 bytes)
-    dwowd->>dwowd: Set anchor_tx_id in header
-    dwowd->>dwowd: Set finality_flags |= CARIBNIA
+    dwowd->>dwowd: Commit a fresh anchor_owner INTO the mined region
+    dwowd->>dwowd: Sign a DataItem binding anchor_commitment(header)
+    dwowd->>dwowd: Attach it as header.caribina_anchor (before accept_block)
     dwowd->>Peer: Broadcast block
+    Peer->>Peer: verify_anchor_proof(header) — local: signature, signer == anchor_owner, payload binds the commitment
     Peer->>Peer: connect_block() — enforce if mode=Always
-    Note over Peer,Arweave: NOT IMPLEMENTED (OBL-C63):<br/>the peer never fetches the<br/>DataItem and never verifies it
+    dwowd->>ArDrive: POST the DataItem (async, best-effort)
+    ArDrive-->>dwowd: TX ID (informational)
+    Note over dwowd,ArDrive: publication is NOT what confers finality —<br/>the carried proof is. If the POST fails the<br/>block keeps its finality and loses only the<br/>external anchor, which is logged as a degradation.
 ```
 
-**Only the top half of that diagram is real.** The peer performs no `GET`, no signature check and no
-payload comparison; it enforces on the header fields it received. The dashed-from-none steps are drawn
-in the note rather than as messages because a sequence diagram that shows them as messages is how the
-gap stayed invisible.
+**The peer verifies locally and needs no gateway.** Before 2026-09-22 it verified nothing at all — it
+enforced on header fields it received, and the diagram showed a `GET` that no code performed. Note also
+which arrow is *not* a dependency: the POST happens after the block is built and never gates acceptance,
+so an Arweave outage cannot stall the chain.
 
 ## Fork Choice with Finality Filter
 
@@ -289,16 +320,16 @@ fork choice.
 
 | Property | Monero Anchor (p2pool) | Caribina (Arweave) |
 |----------|----------------------|---------------------|
-| Status | **anchoring live, anchor fields never set** — `mm_rpc.rs:630-631` writes zeroes, so the gadget has never been in effect (`OBL-C67`) | **anchoring live, verification dead code** (`OBL-C63`) |
+| Status | **anchoring live; the anchor fields are never set and the Monero block's own PoW is never checked** (`OBL-C67`), so a fabricated merge-mined block is accepted | **anchoring and verification live** (2026-09-22); enforcement requires a verified proof |
 | Requires p2pool | Yes | No |
-| Requires Monero node | Yes (for full verification) | No |
+| Requires Monero node | Yes, and `get_block_by_hash` is being added for the admission policy | No |
 | Requires funding | No (merge mining) | No (ArDrive free tier) |
-| Settlement time | ~6 min (3 Monero blocks) | ~2 min (1 DarkWow block) |
+| Settlement | Not read by this chain — nor is Arweave settlement; see the note above | Not read by this chain, by design (`OBL-C66`, accepted) |
 | Consensus mechanism | RandomX PoW | Proof-of-Storage |
 | Key management | Monero wallet | Per-block Ed25519 cycle |
 | Protects native miners | No | Yes |
 | Protects merge miners | Yes | Yes |
-| Verification | monerod RPC or plausibility — **never called** (`OBL-C63`) | Arweave gateway HTTP — **never called** (`OBL-C63`) |
+| Verification | Nothing yet; `verify_monero_anchor` cannot run in consensus (network-bound) | `verify_anchor_proof` — pure and local, called from both enforcement sites |
 
 ## Toy Model Results
 
@@ -324,14 +355,19 @@ hashpower:
 > superseded circular rule and asserts the two rules disagree, so the circularity cannot return
 > silently.
 >
-> **The numbers above survived the correction unchanged** (reproduce with
-> `python3 contrib/docker/darkwow-testnet/merge_mining_model.py`, which is now a gate in
-> `scripts/run-all-tests.sh`). That is the useful result: the claim was not an artefact of the
-> circularity — but nothing before this could have told the difference, which is why the correction
-> mattered. What remains untrue is the *node's* half: the Rust still enforces on unverified header
-> fields, so it implements a weaker rule than the corrected model. Closing that is `OBL-C63`–`OBL-C66`;
-> the model's rule is exported for it as
-> `contrib/model/fixtures/finality_fork_vectors.json`.
+> **The numbers above survived the correction unchanged**, and the node now implements the model's rule
+> (reproduce the table with `python3 contrib/docker/darkwow-testnet/merge_mining_model.py`, a gate in
+> `scripts/run-all-tests.sh`). Two things are worth keeping straight now that both halves have moved:
+>
+> - **The model's rule and the node's rule are not identical, and should not be.** The model counts
+>   settlement in Arweave blocks; the node does **not** count settlement at all, because it cannot
+>   (`OBL-C66`, accepted). What the node enforces is the model's *authenticity* half — a verified anchor
+>   proof from the key the block commits — which is the half that does the work in the table above. So the
+>   numbers survive for a reason the model states and the node enforces, not by coincidence.
+> - **This was the whole point of correcting the model.** Its earlier rule measured settlement on the
+>   chain under attack, so a 51% miner advanced its own anchors toward finality by mining, and the table
+>   could not have distinguished a real result from that circularity. Nothing before the correction could
+>   have told the difference.
 
 ## Source Files
 
