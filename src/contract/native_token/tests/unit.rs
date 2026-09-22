@@ -218,6 +218,37 @@ mod tests {
         assert!(result.is_err(), "Nullifier::from_bytes([0u8;32]) must return Err (zero rejection)");
     }
 
+    /// Rule 3's sibling — `from_bytes` rejects a **non-canonical** encoding too, and only the zero half
+    /// was tested (`OBL-C9`, one of the register's UNCLEAR rows).
+    ///
+    /// A 32-byte little-endian value at or above the Pallas base modulus is not a field element, so
+    /// `from_repr` returns `None` and `from_bytes` errors. That matters beyond tidiness: if a
+    /// non-canonical encoding were accepted, one nullifier would have **two** byte representations, and a
+    /// spent-nullifier set keyed on raw bytes would treat one nullifier as two — a double-spend window.
+    ///
+    /// The test lives here rather than in `src/sdk` deliberately: this contract's `SOURCE_MANIFEST` globs
+    /// `find src -type f -name '*.rs'`, which does not reach `tests/`, so adding it invalidates no
+    /// artifact. A test added to the sdk would invalidate all 32.
+    #[test]
+    fn test_nullifier_rejects_non_canonical_encoding() {
+        // All-ones is far above the Pallas modulus, so `from_repr` must reject it.
+        let result = dwow_native_token_contract::model::Nullifier::from_bytes([0xFFu8; 32]);
+        assert!(
+            result.is_err(),
+            "a non-canonical 32-byte value must be rejected — accepting one gives a single nullifier two \
+             encodings, and a byte-keyed spent set would see them as two nullifiers"
+        );
+
+        // Control: the assertion above would also hold against a `from_bytes` that rejected everything,
+        // so a canonical value must still be accepted.
+        let mut canonical = [0u8; 32];
+        canonical[0] = 0x2A;
+        assert!(
+            dwow_native_token_contract::model::Nullifier::from_bytes(canonical).is_ok(),
+            "control: a canonical value must be accepted, or the rejection above proves nothing"
+        );
+    }
+
     #[test]
     fn test_nullifier_from_bytes_nonzero() {
         // Use a valid canonical representation - 1 as a base field element
