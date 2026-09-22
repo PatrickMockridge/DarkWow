@@ -61,21 +61,45 @@ ROW_RE = re.compile(r'^\|\s*(OBL-[CZT]\d+)\s*\|(.*)$', re.M)
 # of these words **in bold**. FIXED is accepted as a synonym of CLOSED (the finality rows use it);
 # NEW and done are non-statuses that appear in the same position and are counted separately so they
 # are visible rather than silently treated as statuses.
+# Two vocabularies, because two classes of word. The STRONG set is technical — a word that in this
+# register can only be a status — and it drives the headline count and the unmarked list. The WEAK set
+# is ordinary English that a status happens to share: `nothing`, `false`, `new`, `open`, `done` all
+# occur in propositions ("**Nothing static is disclosed**" is OBL-Z9's prose, not its status; "**the
+# converse is false**" is OBL-T6's). Counting them alongside the strong ones produced ten NOTHINGs and
+# twenty-one multi-token rows, which is noise masquerading as structure. They are still reported —
+# a row whose only marker is a weak word is *not* silently unmarked — but separately, so the reader
+# can tell a measurement from an accident.
 VOCAB = (
-    ("CLOSED",      r'\bCLOSED\b'),
-    ("FIXED",       r'\bFIXED\b'),
-    ("SATISFIED",   r'\bSATISFIED\b'),
-    ("RESTATED",    r'\bRESTATED\b'),
-    ("ACCEPTED-WITH-REASON", r'\bACCEPTED-WITH-REASON\b'),
-    ("OPEN",        r'\bOPEN\b'),
-    ("FAILS",       r'\bFAILS\b'),
-    ("PARTLY",      r'\bpartly\b'),
-    ("PROVED",      r'\bproved\b'),
-    ("DEFINITIONAL", r'\bdefinitional\b|\bdefinition\b'),
-    ("MECHANIZED",  r'\bmechanized\b'),
-    ("NEW",         r'\bNEW\b'),
-    ("done",        r'\bdone\b'),
+    ("CLOSED",      r'closed'),
+    ("FIXED",       r'fixed'),
+    ("SATISFIED",   r'satisfied'),
+    ("RESTATED",    r'restated'),
+    ("ACCEPTED-WITH-REASON", r'accepted-with-reason'),
+    ("FAILS",       r'fails'),
+    ("PARTLY",      r'partly'),
+    ("PROVED",      r'proved'),
+    ("DEFINITIONAL", r'definitional'),
+    ("MECHANIZED",  r'mechanized'),
+    ("OPEN",        r'open'),
 )
+WEAK = (
+    ("FALSE",       r'false'),
+    ("NOTHING",     r'nothing'),
+    ("NEW",         r'new'),
+    ("done",        r'done'),
+)
+
+# A token counts anywhere inside a bold span, case-insensitively. Both halves of that were decided by
+# the report disagreeing with the register, and the residue is named rather than hidden:
+#
+#  * case: the register writes lowercase ("partly", "proved") while every marker added on 2026-09-22 is
+#    uppercase ("PARTLY", "DEFINITIONAL"), so a case-sensitive pattern counted the new ones as unmarked.
+#  * position: anchoring the token to the *start* of a span was tried and reverted. It removed
+#    incidental prose ("a **new template**") but also removed real markers that name their status
+#    mid-span — `OBL-Z12`'s "the syntactic half is now **mechanized**" — and the unmarked list is this
+#    report's primary output, so missing a marked row is the worse error.
+COMPILED = tuple((name, re.compile(r'\b(?:' + pat + r')\b', re.I)) for name, pat in VOCAB)
+COMPILED_WEAK = tuple((name, re.compile(r'\b(?:' + pat + r')\b', re.I)) for name, pat in WEAK)
 
 # Count only inside **bold** spans. A row's *prose* legitimately names other rows' statuses ("this
 # closes as a consequence of OBL-C52's fix", "the concern folds into"), and an unbolded mention is a
@@ -92,17 +116,21 @@ rows = []
 for m in ROW_RE.finditer(text):
     rid, body = m.group(1), m.group(2)
     bolded = " ".join(BOLD_RE.findall(body))
-    found = [tok for tok, pat in VOCAB if re.search(pat, bolded)]
-    rows.append((rid, found))
+    found = [tok for tok, pat in COMPILED if pat.search(bolded)]
+    weak = [tok for tok, pat in COMPILED_WEAK if pat.search(bolded)]
+    rows.append((rid, found, weak))
 
 seen = [r[0] for r in rows]
 dupes = sorted(i for i, c in collections.Counter(seen).items() if c > 1)
 
 hist = collections.Counter()
 unmarked, multi = [], []
-for rid, found in rows:
+weak_only = []
+for rid, found, weak in rows:
     if not found:
         unmarked.append(rid)
+        if weak:
+            weak_only.append((rid, weak))
         continue
     if len(found) > 1:
         multi.append((rid, found))
@@ -113,7 +141,7 @@ print(f"register: {path}")
 print(f"rows: {len(rows)}   unique ids: {len(set(seen))}"
       + (f"   DUPLICATE IDS: {', '.join(dupes)}" if dupes else ""))
 print("")
-print("rows per status token (a row with two tokens is counted under both):")
+print("rows per status token — UNRELIABLE, read the caveat below before quoting any number:")
 for token, n in sorted(hist.items(), key=lambda kv: (-kv[1], kv[0])):
     print(f"  {n:>3}  {token}")
 print(f"  {len(unmarked):>3}  (no status token at all)")
@@ -122,10 +150,25 @@ print(f"rows carrying more than one token ({len(multi)}) — read these, the cou
 for rid, found in multi:
     print(f"  {rid}: {', '.join(found)}")
 print("")
+print(f"rows whose only marker is a weak word — ordinary English, may be prose not status ({len(weak_only)}):")
+for rid, weak in weak_only:
+    print(f"  {rid}: {', '.join(weak)}")
+print("")
 print(f"rows with no status token ({len(unmarked)}):")
 for i in range(0, len(unmarked), 12):
     print("  " + "  ".join(unmarked[i:i + 12]))
 
+print("")
+print("WHY THE COUNTS ABOVE ARE NOT EVIDENCE. They are word occurrences inside bold spans, and this")
+print("register's prose contains every one of these words in non-status senses. Three real examples from")
+print("this file, each of which the counts get wrong: \"**partly closed.**\" is PARTLY but counts as both")
+print("PARTLY and CLOSED; a marker reading \"bounded rather than **closed**\" counts as CLOSED while saying")
+print("the opposite; \"**ACCEPTED-WITH-REASON 2026-09-22, premise restated.**\" counts as RESTATED as well")
+print("as its real token. Two vocabularies were tried and neither fixes this — anchoring to the span's")
+print("start drops real mid-span markers (OBL-Z12), and matching anywhere admits the negations above.")
+print("What IS reliable, and what this script is for, is the list of rows with **no** status marker: a row")
+print("absent from that list has one, and that is a fact about the file rather than about prose. The real")
+print("repair is a convention — a dedicated status column, or a generated table — not a better regex.")
 print("")
 print("summary sentences the register makes about itself (compare against the counts above):")
 for line in text.splitlines():
