@@ -854,7 +854,7 @@ recorded rather than resolved.
 | OBL-C17 | The WASM non-deterministic-feature scanner rejects threads and atomics (`0xFE`), with Rust-stdlib-aware filtering rather than by being disabled | `H-7` (red-team, HIGH); red-team `RC-I` | H |
 | OBL-C18 | Chain traversal in `get_next_work_required` is bounded, or the cache that makes it O(1) exists | `M-1` (red-team, MEDIUM) | M |
 | OBL-C19 | A call that exceeds its wall-clock budget is terminated, not merely warned about | `M-13` (red-team, MEDIUM) | M |
-| OBL-C20 | Public-input ordering is verified by parse-and-compare, not by count | `M-5` (red-team, MEDIUM); partially `OBL-Z2`, which now compares position for position across 68 pairs | M |
+| OBL-C20 | Public-input ordering is verified by parse-and-compare, not by count | `M-5` (red-team, MEDIUM); partially `OBL-Z2`, which now compares position for position across 68 pairs. **OPEN — this row was recorded as satisfied on 2026-09-22 and is not**: the gate it cited (`check-circuit-metadata-alignment.sh`) compared counts, over 11 of 32 contracts. The ordering comparison now exists and is advisory; see `OBL-C78`/`OBL-C79` | M |
 | OBL-C21 | Bridge verification is real cryptography at every chain, not a shape check: Monero DLEq, Ethereum MPT, Zcash Groth16, Aztec PLONK all verify rather than returning "not yet implemented" | `C-1`, `C-3`, `C-4` (red-team, CRITICAL, all PARTIAL); `RC-A`'s structural fix `SC-1` (`Verified<T>`) not implemented | C |
 | OBL-C22 | Reorg recursion (`perform_reorg`) has a depth cap | `M8` (sync-audit) | H |
 | OBL-C23 | The client handshake read has a timeout | `M7.3` (sync-audit) | M |
@@ -957,8 +957,8 @@ hash — is correct for a real Monero block, which nothing had verified.
 
 | ID | Proposition | Source | Sev |
 |---|---|---|---|
-| OBL-C63 | Finality is conferred by a *verified* anchor, not by a header field the relaying peer chooses. `chain_state.rs:1011` and `:1546` raise `AnchoredBlockConflict` on `anchor_tx_id != 0 \|\| anchor_monero_height != 0` alone, and every verifier above is dead code outside tests, so a node enforces finality on claims it never authenticates. The direction that matters is not only "an attacker cannot reorg past an anchor" but its mirror: **a block that asserts an anchor it cannot prove confers no finality at all**, because otherwise the same free field is a chain-freeze primitive available to any peer with one accepted block and no hashpower | `chain_state.rs:1011`, `:1546`; `caribina/verify.rs:41`; `finality.rs:122`,`:136` | C |
-| OBL-C64 | The finality fields are authenticated by the proof-of-work that produced the block. They are deliberately outside the mining blob — `block.rs:1094` states it and `block.rs:1137-1138` asserts that setting `anchor_tx_id` must not change the blob — and PoW is over the blob, so **one PoW solution yields unlimited distinct headers** differing only in `anchor_tx_id`, `anchor_monero_height`, `anchor_monero_hash` and `finality_flags`. A relaying peer can strip, swap or invent an anchor for free. The impact is confined to finality semantics (the fields that *are* in the blob — target, timestamp, merkle root, reward — cannot be varied), which is why this is a finality row and not a general block-malleability row | `block.rs:1094`, `:1137`; `block.rs:277` (blob layout) | C |
+| OBL-C63 | Finality is conferred by a *verified* anchor, not by a header field the relaying peer chooses. **CLOSED 2026-09-22 (`5c6bf01a7c`).** Both enforcement sites (`chain_state.rs:1011`, `:1546`) now require `caribina::verify_anchor_proof(&header)` — a pure local function, so consensus can call it — and share one predicate, so a block `connect_block` treats as un-replaceable cannot be one `detect_reorg` is willing to reorg away. The mirror direction the row insisted on holds: a block asserting an anchor it cannot prove confers **no** finality, and is deliberately not rejected either, because rejection would let any peer halt the chain with a malformed relay whereas ignoring the claim costs only that block's finality. That asymmetry is what removes the free chain-freeze. Proven by the positive control and the forged-key control in `chain_state::tests::test_finality_conferred_without_any_anchor_verification`, and the eight negatives in `caribina::verify::tests` | `chain_state.rs:1011`, `:1546`; `caribina/verify.rs` | C |
+| OBL-C64 | The finality fields are authenticated by the proof-of-work that produced the block. **CLOSED for the field that decides finality, 2026-09-22 (`5c6bf01a7c`).** `anchor_owner` — a fresh per-block Ed25519 public key — is now **inside** the mining blob (bytes 260..292; blob 260 → 292), so a relaying peer cannot re-attribute an anchor to a block it did not mine without redoing the proof-of-work, and one PoW solution no longer admits headers differing in the authenticating field. The four older fields (`anchor_tx_id`, `anchor_monero_*`, `finality_flags`) remain outside the blob, because they are set after the nonce and must not invalidate the solution they annotate — and they are no longer consulted for finality at all, so their malleability buys an attacker nothing. Asserted by `block::tests::test_anchor_owner_is_pow_covered_but_post_mining_fields_are_not`, which is the flipped form of the characterization test this row was filed against | `block.rs` (`to_mining_blob`, `ANCHOR_OWNER_OFFSET`) | C |
 | OBL-C65 | Enforcement never outruns verification. `should_enforce` ignores `caribina_enabled` entirely, while `should_verify_anchor` returns `false` whenever `caribina_enabled == false` (`finality.rs:123-125`), so `--finality-disable-caribina` in the default `Always` mode yields a node that enforces anchors it has no intention of ever checking. What is missing is not a test but an *invariant*, and it is finite enough to state exhaustively: `∀ (mode, flags, caribina_enabled, monero_enabled): should_enforce ⇒ should_verify` | `finality.rs:113-133` | H |
 | OBL-C66 | Caribina anchors a block to a *settled* Arweave block. Nothing establishes settlement: `verify_payload` compares the DataItem payload's own timestamp — chosen by the anchoring miner — against the DarkWow block timestamp within ±30 minutes, and never fetches the Arweave block containing the DataItem, so the check is satisfied by construction. The gateway constant is `https://ardrive.net` while `caribina.md:46` documents `arweave.net`. **Settlement cannot be a consensus rule** — it lives on another chain, and consensus must be a pure function of local data — so the achievable form is an authenticated proof carried in the block plus a node-local settle policy, and the gap between "settled" and "published" must be recorded rather than narrowed | `caribina/verify.rs:110-115`, `:14`; `caribina.md:46` | C |
 | OBL-C67 | The Monero anchor is derived from the Monero proof, not asserted beside it. The block already carries `PowSource::Monero(MoneroPowData)` — the receipt-verified Monero data — and `anchor_monero_height`/`anchor_monero_hash` are a second, independent, unauthenticated claim about the same thing. Production never fills them: `mm_rpc.rs:630-631` builds every merge-mined block with `MoneroBlockHeight::new(0)` and `[0u8; 32]`, so **the Monero anchoring gadget has never been live**. `anchor_monero_hash` is also absent from both enforcement predicates, so `anchor_monero_height = 1` with a zero hash is sufficient. And the Monero block's own proof-of-work is never checked anywhere in `dwowd` — the code's own `TODO(HAZOP F3)` at `mm_rpc.rs:574` delegates that to p2pool's colocated monerod — so a fabricated Monero block would confer finality on any chain that did set the fields | `mm_rpc.rs:574`, `:630-631`; `monero/verify.rs:38`; `chain_state.rs:1012`, `:1548` | C |
@@ -1085,6 +1085,8 @@ number; 66 was a pattern-matching artifact.
 | OBL-C74 | Every contract declares in its manifest the barbs each action requires, the capabilities it defines, its note schema and its capability primitives — the declaration `type-system.md` §13 and `ocap.md` §7 make the basis of `wallet_construct` | `manifest.md`; `ocap.md` §7; `contract-wasm-type-system.md` §A.2.2, §A.0.3, §13 | H |
 | OBL-C75 | The id a host uses to key state is the id its circuit derives and `get_metadata` publishes — the host does not independently recompute it from data the client cannot know | `safety.md` RC5 (one fact, two sources of truth); `contract-wasm-type-system.md` §A.1.6, §A.2 | H |
 | OBL-C77 | A metadata arm for a callable non-ZK function returns an **encoded** empty public-input vector, not a bare empty `Vec` | `execution.rs:423`; `native_token/src/entrypoint/mod.rs:922` (`plaintext_call_get_metadata`, the reference); contract-standards.md §3 | H |
+| OBL-C78 | A contract's `get_metadata` publishes, for each circuit, a public-input vector whose **count and order** agree with the circuit's `constrain_instance` list; the tx pair is `poseidon_hash([3, tx_commitment, tx_nonce])` and is never a literal zero | `pool_stake/src/client/create_pool.rs:84-90` (the worked template); `src/sdk/src/crypto/constants.rs:57`; `check-circuit-metadata-alignment.sh`; `privacy.md` §5.3 | C |
+| OBL-C79 | A checker enumerates the **whole class** it claims to check, reports the scope it did not examine, and reconciles the set it walked against the set it declared | `check-circuit-metadata-alignment.sh:71` (`GENESIS`, the counter-example); the four gates that already glob (`check-circuit-domain-separation.sh:27`, `check-pubkey-binding.sh:44`, `check-artifact-freshness.sh:67`, `check-phase-host-functions.sh:175`) | H |
 
 **OBL-C72 — read-in-apply. 66 sites, 9 contracts, zero genesis.** §A.4.7 states the rule as a list
 of four denied functions and §B.2.2 supplies the consequence verbatim: *"An `apply` function that
@@ -1181,7 +1183,12 @@ the bare-empty arm appears for:
   `RegisterRiskTypeV1`, `UnderwriteV1`, `FileClaimV1`, `ResolveClaimV1`, `WithdrawPremiumV1`,
   `UpdatePremiumV1`, `RetireRiskTypeV1`, `CloseMarketV1`, `DeactivateUnderwriterV1`,
   `ResolveClaimWithCapabilityV1`), `tender` 3 (`CancelTenderV1`, `RejectBidV1`,
-  `CreateTenderWithCapabilityV1`), `pool_stake` 5 (fixed).
+  `CreateTenderWithCapabilityV1`), `pool_stake` 5 (fixed), and **`labor_market` 3**
+  (`CancelV1`, `CreateJobWithCapabilityV1`, `CreateJobWithMilestonesAndCapabilityV1`,
+  `entrypoint.rs:274-277`, `:341`, `:359`) — added 2026-09-22, having been absent from this
+  scope in its first revision. `CancelV1` carries the comment *"CancelV1 has no ZK circuit"*: the
+  intent is right and the encoding is wrong, which is why it is the arm that most looks
+  deliberate and is still uncallable.
 - **Unreachable by construction** — the `Initialize` arm in `box`, `purse`, `multisig`, `dex`,
   `otc_swap` and `escrow`. Initialization is the separate `__initialize` entrypoint, so no
   `ContractCall` ever dispatches to that arm. Recorded because it is the reason three *genesis*
@@ -1202,17 +1209,87 @@ The "version every state struct" rule was not measured at all: the scan counted 
 teaching — a scan that reads one side of a pair manufactures defects — and it is recorded here rather
 than left in a scratch file.
 
+**OBL-C78 — the host's public inputs and the circuit's instances must agree in count *and* order.**
+The rule this row names is old; what is new is that it is measurable, and that measuring it shows the
+class was never closed. `check-circuit-metadata-alignment.sh` has always been described as comparing
+"position-for-position, three ways" — `circuit constrain_instance order == entrypoint metadata push
+order == client to_vec order` — while the code compared **counts**, and only for the eleven contracts
+in its allowlist. So `subscription/cancel` passed the gate while pushing `pallas::Base::zero()` at
+**all four** of the positions its circuit constrains, and `stablecoin/init` passed while pushing
+zeros where its circuit constrains `tx_binding` and `tx_nonce`. A vector of the right length whose
+entries are wrong is what "counts agree" cannot express.
+
+The convention is **not** an open design question, and the register previously deferred it as one
+(*"it needs a decision about the convention, not a patch"*, on `dao_escrow`). It is implemented and
+green in genesis: `tx_binding = poseidon_hash([3, tx_commitment, tx_nonce])`, the domain constant at
+`src/sdk/src/crypto/constants.rs:57`, carried in params and published by
+`box/src/entrypoint.rs:70-83` and `purse/src/entrypoint.rs:75-106`, with clients at
+`promissory_note/src/client/issue.rs:181`, `register_type.rs:187`, `revoke.rs:293`. The worked
+template is `pool_stake/src/client/create_pool.rs:73-144` — the contract repaired earlier in this
+campaign — whose four parts are `compute_tx_binding()`, `compute_public_inputs()`, `to_witnesses()`
+and `*_v1_proof()`, and whose comment names what it replaced: *"This was a literal `Base::zero()`
+written as **both** the public input and the witness, while the circuit constrains the witness to
+equal this hash — so the proof was unsatisfiable, not merely unbound."*
+
+Seven contracts were known to be dead at their first ZK endpoint, in two shapes — **literal zero**
+(`dao_escrow`, `drain_protection`, `pool_stake`, `subscription`: the client satisfies the circuit
+with a value the circuit rejects, so the proof is unsatisfiable) and **omitted** (`insurance_market`,
+`labor_market`, `tender`: the host publishes no tx pair at all while the circuits constrain both, so
+the proof is unverifiable). `pool_stake` is fixed. The rest are measured per circuit in the plan
+file, read from both sides of the pair: `labor_market` publishes three values where `create_job`'s
+circuit constrains five, publishes `dao_escrow_bulla` where `dispute` requires `dispute_reason_hash`,
+publishes `milestone_count` and `completed_payment` that `refund` does not constrain, and leaves
+`milestone_payment`'s namespace pushed by nobody. This is why those suites are dead, and why every
+other fix on those contracts lands unverified until it is closed.
+
+**OBL-C79 — a gate must name what it did not check, and prove it checked the rest.**
+`scripts/check-circuit-metadata-alignment.sh:71` defined an eleven-name list called `GENESIS` (holding
+three non-genesis contracts, added one at a time as each was repaired) and iterated only that list.
+The gate examined **11 of 32** contracts and printed `Passed: 70  Failed: 0` /
+`PASS: All circuits have matching metadata push counts`, saying nothing about the 21 it skipped —
+every broken-proof contract among them. `script/circuit_metadata_exceptions.txt` was empty, so this
+was not a declared exception: the coverage was simply absent, and the scope was not reported. This is
+the OBL-C78 class surviving inside the instrument built to detect it.
+
+The other four gates do **not** share the shape, which bounds the row: `check-circuit-domain-
+separation.sh:27`, `check-pubkey-binding.sh:44`, `check-artifact-freshness.sh:67`,
+`check-phase-host-functions.sh:175` and `script/circuit_instance_derivation.py:520` all glob the whole
+tree. This was the only allowlist.
+
+Widening the coverage then exposed three latent parse bugs in the same gate, each of which would have
+been filed as a defect against correct code — and did, before being caught by reading the file:
+a path-qualified constant (`crate::DAO_ESCROW_ZKAS_INIT_NS_V2.to_string()`, which the pattern
+`([A-Z0-9_]+)` cannot match because `crate` is lowercase) accounted for 34 phantom "no metadata push
+carries" findings; the `let zk_public_inputs = vec![(NS.to_string(), vec![…])]` idiom, used by
+`dao_escrow` and `game_room` with no `push` call at all, accounted for 19 more; and `game_room`'s
+`get_metadata` living in `src/lib.rs:236` rather than an entrypoint file accounted for twelve. None
+of the three was visible while the allowlist constrained which contracts were parsed.
+
+The generalisation is the row. A checker's coverage is part of its claim, and a checker that reports
+a verdict must report the scope it did not examine — which is why the script now prints its covered
+and circuit-free sets, reconciles the walked set against the declared set so a future `continue`
+cannot shrink coverage invisibly, and refuses a hand-picked single contract that the enumeration did
+not itself find.
+
+**And the register recorded this gate as satisfying an obligation it was not satisfying.** `OBL-C20`
+— *"Public-input ordering is verified by parse-and-compare, not by count"* — was listed under
+"Verified 2026-09-22: satisfied, with the evidence", citing this script as comparing
+"position-for-position, three ways". It compared counts. **`OBL-C20` is not satisfied**, and the
+verification pass that declared it satisfied is itself an instance of the failure the register
+exists to catch: the evidence was the script's *description of itself* rather than its code.
+
 ## Verified 2026-09-22: what these rows actually are
 
 Every row added or already present was re-read against the code before a remediation campaign was
-planned against it. **Twenty-two are satisfied** and need no fix; five rest on premises that have
-moved; one is worse than its row said. Recording this is the point — a campaign that starts by
+planned against it. **Twenty-one are satisfied** and need no fix; five rest on premises that have
+moved; one is worse than its row said; and **one was recorded as satisfied and is not** — `OBL-C20`,
+corrected on 2026-09-22 when the gate it cited was read instead of trusted (`OBL-C79`). Recording
+this is the point — a campaign that starts by
 fixing things that are already fixed is the failure mode this register exists to prevent.
 
 **Satisfied, with the evidence.** `OBL-C18` — the cached `target[H-1]` fast path
 (`src/linear/src/consensus.rs:359`, the "M-1 fix") bounds the traversal by `TIMESTAMP_WINDOW`, not by
-genesis. `OBL-C20` — `scripts/check-circuit-metadata-alignment.sh` compares position-for-position,
-three ways. `OBL-C23` — `HANDSHAKE_TIMEOUT = 15s` (`src/linear/src/sync_connection.rs:70`, carrying
+genesis. `OBL-C23` — `HANDSHAKE_TIMEOUT = 15s` (`src/linear/src/sync_connection.rs:70`, carrying
 the `M7.3` reference). `OBL-C24` — `disconnect_block` reverses all ten trees `connect_block` writes,
 including `uncles`/`uncles_by_height` ("M7 — symmetric") and `contracts` via the per-block undo batch.
 `OBL-C34` — the handshake now **admits** a peer presenting no genesis, validating it downstream

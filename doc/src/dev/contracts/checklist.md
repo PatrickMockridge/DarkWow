@@ -112,6 +112,12 @@ For any new or modified circuit:
   through params. The invariant is `metadata[i] == proof_instance[i]` for all `i`. See `RC5`.
 - [ ] **Public-input ordering.** The circuit's `constrain_instance` order, the client's `to_vec()`
   order, and the entrypoint's instance vector are identical, position for position. See `RC5`.
+  **The gate does not enforce this for you.** `scripts/check-circuit-metadata-alignment.sh` fails on
+  a *count* mismatch and only warns on order, because mapping a circuit variable to a Rust
+  expression is a heuristic — so a vector of the right length with the wrong entries passes the
+  hard check. Read the circuit's `constrain_instance` list and print it beside your
+  `to_vec()` before changing either; `pool_stake`'s `create_pool` was transposed exactly this way,
+  and no proof could verify. See `OBL-C78`.
 - [ ] **Merkle hash parity.** Every hash used by a circuit opcode has an off-circuit implementation
   producing identical output — `merkle_root` is Sinsemilla via `OrchardHashDomains::MerkleCrh` while
   `MerkleNode::combine` is Poseidon. See `RC5`.
