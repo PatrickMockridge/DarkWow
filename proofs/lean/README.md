@@ -234,6 +234,14 @@ on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
 - **Nothing below is a claim about a build you have not run.** `lake build DarkFi` completes clean
   as of 2026-09-22 (no errors, no warnings — see "What the build currently says" above), but the
   build is what makes every statement below true, so run it before quoting any of them.
+- **The ρ-calculus is mechanized; its binding convention is not.** `Semantics/` defines the syntax,
+  structural congruence and a labelled transition system, and proves §1.2's parallel laws and both
+  barb facts as theorems about processes. What it does **not** have: a binding convention for `bang`,
+  so `Occurs` counts bound occurrences as well as free ones — which is why the restriction rule's
+  freshness is `FreshUpToScong`, the strongest condition expressible without one, and *stronger* than
+  the standard rule's, rejecting extrusions the literature permits; a substitution layer, so
+  `Label.tau` has no rule and every statement is about the free-action fragment; and weak bisimulation,
+  which is what would make `type-system.md` §9.2's `parallelMerge_correctness` stateable.
 - **Halo2 constraint system semantics are not modeled.** We prove properties of the
   mathematical functions the opcodes implement, not that the Halo2 gate/region/
   copy-constraint system correctly implements those functions.
@@ -351,6 +359,20 @@ proofs/lean/
         ├── ECOps.lean          # EC operations, Orchard-class vulnerability detection
         ├── SupplyChain.lean    # Multi-block cumulative supply induction
         ├── HAZOP.lean          # HAZOP risk matrix and cross-cutting patterns
+        ├── Semantics/          # The ρ-calculus: syntax, congruence, transition system
+        │   ├── Proc.lean       # Processes with names folded in; quote/eval
+        │   ├── Congruence.lean # Structural congruence, and the freshness it needs
+        │   └── LTS.lean        # Transitions, barbs, and strong bisimulation
+        ├── Combinatorial/      # L1/L2 combinatorial state space
+        │   ├── StateSpace.lean      # L1 state space types
+        │   ├── Transitions.lean     # State transition combinatorics
+        │   ├── ComplexityJump.lean  # L2→L1 complexity jump theorems
+        │   ├── CompositionBounds.lean # O-cap composition bounds
+        │   ├── CeilingDerivation.lean # Derivation of the L1 complexity ceiling
+        │   ├── Combinations.lean    # Growth in the number of contracts
+        │   ├── Limits.lean          # L1 practical limits
+        │   ├── GeneralTheorem.lean  # Halo2 L1 contract complexity limits
+        │   └── NullifierStorage.lean # Nullifier storage faithfulness
         ├── Capability/         # ρ-calculus type system
         │   ├── Types.lean      # 17 primitive types with barb sets
         │   ├── Pareto.lean     # Pareto-efficiency (all types pairwise distinct)

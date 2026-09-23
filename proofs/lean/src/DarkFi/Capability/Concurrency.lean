@@ -1,13 +1,23 @@
 /-
-DarkWow Concurrency — ρ-Calculus Parallel Composition Theorems
+DarkWow Concurrency — what remains of the parallel-composition layer
 
-Extends the capability type system (Types.lean) with concurrent execution
-semantics. Defines parallel composition, process bisimulation extended to
-concurrency barbs, and the fundamental theorem: parallel execution with
-disjoint key sets is weak-bisimilar to sequential execution.
+This file used to define parallel composition, process bisimulation over concurrency barbs, and a
+"fundamental theorem" that parallel execution with disjoint key sets is weak-bisimilar to sequential
+execution. All of that is deleted, and the section below is the record: `stronglyBisimilar` was
+equality of a `Finset` of tags, so `parallel_commutative` reduced to `Finset.union_comm` — a true
+theorem about set unions, and therefore not a theorem about parallel execution — and `KeyDisjoint`'s
+`writeSetDisjoint : Bool` had neither an invariant nor a consumer. The real transition system,
+structural congruence and bisimulation are in `DarkFi/Semantics/{Proc,Congruence,LTS}.lean`, and the
+replacement for each deleted declaration is the table below.
 
-Theorems follow type-system.md §9 (Concurrent Execution Model) and §10
-(P2P Network as Replicated Process Nets).
+What remains here is the tag vocabulary that `Gossip.lean` and the audit layers still read: the
+`exhibits_*` predicates (Part 6) and `isBlockchainBarb` / `isEventGraphBarb` / `bridgeSafe` (Part 7).
+Those are tag sets, not barbs in `type-system.md` §1.1's sense — a barb is now a consequence of the
+transition relation and cannot be declared — so Part 6 stands as the *recorded obligation* to replace
+them, not as the replacement itself.
+
+Theorems follow type-system.md §9 (Concurrent Execution Model) and §10 (P2P Network as Replicated
+Process Nets).
 -/
 
 import DarkFi.Capability.Types
