@@ -204,3 +204,32 @@ bin/darkirc/proof/rlnv2-diff-signal.zk : epoch : host: darkirc irc/client.rs:631
 # (issuer, holder, schema, both attributes, the blind, the credential secret and the validity window)
 # and constrains it, so these three are no longer free: they are inputs to an in-circuit
 # determination, and the checker classifies them without an exception. The host keeps its comparison.
+
+# --- amounts the host takes from state or from params, and binds to the child transfer -------
+# Two instances adjudicated 2026-09-23 by reading circuit and host together (OBL-Z16's residue).
+# Both expose an amount the prover chooses, and in both the *expose itself* is inert: what the
+# host enforces is its own copy, bound to the `promissory_note::transfer_v1` child's Pedersen
+# value commit. So the expose grants no freedom the params did not already grant — which is the
+# `redundant` reasoning, reached here by reading the entrypoint because the checker's `redundant`
+# rule looks for another *exposed* determination and these have none.
+#
+# roulette: `settle_bet.zk:31` exposes `payout` and the circuit uses it nowhere else. The
+# `SettleBetsV1` metadata arm publishes `params.payout` (entrypoint.rs:138) and the process path
+# never reads it: `settle_bets_v1` sums `bet.payout` out of `bets_db` over the stored bets, binds
+# that sum to the child transfer — `validate_child_value_commit(&child_call.data, house_payout,
+# value_blind)` (:611) — and takes the same figure off `house_capital` (:613). `SettleBetsUpdateV1`
+# carries the table, not the amount. The arm's own design note (:126-132) says the ZK proof is
+# belt-and-suspenders and the plaintext accumulation is authoritative; the circuit's doc line
+# "Payout is calculated externally and verified here" is the opposite of what the code does.
+#
+# labor_market: `milestone_payment.zk` exposes `milestone_payment_amount`, whose only
+# determination in the circuit is the expose. The `ConfirmMilestoneV1` arm publishes
+# `pallas::Base::from(params.payment_release)` in that position (entrypoint.rs:389), and the
+# runtime hands the metadata's vector to `verify_zkp` as the proof's public inputs
+# (`src/linear/src/zk_verifier.rs:234-238`), so the instance is forced to equal the params value.
+# That value is then bound to the child transfer by `validate_child_value_commit(&child_call.data,
+# params.payment_release, value_blind)` (`:1467-1472`). The amount paid is the one the host checks
+# the transfer against. The residual — that the amount is *not* compared against the job's own
+# `milestones[i].payment_amount` — is a different proposition and is filed as OBL-C96.
+src/contract/roulette/proof/settle_bet.zk : payout : host: roulette entrypoint.rs:583-611 settle_bets_v1 recomputes total_payout from `bet.payout` in `bets_db` and binds it to the child transfer with `validate_child_value_commit`; `params.payout` reaches only the metadata arm (:138)
+src/contract/labor_market/proof/milestone_payment.zk : milestone_payment_amount : host: labor_market entrypoint.rs:389 the metadata arm publishes `params.payment_release` as this instance (the runtime checks the proof against that vector, `src/linear/src/zk_verifier.rs:234`), and `:1467` binds the same params value to the child transfer's value commit
