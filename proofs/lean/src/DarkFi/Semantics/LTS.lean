@@ -30,10 +30,13 @@ Two boundaries remain, and they are separate:
   enters the term-level recursion. That is deliberate rather than a shortcut: a synchronisation clause
   inside the `par` case would have to relate the clauses of two different associations in
   `par_assoc`, which is where the invariance proof would stop being structural.
-* **Strong bisimulation is still the only bisimulation.** §1.2's weak equation
-  `P | a?(x).Q | a!(v).R ≈ P | Q{v/x} | R` needs `τ`-transitions *and* the weak relation, and neither
-  the relation nor its laws are here. The barb results are unaffected by `τ`: a barb is an action, and
-  `Barb` never saw `τ`.
+* **Strong bisimulation is still the only bisimulation, and §1.2's weak equation is not a law.**
+  Part 9 records both facts. The weak relation is not here; and the equation
+  `P | a?(x).Q | a!(v).R ≈ P | Q{v/x} | R` is *false* rather than merely unproved — its left side
+  retains both prefixes, so it exhibits barbs the right side need not, and
+  `section_1_2_equation_not_strong` settles the strong reading at `Q = R = 0`. What the equation is
+  reaching for is the reduction, which `Step.tau` now gives. The barb results are unaffected either
+  way: a barb is an action, and `Barb` never saw `τ`.
 
 ## What the rules are, and which are derived
 
@@ -668,5 +671,65 @@ theorem no_barb_nu_of_fresh {x P : Proc} (h : FreshUpToScong x P) : ¬ Barb (Pro
   intro hb
   obtain ⟨Q, hQ, hocc⟩ := barb_nu_subject_occurs hb
   exact h Q (scong0_of_scong hQ) hocc
+
+/-! ==========================================================================
+   Part 9 — §1.2's weak equation: what it says, what is true, and what is not
+
+   §1.2's text, verbatim: "**Weak bisimulation** (`P ≈ Q`): internal synchronization actions
+   (τ-transitions) are unobservable. Two process nets that differ only in internal task scheduling are
+   weak-bisimilar. `P | (a?(x).Q) | a!(v).R ≈ P | Q{v/x} | R` — internal communication on channel `a`
+   is transparent to observers."
+
+   The equation is not a law of this calculus, and the reason is worth being exact about rather than
+   filing as an omission. Its left side **retains** both prefixes: `a?(x).Q` can still take a free
+   input step and `a!(v).R` a free output one, so the left exhibits the barb `↓a` — and at `Q = R = 0`
+   the right exhibits none. A bisimulation requires each side to match the other's steps, so no
+   relation of either strength relates them.
+
+   What *is* true, and what §1.2's prose is reaching for, is the reduction. `Step.tau` gives
+   `a?(x).Q | a!(v).R -[τ]-> Q{v/x}`: one `τ`-step from the composed prefixes to the substituted body.
+   That is "internal communication on channel `a`" as an *event*, and it is a different claim from
+   equating the two processes — the prefixes are still there to be observed afterwards. The standard
+   π-calculus does not equate them either; the equation reads as a law because the `τ`-step is silent,
+   and silence is not the same as absence.
+
+   Mechanized below: the strong reading. The weak reading has the same witness and a different reason —
+   the right side cannot match a step it cannot take, `τ`-reachable or not — and *that* reason needs one
+   negative fact this tree cannot yet prove: that `0 | 0 | 0` has no `τ`-steps. `CanStep` is a set of
+   *actions* by design (Part 3's definition has no `τ` clause, for the invariance reason recorded
+   there), so nothing here proves that a term *cannot* synchronise. Every route to it — a `CanSync`
+   predicate with its own `SCong`-invariance, a congruence-invariant shape invariant, or `Step`
+   inversion — meets the same wall, and it is the wall this file has now hit three times: `SCong`
+   relates terms of different syntactic shape, so a *negative* fact about a term's transitions has to be
+   proved invariant under the congruence rather than computed from the term. That is a unit of its own,
+   sized in `~/.claude/plans/cheerful-roaming-key.md`, and this part does not attempt it.
+   ========================================================================== -/
+
+/-- **§1.2's weak-bisimulation equation is false in its strong reading.** At `P = Q = R = 0`, `a = 0`,
+    `v = 0` and `x = ⌈0⌉`, the left side exhibits the barb `↓0` from its retained output prefix, and the
+    right side — which `subst`'s `nil` clause makes `0 | 0 | 0` — exhibits none. By `strongbisim_barb_eq`
+    no strong bisimulation relates them.
+
+    Strongly non-bisimilar is the weaker of the two conclusions, and it is the one this tree can settle
+    today: the weak reading's refutation needs the `τ`-step-freedom Part 9's note describes. -/
+@[axiom_budget 0]
+theorem section_1_2_equation_not_strong :
+    ¬ StrongBisim
+      (Proc.par (Proc.par Proc.nil (Proc.inp Proc.nil (Proc.bang Proc.nil) Proc.nil))
+        (Proc.out Proc.nil Proc.nil))
+      (Proc.par (Proc.par Proc.nil (subst Proc.nil (Proc.bang Proc.nil) Proc.nil)) Proc.nil) := by
+  intro h
+  have hsub : subst Proc.nil (Proc.bang Proc.nil) Proc.nil = Proc.nil :=
+    subst_nil_of_ne (fun hc => by cases hc)
+  have hright : ¬ Barb (Proc.par (Proc.par Proc.nil (subst Proc.nil (Proc.bang Proc.nil) Proc.nil))
+      Proc.nil) Proc.nil := by
+    rw [hsub]
+    rintro (⟨y, P', hs⟩ | ⟨y, P', hs⟩)
+    · exact absurd (canStep_of_step hs ⟨Proc.nil, y, Or.inl rfl⟩)
+        (by simp only [CanStep, false_or, or_false]; exact id)
+    · exact absurd (canStep_of_step hs ⟨Proc.nil, y, Or.inr rfl⟩)
+        (by simp only [CanStep, false_or, or_false]; exact id)
+  exact hright ((strongbisim_barb_eq h Proc.nil).1
+    (Or.inl ⟨Proc.nil, _, step_par_right (Step.out Proc.nil Proc.nil)⟩))
 
 end DarkFi.Semantics

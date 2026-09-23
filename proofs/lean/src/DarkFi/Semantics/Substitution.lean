@@ -128,4 +128,13 @@ def subst : Proc → Proc → Proc → Proc
 @[axiom_budget 0]
 theorem freshFree_bang {x P : Proc} : FreeOccurs x (Proc.bang P) ↔ False := Iff.rfl
 
+/-- **Substituting for a term that is not `0` leaves `0` alone.** The hypothesis is exactly the one the
+    module note says every law here needs: `subst`'s equality test fires on the *term*, so a term with
+    no free occurrence of itself is still replaced when it is the thing being replaced. `z ≠ 0` is how
+    a caller says that is not what it meant, and it is the shape a general law would have to take. -/
+@[axiom_budget 0]
+theorem subst_nil_of_ne {z y : Proc} (h : z ≠ Proc.nil) : subst Proc.nil z y = Proc.nil := by
+  show (if Proc.nil = z then y else Proc.nil) = Proc.nil
+  exact if_neg (fun hc => h hc.symm)
+
 end DarkFi.Semantics
