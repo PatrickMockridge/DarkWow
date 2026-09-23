@@ -701,8 +701,8 @@ theorem no_barb_nu_of_fresh {x P : Proc} (h : FreshUpToScong x P) : ¬ Barb (Pro
    predicate with its own `SCong`-invariance, a congruence-invariant shape invariant, or `Step`
    inversion — meets the same wall, and it is the wall this file has now hit three times: `SCong`
    relates terms of different syntactic shape, so a *negative* fact about a term's transitions has to be
-   proved invariant under the congruence rather than computed from the term. That is a unit of its own,
-   sized in `~/.claude/plans/cheerful-roaming-key.md`, and this part does not attempt it.
+   proved invariant under the congruence rather than computed from the term. That is a unit of its own
+   and this part does not attempt it.
    ========================================================================== -/
 
 /-- **§1.2's weak-bisimulation equation is false in its strong reading.** At `P = Q = R = 0`, `a = 0`,
