@@ -174,6 +174,11 @@ impl TenderHarness {
             bid_deadline,
             reveal_deadline,
             delivery_deadline,
+            // The pair the proof is bound to (`OBL-C78`). The fixture's call data leaves both zero,
+            // and the client derives the instance from the same pair through the same function, so
+            // the params, the proof and the metadata all describe one value.
+            tx_binding: dwow_tender_contract::client::tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
+            tx_nonce: pallas::Base::zero(),
         };
         let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
@@ -213,6 +218,11 @@ impl TenderHarness {
             amount,
             claim_id,
             encrypted_payload,
+            // The pair the proof is bound to (`OBL-C78`). The fixture's call data leaves both zero,
+            // and the client derives the instance from the same pair through the same function, so
+            // the params, the proof and the metadata all describe one value.
+            tx_binding: dwow_tender_contract::client::tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
+            tx_nonce: pallas::Base::zero(),
         };
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
@@ -245,6 +255,11 @@ impl TenderHarness {
             tender_id,
             bid_id,
             revealed_amount,
+            // The pair the proof is bound to (`OBL-C78`). The fixture's call data leaves both zero,
+            // and the client derives the instance from the same pair through the same function, so
+            // the params, the proof and the metadata all describe one value.
+            tx_binding: dwow_tender_contract::client::tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
+            tx_nonce: pallas::Base::zero(),
         };
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
@@ -283,6 +298,11 @@ impl TenderHarness {
             winner_pub_x: wx,
             winner_pub_y: wy,
             winning_amount,
+            // The pair the proof is bound to (`OBL-C78`). The fixture's call data leaves both zero,
+            // and the client derives the instance from the same pair through the same function, so
+            // the params, the proof and the metadata all describe one value.
+            tx_binding: dwow_tender_contract::client::tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
+            tx_nonce: pallas::Base::zero(),
         };
         let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
@@ -336,6 +356,11 @@ impl TenderHarness {
             encrypted_payload,
             required_capability_id: required_cap_bytes,
             capability_predicate_result,
+            // The pair the proof is bound to (`OBL-C78`). The fixture's call data leaves both zero,
+            // and the client derives the instance from the same pair through the same function, so
+            // the params, the proof and the metadata all describe one value.
+            tx_binding: dwow_tender_contract::client::tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
+            tx_nonce: pallas::Base::zero(),
         };
         let mut call_data = vec![0x08];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);

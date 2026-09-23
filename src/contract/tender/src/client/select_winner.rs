@@ -88,7 +88,7 @@ impl SelectWinnerV1CallData {
             winner_bid_id: self.winner_bid_id,
             requester_pub_x: ix,
             requester_pub_y: iy,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: super::tx_binding_of(&self.tx_commitment, &self.tx_nonce),
             tx_nonce: self.tx_nonce,
         }
     }

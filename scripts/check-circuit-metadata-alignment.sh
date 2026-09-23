@@ -268,6 +268,14 @@ def ns_constants(contract_dir):
     `set_transparency_level.zk` declares `SetTransparencyLevelV2` whose constant is
     `DEX_CONTRACT_ZKAS_SET_TRANSPARENCY_NS_V2` — no `_LEVEL` — so the name-based pattern
     reported a missing push that is there.
+
+    **A value maps to every constant that carries it**, not to the first one seen: a contract may
+    declare an alias pair (`TENDER_CONTRACT_ZKAS_CREATE_TENDER_NS_V2` and
+    `TENDER_CONTRACT_ZKAS_CREATE_NS_V2` are both `"CreateTenderV2"`, as are subscription's
+    `VERIFY_ACCESS`/`VERIFY` pair and game_room's four). Keeping only the first reported
+    `tender/create_tender` as "no metadata push carries ..." while its push was there and correct —
+    the arm simply used the other name for the same string. A push matching *any* name for the
+    circuit's identity is the push for that circuit.
     """
     table = {}
     for f in glob.glob(f"{contract_dir}/src/**/*.rs", recursive=True):
@@ -276,7 +284,7 @@ def ns_constants(contract_dir):
         except OSError:
             continue
         for m in re.finditer(r'pub const\s+([A-Z0-9_]+)\s*:\s*&str\s*=\s*"([^"]+)"\s*;', src):
-            table.setdefault(m.group(2), m.group(1))
+            table.setdefault(m.group(2), []).append(m.group(1))
     return table
 
 def strip_zk_comments(src):
@@ -424,9 +432,9 @@ for contract_name in COVERED:
         # Prefer the constant whose *value* is this circuit's identity string; fall back to the
         # file-name pattern when no constant resolves (the .zk name and the constant's value have
         # drifted, or the constant lives outside `src/`).
-        ns_name = ns_table.get(identity) if identity else None
-        if ns_name is not None:
-            matched = [(ns, elems) for (ns, elems) in pushes if ns == ns_name]
+        ns_names = ns_table.get(identity) if identity else None
+        if ns_names:
+            matched = [(ns, elems) for (ns, elems) in pushes if ns in ns_names]
         else:
             pattern = re.compile(rf'ZKAS_{circuit_name.upper()}_NS(_V[0-9]+)?$')
             matched = [(ns, elems) for (ns, elems) in pushes if pattern.search(ns)]
@@ -440,9 +448,9 @@ for contract_name in COVERED:
             # against correct code; a WARN that names the reason is what the gate does elsewhere
             # for exactly this situation. A namespace that is referenced NOWHERE is a real
             # absence — the metadata function has no arm for the circuit at all.
-            referenced = ns_name is not None and re.search(rf'\b{re.escape(ns_name)}\b',
-                                                           entrypoint_src)
-            label = ns_name or 'ZKAS_' + circuit_name.upper() + '_NS'
+            referenced = bool(ns_names) and any(
+                re.search(rf'\b{re.escape(n)}\b', entrypoint_src) for n in (ns_names or []))
+            label = ' | '.join(ns_names) if ns_names else 'ZKAS_' + circuit_name.upper() + '_NS'
             if referenced:
                 print(f"WARN: {contract_name}/{circuit_name} — {circuit_count} constrain_instance; "
                       f"the vector for {label} is built elsewhere (the namespace is passed to a "

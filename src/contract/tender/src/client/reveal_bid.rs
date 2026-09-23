@@ -101,7 +101,7 @@ impl RevealBidV1CallData {
             revealed_amount: self.revealed_amount,
             bidder_pub_x: ix,
             bidder_pub_y: iy,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: super::tx_binding_of(&self.tx_commitment, &self.tx_nonce),
             tx_nonce: self.tx_nonce,
         }
     }

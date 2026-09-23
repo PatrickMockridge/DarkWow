@@ -67,7 +67,7 @@ impl CreateTenderV1CallData {
     pub fn compute_public_inputs(&self) -> CreateTenderV1PublicInputs {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
         let (ix, iy) = self.requester_public.xy().expect("pk not identity");
-        CreateTenderV1PublicInputs { requester_pub_x: ix, requester_pub_y: iy, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        CreateTenderV1PublicInputs { requester_pub_x: ix, requester_pub_y: iy, tx_binding: super::tx_binding_of(&self.tx_commitment, &self.tx_nonce), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

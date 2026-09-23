@@ -191,9 +191,18 @@ fn create_tender_get_metadata_v1(
     }
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+    // `create_tender.zk` constrains four instances, in this order: requester_pub_x, requester_pub_y,
+    // tx_binding, tx_nonce. The vector pushed here used to carry the first two only, so the host compared
+    // a 2-value vector against the proof's 4 and the call failed verification (`OBL-C78`, measured:
+    // `invalid proof: call[0] namespace 'CreateTenderV2'`).
     zk_public_inputs.push((
         TENDER_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
-        vec![params.requester_pub_x, params.requester_pub_y],
+        vec![
+            params.requester_pub_x,
+            params.requester_pub_y,
+            params.tx_binding,
+            params.tx_nonce,
+        ],
     ));
 
     let mut metadata = vec![];
@@ -239,11 +248,15 @@ fn submit_bid_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V2.to_string(),
+        // `submit_bid.zk` constrains six: bidder_pub_x, bidder_pub_y, tender_id, bid_id, tx_binding,
+        // tx_nonce. The pair travels in the call (`OBL-C78`).
         vec![
             params.bidder_pub_x,
             params.bidder_pub_y,
             params.tender_id,
             params.bid_id,
+            params.tx_binding,
+            params.tx_nonce,
         ],
     ));
 
@@ -286,17 +299,21 @@ fn submit_bid_with_capability_get_metadata_v1(
         return Err(ContractError::InvalidFunction.into())
     }
 
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-    let cap_id = pasta::pallas::Base::from_raw([
-        u64::from_le_bytes(params.required_capability_id[0..8].try_into().unwrap()),
-        u64::from_le_bytes(params.required_capability_id[8..16].try_into().unwrap()),
-        u64::from_le_bytes(params.required_capability_id[16..24].try_into().unwrap()),
-        u64::from_le_bytes(params.required_capability_id[24..32].try_into().unwrap()),
-    ]);
+    // `from_repr`, not `from_raw` (`OBL-C78`). The client serializes this field with
+    // `pallas::Base`'s `Encodable`, which writes the **canonical** 32-byte representation, and the
+    // metadata must publish the same element the proof instances. `from_raw` reads the same bytes as
+    // internal limbs, which is a different field element for any value whose limbs are not already
+    // the internal form — so the published instance matched the proof's only by coincidence.
+    let cap_id = Option::<pasta::pallas::Base>::from(pasta::pallas::Base::from_repr(
+        params.required_capability_id,
+    ))
+    .ok_or_else(|| ContractError::IoError("submit_bid_with_capability: invalid required_capability_id".into()))?;
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V2.to_string(),
+        // `submit_bid_with_capability.zk` constrains eight: the four above, then the capability id, the
+        // predicate result, and the tx pair last (`OBL-C78`).
         vec![
             params.bidder_pub_x,
             params.bidder_pub_y,
@@ -304,6 +321,8 @@ fn submit_bid_with_capability_get_metadata_v1(
             params.bid_id,
             cap_id,
             params.capability_predicate_result,
+            params.tx_binding,
+            params.tx_nonce,
         ],
     ));
 
@@ -349,12 +368,17 @@ fn reveal_bid_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V2.to_string(),
+        // `reveal_bid.zk` constrains seven, in this order: tender_id, bid_id, revealed_amount,
+        // bidder_pub_x, bidder_pub_y, tx_binding, tx_nonce. The bidder's coordinates come from the
+        // stored bid (the witness is its secret); the tx pair travels in the call (`OBL-C78`).
         vec![
             params.tender_id,
             params.bid_id,
             pasta::pallas::Base::from(params.revealed_amount),
             bid.bidder_pub_x,
             bid.bidder_pub_y,
+            params.tx_binding,
+            params.tx_nonce,
         ],
     ));
 
@@ -421,11 +445,16 @@ fn select_winner_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V2.to_string(),
+        // `select_winner.zk` constrains six: tender_id, winner_bid_id, requester_pub_x, requester_pub_y,
+        // tx_binding, tx_nonce. The requester's coordinates come from the stored tender; the tx pair
+        // travels in the call (`OBL-C78`).
         vec![
             params.tender_id,
             params.winner_bid_id,
             tender.requester_pub_x,
             tender.requester_pub_y,
+            params.tx_binding,
+            params.tx_nonce,
         ],
     ));
 

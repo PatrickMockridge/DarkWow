@@ -117,7 +117,7 @@ impl SubmitBidWithCapabilityV1CallData {
             bidder_pub_y: iy,
             required_capability_id: self.required_capability_id,
             capability_predicate_result: self.capability_predicate_result,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: super::tx_binding_of(&self.tx_commitment, &self.tx_nonce),
             tx_nonce: self.tx_nonce,
         }
     }

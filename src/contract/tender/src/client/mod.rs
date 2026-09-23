@@ -45,6 +45,25 @@ use crate::model::{
     RevealBidParamsV1, SelectWinnerParamsV1, SubmitBidParamsV1,
 };
 
+/// The transaction binding every tender circuit instances: `poseidon_hash([3, tx_commitment, tx_nonce])`
+/// (`OBL-C78`).
+///
+/// **One function, so the three sides cannot disagree.** The circuit derives this value from two
+/// witnesses and constrains its public input to it (`create_tender.zk:74-75` and the same pair in the
+/// other four); the client's proof builder must instance the *same* value; and the contract's metadata
+/// must publish the same value again, from the pair carried in the call. The five clients each used to
+/// instance a literal `Base::zero()` here, which no circuit ever derives for any input — so every tender
+/// proof failed verification against its own circuit, which is what `invalid proof: call[0] namespace
+/// 'CreateTenderV2'` was. A caller that wants a real binding sets `tx_commitment`/`tx_nonce` on the call
+/// data and passes the same pair to the params builder, and both sides derive the binding through this.
+pub fn tx_binding_of(tx_commitment: &pallas::Base, tx_nonce: &pallas::Base) -> pallas::Base {
+    dwow_sdk::crypto::poseidon_hash([
+        dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING,
+        *tx_commitment,
+        *tx_nonce,
+    ])
+}
+
 /// Builder for CreateTenderV1 params
 #[derive(Default)]
 pub struct CreateTenderBuilder {
@@ -59,6 +78,11 @@ pub struct CreateTenderBuilder {
     bid_deadline: Option<u64>,
     reveal_deadline: Option<u64>,
     delivery_deadline: Option<u64>,
+    /// The transaction the proof is bound to (`OBL-C78`); `None` means the zero pair, which is what
+    /// `to_witnesses` defaults to as well. Set both through `tx_pair` so the params and the proof
+    /// cannot disagree.
+    tx_commitment: Option<pallas::Base>,
+    tx_nonce: Option<pallas::Base>,
 }
 
 impl CreateTenderBuilder {
@@ -119,6 +143,14 @@ impl CreateTenderBuilder {
         self
     }
 
+    /// Bind the proof to a transaction: the pair `to_witnesses` must use, so params and proof agree
+    /// (`OBL-C78`). Without it both default to zero, which is what the heavyweight fixtures use.
+    pub fn tx_pair(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Self {
+        self.tx_commitment = Some(tx_commitment);
+        self.tx_nonce = Some(tx_nonce);
+        self
+    }
+
     pub fn build(self) -> Result<CreateTenderParamsV1, &'static str> {
         Ok(CreateTenderParamsV1 {
             proof: vec![],
@@ -133,6 +165,11 @@ impl CreateTenderBuilder {
             bid_deadline: self.bid_deadline.ok_or("bid_deadline not set")?,
             reveal_deadline: self.reveal_deadline.ok_or("reveal_deadline not set")?,
             delivery_deadline: self.delivery_deadline.ok_or("delivery_deadline not set")?,
+            tx_binding: tx_binding_of(
+                &self.tx_commitment.unwrap_or_else(pallas::Base::zero),
+                &self.tx_nonce.unwrap_or_else(pallas::Base::zero),
+            ),
+            tx_nonce: self.tx_nonce.unwrap_or_else(pallas::Base::zero),
         })
     }
 }
@@ -147,6 +184,11 @@ pub struct SubmitBidBuilder {
     amount: Option<u64>,
     competency_commitment: Option<pallas::Base>,
     encrypted_payload: Option<Vec<u8>>,
+    /// The transaction the proof is bound to (`OBL-C78`); `None` means the zero pair, which is what
+    /// `to_witnesses` defaults to as well. Set both through `tx_pair` so the params and the proof
+    /// cannot disagree.
+    tx_commitment: Option<pallas::Base>,
+    tx_nonce: Option<pallas::Base>,
 }
 
 impl SubmitBidBuilder {
@@ -187,6 +229,14 @@ impl SubmitBidBuilder {
         self
     }
 
+    /// Bind the proof to a transaction: the pair `to_witnesses` must use, so params and proof agree
+    /// (`OBL-C78`). Without it both default to zero, which is what the heavyweight fixtures use.
+    pub fn tx_pair(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Self {
+        self.tx_commitment = Some(tx_commitment);
+        self.tx_nonce = Some(tx_nonce);
+        self
+    }
+
     pub fn build(self) -> Result<SubmitBidParamsV1, &'static str> {
         Ok(SubmitBidParamsV1 {
             proof: vec![],
@@ -197,6 +247,11 @@ impl SubmitBidBuilder {
             amount: self.amount.ok_or("amount not set")?,
             claim_id: self.competency_commitment.ok_or("claim_id not set")?,
             encrypted_payload: self.encrypted_payload.unwrap_or_default(),
+            tx_binding: tx_binding_of(
+                &self.tx_commitment.unwrap_or_else(pallas::Base::zero),
+                &self.tx_nonce.unwrap_or_else(pallas::Base::zero),
+            ),
+            tx_nonce: self.tx_nonce.unwrap_or_else(pallas::Base::zero),
         })
     }
 }
@@ -207,6 +262,11 @@ pub struct RevealBidBuilder {
     tender_id: Option<pallas::Base>,
     bid_id: Option<pallas::Base>,
     revealed_amount: Option<u64>,
+    /// The transaction the proof is bound to (`OBL-C78`); `None` means the zero pair, which is what
+    /// `to_witnesses` defaults to as well. Set both through `tx_pair` so the params and the proof
+    /// cannot disagree.
+    tx_commitment: Option<pallas::Base>,
+    tx_nonce: Option<pallas::Base>,
 }
 
 impl RevealBidBuilder {
@@ -229,12 +289,25 @@ impl RevealBidBuilder {
         self
     }
 
+    /// Bind the proof to a transaction: the pair `to_witnesses` must use, so params and proof agree
+    /// (`OBL-C78`). Without it both default to zero, which is what the heavyweight fixtures use.
+    pub fn tx_pair(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Self {
+        self.tx_commitment = Some(tx_commitment);
+        self.tx_nonce = Some(tx_nonce);
+        self
+    }
+
     pub fn build(self) -> Result<RevealBidParamsV1, &'static str> {
         Ok(RevealBidParamsV1 {
             proof: vec![],
             tender_id: self.tender_id.ok_or("tender_id not set")?,
             bid_id: self.bid_id.ok_or("bid_id not set")?,
             revealed_amount: self.revealed_amount.ok_or("revealed_amount not set")?,
+            tx_binding: tx_binding_of(
+                &self.tx_commitment.unwrap_or_else(pallas::Base::zero),
+                &self.tx_nonce.unwrap_or_else(pallas::Base::zero),
+            ),
+            tx_nonce: self.tx_nonce.unwrap_or_else(pallas::Base::zero),
         })
     }
 }
@@ -281,6 +354,11 @@ pub struct SelectWinnerBuilder {
     winner_pubkey: Option<PublicKey>,
     winning_amount: Option<u64>,
     requester_pubkey: Option<PublicKey>,
+    /// The transaction the proof is bound to (`OBL-C78`); `None` means the zero pair, which is what
+    /// `to_witnesses` defaults to as well. Set both through `tx_pair` so the params and the proof
+    /// cannot disagree.
+    tx_commitment: Option<pallas::Base>,
+    tx_nonce: Option<pallas::Base>,
 }
 
 impl SelectWinnerBuilder {
@@ -313,6 +391,14 @@ impl SelectWinnerBuilder {
         self
     }
 
+    /// Bind the proof to a transaction: the pair `to_witnesses` must use, so params and proof agree
+    /// (`OBL-C78`). Without it both default to zero, which is what the heavyweight fixtures use.
+    pub fn tx_pair(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Self {
+        self.tx_commitment = Some(tx_commitment);
+        self.tx_nonce = Some(tx_nonce);
+        self
+    }
+
     pub fn build(self) -> Result<SelectWinnerParamsV1, &'static str> {
         let winner_pubkey = self.winner_pubkey.ok_or("winner_pubkey not set")?;
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
@@ -329,6 +415,11 @@ impl SelectWinnerBuilder {
             winning_amount: self.winning_amount.ok_or("winning_amount not set")?,
             requester_pub_x: req_x,
             requester_pub_y: req_y,
+            tx_binding: tx_binding_of(
+                &self.tx_commitment.unwrap_or_else(pallas::Base::zero),
+                &self.tx_nonce.unwrap_or_else(pallas::Base::zero),
+            ),
+            tx_nonce: self.tx_nonce.unwrap_or_else(pallas::Base::zero),
         })
     }
 }
