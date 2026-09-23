@@ -1663,7 +1663,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         let deposit = bridge_harness.deposit(
             secret, 10000, recipient, 1,
             pallas::Base::from(200u64),
-            ExternalChain::Monero, 0,
+            ExternalChain::Monero, vec![], 0,
         );
         let deposit = deposit.map_err(|e| format!("deposit proof failed: {}", e))?;
         assert!(!deposit.call_data.is_empty(), "deposit call_data must not be empty");

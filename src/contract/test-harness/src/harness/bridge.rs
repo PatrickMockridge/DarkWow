@@ -86,6 +86,7 @@ impl BridgeHarness {
         bridge_nonce: u64,
         external_block_hash: pallas::Base,
         chain: ExternalChain,
+        merkle_proof: Vec<[u8; 32]>,
         fee: u64,
     ) -> Result<DepositResult, Box<dyn std::error::Error>> {
         let input = DepositCallData::new(
@@ -109,9 +110,14 @@ impl BridgeHarness {
             bridge_nonce,
             chain,
             external_block_hash: public_inputs.external_block_hash.to_repr(),
-            // External-chain merkle proof is supplied by the indexer; empty in the
-            // harness (bridge-verify is feature-gated off).
-            merkle_proof: vec![],
+            // External-chain merkle proof, supplied by the caller. It rides in `DepositParams` but
+            // is not a public input of `deposit.zk` (whose instances are the derived commitment,
+            // the tx binding and the nonce), so its contents do not affect the proof. Taking it as
+            // a parameter rather than hardcoding emptiness is what lets a spec exercise the
+            // deposit's external-chain gate: with `bridge-verify` off that gate refuses every
+            // chain, while an empty proof is refused a step earlier by a shape check — and an
+            // assertion that only sees "some error" cannot tell the two apart (OBL-C21).
+            merkle_proof,
             // External-chain state root — not verified without bridge-verify.
             external_state_root: [0u8; 32],
             fee,

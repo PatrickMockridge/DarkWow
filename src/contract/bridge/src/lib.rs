@@ -53,8 +53,13 @@ pub mod chain_handler;
 pub mod light_client;
 /// Object Capability module - capability derivation and verification
 pub mod capability;
-/// Cross-chain cryptographic verification (gated behind bridge-verify feature)
-#[cfg(feature = "bridge-verify")]
+/// Cross-chain cryptographic verification. **Not** gated by `bridge-verify`: its
+/// `verify_chain_proof` dispatch is fail-closed at every arm when the feature is off (OBL-C21), and
+/// that fail-closed behaviour *is* this contract's deposit policy in the only configuration the tree
+/// builds. Gating the module compiled those arms out entirely, which left the entrypoint's own arm
+/// free to accept an Ethereum deposit on a shape check instead — two policies for one disabled
+/// state, with the permissive one on the reachable path. The chain-specific submodules below stay
+/// gated; only the dispatch is compiled unconditionally.
 pub mod verify;
 
 use dwow_sdk::define_contract_function;

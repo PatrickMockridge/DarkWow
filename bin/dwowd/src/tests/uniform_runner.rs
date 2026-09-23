@@ -248,10 +248,17 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             "TEST-FAIL [{}::{}]: call_data must not be empty", spec.name, endpoint.name);
 
         if endpoint.expectation == EndpointExpectation::Rejection {
-            // Expect accept_block to REJECT this call (e.g., MintV1 FunctionDisabled)
-            let submit_result = modules::block_submission::submit_single_call_block(
+            // Expect accept_block to REJECT this call (e.g., MintV1 FunctionDisabled).
+            //
+            // The endpoint's child calls ride with it. Without them, a call whose rejection comes
+            // from a *later* check is turned away a step earlier for the missing child instead, and
+            // the assertion then holds for a reason the endpoint does not name — a control that
+            // cannot fail. For an endpoint with no children this is byte-identical to the
+            // single-call submitter: `build_witness_tree` with an empty child list emits exactly
+            // `build_witness`'s transaction, and `build_contract_tx_tree` likewise.
+            let submit_result = modules::block_submission::submit_multi_call_block(
                 &chain_a, cid, spec.harness,
-                &result.call_data, result.proofs, endpoint.is_zk,
+                &result.call_data, result.proofs, endpoint.is_zk, result.children,
             ).await;
             assert!(submit_result.is_err(),
                 "TEST-FAIL [{}::{}]: expected rejection but accept_block succeeded",
@@ -353,9 +360,9 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
         } else {
             let result = (endpoint.generate)()?;
             if endpoint.expectation == EndpointExpectation::Rejection {
-                let _ = modules::block_submission::submit_single_call_block(
+                let _ = modules::block_submission::submit_multi_call_block(
                     &chain_b, cid_b, spec.harness,
-                    &result.call_data, result.proofs, endpoint.is_zk,
+                    &result.call_data, result.proofs, endpoint.is_zk, result.children,
                 ).await;
             } else {
                 h_b = modules::endpoint_exercise::exercise_endpoint(

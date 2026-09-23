@@ -315,21 +315,27 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
     }
 
     // HAZOP HAZ-CODE-01: unified verification path.
-    #[cfg(feature = "bridge-verify")]
-    crate::verify::verify_chain_proof(&params.chain_proof, &params.merkle_proof)?;
-    #[cfg(not(feature = "bridge-verify"))]
-    {
-        if params.chain == ExternalChain::Ethereum {
-            if params.merkle_proof.is_empty() {
-                msg!("[bridge::DepositV1] Error: Ethereum merkle proof is empty");
-                return Err(BridgeError::InvalidMerkleProof.into());
-            }
+    //
+    // OBL-C21: one call, made in both feature configurations. With `bridge-verify` off,
+    // `verify_chain_proof` is fail-closed at every arm ("verification not compiled"), so a deposit is
+    // refused and no wrapped note is minted. The arm that stood here did not call this dispatch: it
+    // accepted `ExternalChain::Ethereum` whenever `merkle_proof` was merely non-empty — a shape
+    // check, not verification — while the child call validated above is `promissory_note::issue_v1`
+    // and mints a value-bearing note. So the contract held two policies for its own disabled state,
+    // all five chains refused in one place and one chain accepted in another, and the reachable one
+    // was the permissive one.
+    if let Err(e) = crate::verify::verify_chain_proof(&params.chain_proof, &params.merkle_proof) {
+        // The contract states its own reason, and it has to: `From<BridgeError> for ContractError`
+        // maps `InvalidDeposit(_)` to `Custom(1)` and **discards the message**, so the verifier's
+        // own explanation ("… verification not compiled") never reaches the node. Without this line
+        // a refusal arrives as a bare code and its cause has to be re-derived from the source — and
+        // a test can only see *that* something refused, never *what*.
+        if cfg!(feature = "bridge-verify") {
+            msg!("[bridge::DepositV1] Error: {:?} deposit refused — cross-chain verification rejected the proof", params.chain);
         } else {
-            msg!("[bridge::DepositV1] Error: bridge-verify feature not enabled — rejecting non-Ethereum deposit");
-            return Err(BridgeError::InvalidDeposit(
-                "Cross-chain verification not compiled (enable bridge-verify feature)".into()
-            ).into());
+            msg!("[bridge::DepositV1] Error: {:?} deposit refused — cross-chain verification is not compiled in this build, so nothing was verified (OBL-C21)", params.chain);
         }
+        return Err(e);
     }
 
     // Create update data. The timestamp is read here — apply may not read (register OBL-C72).

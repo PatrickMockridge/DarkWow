@@ -157,7 +157,13 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "DepositV1",
                 is_zk: true,
-                expectation: EndpointExpectation::Success,
+                // OBL-C21: no build in this tree enables `bridge-verify`, so the not-enabled arm is
+                // the compiled one, and it now refuses every chain — nothing about a deposit is
+                // verified when the feature is off. The deposit's child call mints a wrapped
+                // promissory note (`promissory_note::issue_v1`), so the permissive form minted a
+                // value-bearing note against no external backing. The expectation is refusal, which
+                // is the deferral made explicit rather than a silent mint path.
+                expectation: EndpointExpectation::Rejection,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new(move |chain| {
                     let r = chain.query_contract_state(cid, "deposits", &[])?;
@@ -167,7 +173,12 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h.deposit(secret, 10000, recipient, 1, pallas::Base::from(200u64), ExternalChain::Ethereum, 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        // A NON-EMPTY external-chain proof on purpose. This is the shape the
+                        // permissive arm accepted — it refused an Ethereum deposit only when the
+                        // proof was *empty* — so an empty one here would be refused by that shape
+                        // check in both the old and the new code, and the rejection assertion
+                        // below would hold either way: a control that cannot fail (OBL-C21).
+                        let r = h.deposit(secret, 10000, recipient, 1, pallas::Base::from(200u64), ExternalChain::Ethereum, vec![[4u8; 32], [5u8; 32], [6u8; 32]], 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let child = pn_issue_child(bridge_cid, ExternalChain::Ethereum, poseidon_hash([pallas::Base::from(7u64), secret]), 10000)?;
                         drop(notes.lock().unwrap());
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })

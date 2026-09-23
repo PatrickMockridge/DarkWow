@@ -19,10 +19,11 @@
 use dwow_sdk::error::ContractResult;
 
 use crate::error::BridgeError;
-use crate::model::{
-    ExternalChainProof, AztecDepositProof, LitecoinDepositProof,
-    XmrDepositProof, ZcashDepositProof,
-};
+// The payload types are named only by the chain-specific verifiers below, which exist only when
+// `bridge-verify` is on. The dispatch itself matches on `ExternalChainProof`'s variants.
+#[cfg(feature = "bridge-verify")]
+use crate::model::{AztecDepositProof, LitecoinDepositProof, XmrDepositProof, ZcashDepositProof};
+use crate::model::ExternalChainProof;
 
 #[cfg(feature = "bridge-verify")]
 mod ethereum;
@@ -37,6 +38,18 @@ mod aztec;
 
 /// Dispatch to the appropriate chain-specific verifier.
 /// Called from `process_deposit_instruction` in entrypoint.rs.
+///
+/// With `bridge-verify` off — the only configuration this tree builds — there is no chain-specific
+/// verifier to dispatch to, so every arm returns the same refusal and the per-arm payload bindings
+/// and the Merkle argument go unread. That is expected here rather than incidental, and it is
+/// enclosed by this `expect` so the feature-on build fails as unfulfilled if it ever stops holding.
+#[cfg_attr(
+    not(feature = "bridge-verify"),
+    expect(
+        unused_variables,
+        reason = "no chain verifier is compiled in this configuration; every arm refuses (OBL-C21)"
+    )
+)]
 pub fn verify_chain_proof(proof: &ExternalChainProof, eth_merkle_proof: &[[u8; 32]]) -> ContractResult {
     match proof {
         ExternalChainProof::Ethereum => {
