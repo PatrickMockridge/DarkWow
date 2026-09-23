@@ -36,6 +36,22 @@ src/contract/escrow/proof/refund.zk : current_block : host: escrow entrypoint.rs
 src/contract/otc_swap/proof/cancel_swap.zk : timeout : host: otc_swap entrypoint.rs Funded branch compares against `swap.timeout` from state (db_get by swap_id); the proof's copy is not consulted
 src/contract/otc_swap/proof/cancel_swap.zk : current_block : host: otc_swap entrypoint.rs `wasm::util::get_verifying_block_height()`; the proof's copy is not consulted
 
+# --- the oracle aggregate's declared bounds (OBL-Z16) --------------------------------------
+# `aggregate.zk` exposes `min_result` and `max_result` and uses them only against `result`
+# (`diff_max = base_sub(max_result, result)`, `diff_min = base_sub(result, min_result)`, each
+# `range_check(64)`ed at :161, :165) — a check over three values the prover picks, so the
+# in-circuit half constrains nothing on its own. The host half is what makes the expose safe
+# to let through: `aggregate_v1` re-checks the same relation on the *params* and rejects by
+# name, so a proof cannot carry a result outside the bounds the transaction itself declares.
+# The honest limit, stated rather than implied: the bounds are the operator's own declaration
+# about its own output, and the operator already chooses `result` — the four `value_i` and
+# `weight_i` are prover-chosen too (`aggregate.zk:220-224`, OBL-Z1) — so these two grant no
+# freedom the `result` expose did not already grant. The chosen alternative, not taken, is to
+# register bounds on chain and compare against the record; that is a new field on a genesis
+# contract's record, which is a design change rather than a repair.
+src/contract/oracle/proof/aggregate.zk : min_result : host: oracle entrypoint.rs:457 `if params.result < params.min_result` -> `OracleError::InvalidPredicate`, and :229 publishes `params.min_result` as the aggregate circuit's public input
+src/contract/oracle/proof/aggregate.zk : max_result : host: oracle entrypoint.rs:462 `if params.result > params.max_result` -> `OracleError::InvalidPredicate`, and :230 publishes `params.max_result` as the aggregate circuit's public input
+
 # --- values the host compares against the stored object ------------------------------------
 src/contract/tender/proof/reveal_bid.zk : bid_id : host: tender entrypoint.rs reveal_bid_v1 loads the bid from `bids_db` by bid_id and rejects an unknown id before any other check
 src/contract/tender/proof/reveal_bid.zk : revealed_amount : host: tender entrypoint.rs:635 `if params.revealed_amount != bid.amount { ... "Revealed amount does not match sealed bid" }`
