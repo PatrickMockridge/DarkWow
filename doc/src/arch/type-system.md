@@ -171,10 +171,21 @@ This extends to concurrency barbs: for every barb `P` exhibits (including
 
 **Weak bisimulation** (`P ≈ Q`): internal synchronization actions (τ-transitions)
 are unobservable. Two process nets that differ only in internal task scheduling
-are weak-bisimilar. `P | (a?(x).Q) | a!(v).R ≈ P | Q{v/x} | R` — internal
-communication on channel `a` is transparent to observers. The smol executor's
-internal task scheduling SHALL be modeled as τ-transitions and MUST NOT affect
-observable barb behavior.
+are weak-bisimilar. Two composed prefixes take one τ-step to the substituted
+body — `a?(x).Q | a!(v).R -[τ]-> Q{v/x}` — so internal communication on channel
+`a` is transparent to observers. The smol executor's internal task scheduling
+SHALL be modeled as τ-transitions and MUST NOT affect observable barb behavior.
+
+This paragraph stated that step as an *equivalence*, `P | (a?(x).Q) | a!(v).R ≈
+P | Q{v/x} | R`, and that is false. The left side retains both prefixes, so it
+still exhibits the barb `↓a`, while the substituted right side need not — at
+`Q = R = 0` it exhibits none. A bisimulation requires each side to match the
+other's steps, so no relation of either strength relates them; a τ-step is
+silent, which is not the same as the prefixes being absent. The same holds in the
+π-calculus, where the corresponding claim is the reduction `→` rather than an
+equivalence. Mechanized in `proofs/lean/src/DarkFi/Semantics/LTS.lean`:
+`Step.tau` is the reduction above, and `section_1_2_equation_not_strong` refutes
+the equation's strong reading through `strongbisim_barb_eq`.
 
 **Barbed bisimulation** (`P ≅ Q`): two concurrent processes are equivalent if
 their observable concurrent barbs match, even if their internal scheduling
