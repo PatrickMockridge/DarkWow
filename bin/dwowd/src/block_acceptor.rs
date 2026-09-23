@@ -121,7 +121,16 @@ pub fn accept_block(
         }
         // HAZOP H25 fix: collect existing uncle hashes from sled for cross-block dedup.
         // Previously always empty — uncles could earn rewards across multiple blocks.
-        let existing_keys: std::collections::HashSet<[u8; 32]> = chain_state.stored_uncle_hashes();
+        // Fails the block on a malformed or unreadable key rather than deduping against a padded guess
+        // (register OBL-C27): the alternative is silently accepting a second reward for one uncle or
+        // refusing an honest one, and this is the only caller.
+        let existing_keys: std::collections::HashSet<[u8; 32]> =
+            chain_state.stored_uncle_hashes().map_err(|e| {
+                dwow_core::Error::Custom(format!(
+                    "Block {} uncle set unreadable: {e}",
+                    block.header.height
+                ))
+            })?;
 
         // Each uncle's PoW is judged against the target that was in force at the
         // UNCLE's own height — not this block's target. The target is recomputed

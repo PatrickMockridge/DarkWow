@@ -248,10 +248,17 @@ pub struct MiningState {
     pub linear_submit_lock: Mutex<()>,
     /// Genesis hash for merge-mining RPC
     pub linear_genesis_hash: Mutex<Option<HeaderHash>>,
-    /// Active merge mining job IDs (JobId → ())
-    pub mm_jobs: Mutex<HashMap<JobId, ()>>,
-    /// Submitted merge mining job IDs (dedup)
-    pub mm_jobs_submitted: Mutex<HashSet<JobId>>,
+    /// Active merge mining job IDs (JobId → insertion sequence).
+    ///
+    /// The value is an insertion sequence, not `()`, so eviction at capacity can evict the **oldest**
+    /// job as `merge-mining-ffi.md` §4.4 requires (`OBL-C55`). A HashMap's iteration order is arbitrary,
+    /// so the previous `keys().next()` eviction was not FIFO however the comment read.
+    pub mm_jobs: Mutex<HashMap<JobId, u64>>,
+    /// Submitted merge mining job IDs (dedup), keyed by the same insertion sequence as `mm_jobs`.
+    pub mm_jobs_submitted: Mutex<HashMap<JobId, u64>>,
+    /// Insertion counter shared by both job tables — one monotonic source, so "oldest" means the same
+    /// thing in each and a job's relative age cannot invert between them.
+    pub mm_jobs_seq: AtomicU64,
     /// Miner block assembly config — fee policy, gas limits, tx count.
     pub miner_config: MinerConfig,
     /// Sync state machine — gates mining until the node is caught up to peers.
@@ -273,7 +280,8 @@ impl MiningState {
             linear_submit_lock: Mutex::new(()),
             linear_genesis_hash: Mutex::new(None),
             mm_jobs: Mutex::new(HashMap::new()),
-            mm_jobs_submitted: Mutex::new(HashSet::new()),
+            mm_jobs_submitted: Mutex::new(HashMap::new()),
+            mm_jobs_seq: AtomicU64::new(0),
             miner_config: MinerConfig::default(),
             sync_state,
         }
@@ -1749,10 +1757,25 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
             }
         };
 
-        // Check again after mining — peer may have sent a block while we hashed
-        if chain_state.get_height() >= height {
+        // Check again after mining, on both counts that can have changed while we hashed: a peer may have
+        // sent a block for this height, and the consensus task may have declared the node Behind.
+        //
+        // The sync state is re-read **here**, next to the commit, and not only at the top of the loop
+        // (OBL-C56). The top-of-loop check is observed, not held: RandomX mining can take minutes, so a
+        // transition that arrives mid-attempt used to stay invisible until the next iteration — by which
+        // time this block had already been proposed at a height the network had moved past. A lease
+        // cannot be held across the attempt, because the sync task must stay free to declare the node
+        // Behind (blocking it on a mining attempt would stall sync on the one thing it exists to detect).
+        // So the state is re-observed at the last point where abandoning the block is still free, and
+        // both reasons to abandon share one recovery path.
+        let peer_ahead = chain_state.get_height() >= height;
+        let fell_behind = SyncState::load(&node.mining_state.sync_state) != SyncState::CaughtUp;
+        if peer_ahead || fell_behind {
             info!(target: "dwowd::miner_task",
-                "Peer block arrived at height {} during mining — discarding ours and re-inserting mempool txs", height);
+                "Discarding mined block {} because {} — re-inserting mempool txs",
+                height,
+                if peer_ahead { "a peer block arrived at this height" }
+                else { "the node fell behind while we hashed (sync_state != CaughtUp)" });
             // Re-insert mempool transactions — they were consumed into all_txs
             // at block assembly. The pre-mining race path (above) does the same.
             if let Some(ref mp) = node.mempool {

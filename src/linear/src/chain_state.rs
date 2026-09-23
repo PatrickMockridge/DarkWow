@@ -35,9 +35,17 @@
 //! When multiple locks must be held simultaneously, acquire in this order:
 //!   1. `connect_lock`        — outermost, serializes all block application
 //!   2. `vm_cache`            — RandomX VM pool
-//!   3. `competing_seen`      — dedup set for competing blocks
-//!   4. `competing_blocks`    — competing block storage
+//!   3. `competing_blocks`    — competing block storage
+//!   4. `competing_seen`      — dedup set for competing blocks
 //!   5. `consensus`           — target/timestamp state
+//!
+//! **`competing_blocks` before `competing_seen`, corrected 2026-09-23 (`OBL-C28`).** This list said the
+//! opposite until then, and `prune_competing` — the one place that holds the two at once — has always
+//! taken `competing_blocks` first (`:848`), so a reader following the old order would have written the
+//! one nesting that deadlocks. `take_competing_blocks` and `store_competing_block` are written *not* to
+//! nest at all: each takes a lock, does its work, and releases it before taking the next, which is why
+//! `store_competing_block` tests the per-height cap in one critical section and pushes in another rather
+//! than holding both. Nest in the `competing_blocks`-first direction or not at all.
 //!
 //! `take_competing_blocks` and `put_competing_blocks` acquire only
 //! `competing_blocks` + `competing_seen` (never `connect_lock`),
@@ -103,8 +111,8 @@ use blake3::Hash as Blake3Hash;
 use randomx::{RandomXCache, RandomXFlags, RandomXVM};
 use sled::transaction::Transactional;
 use tracing::info;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp};
-use dwow_sdk::crypto::{pedersen_commitment_u64, Blind, MerkleNode, MerkleTree};
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget, BlockTimestamp};
+use dwow_sdk::crypto::{MerkleNode, MerkleTree};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::{ff::FromUniformBytes, Group, GroupEncoding};
 use dwow_sdk::pasta::group::ff::PrimeField;
@@ -162,12 +170,6 @@ pub struct CChainState {
     /// Commitments → block height (for maturity tracking).
     /// Typed Commitment per Phase X — BTreeMap (Commitment has Ord).
     commitment_set: Mutex<BTreeMap<Commitment, BlockHeight>>,
-    /// Uncle commitment Pedersen commitments → block height.
-    /// C_uncle_i = u_i·G_v + r_i·G_r with deterministic blinds per
-    /// uncle_merkle.md §Coinbase Split. In-memory only (no sled persistence
-    /// in Phase 1). Uncle commitments are deterministically recomputable from the
-    /// canonical chain via r_i = blake3(uncle_hash ‖ u_i ‖ H) mod p.
-    uncle_commitment_set: Mutex<HashMap<[u8; 32], BlockHeight>>,
     /// All nullifiers → block height (maturity tracking + historical record).
     /// Includes both claim nullifiers (PoWRewardV1, FeeCollectV1) and spend
     /// nullifiers (FeeV3, TransferV1, SpendV1, BurnV1).
@@ -370,14 +372,13 @@ impl CChainState {
             }
             Mutex::new(map)
         };
-        // Uncle commitment set — Pedersen commitments, in-memory only.
-        // TODO(Phase 2): Add dedicated sled tree for uncle commitment persistence.
-        // The previous restoration code read from store.uncles which stores
-        // JSON-serialized UncleBlock values (not u64 heights) — the v.len()==8
-        // check always filtered out all entries, so this was always empty.
-        // Uncle commitments are deterministically recomputable from chain data.
-        let uncle_commitment_set: Mutex<HashMap<[u8; 32], BlockHeight>> =
-            Mutex::new(HashMap::new());
+        // NOTE (`OBL-C26`, 2026-09-23): an `uncle_commitment_set` used to be constructed here —
+        // "Pedersen commitments, in-memory only", with a `TODO(Phase 2)` for persistence. It was
+        // **deleted rather than persisted**: nothing read it, in this crate or any other, so the restart
+        // hazard the row named was moot and the cost was a map that grew per block and a mutex
+        // acquisition per connect. The per-uncle Pedersen audit commitment the spec describes
+        // (`uncle_merkle.md` §Coinbase Split) has no home in this tree at all — see the register row for
+        // that gap, which is a design item and not this cache.
         let nullifier_set = {
             let mut map = BTreeMap::new();
             for item in store.nullifiers.iter() {
@@ -475,7 +476,6 @@ impl CChainState {
             #[cfg(feature = "pow")]
             cache_pool: Mutex::new(HashMap::new()),
             commitment_set,
-            uncle_commitment_set,
             nullifier_set,
             spent_nullifiers,
             block_anchor_tree,
@@ -779,18 +779,35 @@ impl CChainState {
     /// HAZOP H25: return all uncle block hashes stored in the sled uncles tree.
     /// Used at block acceptance to prevent the same uncle from earning rewards
     /// across multiple canonical blocks.
-    pub fn stored_uncle_hashes(&self) -> std::collections::HashSet<[u8; 32]> {
+    ///
+    /// **Fails closed on a key that is not exactly 32 bytes** (`OBL-C27`, 2026-09-23). Before that it
+    /// copied the first `min(32, key.len())` bytes into a zeroed array, so a 30-byte key `K` and the
+    /// 32-byte key `K‖00 00` produced the *same* set entry — silently, because the copy was an iterator
+    /// `zip` rather than a length check. Nothing can currently write such a key: `store.uncles` has one
+    /// insertion site (`uncles_batch.insert(uncle_hash.as_bytes(), …)`), whose argument is a
+    /// `blake3::Hash`. That is precisely the invariant worth enforcing rather than assuming, because this
+    /// set is a **dedup** input: an ambiguous key can only make the caller refuse an honest uncle or
+    /// admit a second reward for one already paid, and neither is a decision to make on a padded guess.
+    ///
+    /// An iteration error is now an error too, for the same reason — the old `if let Ok` skipped a read
+    /// that failed and returned a set that looked complete.
+    pub fn stored_uncle_hashes(
+        &self,
+    ) -> std::result::Result<std::collections::HashSet<[u8; 32]>, super::LinearError> {
         let mut keys = std::collections::HashSet::new();
         for item in self.store.uncles.iter() {
-            if let Ok((key, _)) = item {
-                // The first `min(32, key.len())` bytes, the rest zero — an iterator copy rather
-                // than a slice plus `copy_from_slice`, which panics on a length mismatch.
-                let mut arr = [0u8; 32];
-                for (slot, b) in arr.iter_mut().zip(key.iter()) { *slot = *b; }
-                keys.insert(arr);
-            }
+            let (key, _) = item.map_err(|e| {
+                super::LinearError::StorageError(format!("uncles tree iteration failed: {e}"))
+            })?;
+            let arr: [u8; 32] = key.as_ref().try_into().map_err(|_| {
+                super::LinearError::StorageError(format!(
+                    "uncles tree key is {} bytes, not 32 — the dedup set cannot compare it unambiguously",
+                    key.len()
+                ))
+            })?;
+            keys.insert(arr);
         }
-        keys
+        Ok(keys)
     }
 
     /// The PoW target that was in force at `height` — the target a block mined
@@ -951,6 +968,19 @@ impl CChainState {
             // different keys a re-submitted block was silently dropped (OBL-C52).
             let block_hash = Self::competing_dedup_key(block);
             drop(guard); // Release VM lock before acquiring other locks
+            // The cap test comes BEFORE the dedup insert (OBL-C28). `competing_seen` is only ever cleaned
+            // for blocks that are actually stored — `take_competing_blocks` and `prune_competing` remove a
+            // key while returning/dropping the block that has it — so a key inserted and then *refused* by
+            // the cap has no removal path at all and lives until restart, while the set is fed by whoever
+            // relays blocks. Three separate critical sections, not one nested pair: the documented lock
+            // order is narrower than what `prune_competing` does, and not nesting is what keeps the insert
+            // paths from having to pick a side.
+            {
+                let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
+                if competing.entry(block_height).or_default().len() >= crate::MAX_COMPETING_BLOCKS {
+                    return Ok(BlockConnectOutcome::CompetingStored);
+                }
+            }
             {
                 let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
                 if seen.contains(&block_hash) {
@@ -959,11 +989,7 @@ impl CChainState {
                 seen.insert(block_hash);
             }
             let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
-            let entry = competing.entry(block_height).or_default();
-            if entry.len() >= crate::MAX_COMPETING_BLOCKS {
-                return Ok(BlockConnectOutcome::CompetingStored);
-            }
-            entry.push(block.clone());
+            competing.entry(block_height).or_default().push(block.clone());
             drop(competing);
             info!(target: "chain_state",
                 "Competing block at h={} stored as potential uncle", block_height);
@@ -1024,15 +1050,18 @@ impl CChainState {
                 // Fork rule is uncle rewards, not reorg: an uncle-chain extension
                 // is always stored as a competing block, never reorged.
 
-                // H5 fix: cap competing blocks per height
+                // H5 fix: cap competing blocks per height.
+                //
+                // The cap is tested *before* the dedup key is recorded (OBL-C28): a key inserted for a
+                // block the cap then refuses has no removal path — the only removers walk the blocks they
+                // hold — so it would live until restart with the set fed by whoever relays blocks.
                 let block_hash = Self::competing_dedup_key(block);
-                let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
-                if !seen.contains(&block_hash) {
-                    seen.insert(block_hash);
-                    drop(seen);
-                    let entry = competing.entry(block_height).or_default();
-                    if entry.len() < crate::MAX_COMPETING_BLOCKS {
-                        entry.push(block.clone());
+                if competing.entry(block_height).or_default().len() < crate::MAX_COMPETING_BLOCKS {
+                    let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
+                    if !seen.contains(&block_hash) {
+                        seen.insert(block_hash);
+                        drop(seen);
+                        competing.entry(block_height).or_default().push(block.clone());
                     }
                 }
                 drop(competing);
@@ -1118,43 +1147,18 @@ impl CChainState {
         )?;
 
         // === Pre-compute Pedersen uncle commitments ===
-        // C_uncle_i = u_i·G_v + r_i·G_r  with deterministic blinds.
-        // r_i = blake3(uncle_hash ‖ u_i ‖ H) → pallas::Scalar
-        // Computed before the closure so uncle commitment batch is included
-        // in the atomic sled transaction (uncle_merkle.md §Coinbase Split).
-        let uncle_commitment_entries: Vec<([u8; 32], BlockHeight)> = {
-            let mut entries = Vec::new();
-            for uncle in uncles.iter().filter(|u| u.pin_accepted && u.pin_confirmed > BlockReward::new(0)) {
-                // Spec: uncle_merkle.md §Uncle blind — r_i = blake3s(uncle_hash ‖ u_i ‖ H):
-                // bind the uncle identity (hash), the pin amount (u_i), and the canonical
-                // block height (H). (Not the doubled mining blob.)
-                let r_bytes: [u8; 64] = {
-                    let uncle_hash = blake3::hash(&uncle.header.to_mining_blob());
-                    let mut hasher = blake3::Hasher::new();
-                    hasher.update(uncle_hash.as_bytes());
-                    hasher.update(&uncle.pin_confirmed.get().to_le_bytes());
-                    hasher.update(&height.to_le_bytes());
-                    let h = hasher.finalize();
-                    let mut out = [0u8; 64];
-                    out[..32].copy_from_slice(h.as_bytes());
-                    out[32..].copy_from_slice(h.as_bytes());
-                    out
-                };
-                let r_i = pallas::Scalar::from_uniform_bytes(&r_bytes);
-                let c_uncle = pedersen_commitment_u64(uncle.pin_confirmed.get(), Blind(r_i));
-                // A debug-only assertion used to guard this; in release an identity commitment
-                // fell through and was recorded as an uncle entry. Skipping is the defined
-                // behaviour in both profiles now.
-                if bool::from(c_uncle.is_identity()) { continue; }
-                // spec dispensation: type-system.md §2.3 — pallas compressed
-                // points are always exactly 32 bytes per the Pasta curve spec.
-                let mut c_bytes = [0u8; 32];
-                c_bytes.copy_from_slice(c_uncle.to_bytes().as_ref()); // pallas compressed point is 32 bytes
-                entries.push((c_bytes, height));
-            }
-            entries
-        };
-
+        //
+        // REMOVED 2026-09-23 (`OBL-C26`). This built `C_uncle_i = u_i·G_v + r_i·G_r` for every accepted
+        // uncle — a blake3 and a Pedersen commitment per uncle, per block — into a vector whose **only**
+        // consumer was an in-memory set that nothing ever read, and which was not persisted. The set is
+        // deleted (see `CChainState::new`), so the computation has no consumer at all and is gone with
+        // it.
+        //
+        // The spec obligation this looks like it served is **not** satisfied here or anywhere:
+        // `uncle_merkle.md` §Coinbase Split says the per-uncle audit commitments are "EC points in the
+        // stored cumulative supply chain", while `CumulativeSupplyEntry` carries one aggregate
+        // `value_commit` per height and `verify_uncle_split` checks the split as integer arithmetic. That
+        // gap is recorded as its own register item rather than re-created as dead code here.
         // --- Coinbase maturity enforcement (Phase 3c) ---
         // CRITICAL: MUST precede the sled commit closure (C-6 fix) — an immature spend must never
         // reach disk. The *rule* lives in `check_coinbase_maturity` below, extracted on 2026-09-23 so
@@ -1478,17 +1482,8 @@ impl CChainState {
             *tree = fresh;
         }
 
-        // --- Post-commit uncle_commitment_set update ---
-        // Uncle Pedersen commitments were pre-computed before the closure.
-        // Update the in-memory cache after the atomic sled commit succeeds.
-        // Sled persistence deferred to Phase 2 (uncle commitments are deterministically
-        // recomputable from chain data via r_i = blake3(uncle_hash ‖ u_i ‖ H) mod p).
-        if !uncle_commitment_entries.is_empty() {
-            let mut ucs = self.uncle_commitment_set.lock().unwrap_or_else(|e| e.into_inner());
-            for (c_bytes, h) in &uncle_commitment_entries {
-                ucs.insert(*c_bytes, *h);
-            }
-        }
+        // (An in-memory `uncle_commitment_set` update used to sit here, fed by the Pedersen commitments
+        // pre-computed above. Both are deleted — OBL-C26, 2026-09-23. Nothing read the set.)
 
         // Clean up orphaned competing blocks (H11)
         self.prune_competing(height);
@@ -1537,9 +1532,9 @@ impl CChainState {
     /// rewards per reorg), not a security issue. General reorg support will add
     /// per-block uncle tracking for complete reversal.
     ///
-    /// Similarly, in-memory `uncle_commitment_set` entries from the displaced block
-    /// are NOT removed — they represent Pedersen commitments that are
-    /// deterministically recomputable from chain data on restart.
+    /// The in-memory `uncle_commitment_set` this list used to mention is **deleted** (`OBL-C26`,
+    /// 2026-09-23). It was never read, so neither its entries nor their removal meant anything — and
+    /// this paragraph contradicted the delete path, which did remove them.
     /// Detect whether `block` extends a competing (uncle) chain that is heavier
     /// than the canonical chain, warranting a reorg. Called by `accept_block`
     /// BEFORE WASM execution so a divergent-coinbase extension is recognized as
@@ -1633,16 +1628,26 @@ impl CChainState {
         // why this method's `pow` feature gate is now spurious — it was needed for `hash_with_vm` — and
         // a later pass can drop it once the callers are checked (OBL-C52).
         let block_hash = Self::competing_dedup_key(block);
-        let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
-        if !seen.contains(&block_hash) {
-            seen.insert(block_hash);
-            drop(seen);
+        // Cap before insert (OBL-C28), as in `connect_block`'s two branches: a dedup key recorded for a
+        // block the cap then refuses is never removed, because the only removers walk the blocks they
+        // hold — and this path is reached from `accept_block` with a block a peer chose.
+        {
             let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
-            let entry = competing.entry(height).or_default();
-            if entry.len() < crate::MAX_COMPETING_BLOCKS {
-                entry.push(block.clone());
+            if competing.get(&height).map(|entry| entry.len()).unwrap_or(0)
+                >= crate::MAX_COMPETING_BLOCKS
+            {
+                return Ok(());
             }
         }
+        {
+            let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
+            if seen.contains(&block_hash) {
+                return Ok(());
+            }
+            seen.insert(block_hash);
+        }
+        let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
+        competing.entry(height).or_default().push(block.clone());
         Ok(())
     }
 
@@ -1932,13 +1937,9 @@ impl CChainState {
                 spent_nullifiers.remove(nf);
             }
         }
-        // M7 — reverse the in-memory uncle commitment set (entries created by this
-        // block). They are deterministically recomputable, but must not linger as
-        // phantom "already included" markers after a disconnect.
-        {
-            let mut ucs = self.uncle_commitment_set.lock().unwrap_or_else(|e| e.into_inner());
-            ucs.retain(|_, h| *h != height);
-        }
+        // (M7's reversal of the in-memory uncle commitment set sat here; the set is deleted — OBL-C26.
+        // The "phantom already-included markers" it guarded against were only ever visible to a reader
+        // of that set, and there was none.)
         // M7 — roll the cumulative-supply in-memory cache back to the predecessor.
         self.supply_chain.rollback_cache(height.pred().unwrap_or(BlockHeight::new(0)))?;
 
@@ -2115,6 +2116,20 @@ mod tests {
         assert_eq!(audit_total, expected_total,
             "Supply chain audit: cumulative reward sum must match expected_reward sum");
         assert!(audit_total > 0, "Supply must be non-zero after 5 blocks");
+
+        // `OBL-C45`: the *schedule-side* recomputation the RPC now reconciles against must agree with this
+        // store-side audit at every height. Two independent sums — one over the rewards actually written
+        // into blocks, one over `expected_reward` evaluated from the schedule — so a sum that starts at
+        // the wrong height (0, or `h+1`) fails here rather than silently mis-reporting supply.
+        let mut running = 0u64;
+        for h in 1u64..=5 {
+            running = running.saturating_add(expected_reward(BlockHeight::new(h)).get());
+            assert_eq!(
+                crate::supply_chain::CumulativeSupplyChain::expected_cumulative_supply(BlockHeight::new(h)),
+                SupplyAmount::new(running),
+                "OBL-C45: the schedule-side cumulative total must equal the store-side audit at height {h}"
+            );
+        }
     }
 
     /// CChainState::new correctly initializes from empty sled.
@@ -2616,6 +2631,91 @@ mod tests {
             cs.peek_competing_blocks(height).len(),
             2,
             "a distinct competing block at the same height must be stored"
+        );
+    }
+
+    /// `OBL-C28` — a competing block **refused by the per-height cap** must leave no dedup key behind.
+    ///
+    /// The inserts and removals are only paired for blocks that are actually stored: `take_competing_blocks`
+    /// and `prune_competing` remove a key while handing back or dropping the block that owns it. A key
+    /// recorded for a block the cap then refused therefore has no removal path at all, and the set — fed
+    /// by whatever a peer relays — grows for the life of the process.
+    ///
+    /// Both halves are asserted, because either alone passes against the defect: the table must stay at
+    /// the cap, **and** the set must hold no key for the refused block. The last assertion is the
+    /// positive control — the refused block must still be storable later, which it cannot be if the
+    /// refusal recorded its identity on the way out.
+    #[test]
+    fn test_competing_cap_refusal_leaves_no_dedup_key() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+        let height = BlockHeight::new(1);
+
+        for nonce in 0..crate::MAX_COMPETING_BLOCKS as u32 {
+            let b = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), nonce);
+            cs.store_competing_block(&b, height).unwrap();
+        }
+        assert_eq!(
+            cs.peek_competing_blocks(height).len(),
+            crate::MAX_COMPETING_BLOCKS,
+            "the cap must be reached exactly"
+        );
+        let keys_at_cap = cs.competing_seen.lock().unwrap_or_else(|e| e.into_inner()).len();
+
+        // One more *distinct* block at the same height — refused by the cap.
+        let over = dr_block(1, BlockTarget::MAX, blake3::hash(b"g"), 0xDEAD);
+        cs.store_competing_block(&over, height).unwrap();
+        assert_eq!(
+            cs.peek_competing_blocks(height).len(),
+            crate::MAX_COMPETING_BLOCKS,
+            "the cap must hold"
+        );
+        assert_eq!(
+            cs.competing_seen.lock().unwrap_or_else(|e| e.into_inner()).len(),
+            keys_at_cap,
+            "OBL-C28: a block refused by the cap must not leave a dedup key behind. Before the fix the \
+             cap test ran after the insert, and that key had no removal path — take/prune only remove \
+             keys for blocks they hold."
+        );
+
+        // Positive control: take the stored blocks — which removes exactly their keys — and then store the
+        // refused block. It must be accepted, because it was never recorded as seen.
+        let taken = cs.take_competing_blocks(height);
+        assert_eq!(taken.len(), crate::MAX_COMPETING_BLOCKS, "the take must return every stored block");
+        cs.store_competing_block(&over, height).unwrap();
+        assert_eq!(
+            cs.peek_competing_blocks(height).len(),
+            1,
+            "control: the refused block's identity must not have been recorded — it is not a duplicate"
+        );
+    }
+
+    /// `OBL-C27` — the uncle dedup reader **refuses** a key that is not a 32-byte hash.
+    ///
+    /// It used to copy the first `min(32, key.len())` bytes into a zeroed array, so a 30-byte key `K` and
+    /// the 32-byte key `K‖00 00` produced the same set entry — silently, because the copy was an iterator
+    /// `zip` rather than a length check. The set is a *dedup* input, so an ambiguous key can only make the
+    /// caller refuse an honest uncle or admit a second reward for one already paid.
+    #[test]
+    fn test_uncle_hash_reader_refuses_a_non_32_byte_key() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let cs = CChainState::new(Arc::new(db), 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        // Positive control first: a well-formed tree reads back, so the assertion below is about the key
+        // shape and not about a reader that fails on everything.
+        let good = [0x11u8; 32];
+        cs.store.uncles.insert(good, b"uncle").expect("insert a 32-byte uncle key");
+        let keys = cs.stored_uncle_hashes().expect("a 32-byte key set must read");
+        assert!(keys.contains(&good), "control: the stored hash must be returned");
+
+        // The defect's input: 30 bytes, which the old reader padded to `K‖00 00`.
+        cs.store.uncles.insert(&good[..30], b"short").expect("insert a 30-byte key");
+        assert!(
+            matches!(cs.stored_uncle_hashes(), Err(LinearError::StorageError(_))),
+            "OBL-C27: a key that is not 32 bytes must be a hard error, not zero-padded into an \
+             array a 32-byte key could also produce"
         );
     }
 

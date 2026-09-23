@@ -381,12 +381,41 @@ impl DwowNode {
 
         // Stored cumulative supply state — seeded by the coinbase WASM
         // execution (block_acceptor mirrors the overlay into this tree).
-        // UNVERIFIED(F3-1): needs cargo test -p dwowd --lib && ./verify_cumulative_supply.sh
-        // against a devnet node (no unit test covers this path directly)
         let latest = chain.supply_chain.get_latest();
         let cumulative = latest.value_commit;
         let cumulative_blind = latest.blind;
         let total_supply = latest.total_supply;
+
+        // Reconcile the stored plaintext total against the emission schedule **at read time** (`OBL-C45`).
+        //
+        // Until 2026-09-23 this handler returned the stored entry with no recomputation at all: the
+        // supply-chain entry is re-derived and cross-checked against the WASM overlay before it is
+        // *written* (`block_acceptor::read_cumulative_from_overlay`, OBL-C25), so the stored value is not
+        // arbitrary — but an RPC whose whole purpose is to expose an audit anchor should not ask the
+        // caller to take that on trust, and `verify_cumulative_supply.sh` performed this exact comparison
+        // from the outside, in Python, against the same schedule.
+        //
+        // It fails closed rather than reporting a flag: a mismatch means the stored total and the
+        // schedule disagree, and a caller parsing `total_supply` out of a successful response cannot tell
+        // a flag from a claim. The cost is O(height) reward evaluations on an operator RPC, not a
+        // per-block path — see `expected_cumulative_supply`.
+        let expected_supply = dwow_chain::supply_chain::CumulativeSupplyChain::expected_cumulative_supply(height);
+        if total_supply != expected_supply {
+            error!(
+                target: "dwowd::rpc::blockchain",
+                "[RPC] cumulative supply does not reconcile at height {}: stored {}, emission schedule {}",
+                height, total_supply, expected_supply
+            );
+            return JsonError::new(
+                InternalError,
+                Some(format!(
+                    "cumulative supply does not reconcile at height {}: stored {}, emission schedule {}",
+                    height, total_supply.get(), expected_supply.get()
+                )),
+                id,
+            )
+            .into()
+        }
 
         // Serialize using dwow_serial (Encodable trait)
         use dwow_serial::Encodable;

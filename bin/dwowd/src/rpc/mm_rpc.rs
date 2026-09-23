@@ -29,6 +29,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    sync::atomic::Ordering,
 };
 
 use async_trait::async_trait;
@@ -59,6 +60,26 @@ use dwow_chain::{
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTimestamp, BlockVersion, MoneroBlockHeight};
 
 use crate::{error::{miner_status_response, server_error, RpcError}, DwowNode};
+
+/// Evict the **oldest** entry from a merge-mining job table at capacity (`OBL-C55`).
+///
+/// `merge-mining-ffi.md` §4.4 requires the oldest entry to be evicted, not the whole table and not an
+/// arbitrary one. Both job tables therefore carry an insertion sequence as their value — `u64` from
+/// `MiningState::mm_jobs_seq` — because a `HashMap`'s and a `HashSet`'s iteration order is arbitrary:
+/// `keys().next()` (and `iter().next()`) evicted *some* job, and the comment beside one of those sites
+/// said so while the site next to it, and the test that named this rule, both claimed FIFO.
+///
+/// Returns whether an entry was evicted, so a caller can assert on it.
+fn evict_oldest<K: std::hash::Hash + Eq + Clone>(table: &mut HashMap<K, u64>, capacity: usize) -> bool {
+    if table.len() < capacity {
+        return false;
+    }
+    let Some(oldest) = table.iter().min_by_key(|(_, seq)| **seq).map(|(k, _)| k.clone()) else {
+        return false;
+    };
+    table.remove(&oldest);
+    true
+}
 
 /// JSON-RPC `RequestHandler` for Merge Mining (p2pool protocol)
 pub struct MergeMiningRpcHandler;
@@ -324,22 +345,17 @@ impl DwowNode {
         };
 
         // Register the job with bounded capacity — prevent unbounded
-        // growth in long-running nodes. Jobs older than the latest
-        // MAX_MM_JOBS entries are evicted.
+        // growth in long-running nodes. The oldest job is evicted.
         {
             const MAX_MM_JOBS: usize = 100;
             let mut mm_jobs = self.mining_state.mm_jobs.lock().await;
-            // HAZID H-M11: single-entry eviction, not bulk clear(). Previously
-            // clear() wiped 100 jobs at once, evicting recently-created valid
-            // jobs alongside expired ones. Note mm_jobs is a HashMap, so the
-            // evicted entry is arbitrary, not FIFO - acceptable for a job cache
-            // since jobs expire naturally (submitted/current-height tracking).
-            if mm_jobs.len() >= MAX_MM_JOBS {
-                if let Some(evicted) = mm_jobs.keys().next().cloned() {
-                    mm_jobs.remove(&evicted);
-                }
-            }
-            mm_jobs.insert(job_id, ());
+            // HAZID H-M11: single-entry eviction, not bulk clear(). Previously clear() wiped 100 jobs at
+            // once, evicting recently-created valid jobs alongside expired ones. The evicted entry is the
+            // **oldest by insertion** (`OBL-C55`): `evict_oldest` reads the sequence value rather than
+            // `keys().next()`, which on a HashMap was arbitrary while the comment here, and
+            // merge-mining-ffi.md §4.4, both said FIFO.
+            evict_oldest(&mut mm_jobs, MAX_MM_JOBS);
+            mm_jobs.insert(job_id, self.mining_state.mm_jobs_seq.fetch_add(1, Ordering::Relaxed));
         }
 
         // Store template in current_linear_template
@@ -411,7 +427,7 @@ impl DwowNode {
         // Check not already submitted
         {
             let submitted = self.mining_state.mm_jobs_submitted.lock().await;
-            if submitted.contains(&job_id) {
+            if submitted.contains_key(&job_id) {
                 return miner_status_response(id, "rejected")
             }
         }
@@ -753,13 +769,11 @@ impl DwowNode {
                 {
                     const MAX_MM_SUBMITTED: usize = 1000;
                     let mut submitted = self.mining_state.mm_jobs_submitted.lock().await;
-                    // HAZID H-M11: FIFO eviction for submitted set too.
-                    if submitted.len() >= MAX_MM_SUBMITTED {
-                        if let Some(oldest) = submitted.iter().next().cloned() {
-                            submitted.remove(&oldest);
-                        }
-                    }
-                    submitted.insert(job_id);
+                    // HAZID H-M11: FIFO eviction for submitted set too — and it now is FIFO
+                    // (`OBL-C55`). The set is keyed the same way as `mm_jobs`, and this site's comment
+                    // claimed FIFO while `iter().next()` on a HashSet picked arbitrarily.
+                    evict_oldest(&mut submitted, MAX_MM_SUBMITTED);
+                    submitted.insert(job_id, self.mining_state.mm_jobs_seq.fetch_add(1, Ordering::Relaxed));
                 }
 
                 // Generate new template for next round.
@@ -891,57 +905,59 @@ mod tests {
     /// merge-mining-ffi.md §4.4: "When the table reaches capacity, the oldest
     /// entry SHALL be evicted, not all entries."
     ///
-    /// Uses a Vec as an insertion-order tracker alongside the HashMap to
-    /// deterministically identify the oldest entry for FIFO eviction.
+    /// **Rewritten 2026-09-23 (`OBL-C55`) to call the code the daemon calls.** As written this test built
+    /// its own `HashMap` and `Vec` pair and evicted from *them* — it asserted FIFO of a local model while
+    /// the two real eviction sites picked arbitrarily with `keys().next()`, so it could not have failed for
+    /// the reason it named. It now drives `evict_oldest`, which is what `mm_get_aux_block` calls.
     #[test]
     fn test_fifo_eviction_removes_oldest_not_newest() {
-        let mut map: HashMap<String, ()> = HashMap::new();
-        let mut order: Vec<String> = Vec::new();
-
-        // Fill to capacity with ordered keys, tracking insertion order
-        for i in 0..100 {
-            let key = format!("job_{:03}", i);
-            map.insert(key.clone(), ());
-            order.push(key);
+        let mut table: HashMap<String, u64> = HashMap::new();
+        for seq in 0..100u64 {
+            table.insert(format!("job_{seq:03}"), seq);
         }
-        assert_eq!(map.len(), 100, "table at capacity");
-        assert_eq!(order.len(), 100, "order tracker at capacity");
+        assert_eq!(table.len(), 100, "table at capacity");
 
-        // FIFO: remove oldest by insertion order (first in Vec)
-        let oldest = order.remove(0);
-        map.remove(&oldest);
-        assert_eq!(map.len(), 99, "one entry evicted");
-        assert_eq!(order.len(), 99, "order tracker updated");
+        assert!(evict_oldest(&mut table, 100), "a table at capacity must evict one entry");
+        assert_eq!(table.len(), 99, "one entry evicted");
 
-        // Insert new job — track in order
-        let new_key = "job_new".to_string();
-        map.insert(new_key.clone(), ());
-        order.push(new_key);
-        assert_eq!(map.len(), 100, "new entry fits after FIFO eviction");
+        table.insert("job_new".to_string(), 100);
+        assert_eq!(table.len(), 100, "new entry fits after FIFO eviction");
 
-        // Oldest was evicted (job_000), job_099 still present, new entry present
-        assert!(!map.contains_key("job_000"), "oldest (job_000) evicted");
-        assert!(map.contains_key("job_099"), "job_099 survives FIFO");
-        assert!(map.contains_key("job_new"), "new entry present");
+        // The implementation's answer, not a model's: `keys().next()` — what the daemon did before
+        // `OBL-C55` — picks an arbitrary key, so `job_000` surviving is the failure this asserts against.
+        assert!(!table.contains_key("job_000"), "the OLDEST entry (job_000) must be the one evicted");
+        assert!(table.contains_key("job_099"), "job_099 is newer and must survive");
+        assert!(table.contains_key("job_new"), "new entry present");
+
+        // Below capacity evicts nothing — a control that the helper is not a blanket clear.
+        assert!(!evict_oldest(&mut table, 1000), "under capacity there is nothing to evict");
+        assert_eq!(table.len(), 100, "and nothing is removed");
     }
 
     /// P0: Submitted set FIFO eviction — same pattern as job table.
     /// merge-mining-ffi.md §4.4
+    ///
+    /// **Rewritten 2026-09-23 (`OBL-C55`)**, for the same reason as the table test above: the version
+    /// before it built a local `HashSet`, removed an entry with the comment "arbitrary pick from set", and
+    /// asserted only the resulting *length* — so it passed against the arbitrary behaviour it was named
+    /// after. This one asserts which entry goes.
     #[test]
     fn test_submitted_fifo_eviction() {
-        let mut submitted: HashSet<String> = HashSet::new();
-        for i in 0..1000 {
-            submitted.insert(format!("sub_{:04}", i));
+        let mut submitted: HashMap<String, u64> = HashMap::new();
+        for seq in 0..1000u64 {
+            submitted.insert(format!("sub_{seq:04}"), seq);
         }
-        assert_eq!(submitted.len(), 1000, "submitted set at capacity");
+        assert_eq!(submitted.len(), 1000, "submitted table at capacity");
 
-        // FIFO: remove oldest entry (arbitrary pick from set)
-        if let Some(oldest) = submitted.iter().next().cloned() {
-            submitted.remove(&oldest);
-        }
+        assert!(evict_oldest(&mut submitted, 1000));
         assert_eq!(submitted.len(), 999, "one entry evicted");
-        submitted.insert("sub_new".into());
+
+        submitted.insert("sub_new".into(), 1000);
         assert_eq!(submitted.len(), 1000, "new entry fits");
+
+        assert!(!submitted.contains_key("sub_0000"), "the OLDEST submission must be the one evicted");
+        assert!(submitted.contains_key("sub_0999"), "the newest pre-existing entry survives");
+        assert!(submitted.contains_key("sub_new"), "new entry present");
     }
 
     /// P3: Job ID determinism — same template contents produce same job ID.

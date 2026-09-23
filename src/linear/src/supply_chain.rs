@@ -325,6 +325,29 @@ impl CumulativeSupplyChain {
         Ok(())
     }
 
+    /// The cumulative supply the **emission schedule** requires at `height`.
+    ///
+    /// `Σ expected_reward(h) for h = 1..=height` — the same function, under the same name, as
+    /// `sim/crypto.py:expected_cumulative_supply` and `contrib/model/supply_chain_model.py`, which are
+    /// the specification (`OBL-C45`). It exists in Rust so a reader of the *stored* supply can reconcile
+    /// it against the schedule instead of trusting it: `blockchain_get_cumulative_supply` called this
+    /// after the row was read, because it returned the stored entry with no recomputation at all.
+    ///
+    /// O(height) reward evaluations, each O(log height) in `fixed_pow_decay`, so an operator RPC call
+    /// rather than a per-block path — deliberately not memoised, because a cache here would be a second
+    /// piece of stored state to reconcile.
+    pub fn expected_cumulative_supply(height: BlockHeight) -> SupplyAmount {
+        let mut total = SupplyAmount::ZERO;
+        for h in 1..=height.get() {
+            // `SupplyAmount::from(BlockReward)` — the domain-edge conversion this file documents, rather
+            // than unwrapping to `u64` and rewrapping, so the crossing stays nominal.
+            total = total.saturating_add(SupplyAmount::from(dwow_sdk::blockchain::expected_reward(
+                BlockHeight::new(h),
+            )));
+        }
+        total
+    }
+
     /// Write a cumulative supply entry into a sled Batch.
     ///
     /// Used by `connect_block` to include supply_chain updates in the
