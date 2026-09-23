@@ -618,6 +618,143 @@ mod tests {
         Ok(())
     }
 
+    /// The **adopt** path's refusal, driven with a real second genesis.
+    ///
+    /// `OBL-C34` stayed `PARTLY` for exactly this and said so: the check was placed in the pull
+    /// loop, the positive half was measured (a correct genesis is not obstructed), and the
+    /// end-to-end negative was not — "a condition that was never true would look identical". The
+    /// gap was never the *comparison*, which `genesis_pin_rejects_a_wrong_hash` covers on both
+    /// sides, but that the loop reaches it at all, and no unit test can supply a live peer, a
+    /// RandomX cache and a synced head. So the decision was extracted into
+    /// `task::consensus_linear::admit_received_genesis` — the function the loop now calls — and
+    /// this drives it with a second genesis built from a different mining key.
+    ///
+    /// The fixture the register asked for, and it costs nothing on a failed run: the second
+    /// genesis is built by the *same* `build_genesis_block` with the *same* `DRKW_MAGIC`, so it
+    /// differs from the pinned genesis in one input — the mining recipient, whose key drives the
+    /// coinbase commitment and nullifier. No wrong pin is written to disk, so this never risks the
+    /// file the whole repository's genesis identity rests on.
+    ///
+    /// Three assertions, and the third is what keeps the first two honest: the pinned genesis is
+    /// **admitted**, the second genesis is **refused with the pin named**, and a block at another
+    /// height is **admitted whatever its hash carries** — without which a function that refused
+    /// everything would pass.
+    #[test]
+    fn the_adopt_path_refuses_a_second_genesis() -> TestResult<()> {
+        dwow_native_token_contract::enable_deterministic_zk();
+
+        smol::block_on(async {
+            let expected = crate::pinned_genesis_hash().ok_or_else(|| TestError::Test {
+                contract: "genesis",
+                endpoint: "pinned_genesis_hash",
+                cause: "the pin must be set; see genesis_pin_is_current".into(),
+            })?;
+
+            // A second identity for the same network: the canonical keys file with its last byte
+            // changed. It must be the canonical key *plus one* rather than an arbitrary constant,
+            // and that is not laziness: `SecretKey::from_bytes` is `pallas::Base::from_repr`, which
+            // reads the 32 bytes **little-endian**, so the last byte is the most significant one
+            // and a fixture like `…feedface` is not a canonical field element at all — the first
+            // version of this test was rejected with "keys.toml: invalid secret key" for exactly
+            // that. One nibble is enough to change every derived key, and the pin above proves it.
+            const OTHER_KEYS_TOML: &str = "[node0]\nwallet_secret = \
+                \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685406\"\n";
+
+            let har =
+                GenesisHarness::new_without_contracts().infra("creating the genesis harness")?;
+            let prev_entry = har.chain_state.supply_chain.get_latest();
+            let path = std::env::temp_dir()
+                .join(format!("dwow_adopt_{}.toml", std::process::id()));
+
+            // (1) The genesis the pin records. Building it here is not incidental: without this
+            // assertion the negative below could pass on a fixture that is not a genesis at all.
+            std::fs::write(&path, crate::tests::modules::chain_setup::GENESIS_KEYS_TOML)
+                .infra("writing the canonical keys file")?;
+            let mgr = crate::accounts::AccountManager::open(
+                &path, dwow_sdk::crypto::keypair::Network::Testnet, "node0",
+            ).infra("opening the canonical account")?;
+            let recipient = crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
+                .infra("deriving the canonical mining recipient")?;
+            drop(mgr);
+            let canonical = crate::build_genesis_block(
+                &prev_entry,
+                recipient,
+                crate::tests::modules::chain_setup::DRKW_MAGIC,
+            ).await.infra("building the canonical genesis block")?;
+            let canonical_hash = har.chain_state
+                .hash_block_with_cached_vm(&canonical)
+                .infra("hashing the canonical genesis block")?;
+
+            ensure_eq!(
+                canonical_hash.to_string(), expected,
+                "the positive control must be hashing the genesis the pin records, or the \
+                 refusal below is about some other block"
+            );
+            ensure!(
+                crate::task::consensus_linear::admit_received_genesis(&canonical, &canonical_hash)
+                    .is_ok(),
+                "the pinned genesis MUST be admitted on the adopt path — this is the half that \
+                 catches an extraction which turned the check into a refusal of everything"
+            );
+
+            // (2) A second genesis: same builder, same magic bytes, a different mining key.
+            std::fs::write(&path, OTHER_KEYS_TOML).infra("writing the second keys file")?;
+            let mgr = crate::accounts::AccountManager::open(
+                &path, dwow_sdk::crypto::keypair::Network::Testnet, "node0",
+            ).infra("opening the second account")?;
+            let recipient = crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
+                .infra("deriving the second mining recipient")?;
+            drop(mgr);
+            let _ = std::fs::remove_file(&path);
+            let second = crate::build_genesis_block(
+                &prev_entry,
+                recipient,
+                crate::tests::modules::chain_setup::DRKW_MAGIC,
+            ).await.infra("building the second genesis block")?;
+            let second_hash = har.chain_state
+                .hash_block_with_cached_vm(&second)
+                .infra("hashing the second genesis block")?;
+
+            ensure!(
+                second_hash != canonical_hash,
+                "the fixture is not a second genesis — identical hashes mean the mining key never \
+                 reached the coinbase, and the refusal below would prove nothing"
+            );
+
+            let err = match crate::task::consensus_linear::admit_received_genesis(
+                &second, &second_hash,
+            ) {
+                Ok(()) => {
+                    return Err(TestError::Test {
+                        contract: "genesis",
+                        endpoint: "admit_received_genesis",
+                        cause: "a genesis that is not this build's genesis MUST be refused on the \
+                                adopt path — this is the end-to-end negative OBL-C34 was PARTLY for"
+                            .into(),
+                    })
+                }
+                Err(e) => e,
+            };
+            ensure!(
+                err.to_string().contains("does not match the compiled-in pin"),
+                format!("the adopt-path refusal must name the pin, got: {err}"),
+            );
+
+            // (3) The control that keeps (2) honest: the rule is about the genesis only. A block
+            // at any other height is admitted by this function whatever its hash carries, because
+            // screening every synced block against the genesis pin would refuse the whole chain.
+            let mut not_genesis = second.clone();
+            not_genesis.header.height = BlockHeight::new(2);
+            ensure!(
+                crate::task::consensus_linear::admit_received_genesis(&not_genesis, &second_hash)
+                    .is_ok(),
+                "only the genesis is the chain's identity — this function must not screen blocks \
+                 at other heights"
+            );
+            Ok(())
+        })
+    }
+
     /// Block creation: genesis → build height-2 block with PoWRewardV1 coinbase
     /// → submit through `accept_block` (production path, WASM executes).
     ///
