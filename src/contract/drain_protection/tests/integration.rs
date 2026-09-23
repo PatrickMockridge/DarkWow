@@ -207,6 +207,8 @@ fn test_exit_params_encoding() {
         dao_membership_note: pallas::Base::from(1),
         effective_weight: pallas::Base::from(1000),
         proof: vec![1, 2, 3],
+        tx_binding: pallas::Base::from(23),
+        tx_nonce: pallas::Base::from(24),
     };
 
     let encoded = serialize(&params);
@@ -214,11 +216,14 @@ fn test_exit_params_encoding() {
 
     assert_eq!(decoded.contribution_weight, params.contribution_weight);
     assert_eq!(decoded.current_block, params.current_block);
+    assert_eq!(decoded.tx_binding, params.tx_binding);
+    assert_eq!(decoded.tx_nonce, params.tx_nonce);
 }
 
 /// A drain-protection proof is kilobyte-scale, so a `u8` prefix truncated it and every field after
-/// it misread. `ExitParamsV1` carries its proof *last*, so nothing follows to be moved — the exact
-/// length check is what a wrong width trips.
+/// it misread. `ExitParamsV1` carries its proof last among the fixed fields — and, since `OBL-C78`,
+/// the tx pair **after** the proof — so the length check is what a wrong width trips, and the pair
+/// is what a decoder that ignored the declared proof length would slice wrongly.
 #[test]
 fn test_exit_params_proof_length_is_not_a_byte() {
     let params = ExitParamsV1 {
@@ -230,15 +235,19 @@ fn test_exit_params_proof_length_is_not_a_byte() {
         dao_membership_note: pallas::Base::from(43),
         effective_weight: pallas::Base::from(1000),
         proof: vec![0xE9; 700],
+        tx_binding: pallas::Base::from(45),
+        tx_nonce: pallas::Base::from(46),
     };
 
     let encoded = params.encode().unwrap();
-    assert_eq!(encoded.len(), 180 + 700);
+    assert_eq!(encoded.len(), 244 + 700);
 
     let decoded = ExitParamsV1::decode(&encoded).unwrap();
     assert_eq!(decoded.proof.len(), 700);
     assert_eq!(decoded.contribution_weight, 4242);
     assert_eq!(decoded.current_block, 5000);
+    assert_eq!(decoded.tx_binding, pallas::Base::from(45));
+    assert_eq!(decoded.tx_nonce, pallas::Base::from(46));
 }
 
 /// `ProposeParamsV1` carries its proof last too, with the same `u8` prefix.
