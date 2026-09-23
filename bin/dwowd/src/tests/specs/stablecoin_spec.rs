@@ -108,6 +108,14 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
         promissory_note_contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
         governance_pub_x,
         governance_pub_y,
+        // OBL-C78: the deploy carries no transaction to bind, so both halves are zero and the
+        // binding is the zero pair's — the same value `client/initialize.rs` derives for it.
+        tx_binding: poseidon_hash([
+            pallas::Base::from(3u64),
+            pallas::Base::zero(),
+            pallas::Base::zero(),
+        ]),
+        tx_nonce: pallas::Base::zero(),
     }
     .encode();
 

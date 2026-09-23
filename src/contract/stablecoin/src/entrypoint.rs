@@ -149,6 +149,15 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
             // goes through the `else` arm with params carrying the authority.
             governance_pub_x: pallas::Base::zero(),
             governance_pub_y: pallas::Base::zero(),
+            // OBL-C78: the pair a client that leaves both at zero would carry. This branch runs with
+            // no call and verifies no proof, so the value is inert here — it is set to the derived
+            // form rather than to zero so this default agrees with the circuit it mirrors.
+            tx_binding: poseidon_hash([
+                pallas::Base::from(3u64),
+                pallas::Base::zero(),
+                pallas::Base::zero(),
+            ]),
+            tx_nonce: pallas::Base::zero(),
         }
     } else {
         InitializeParams::decode(ix)
@@ -253,9 +262,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             // Order matches constrain_instance in init.zk:
             // tx_binding, tx_nonce, deployer_auth
+            //
+            // OBL-C78: the first two come from the call. The client already derived the binding
+            // (`client/initialize.rs`'s `tx_binding()`), so the arm's literal zeros were the only
+            // thing standing between a real init proof and the vector the host expected.
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_INIT_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero(), params.deployer_auth],
+                vec![params.tx_binding, params.tx_nonce, params.deployer_auth],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;

@@ -227,6 +227,18 @@ pub struct InitializeParams {
     /// compares those against this stored pair.
     pub governance_pub_x: pallas::Base,
     pub governance_pub_y: pallas::Base,
+
+    /// The transaction binding the init proof is made against:
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])` (`OBL-C78`).
+    ///
+    /// `init.zk` instances it with `tx_nonce` after it, so the metadata has to publish it — and the
+    /// host can only publish what the call carries. This arm published two literal zeros while the
+    /// client (`client/initialize.rs`) already derived the binding, so a real init proof could not
+    /// verify against the vector the host expected. Appended after `governance_pub_y`, so an
+    /// old-format call is refused by the length guard rather than decoded shifted.
+    pub tx_binding: pallas::Base,
+    /// The tx nonce half of the pair above — instanced separately by the circuit.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for InitializeParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
@@ -265,15 +277,17 @@ impl InitializeParams {
         buf.extend_from_slice(&self.promissory_note_contract_id.to_bytes());
         buf.extend_from_slice(&self.governance_pub_x.to_repr());
         buf.extend_from_slice(&self.governance_pub_y.to_repr());
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
     #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 245 {
+        if data.len() < 309 {
             return Err(ContractError::IoError(format!(
-                "InitializeParams: expected at least 181 bytes, got {}", data.len()
+                "InitializeParams: expected at least 309 bytes, got {}", data.len()
             )));
         }
         let model = StablecoinModel::decode(&data[0..1])?;
@@ -287,10 +301,10 @@ impl InitializeParams {
         let price_deviation_threshold = u64::from_le_bytes(data[57..65].try_into().unwrap());
         let cp_count = data[65] as usize;
         let dm_start = 66 + cp_count * 25;
-        if data.len() < dm_start + 211 {
+        if data.len() < dm_start + 275 {
             return Err(ContractError::IoError(format!(
                 "InitializeParams: expected at least {} bytes for {} collateral_params, got {}",
-                dm_start + 18 + 97, cp_count, data.len()
+                dm_start + 18 + 97 + 64, cp_count, data.len()
             )));
         }
         let mut collateral_params = Vec::with_capacity(cp_count);
@@ -319,12 +333,16 @@ impl InitializeParams {
             .ok_or_else(|| ContractError::IoError("InitializeParams: invalid governance_pub_x".into()))?;
         let governance_pub_y = Option::<pallas::Base>::from(pallas::Base::from_repr(data[dm_start + 179..dm_start + 211].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("InitializeParams: invalid governance_pub_y".into()))?;
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[dm_start + 211..dm_start + 243].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("InitializeParams: invalid tx_binding".into()))?;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[dm_start + 243..dm_start + 275].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("InitializeParams: invalid tx_nonce".into()))?;
         Ok(InitializeParams {
             model, min_collateralization_ratio, liquidation_threshold, liquidation_penalty,
             base_rate, pi_kp, pi_ki, twap_window, price_deviation_threshold,
             collateral_params, dead_man_switch, token_authority_pub, create_token,
             token_symbol, deployer_auth, promissory_note_contract_id,
-            governance_pub_x, governance_pub_y,
+            governance_pub_x, governance_pub_y, tx_binding, tx_nonce,
         })
     }
 }

@@ -189,6 +189,15 @@ impl InitializeCallBuilder {
             promissory_note_contract_id: self.promissory_note_contract_id,
             governance_pub_x: self.governance_pub_x,
             governance_pub_y: self.governance_pub_y,
+            // OBL-C78: the same derivation `InitV1CallData::tx_binding` computes, so the params the
+            // deployer sends and the proof it builds cannot disagree. This builder has no transaction
+            // to bind, so both halves are zero and the binding is the zero pair's.
+            tx_binding: poseidon_hash([
+                pallas::Base::from(3u64),
+                pallas::Base::zero(),
+                pallas::Base::zero(),
+            ]),
+            tx_nonce: pallas::Base::zero(),
         };
 
         InitializeCallDebris { params, token_mint_debris }
@@ -251,6 +260,15 @@ impl InitV1CallData {
     /// Compute the transaction binding hash
     pub fn tx_binding(&self) -> pallas::Base {
         poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
+    }
+
+    /// Bind the proof to a transaction: the pair the witnesses, the public inputs and the params all
+    /// use, so the three agree (`OBL-C78`). Without it both default to zero, which is what the
+    /// fixtures use.
+    pub fn tx_pair(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Self {
+        self.tx_commitment = tx_commitment;
+        self.tx_nonce = tx_nonce;
+        self
     }
 
     /// Compute public inputs for this call
