@@ -68,8 +68,16 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({
-                    // WithdrawV1 nullifier nf = poseidon_hash([dnl=1, os=43, pid=1, sn=0]).
-                    let nf = poseidon_hash([pallas::Base::from(1u64), pallas::Base::from(43u64), pallas::Base::from(1u64), pallas::Base::zero()]);
+                    // WithdrawV1 nullifier, taken from the *producer* rather than recalled:
+                    // `harness/purse.rs:89-91` withdraws with `os = 42` and `sn = 1`, so
+                    // `nf = poseidon_hash([dnl=1, os=42, pid=1, sn=1])`. This check read
+                    // `os = 43, sn = 0`, which no proof in the flow ever produces — the deposit
+                    // consumes `sn = 0` (and its own check above is right), so `0` here was the
+                    // previous step's nonce and `43` matched no harness at all. It was the spec's
+                    // expectation that was wrong, not the contract: the endpoint succeeded and the
+                    // nullifier *is* written (`entrypoint/mod.rs:215-216`, `db_mark_spent`). See
+                    // OBL-C87.
+                    let nf = poseidon_hash([pallas::Base::from(1u64), pallas::Base::from(42u64), pallas::Base::from(1u64), pallas::Base::from(1u64)]);
                     let k = nf.to_repr().to_vec();
                     let c = *PURSE_CONTRACT_ID;
                     move |chain: &HeavyweightPipeline| {
