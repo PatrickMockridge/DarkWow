@@ -37,10 +37,18 @@ Two boundaries remain, and they are separate:
   the weak one, through Part 3c's `ActionFree`. What the equation is reaching for is the reduction,
   which `Step.tau` now gives.
 
-  The weak relation `WeakBisim` is here (Part 9b) and carries **no laws yet** — no `SCong`-invariance,
-  no reflexivity, no transitivity, none of the τ-laws. It is here because the refutation needs its
-  definition; its laws belong with whatever consumes them. The barb results are unaffected either way:
-  a barb is an action, and `Barb` never saw `τ`.
+  The weak relation `WeakBisim` and its laws are here (Part 9b): `scong_isWeakBisim` — which is §1.2's
+  "differ only in internal task scheduling" sentence in the reading a calculus of processes can support,
+  rearranging a term rather than reordering a scheduler — with `strong_is_weak`, reflexivity, symmetry
+  and the three par laws. **Transitivity is not proved**: composing two weak bisimulations means weaving
+  the `τ`-runs of the two witnesses, which is real work and which nothing here consumes. Nothing models
+  a scheduler either, so "scheduling" in the net sense stays prose rather than becoming an absence.
+
+  §1.2's *third* relation is here too: `BarbedEq` is its `≅` read literally as "the barbs match", with
+  both stated laws. It is strictly weaker than bisimilarity — `barb_eq_not_strongbisim` is the witness —
+  and the standard barbed equivalence closes the relation under every context, which matching barbs
+  alone does not. The barb results are unaffected by all of this: a barb is an action, and `Barb` never
+  saw `τ`.
 
 ## What the rules are, and which are derived
 
@@ -847,6 +855,109 @@ def IsWeakBisim (R : Proc → Proc → Prop) : Prop :=
     and for the same reason: the union of weak bisimulations is one, so this *is* the greatest fixed
     point, and composing two witnesses needs a relation to hand over. -/
 def WeakBisim (P Q : Proc) : Prop := ∃ R : Proc → Proc → Prop, IsWeakBisim R ∧ R P Q
+
+/-! ### The weak relation's laws, and the sentence they are the mechanization of
+
+   §1.2 says "two process nets that differ only in internal task scheduling are weak-bisimilar". What
+   can be said about *processes* here is the congruence reading: rearranging a term — `par_comm`,
+   `par_assoc` — does not change what an observer sees, so congruent terms are weakly bisimilar. That is
+   `scong_isWeakBisim`, and the three par laws below are §1.2's sentence in the form the calculus can
+   state.
+
+   What is *not* mechanized is scheduling in the net sense — the interleaving of `τ`s *between*
+   independent subprocesses — because nothing here models a scheduler. `WeakBisim` is the relation that
+   would make it provable, which is why the sentence is a motivation for the definition rather than a
+   consequence of it. Recorded rather than left as an impression. -/
+
+/-- **Every strong bisimulation is a weak one**: matching each step with a step of the same label is a
+    special case of matching it up to `τ*` on both sides. The three `τ*`-runs are all reflexive. -/
+@[axiom_budget 0]
+theorem strong_is_weak {P Q : Proc} (h : StrongBisim P Q) : WeakBisim P Q := by
+  obtain ⟨R, hR, hPQ⟩ := h
+  refine ⟨R, ?_, hPQ⟩
+  intro A B hAB
+  constructor
+  · rintro μ A' hs
+    obtain ⟨B', hsB, hrel⟩ := (hR hAB).1 hs
+    exact ⟨B', StepWeak.intro (StepTauStar.refl B) hsB (StepTauStar.refl B'), hrel⟩
+  · rintro μ B' hs
+    obtain ⟨A', hsA, hrel⟩ := (hR hAB).2 hs
+    exact ⟨A', StepWeak.intro (StepTauStar.refl A) hsA (StepTauStar.refl A'), hrel⟩
+
+/-- The weak version of `scong_isStrongBisim`, and the reason the par laws below can be stated for
+    `≈` at all: the congruence is a weak bisimulation because it is a strong one. -/
+@[axiom_budget 0]
+theorem scong_isWeakBisim : IsWeakBisim SCong := by
+  intro A B hAB
+  constructor
+  · rintro μ A' hs
+    exact ⟨_, StepWeak.intro (StepTauStar.refl B)
+      (Step.scong (SCong.symm hAB) hs (SCong.refl _)) (StepTauStar.refl _), SCong.refl _⟩
+  · rintro μ B' hs
+    exact ⟨_, StepWeak.intro (StepTauStar.refl A)
+      (Step.scong hAB hs (SCong.refl _)) (StepTauStar.refl _), SCong.refl _⟩
+
+/-- Weak bisimilarity is reflexive: equality is a weak bisimulation. -/
+@[axiom_budget 0]
+theorem weakbisim_refl (P : Proc) : WeakBisim P P :=
+  ⟨(· = ·), by
+    intro A B hAB
+    subst hAB
+    exact ⟨fun hs => ⟨_, StepWeak.intro (StepTauStar.refl _) hs (StepTauStar.refl _), rfl⟩,
+           fun hs => ⟨_, StepWeak.intro (StepTauStar.refl _) hs (StepTauStar.refl _), rfl⟩⟩,
+   rfl⟩
+
+/-- Weak bisimilarity is symmetric: the converse of a weak bisimulation is one. -/
+@[axiom_budget 0]
+theorem weakbisim_symm {P Q : Proc} (h : WeakBisim P Q) : WeakBisim Q P := by
+  obtain ⟨R, hR, hPQ⟩ := h
+  exact ⟨fun A B => R B A, fun {A B} hBA => ⟨(hR hBA).2, (hR hBA).1⟩, hPQ⟩
+
+/-- `P | Q ≈ Q | P` — §1.2's commutativity, for the weak relation. The same witness as the strong law,
+    because `SCong` is both. -/
+@[axiom_budget 0]
+theorem weak_parallel_commutative (P Q : Proc) : WeakBisim (Proc.par P Q) (Proc.par Q P) :=
+  ⟨SCong, scong_isWeakBisim, SCong.par_comm P Q⟩
+
+/-- `(P | Q) | R ≈ P | (Q | R)` — §1.2's associativity, for the weak relation. -/
+@[axiom_budget 0]
+theorem weak_parallel_associative (P Q R : Proc) :
+    WeakBisim (Proc.par (Proc.par P Q) R) (Proc.par P (Proc.par Q R)) :=
+  ⟨SCong, scong_isWeakBisim, SCong.par_assoc P Q R⟩
+
+/-- `P | 0 ≈ P` — the identity law, weakly. -/
+@[axiom_budget 0]
+theorem weak_parallel_nil (P : Proc) : WeakBisim (Proc.par P Proc.nil) P :=
+  ⟨SCong, scong_isWeakBisim, SCong.par_nil P⟩
+
+/-! ### §1.2's third relation, `≅`
+
+   §1.2 defines barbed bisimulation as "two concurrent processes are equivalent if their observable
+   concurrent barbs match, even if their internal scheduling order differs", and states two laws for it:
+   commutativity and associativity of parallel composition.
+
+   That reading is mechanizable exactly as written — `BarbedEq` is barbs matching — and the two laws
+   follow from `barb_of_scong`. Two things are worth recording about it. It is **strictly weaker than
+   bisimilarity**: `barb_eq_not_strongbisim` exhibits a pair with equal barbs that no bisimulation
+   relates, so `≅` read this way cannot be the same relation as `≈` (Part 5 and Part 9b). And the
+   *standard* barbed equivalence — the one that is a congruence for all contexts — closes the relation
+   under every context, which "the barbs match" alone does not; nothing here builds a context closure,
+   so this is the reading the sentence supports and not the standard notion's full strength. -/
+
+/-- `BarbedEq P Q`: §1.2's `≅`, read as "their observable barbs match" — the definition the sentence
+    gives, with no context closure added. -/
+def BarbedEq (P Q : Proc) : Prop := ∀ x : Proc, Barb P x ↔ Barb Q x
+
+/-- `P | Q ≅ Q | P` — §1.2's commutativity law for the barbed relation. -/
+@[axiom_budget 0]
+theorem barbed_parallel_commutative (P Q : Proc) : BarbedEq (Proc.par P Q) (Proc.par Q P) :=
+  fun x => barb_of_scong (SCong.par_comm P Q) x
+
+/-- `(P | Q) | R ≅ P | (Q | R)` — §1.2's associativity law for the barbed relation. -/
+@[axiom_budget 0]
+theorem barbed_parallel_associative (P Q R : Proc) :
+    BarbedEq (Proc.par (Proc.par P Q) R) (Proc.par P (Proc.par Q R)) :=
+  fun x => barb_of_scong (SCong.par_assoc P Q R) x
 
 /-- An action-free term's `τ*`-closure is itself, because it has no `τ`-steps to take. -/
 @[axiom_budget 0]
