@@ -35,6 +35,15 @@ circuit "AccrueInterestV2" {
     constrain_equal_base(accumulator_public_x, accumulator_pub_x);
     constrain_equal_base(accumulator_public_y, accumulator_pub_y);
 
+    # OBL-C82. The equalities above were between two values neither of which was exposed, so
+    # they held for any secret and the host had nothing to compare against the point registered
+    # at init. Instancing the params copy is what makes the pair mean something: the equality
+    # binds it to the secret-derived point, and the expose lets the host compare it with stored
+    # state. Same shape and same reason as `governance_report.zk`'s `reporter_pub_x/y` (OBL-Z14),
+    # which is the worked precedent one circuit over.
+    constrain_instance(accumulator_pub_x);
+    constrain_instance(accumulator_pub_y);
+
     # Expose old_total_debt as public input
     constrain_instance(old_total_debt);
 

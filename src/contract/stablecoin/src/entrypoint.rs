@@ -447,10 +447,24 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             // Order matches constrain_instance in accrue_interest.zk:
-            // old_total_debt, tx_binding, tx_nonce
+            // accumulator_pub_x, accumulator_pub_y, old_total_debt, tx_binding, tx_nonce
+            //
+            // OBL-C82: the accumulator point is the first pair because the circuit instances it
+            // there. The identity is refused here rather than pushed as a pair of zeros, because
+            // an identity key is what a caller who cannot name the registered authority would
+            // fail to produce anyway — refusing it by name says which field is wrong.
+            let (accumulator_pub_x, accumulator_pub_y) = match params.accumulator_pub.xy() {
+                Some(coords) => coords,
+                None => {
+                    msg!("[stablecoin::get_metadata] Error: AccrueInterest accumulator_pub is the identity point");
+                    let _ = wasm::util::set_return_data(&vec![]); return Ok(());
+                }
+            };
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V2.to_string(),
                 vec![
+                    accumulator_pub_x,
+                    accumulator_pub_y,
                     pallas::Base::from(params.old_total_debt),
                     poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
                     pallas::Base::zero(),
@@ -1539,6 +1553,44 @@ fn process_accrue_interest_instruction(
         params.new_total_debt,
         params.interest_amount
     );
+
+    // OBL-C82. The circuit now *instances* the accumulator point, so `params.accumulator_pub` is
+    // bound to the prover's secret rather than being a value the caller asserts. What a proof
+    // cannot know is whether that point is the one this contract recognizes — only the host can
+    // check that, against the point stored at init. Without this check any account could accrue
+    // interest on the pool's debt with a proof it made itself. Same shape, same key and same
+    // reason as `process_governance_report_instruction`'s authority check (OBL-Z14) below.
+    let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
+    let authority_point = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_GOVERNANCE_PUBKEY_KEY)?
+        .ok_or_else(|| ContractError::IoError("governance authority not configured".to_string()))?;
+    if authority_point.len() != 64 {
+        return Err(ContractError::IoError("governance authority malformed".to_string()))
+    }
+    let authority_x = Option::<pallas::Base>::from(pallas::Base::from_repr(
+        authority_point[0..32].try_into().unwrap(),
+    ))
+    .ok_or_else(|| ContractError::IoError("governance authority x not canonical".to_string()))?;
+    let authority_y = Option::<pallas::Base>::from(pallas::Base::from_repr(
+        authority_point[32..64].try_into().unwrap(),
+    ))
+    .ok_or_else(|| ContractError::IoError("governance authority y not canonical".to_string()))?;
+    let (accumulator_x, accumulator_y) = match params.accumulator_pub.xy() {
+        Some(coords) => coords,
+        None => {
+            msg!("[stablecoin::process_instruction] AccrueInterest: accumulator_pub is the identity point");
+            return Err(StablecoinError::ConfigError(
+                "AccrueInterest accumulator is the identity point".to_string(),
+            )
+            .into())
+        }
+    };
+    if accumulator_x != authority_x || accumulator_y != authority_y {
+        msg!("[stablecoin::process_instruction] AccrueInterest: accumulator is not the registered authority");
+        return Err(StablecoinError::ConfigError(
+            "AccrueInterest accumulator is not the registered authority".to_string(),
+        )
+        .into())
+    }
 
     // Verify old_total_debt matches on-chain state.
     // The ZK circuit constrains new = old + interest, but old_total_debt

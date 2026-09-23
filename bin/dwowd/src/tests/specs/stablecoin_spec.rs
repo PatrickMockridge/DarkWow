@@ -273,6 +273,29 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
+            // NEGATIVE — OBL-C82, end to end, and it is the positive endpoint above that makes it
+            // a control. A stranger holds a perfectly valid accrual proof: a real proof of a real
+            // accumulator point, just not the point registered at init. Every other field is the
+            // positive's, `old_total_debt` included, so the only difference is the secret behind
+            // the accumulator — which is why a rejection here cannot be a statement about state.
+            // Before the fix the entrypoint had nothing to compare and any account could accrue
+            // interest on the pool's debt with a proof it made itself; if this endpoint ever flips
+            // to Success, that is back. Read the rejection's cause in the DWOW_TEST_LOGS=1 output:
+            // it must be the authority refusal ("AccrueInterest accumulator is not the registered
+            // authority"), not a proof-verification failure — a rejection for an unrelated reason
+            // is not evidence about this check. The positive endpoint succeeding in the same run
+            // is what rules out a blanket refusal.
+            EndpointSpec {
+                name: "AccrueInterestV1ByStranger", is_zk: true,
+                expectation: EndpointExpectation::Rejection,
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new(move || {
+                    let r = h.accrue_interest(pallas::Base::from(11u64), 500, 10, 3600)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                }),
+            },
             mk_ep("AddCollateralV1", true, Box::new({
                 let notes = notes.clone();
                 move || {
