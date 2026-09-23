@@ -39,10 +39,12 @@ Two boundaries remain, and they are separate:
 
   The weak relation `WeakBisim` and its laws are here (Part 9b): `scong_isWeakBisim` — which is §1.2's
   "differ only in internal task scheduling" sentence in the reading a calculus of processes can support,
-  rearranging a term rather than reordering a scheduler — with `strong_is_weak`, reflexivity, symmetry
-  and the three par laws. **Transitivity is not proved**: composing two weak bisimulations means weaving
-  the `τ`-runs of the two witnesses, which is real work and which nothing here consumes. Nothing models
-  a scheduler either, so "scheduling" in the net sense stays prose rather than becoming an absence.
+  rearranging a term rather than reordering a scheduler — with `strong_is_weak`, reflexivity, symmetry,
+  transitivity and the three par laws. Transitivity is the one whose proof is not `τ`-blind: the two
+  witnesses' `τ`-runs have to be woven, which is what `stepTauStar_of_weak` and its mirror are for.
+  Nothing models a scheduler, so "scheduling" in the net sense stays prose rather than becoming an
+  absence — `WeakBisim` is the relation that would make it provable, and the sentence reads as that
+  relation's motivation rather than as one of its consequences.
 
   §1.2's *third* relation is here too: `BarbedEq` is its `≅` read literally as "the barbs match", with
   both stated laws. It is strictly weaker than bisimilarity — `barb_eq_not_strongbisim` is the witness —
@@ -929,6 +931,100 @@ theorem weak_parallel_associative (P Q R : Proc) :
 @[axiom_budget 0]
 theorem weak_parallel_nil (P : Proc) : WeakBisim (Proc.par P Proc.nil) P :=
   ⟨SCong, scong_isWeakBisim, SCong.par_nil P⟩
+
+/-! #### Closure of the weak transitions, and transitivity
+
+   Transitivity is where the `τ*`-runs of two witnesses have to be woven, and the weaving is what these
+   three lemmas exist for. They are the standard ones: `τ*` is transitive, a *weak* `τ`-transition is
+   just a `τ*`-run (`StepWeak`'s three parts with `τ` in the middle are all `τ`), and a bisimulation's
+   relation survives an entire `τ*`-run rather than only a single step. -/
+
+/-- `StepWeak`'s witnesses, named. The constructor's intermediate processes are implicit parameters, so
+    a consumer that needs to *mention* them — as transitivity does, to relate them by the second
+    relation — gets them here rather than by unfolding the definition at the use site. -/
+@[axiom_budget 0]
+theorem stepWeak_witnesses {P Q : Proc} {μ : Label} (hw : StepWeak P μ Q) :
+    ∃ P' Q' : Proc, StepTauStar P P' ∧ Step P' μ Q' ∧ StepTauStar Q' Q := by
+  cases hw with
+  | intro h1 h2 h3 => exact ⟨_, _, h1, h2, h3⟩
+
+/-- `τ*` is transitive. -/
+@[axiom_budget 0]
+theorem stepTauStar_trans {P Q R : Proc} (h1 : StepTauStar P Q) :
+    StepTauStar Q R → StepTauStar P R := by
+  induction h1 with
+  | refl _ => intro h2; exact h2
+  | step hτ _ ih => intro h2; exact StepTauStar.step hτ (ih h2)
+
+/-- A weak `τ`-transition is a `τ*`-run: with `τ` in the middle, all three parts are `τ*`. -/
+@[axiom_budget 0]
+theorem stepTauStar_of_stepWeak_tau {P Q : Proc} (hw : StepWeak P Label.tau Q) :
+    StepTauStar P Q := by
+  obtain ⟨_, _, h1, h2, h3⟩ := stepWeak_witnesses hw
+  exact stepTauStar_trans h1 (stepTauStar_trans (StepTauStar.step h2 (StepTauStar.refl _)) h3)
+
+/-- **A weak bisimulation's relation survives a whole `τ*`-run**, not only a single step. The induction
+    is on the run, and the step that is *not* `τ` is a weak `τ`-transition, which is a `τ*`-run. -/
+@[axiom_budget 0]
+theorem stepTauStar_of_weak {S : Proc → Proc → Prop} (hS : IsWeakBisim S) {P P' : Proc}
+    (hs : StepTauStar P P') : ∀ {Q : Proc}, S P Q → ∃ Q' : Proc, StepTauStar Q Q' ∧ S P' Q' := by
+  induction hs with
+  | refl _ => intro Q hPQ; exact ⟨Q, StepTauStar.refl Q, hPQ⟩
+  | step hτ _ ih =>
+      intro Q hPQ
+      obtain ⟨Q₁, hw, hrel⟩ := (hS hPQ).1 hτ
+      obtain ⟨Q₂, hQ₂, hrel₂⟩ := ih hrel
+      exact ⟨Q₂, stepTauStar_trans (stepTauStar_of_stepWeak_tau hw) hQ₂, hrel₂⟩
+
+/-- The mirror of `stepTauStar_of_weak`: a run on the relation's *second* component lifts too, with the
+    orientation kept. Transitivity needs both, because the two witnesses' runs are on opposite sides.
+
+    Derived from the primary by flipping the relation rather than by repeating the induction, which is
+    why it is four lines: `S`'s second component is the flip's first, and the flip's conclusion is
+    `S`-oriented again once it is read back. -/
+@[axiom_budget 0]
+theorem stepTauStar_of_weak_right {S : Proc → Proc → Prop} (hS : IsWeakBisim S) {Q Q' : Proc}
+    (hs : StepTauStar Q Q') : ∀ {P : Proc}, S P Q → ∃ P' : Proc, StepTauStar P P' ∧ S P' Q' := by
+  have hSc : IsWeakBisim (fun A B => S B A) :=
+    fun {A B} hBA => ⟨(hS hBA).2, (hS hBA).1⟩
+  intro P hPQ
+  exact stepTauStar_of_weak hSc hs hPQ
+
+/-- **Weak bisimilarity is transitive**: the composite relation `∃ B, R₁ A B ∧ R₂ B C` is a weak
+    bisimulation.
+
+    The weaving is the content. `R₁` matches a step of `A` with a step of `B` surrounded by two `τ*`-runs
+    on `B`'s side; each of those runs has to be carried into `C` by `R₂` before the middle step can be
+    matched there, which is what `stepTauStar_of_weak` is for, and the resulting `τ*`-runs have to be
+    composed, which is what `stepTauStar_trans` is for. The strong version needs none of this — its two
+    matches compose directly — which is the whole difference between the two proofs: nothing here is
+    `τ`-blind, so every run has to be carried across before the next match can be made. -/
+@[axiom_budget 0]
+theorem weakbisim_trans {P Q R : Proc} (h1 : WeakBisim P Q) (h2 : WeakBisim Q R) : WeakBisim P R := by
+  obtain ⟨R₁, hR₁, hPQ⟩ := h1
+  obtain ⟨R₂, hR₂, hQR⟩ := h2
+  refine ⟨fun A C => ∃ B : Proc, R₁ A B ∧ R₂ B C, ?_, ⟨Q, hPQ, hQR⟩⟩
+  intro A C hAC
+  obtain ⟨B, hAB, hBC⟩ := hAC
+  constructor
+  · rintro μ A' hs
+    obtain ⟨B₁, hw, hA'B₁⟩ := (hR₁ hAB).1 hs
+    obtain ⟨_, _, hτ₁, hsB, hτ₂⟩ := stepWeak_witnesses hw
+    obtain ⟨C₁, hC₁, hBC₁⟩ := stepTauStar_of_weak hR₂ hτ₁ hBC
+    obtain ⟨C₂, hw₂, hB₁C₂⟩ := (hR₂ hBC₁).1 hsB
+    obtain ⟨_, _, hτ₃, hsC, hτ₄⟩ := stepWeak_witnesses hw₂
+    obtain ⟨C₄, hC₄, hB₁'C₄⟩ := stepTauStar_of_weak hR₂ hτ₂ hB₁C₂
+    exact ⟨C₄, StepWeak.intro (stepTauStar_trans hC₁ hτ₃) hsC (stepTauStar_trans hτ₄ hC₄),
+      ⟨B₁, hA'B₁, hB₁'C₄⟩⟩
+  · rintro μ C' hs
+    obtain ⟨B₁, hw, hBC'⟩ := (hR₂ hBC).2 hs
+    obtain ⟨_, _, hτ₁, hsB, hτ₂⟩ := stepWeak_witnesses hw
+    obtain ⟨A₁, hA₁, hA₁B₂⟩ := stepTauStar_of_weak_right hR₁ hτ₁ hAB
+    obtain ⟨A₂, hw₂, hA₂B₃⟩ := (hR₁ hA₁B₂).2 hsB
+    obtain ⟨_, _, hτ₃, hsA, hτ₄⟩ := stepWeak_witnesses hw₂
+    obtain ⟨A₄, hA₄, hA₄B₁⟩ := stepTauStar_of_weak_right hR₁ hτ₂ hA₂B₃
+    exact ⟨A₄, StepWeak.intro (stepTauStar_trans hA₁ hτ₃) hsA (stepTauStar_trans hτ₄ hA₄),
+      ⟨B₁, hA₄B₁, hBC'⟩⟩
 
 /-! ### §1.2's third relation, `≅`
 
