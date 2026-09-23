@@ -30,13 +30,19 @@ column — "code as data — the deployed contract bytes", and deployed bytes ar
   That is why `CaptureFree` is a hypothesis the caller carries rather than a property of the
   definition: the definition is total *by arrest*, and the theory only constrains it where there is
   nothing to capture.
-* `subst` carries **three** laws and no more, and the reason the rest are missing is the same gap: the
-  laws that assert `subst` leaves a term *alone* need `P ≠ z` — `subst P z z = P` fails at `z = 0`,
-  where the term `0` has no free occurrence of itself and is still the thing being replaced — and
-  refuting `νz.P = z` for arbitrary `z` is an occurs-check, which a structural `cases` cannot close and
-  which needs a size induction. What is here is the sealing (`freshFree_bang`), the nil case with its
-  hypothesis stated (`subst_nil_of_ne`), and the one that needs no hypothesis because the equality test
-  *is* the case it is about (`subst_self`).
+* `subst` carries **three** laws and no more, and the reason the rest are missing is *not* the one this
+  note gave first. The laws that assert `subst` leaves a term alone need a side condition, and the
+  obvious candidate is wrong: `FreshFree z P → P ≠ z → subst P z y = P` is **false**, with the witness
+  `Substitution.lean`'s `subst_of_freshFree_is_false` carries — at `z = 0`, `P = 0 | ⌈0⌉`, `y = ⌈0⌉`, the
+  term `0` is not *free* in `P` (because `FreeOccurs z 0` is `False` **by definition**, for every `z`)
+  and `subst` replaces it anyway. Substitution works on positions, and `nil` is a position.
+
+  So the condition has to be subterm-freeness with `subst`'s own shadowing structure, which
+  `Proc.lean`'s `Occurs` cannot supply: its `nil` clause is exactly right for freshness and exactly
+  wrong here, and `FreshFree` conflates the two uses. That — not an occurs-check — is what the missing
+  laws are waiting for. What is here is the sealing (`freshFree_bang`), the nil case with its hypothesis
+  stated (`subst_nil_of_ne`), and the one that needs no hypothesis because the equality test *is* the
+  case it is about (`subst_self`).
 
 **The α-rule is not a mechanical extension, and that is measured rather than suspected.** The renaming
 rule that would remove `CaptureFree` from `LTS.lean`'s `Step.tau` relates `νx.P` to `νy.P{x/y}` — and
@@ -158,5 +164,39 @@ theorem subst_nil_of_ne {z y : Proc} (h : z ≠ Proc.nil) : subst Proc.nil z y =
 theorem subst_self (z y : Proc) : subst z z y = y := by
   unfold subst
   exact if_pos rfl
+
+/-- **The obvious law about `subst` is false, and the witness says why the note above was wrong about
+    the reason.** "Nothing to substitute is no change" would read `FreshFree z P → P ≠ z → subst P z y =
+    P`, and it fails at `z = 0`, `P = 0 | ⌈0⌉`, `y = ⌈0⌉`: `0` is not free in `P` — `FreeOccurs z 0` is
+    `False` **by definition**, for every `z`, including `z = 0` — and `subst` replaces it anyway, because
+    substitution works on positions and `nil` is a position.
+
+    That is the real obstacle, and it is a different one from the occurs-check the note used to name: the
+    side condition the law needs is *subterm-freeness with `subst`'s own shadowing structure*, not
+    freeness. `Proc.lean`'s `Occurs` cannot supply it — its `nil` clause is `False`, which is exactly
+    right for freshness and exactly wrong here, and the two uses are conflated in `FreshFree`. Stated as
+    a refutation of the universal so that what fails is the tempting statement, the same shape as the
+    `Occurs`-invariance refutations in `Congruence.lean`. -/
+@[axiom_budget 0]
+theorem subst_of_freshFree_is_false :
+    ¬ (∀ (z y P : Proc), FreshFree z P → P ≠ z → subst P z y = P) := by
+  intro h
+  have hfresh : FreshFree Proc.nil (Proc.par Proc.nil (Proc.bang Proc.nil)) := by
+    rintro (h1 | h2)
+    · exact h1
+    · exact h2
+  have hne : Proc.par Proc.nil (Proc.bang Proc.nil) ≠ Proc.nil := fun hc => by cases hc
+  have hbang : subst (Proc.bang Proc.nil) Proc.nil (Proc.bang Proc.nil) = Proc.bang Proc.nil := by
+    show (if Proc.bang Proc.nil = Proc.nil then _ else Proc.bang Proc.nil) = Proc.bang Proc.nil
+    exact if_neg (fun hc => by cases hc)
+  have hsub : subst (Proc.par Proc.nil (Proc.bang Proc.nil)) Proc.nil (Proc.bang Proc.nil)
+      = Proc.par (Proc.bang Proc.nil) (Proc.bang Proc.nil) := by
+    show (if Proc.par Proc.nil (Proc.bang Proc.nil) = Proc.nil then _
+      else Proc.par (subst Proc.nil Proc.nil (Proc.bang Proc.nil))
+        (subst (Proc.bang Proc.nil) Proc.nil (Proc.bang Proc.nil))) = _
+    rw [if_neg hne, subst_self, hbang]
+  have hbad := h Proc.nil (Proc.bang Proc.nil) (Proc.par Proc.nil (Proc.bang Proc.nil)) hfresh hne
+  rw [hsub] at hbad
+  exact absurd hbad (fun hc => by cases hc)
 
 end DarkFi.Semantics
