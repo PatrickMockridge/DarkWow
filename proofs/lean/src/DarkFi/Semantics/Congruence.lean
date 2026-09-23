@@ -28,7 +28,9 @@ witness, and a proof that needs one has to produce it.
 `¬ Occurs x P` over the term as written, and this relation changes what a term mentions: `cong_bang`
 with `nu_nil` identifies `⌈νx.0⌉` and `⌈0⌉`, so the *channel* of `out ⌈νx.0⌉ b` can be read as `⌈0⌉` —
 a name that does not occur in that term at all. An extrusion asking only `Fresh x P` therefore lets
-`x` out through the back door, and `Semantics/LTS.lean` carries the witness.
+`x` out through the back door, and `Semantics/LTS.lean` carries the witness. The two mechanisms are
+`occurs_not_invariant_nu_nil` and `occurs_not_invariant_cong_bang` below, refuting
+`occurs_not_scong_invariant`.
 
 The notion the rule needs is the invariant one — "no term congruent to `P` mentions `x`" — and that is
 what `FreshUpToScong` below is. It cannot be defined in terms of `SCong`, because `SCong` is the
@@ -224,6 +226,49 @@ theorem scong0_of_scong {P Q : Proc} (h : SCong P Q) : SCong0 P Q := by
 @[axiom_budget 0]
 theorem fresh_of_freshUpToScong {x P : Proc} (h : FreshUpToScong x P) : Fresh x P :=
   h P (SCong0.refl P)
+
+/-- **`Occurs` is not invariant under `SCong` — mechanism 1: `nu_nil`.** `νx.0 ≡ 0`, and `x` occurs in
+    `νx.0` as the binder while it does not occur in `0` at all.
+
+    A theorem rather than the prose it was, because it is the fact the whole two-relation construction
+    exists for, and prose cannot be checked. `Proc.lean` and this file's module note both assert it;
+    they now have something to cite. -/
+@[axiom_budget 0]
+theorem occurs_not_invariant_nu_nil (x : Proc) :
+    SCong (Proc.nu x Proc.nil) Proc.nil ∧ Occurs x (Proc.nu x Proc.nil) ∧
+      ¬ Occurs x Proc.nil := by
+  refine ⟨SCong.nu_nil x, Or.inl rfl, ?_⟩
+  intro h
+  exact h
+
+/-- **`Occurs` is not invariant under `SCong` — mechanism 2: `cong_bang` with `nu_nil`.** `⌈νx.0⌉` and
+    `⌈0⌉` are congruent; `⌈0⌉` occurs in `⌈0⌉`, and it does not occur in `⌈ν0.0⌉`.
+
+    This is the mechanism `LTS.lean`'s scope note blames for the second refuted witness, and it is
+    worth separating from the first: `nu_nil` moves a *binder*, while this one rewrites a term in name
+    position into a name it does not literally mention. Only the second survives every obvious repair
+    to the syntactic notion. -/
+@[axiom_budget 0]
+theorem occurs_not_invariant_cong_bang :
+    SCong (Proc.bang (Proc.nu Proc.nil Proc.nil)) (Proc.bang Proc.nil) ∧
+      Occurs (Proc.bang Proc.nil) (Proc.bang Proc.nil) ∧
+      ¬ Occurs (Proc.bang Proc.nil) (Proc.bang (Proc.nu Proc.nil Proc.nil)) := by
+  refine ⟨SCong.cong_bang (SCong.nu_nil Proc.nil), Or.inl rfl, ?_⟩
+  intro h
+  rcases h with h | h
+  · cases h
+  · rcases h with h | h
+    · cases h
+    · exact h
+
+/-- **`Occurs` is not invariant under the structural congruence**, stated as the refutation of the
+    universally quantified claim — so what fails is the tempting statement rather than a straw man. -/
+@[axiom_budget 0]
+theorem occurs_not_scong_invariant :
+    ¬ (∀ (x P Q : Proc), SCong P Q → (Occurs x P ↔ Occurs x Q)) := by
+  intro h
+  obtain ⟨hs, hp, hnq⟩ := occurs_not_invariant_nu_nil Proc.nil
+  exact hnq ((h Proc.nil _ _ hs).1 hp)
 
 /-- `0 | P ≡ P` — the mirror of `par_nil`, and the reason `par_nil` alone would be a half-statement:
     `P | 0 ≡ P` and `0 | P ≡ P` are different facts about parallel composition, and a proof that

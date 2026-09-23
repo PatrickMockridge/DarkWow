@@ -175,7 +175,10 @@ theorem eval_of_not_name (x : Proc) (h : ¬ IsName x) : eval x = .nil := by
 
     What that costs is recorded here rather than left implicit. `Occurs` is **not invariant under the
     structural congruence**, because the congruence can change what a term mentions: `nu_nil` gives
-    `SCong (νx.0) 0` and `cong_bang` identifies `⌈P⌉` with `⌈Q⌉` for `P ≡ Q`. A side condition stated
+    `SCong (νx.0) 0`, and `cong_bang` identifies `⌈P⌉` with `⌈Q⌉` for `P ≡ Q`. Those are the two
+    mechanisms, and `Congruence.lean` carries each as a theorem — `occurs_not_invariant_nu_nil` and
+    `occurs_not_invariant_cong_bang`, with `occurs_not_scong_invariant` the claim they refute. A side
+    condition stated
     with it is therefore *weaker* than it reads, and the rules do not use it: the restriction rule and
     scope extrusion carry `Congruence.lean`'s `FreshUpToScong`, which quantifies over every term the
     congruence can reach. `Semantics/LTS.lean`'s record carries the witnesses that made the
