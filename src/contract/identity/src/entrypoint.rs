@@ -678,7 +678,10 @@ fn process_verify_capability_instruction(
 
     let update = VerifyCapabilityUpdateV1 {
         capability_id: params.capability_proof.capability_id,
-        holder_pub: params.capability_proof.issuer_pub,
+        // The holder, from the record the proof's commitment was just required to match — not the
+        // issuer, which is what this field carried until OBL-C86. Naming the wrong principal in an
+        // authorization record is the kind of error a first consumer would inherit silently.
+        holder_pub: credential.holder_pub,
         verified: true,
     };
 
