@@ -285,10 +285,14 @@ Any node can independently compute `r_i` from the uncle hash, pin reward, and
 block height, and verify the commitment. `r_i` SHALL bind all three of uncle
 identity (`uncle_hash_i`), amount (`u_i`), and height (`H`).
 
-**Status: implemented.** `connect_block` computes
-`r_i = from_uniform_bytes(blake3(uncle_hash || u_i.to_le_bytes() || H.to_le_bytes()) doubled)`
-(`chain_state.rs::connect_block`, where `uncle_hash = blake3(to_mining_blob())`),
-binding uncle identity, amount, and height.
+**Status: NOT implemented.** This block read "**implemented**" and cited
+`chain_state.rs::connect_block` as the computation site. That code no longer exists: the
+per-uncle Pedersen computation was removed on 2026-09-23 with the write-only in-memory
+cache it fed (`OBL-C26`), and nothing has computed `r_i` since — `grep -rn 'from_uniform_bytes' src/linear/src/`
+returns no per-uncle blind. What remains is the *formula*, which is what makes the audit
+possible: `r_i = from_uniform_bytes(blake3(uncle_hash || u_i.to_le_bytes() || H.to_le_bytes()) doubled)`,
+with `uncle_hash = blake3(to_mining_blob())`. An auditor recomputes it; no node does today,
+and the value-level split is enforced instead. Corrected 2026-09-23 under `OBL-C85`.
 
 #### Pedersen Mass Balance Proof
 
@@ -436,9 +440,15 @@ conflated:
 
 1. **Pedersen audit commitments** (defined in [§Coinbase Split via Pedersen Mass
    Balance](#coinbase-split-via-pedersen-mass-balance)): `C_uncle_i = u_i·G_v +
-   r_i·G_r` and `C_effective = C_base − Σ C_uncle_i`. These are EC points in the
-   stored cumulative supply chain (`blockchain.get_cumulative_supply`) that
-   prove the subtractive mass balance `C_effective + Σ C_uncle_i = C_base`. They are NOT
+   r_i·G_r` and `C_effective = C_base − Σ C_uncle_i`. They prove the subtractive mass
+   balance `C_effective + Σ C_uncle_i = C_base`, and they are **not stored**: the
+   cumulative supply chain (`blockchain.get_cumulative_supply`) records one aggregate
+   `value_commit` per height plus a plaintext `total_supply`, and `verify_uncle_split()`
+   enforces the split as **value-level** arithmetic. The per-uncle points are an audit
+   artifact an auditor **recomputes** from durable state — `uncle_hash`, `u_i` and `H` are
+   all persisted and `r_i` is deterministic (§Audit Compatibility) — which is the property
+   that matters and the one this file used to state as a storage location. Corrected
+   2026-09-23 under `OBL-C85`, whose row records the measurement of both sides. They are NOT
    spendable — no nullifier, no note, no merkle path attaches to them.
 2. **Spendable Poseidon notes** (this section): a spendable coin is a note
    `C' = poseidon(pk, value, asset, hook, data, blind)` + nullifier
@@ -778,11 +788,11 @@ fragile line numbers).
 | Uncle proof verification | §Verification (Stateless) | Implemented — `validation.rs::check_uncles()` |
 | Pin computation (value-level) | §Reward Distribution | Implemented — `block.rs::compute_reward()` |
 | Value-level split invariant | §Coinbase Split — Supply Invariant | Implemented — `supply_chain.rs::verify_uncle_split()`, called from `chain_state.rs::connect_block()` before the sled commit |
-| Pedersen uncle commitment precompute | §Coinbase Split — Mass Balance Proof | Implemented — `chain_state.rs::connect_block()` pre-computes `C_uncle_i = pedersen_commitment_u64(u_i, Blind(r_i))` |
-| Deterministic uncle blind `r_i` (identity+amount+height) | §Uncle Commitment Creation | Implemented — `chain_state.rs::connect_block()` binds identity, amount, and height |
+| Pedersen uncle commitment precompute | §Coinbase Split — Mass Balance Proof | **Not implemented** — this row read "Implemented — `chain_state.rs::connect_block()` pre-computes `C_uncle_i = pedersen_commitment_u64(u_i, Blind(r_i))`" until 2026-09-23, when `OBL-C85` measured both sides and found the precompute deleted with `OBL-C26`'s write-only cache. Nothing materialises `C_uncle_i`; `supply_chain.rs::verify_uncle_split()` enforces the split value-level |
+| Deterministic uncle blind `r_i` (identity+amount+height) | §Uncle Commitment Creation | **Not implemented** — the formula is specified and deterministic, and no node computes it. `from_uniform_bytes` has no occurrence in `src/linear/src/`. The audit recomputes it; see §Audit Compatibility and `OBL-C85` |
 | Full uncle minting into `commitment_set` | §Uncle Minting & Maturity | Implemented — coinbase note minted at the reduced effective value (`registry/model.rs::build_linear_coinbase_effective`); uncle notes minted via `uncle_mint_v1` (0x07) and persisted (`chain_state.rs::connect_block`) |
 | Uncle commitment reversal on disconnect | §Uncle Minting & Maturity | Implemented — `chain_state.rs::disconnect_block()` |
-| Uncle commitment set restoration on restart | — | Not implemented — in-memory only, initialized empty on restart (uncle Pedersen commitments are deterministically recomputable from chain data) |
+| Uncle commitment set restoration on restart | — | **Withdrawn** — there is no longer a set to restore. `uncle_commitment_set` was write-only (no `get`, no `contains_key`, no iteration, no accessor) and was deleted under `OBL-C26`, 2026-09-23. The row is kept rather than struck because it is where the recomputability argument was first written down, and that argument is the one `OBL-C85` rests on |
 
 ## References
 
