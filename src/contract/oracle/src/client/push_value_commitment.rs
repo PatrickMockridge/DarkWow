@@ -95,9 +95,11 @@ impl PushValueCommitmentV1CallData {
     }
 
     /// `H(DOMAIN_OPERATOR_COMMITMENT, staker_secret, oracle_id)` — must equal the registered record.
-    /// `DOMAIN_OPERATOR_COMMITMENT` is also `witness_base(4)`.
+    /// `DOMAIN_OPERATOR_COMMITMENT` is `witness_base(8)`, deliberately NOT the `witness_base(4)` of
+    /// `compute_data_commitment` above: with both at 4 the circuit's two hashes collide
+    /// constructibly, and this value is the operator's public one (OBL-Z19).
     pub fn compute_oracle_commitment(&self) -> pallas::Base {
-        poseidon_hash([pallas::Base::from(4u64), self.staker_secret, self.oracle_id])
+        poseidon_hash([pallas::Base::from(8u64), self.staker_secret, self.oracle_id])
     }
 
     /// `H(DOMAIN_NULLIFIER, staker_secret, oracle_id, commitment)` — one push per data commitment.

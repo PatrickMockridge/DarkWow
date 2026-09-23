@@ -123,7 +123,8 @@ impl AggregateV1CallData {
 
     /// `H(DOMAIN_OPERATOR_COMMITMENT, oracle_secret, oracle_id)` — must equal the registered record.
     pub fn compute_commitment(&self) -> pallas::Base {
-        poseidon_hash([pallas::Base::from(4u64), self.oracle_secret, self.oracle_id])
+        // `witness_base(8)`, not 4: the operator commitment has its own domain (OBL-Z19).
+        poseidon_hash([pallas::Base::from(8u64), self.oracle_secret, self.oracle_id])
     }
 
     /// `H(DOMAIN_NULLIFIER, oracle_secret, oracle_id, result)` — one aggregate per result value.

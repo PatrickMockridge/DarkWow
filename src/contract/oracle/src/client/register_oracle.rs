@@ -72,7 +72,8 @@ impl RegisterOracleV1CallData {
     /// static key, computed the same way the circuit derived it, and published. It is now a hiding
     /// commitment, so nothing static is disclosed (OBL-Z9).
     pub fn compute_commitment(&self) -> pallas::Base {
-        poseidon_hash([pallas::Base::from(4u64), self.oracle_secret, self.oracle_id])
+        // `witness_base(8)`, not 4: the operator commitment has its own domain (OBL-Z19).
+        poseidon_hash([pallas::Base::from(8u64), self.oracle_secret, self.oracle_id])
     }
 
     pub fn compute_public_inputs(&self) -> RegisterOracleV1PublicInputs {

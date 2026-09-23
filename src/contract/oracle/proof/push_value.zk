@@ -39,7 +39,12 @@ witness "PushValueV2" {
 
 circuit "PushValueV2" {
     DOMAIN_TX_BINDING = witness_base(3);
-    DOMAIN_OPERATOR_COMMITMENT = witness_base(4);
+    # The operator commitment has its OWN domain rather than the generic DOMAIN_COMMITMENT.
+    # Sharing one made `oracle_commitment` constructibly equal to any other three-argument hash
+    # over prover-chosen elements in the same circuit (OBL-Z19, inherited from OBL-Z9). The value
+    # is registered on chain and compared on every later operation, so it MUST be identical in all
+    # six oracle circuits and in the client's `compute_commitment()`.
+    DOMAIN_OPERATOR_COMMITMENT = witness_base(8);
     DOMAIN_NULLIFIER = witness_base(1);
 
     # ==========================================================================

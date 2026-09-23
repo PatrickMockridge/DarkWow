@@ -58,7 +58,16 @@ witness "PushValueCommitmentV2" {
 circuit "PushValueCommitmentV2" {
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_COMMITMENT = witness_base(4);
-    DOMAIN_OPERATOR_COMMITMENT = witness_base(4);
+    # The operator commitment has its OWN domain rather than the generic DOMAIN_COMMITMENT, and in
+    # THIS circuit that is not a matter of taste: with both at `witness_base(4)` the two hashes
+    # below are both three arguments over prover-chosen field elements, so `(value, nonce) =
+    # (staker_secret, oracle_id)` made `computed_commitment == oracle_commitment` exactly, and both
+    # are exposed — a "data point commitment" that is the operator's own public registration value,
+    # carrying no data point (OBL-Z19). The value is registered on chain and compared on every later
+    # operation, so it MUST be identical in all six oracle circuits and in the client's
+    # `compute_commitment()`; changing it here alone would make this circuit's proof disagree with
+    # every `oracle_commitment` the contract has stored.
+    DOMAIN_OPERATOR_COMMITMENT = witness_base(8);
     DOMAIN_NULLIFIER = witness_base(1);
 
     # ==========================================================================
