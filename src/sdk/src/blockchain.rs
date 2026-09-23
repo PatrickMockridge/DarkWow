@@ -885,10 +885,23 @@ impl<'de> serde::Deserialize<'de> for BlockTimestamp {
 /// Nominal Monero block-height type (type-system.md §2.3.1).
 ///
 /// A block height on the Monero blockchain. Distinguished from our
-/// `BlockHeight` because the two chains advance independently. The
-/// `BlockHeader.anchor_monero_height` field gates merge-mining finality —
-/// confusing our height for the Monero anchor height silently breaks
-/// the finality guarantee.
+/// `BlockHeight` because the two chains advance independently.
+///
+/// **Corrected 2026-09-23 (`OBL-C67`).** This docstring used to end: *"The `BlockHeader.anchor_monero_height`
+/// field gates merge-mining finality — confusing our height for the Monero anchor height silently breaks the
+/// finality guarantee."* The field does **not** gate anything, and the version of that claim which survives
+/// measurement is a different one: what confers finality is a **verified Caribina anchor proof**, and the
+/// anchor is *derived* rather than asserted (`validation.rs:98-103` checks the proof; `chain_state`'s two
+/// enforcement sites read it, not the field). `anchor_monero_height` is a Monero height carried in the
+/// header, and nothing consults it — the register re-read the row on 2026-09-23 and split it: the proposition
+/// it was filed under is enforced, and what remained was a *deployment default*, now its own row
+/// (`OBL-C80`).
+///
+/// The reason to keep the distinction at all is still real, which is why the type stays: our height and the
+/// Monero anchor height advance independently and are both `u64`, so a nominal wrapper is what stops them
+/// being interchanged by accident. The claim that the field *enforces* finality is what was wrong, and a
+/// comment asserting an enforcement that does not exist is worse than no comment — it is the thing a reader
+/// would cite to skip the check.
 #[repr(transparent)]
 #[derive(
     Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable,
@@ -1258,6 +1271,14 @@ use pasta_curves::pallas;
 
 /// Compute the expected cumulative total supply at a given block height.
 /// Sum of expected_reward(h) for h = 1..=height.
+///
+/// `saturating_add` is deliberate here and is **not** the defect `OBL-C51` filed: this function computes
+/// the *expected* side of the coinbase's supply guard, and the guard's enforcement point
+/// (`native_token`'s `pow_reward_v1`) now uses `checked_add` and fails closed, so a total that this
+/// saturates out of range cannot be accepted as a supply value — it is rejected before the comparison.
+/// Saturating in a reference computation keeps the function total, which is what a reference should be;
+/// the alternative would be a `Result` here for an input (~1.8 × 10^19 units minted) that the enforcement
+/// point already refuses.
 pub fn expected_cumulative_supply(height: BlockHeight) -> SupplyAmount {
     let mut total: u64 = 0;
     for h in 1..=height.get() {

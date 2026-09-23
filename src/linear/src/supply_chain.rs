@@ -298,6 +298,11 @@ impl CumulativeSupplyChain {
         CumulativeSupplyEntry {
             value_commit: prev.value_commit + coinbase_value_commit,
             blind: prev.blind + coinbase_blind,
+            // Saturating is deliberate at this producer (`OBL-C51`): the enforcement point is the coinbase
+            // contract's guard, which now uses `checked_add` and fails closed, so a saturated total here
+            // cannot be accepted as a supply value. What this must not do is *silently* clamp into
+            // something the guard then agrees with — and it cannot any more, because the guard rejects the
+            // overflow before comparing.
             total_supply: prev.total_supply.saturating_add(coinbase_value),
         }
     }
@@ -337,15 +342,11 @@ impl CumulativeSupplyChain {
     /// rather than a per-block path — deliberately not memoised, because a cache here would be a second
     /// piece of stored state to reconcile.
     pub fn expected_cumulative_supply(height: BlockHeight) -> SupplyAmount {
-        let mut total = SupplyAmount::ZERO;
-        for h in 1..=height.get() {
-            // `SupplyAmount::from(BlockReward)` — the domain-edge conversion this file documents, rather
-            // than unwrapping to `u64` and rewrapping, so the crossing stays nominal.
-            total = total.saturating_add(SupplyAmount::from(dwow_sdk::blockchain::expected_reward(
-                BlockHeight::new(h),
-            )));
-        }
-        total
+        // Delegates to the sdk, which owns this function (`OBL-C51` found the duplication): two copies of
+        // the emission schedule's cumulative sum is exactly the drift the register keeps finding, and this
+        // one was written a second time when the RPC needed it. The sdk version is the one the contract's
+        // own guard is expressed against, so it is the one to keep.
+        dwow_sdk::blockchain::expected_cumulative_supply(height)
     }
 
     /// Write a cumulative supply entry into a sled Batch.

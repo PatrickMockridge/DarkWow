@@ -1051,7 +1051,25 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
             0
         }
     };
-    let new_supply = current_supply.saturating_add(pr.input.value);
+    // `checked_add`, not `saturating_add` (`OBL-C51`). The guard below only catches a *disagreement*, and
+    // both sides of it used to saturate: the block builder's `compute_next` and the sdk's
+    // `expected_cumulative_supply` both clamp at `u64::MAX`, so an overflowing sum agreed with an
+    // overflowing expectation and passed. An overflow is not a supply value — it is the end of the u64
+    // domain — so it fails closed here instead of being clamped into a number the comparison can accept.
+    //
+    // This is the enforcement point, which is why the two producers still saturate and say so: a saturated
+    // builder value can no longer produce an accepted block, because this rejects the block before the
+    // comparison runs. Fixing the producers instead would leave the guard silent for a third one.
+    let new_supply = match current_supply.checked_add(pr.input.value) {
+        Some(supply) => supply,
+        None => {
+            msg!("[pow_reward_v1] Error: supply overflow at height={}: {} + {} exceeds u64",
+                 verifying_block_height, current_supply, pr.input.value);
+            return Err(ContractError::IoError(
+                "Supply overflow: cumulative supply exceeds u64".to_string(),
+            ))
+        }
+    };
     if new_supply != pr.expected_cumulative_supply {
         msg!("[pow_reward_v1] Supply mismatch at height={}: current={} + reward={} = {} (expected={})",
              verifying_block_height, current_supply, pr.input.value, new_supply, pr.expected_cumulative_supply);
