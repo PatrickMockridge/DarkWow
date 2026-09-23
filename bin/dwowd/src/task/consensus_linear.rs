@@ -295,6 +295,29 @@ pub(crate) async fn reorg_to_heavier_chain(
     ReorgOutcome::Applied
 }
 
+/// OBL-C34: the **adopt** path's genesis admission, as a seam the tests can drive.
+///
+/// The genesis a peer hands us *is* the chain's identity, so it is checked against the compiled-in
+/// pin before anything is adopted from it. The four magic bytes the loop checks are a network
+/// label, not a trust anchor: a peer that knows the magic can present any genesis it likes.
+///
+/// This decision lived inline in the pull loop, where nothing could reach it — the loop needs a
+/// live peer, a RandomX cache and a synced head, so the register recorded the refusal as
+/// *unmeasured* and said so rather than claiming a closure. Extracting it costs one function and
+/// makes the negative measurable:
+/// `tests::genesis::the_adopt_path_refuses_a_second_genesis` builds a second genesis from a
+/// different key, hashes it, and drives this function with it.
+///
+/// The height guard is here rather than at the call site so the rule reads as a rule — only the
+/// genesis is the chain's identity — and so a test can assert the other direction too: a block at
+/// any other height is admitted by this function whatever its hash carries.
+pub(crate) fn admit_received_genesis(block: &dwow_chain::Block, hash: &blake3::Hash) -> Result<()> {
+    if block.header.height != BlockHeight::GENESIS {
+        return Ok(());
+    }
+    crate::check_genesis_pin(hash.as_bytes(), "received")
+}
+
 /// Async task to initialize consensus for darkwow-devnet mode.
 ///
 /// A single pull loop matching the wallet (`bin/dww/src/sync_task.rs`): dial
@@ -371,11 +394,20 @@ pub async fn consensus_linear_init_task(
                     continue;
                 }
                 for block in &blocks {
+                    // `OBL-C33`: the sites below are the ones where the *peer* is at fault — a block
+                    // malformed, for the wrong network, or failing its own proof. Each scores that peer
+                    // before stopping the pass, and at the limit the score keeps it out of every later
+                    // dial (`LinearSyncClient::penalise`). Two sites are deliberately not scored: a
+                    // request that times out (`Err(_) => continue` above — the spec's "simply skipped"),
+                    // and an `accept_block` failure, which is scored nowhere because it may be a
+                    // legitimate fork between two honest nodes, which the reorg path below handles.
+
                     // C1 contiguity guard.
                     if block.header.height != next_height {
                         warn!(target: "dwowd::task::consensus_linear_init_task",
                             "Peer sent block at height {} but expected {}",
                             block.header.height, next_height);
+                        client.penalise(peer.url());
                         break;
                     }
                     // Genesis magic-byte check (defense-in-depth).
@@ -383,6 +415,7 @@ pub async fn consensus_linear_init_task(
                         && &block.header.anchor_tx_id[0..4] != &magic[..] {
                         warn!(target: "dwowd::task::consensus_linear_init_task",
                             "Genesis magic bytes mismatch — wrong network");
+                        client.penalise(peer.url());
                         break;
                     }
                     // PoTB pre-filter (skip for genesis).
@@ -391,6 +424,7 @@ pub async fn consensus_linear_init_task(
                             warn!(target: "dwowd::task::consensus_linear_init_task",
                                 "Synced block at height {} failed proof-of-token-balance: {}",
                                 block.header.height, e);
+                            client.penalise(peer.url());
                             break;
                         }
                     }
@@ -412,6 +446,7 @@ pub async fn consensus_linear_init_task(
                     if block.header.height.pred().is_none() {
                         warn!(target: "dwowd::task::consensus_linear_init_task",
                             "Peer sent block at pre-genesis height 0 — skipping");
+                        client.penalise(peer.url());
                         break;
                     }
                     // OBL-C34: the genesis a peer hands us **is** the chain's identity, so it is
@@ -431,17 +466,23 @@ pub async fn consensus_linear_init_task(
                     //
                     // A mismatch is the peer's problem, not a local one, so it drops this peer and
                     // lets the outer loop try the next rather than aborting sync.
+                    //
+                    // The decision itself is `admit_received_genesis` below, extracted so it can be
+                    // driven with a genesis this build did not create; see that function.
                     if block.header.height == BlockHeight::GENESIS {
                         match block.hash_with_vm(&vm) {
                             Ok(hash) => {
-                                if let Err(e) = crate::check_genesis_pin(hash.as_bytes(), "received") {
+                                if let Err(e) = admit_received_genesis(block, &hash) {
                                     warn!(target: "dwowd::task::consensus_linear_init_task",
                                         "Genesis received from a peer does not match the compiled-in pin, \
                                          so nothing was adopted from it: {e}");
+                                    client.penalise(peer.url());
                                     break;
                                 }
                             }
                             Err(e) => {
+                                // Local: hashing failed with a VM this node built, so this says nothing
+                                // about the peer and is deliberately not scored (`OBL-C33`).
                                 warn!(target: "dwowd::task::consensus_linear_init_task",
                                     "Genesis hash failed at height {} — local failure, retrying: {e}",
                                     block.header.height);

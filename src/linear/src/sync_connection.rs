@@ -250,6 +250,16 @@ impl SyncPeer {
         Ok(peer)
     }
 
+    /// The dialed peer's URL — this peer's **stable identity across passes**.
+    ///
+    /// The field has said since it was added that it exists "for per-peer scoring/punishment", and the
+    /// scoring half was never built: a pull pass skipped a failing peer *within* the pass and re-dialed it,
+    /// equally trusted, 30 seconds later (`OBL-C33`). This accessor is what lets the sync client keep the
+    /// score across passes, since a `SyncPeer` is a fresh object every dial.
+    pub fn url(&self) -> &url::Url {
+        &self.url
+    }
+
     /// Request the chain tip.
     pub async fn request_tip(&mut self) -> dwow_core::Result<Tip> {
         let payload = encode_msg(&GetTip)

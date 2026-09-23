@@ -42,7 +42,10 @@
 //! It does NOT use `net-full` types (BanPolicy, session-seed, transport
 //! plugins) or `event-graph` types. The gate remains closed.
 
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use tracing::{info, warn};
 
@@ -64,6 +67,53 @@ pub use dwow_chain::sync_boundary::PeerTip;
 /// Atomic pointer to the linear sync client.
 pub type LinearSyncClientPtr = Arc<LinearSyncClient>;
 
+/// Persistent per-peer misbehaviour scores (`OBL-C33`).
+///
+/// Spec `sync-protocol.md` §13.3: *"Peer discipline SHALL be a single persistent score (Bitcoin Core
+/// `Misbehaving()`): a peer that serves an **invalid block** is disconnected; a peer that times out is
+/// simply skipped and the next peer tried."* This is that score, keyed by the peer's dialed URL — the
+/// stable identity a `SyncPeer` carries, since a peer object is fresh on every dial and cannot hold a
+/// memory of its own.
+///
+/// Deliberately one counter and no taxonomy: the spec's next sentence rules out a deadness/slowness
+/// taxonomy, bounded backoff, a heartbeat and a watchdog, as machinery with no production analogue. So
+/// timeouts do not call [`PeerScores::penalise`] at all, and nothing decays — which is why
+/// `MISBEHAVIOUR_LIMIT` is 1: one invalid block is the rule, not a budget.
+struct PeerScores {
+    scores: Mutex<HashMap<String, u32>>,
+}
+
+impl PeerScores {
+    /// Score at which a peer is disconnected and never re-dialed. A constant so the rule is named rather
+    /// than spelled as a literal at the call site.
+    const MISBEHAVIOUR_LIMIT: u32 = 1;
+
+    fn new() -> Self {
+        Self { scores: Mutex::new(HashMap::new()) }
+    }
+
+    /// Record one misbehaviour by the peer at `url` and return its score.
+    ///
+    /// Called for a block that is malformed, for the wrong network, or fails its own proof — never for a
+    /// timeout, and never for an `accept_block` failure, which may be a legitimate fork between two honest
+    /// nodes (`accept_block`'s caller already reorgs in that case).
+    fn penalise(&self, url: &url::Url) -> u32 {
+        let mut scores = self.scores.lock().unwrap_or_else(|e| e.into_inner());
+        let score = scores.entry(url.to_string()).or_insert(0);
+        *score = score.saturating_add(1);
+        *score
+    }
+
+    /// Whether `url` has reached the limit and must not be dialed again.
+    fn is_banned(&self, url: &url::Url) -> bool {
+        let scores = self.scores.lock().unwrap_or_else(|e| e.into_inner());
+        match scores.get(&url.to_string()) {
+            Some(score) => *score >= Self::MISBEHAVIOUR_LIMIT,
+            None => false,
+        }
+    }
+}
+
 /// Client-side peer discovery + sync gate for linear blockchain sync.
 ///
 /// Discovers full-node peers (`filtered_peers`) and dials them onto the unified
@@ -72,6 +122,8 @@ pub type LinearSyncClientPtr = Arc<LinearSyncClient>;
 pub struct LinearSyncClient {
     /// P2P network pointer for peer discovery
     p2p: P2pPtr,
+    /// Per-peer misbehaviour scores, kept across passes (`OBL-C33`).
+    peer_scores: PeerScores,
 }
 
 impl ExhibitsBarb for LinearSyncClient {
@@ -109,7 +161,7 @@ impl LinearSyncClient {
             target: "dwowd::proto::linear_sync_client::new",
             "Initializing linear sync client"
         );
-        Arc::new(Self { p2p: p2p.clone() })
+        Arc::new(Self { p2p: p2p.clone(), peer_scores: PeerScores::new() })
     }
 
     // ── Peer Discovery ────────────────────────────────────────────
@@ -217,6 +269,21 @@ impl LinearSyncClient {
             if let Some(port) = url.port() {
                 let _ = url.set_port(Some(port + dwow_chain::sync_connection::SYNC_PORT_OFFSET));
             }
+            // A peer that has served an invalid block is not dialed again (`OBL-C33`) — this is the
+            // "disconnected" half of the spec's rule, and it is what makes the score *persistent*: the
+            // pull pass that caught the peer has long since dropped its connection by the time the next
+            // tick runs, so without this the score would only re-derive what the last pass already knew.
+            // Note it is checked per dial, not by filtering the peer list, so a ban takes effect on the
+            // very next pass rather than at the next discovery refresh.
+            if self.peer_scores.is_banned(&url) {
+                warn!(
+                    target: "dwowd::proto::linear_sync_client",
+                    "skipping {url}: the peer reached the misbehaviour limit \
+                     ({} invalid block(s), sync-protocol.md §13.3)",
+                    PeerScores::MISBEHAVIOUR_LIMIT
+                );
+                continue;
+            }
             match dwow_chain::sync_connection::SyncPeer::dial(
                 url.clone(),
                 magic,
@@ -235,5 +302,56 @@ impl LinearSyncClient {
             }
         }
         peers
+    }
+
+    /// Score one misbehaviour by the peer at `url` (`OBL-C33`). See [`PeerScores::penalise`] for what
+    /// does and does not count as one.
+    pub fn penalise(&self, url: &url::Url) -> u32 {
+        let score = self.peer_scores.penalise(url);
+        warn!(
+            target: "dwowd::proto::linear_sync_client",
+            "peer {url} served an invalid block — score {score} of {}",
+            PeerScores::MISBEHAVIOUR_LIMIT
+        );
+        score
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn peer(port: u16) -> url::Url {
+        url::Url::parse(&format!("tcp+tls://127.0.0.1:{port}")).expect("test url")
+    }
+
+    /// `OBL-C33` — a peer that serves an invalid block is scored, and at the limit it is never dialed
+    /// again while every other peer is unaffected.
+    ///
+    /// The persistence is the point, and it is what a per-pass skip cannot express: the client outlives
+    /// the pass that observed the misbehaviour.
+    #[test]
+    fn test_a_misbehaving_peer_is_banned_and_others_are_not() {
+        let scores = PeerScores::new();
+        let bad = peer(10001);
+        let good = peer(10002);
+
+        assert!(!scores.is_banned(&bad), "control: an unpenalised peer is dialable");
+        assert!(!scores.is_banned(&good), "control: and so is an unrelated one");
+
+        assert_eq!(scores.penalise(&bad), 1, "the first misbehaviour scores one");
+        assert!(
+            scores.is_banned(&bad),
+            "at the limit ({}) the peer must not be dialed again",
+            PeerScores::MISBEHAVIOUR_LIMIT
+        );
+        assert!(
+            !scores.is_banned(&good),
+            "control: scoring one peer must not touch another — the score is keyed by URL, not global"
+        );
+
+        // Score again: the counter is monotonic and the peer stays banned.
+        assert_eq!(scores.penalise(&bad), 2, "the score accumulates rather than resetting per pass");
+        assert!(scores.is_banned(&bad), "and the ban persists");
     }
 }
