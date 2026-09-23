@@ -1547,12 +1547,26 @@ breaking ties:
   `reveal_spin_process_instruction_v1` (`entrypoint.rs:203`), and **that function has no
   `InvalidChildCall` site at all** — the variant's only three raise sites are `commit_spin`
   (`:307`/`:313`), `settle_spin` (`:552`/`:558`) and `cancel_spin` (`:673`/`:679`). So the failing exec
-  returned an error its own code path cannot raise directly. Three explanations survive reading, and the
-  next step is bounded and textual: **a nested or child path propagating it** (read
-  `reveal_spin_process_instruction_v1` to its end and every helper it calls), **a mistaken mapping**
-  (check the enum against the sites), or **a framing mismatch where the selector the host prints is not
-  the byte the contract dispatches on** — the class the other session's phase work keeps meeting. No
-  guess is recorded in place of the third.
+  returned an error its own code path cannot raise directly. **The reading was then done, and it
+  eliminated two of the three explanations while exposing the fact that is missing.**
+
+  *Eliminated:* `reveal_spin_process_instruction_v1` was read to its end — it can return only codes
+  **1** (`SpinNotFound`), **3** (`InvalidSpinState`), **11** (`InvalidSignature`) and **18**
+  (`HouseNotInitialized`), plus `?` on db/serde errors — so it cannot return 20, and its first
+  statement is a `msg!` that **never printed in the failing block**, so the handler did not run at all.
+  The same holds for the child contract: `promissory_note` has **no `Custom(20)` anywhere**, neither
+  mapped in `error.rs` nor written inline, so the `IssueV1 = 0x02` child (children precede parents in
+  the call list) cannot be the source either. And `fn_code` is genuinely that call's own selector — it
+  is `job.call_data.first()` (`execution.rs:525`) — so the printed `0x02` is not a framing artefact.
+
+  *What that leaves is a question the tree cannot answer by reading:* the error names the contract as
+  the base58 id `21LYoifepcySKhyDA1vzxRDWGHyDizPQ8f11zSqhep7t`, and **no such id appears anywhere in
+  the source** — it is derived at deploy time (there is no `SLOT_CONTRACT_ID` or equivalent constant to
+  grep for), so "which contract is this?" has no static answer. That single fact decides between the
+  remaining possibilities, and obtaining it is the next step rather than more reading: resolve the id
+  to a contract (the harness knows the ids it deploys; a print, or a small derivation check, settles
+  it), and the diagnosis closes from there. Recorded because the alternative — three plausible
+  explanations and no way to choose — is how a red test sits for a month.
 
   What is known is uneven, and 2026-09-22 narrowed it twice. `insurance_market::UnderwriteV1`'s halo2
   synthesis error is OBL-Z16 arriving as a runtime symptom. `purse::WithdrawV1` fails its own
