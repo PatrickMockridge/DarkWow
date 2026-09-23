@@ -54,14 +54,14 @@ src/contract/oracle/proof/aggregate.zk : max_result : host: oracle entrypoint.rs
 
 # --- values the host compares against the stored object ------------------------------------
 src/contract/tender/proof/reveal_bid.zk : bid_id : host: tender entrypoint.rs reveal_bid_v1 loads the bid from `bids_db` by bid_id and rejects an unknown id before any other check
-src/contract/tender/proof/reveal_bid.zk : revealed_amount : host: tender entrypoint.rs:635 `if params.revealed_amount != bid.amount { ... "Revealed amount does not match sealed bid" }`
-src/contract/labor_market/proof/refund.zk : refund_amount : host: labor_market entrypoint.rs:766 for non-milestone jobs `if params.refund_amount != job.payment_amount` -> reject (defence-in-depth over the HAZOP HIGH-3 finding)
+src/contract/tender/proof/reveal_bid.zk : revealed_amount : host: tender entrypoint.rs:683 `if params.revealed_amount != bid.amount { ... "Revealed amount does not match sealed bid" }`
+src/contract/labor_market/proof/refund.zk : refund_amount : host: labor_market entrypoint.rs:1081 for non-milestone jobs `if params.refund_amount != job.payment_amount` -> reject (defence-in-depth over the HAZOP HIGH-3 finding)
 
 # --- dispatch targets the host computes from the real call graph ---------------------------
 # The FuncRef ids are derived by the entrypoint from the child calls it is actually routing to,
 # not taken from the prover's params, so the expose is a disclosure of the host's own derivation.
-src/contract/dex/proof/execute_swap.zk : alice_otc_func_id : host: dex entrypoint/execute_swap.rs:141 builds `FuncRef { contract_id: child_contract_id, func_code: child_func_code }.to_func_id()` from the actual child call
-src/contract/dex/proof/execute_swap.zk : bob_otc_func_id : host: dex entrypoint/execute_swap.rs:141 builds `FuncRef { contract_id: child_contract_id, func_code: child_func_code }.to_func_id()` from the actual child call
+src/contract/dex/proof/execute_swap.zk : alice_otc_func_id : host: dex entrypoint/execute_swap.rs:140 builds `FuncRef { contract_id: child_contract_id, func_code: child_func_code }.to_func_id()` from the actual child call
+src/contract/dex/proof/execute_swap.zk : bob_otc_func_id : host: dex entrypoint/execute_swap.rs:140 builds `FuncRef { contract_id: child_contract_id, func_code: child_func_code }.to_func_id()` from the actual child call
 
 # --- execute_swap_fee: proven, and read by nobody -------------------------------------------
 # `fee` is a bare witness from this checker's point of view, but the circuit does pin it:
@@ -96,12 +96,12 @@ src/contract/multisig/proof/create_group.zk : total_keys : host: multisig entryp
 # nothing on their own. What makes them mean something is the entrypoint, which compares every one
 # of them against on-chain state and rejects a mismatch. `report_timestamp` is the exception: it
 # appears only in `get_metadata` and is never validated or stored, so it is NOT listed here.
-src/contract/stablecoin/proof/governance_report.zk : outstanding : host: stablecoin entrypoint.rs:1400-1405 computes `outstanding = on_chain_debt - on_chain_redeemed` from the config DB and rejects `params.outstanding != outstanding`, so the exposed denominator is the host's own arithmetic re-derived from chain state
-src/contract/stablecoin/proof/governance_report.zk : collateral_ratio_bps : host: anchored indirectly and deliberately — entrypoint.rs:1363-1368 requires the exposed `total_collateral`/`total_debt` to equal the config DB values and :1400-1405 requires `outstanding = total_debt - total_redeemed`; since the circuit pins the exposed ratio to those exposed amounts (`crb * debt <= collateral * BPS < (crb+1) * debt`), the stored ratio is a function of DB state, not of the reporter's choice
-src/contract/stablecoin/proof/governance_report.zk : total_collateral : host: stablecoin entrypoint.rs:1331 process_governance_report_instruction `if params.total_collateral != on_chain_collateral` (config DB CDP_TOTAL_COLLATERAL_KEY) -> ConfigError
-src/contract/stablecoin/proof/governance_report.zk : total_debt : host: stablecoin entrypoint.rs:1331 `if params.total_debt != on_chain_debt` (config DB CDP_TOTAL_DEBT_KEY) -> ConfigError
-src/contract/stablecoin/proof/governance_report.zk : interest_accrued : host: stablecoin entrypoint.rs:1331 `if params.interest_accrued != stored_interest` (config DB "last_interest_accrued"), carrying an explicit HAZOP CRIT-1 comment that this entrypoint check is the defence-in-depth
-src/contract/stablecoin/proof/accrue_interest.zk : old_total_debt : host: stablecoin entrypoint.rs:1483 `if params.old_total_debt != stored_debt` (config DB) -> CommitmentMismatch
+src/contract/stablecoin/proof/governance_report.zk : outstanding : host: stablecoin entrypoint.rs:1471 computes `outstanding = on_chain_debt - on_chain_redeemed` from the config DB and rejects `params.outstanding != outstanding`, so the exposed denominator is the host's own arithmetic re-derived from chain state
+src/contract/stablecoin/proof/governance_report.zk : collateral_ratio_bps : host: anchored indirectly and deliberately — entrypoint.rs:1433-1439 requires the exposed `total_collateral`/`total_debt` to equal the config DB values and :1471 requires `outstanding = total_debt - total_redeemed`; since the circuit pins the exposed ratio to those exposed amounts (`crb * debt <= collateral * BPS < (crb+1) * debt`), the stored ratio is a function of DB state, not of the reporter's choice
+src/contract/stablecoin/proof/governance_report.zk : total_collateral : host: stablecoin entrypoint.rs:1433 process_governance_report_instruction `if params.total_collateral != on_chain_collateral` (config DB CDP_TOTAL_COLLATERAL_KEY) -> ConfigError
+src/contract/stablecoin/proof/governance_report.zk : total_debt : host: stablecoin entrypoint.rs:1439 `if params.total_debt != on_chain_debt` (config DB CDP_TOTAL_DEBT_KEY) -> ConfigError
+src/contract/stablecoin/proof/governance_report.zk : interest_accrued : host: stablecoin entrypoint.rs:1461 `if params.interest_accrued != stored_interest` (config DB "last_interest_accrued"), carrying an explicit HAZOP CRIT-1 comment that this entrypoint check is the defence-in-depth
+src/contract/stablecoin/proof/accrue_interest.zk : old_total_debt : host: stablecoin entrypoint.rs:1553 `if params.old_total_debt != stored_debt` (config DB) -> CommitmentMismatch
 
 # --- oracle_id: RETIRED 2026-09-21 — the entries had become dead text -------------------------
 # Five lines stood here, one per oracle circuit, each declaring `oracle_id` free against the
@@ -129,7 +129,7 @@ src/contract/stablecoin/proof/accrue_interest.zk : old_total_debt : host: stable
 # the record receives the flag the operator proved and not a substitution made in transit.
 # Authorization for the *write* is separate and real (the commitment check above); this entry says
 # only that the value written is the prover's choice, which for a toggle it has to be.
-src/contract/oracle/proof/set_oracle_active.zk : is_active : host: none — the operator's own new state value; oracle entrypoint.rs:474 `oracle.is_active = params.is_active`, stored verbatim after the proof covering it verifies. Nothing on chain determines it; a toggle is a choice.
+src/contract/oracle/proof/set_oracle_active.zk : is_active : host: none — the operator's own new state value; oracle entrypoint.rs:487 `oracle.is_active = params.is_active`, stored verbatim after the proof covering it verifies. Nothing on chain determines it; a toggle is a choice.
 
 # --- bearer_bond coverage report: FREE BY DESIGN, and no host check exists ------------------
 #
@@ -154,10 +154,10 @@ src/contract/oracle/proof/set_oracle_active.zk : is_active : host: none — the 
 # issuer hiding insolvency reports the opposite. The remedy would be an anchor the issuer cannot
 # choose — a series reserve account the contract holds and totals itself — which this contract does
 # not have. Until it does, a coverage report is an attestation and should be read as one.
-src/contract/bearer_bond/proof/prove_coverage.zk : reserve_amount : host: none — issuer's claimed reserve balance; bearer_bond entrypoint/mod.rs:1021-1030 stores it verbatim and (mod.rs:1033) voids the series when the ratio is < 10000; there is no on-chain quantity to compare it against
-src/contract/bearer_bond/proof/prove_coverage.zk : total_outstanding : host: none — issuer's claimed outstanding principal; stored verbatim by mod.rs:1021-1030; the contract keeps no running total of stake principal to compare against
-src/contract/bearer_bond/proof/prove_coverage.zk : total_interest_obligation : host: none — issuer's claimed accrued interest; stored verbatim by mod.rs:1021-1030
-src/contract/bearer_bond/proof/prove_coverage.zk : coverage_ratio_bps : host: none — the governance datum, stored verbatim and consumed by validation.rs:52 `is_coverage_voided`; the circuit proves only that it is the ratio of the three amounts above, which the issuer also chooses
+src/contract/bearer_bond/proof/prove_coverage.zk : reserve_amount : host: none — issuer's claimed reserve balance; bearer_bond entrypoint/mod.rs:1063-1066 stores it verbatim and `is_coverage_voided` (validation.rs:52, called at mod.rs:903 and :1077) voids the series when the ratio is < 10000; there is no on-chain quantity to compare it against
+src/contract/bearer_bond/proof/prove_coverage.zk : total_outstanding : host: none — issuer's claimed outstanding principal; stored verbatim by mod.rs:1063; the contract keeps no running total of stake principal to compare against
+src/contract/bearer_bond/proof/prove_coverage.zk : total_interest_obligation : host: none — issuer's claimed accrued interest; stored verbatim by mod.rs:1064
+src/contract/bearer_bond/proof/prove_coverage.zk : coverage_ratio_bps : host: none — the governance datum, stored verbatim (mod.rs:1066) and consumed by validation.rs:52 `is_coverage_voided`; the circuit proves only that it is the ratio of the three amounts above, which the issuer also chooses
 
 # --- the id-lookup family: fourteen identifiers a db_get has to resolve ----------------------
 # Surveyed 2026-09-20, one at a time, after the triage of OBL-Z1's remaining 33. Each of these is
@@ -168,10 +168,10 @@ src/contract/bearer_bond/proof/prove_coverage.zk : coverage_ratio_bps : host: no
 src/contract/baccarat/proof/draw_cards.zk : bet_id : host: baccarat entrypoint/draw_cards.rs:55 `db_get(bets_db, &params.bet_id.to_repr())?.ok_or(BaccaratError::BetNotFound)?`
 src/contract/darktoshi_dice/proof/reveal_roll.zk : bet_id : host: darktoshi_dice entrypoint/reveal_roll.rs:52 `db_get(bets_db, &params.bet_id.to_repr())?` -> `None => DiceError::BetNotFound`
 src/contract/slot/proof/reveal_spin.zk : spin_id : host: slot entrypoint.rs:452 `db_get(spins_db, &params.spin_id.to_repr())?` -> `None => SlotError::SpinNotFound`; the secret_nonce commitment is then compared against the stored spin's (:466)
-src/contract/tender/proof/reveal_bid.zk : tender_id : host: tender entrypoint.rs:597 `db_get(tenders_db, &params.tender_id.to_repr())?` -> "Tender not found"
-src/contract/tender/proof/select_winner.zk : tender_id : host: tender entrypoint.rs:702 `db_get(tenders_db, &params.tender_id.to_repr())?` -> "Tender not found"
-src/contract/tender/proof/select_winner.zk : winner_bid_id : host: tender entrypoint.rs:730 `db_get(bids_db, &params.winner_bid_id.to_repr())?` -> "Winner bid not found", then :740 rejects `winner_bid.tender_id != params.tender_id`
-src/contract/tender/proof/submit_bid_with_capability.zk : required_capability_id : host: tender entrypoint.rs:961 rejects `params.required_capability_id != tender.required_capability`
+src/contract/tender/proof/reveal_bid.zk : tender_id : host: tender entrypoint.rs:644 `db_get(tenders_db, &params.tender_id.to_repr())?` -> "Tender not found"
+src/contract/tender/proof/select_winner.zk : tender_id : host: tender entrypoint.rs:748 `db_get(tenders_db, &params.tender_id.to_repr())?` -> "Tender not found"
+src/contract/tender/proof/select_winner.zk : winner_bid_id : host: tender entrypoint.rs:776 `db_get(bids_db, &params.winner_bid_id.to_repr())?` -> "Winner bid not found", then :786 rejects `winner_bid.tender_id != params.tender_id`
+src/contract/tender/proof/submit_bid_with_capability.zk : required_capability_id : host: tender entrypoint.rs:1010 rejects `params.required_capability_id != required_cap` (the stored `tender.required_capability`), under the `if let Some(required_cap)` guard at :1009
 src/contract/labor_market/proof/accept_job_with_capability.zk : capability_id : host: labor_market entrypoint.rs:1613-1644 requires exactly one child call, of function 0x06 (`Identity::VerifyCapabilityV1`), whose `contract_id` matches the configured Identity contract — a real on-chain capability check, the only one in the repository
 # --- multisig sign/finalize: RETIRED 2026-09-22 — the entries had become dead text -----------
 # Four lines stood here, declaring `group_id` and `message_hash` free in `sign.zk` and
