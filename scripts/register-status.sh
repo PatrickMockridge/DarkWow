@@ -117,30 +117,43 @@ for rid, _body, found, weak in rows:
     for t in found:
         hist[t] += 1
 
-# --- the coined-marker check ---------------------------------------------------------------------
-# Narrow by construction, because a rule that cries wolf gets switched off: only the row's LAST cell
-# (where an appended marker lands), only a bold span that OPENS that cell, and only an ALL-CAPS first
-# word. A row whose marker lives inside the proposition cell — `OBL-C63` is one — is not examined at
-# all. This guards the convention; it does not replace reading.
+# --- the status-column check ---------------------------------------------------------------------
+# 2026-09-23: the register gained a `Status` column, immediately after `ID`. This check was previously
+# a *convention* it hoped was followed — it examined only a row's LAST cell, and only a bold span that
+# opened it, so a row whose marker lived anywhere else "was not examined at all" (its own words, and
+# it named `OBL-C63` as one such row). An adversarial pass over all 107 rows measured the cost: 31 rows
+# carried their token somewhere other than that cell and 9 carried none, leaving 40 invisible to the
+# guard while it reported "107 rows walked". A status *column* is the register's own stated repair —
+# "a convention — a status column, or a generated table — not a better regex" — so this now reads a
+# fixed cell and REQUIRES a token there, which is the difference between guarding a form and guarding
+# a fact.
 COINED_RE = re.compile(r'^\s*\*\*([A-Z][A-Z-]{1,})')
 KNOWN = {n for n, _ in VOCAB} | {n for n, _ in WEAK}
-coined = []
+coined, missing = [], []
 for rid, body, _f, _w in rows:
     cells = body.split('|')
-    last = cells[-2] if cells and cells[-1].strip() == '' else (cells[-1] if cells else '')
-    hit = COINED_RE.match(last)
-    if hit and hit.group(1) not in KNOWN:
+    status_cell = (cells[0] if cells else '').strip()
+    hit = COINED_RE.match(status_cell)
+    if not hit:
+        missing.append(rid)
+    elif hit.group(1) not in KNOWN:
         coined.append((rid, hit.group(1)))
 
 if check_mode:
     if coined:
-        print(f"FAIL: {len(coined)} row(s) open their last cell with a word that is not a status:")
+        print(f"FAIL: {len(coined)} row(s) open their Status cell with a word that is not a status:")
         for rid, word in coined:
             print(f"  {rid}: {word}")
-        print("A marker no count can find is a marker no audit can use. Use the register's own word, or")
-        print("add the new one to its status-vocabulary note.")
+        print("Use the register's own word, or add the new one to its status-vocabulary note.")
         sys.exit(1)
-    print(f"OK: every row whose last cell opens with an ALL-CAPS word uses a status from the vocabulary "
+    if missing:
+        print(f"FAIL: {len(missing)} row(s) carry no status in the Status column:")
+        for rid in missing:
+            print(f"  {rid}")
+        print("Every row states one status from the vocabulary. A row without one cannot be counted,")
+        print("grepped or audited, which is the reason the column exists.")
+        sys.exit(1)
+    print(f"OK: every row carries one status from the vocabulary in its Status column "
           f"({len(rows)} rows walked).")
     sys.exit(0)
 
