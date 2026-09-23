@@ -20,7 +20,10 @@ binding convention it needs — the one `Proc.lean` declined to invent, and whic
 than this module: §0's "treat name `x` as data" and §Quote/Eval's "`quote(val)` produces canonical
 bytes" make a quote seal, so substitution stops at it. The rule carries `CaptureFree` as a proviso
 because `SCong` has no renaming rule; that incompleteness is recorded in `Substitution.lean` rather
-than hidden by a silent α-renaming.
+than hidden by a silent α-renaming — and so is the *size* of the unit that would close it. `α` renames
+the channels that labels are made of, so closing it means redesigning this file's label predicates as
+well as adding a constructor to the congruence; `subst_moves_the_label` in Part 3 is that fact stated,
+and `Substitution.lean`'s note says what it implies for `CanStep` and everything built on it.
 
 Two boundaries remain, and they are separate:
 
@@ -430,6 +433,36 @@ theorem canStep_occurs_up_to_scong {P : Proc} {μ : Label} (h : CanStep P μ) :
       exact ⟨Proc.par A' B, SCong.cong_par hA' (SCong.refl B), Or.inl hocc⟩
     · obtain ⟨B', hB', hocc⟩ := ihB h
       exact ⟨Proc.par A B', SCong.cong_par (SCong.refl A) hB', Or.inr hocc⟩
+
+/-- **Substitution relabels.** `subst` moves an action from the channel it replaces to the one it
+    replaces it with, so the *label* changes — and that is the obstacle to the α-rule on `SCong`, the
+    one `Substitution.lean`'s note records as the unit that would remove `Step.tau`'s `CaptureFree`
+    proviso.
+
+    It is recorded as a theorem rather than discovered halfway through that unit, because it says what
+    the unit costs. An α-rule would relate `νx.(out x b)` to `νy.(out y b)`, and `CanStep` is a predicate
+    over *labels*: the first has the label `x!(b)` and the second `y!(b)`, and neither is among the
+    other's, since the membership test compares channels with `SCong`. So adding α to `SCong` would make
+    `CanStep` — and with it `canStep_occurs_up_to_scong`, `barb_nu_subject_occurs`, and the restriction
+    obligation that rests on them — *not invariant*, unless "the same channel" is relaxed to an
+    α-aware notion everywhere it appears. Measured and then written down, in the order this corpus asks
+    for.
+
+    The hypothesis is the one `Substitution.lean`'s note predicts every statement about `subst` needs:
+    nothing here decides whether `out x b` *is* `x`. -/
+@[axiom_budget 0]
+theorem subst_moves_the_label {x y b : Proc} (hne : Proc.out x b ≠ x) (hsc : ¬ SCong x y) :
+    CanStep (subst (Proc.out x b) x y) (.out y (subst b x y)) ∧
+      ¬ CanStep (Proc.out x b) (.out y (subst b x y)) := by
+  have hsub : subst (Proc.out x b) x y = Proc.out y (subst b x y) := by
+    show (if Proc.out x b = x then y else Proc.out (subst x x y) (subst b x y)) = _
+    rw [if_neg hne, subst_self]
+  constructor
+  · rw [hsub]
+    exact ⟨y, subst b x y, rfl, SCong.refl y, SCong.refl (subst b x y)⟩
+  · rintro ⟨c, d, he, hxc, _⟩
+    injection he with h1 _
+    exact hsc (h1 ▸ hxc)
 
 /-! ==========================================================================
    Part 4 — Barbs

@@ -30,12 +30,25 @@ column — "code as data — the deployed contract bytes", and deployed bytes ar
   That is why `CaptureFree` is a hypothesis the caller carries rather than a property of the
   definition: the definition is total *by arrest*, and the theory only constrains it where there is
   nothing to capture.
-* `subst` carries no laws here beyond the quote's sealing, and the reason is worth recording because it
-  is the same gap: every law one would state needs `P ≠ z` — `subst P z z = P` fails at `z = 0`, where
-  the term `0` has no free occurrence of itself and is still the thing being replaced — and refuting
-  `νz.P = z` for arbitrary `z` is an occurs-check, which a structural `cases` cannot close and which
-  needs a size induction. So the laws arrive with the renaming rule that removes the need for the
-  hypothesis, or they arrive as size inductions. Neither is written down here.
+* `subst` carries **three** laws and no more, and the reason the rest are missing is the same gap: the
+  laws that assert `subst` leaves a term *alone* need `P ≠ z` — `subst P z z = P` fails at `z = 0`,
+  where the term `0` has no free occurrence of itself and is still the thing being replaced — and
+  refuting `νz.P = z` for arbitrary `z` is an occurs-check, which a structural `cases` cannot close and
+  which needs a size induction. What is here is the sealing (`freshFree_bang`), the nil case with its
+  hypothesis stated (`subst_nil_of_ne`), and the one that needs no hypothesis because the equality test
+  *is* the case it is about (`subst_self`).
+
+**The α-rule is not a mechanical extension, and that is measured rather than suspected.** The renaming
+rule that would remove `CaptureFree` from `LTS.lean`'s `Step.tau` relates `νx.P` to `νy.P{x/y}` — and
+`subst` *relabels*: an action that was on the channel `x` is on `y` afterwards. `CanStep` is a predicate
+over labels, and its membership test compares channels with `SCong`, so α-related terms have *different*
+label sets. `LTS.lean`'s `subst_moves_the_label` is that fact, carrying the hypothesis `¬ SCong x y` that
+makes it non-vacuous. Adding α to the congruence would therefore make `CanStep` — and with it
+`canStep_occurs_up_to_scong`, `barb_nu_subject_occurs`, and the restriction obligation that rests on
+them — fail to be invariant, unless "the same channel" is relaxed to an α-aware notion everywhere it
+appears. So the unit is a redesign of the label-level predicates *and* a constructor on the congruence,
+and its first question is what a label's channel *means* when names are defined only up to renaming. Said
+here, next to the gap it would close, rather than discovered halfway into it.
 -/
 
 import DarkFi.Semantics.Proc
@@ -136,5 +149,14 @@ theorem freshFree_bang {x P : Proc} : FreeOccurs x (Proc.bang P) ↔ False := If
 theorem subst_nil_of_ne {z y : Proc} (h : z ≠ Proc.nil) : subst Proc.nil z y = Proc.nil := by
   show (if Proc.nil = z then y else Proc.nil) = Proc.nil
   exact if_neg (fun hc => h hc.symm)
+
+/-- **Substituting a term for itself is the identity**, and it needs no hypothesis: `z = z` is exactly
+    the case where the definition's equality test fires, so the term is replaced by `y` — which is `z`
+    here. It is the third law, and the one that shows the test doing its job rather than needing to be
+    worked around. -/
+@[axiom_budget 0]
+theorem subst_self (z y : Proc) : subst z z y = y := by
+  unfold subst
+  exact if_pos rfl
 
 end DarkFi.Semantics
