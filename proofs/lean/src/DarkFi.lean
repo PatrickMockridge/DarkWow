@@ -52,6 +52,7 @@ import DarkFi.Combinatorial.Combinations
 import DarkFi.Genesis.Ceremony
 import DarkFi.Semantics.Proc
 import DarkFi.Semantics.Congruence
+import DarkFi.Semantics.Substitution
 import DarkFi.Semantics.LTS
 
 /-!

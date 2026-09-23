@@ -70,7 +70,13 @@ namespace DarkFi.Semantics
     | `inp`   | `x?(y).P`  | discovering a commitment by AEAD decryption |
     | `nu`    | `νx.P`     | deriving a per-instance key |
     | `rep`   | `!P`       | the nullifier marker set |
-    | `par`   | `P \| Q`   | two calls in one block | -/
+    | `par`   | `P \| Q`   | two calls in one block |
+
+    `DecidableEq` is derived, and it is here rather than in `Substitution.lean` because it is part of
+    how the type presents itself rather than a tool one module happens to need: substitution has to
+    recognise the term it replaces, and in this calculus names are arbitrary terms, so that test is
+    term equality. The instance is structural — it decides by the constructors and uses nothing beyond
+    them — so it adds no assumption to anything. -/
 inductive Proc : Type where
   /-- The stopped process, `0`. -/
   | nil : Proc
@@ -86,6 +92,7 @@ inductive Proc : Type where
   | rep : Proc → Proc
   /-- Parallel composition, `P | Q`. -/
   | par : Proc → Proc → Proc
+deriving DecidableEq
 
 /-! ==========================================================================
    Part 2 — Dereference, and the two equations

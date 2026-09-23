@@ -14,14 +14,26 @@ used to be union-commutativity are then statements a reader can disagree with.
 
 ## Scope, stated rather than implied
 
-`Label` has a `tau`, and **no rule produces a τ-transition.** That is not an omission: the τ-rule is
-`x!(y) | x?(z).P -[τ]-> P{y/z}`, and `P{y/z}` is capture-avoiding substitution, which needs a binding
-convention for `bang` that `Proc.lean` deliberately does not invent. Every statement below is about
-the free-action fragment — `out`, `inp`, `par`, `nu`, and closure up to `SCong` — which is exactly the
-fragment the barbs and strong bisimulation need. τ is kept in the label type because §1.2 discusses
-τ-transitions explicitly, and a calculus whose labels did not mention them would misdescribe itself;
-the substitution layer that inhabits it is the next module, and it is named here so that its absence
-is a recorded boundary rather than a surprise.
+`Label`'s `tau` now has a producer: `Step.tau` is the synchronisation rule
+`x!(y) | x?(z).P -[τ]-> P{y/z}`, and `Semantics/Substitution.lean` supplies `P{y/z}` together with the
+binding convention it needs — the one `Proc.lean` declined to invent, and which the spec fixes rather
+than this module: §0's "treat name `x` as data" and §Quote/Eval's "`quote(val)` produces canonical
+bytes" make a quote seal, so substitution stops at it. The rule carries `CaptureFree` as a proviso
+because `SCong` has no renaming rule; that incompleteness is recorded in `Substitution.lean` rather
+than hidden by a silent α-renaming.
+
+Two boundaries remain, and they are separate:
+
+* **Every statement about `CanStep` is about free actions.** `CanStep` is the static label set the barb
+  obligations are proved through, and no clause of it produces `τ` — a synchronisation is a property of
+  a *pair*, which a per-term label set cannot see. So its three lemmas carry `IsAction μ`, and `τ` never
+  enters the term-level recursion. That is deliberate rather than a shortcut: a synchronisation clause
+  inside the `par` case would have to relate the clauses of two different associations in
+  `par_assoc`, which is where the invariance proof would stop being structural.
+* **Strong bisimulation is still the only bisimulation.** §1.2's weak equation
+  `P | a?(x).Q | a!(v).R ≈ P | Q{v/x} | R` needs `τ`-transitions *and* the weak relation, and neither
+  the relation nor its laws are here. The barb results are unaffected by `τ`: a barb is an action, and
+  `Barb` never saw `τ`.
 
 ## What the rules are, and which are derived
 
@@ -81,6 +93,7 @@ which are complete.
 -/
 
 import DarkFi.Semantics.Congruence
+import DarkFi.Semantics.Substitution
 
 namespace DarkFi.Semantics
 
@@ -111,6 +124,16 @@ def Label.subject : Label → Proc
   | .out x _ => x
   | .inp x _ => x
 
+/-- `IsAction μ`: `μ` is a free action — an output or an input, not `τ`.
+
+    Named for the vocabulary the rules already use ("`P` performs the action `μ`"), and it is the
+    shape the barbed fragment is stated over: a barb is an action on a channel, `τ` is not, and
+    `CanStep` — the static label set the barb obligations are proved through — is an approximation of
+    the *actions* only. Stating that as a hypothesis rather than folding it into `CanStep` is what
+    keeps `τ` out of the term-level recursion, which is where the invariance proof would otherwise
+    have to relate the synchronisation clauses of two different associations. -/
+def IsAction (μ : Label) : Prop := ∃ x y : Proc, μ = Label.out x y ∨ μ = Label.inp x y
+
 /-! ==========================================================================
    Part 2 — Transitions
    ========================================================================== -/
@@ -126,6 +149,20 @@ inductive Step : Proc → Label → Proc → Prop where
   | out (x y : Proc) : Step (Proc.out x y) (.out x y) Proc.nil
   /-- `x?(y)` receives: `x?(y).P -[x?(y)]-> P`. -/
   | inp (x y P : Proc) : Step (Proc.inp x y P) (.inp x y) P
+  /-- **Synchronisation**: `x!(y) | x?(z).P -[τ]-> P{y/z}`, the only rule that produces `τ`.
+
+      This is the rule this module's scope note used to record as absent, and the reason
+      `Semantics/Substitution.lean` exists. It is stated on the parallel composition of the two
+      actions rather than left to the reader to assemble from `par` and `out`/`inp`: a version stated
+      per-component would be a different calculus.
+
+      The proviso is `CaptureFree`, and it is a *proviso* rather than a property of `subst` because
+      `SCong` has no renaming rule — an α-equivalent pair of interactions is not derivable here, and
+      that incompleteness is recorded in `Substitution.lean` rather than hidden by a silent renaming.
+      The other order of the two components is reachable by `par_comm` and `Step.scong`, so it needs
+      no rule of its own; nothing consumes it yet, so it is not stated. -/
+  | tau {x y z P : Proc} (h : CaptureFree z y P) :
+      Step (Proc.par (Proc.out x y) (Proc.inp x z P)) .tau (subst P z y)
   /-- Parallel composition: a component acts, the other is untouched. Note the other is *unchanged*
       rather than renamed — the right-handed form is `step_par_right` below, derived. -/
   | par {P P' Q : Proc} {μ : Label} : Step P μ P' → Step (Proc.par P Q) μ (Proc.par P' Q)
@@ -221,29 +258,45 @@ theorem canStep_of_scong {P Q : Proc} (h : SCong P Q) (μ : Label) :
   | cong_rep _ ih => simp only [CanStep]; exact ih
   | cong_par _ _ ih1 ih2 => simp only [CanStep]; exact or_congr ih1 ih2
 
-/-- Every step's label is in the static set. This is the direction that makes `CanStep` usable: it
-    is an over-approximation, and an over-approximation of `Step` is what a proof gets to reason on.
+/-- Every *action* a term can take is in the static set. This is the direction that makes `CanStep`
+    usable: it is an over-approximation, and an over-approximation of `Step` is what a proof gets to
+    reason on.
 
-    The `scong` case is the whole point of the design and takes one line — the induction hypothesis
-    is about the *congruent* term `Q`, and `canStep_of_scong` carries it back to `P`. That is the
-    case an induction over `Step` cannot close on its own, because `Q` is a variable there. -/
+    The `scong` case is the whole point of the design and takes one line — the induction hypothesis is
+    about the *congruent* term `Q`, and `canStep_of_scong` carries it back to `P`. That is the case an
+    induction over `Step` cannot close on its own, because `Q` is a variable there.
+
+    The `IsAction` hypothesis is what `τ` costs. It cannot be dropped: a synchronisation step's label
+    is not in any term's `CanStep`, because no clause of that definition produces `τ`, and the case
+    below is the discharge — so with a `τ` rule in the tree, `CanStep` no longer contains *every*
+    step's label and the statement has to say which labels it is about. `τ` cases stay out of the
+    term-level recursion instead, which is what keeps `canStep_of_scong` from having to relate the
+    synchronisation clauses of two different associations. -/
 @[axiom_budget 0]
-theorem canStep_of_step {P : Proc} {μ : Label} {P' : Proc} (h : Step P μ P') : CanStep P μ := by
+theorem canStep_of_step {P : Proc} {μ : Label} {P' : Proc} (h : Step P μ P') (hμ : IsAction μ) :
+    CanStep P μ := by
+  revert hμ
   induction h with
-  | out x y => simp only [CanStep]; exact ⟨x, y, rfl, SCong.refl x, SCong.refl y⟩
-  | inp x y P => simp only [CanStep]; exact ⟨x, y, rfl, SCong.refl x, SCong.refl y⟩
-  | par _ ih => simp only [CanStep]; exact Or.inl ih
-  | nu _ _ ih => simp only [CanStep]; exact ih
-  | scong h1 _ _ ih => exact (canStep_of_scong h1 _).2 ih
+  | out x y => intro _; simp only [CanStep]; exact ⟨x, y, rfl, SCong.refl x, SCong.refl y⟩
+  | inp x y P => intro _; simp only [CanStep]; exact ⟨x, y, rfl, SCong.refl x, SCong.refl y⟩
+  | tau _ => intro hμ; exact absurd hμ (by rintro ⟨x, y, h | h⟩ <;> cases h)
+  | par _ ih => intro hμ; simp only [CanStep]; exact Or.inl (ih hμ)
+  | nu _ _ ih => intro hμ; simp only [CanStep]; exact ih hμ
+  | scong h1 _ _ ih => intro hμ; exact (canStep_of_scong h1 _).2 (ih hμ)
 
 /-- **The labels out of a bare `out`.** `Step (out a b) μ P'` pins `μ` to `c!(d)` with `SCong a c` and
     `SCong b d` — the channel and the payload are determined up to the congruence, and nothing else is
-    reachable. This is the corollary the two obligations below consume; it is `canStep_of_step`
-    composed with the definition, and the work is all in the two lemmas above. -/
+    reachable. This is the corollary the obligations below consume; it is `canStep_of_step` composed
+    with the definition, and the work is all in the two lemmas above.
+
+    `IsAction μ` is carried rather than derived, and that is not avoidable here: a bare `out` cannot
+    take a `τ` step — the synchronisation rule's source is a parallel composition — but *proving* that
+    means inverting `Step`, which is the same wall `CanStep` was built to route around. Its callers
+    name a concrete label, so they discharge it by `Or.inl rfl`. -/
 @[axiom_budget 0]
-theorem step_out_label {a b : Proc} {μ : Label} {P' : Proc} (h : Step (Proc.out a b) μ P') :
-    ∃ c d : Proc, μ = Label.out c d ∧ SCong a c ∧ SCong b d :=
-  canStep_of_step h
+theorem step_out_label {a b : Proc} {μ : Label} {P' : Proc} (h : Step (Proc.out a b) μ P')
+    (hμ : IsAction μ) : ∃ c d : Proc, μ = Label.out c d ∧ SCong a c ∧ SCong b d :=
+  canStep_of_step h hμ
 
 /-- **A term can only step on a channel its congruence class mentions.** If `P` can engage in `μ`,
     then some `Q ≡ P` mentions `μ`'s subject.
@@ -307,11 +360,11 @@ def Barb (P x : Proc) : Prop :=
 theorem barb_out_iff {x y w : Proc} : Barb (Proc.out x y) w ↔ SCong x w := by
   constructor
   · rintro (⟨y', P', hs⟩ | ⟨y', P', hs⟩)
-    · obtain ⟨c, d, he, hxc, _⟩ := step_out_label hs
+    · obtain ⟨c, d, he, hxc, _⟩ := step_out_label hs ⟨w, y', Or.inl rfl⟩
       injection he with hwc _
       rw [← hwc] at hxc
       exact hxc
-    · obtain ⟨c, d, he, _, _⟩ := step_out_label hs
+    · obtain ⟨c, d, he, _, _⟩ := step_out_label hs ⟨w, y', Or.inr rfl⟩
       cases he
   · intro h
     exact Or.inl ⟨y, Proc.nil,
@@ -512,7 +565,7 @@ theorem not_strongbisim_of_not_scong {x y z : Proc} (h : ¬ SCong y z) :
     ¬ StrongBisim (Proc.out x y) (Proc.out x z) := by
   rintro ⟨R, hR, hxy⟩
   obtain ⟨Q', hs, _⟩ := (hR hxy).1 (Step.out x y)
-  obtain ⟨c, d, he, _, hzd⟩ := step_out_label hs
+  obtain ⟨c, d, he, _, hzd⟩ := step_out_label hs ⟨x, y, Or.inl rfl⟩
   injection he with _ hyd
   rw [← hyd] at hzd
   exact h (SCong.symm hzd)
@@ -593,10 +646,10 @@ theorem barb_nu_subject_occurs {x P : Proc} (h : Barb (Proc.nu x P) x) :
     ∃ Q : Proc, SCong P Q ∧ Occurs x Q := by
   rcases h with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
   · have hc : CanStep P (Label.out x y) := by
-      simpa only [CanStep] using canStep_of_step hs
+      simpa only [CanStep] using canStep_of_step hs ⟨x, y, Or.inl rfl⟩
     exact canStep_occurs_up_to_scong hc
   · have hc : CanStep P (Label.inp x y) := by
-      simpa only [CanStep] using canStep_of_step hs
+      simpa only [CanStep] using canStep_of_step hs ⟨x, y, Or.inr rfl⟩
     exact canStep_occurs_up_to_scong hc
 
 /-- **Obligation 2: no barb survives a restriction on the name it would need.**
