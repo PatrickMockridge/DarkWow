@@ -171,10 +171,16 @@ theorem eval_of_not_name (x : Proc) (h : ¬ IsName x) : eval x = .nil := by
     Deliberately *syntactic*: it does not distinguish free from bound occurrence, because that
     distinction requires committing to a binding convention for `bang` — whether `⌈P⌉` seals the
     names inside `P` or exposes them — and the ρ-calculus literature is where that convention
-    belongs, not in a definition invented here. The side conditions the transition rules need are
-    the *stronger* and unambiguous form anyway: "`x` is fresh for `P`" as `¬ Occurs x P`. A rule
-    stated with this proviso is a rule with a visible, checkable hypothesis; one stated with a
-    binding analysis would be a rule whose hypothesis depends on a convention no reader can see.
+    belongs, not in a definition invented here.
+
+    What that costs is recorded here rather than left implicit. `Occurs` is **not invariant under the
+    structural congruence**, because the congruence can change what a term mentions: `nu_nil` gives
+    `SCong (νx.0) 0` and `cong_bang` identifies `⌈P⌉` with `⌈Q⌉` for `P ≡ Q`. A side condition stated
+    with it is therefore *weaker* than it reads, and the rules do not use it: the restriction rule and
+    scope extrusion carry `Congruence.lean`'s `FreshUpToScong`, which quantifies over every term the
+    congruence can reach. `Semantics/LTS.lean`'s record carries the witnesses that made the
+    difference visible. This module keeps `Occurs` because it is the honest description of the term
+    as written, and because `FreshUpToScong` is defined *from* it.
 
     `Occurs` is decidable in principle but is left as a `Prop`: nothing here computes with it, and
     a `Bool` version named for occurrence is the shape of the `has_deadlock` placeholder this corpus
@@ -188,8 +194,13 @@ def Occurs (x : Proc) : Proc → Prop
   | .rep P => Occurs x P
   | .par P Q => Occurs x P ∨ Occurs x Q
 
-/-- `Fresh x P`: `x` does not occur in `P` at all. The side condition of the restriction rule and of
-    scope extrusion, named so that the rules read as their standard presentations. -/
+/-- `Fresh x P`: `x` does not occur in `P` at all.
+
+    The *syntactic* freshness, and **not** the side condition of the restriction rule or of scope
+    extrusion — those carry `Congruence.lean`'s `FreshUpToScong`, which quantifies over every term
+    the congruence can reach, because this one does not survive the congruence (see `Occurs` above).
+    `fresh_of_freshUpToScong` is the direction that relates them: the invariant notion implies this
+    one, strictly. -/
 def Fresh (x P : Proc) : Prop := ¬ Occurs x P
 
 /-- A process is `fresh`-determined: `Fresh x P` is decidable in the sense that matters for the
