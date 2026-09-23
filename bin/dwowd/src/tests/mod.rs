@@ -22,6 +22,7 @@
  */
 
 pub mod blockchain;
+pub mod reward_schedule;
 pub mod genesis;
 pub mod harness;
 pub mod modules;
