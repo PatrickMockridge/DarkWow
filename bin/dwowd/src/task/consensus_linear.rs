@@ -36,6 +36,7 @@ use dwow_core::barb::{BarbId, ExhibitsBarb};
 use smol::Executor;
 use tracing::{debug, error, info, warn};
 
+use dwow_chain::sync_boundary::{apply_genesis_filter, GenesisFilterMode};
 use dwow_chain::sync_connection::sync_batch_len;
 use crate::proto::linear_sync_client::{LinearSyncClient, PeerTip};
 use crate::{DwowNodePtr, Result, SyncState};
@@ -364,16 +365,59 @@ pub async fn consensus_linear_init_task(
         // Dial full-node peers over the unified sync rail (port+2).
         let mut sync_peers = client.dial_sync_peers(magic, our_genesis_hash.clone()).await;
 
-        // Collect tips → max_peer_height.
-        let mut max_peer_height = BlockHeight::new(0);
-        for peer in &mut sync_peers {
+        // Collect tips, keeping each one with the peer that answered it, so the genesis filter below can
+        // decide which peers this node may pull from (`OBL-C29`).
+        let mut answered: Vec<(usize, PeerTip)> = Vec::new();
+        for (index, peer) in sync_peers.iter_mut().enumerate() {
             if let Ok(tip) = peer.request_tip().await {
                 if let Ok(pt) = PeerTip::from_tip(&tip) {
-                    if pt.height > max_peer_height {
-                        max_peer_height = pt.height;
-                    }
+                    answered.push((index, pt));
                 }
             }
+        }
+
+        // Genesis compatibility over the peer *set*: Path A compares each peer's genesis with ours, and
+        // Path B — for a node that holds no genesis yet — votes on which genesis the peers present, with
+        // the model's tie-breaker. This is the multi-peer decision the per-connection handshake could not
+        // make, which is where the code had deferred it; the peer set is visible here.
+        //
+        // `Strict`: a peer whose chain this node cannot validate is not a sync source, and chasing its
+        // height would only walk a chain `accept_block` refuses. `Relaxed` is for a node that must never
+        // let the filter block sync, and `Off` for tests; see `GenesisFilterMode`.
+        const GENESIS_FILTER: GenesisFilterMode = GenesisFilterMode::Strict;
+        let tip_values: Vec<PeerTip> = answered.iter().map(|(_, tip)| tip.clone()).collect();
+        let compatible = apply_genesis_filter(our_genesis_hash.clone(), &tip_values, GENESIS_FILTER);
+        let kept_tips: Vec<PeerTip> = compatible.iter().map(|i| tip_values[*i].clone()).collect();
+        if kept_tips.len() != sync_peers.len() {
+            info!(target: "dwowd::task::consensus_linear_init_task",
+                "Genesis filter ({:?}): {}/{} dialed peer(s) are compatible with this node's chain",
+                GENESIS_FILTER, kept_tips.len(), sync_peers.len());
+        }
+
+        // max_peer_height is the height of a chain this node can actually validate, so it is taken over
+        // the compatible tips only.
+        let mut max_peer_height = BlockHeight::new(0);
+        for tip in &kept_tips {
+            if tip.height > max_peer_height {
+                max_peer_height = tip.height;
+            }
+        }
+
+        // Drop the **rejected** peers — which closes their connections — so the pull loop cannot use them.
+        // A peer that never answered a tip request keeps its place: the filter judges the tips it was
+        // given, and a silent peer is the spec's "simply skipped" case rather than one this rule may
+        // exclude. So what is dropped is the peers whose tip the filter refused, not "everything not kept".
+        let rejected: std::collections::HashSet<usize> = answered
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, (index, _))| (!compatible.contains(&slot)).then_some(*index))
+            .collect();
+        if !rejected.is_empty() {
+            sync_peers = sync_peers
+                .into_iter()
+                .enumerate()
+                .filter_map(|(index, peer)| (!rejected.contains(&index)).then_some(peer))
+                .collect();
         }
 
         // Pull missing blocks by height (Monero pull sync).
