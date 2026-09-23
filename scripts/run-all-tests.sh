@@ -116,6 +116,14 @@ run_gate "exec/apply phase rule"          bash "$SCRIPT_DIR/check-phase-host-fun
 # too. The detector itself was left deliberately shallow — see that file's header for why a cleverer
 # classifier was rejected.
 run_gate "circuit pubkey binding"         bash "$SCRIPT_DIR/check-pubkey-binding.sh"
+# OBL-C76: the tests that do not run in their crate's DEFAULT configuration are enumerated and
+# declared. `make test` runs `--release --all-features --workspace`, so this gate's subject is not the gate run — it is the ad-hoc `cargo test -p <crate>` one reaches
+# for to check a single crate, and the claim that follows it: 172 tests where `--all-features` lists
+# 263, with the 91 that differ being the consensus surface. Four mechanisms hide a test here —
+# `#[ignore]`, a feature-gated test fn, a feature-gated test module, and a module gated in its
+# PARENT (which is why walking files alone finds 20 of the 29) — and each site must be declared in
+# `script/hidden_test_exceptions.txt` with a reason and the command that runs it.
+run_gate "hidden tests declared (OBL-C76)" bash "$SCRIPT_DIR/check-hidden-tests.sh"
 # The documentation index. Also seconds, also needs no build: it checks that every
 # doc is listed and every citation resolves, both directions. The 2026-09 docs
 # clean-up removed 25 documents and repointed ~30 referrers by hand; this is what

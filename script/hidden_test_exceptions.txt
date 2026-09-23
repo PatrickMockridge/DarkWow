@@ -1,0 +1,68 @@
+# Hidden-test declarations — the reviewed list for `scripts/check-hidden-tests.sh` (OBL-C76)
+#
+# Format:  <rel path> :: <test fn or test module> : <reason, and how to run it>
+#
+# WHAT BELONGS HERE. A test that does not run in its crate's default configuration, with the
+# reason it is that way and the command that does run it. The second half is not optional: the
+# point of the list is that a reader can find out what a default run does not cover, and a claim
+# that names neither the command nor the feature set is what OBL-C76 is about.
+#
+# WHAT DOES NOT BELONG HERE. A test that runs by default. When one of these is fixed — the feature
+# made default, or the gate in front of it removed — its line comes out in the same commit, and the
+# gate reports a stale entry so it cannot linger.
+#
+# THE ROOT CAUSE, in one line each. `src/linear/Cargo.toml` and `src/sdk/Cargo.toml` both declare
+# `default = []`, and the features that carry these tests are enabled explicitly by their consumers
+# (`bin/dwowd` enables `pow`, for instance). So a bare `cargo test -p dwow_chain --lib` lists 172
+# tests where `--all-features` lists 263, and the 91 that differ are the consensus surface — the
+# exact area this register's campaign works on.
+#
+# THE ROOT-CAUSE FIX EXISTS AND IS NOT TAKEN, deliberately. `default = ["pow"]` (and `["json"]` for
+# the sdk) would make the bare ad-hoc command complete, which is the honest repair. It is not taken
+# here because a default feature propagates to every consumer of the crate, so it changes the
+# dependency graph and the build of crates that have no interest in PoW — a design decision rather
+# than a patch, and one that belongs with whoever owns the crate's feature layout. Until it is
+# taken, this list is the mechanism: the hidden set is enumerated on every run of the gate, and a
+# new hidden test fails rather than quietly reducing what a pass count means.
+#
+# `make test` is unaffected by all of this — it runs `--release --all-features --workspace`, so the
+# gates always exercised the full 263. The risk these entries exist for is the ad-hoc command.
+
+src/linear/src/caribina/integration_tests.rs :: test_anchor_with_unfunded_wallet : OBL-C76 — #[ignore]: an opt-in conformance run against the real Arweave/ArDrive stack over the public internet, never a gate (the file's own header says so). Run with `cargo test --all-features -p dwow_chain -- --ignored`
+src/linear/src/caribina/integration_tests.rs :: test_wallet_cycling_yields_distinct_tx_ids_for_one_payload : OBL-C76 — #[ignore]: same opt-in conformance run, public internet required. Run with `cargo test --all-features -p dwow_chain -- --ignored`
+src/linear/src/caribina/integration_tests.rs :: test_verify_not_found : OBL-C76 — #[ignore]: same opt-in conformance run, public internet required. Run with `cargo test --all-features -p dwow_chain -- --ignored`
+src/linear/src/caribina/integration_tests.rs :: test_anchor_block_does_not_panic : OBL-C76 — #[ignore]: same opt-in conformance run, public internet required. Run with `cargo test --all-features -p dwow_chain -- --ignored`
+src/linear/src/caribina/integration_tests.rs :: test_end_to_end_anchor_and_verify : OBL-C76 — #[ignore]: same opt-in conformance run, public internet required. Run with `cargo test --all-features -p dwow_chain -- --ignored`
+src/linear/src/caribina/integration_tests.rs :: test_verify_bad_signature : OBL-C76 — #[ignore]: same opt-in conformance run, public internet required. Run with `cargo test --all-features -p dwow_chain -- --ignored`
+src/linear/src/caribina/integration_tests.rs :: test_verify_data_mismatch : OBL-C76 — #[ignore]: same opt-in conformance run, public internet required. Run with `cargo test --all-features -p dwow_chain -- --ignored`
+src/linear/src/caribina/integration_tests.rs :: test_timestamp_tolerance_integration : OBL-C76 — #[ignore]: same opt-in conformance run, public internet required. Run with `cargo test --all-features -p dwow_chain -- --ignored`
+src/net/tests.rs :: p2p_magic_bytes_mismatch_gets_banned : OBL-C76 — #[ignore] with its own reason in the attribute: upstream p2p networking, not blockchain functionality. Run with `cargo test --all-features -p dwow_net -- --ignored` when networking is in scope
+src/event_graph/tests.rs :: eventgraph_chaotic_propagation : OBL-C76 — #[ignore] with its own reason in the attribute: upstream p2p networking, not blockchain functionality. Run with `cargo test --all-features -p dwow_core -- --ignored` when networking is in scope
+src/linear/src/block.rs :: tests : OBL-C76 — the module is #[cfg(all(test, feature = "pow"))] and `pow` is not a default feature of dwow_chain (`default = []`), so a bare `cargo test -p dwow_chain` does not compile it. This module and the three below it are the bulk of the 91 tests that differ between 172 and 263, and they are the consensus surface. Run with `cargo test --all-features -p dwow_chain`
+src/linear/src/chain_state.rs :: tests : OBL-C76 — #[cfg(all(test, feature = "pow"))]; part of the 91 that a bare run omits, and chain state is where this campaign's reorg and dedup work lives. Run with `cargo test --all-features -p dwow_chain`
+src/linear/src/consensus.rs :: tests : OBL-C76 — #[cfg(all(test, feature = "pow"))]; the difficulty-adjustment surface, where a bare run shows nothing. Run with `cargo test --all-features -p dwow_chain`
+src/linear/src/validation.rs :: tests : OBL-C76 — #[cfg(all(test, feature = "pow"))]; the block-validation surface. Run with `cargo test --all-features -p dwow_chain`
+src/linear/src/monero/mod.rs :: test_monero_powdata_serde : OBL-C76 — #[cfg(feature = "async")]: the sync/async serialization formats of the merge-mining proof data must agree, and the async half is the only coverage. Run with `cargo test --all-features -p dwow_chain`
+src/linear/src/monero/merkle_proof.rs :: test_monero_merkleproof_serde : OBL-C76 — #[cfg(feature = "async")]: the same sync/async format agreement for the Merkle proof, not named in this row's original prose — found by this gate. Run with `cargo test --all-features -p dwow_chain`
+src/sdk/src/blockchain.rs :: test_supply_amount_serde_is_transparent_number : OBL-C76 — #[cfg(feature = "json")] and `json` is not a default feature of the sdk (`default = []`). Also not in the row's original prose — found by this gate, and all four are the same class. Run with `cargo test --all-features -p dwow-sdk`
+src/sdk/src/blockchain.rs :: test_fee_amount_serde_is_transparent_number : OBL-C76 — #[cfg(feature = "json")]: the newtypes must serialize as bare JSON numbers. Run with `cargo test --all-features -p dwow-sdk`
+src/sdk/src/blockchain.rs :: test_block_timestamp_serde_is_transparent_number : OBL-C76 — #[cfg(feature = "json")]: the same serde-transparency property for the timestamp newtype. Run with `cargo test --all-features -p dwow-sdk`
+src/sdk/src/blockchain.rs :: test_monero_block_height_serde_is_transparent_number : OBL-C76 — #[cfg(feature = "json")]: the same property for the Monero height newtype, which is the field `OBL-C67`/`OBL-C80` are about. Run with `cargo test --all-features -p dwow-sdk`
+
+# --- hidden by a PARENT module's gate, not by anything in their own file ------------------------
+# These nine were invisible to this gate's first version, which walked files. The gate is in a file
+# the tests are not in, so nothing inside them can declare it — which is the strongest argument for
+# enumerating the mechanism rather than trusting a per-file read. Two of them (`sync_boundary`,
+# `sync_connection`) are the five tests OBL-C76's own measurement attributed to `sync-p2p`-gated
+# modules without naming the gate; the rest were not in the row at all.
+
+src/linear/src/sync_boundary.rs :: tests : OBL-C76 — hidden by its PARENT: `#[cfg(feature = "sync-p2p")] mod sync_boundary;` at src/linear/src/lib.rs:54. Its four tests are part of the 91 that differ between 172 and 263. Run with `cargo test --all-features -p dwow_chain`
+src/linear/src/sync_connection.rs :: tests : OBL-C76 — hidden by its PARENT: `#[cfg(feature = "sync-p2p")] mod sync_connection;` at src/linear/src/lib.rs:56. The sync protocol's own tests, absent from a bare run. Run with `cargo test --all-features -p dwow_chain`
+src/net/mod.rs :: tests : OBL-C76 — hidden by its PARENT: `#[cfg(any(feature = "net-wire", feature = "net-wallet", feature = "net"))] mod net;` at src/lib.rs:52. Run with `cargo test --all-features -p dwow_core`
+src/net/hosts.rs :: tests : OBL-C76 — hidden by its PARENT: `#[cfg(any(feature = "net-full", feature = "net-wallet"))] mod hosts;` at src/net/mod.rs:53. Run with `cargo test --all-features -p dwow_core`
+src/net/known_hosts.rs :: tests : OBL-C76 — hidden by its PARENT: `#[cfg(any(feature = "net-full", feature = "net-wallet"))] mod known_hosts;` at src/net/mod.rs:57. Run with `cargo test --all-features -p dwow_core`
+src/event_graph/mod.rs :: tests : OBL-C76 — hidden by its PARENT: `#[cfg(feature = "event-graph")] mod event_graph;` at src/lib.rs:49. Run with `cargo test --all-features -p dwow_core`
+src/util/pcg.rs :: tests : OBL-C76 — hidden by its PARENT: `#[cfg(feature = "rand")] mod pcg;` at src/util/mod.rs:50. Run with `cargo test --all-features -p dwow_core`
+src/sdk/src/test_support.rs :: tests : OBL-C76 — hidden by its PARENT: `#[cfg(feature = "test-support")] mod test_support;` at src/sdk/src/lib.rs:63. Worth its own line because the module the heavyweight tests rely on is itself uncovered by a default sdk run. Run with `cargo test --all-features -p dwow-sdk`
+src/contract/native_token/src/entrypoint/mod.rs :: tests : OBL-C76 — hidden by a NEGATIVE parent gate: `#[cfg(not(feature = "no-entrypoint"))] mod entrypoint;` at src/contract/native_token/src/lib.rs:103, so the module and its tests are PRESENT by default here and ABSENT under the `no-entrypoint` build the python SDK uses (see src/sdk/python). Declared because that is a configuration someone can claim verification in: run with `cargo test -p dwow_native_token_contract` (default features), or drop this line if the no-entrypoint path is never claimed
+
