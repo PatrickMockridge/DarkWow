@@ -31,8 +31,20 @@
 #   scripts/check-pubkey-binding.sh                 # all circuits
 #   scripts/check-pubkey-binding.sh <files...>      # specific files (the hook passes staged)
 #
-# Exit 0: no vacuous bindings.
-# Exit 1: at least one, reported with file:line.
+# Exit 0: no vacuous bindings, or every finding adjudicated in
+#         script/circuit_pubkey_binding_exceptions.txt (each printed as EXCEPTED with the
+#         mechanism that makes it sound, or the register row that schedules its repair).
+# Exit 1: at least one *unexcepted* finding, reported with file:line.
+# Exit 2: the exception list is malformed.
+#
+# THE LIST IS A RATCHET, NOT AN AMNESTY, and this is the whole of what changed on 2026-09-23.
+# The detector stayed deliberately shallow — it cannot see a host — and the 57 candidates it
+# reports are adjudicated by *reading*, recorded one line at a time in that list. Fifteen of them
+# are genuine defects and their entries say so, naming OBL-C81, C82, C83, C84 and OBL-C75's first
+# measured instance; the rest name the mechanism. A new site anywhere still fails, which is what
+# the report-only mode was waiting for: before the sweep the class was invisible, and after it the
+# class is scheduled and watched. See script/circuit_pubkey_binding_exceptions.txt's own header
+# for why the classifier was not made cleverer to shrink the list.
 
 set -uo pipefail
 
@@ -118,7 +130,15 @@ def scan(rel, text):
                                     f"equality holds for any witness"))
     return findings
 
-total = 0
+def rel_to_repo(p):
+    """Normalise a path to repo-relative, so the hook's absolute paths key the same as the
+    exception entries. The hook passes `$REPO_ROOT/<file>`; a bare invocation passes the
+    repo-relative path. Both must match one list."""
+    p = p.replace("\\", "/")
+    prefix = repo.rstrip("/") + "/"
+    return p[len(prefix):] if p.startswith(prefix) else p
+
+findings = []
 for rel in sys.argv[1:]:
     path = os.path.join(repo, rel)
     if not os.path.isfile(path):
@@ -127,17 +147,53 @@ for rel in sys.argv[1:]:
         text = open(path, errors="replace").read()
     except OSError:
         continue
-    for lineno, detail in scan(rel, text):
-        print(f"{rel}:{lineno}: {detail}")
-        total += 1
+    for lineno, detail in scan(rel_to_repo(rel), text):
+        findings.append((rel_to_repo(rel), lineno, detail))
 
-if total:
-    print(f"\nFAIL: {total} vacuous binding(s).")
+# Reviewed exceptions (script/circuit_pubkey_binding_exceptions.txt). Keyed on (path, the equality
+# as it appears in the source) — content, not a line number, so an edit above a site moves nothing.
+exceptions = {}
+exc_path = os.path.join(repo, "script", "circuit_pubkey_binding_exceptions.txt")
+if os.path.isfile(exc_path):
+    for raw in open(exc_path, errors="replace").read().splitlines():
+        entry = raw.split("#")[0].strip()
+        if not entry:
+            continue
+        parts = [p.strip() for p in entry.split(":", 2)]
+        if len(parts) != 3:
+            print(f"ERROR: malformed exception line in {os.path.basename(exc_path)}: {entry!r}")
+            print("       expected: <zk path> : <equality as written> : <reason citing a register ID>")
+            sys.exit(2)
+        exceptions.setdefault((parts[0], parts[1]), parts[2])
+
+excepted, failing = [], []
+for rel, lineno, detail in findings:
+    key = (rel, detail.split(" binds two", 1)[0].strip())
+    if key in exceptions:
+        excepted.append((rel, lineno, key[1], exceptions[key]))
+    else:
+        failing.append((rel, lineno, detail))
+
+for rel, lineno, pair, reason in excepted:
+    print(f"EXCEPTED: {rel}:{lineno}: {pair}")
+    print(f"          {reason}")
+
+for rel, lineno, detail in failing:
+    print(f"FAIL: {rel}:{lineno}: {detail}")
+
+if failing:
+    print(f"\nFAIL: {len(failing)} unexcepted vacuous binding(s).")
     print("FIX: expose the value instead of comparing it to another prover-chosen one —")
     print("  derive-and-expose:  pub = ec_mul_base(secret, K); constrain_instance(ec_get_x(pub));")
     print("  ...or pin one side: constrain_equal_base(derived, ONE)")
+    print("  If both sides have been read and the finding is sound, add it to")
+    print("  script/circuit_pubkey_binding_exceptions.txt with its mechanism or register row.")
+    if excepted:
+        print(f"  ({len(excepted)} other finding(s) are excepted and are not among the above.)")
     sys.exit(1)
 
-print(f"PASS: no vacuous bindings ({len(sys.argv) - 1} circuit(s) scanned)")
+scheduled = (f"; {len(excepted)} adjudicated in script/circuit_pubkey_binding_exceptions.txt"
+             if excepted else "")
+print(f"PASS: no unexcepted vacuous bindings ({len(sys.argv) - 1} circuit(s) scanned{scheduled})")
 sys.exit(0)
 PYEOF

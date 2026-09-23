@@ -1,0 +1,92 @@
+# Vacuous-binding exceptions — the reviewed list for `scripts/check-pubkey-binding.sh` (OBL-Z18)
+#
+# Format:  <zk source path> : <the equality as it appears in the source> : <reason, citing a register ID>
+#
+# The key is the *content* of the equality, not a line number, so an edit above a site moves
+# nothing. The gate prints a matching finding as EXCEPTED with the reason below and exits 0; every
+# other finding still exits 1.
+#
+# WHAT BELONGS HERE. A finding whose two sides have been read — circuit *and* host, in one command,
+# which is the bar OBL-Z18 set — and whose reason names the mechanism that makes it sound, or the
+# register row that schedules the repair. An entry that schedules a defect says so in those words.
+#
+# WHAT DOES NOT BELONG HERE. A site nobody has read. This rule matters for this file specifically:
+# the detector is deliberately *shallow* — it treats a value as seen only when it is a literal, a
+# named constant, or a `constrain_instance` target — because it cannot see a host, and OBL-Z18's
+# adjudication is the record of that gap being closed by reading. Growing this list is the act of
+# adjudicating; an entry whose justification was inferred from a name is exactly the Orchard-class
+# bug wearing an audit badge.
+#
+# WHY THE GATE IS SHALLOW RATHER THAN SMART. A refined classifier — propagating "consumed by an
+# exposed determination" back through a hash to its arguments — would cut this list from 57 to 15.
+# It is not done, because that propagation is a claim about crypto binding that a line-anchored
+# script cannot establish, and a gate that *silently* classifies a genuine vacuity as bound is worse
+# than one that reports 57 candidates a reviewer must read. The sibling gate,
+# `check-circuit-instance-derivation.sh`, does make that claim (it classifies such a value
+# `redundant`); this one deliberately does not, and the reasons below are the difference.
+#
+# WHAT THE LIST SAYS. 57 candidates, adjudicated 2026-09-23 in six slices — 37 resolve by arms (a),
+# (b) or (c), 15 are genuine defects each named in a register row (OBL-C81, C82, C83, C84 and
+# OBL-C75's first measured instance), 4 are inert, and 1 (dao_escrow) is deferred. The per-slice
+# evidence is in `doc/src/arch/verification-hazop.md`, OBL-Z18.
+#
+# Transcription check: the gate is its own verifier here — a mistyped key leaves its finding
+# unexcepted and the run reports it by name, so this file cannot silently cover a site it misspells.
+
+proofs/core/tx.zk : constrain_equal_base(c1_value, outval) : OBL-Z18 arm (b) — both operands are bound through their own exposed Pedersen commitments (c1_cm_x/y, c3_cm_x/y, c4_cm_x/y at :54-73). Inert in any case: circuit `tx` is referenced by no .rs, .toml or Makefile, so it has no host (OBL-Z16 gives lead/set_v1 the same disposition)
+src/contract/bearer_bond/proof/burn.zk : constrain_equal_base(derived_signature_secret, signature_secret) : OBL-Z18 arm (b), transitive — `nullifier` is a constrain_instance target (:64) and `signature_secret` is consumed by the exposed `signature_public` (:106-107), so both operands are determined
+src/contract/dao_escrow/proof/pay_premium.zk : constrain_equal_base(computed_bulla, dao_escrow_bulla) : OBL-Z18 DEFERRED — the circuit half is read and does not resolve (the exposed set is the tx pair only, and `computed_bulla`'s operands are consumed by nothing exposed), but the host half decides it and `dao_escrow`'s entrypoint is under active edit by another agent, so this is unadjudicated rather than cleared
+src/contract/dex/proof/cancel_swap.zk : constrain_equal_base(derived_lock, lock_commitment) : OBL-Z18 arm (a) — the host requires the exposed nullifier to be one of the swap's stored participant nullifiers (`cancel_swap.rs:181-193`), and `lock_commitment` reaches the exposed nullifier and swap id (:47-52)
+src/contract/dex/proof/execute_swap_fee.zk : constrain_equal_base(alice_lock_check, alice_lock) : OBL-Z18 arm (a)+(b) — the host compares the params lock against the stored swap and rejects a mismatch (`execute_swap_fee.rs:167-176`), and the lock is consumed by the exposed nullifier and the exposed swap id, both published by get_metadata
+src/contract/dex/proof/execute_swap_fee.zk : constrain_equal_base(bob_lock_check, bob_lock) : OBL-Z18 arm (a)+(b) — the host compares the params lock against the stored swap and rejects a mismatch (`execute_swap_fee.rs:167-176`), and the lock is consumed by the exposed nullifier and the exposed swap id, both published by get_metadata
+src/contract/dex/proof/execute_swap_slippage.zk : constrain_equal_base(alice_lock_check, alice_lock) : OBL-Z18 arm (a)+(b) — the host compares the params lock against the stored swap and rejects a mismatch (`execute_swap_slippage.rs:136-145`), and the lock is consumed by the exposed nullifier and the exposed swap id, both published by get_metadata
+src/contract/dex/proof/execute_swap_slippage.zk : constrain_equal_base(bob_lock_check, bob_lock) : OBL-Z18 arm (a)+(b) — the host compares the params lock against the stored swap and rejects a mismatch (`execute_swap_slippage.rs:136-145`), and the lock is consumed by the exposed nullifier and the exposed swap id, both published by get_metadata
+src/contract/dex/proof/execute_swap.zk : constrain_equal_base(alice_lock_check, alice_lock) : OBL-Z18 arm (a)+(b) — the host compares the params lock against the stored swap and rejects a mismatch (`execute_swap.rs:223-233`), and the lock is consumed by the exposed nullifier and the exposed swap id, both published by get_metadata
+src/contract/dex/proof/execute_swap.zk : constrain_equal_base(bob_lock_check, bob_lock) : OBL-Z18 arm (a)+(b) — the host compares the params lock against the stored swap and rejects a mismatch (`execute_swap.rs:223-233`), and the lock is consumed by the exposed nullifier and the exposed swap id, both published by get_metadata
+src/contract/escrow/proof/claim.zk : constrain_equal_base(seller_pub_x, seller_x) : OBL-Z18 arm (b), transitive — `seller_pub_x` reaches the exposed `escrow_seller_commitment` (:78-79, :92), and the host computes that commitment from `params.recipient_pubkey` and publishes it (`entrypoint.rs:261-273`), so the recipient is bound
+src/contract/escrow/proof/claim.zk : constrain_equal_base(seller_pub_y, seller_y) : OBL-Z18 arm (b), transitive — `seller_pub_y` reaches the exposed `escrow_seller_commitment` (:78-79, :92), and the host computes that commitment from `params.recipient_pubkey` and publishes it (`entrypoint.rs:261-273`), so the recipient is bound
+src/contract/escrow/proof/create_escrow.zk : constrain_equal_base(buyer_pub_x, buyer_pub_computed_x) : OBL-Z18 arm (b) — `buyer_pub_x` enters `C`, a constrain_instance target (:86-96)
+src/contract/escrow/proof/create_escrow.zk : constrain_equal_base(buyer_pub_y, buyer_pub_computed_y) : OBL-Z18 arm (b) — `buyer_pub_y` enters `C`, a constrain_instance target (:86-96)
+src/contract/escrow/proof/refund.zk : constrain_equal_base(buyer_pub_x, escrow_buyer_pub_x) : OBL-Z18 arm (b), transitive — `buyer_pub_x` is constrained equal to the exposed `input_buyer_pub_x` (:88-89, :99), which the host publishes from `params.recipient_pubkey` (`entrypoint.rs:298-311`)
+src/contract/escrow/proof/refund.zk : constrain_equal_base(buyer_pub_y, escrow_buyer_pub_y) : OBL-Z18 arm (b), transitive — `buyer_pub_y` is constrained equal to the exposed `input_buyer_pub_y` (:88-89, :99), which the host publishes from `params.recipient_pubkey` (`entrypoint.rs:298-311`)
+src/contract/identity/proof/issue_credential.zk : constrain_equal_base(issuer_public_x, issuer_pub_x) : OBL-Z18 arm (b) — `issuer_pub_x` enters `credential_data` and thence `commitment_check`, a constrain_instance target
+src/contract/identity/proof/issue_credential.zk : constrain_equal_base(issuer_public_y, issuer_pub_y) : OBL-Z18 arm (b) — `issuer_pub_y` enters `credential_data` and thence `commitment_check`, a constrain_instance target
+src/contract/native_token/proof/burn.zk : constrain_equal_base(derived_signature_secret, signature_secret) : OBL-Z18 arm (b) — the derived value's input `signature_public` is a constrain_instance target, so the pair is determined
+src/contract/native_token/proof/fee.zk : constrain_equal_base(computed_sum, input_value) : OBL-Z18 arm (b) — `input_value` enters the exposed determination; adjudicated with the genesis slice
+src/contract/native_token/proof/mint.zk : constrain_equal_base(pk_x, public_x) : OBL-Z18 arm (b) — `public_x` enters the coin commitment `C`, which is exposed; `spend_secret` enters the exposed nullifier `nf`
+src/contract/native_token/proof/mint.zk : constrain_equal_base(pk_y, public_y) : OBL-Z18 arm (b) — `public_y` enters the coin commitment `C`, which is exposed; `spend_secret` enters the exposed nullifier `nf`
+src/contract/native_token/proof/mint.zk : constrain_equal_base(effective_plus_pin, value) : OBL-Z18 arm (a) — the host enforces this on the plaintext params (`validation.rs:455-460` with `pow_reward_v1:1000-1006`, OBL-C4), and `value` enters the exposed `value_commit`
+src/contract/oracle/proof/aggregate.zk : constrain_equal_base(claimed_sum, sum_weights) : OBL-Z18 arm (b) — `sum_weights` is the denominator of a division whose `result` is exposed
+src/contract/otc_swap/proof/create_swap.zk : constrain_equal_base(alice_pub_x, alice_pub_computed_x) : OBL-Z18 arm (b) — `alice_pub_x` enters `C`, a constrain_instance target (`create_swap.zk:93`)
+src/contract/otc_swap/proof/create_swap.zk : constrain_equal_base(alice_pub_y, alice_pub_computed_y) : OBL-Z18 arm (b) — `alice_pub_y` enters `C`, a constrain_instance target (`create_swap.zk:93`)
+src/contract/otc_swap/proof/execute_swap.zk : constrain_equal_base(bob_pub_x, bob_pub_computed_x) : OBL-Z18 arm (b) — `bob_pub_x` enters `bob_commitment`, a constrain_instance target (`execute_swap.zk:76`)
+src/contract/otc_swap/proof/execute_swap.zk : constrain_equal_base(bob_pub_y, bob_pub_computed_y) : OBL-Z18 arm (b) — `bob_pub_y` enters `bob_commitment`, a constrain_instance target (`execute_swap.zk:76`)
+src/contract/promissory_note/proof/revoke.zk : constrain_equal_base(derived_signature_secret, signature_secret) : OBL-Z18 arm (b) — the derived value's input `signature_public` is a constrain_instance target, so the pair is determined
+src/contract/purse/proof/balance.zk : constrain_equal_base(derived_owner, owner_pub) : OBL-C81 — the row's defect. Neither operand is exposed, `owner_pub` is used nowhere else, and the record's `owner_commit` is compared against nothing. Scheduled there, not cleared here
+src/contract/purse/proof/deposit.zk : constrain_equal_base(derived_owner, owner_pub) : OBL-C81 — the row's defect. Neither operand is exposed, `owner_pub` is used nowhere else, and the record's `owner_commit` is compared against nothing. Scheduled there, not cleared here
+src/contract/purse/proof/deposit.zk : constrain_equal_base(computed_new, new_balance) : OBL-Z18 arm (b) — `new_balance` enters both the exposed `new_commit` and the exposed `new_leaf`
+src/contract/purse/proof/withdraw.zk : constrain_equal_base(derived_owner, owner_pub) : OBL-C81 — the row's defect. Neither operand is exposed, `owner_pub` is used nowhere else, and the record's `owner_commit` is compared against nothing. Scheduled there, not cleared here
+src/contract/purse/proof/withdraw.zk : constrain_equal_base(computed_new, new_balance) : OBL-Z18 arm (b) — `new_balance` enters both the exposed `new_commit` and the exposed `new_leaf`
+src/contract/roulette/proof/place_bet.zk : constrain_equal_base(derived_bet_id, bet_id) : OBL-Z18 arm (a), host-derived — the host takes NEITHER value from the circuit: `Bet::new(table_id, player_pub, bet_type, numbers, amount, spin_count, block, instance_seed)` derives the id and the nullifier itself (`entrypoint.rs:364-373`), the record is keyed on the derived id (:405) and the spent-check is on the derived nullifier (:385), so the circuit's copies go unused
+src/contract/roulette/proof/place_bet.zk : constrain_equal_base(derived_nullifier, nullifier) : OBL-Z18 arm (a), host-derived — the host takes NEITHER value from the circuit: `Bet::new(table_id, player_pub, bet_type, numbers, amount, spin_count, block, instance_seed)` derives the id and the nullifier itself (`entrypoint.rs:364-373`), the record is keyed on the derived id (:405) and the spent-check is on the derived nullifier (:385), so the circuit's copies go unused
+src/contract/stablecoin/proof/accrue_interest.zk : constrain_equal_base(accumulator_public_x, accumulator_pub_x) : OBL-C82 — the row's defect. The accumulator authorization binds nothing and the host never compares `params.accumulator_pub` against the point stored at init. Scheduled there, not cleared here
+src/contract/stablecoin/proof/accrue_interest.zk : constrain_equal_base(accumulator_public_y, accumulator_pub_y) : OBL-C82 — the row's defect. The accumulator authorization binds nothing and the host never compares `params.accumulator_pub` against the point stored at init. Scheduled there, not cleared here
+src/contract/stablecoin/proof/accrue_interest.zk : constrain_equal_base(new_debt_check, new_total_debt) : OBL-Z18 arm (a) — the host checks `params.old_total_debt` against the config DB and `new - old == interest` (`entrypoint.rs:1553`, `:1566`), which is this equality on the params side
+src/contract/stablecoin/proof/add_collateral.zk : constrain_equal_base(owner_pub_check, owner_pub) : OBL-Z18 arm (b) — `owner_pub` enters `position_check`, a constrain_instance target on the lines immediately following
+src/contract/stablecoin/proof/liquidate.zk : constrain_equal_base(old_position, old_commitment) : OBL-C83 — the row's defect. No operand is exposed and the host records the params commitment without comparing it to anything. Scheduled there, not cleared here
+src/contract/stablecoin/proof/liquidate.zk : constrain_equal_base(new_position, new_commitment) : OBL-C83 — the row's defect. No operand is exposed and the host records the params commitment without comparing it to anything. Scheduled there, not cleared here
+src/contract/stablecoin/proof/mint_stable.zk : constrain_equal_base(mint_check, new_debt) : OBL-C83 — the row's defect. No operand is exposed, and neither the circuit nor the host enforces the collateralization property `MintStableParams` states. Scheduled there, not cleared here
+src/contract/stablecoin/proof/mint_stable.zk : constrain_equal_base(old_collateral, new_collateral) : OBL-C83 — the row's defect. No operand is exposed, and neither the circuit nor the host enforces the collateralization property `MintStableParams` states. Scheduled there, not cleared here
+src/contract/stablecoin/proof/mint_stable.zk : constrain_equal_base(old_position, old_commitment) : OBL-C83 — the row's defect. No operand is exposed, and neither the circuit nor the host enforces the collateralization property `MintStableParams` states. Scheduled there, not cleared here
+src/contract/stablecoin/proof/mint_stable.zk : constrain_equal_base(new_position, new_commitment) : OBL-C83 — the row's defect. No operand is exposed, and neither the circuit nor the host enforces the collateralization property `MintStableParams` states. Scheduled there, not cleared here
+src/contract/stablecoin/proof/open_position.zk : constrain_equal_base(owner_pub_check, owner_pub) : OBL-Z18 arm (b) — `owner_pub` enters `position_check`, a constrain_instance target on the lines immediately following
+src/contract/stablecoin/proof/remove_collateral.zk : constrain_equal_base(owner_pub_check, owner_pub) : OBL-Z18 arm (b) — `owner_pub` enters `position_check`, a constrain_instance target on the lines immediately following
+src/contract/stablecoin/proof/repay_stable.zk : constrain_equal_base(owner_pub_check, owner_pub) : OBL-Z18 arm (b) — `owner_pub` enters `position_check`, a constrain_instance target on the lines immediately following
+src/contract/subscription/proof/subscribe.zk : constrain_equal_base(derived_sub_x, subscriber_pub_x) : OBL-Z18 inert — the subscriber pubkey is written into the record (`entrypoint.rs:361`), copied on renew (`:555`) and read by nothing in the tree, so the vacuity has no consumer. Recorded as inert rather than filed as a defect
+src/contract/subscription/proof/subscribe.zk : constrain_equal_base(derived_sub_y, subscriber_pub_y) : OBL-Z18 inert — the subscriber pubkey is written into the record (`entrypoint.rs:361`), copied on renew (`:555`) and read by nothing in the tree, so the vacuity has no consumer. Recorded as inert rather than filed as a defect
+src/contract/subscription/proof/subscribe.zk : constrain_equal_base(derived_id, subscription_id) : OBL-C75 — the row's first measured instance. The stored key is `params.commitment` and the derived id reaches no verifier (`get_metadata` publishes zeros). Scheduled there, not cleared here
+src/contract/subscription/proof/subscribe.zk : constrain_equal_base(computed_x, value_commit_x) : OBL-Z18 inert — the value commitment is written into the record (`entrypoint.rs:366`), copied on renew (`:560`) and read by nothing in the tree, so the vacuity has no consumer. Recorded as inert rather than filed as a defect
+src/contract/subscription/proof/subscribe.zk : constrain_equal_base(computed_y, value_commit_y) : OBL-Z18 inert — the value commitment is written into the record (`entrypoint.rs:366`), copied on renew (`:560`) and read by nothing in the tree, so the vacuity has no consumer. Recorded as inert rather than filed as a defect
+src/contract/subscription/proof/verify_access.zk : constrain_equal_base(derived_pub_x, subscriber_pub_x) : OBL-C84 — the row's defect. The exposure set is the tx pair only, `expected_capability` is published as a literal zero, and the host does nothing with the call in either phase. Scheduled there, not cleared here
+src/contract/subscription/proof/verify_access.zk : constrain_equal_base(derived_pub_y, subscriber_pub_y) : OBL-C84 — the row's defect. The exposure set is the tx pair only, `expected_capability` is published as a literal zero, and the host does nothing with the call in either phase. Scheduled there, not cleared here
+src/contract/subscription/proof/verify_access.zk : constrain_equal_base(derived_capability, expected_capability) : OBL-C84 — the row's defect. The exposure set is the tx pair only, `expected_capability` is published as a literal zero, and the host does nothing with the call in either phase. Scheduled there, not cleared here

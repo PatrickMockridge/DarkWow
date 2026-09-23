@@ -105,6 +105,14 @@ run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instan
 # violation fails. Negative-controlled before wiring, both ways — with the exception file removed
 # the gate exits 1 with all seven, and with one entry dropped it exits 1 naming exactly that site.
 run_gate "exec/apply phase rule"          bash "$SCRIPT_DIR/check-phase-host-functions.sh"
+# OBL-Z18: the vacuous-binding rule. Promoted from report-only to a ratchet on 2026-09-23, when
+# the sweep finished — all 57 candidates were read, circuit and host together, and each is listed
+# in `script/circuit_pubkey_binding_exceptions.txt` with either the mechanism that makes it sound
+# or the register row that schedules its repair (15 are genuine defects: OBL-C81, C82, C83, C84 and
+# OBL-C75). A new vacuous binding anywhere fails this gate, and `hooks/pre-commit` now blocks on one
+# too. The detector itself was left deliberately shallow — see that file's header for why a cleverer
+# classifier was rejected.
+run_gate "circuit pubkey binding"         bash "$SCRIPT_DIR/check-pubkey-binding.sh"
 # The documentation index. Also seconds, also needs no build: it checks that every
 # doc is listed and every citation resolves, both directions. The 2026-09 docs
 # clean-up removed 25 documents and repointed ~30 referrers by hand; this is what

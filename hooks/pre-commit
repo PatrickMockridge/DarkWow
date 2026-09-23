@@ -21,17 +21,18 @@
 # scanned only staged files.
 #
 # ---------------------------------------------------------------------------
-# The replacement is `scripts/check-pubkey-binding.sh`. It is REPORT-ONLY here, and that
-# is deliberate rather than a quieting: it finds **57** sites of the vacuous-binding shape
-# across twelve contracts (run it to see them), and each needs its circuit *and* its host
-# read together before it is called a defect — a fully private circuit with no host-side
-# use of the value has nothing to forge. Blocking commits on 57 unadjudicated findings
-# would be a gate whose authority is not yet defensible; the sites are promoted to the
-# register as OBL-Z18 instead, and this hook starts failing on them once they are
-# adjudicated. Until then it reports, so the class stops being invisible.
+# The replacement is `scripts/check-pubkey-binding.sh`. It was REPORT-ONLY here while its
+# findings were unadjudicated — a gate whose authority is not yet defensible is worse than a
+# report — and it **blocks as of 2026-09-23**, because the adjudication happened. All 57
+# candidates were read, circuit and host together, in six slices (OBL-Z18); each is now listed
+# in `script/circuit_pubkey_binding_exceptions.txt` with either the mechanism that makes it
+# sound or the register row that schedules its repair. Fifteen of the 57 are genuine defects,
+# named in OBL-C81, C82, C83, C84 and OBL-C75.
 #
-# The hook does not exit non-zero on findings. It does exit non-zero if the checker itself
-# cannot run, because a check that silently does nothing is worse than no check.
+# So this hook now fails on any finding NOT in that list — a new vacuous binding anywhere is a
+# blocked commit — and passes with the adjudicated set reported and counted. The checker itself
+# exits non-zero if it cannot run, because a check that silently does nothing is worse than no
+# check.
 
 echo "Checking circuit bindings for vacuous constrain_equal_base..."
 
@@ -51,25 +52,34 @@ while IFS= read -r f; do
 done < <(git diff --cached --name-only --diff-filter=ACM | grep '\.zk$' || true)
 
 if [ "${#FILES[@]}" -eq 0 ]; then
-    OUT="$(bash "$CHECKER" --all 2>&1 || true)"
+    STATUS=0
+    OUT="$(bash "$CHECKER" --all 2>&1)" || STATUS=$?
 else
-    OUT="$(bash "$CHECKER" "${FILES[@]}" 2>&1 || true)"
+    STATUS=0
+    OUT="$(bash "$CHECKER" "${FILES[@]}" 2>&1)" || STATUS=$?
 fi
 
-# Summarised, not dumped. The full list is 57 lines across 12 contracts and printing it on
+# Summarised, not dumped. The full list is 57 lines across twelve contracts and printing it on
 # every commit is how a hook gets disabled — and a disabled hook is worse than a quiet one.
-if printf '%s' "$OUT" | grep -q 'PASS:'; then
-    echo "OK: no vacuous bindings."
-else
-    # Trust the checker's own tally rather than re-counting: its FIX text also contains
-    # the string, so a grep here is off by one.
-    N="$(printf '%s' "$OUT" | sed -n 's/^FAIL: \([0-9]*\) vacuous binding.*/\1/p' | head -1)"
-    N="${N:-some}"
+if [ "$STATUS" -ne 0 ]; then
     echo ""
-    echo "REPORTED, NOT BLOCKING: $N known vacuous-binding candidate(s) (OBL-Z18)."
-    echo "  These need their circuit *and* host read together before they can be called"
-    echo "  defects — some are structurally flagged while the property is held elsewhere."
-    echo "  To see them:  scripts/check-pubkey-binding.sh"
-    echo "  Register row: doc/src/arch/verification-hazop.md (OBL-Z18)"
+    echo "BLOCKED: unexcepted vacuous binding(s) — the lines above name them."
+    echo "  A constrain_equal_base whose two sides are both prover-chosen proves nothing: the"
+    echo "  equality holds for any witness, so the verifier learns nothing from it."
+    echo "  If both sides have been read and the finding is sound, add it to"
+    echo "  script/circuit_pubkey_binding_exceptions.txt with its mechanism or register row."
+    exit 1
+fi
+
+if printf '%s' "$OUT" | grep -q '^EXCEPTED:'; then
+    N="$(printf '%s' "$OUT" | grep -c '^EXCEPTED:')"
+    echo ""
+    echo "OK: $N vacuous-binding site(s) adjudicated and scheduled (OBL-Z18)."
+    echo "  Fifteen are genuine defects and their entries name the register rows — OBL-C81, C82,"
+    echo "  C83, C84 and OBL-C75; the rest name the mechanism that makes them sound. This hook now"
+    echo "  fails on a finding that is NOT in that list. See"
+    echo "  script/circuit_pubkey_binding_exceptions.txt, or run scripts/check-pubkey-binding.sh."
+else
+    echo "OK: no vacuous bindings."
 fi
 exit 0
