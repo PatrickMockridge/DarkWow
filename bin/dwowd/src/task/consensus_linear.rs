@@ -414,6 +414,41 @@ pub async fn consensus_linear_init_task(
                             "Peer sent block at pre-genesis height 0 — skipping");
                         break;
                     }
+                    // OBL-C34: the genesis a peer hands us **is** the chain's identity, so it is
+                    // checked against the compiled-in pin before anything is adopted from it. The
+                    // four magic bytes checked above are a network label, not a trust anchor: a
+                    // peer that knows the magic can present any genesis it likes. This loop is
+                    // where a node running `CREATE_GENESIS=false` adopts one — every miner and
+                    // observer takes this path — and `check_genesis_pin`'s own doc says the pin
+                    // "has to bite on the path that creates *and adopts* a chain", which was only
+                    // true of the creating half.
+                    //
+                    // It sits here rather than beside the magic check because it needs the hash, and
+                    // the hash is RandomX over the header: it costs the cache this block needs
+                    // anyway, which is allocated immediately above. And it is here rather than in
+                    // `accept_block`, which is also the tests' fixture path, where a pin failure
+                    // would be indistinguishable from the test's own failure.
+                    //
+                    // A mismatch is the peer's problem, not a local one, so it drops this peer and
+                    // lets the outer loop try the next rather than aborting sync.
+                    if block.header.height == BlockHeight::GENESIS {
+                        match block.hash_with_vm(&vm) {
+                            Ok(hash) => {
+                                if let Err(e) = crate::check_genesis_pin(hash.as_bytes(), "received") {
+                                    warn!(target: "dwowd::task::consensus_linear_init_task",
+                                        "Genesis received from a peer does not match the compiled-in pin, \
+                                         so nothing was adopted from it: {e}");
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                warn!(target: "dwowd::task::consensus_linear_init_task",
+                                    "Genesis hash failed at height {} — local failure, retrying: {e}",
+                                    block.header.height);
+                                break;
+                            }
+                        }
+                    }
                     match accept_block(&blockchain, block, &[], &vm, block.header.target, None) {
                         Ok(outcome) => match outcome {
                             dwow_chain::BlockConnectOutcome::CanonicalExtension { .. }
