@@ -18,18 +18,21 @@ name = "create_group"
 code = 1
 description = "Create an N-of-M threshold signature group. Takes list of public keys and required threshold."
 requires_proof = true
+proof_circuit = "CreateGroupV2"
 
 [[functions]]
 name = "sign"
 code = 2
 description = "Sign a message as a group member. Proves membership via public key in group."
 requires_proof = true
+proof_circuit = "SignV2"
 
 [[functions]]
 name = "finalize"
 code = 3
 description = "Finalize when threshold partial signatures exist for a message. Consumes partial signatures, produces approval capability for composition."
 requires_proof = true
+proof_circuit = "FinalizeV2"
 
 [[capabilities]]
 discriminant = 0

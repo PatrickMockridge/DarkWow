@@ -40,6 +40,8 @@ proof_circuit = "AggregateV2"
 [[functions]]
 name = "set_oracle_active"
 code = 5
+requires_proof = true
+proof_circuit = "SetOracleActiveV2"
 
 [[capabilities]]
 discriminant = 0
@@ -141,4 +143,8 @@ namespace = "oracle"
 
 [[circuits]]
 name = "AggregateV2"
+namespace = "oracle"
+
+[[circuits]]
+name = "SetOracleActiveV2"
 namespace = "oracle"
