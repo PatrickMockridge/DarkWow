@@ -207,11 +207,15 @@ impl PoWConsensus {
         for i in start + 1..timestamps.len() {
             let Some(interval) = timestamps[i].get().checked_sub(timestamps[i - 1].get()) else {
                 // A decreasing pair violates causality — and substituting `0` for the interval, which
-                // this did until 2026-09-22 (`OBL-C37`), biases the adjustment in the *miner's* favour:
-                // a zero interval drags `avg_interval` down, `ratio_scaled` up, and the target **easier**.
-                // The anomaly was logged and then acted upon. So the adjustment is **abandoned** instead:
-                // the target stays exactly where it was, which is the conservative answer and the only one
-                // a miner cannot profit from.
+                // this did until 2026-09-22 (`OBL-C37`), feeds the adjustment a value no chain can
+                // produce. It is not the substitution that pays the miner, though: the fabricated zero
+                // drags `avg_interval` *down*, which pushes `ratio_scaled` **up**, i.e. *harder*. What paid
+                // the miner was the separate all-zero-window branch, which answered `SCALE * 9 / 10`,
+                // below `SCALE`, and so eased the target ~11% (corrected 2026-09-23; the causal chain
+                // written here when this branch landed had the direction of that middle step backwards).
+                // Either way the input is impossible, the anomaly was logged and then acted upon, and so
+                // the adjustment is **abandoned** instead: the target stays exactly where it was, which is
+                // the conservative answer and the only one a miner cannot profit from.
                 //
                 // Reachable, not merely defensive: `validation::check_block_timestamp` requires a
                 // timestamp above the *median* of the last 11, which does not exclude one below its own
@@ -231,13 +235,31 @@ impl PoWConsensus {
             self.target_block_time
         };
 
+        // A window whose *every* interval is zero is not a fast window — it is a window no valid chain
+        // produces, so there is nothing to steer toward and the adjustment is **abandoned** (`OBL-C37`).
+        //
+        // This branch used to answer `ratio_scaled = SCALE * 9 / 10` under the comment "Blocks are
+        // instant — make it 10% harder". Both halves were wrong. The direction: `adjust` computes
+        // `current * scale / adjustment`, so `ratio_scaled < SCALE` yields `adjustment = 0.9·SCALE` and a
+        // target **11% higher** — *easier*, the opposite of the comment, and the trade a miner would
+        // engineer a zero interval to get. The premise: `count > 0` here, so `avg_interval == 0` means
+        // all `n-1` intervals in the window are zero, i.e. ten consecutive equal timestamps — and
+        // `validation::check_block_timestamp` requires each timestamp to exceed the median of the last
+        // 11, which admits at most five equal in a row before the median *is* that value. So the state is
+        // unreachable from a chain that validated, and a branch that pays 11% for reaching it is a
+        // standing invitation to widen one of those two rules later. Abandoning is deterministic,
+        // conservative, and the only answer a miner cannot profit from.
+        if avg_interval == 0 {
+            tracing::warn!(target: "dwow_chain::consensus",
+                "All {} intervals in the adjustment window are zero — leaving the target unchanged",
+                count);
+            return BlockTarget::new(self.target.load(Ordering::Acquire));
+        }
+
         // Fixed-point ratio: SCALE means "exactly on target".
         // > SCALE means blocks arrive too fast → need harder (lower target).
         // < SCALE means blocks arrive too slow → need easier (higher target).
-        let ratio_scaled = if avg_interval == 0 {
-            // Blocks are instant — make it 10% harder
-            SCALE * 9 / 10
-        } else {
+        let ratio_scaled = {
             let r = (self.target_block_time * SCALE) / avg_interval;
             r.clamp(SCALE / 2, SCALE * 2)
         };
@@ -466,9 +488,11 @@ impl PoWConsensus {
         max_target: BlockTarget,
     ) -> BlockTarget {
         let n = timestamps.len().min(10);
-        // Unifies with `adjust_target`, including the 2026-09-22 change (`OBL-C37`): a decreasing pair
-        // abandons the adjustment rather than contributing a zero interval, because a zero interval makes
-        // the target *easier* and is therefore worth engineering. Both paths must agree or the same window
+        // Unifies with `adjust_target`, including both halves of the 2026-09-23 change (`OBL-C37`): a
+        // decreasing pair abandons the adjustment rather than contributing a fabricated zero interval,
+        // and so does a window whose intervals are *all* zero. This function is the consensus authority —
+        // `get_next_work_required` calls it to derive the target a block must declare — so a divergence
+        // here is a fork, not a disagreement about caching. Both paths must agree or the same window
         // would produce different targets depending on which one a caller used.
         let start = timestamps.len() - n;
         let mut total_interval = 0u64;
@@ -488,9 +512,18 @@ impl PoWConsensus {
             target_block_time
         };
 
-        let ratio_scaled = if avg_interval == 0 {
-            SCALE * 9 / 10
-        } else {
+        // `OBL-C37`, the other half: an all-zero window abandons the adjustment here exactly as it does in
+        // `adjust_target`. See that function for why the branch's former `SCALE * 9 / 10` answer was both
+        // backwards (11% *easier*) and unreachable — but the two paths must agree, or the same window
+        // yields two different expected targets depending on which one a caller asked.
+        if avg_interval == 0 {
+            tracing::warn!(target: "dwow_chain::consensus",
+                "All {} intervals in compute_adjustment's window are zero — leaving the target unchanged",
+                count);
+            return current_target;
+        }
+
+        let ratio_scaled = {
             let r = (target_block_time * SCALE) / avg_interval;
             r.clamp(SCALE / 2, SCALE * 2)
         };
@@ -814,8 +847,8 @@ mod tests {
         assert_eq!(
             result, current,
             "OBL-C37: a window containing a decreasing timestamp must leave the target exactly as it was. \
-             Adjusting on it biases the difficulty in the miner's favour — a substituted zero interval \
-             makes the target easier."
+             Adjusting on it feeds the controller an interval no chain can produce, and the answer a miner \
+             can then engineer toward is an easier target."
         );
 
         // Positive control: a *well-formed* window that is too fast must still move the target, or this
@@ -825,6 +858,63 @@ mod tests {
             &fast, current, 120, BlockTarget::new(0x0000FFFF), BlockTarget::new(0x0FFFFFFF));
         assert_ne!(moved, current, "control: 30s blocks against a 120s target must harden the target");
         assert!(moved.get() < current.get(), "and hardening means a *lower* target");
+    }
+
+    /// `OBL-C37`, the other half — a window whose intervals are **all** zero abandons the adjustment too.
+    ///
+    /// The branch this replaces answered `ratio_scaled = SCALE * 9/10` under the comment "make it 10%
+    /// harder". Both halves were wrong, and the second is the one that matters: `adjust` divides by the
+    /// adjustment, so a ratio *below* `SCALE` produces a target **11% higher** — easier — which is the
+    /// exact opposite of the comment and a free easing for whoever reaches it.
+    ///
+    /// **The negative control is in the assertion, as a number.** `SCALE = 1_000_000` and
+    /// `adjustment = 900_000`, so the old branch returned `0x00FFFFFF * 1_000_000 / 900_000 = 18_641_350
+    /// = 0x011C71C6` — inside the test's own `[0x0000FFFF, 0x0FFFFFFF]` clamp, so the old behaviour really
+    /// did reach the caller rather than being clamped away. Restore the branch and the equality below
+    /// fails with that value; verified by reverting.
+    #[test]
+    fn test_compute_adjustment_all_zero_intervals_leaves_the_target_unchanged() {
+        let current = BlockTarget::new(0x00FFFFFF);
+        // Ten equal timestamps — `count == 9 > 0` and every interval zero, so `avg_interval == 0`.
+        let timestamps: Vec<BlockTimestamp> = vec![BlockTimestamp::new(1000); 10];
+        let result = PoWConsensus::compute_adjustment(
+            &timestamps, current, 120, BlockTarget::new(0x0000FFFF), BlockTarget::new(0x0FFFFFFF));
+
+        assert_eq!(
+            result, current,
+            "OBL-C37: a window with no interval at all must leave the target exactly as it was. The \
+             former SCALE * 9 / 10 answer eased it by ~11% (0x00FFFFFF became 0x011C71C6), which is the \
+             reverse of the direction its own comment claimed."
+        );
+
+        // A *single* zero interval among real ones is a different case and must NOT be abandoned: the
+        // window is still informative, and the controller steers on the average.
+        let one_zero: Vec<BlockTimestamp> = vec![
+            BlockTimestamp::new(0), BlockTimestamp::new(0), BlockTimestamp::new(120),
+            BlockTimestamp::new(240), BlockTimestamp::new(360),
+        ];
+        let steered = PoWConsensus::compute_adjustment(
+            &one_zero, current, 120, BlockTarget::new(0x0000FFFF), BlockTarget::new(0x0FFFFFFF));
+        assert_ne!(
+            steered, current,
+            "control: a window with one zero interval and four real ones still has an average to steer on"
+        );
+    }
+
+    /// The same rule on the tracker path, whose window is fed by `record_block` rather than rebuilt from
+    /// the store — the two must agree or a miner's own target and the expected one diverge (`OBL-C37`).
+    #[test]
+    fn test_adjust_target_all_zero_intervals_leaves_the_target_unchanged() {
+        let c = test_consensus();
+        let initial = c.target();
+        for _ in 0..5 {
+            c.record_block(BlockTimestamp::new(1000));
+        }
+        assert_eq!(
+            c.adjust_target(), initial,
+            "OBL-C37 (tracker path): equal timestamps must not move the target; the removed branch would \
+             have eased it ~11% per call"
+        );
     }
 
     /// Failure mode: window-based average with fewer than 11 timestamps uses
