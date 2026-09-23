@@ -130,6 +130,16 @@ run_gate "documentation index"            bash "$SCRIPT_DIR/check-doc-index.sh"
 run_gate "register status markers"        bash "$SCRIPT_DIR/register-status.sh" --check
 
 run_gate "build contract ZK circuits"     "$SCRIPT_DIR/build-contract-zk.sh"
+# OBL-Z8: the compiled artefacts are structurally valid. This is the only check that looks at the
+# `.zk.bin` files themselves rather than at the sources — `validate_zk_bins.sh` runs the compiler's
+# own `validate` over every one of them — and it ran nowhere until 2026-09-23. It belongs here,
+# immediately after the build that produces them, because `.zk.bin` is a build artefact: **zero are
+# tracked in git** against 224 tracked `.zk`, so there is no committed binary to be stale. Freshness
+# against the source is already covered twice over — the Makefiles declare
+# `proof/%.zk.bin: proof/%.zk`, and `ZK_SRC := $(wildcard proof/*.zk)` is in every contract's
+# `SOURCE_MANIFEST`, so an edited circuit makes the contract stale and `contract artifact freshness`
+# (gate 1) names it. What was missing is exactly this: nobody checked the *output* is well-formed.
+run_gate "ZK binaries well-formed"        bash "$SCRIPT_DIR/validate_zk_bins.sh"
 run_gate "pre-build guard (dwowd + wallet + 32 contracts→wasm32)" \
                                           "$SCRIPT_DIR/check_pipeline_build.sh"
 run_gate "Rust tests (make test)"          make test
