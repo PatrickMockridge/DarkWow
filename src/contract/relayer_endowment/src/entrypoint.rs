@@ -132,11 +132,93 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = ClaimFeesParamsV1::decode(&self_.data[1..])?;
             relayer_endowment_claim_fees_get_metadata_v1(cid, params)?
         }
-        // No ZK circuits for WithdrawDeployment, SettleFees, UpdateConfig
-        _ => vec![],
+        // The eight instructions this contract has no circuit for (`proof/` holds three: initialize,
+        // deploy_capital, claim_fees). They are **plaintext**, so their metadata is an encoded *empty*
+        // public-input vector — the reference is `native_token`'s `plaintext_call_get_metadata`, and
+        // `contract-standards.md` §3 is the rule (`OBL-C77`).
+        //
+        // This arm used to be `_ => vec![]`, and a bare empty buffer is not "no public inputs" to the
+        // host: it is the documented **rejection** signal. `execution.rs` decodes the first vector out of
+        // the metadata and, on an empty buffer, sets `fail_stage = "metadata-decode-zkp"` and fails the
+        // call — before exec ever runs. So all eight were callable instructions that could never succeed,
+        // and none of them had ever been exercised.
+        RelayerEndowmentFunction::WithdrawDeploymentV1 => plaintext_call_get_metadata(
+            "withdraw_deployment",
+            &self_.data[1..],
+            |p| WithdrawDeploymentParamsV1::decode(p).map(|_| ()),
+        )?,
+        RelayerEndowmentFunction::SettleFeesV1 => plaintext_call_get_metadata(
+            "settle_fees",
+            &self_.data[1..],
+            |p| SettleFeesParamsV1::decode(p).map(|_| ()),
+        )?,
+        RelayerEndowmentFunction::UpdateConfigV1 => plaintext_call_get_metadata(
+            "update_config",
+            &self_.data[1..],
+            |p| UpdateConfigParamsV1::decode(p).map(|_| ()),
+        )?,
+        RelayerEndowmentFunction::ForceSettleV1 => plaintext_call_get_metadata(
+            "force_settle",
+            &self_.data[1..],
+            |p| ForceSettleParamsV1::decode(p).map(|_| ()),
+        )?,
+        RelayerEndowmentFunction::DeactivateEndowmentV1 => plaintext_call_get_metadata(
+            "deactivate_endowment",
+            &self_.data[1..],
+            |p| DeactivateEndowmentParamsV1::decode(p).map(|_| ()),
+        )?,
+        // The three relayer-rail instructions are gated in `process_instruction` too, and their arms are
+        // gated here in the same way so the two dispatches stay in step: with the feature off they are not
+        // dispatchable, and the metadata answers the same way exec would.
+        #[cfg(feature = "relayer")]
+        RelayerEndowmentFunction::RegisterRelayerV1 => plaintext_call_get_metadata(
+            "register_relayer",
+            &self_.data[1..],
+            |p| crate::relayer::RegisterRelayerParams::decode(p).map(|_| ()),
+        )?,
+        #[cfg(feature = "relayer")]
+        RelayerEndowmentFunction::VerifyRelayerReputationV1 => plaintext_call_get_metadata(
+            "verify_relayer_reputation",
+            &self_.data[1..],
+            |p| crate::relayer::VerifyRelayerReputationParams::decode(p).map(|_| ()),
+        )?,
+        #[cfg(feature = "relayer")]
+        RelayerEndowmentFunction::RegisterFeeScheduleV1 => plaintext_call_get_metadata(
+            "register_fee_schedule",
+            &self_.data[1..],
+            |p| crate::relayer::RegisterFeeScheduleParams::decode(p).map(|_| ()),
+        )?,
     };
 
     wasm::util::set_return_data(&metadata)
+}
+
+/// Metadata for an instruction this contract has **no circuit** for.
+///
+/// Ported from `native_token`'s `plaintext_call_get_metadata` (`entrypoint/mod.rs:922`), which is the
+/// repository's reference for the shape: empty params and undecodable params both answer with an empty
+/// buffer — the documented rejection signal, and the same answer the reference gives — while a decodable
+/// call answers with `zk_public_inputs` encoded and nothing else. The host reads only the first encoded
+/// vector (`execution.rs`: the signature-pubkey vector is still emitted for wire compatibility but is no
+/// longer decoded), so "no circuits involved" means *an encoded empty vector*, not zero bytes.
+fn plaintext_call_get_metadata(
+    tag: &str,
+    params: &[u8],
+    decode: impl FnOnce(&[u8]) -> Result<(), ContractError>,
+) -> Result<Vec<u8>, ContractError> {
+    if params.is_empty() {
+        msg!("[relayer_endowment::{}] Error: Empty params", tag);
+        return Ok(vec![]);
+    }
+    if let Err(e) = decode(params) {
+        msg!("[relayer_endowment] Error: Failed to decode params: {:?}", e);
+        return Ok(vec![]);
+    }
+
+    let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 fn relayer_endowment_initialize_get_metadata_v1(

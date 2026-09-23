@@ -31,6 +31,7 @@
 //! relayer node watches it directly.
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{ContractId, PublicKey},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},

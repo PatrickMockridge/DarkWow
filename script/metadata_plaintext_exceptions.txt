@@ -1,0 +1,43 @@
+# Empty get_metadata arms — the reviewed list for `scripts/check-metadata-arms.sh` (OBL-C77)
+#
+# Format:  <rel path> : <arm> : <reason, citing a register ID>
+#
+# WHAT AN ENTRY MEANS. The arm answers the host with a **bare empty buffer**, which
+# `execution.rs` reads as the documented *rejection* signal (`contract-standards.md` §3) and fails
+# the call at `metadata-decode-zkp` — before exec runs. The entry says that is intentional, and why.
+#
+# WHAT IT MUST NOT MEAN. "Nobody has looked." An entry whose justification was not verified by
+# reading the arm *and* the exec function behind it is worse than a red gate: it is an instruction
+# that cannot be called, wearing an audit badge.
+#
+# THE REPAIR, when the arm is not intentional: answer with the encoded empty public-input vector.
+# The reference is `native_token`'s `plaintext_call_get_metadata`
+# (`src/contract/native_token/src/entrypoint/mod.rs:922`) — it returns
+# `zk_public_inputs.encode()` (an encoded empty vector) on success, and the empty buffer only for
+# its two rejection cases: no params, undecodable params. `relayer_endowment` was the one contract
+# where the shape hid live defects; its eight plaintext instructions now use a ported copy of that
+# helper, which is why its arms are no longer here.
+#
+# THE TEN BELOW ARE ALL THE SAME JUDGEMENT, made per site by reading the exec arm:
+#   * nine are `Initialize`/`InitializeV1` (box, purse, bridge, escrow, multisig, otc_swap, dex, and
+#     the two catch-alls that cover nothing else) — the deploy-time instruction. Each exec arm either
+#     says so in words ("InitializeV1 has no instruction data" / "has no update data") or returns
+#     `Err(InvalidFunction)` outright, and the contract's state is created by `init_contract`, not by
+#     a call. So the empty answer IS the intended refusal: a call to Initialize is meant to fail, and
+#     it now fails visibly instead of silently.
+#   * one is `bearer_bond`'s `VerifyCoverageV1`, whose exec function is a **documented stub** — it
+#     carries a FIXME describing the sentinel-key lookup that would implement it and returns
+#     `set_return_data(&vec![])` with the message "Coverage lookup not yet implemented". Until that
+#     lookup exists the instruction has nothing to answer with, and the declaration records that the
+#     refusal is the stub, not a missing encode.
+
+src/contract/baccarat/src/entrypoint.rs : _ => vec![] : OBL-C77 — the catch-all covers InitializeV1 only (CommitBetV1 has its own arm); a call to Initialize is refused by design
+src/contract/bearer_bond/src/entrypoint/mod.rs : BearerBondFunction::VerifyCoverageV1 => vec![] : OBL-C77 — a documented stub: `verify_coverage_v1` carries the FIXME for the sentinel-key lookup and returns empty with "Coverage lookup not yet implemented"
+src/contract/box/src/entrypoint/mod.rs : BoxFunction::Initialize => vec![] : OBL-C77 — deploy-time instruction; state is created by `init_contract`, so a call is refused by design
+src/contract/bridge/src/entrypoint.rs : BridgeFunction::InitializeV1 => vec![] : OBL-C77 — deploy-time instruction; exec and apply both say "has no update data", so a call is refused by design
+src/contract/darktoshi_dice/src/entrypoint.rs : _ => vec![] : OBL-C77 — the catch-all covers InitializeV1 only (CommitBet, RevealRoll, HouseClose and SettleBet each have an arm); Initialize's exec returns `Err(InvalidFunction)`
+src/contract/dex/src/entrypoint/mod.rs : DexFunction::InitializeV1 => vec![] : OBL-C77 — deploy-time instruction; a call is refused by design
+src/contract/escrow/src/entrypoint.rs : EscrowFunction::InitializeV1 => vec![] : OBL-C77 — deploy-time instruction; a call is refused by design
+src/contract/multisig/src/entrypoint/mod.rs : MultiSigFunction::InitializeV1 => vec![] : OBL-C77 — deploy-time instruction; a call is refused by design
+src/contract/otc_swap/src/entrypoint.rs : OtcSwapFunction::InitializeV1 => vec![] : OBL-C77 — deploy-time instruction; exec says "InitializeV1 has no instruction data", so a call is refused by design
+src/contract/purse/src/entrypoint/mod.rs : PurseFunction::Initialize => vec![] : OBL-C77 — deploy-time instruction; state is created by `init_contract`, so a call is refused by design

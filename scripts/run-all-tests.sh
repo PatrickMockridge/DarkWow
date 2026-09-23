@@ -135,6 +135,16 @@ run_gate "hidden tests declared (OBL-C76)" bash "$SCRIPT_DIR/check-hidden-tests.
 # clean-up removed 25 documents and repointed ~30 referrers by hand; this is what
 # keeps that from silently un-happening.
 run_gate "documentation index"            bash "$SCRIPT_DIR/check-doc-index.sh"
+# OBL-C77: an empty get_metadata arm is the host's *rejection* signal, not "no public inputs".
+# `execution.rs` decodes the first encoded vector out of the metadata and fails the call at
+# `metadata-decode-zkp` on an empty buffer, before exec runs — so an arm whose success path returns
+# `vec![]` makes the instruction impossible to call, which is how `relayer_endowment`'s eight
+# plaintext instructions were unreachable until 2026-09-23. The gate is a shape check (the arm's
+# value is a literal empty vector) and every finding must be declared in
+# `script/metadata_plaintext_exceptions.txt` with the reason it must reject; a stale entry is
+# reported. Negative-controlled both ways: dropping one entry fails naming exactly that site, and a
+# fake entry is reported stale while the run still passes.
+run_gate "empty metadata arms declared"   bash "$SCRIPT_DIR/check-metadata-arms.sh"
 # The register's own convention, guarded. Four times the register has been wrong about its own
 # bookkeeping and only a human reading a diff noticed — including three markers written on 2026-09-22
 # with words the register does not use ("STALE", "CONFIRMED") or with no status word at all. This is
