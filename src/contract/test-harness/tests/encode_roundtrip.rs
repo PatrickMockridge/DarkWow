@@ -190,6 +190,42 @@ fn test_multisig_encode_roundtrip() {
     };
     assert_roundtrip!(SignParamsV1, sign);
 
+    // OBL-C62: the guard `decode` opens with must be the *exact* minimum, and this is the boundary
+    // the defect lived on. The layout is `group_id(32) + message_hash(32) + member_commitment(32) +
+    // nullifier(32) + len(4) + proof + tx_binding(32) + tx_nonce(32)` = `196 + proof.len()`, so a
+    // proof shorter than four bytes encodes to 196..199 — and the guard read `200`, refusing its own
+    // encoder's output for exactly those. The three-byte `sign` above is the instance that was
+    // failing; these five are the boundary stated rather than stumbled into, and each carries its
+    // own control so that removing the guard instead of correcting it cannot pass this test.
+    for proof_len in [0usize, 1, 2, 3, 4] {
+        let short = SignParamsV1 {
+            group_id: GroupId(pallas::Base::from(42u64)),
+            message_hash: pallas::Base::from(12345u64),
+            member_commitment: pallas::Base::from(7u64),
+            nullifier: pallas::Base::from(8u64),
+            proof: vec![0u8; proof_len],
+            tx_binding: pallas::Base::from(99u64),
+            tx_nonce: pallas::Base::from(88u64),
+        };
+        let encoded = EncodeResult::unwrap_encode(short.encode());
+        assert_eq!(
+            encoded.len(), 196 + proof_len,
+            "the layout minimum is 196, not 200 — an encoder whose capacity hint disagrees with its \
+             own layout is how the decoder's guard drifted in the first place"
+        );
+        assert!(
+            SignParamsV1::decode(&encoded).is_ok(),
+            "a decoder must accept every length its own encoder produces (OBL-C62); it refused a \
+             {proof_len}-byte proof"
+        );
+        let truncated = &encoded[..encoded.len() - 1];
+        assert!(
+            SignParamsV1::decode(truncated).is_err(),
+            "a buffer one byte shorter than the layout must still be refused — without this the \
+             acceptance above is indistinguishable from having deleted the guard"
+        );
+    }
+
     let fin = FinalizeParamsV1 {
         group_id: GroupId(pallas::Base::from(42u64)),
         message_hash: pallas::Base::from(12345u64),
