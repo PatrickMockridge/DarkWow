@@ -78,13 +78,30 @@ pub enum BalanceError {
 /// Returns `Ok(())` if the block passes, or `Err(BalanceError)` with details.
 pub fn verify_proof_of_token_balance(block: &Block) -> Result<(), BalanceError> {
     // --- Compute darkw token_commit once ---
-    // UNVERIFIED(POTB-1): needs cargo test -p dwow_chain --lib proof_of_token_balance
-    // AND a full devnet-history sync validation before enabling in production:
-    // this filter previously used poseidon_hash([0, 0]), which matched NO real
-    // DRKW call (the contract builds poseidon_hash([DOMAIN_TOKEN_COMMIT, 0, 0]))
-    // — so the mass-balance anti-inflation check was silently inert. With the
-    // correct constant it activates: any historical block whose Pedersen
-    // input/output/fee blind sums do not balance will now be REJECTED on sync.
+    // UNVERIFIED(POTB-1): the *local* half is now verified, and what remains is the
+    // history question, which no local run can answer.
+    //
+    // Verified 2026-09-23: `cargo test --release -p dwow_chain --lib --all-features
+    // proof_of_token_balance -- --test-threads 4` → 9 passed. Those cover the check
+    // on constructed blocks, including a one-unit inflation rejected with the same
+    // blind, a value-matching blind mismatch, and a balanced transfer accepted.
+    //
+    // What the tag used to say was "before enabling in production", and that clause
+    // no longer describes anything pending: the check is on three production paths
+    // — `bin/dwowd/src/block_acceptor.rs:217` (the accept path),
+    // `bin/dwowd/src/task/consensus_linear.rs:471` (the pull loop) and
+    // `bin/dwowd/src/proto/linear_broadcast.rs:402` (broadcast). So the activation
+    // has happened, not been proposed.
+    //
+    // The residual, stated as the obstruction rather than as an assurance: this
+    // filter previously used poseidon_hash([0, 0]), which matched NO real DRKW call
+    // (the contract builds poseidon_hash([DOMAIN_TOKEN_COMMIT, 0, 0])), so the
+    // mass-balance anti-inflation check was silently inert. With the correct
+    // constant it is live, and whether any block already in the chain's history
+    // fails it **cannot be determined from this repository** — it needs that
+    // history, and the only way to obtain it is a devnet sync. A node that stalls
+    // on such a block is the failure mode to watch for, and it is the reason this
+    // tag is kept rather than deleted once the local half went green.
     let darkw_token_commit = poseidon_hash([
         DRK_POSEIDON_DOMAIN_TOKEN_COMMIT,
         pallas::Base::zero(),
