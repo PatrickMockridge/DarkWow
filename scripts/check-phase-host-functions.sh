@@ -24,7 +24,15 @@
 # about, and this repository has had that failure four times.
 #
 # Usage:  scripts/check-phase-host-functions.sh
-# Exit 0: clean.  Exit 1: at least one site, reported with file:line.
+# Exit 0: clean, or all findings excepted in script/phase_host_function_exceptions.txt
+#         (each printed as EXCEPTED with the register ID that schedules it).
+# Exit 1: at least one *unexcepted* site, reported with file:line.
+# Exit 2: the ACL parser or the exception list drifted — see the checks' own messages.
+#
+# The exception list is a ratchet, not an amnesty: a site in it is a named, scheduled defect
+# (OBL-C73), it stays visible in every run, and a *new* violation still fails. Wiring this gate
+# into `scripts/run-all-tests.sh` without that list would have made every full run red forever,
+# which is how a gate becomes a comment.
 
 set -euo pipefail
 
@@ -248,7 +256,40 @@ for crate in sorted(p for p in (repo / "src/contract").iterdir() if p.is_dir()):
                     if h not in ACL:
                         seen_unclassified.add((rel, h))
 
-for rel, line, name, h, secs, why in sorted(set(report)):
+# Reviewed exceptions (script/phase_host_function_exceptions.txt). A finding whose (file, exec
+# function, host function) matches an entry is reported as EXCEPTED and does not fail the run;
+# every other finding still does. Matching is on the call's content rather than on a line number,
+# so an edit elsewhere in the file cannot silently retire an entry — a line-keyed list would
+# instead retire them wholesale, which is the same failure mode the ACL table above is parsed
+# rather than hardcoded to avoid.
+exceptions = {}
+exc_path = repo / "script" / "phase_host_function_exceptions.txt"
+if exc_path.is_file():
+    for raw in exc_path.read_text(errors="replace").splitlines():
+        entry = raw.split("#")[0].strip()
+        if not entry:
+            continue
+        parts = [p.strip() for p in entry.split(":", 2)]
+        if len(parts) != 3:
+            print(f"ERROR: malformed exception line in {exc_path.name}: {entry!r}")
+            print("       expected: <file> : <function>() -> <host>() : <reason citing a register ID>")
+            sys.exit(2)
+        exceptions.setdefault((parts[0], parts[1]), parts[2])
+
+excepted, failing = [], []
+for entry in sorted(set(report)):
+    rel_f, line_f, name_f, h_f, secs_f, why_f = entry
+    key = (str(rel_f), f"{name_f}() -> {h_f}()")
+    if key in exceptions:
+        excepted.append((entry, exceptions[key]))
+    else:
+        failing.append(entry)
+
+for (rel_f, line_f, name_f, h_f, secs_f, why_f), reason in excepted:
+    print(f"EXCEPTED: {rel_f}:{line_f}: {name_f}() -> {h_f}()")
+    print(f"          {reason}")
+
+for rel, line, name, h, secs, why in failing:
     print(f"FAIL: {rel}:{line}: {name}() -> {h}()  (legal in {secs})")
     print(f"      {why}")
 
@@ -261,16 +302,22 @@ if seen_unclassified:
     print("      delegates to a host import (e.g. db_mark_spent -> db_set). Confirm by")
     print("      hand before treating it as unclassified.")
 
-if fail:
+if failing:
     print()
-    print(f"FAIL: {fail} phase violation(s).")
+    print(f"FAIL: {len(failing)} unexcepted phase violation(s).")
     print("FIX: apply writes blindly — read in exec, carry the value through the update")
     print("     struct, write in apply. exec does not write at all. See")
     print("     contract-wasm-type-system.md §B.2.2 and the register's OBL-C72/OBL-C73.")
     print("     The genesis contracts are the worked example; three of them say so in")
     print("     comments (native_token entrypoint/mod.rs:1405, box:143, purse:202).")
+    if excepted:
+        print(f"     {len(excepted)} further site(s) are excepted and scheduled in")
+        print("     script/phase_host_function_exceptions.txt — they are not among the above.")
     sys.exit(1)
 
-print(f"PASS: no phase violations ({len(ACL)} host functions' ACLs parsed from the runtime)")
+scheduled = (f"; {len(excepted)} scheduled in script/phase_host_function_exceptions.txt"
+             if excepted else "")
+print(f"PASS: no unexcepted phase violations ({len(ACL)} host functions' ACLs parsed "
+      f"from the runtime{scheduled})")
 sys.exit(0)
 PYEOF

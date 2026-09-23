@@ -96,6 +96,15 @@ run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain
 # is named here and not duplicated. A "the full gate is green" claim is therefore two obligations
 # away, not one: 15 unclassified instances and 19 metadata misalignments.
 run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instance-derivation.sh"
+# OBL-C72/C73: the exec/apply phase rule — apply writes blindly, exec does not write. This gate
+# existed and was invoked by NOTHING until now, which is why the class it guards drifted: seven
+# live `db_set` calls in an exec phase, every one of them a call the host refuses at runtime
+# (§B.2.2 `CALLER_ACCESS_DENIED`), so `drain_protection` is inert as shipped. It is wired here as
+# a ratchet rather than a blocker: those seven are named and scheduled in
+# `script/phase_host_function_exceptions.txt` and print as EXCEPTED on every run, while a *new*
+# violation fails. Negative-controlled before wiring, both ways — with the exception file removed
+# the gate exits 1 with all seven, and with one entry dropped it exits 1 naming exactly that site.
+run_gate "exec/apply phase rule"          bash "$SCRIPT_DIR/check-phase-host-functions.sh"
 # The documentation index. Also seconds, also needs no build: it checks that every
 # doc is listed and every citation resolves, both directions. The 2026-09 docs
 # clean-up removed 25 documents and repointed ~30 referrers by hand; this is what
