@@ -67,9 +67,13 @@ rpc_listen = "tcp://127.0.0.1:18346"
 #rpc_disabled_methods = []
 
 ## Testnet JSON-RPC settings for p2pool merge mining requests (optional)
-[network_config."testnet".mm_rpc]
+## Off by default, as `mainnet` and `localnet` are. Uncommenting this section opts the node
+## into merge mining, which requires `monerod_url` in the `.finality` section (or
+## `--monerod-rpc-url`): a merge-mined block's only authentication is a Monero inclusion
+## proof, and dwowd refuses to start without the verifier that checks it (OBL-C80).
+#[network_config."testnet".mm_rpc]
 # JSON-RPC listen URL (merge mining)
-rpc_listen = "http+tcp://127.0.0.1:18348"
+#rpc_listen = "http+tcp://127.0.0.1:18348"
 
 # Disabled RPC methods (merge mining)
 #rpc_disabled_methods = []
@@ -554,6 +558,12 @@ localnet = true
 ## ======================
 # Darkwow-devnet blockchain network configuration (formerly linear-testnet)
 [network_config."darkwow-devnet"]
+# Create the genesis block. Required by the config parser, so it cannot simply be omitted:
+# a section without it fails to load and the node never starts. Set `true` on exactly ONE
+# node per network (`darkwow node --role genesis`, i.e. CREATE_GENESIS=true, overrides this);
+# every other node stays `false` and syncs genesis over P2P. See OBL-C93.
+create_genesis = false
+
 # Path to the blockchain database directory
 database = "~/.local/share/dwow/dwowd/darkwow-devnet"
 
@@ -615,9 +625,11 @@ rpc_listen = "tcp://127.0.0.1:28346"
 #rpc_disabled_methods = []
 
 ## Linear-testnet JSON-RPC settings for p2pool merge mining requests (optional)
-[network_config."darkwow-devnet".mm_rpc]
+## Off by default: enabling it requires `monerod_url` (or `--monerod-rpc-url`). See the
+## `testnet` section above, or OBL-C80 in `doc/src/arch/verification-hazop.md`.
+#[network_config."darkwow-devnet".mm_rpc]
 # JSON-RPC listen URL (merge mining)
-rpc_listen = "http+tcp://127.0.0.1:28348"
+#rpc_listen = "http+tcp://127.0.0.1:28348"
 
 # Disabled RPC methods (merge mining)
 #rpc_disabled_methods = []
@@ -642,6 +654,10 @@ localnet = true
 # ========================
 # DarkWow-testnet blockchain network configuration
 [network_config."darkwow-testnet"]
+# See the note in `[network_config."darkwow-devnet"]`: `create_genesis` is required by the
+# parser. False here, and true on exactly one node (`--role genesis`).
+create_genesis = false
+
 # Path to the blockchain database directory
 database = "~/.local/share/dwow/dwowd/darkwow-testnet"
 
@@ -702,9 +718,11 @@ rpc_listen = "tcp://127.0.0.1:31346"
 rpc_listen = "tcp://127.0.0.1:31347"
 
 ## DarkWow-testnet merge mining JSON-RPC settings (for p2pool)
-[network_config."darkwow-testnet".mm_rpc]
+## Off by default: enabling it requires `monerod_url` (or `--monerod-rpc-url`). See the
+## `testnet` section above, or OBL-C80 in `doc/src/arch/verification-hazop.md`.
+#[network_config."darkwow-testnet".mm_rpc]
 # JSON-RPC listen URL (merge mining)
-rpc_listen = "http+tcp://127.0.0.1:31348"
+#rpc_listen = "http+tcp://127.0.0.1:31348"
 
 ## DarkWow-testnet P2P network settings
 [network_config."darkwow-testnet".net]

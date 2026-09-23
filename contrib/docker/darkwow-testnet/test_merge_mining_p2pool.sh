@@ -411,14 +411,10 @@ if [ ! -s "$CONFIG_FILE" ]; then
 fi
 
 # Override darkwow-testnet settings for local test environment.
-# The mm_rpc section already exists — just update the port.
 detail "Overriding test config for local merge mining..."
 sed -i "
     /\[network_config.\"darkwow-testnet\"\]/,/^\[/{
         s|database = .*|database = \"$DATADIR\"|
-    }
-    /\[network_config.\"darkwow-testnet\".mm_rpc\]/,/^\[/{
-        s|rpc_listen = .*|rpc_listen = \"http+tcp://127.0.0.1:$MM_RPC_PORT\"|
     }
     s|skip_sync = false|skip_sync = true|g
     s|skip_fees = false|skip_fees = true|g
@@ -427,6 +423,16 @@ sed -i "
         s|outbound_connections = 8|outbound_connections = 0|
     }
 " "$CONFIG_FILE" 2>/dev/null || true
+
+# OBL-C80: the shipped config no longer enables `mm_rpc` by default, because enabling it with
+# no `monerod_url` makes a merge-mined block's Monero inclusion proof mean nothing and dwowd
+# refuses to start in that state. This test merge-mines, so it injects the section itself —
+# the same shape `reproduce_merge_mining.sh` uses — and points the node at the monerod below.
+cat >> "$CONFIG_FILE" << EOF
+
+[network_config."darkwow-testnet".mm_rpc]
+rpc_listen = "http+tcp://127.0.0.1:${MM_RPC_PORT}"
+EOF
 
 # Verify darkwow-testnet section is present.
 grep -q 'network_config."darkwow-testnet"' "$CONFIG_FILE" || {
@@ -485,7 +491,9 @@ done
 ulimit -s 131072
 export RUST_MIN_STACK=67108864
 info "Starting dwowd..."
-"$DWOWD_BIN" > "$TEST_DIR/dwowd.log" 2>&1 &
+# OBL-C80: with the `mm_rpc` section injected above, the node needs the verifier that
+# authenticates a merge-mined block. The monerod started above is it.
+"$DWOWD_BIN" --monerod-rpc-url "http://127.0.0.1:${MONERO_RPC_PORT}/json_rpc" > "$TEST_DIR/dwowd.log" 2>&1 &
 DWOWD_PID=$!
 detail "dwowd PID: $DWOWD_PID"
 

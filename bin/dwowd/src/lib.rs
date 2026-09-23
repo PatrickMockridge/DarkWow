@@ -799,7 +799,10 @@ impl Dwowd {
         keys_toml: Option<&std::path::Path>,
         mining_enabled: bool,
     ) -> Result<DwowdPtr> {
-        info!(target: "dwowd::Dwowd::init_linear", "Initializing a DarkWow daemon for darkwow-devnet...");
+        // No network name here: `Network` is `Testnet` for both `darkwow-devnet` and
+        // `darkwow-testnet` (`main.rs`'s `parse_blockchain_config`), so a literal naming one of
+        // them is wrong on the other. It said "darkwow-devnet" unconditionally (OBL-C94).
+        info!(target: "dwowd::Dwowd::init_linear", "Initializing a DarkWow daemon...");
 
         let finality_config = finality_config.unwrap_or_default();
         info!(target: "dwowd::Dwowd::init_linear", "Finality mode: {:?}, caribina_enabled: {}", finality_config.mode, finality_config.caribina_enabled);
