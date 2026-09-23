@@ -77,6 +77,12 @@
 # defects (``spent_nullifier`` in the wrong position; tender's `submit_bid`
 # transposition) visible without inventing a name-mapping layer first.
 #
+# **Amended 2026-09-23 (OBL-C20): the heuristic stays a WARN, and one subset of it
+# was promoted to a hard FAIL.** The reasoning above is why the general order
+# comparison cannot block — but part of what it reports is not a mapping question at
+# all, and that part now fails. See the literal-vs-value note below, next to
+# `ZERO_CONVENTION`, for the rule, the measurement, and the one limitation it has.
+#
 # Exit 0: every circuit's counts agree, or the circuit is a declared exception
 # Exit 1: mismatch found and undeclared
 
@@ -492,6 +498,53 @@ for contract_name in COVERED:
             for pos, var, expr in push_vec_order_diff(instance_order, elems):
                 order_warnings.append((f"{contract_name}/{circuit_name}", pos, var, expr, ns))
 
+# LITERAL-VS-VALUE — the half of the order comparison that is NOT a heuristic, promoted from
+# advisory to a hard FAIL (OBL-C20).
+#
+# The order comparison stays a WARN in general, for the reason its own note gives: mapping a
+# circuit variable to a Rust expression by name cannot tell a transposition from a derived value
+# reached another way, and 291 of its 304 warnings are exactly that. But one subset of those
+# warnings is not a mapping question at all: a position where the circuit instances a value and
+# the metadata pushes a *literal constant*. A literal can only match a derived value by a
+# preimage coincidence, and it cannot match a witness whose client-supplied value is not that
+# literal either — so the site's proof does not verify, whatever the name mapping does.
+#
+# Measured 2026-09-23 before this was promoted: 81 positions push a literal `Base::zero()`, of
+# which 71 are the tx-nonce convention below and 10 — across six circuits — are not. Those six
+# have **no overlap at all** with the 19 circuits the count check already fails, so this rule finds
+# a class that was invisible rather than restating one that was known.
+#
+# ONE LIMITATION, stated rather than discovered later: the order comparison — this half included —
+# runs only against a push that is at least as long as the circuit's instance list, so a circuit
+# that already fails on counts is not order-checked and its literal rows are not enumerated here.
+# Nothing is *lost* (that circuit is failing and named), but the counts of the two classes are not
+# additive across the whole corpus, and a reader comparing them should not expect them to be.
+ZERO_CONVENTION = {"tx_nonce"}
+
+literal_findings = sorted({
+    (label, pos, var, expr)
+    for label, pos, var, expr, _ns in set(order_warnings)
+    if re.fullmatch(r'[A-Za-z_:]*Base::zero\(\)', expr.strip())
+    and var not in ZERO_CONVENTION
+})
+literal_keys = {(label, pos, var, expr) for label, pos, var, expr in literal_findings}
+
+if literal_findings:
+    print("")
+    print(f"FAIL: {len(literal_findings)} position(s) push a literal `Base::zero()` where the "
+          f"circuit instances a value.")
+    print("      A literal cannot equal a derived value, and cannot equal a client-supplied "
+          "witness either, so")
+    print("      these proofs cannot verify as built. `tx_nonce` is the only reviewed exemption "
+          "(left zero by")
+    print("      convention across 68 circuits); everything else is a finding. Register: "
+          "OBL-Z2 / OBL-C78.")
+    by_label = {}
+    for label, pos, var, _expr in literal_findings:
+        by_label.setdefault(label, []).append((pos, var))
+    for label in sorted(by_label):
+        print(f"  {label}: " + ", ".join(f"instance {p} `{v}`" for p, v in sorted(by_label[label])))
+
 if AMBIGUOUS:
     print("")
     for contract_name, circuit_name, rel, n in sorted(set(AMBIGUOUS)):
@@ -499,18 +552,17 @@ if AMBIGUOUS:
               f"alias names the circuit's; the client vector is NOT checked. Add a CLIENT_ALIASES "
               f"entry (file, impl type).")
 if order_warnings:
-    uniq = sorted(set(order_warnings))
+    uniq = [w for w in sorted(set(order_warnings)) if (w[0], w[1], w[2], w[3]) not in literal_keys]
     by_circuit = {}
     for label, pos, var, expr, ns in uniq:
         by_circuit.setdefault(label, []).append((pos, var, expr))
-    hardcoded = sum(1 for _, _, _, expr, _ in uniq if re.fullmatch(r'[A-Za-z_:]*Base::zero\(\)', expr.strip()))
     print("")
-    print(f"Order warnings: {len(uniq)} position(s) across {len(by_circuit)} circuit(s). The count")
-    print("agrees, but the circuit's variable at that position is not what the metadata expression")
-    print("there supplies — a transposition, or a hardcoded substitute. ADVISORY, not blocking:")
-    print(f"{hardcoded} of them push a literal `Base::zero()` where the circuit names a variable")
-    print("(the constant-binding class the register already records); the rest are order or")
-    print("derived-value differences. Read with the circuit in hand before acting on one.")
+    print(f"Order warnings (advisory): {len(uniq)} position(s) across {len(by_circuit)} circuit(s).")
+    print("The count agrees, but the circuit's variable at that position is not what the metadata")
+    print("expression there supplies — a transposition, or a derived value reached another way.")
+    print("ADVISORY and deliberately so: mapping a circuit variable to a Rust expression by name")
+    print("is a heuristic, and a false FAIL here would block correct work. The literal-push rows")
+    print("are NOT in this count — they are findings, reported above.")
     for label in sorted(by_circuit):
         rows = by_circuit[label]
         print(f"  {label} ({len(rows)}):")
@@ -551,7 +603,7 @@ if not COVERED:
     print("FAIL: no contract with a `proof/` directory was found — the enumeration is broken.")
     sys.exit(1)
 
-if failures == 0:
+if failures == 0 and not literal_findings:
     print(f"PASS: All {len(seen)} circuits across {len(COVERED)} contracts have matching metadata "
           f"push counts")
     if order_warnings:
@@ -562,8 +614,14 @@ else:
     # functions of the same contract share a circuit — `labor_market`'s `CreateJobV1` and
     # `CreateJobWithMilestonesV1` both use `CREATE_JOB_NS_V2`), and each is reported separately.
     # Calling thirteen findings "thirteen circuits" would overstate the defect count by four.
-    print(f"FAIL: {failures} finding(s) over {len(failed_circuits)} circuit(s) — insufficient "
-          f"metadata push counts")
+    literal_circuits = {label for label, _p, _v, _e in literal_findings}
+    parts = []
+    if failures:
+        parts.append(f"{failures} count mismatch(es) over {len(failed_circuits)} circuit(s)")
+    if literal_findings:
+        parts.append(f"{len(literal_findings)} literal-vs-value position(s) over "
+                     f"{len(literal_circuits)} circuit(s)")
+    print(f"FAIL: {' and '.join(parts)}")
     print("")
     print("Root cause: a circuit's constrain_instance order must match the metadata")
     print("function's zk_inputs.push() order position-for-position (privacy.md §5.3).")

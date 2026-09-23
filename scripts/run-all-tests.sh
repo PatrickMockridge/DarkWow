@@ -90,11 +90,14 @@ run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain
 # doc/src/arch/verification-hazop.md, OBL-Z1 and OBL-Z16.
 #
 # TWO gates are red, not one — measured 2026-09-22 rather than inferred from this comment. The other
-# is `circuit metadata alignment` (gate 2 above): it exits 1 with **19** findings over 19 circuits
-# ("insufficient metadata push counts"), and the register's OBL-Z2 still records that gate as passing
-# on 68 circuit/site pairs, which is stale. That class is the other session's OBL-C78/OBL-C79, so it
-# is named here and not duplicated. A "the full gate is green" claim is therefore two obligations
-# away, not one: 15 unclassified instances and 19 metadata misalignments.
+# is `circuit metadata alignment` (gate 2 above): re-measured 2026-09-23 it exits 1 with **19 count
+# mismatches over 19 circuits and 10 literal-vs-value positions over 6 more**, and the register's
+# OBL-Z2 still records that gate as passing on 68 circuit/site pairs, which is stale. The second
+# class is new: a literal-vs-value rule was promoted from the advisory order comparison to a hard
+# FAIL that day (OBL-C20), because a position where the circuit instances a value and the metadata
+# pushes a literal constant is not a name-mapping question. That class is the other session's
+# OBL-C78/OBL-C79, so it is named here and not duplicated. A "the full gate is green" claim is
+# therefore two obligations away, not one: 15 unclassified instances and 29 metadata findings.
 run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instance-derivation.sh"
 # OBL-C72/C73: the exec/apply phase rule — apply writes blindly, exec does not write. This gate
 # existed and was invoked by NOTHING until now, which is why the class it guards drifted: seven
