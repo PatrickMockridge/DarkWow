@@ -245,9 +245,12 @@ fn drain_protection_exit_get_metadata_v1(
     params: ExitParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    // OBL-C78: the pair comes from the call. `exit.zk` derives `tx_binding` from `tx_commitment` and
+    // `tx_nonce` and instances it with `tx_nonce`; this pushed two literal zeros, which no
+    // satisfiable proof can match, so `ExitV1` could not verify as built.
     zk_public_inputs.push((
         crate::DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V2.to_string(),
-        vec![pallas::Base::zero(), pallas::Base::zero()],
+        vec![params.tx_binding, params.tx_nonce],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;

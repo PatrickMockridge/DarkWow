@@ -83,10 +83,17 @@
 //!     .build()?;
 //! ```
 
+// The proof modules need the optional `dwow_core` dependency, which the wasm build does not
+// enable — the same gating `subscription/src/lib.rs:88` applies to its whole client module.
+#[cfg(feature = "client")]
+pub mod exit;
 pub mod zkbins;
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey},
+    crypto::{
+        constants::DRK_POSEIDON_DOMAIN_TX_BINDING, pasta_prelude::PrimeField, poseidon_hash,
+        PublicKey, SecretKey,
+    },
     error::ContractError,
     pasta::pallas,
 };
@@ -372,6 +379,8 @@ pub struct ExitBuilder {
     dao_membership_note: pallas::Base,
     effective_weight: pallas::Base,
     proof: Vec<u8>,
+    tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
 }
 
 impl ExitBuilder {
@@ -390,7 +399,17 @@ impl ExitBuilder {
             dao_membership_note: pallas::Base::zero(),
             effective_weight: pallas::Base::zero(),
             proof: vec![],
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
+    }
+
+    /// Bind the proof to a transaction (`OBL-C78`): the pair the exit client's witnesses and public
+    /// inputs both use. Without it both halves are zero, which is what the fixtures use.
+    pub fn tx_pair(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Self {
+        self.tx_commitment = tx_commitment;
+        self.tx_nonce = tx_nonce;
+        self
     }
 
     pub fn fund_id(mut self, id: pallas::Base) -> Self {
@@ -443,6 +462,13 @@ impl ExitBuilder {
             dao_membership_note: self.dao_membership_note,
             effective_weight: self.effective_weight,
             proof: self.proof.clone(),
+            // The derivation `client/exit.rs` uses, so the builder and the proof cannot disagree.
+            tx_binding: poseidon_hash([
+                DRK_POSEIDON_DOMAIN_TX_BINDING,
+                self.tx_commitment,
+                self.tx_nonce,
+            ]),
+            tx_nonce: self.tx_nonce,
         })
     }
 }
