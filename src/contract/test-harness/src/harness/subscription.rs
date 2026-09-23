@@ -45,6 +45,7 @@ use dwow_subscription_contract::client::{
     verify_access::{
         VerifyAccessCallData, VerifyAccessPublicInputs, create_verify_access_proof,
     },
+    tx_binding_of,
 };
 use dwow_subscription_contract::model::{
     CancelParamsV1, RenewParamsV1, SubscribeParamsV1, SubscriptionId,
@@ -217,6 +218,10 @@ impl SubscriptionHarness {
             dao_merkle_proof: Some(dao_proof_values),
             dao_leaf_pos: Some(dao_leaf_pos),
             instance_seed: [0u8; 32],
+            // The pair the proof above was built against (`OBL-C78`). Taken from `public_inputs`
+            // rather than recomputed, so the fixture cannot disagree with the client.
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x01];
@@ -283,6 +288,8 @@ impl SubscriptionHarness {
             subscription_id: SubscriptionId(public_inputs.subscription_id),
             capability: public_inputs.expected_capability,
             nonce,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x04];
@@ -327,6 +334,8 @@ impl SubscriptionHarness {
             nonce,
             spent_nullifier,
             merkle_proof,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x06];
@@ -355,6 +364,12 @@ impl SubscriptionHarness {
             spent_nullifier,
             current_block,
             recipient_pubkey,
+            // No client builds this instruction yet, so the pair is the one the zero default derives
+            // (`OBL-C78`). The fabricated proof above carries no instances at all, so this endpoint
+            // still fails at verification — the missing client is the reason, and it is recorded in
+            // the register rather than papered over here.
+            tx_binding: tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
+            tx_nonce: pallas::Base::zero(),
         };
 
         let mut call_data = vec![0x02];
@@ -385,6 +400,9 @@ impl SubscriptionHarness {
             spent_nullifier,
             value_commit,
             merkle_proof,
+            // As with `cancel` above: no client exists for `renew`, so the pair is the zero default's.
+            tx_binding: tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
+            tx_nonce: pallas::Base::zero(),
         };
 
         let mut call_data = vec![0x03];

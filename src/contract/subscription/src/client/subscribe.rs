@@ -157,6 +157,15 @@ impl SubscribeCallData {
     }
 
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+    /// Bind the proof to a transaction: the pair the witnesses and the public inputs both use, so the
+    /// params and the proof agree (`OBL-C78`). Without it both default to zero, which is what the
+    /// heavyweight fixtures use.
+    pub fn tx_pair(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Self {
+        self.tx_commitment = tx_commitment;
+        self.tx_nonce = tx_nonce;
+        self
+    }
+
     pub fn compute_public_inputs(&self) -> SubscribePublicInputs {
         SubscribePublicInputs {
             subscription_id: self.subscription_id,
@@ -173,7 +182,7 @@ impl SubscribeCallData {
             dao_escrow_bulla: self.dao_escrow_bulla,
             dao_membership_note: self.dao_membership_note,
             dao_escrow_merkle_root: self.dao_escrow_merkle_root,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: super::tx_binding_of(&self.tx_commitment, &self.tx_nonce),
             tx_nonce: self.tx_nonce,
         }
     }

@@ -23,9 +23,29 @@
 
 //! Subscription contract client module
 
+use dwow_sdk::pasta::pallas;
+
 pub mod zkbins;
 
 pub mod rate_limit;
 pub mod subscribe;
 pub mod update_usage;
 pub mod verify_access;
+
+/// The transaction binding a subscription circuit instances:
+/// `poseidon_hash([3, tx_commitment, tx_nonce])` under the named domain constant (`OBL-C78`).
+///
+/// **Every five of this contract's circuits instance it and its nonce**, and each metadata arm used to
+/// publish a literal `Base::zero()` in its place — a value no circuit derives for any input, so no
+/// proof could satisfy the instance column and every one of those instructions was unbuildable. The
+/// derivation lives here so the client and the params cannot disagree about it: the client passes the
+/// result to `compute_public_inputs`, the params carry it to the host, and the host publishes it as
+/// the vector the proof is checked against. This is `tender`'s worked template
+/// (`tender/src/client/mod.rs:59`), copied rather than re-derived.
+pub fn tx_binding_of(tx_commitment: &pallas::Base, tx_nonce: &pallas::Base) -> pallas::Base {
+    dwow_sdk::crypto::poseidon_hash([
+        dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING,
+        *tx_commitment,
+        *tx_nonce,
+    ])
+}

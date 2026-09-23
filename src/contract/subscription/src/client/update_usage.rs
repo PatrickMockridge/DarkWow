@@ -45,7 +45,7 @@ pub struct UpdateUsagePublicInputs {
 
 impl UpdateUsagePublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_id, self.tx_binding, self.tx_nonce]
+        vec![self.tx_binding, self.tx_nonce, self.derived_id]
     }
 }
 
@@ -72,6 +72,14 @@ impl UpdateUsageCallData {
         Self { subscription_id, subscriber_pub_x, subscriber_pub_y, usage_timestamp, nonce, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 
+    /// Bind the proof to a transaction: the pair the witnesses and the public inputs both use, so the
+    /// params and the proof agree (`OBL-C78`). Without it both default to zero.
+    pub fn tx_pair(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Self {
+        self.tx_commitment = tx_commitment;
+        self.tx_nonce = tx_nonce;
+        self
+    }
+
     pub fn compute_public_inputs(&self) -> UpdateUsagePublicInputs {
         let derived_id = poseidon_hash([
             self.subscription_id,
@@ -80,7 +88,7 @@ impl UpdateUsageCallData {
             self.usage_timestamp,
             self.nonce,
         ]);
-        UpdateUsagePublicInputs { derived_id, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        UpdateUsagePublicInputs { derived_id, tx_binding: super::tx_binding_of(&self.tx_commitment, &self.tx_nonce), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

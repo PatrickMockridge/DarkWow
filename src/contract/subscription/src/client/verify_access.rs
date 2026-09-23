@@ -139,6 +139,14 @@ impl VerifyAccessCallData {
         }
     }
 
+    /// Bind the proof to a transaction: the pair the witnesses and the public inputs both use, so the
+    /// params and the proof agree (`OBL-C78`). Without it both default to zero.
+    pub fn tx_pair(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Self {
+        self.tx_commitment = tx_commitment;
+        self.tx_nonce = tx_nonce;
+        self
+    }
+
     pub fn compute_public_inputs(&self) -> VerifyAccessPublicInputs {
         VerifyAccessPublicInputs {
             expected_capability: self.expected_capability,
@@ -154,7 +162,7 @@ impl VerifyAccessCallData {
             last_access_block: self.last_access_block,
             uses_remaining: self.uses_remaining,
             subscription_state_root: self.subscription_state_root,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: super::tx_binding_of(&self.tx_commitment, &self.tx_nonce),
             tx_nonce: self.tx_nonce,
         }
     }

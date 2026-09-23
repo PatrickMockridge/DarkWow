@@ -255,6 +255,8 @@ fn test_subscribe_params_encoding() {
         dao_merkle_proof: Some(vec![pallas::Base::from(6)]),
         dao_leaf_pos: Some(1),
         instance_seed: [0u8; 32],
+        tx_binding: pallas::Base::from(9),
+        tx_nonce: pallas::Base::from(10),
     };
 
     let encoded = serialize(&params);
@@ -285,6 +287,8 @@ fn test_subscribe_params_tail_round_trips() {
         dao_merkle_proof: Some(vec![pallas::Base::from(88)]),
         dao_leaf_pos: Some(5),
         instance_seed: seed,
+        tx_binding: pallas::Base::from(12),
+        tx_nonce: pallas::Base::from(13),
     };
 
     let encoded = serialize(&params);
@@ -320,6 +324,8 @@ fn test_cancel_params_encoding() {
         spent_nullifier: pallas::Base::zero(),
         current_block: 50000,
         recipient_pubkey,
+        tx_binding: pallas::Base::from(7),
+        tx_nonce: pallas::Base::from(8),
     };
 
     let encoded = serialize(&params);
@@ -355,6 +361,8 @@ fn test_renew_params_encoding() {
         spent_nullifier: pallas::Base::from(3),
         value_commit: Group::identity(),
         merkle_proof: vec![pallas::Base::from(4)],
+        tx_binding: pallas::Base::from(9),
+        tx_nonce: pallas::Base::from(10),
     };
 
     let encoded = serialize(&params);
@@ -387,6 +395,8 @@ fn test_verify_access_params_encoding() {
         subscription_id: SubscriptionId(pallas::Base::from(1)),
         capability: pallas::Base::from(2),
         nonce: pallas::Base::from(3),
+        tx_binding: pallas::Base::from(4),
+        tx_nonce: pallas::Base::from(5),
     };
 
     let encoded = serialize(&params);
@@ -432,6 +442,8 @@ fn test_update_usage_params_encoding() {
         nonce: pallas::Base::from(5),
         spent_nullifier: pallas::Base::from(6),
         merkle_proof: vec![pallas::Base::from(7)],
+        tx_binding: pallas::Base::from(8),
+        tx_nonce: pallas::Base::from(9),
     };
 
     let encoded = serialize(&params);

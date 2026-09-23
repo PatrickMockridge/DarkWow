@@ -519,6 +519,15 @@ pub struct SubscribeParamsV1 {
     /// DAO-Escrow membership leaf position
     pub dao_leaf_pos: Option<u32>,
     pub instance_seed: [u8; 32],
+    /// The transaction binding the proof is made against:
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])` (`OBL-C78`). Same reason and same shape as
+    /// `CancelParamsV1`'s pair: `subscribe.zk` instances it with `tx_nonce` after it, the metadata
+    /// can only publish what the call carries, and the arm published two literal zeros before this
+    /// — so `SubscribeV1` could not verify as built. Appended after `instance_seed`, so an old-format
+    /// call is refused by the length guard rather than decoded shifted.
+    pub tx_binding: pallas::Base,
+    /// The tx nonce half of the pair above — instanced separately by the circuit.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for SubscribeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
@@ -553,6 +562,8 @@ impl SubscribeParamsV1 {
         b.push(self.dao_leaf_pos.is_some() as u8);
         if let Some(v) = self.dao_leaf_pos { b.extend_from_slice(&v.to_le_bytes()); }
         b.extend_from_slice(&self.instance_seed);
+        b.extend_from_slice(&self.tx_binding.to_repr());
+        b.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(b)
     }
 
@@ -568,7 +579,7 @@ impl SubscribeParamsV1 {
     /// and carrying a known-wrong offset forward would be worse than either.
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         // The floor with no proof and every optional absent: 100 + 4 + 32 + 5 + 32 = 173.
-        if data.len() < 173 { return Err(ContractError::IoError("SubscribeParamsV1: too short".into())); }
+        if data.len() < 237 { return Err(ContractError::IoError("SubscribeParamsV1: too short".into())); }
         let plan_id = u32::from_le_bytes(data[0..4].try_into().unwrap());
         let subscriber_pubkey = PublicKey::from_bytes(data[4..36].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SubscribeParamsV1: invalid subscriber_pubkey: {}", e)))?;
         let commitment = SubscriptionId(read_base(&data[36..68])?);
@@ -594,7 +605,11 @@ impl SubscribeParamsV1 {
         let dao_leaf_pos = read_opt_u32(&mut pos);
         if data.len() < pos.saturating_add(32) { return Err(ContractError::IoError("SubscribeParamsV1: instance_seed truncated".into())); }
         let instance_seed: [u8; 32] = data[pos..pos+32].try_into().unwrap();
-        Ok(SubscribeParamsV1 { plan_id, subscriber_pubkey, commitment, value_commit, merkle_proof, merkle_root, dao_escrow_bulla, dao_membership_note, dao_escrow_merkle_root, dao_merkle_proof, dao_leaf_pos, instance_seed })
+        let pair_at = pos.saturating_add(32);
+        if data.len() < pair_at.saturating_add(64) { return Err(ContractError::IoError("SubscribeParamsV1: tx pair truncated".into())); }
+        let tx_binding = read_base(&data[pair_at..pair_at+32])?;
+        let tx_nonce = read_base(&data[pair_at+32..pair_at+64])?;
+        Ok(SubscribeParamsV1 { plan_id, subscriber_pubkey, commitment, value_commit, merkle_proof, merkle_root, dao_escrow_bulla, dao_membership_note, dao_escrow_merkle_root, dao_merkle_proof, dao_leaf_pos, instance_seed, tx_binding, tx_nonce })
     }
 }
 
@@ -618,13 +633,29 @@ pub struct CancelParamsV1 {
     pub current_block: u64,
     /// Recipient public key for refund
     pub recipient_pubkey: PublicKey,
+    /// The transaction binding the proof is made against:
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])` (`OBL-C78`).
+    ///
+    /// It is a **public input of the circuit** (`cancel.zk` instances it, with `tx_nonce` after it),
+    /// so the metadata has to publish it — and the contract can only publish what it is given, so it
+    /// travels in the call. The client derives it from the transaction it is building, the host
+    /// publishes the pair the proof is checked against, and a call carrying the wrong pair fails
+    /// verification rather than being silently accepted. This is `box`'s convention
+    /// (`PutParams.tx_binding`) and `tender`'s worked template; before this the arm published four
+    /// literal zeros under a circuit that instances two params-derived values and the pair, so
+    /// `CancelV1` could not verify as built. Appended after the last existing field, so every prior
+    /// position is unchanged and an old-format call is refused by the length guard rather than
+    /// decoded shifted.
+    pub tx_binding: pallas::Base,
+    /// The tx nonce half of the pair above — instanced separately by the circuit.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for CancelParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CancelParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl CancelParamsV1 { pub const ENCODED_SIZE: usize = 136; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(136); b.extend_from_slice(&self.subscription_id.inner().to_repr()); b.extend_from_slice(&self.subscriber_secret.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.current_block.to_le_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 136 { return Err(ContractError::IoError(format!("CancelParamsV1: expected 136 bytes, got {}", data.len()))); } Ok(CancelParamsV1 { subscription_id: SubscriptionId(read_base(&data[0..32])?), subscriber_secret: read_base(&data[32..64])?, spent_nullifier: read_base(&data[64..96])?, current_block: u64::from_le_bytes(data[96..104].try_into().unwrap()), recipient_pubkey: PublicKey::from_bytes(data[104..136].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CancelParamsV1: invalid recipient_pubkey: {}", e)))? }) } }
+impl CancelParamsV1 { pub const ENCODED_SIZE: usize = 200; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(200); b.extend_from_slice(&self.subscription_id.inner().to_repr()); b.extend_from_slice(&self.subscriber_secret.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.current_block.to_le_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 200 { return Err(ContractError::IoError(format!("CancelParamsV1: expected 200 bytes, got {}", data.len()))); } Ok(CancelParamsV1 { subscription_id: SubscriptionId(read_base(&data[0..32])?), subscriber_secret: read_base(&data[32..64])?, spent_nullifier: read_base(&data[64..96])?, current_block: u64::from_le_bytes(data[96..104].try_into().unwrap()), recipient_pubkey: PublicKey::from_bytes(data[104..136].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CancelParamsV1: invalid recipient_pubkey: {}", e)))?, tx_binding: read_base(&data[136..168])?, tx_nonce: read_base(&data[168..200])? }) } }
 
 /// State update for `Subscription::CancelV1`
 #[derive(Debug, Clone)]
@@ -652,13 +683,22 @@ pub struct RenewParamsV1 {
     pub value_commit: pallas::Point,
     /// Merkle proof of the commitment
     pub merkle_proof: Vec<pallas::Base>,
+    /// The transaction binding the proof is made against:
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])` (`OBL-C78`). Same reason and same shape as
+    /// `CancelParamsV1`'s pair: `renew.zk` instances it with `tx_nonce` after it, the metadata can
+    /// only publish what the call carries, and the arm published four literal zeros before this —
+    /// so `RenewV1` could not verify as built. Appended after the merkle proof, so an old-format
+    /// call is refused by the length guard rather than decoded shifted.
+    pub tx_binding: pallas::Base,
+    /// The tx nonce half of the pair above — instanced separately by the circuit.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for RenewParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RenewParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl RenewParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.merkle_proof.len())?; let mut b = Vec::with_capacity(140+self.merkle_proof.len()*32); b.extend_from_slice(&self.subscription_id.inner().to_repr()); b.extend_from_slice(&self.subscriber_secret.to_repr()); b.extend_from_slice(&self.new_lock_until_block.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.value_commit.to_bytes()); b.extend_from_slice(&n.to_le_bytes()); for p in &self.merkle_proof { b.extend_from_slice(&p.to_repr()); } Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 140 { return Err(ContractError::IoError("RenewParamsV1: too short".into())); } let subscription_id = SubscriptionId(read_base(&data[0..32])?); let subscriber_secret = read_base(&data[32..64])?; let new_lock_until_block = u64::from_le_bytes(data[64..72].try_into().unwrap()); let spent_nullifier = read_base(&data[72..104])?; let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[104..136].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RenewParamsV1: invalid value_commit".into()))?; let mp_count = SerializedLen::from_le_bytes(data[136..140].try_into().unwrap()).to_usize(); let expected = mp_count.saturating_mul(32).saturating_add(140); if data.len() != expected { return Err(ContractError::IoError(format!("RenewParamsV1: expected {} bytes, got {}", expected, data.len()))); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(read_base(&data[140+i*32..140+(i+1)*32])?); } Ok(RenewParamsV1 { subscription_id, subscriber_secret, new_lock_until_block, spent_nullifier, value_commit, merkle_proof }) } }
+impl RenewParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.merkle_proof.len())?; let mut b = Vec::with_capacity(204+self.merkle_proof.len()*32); b.extend_from_slice(&self.subscription_id.inner().to_repr()); b.extend_from_slice(&self.subscriber_secret.to_repr()); b.extend_from_slice(&self.new_lock_until_block.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.value_commit.to_bytes()); b.extend_from_slice(&n.to_le_bytes()); for p in &self.merkle_proof { b.extend_from_slice(&p.to_repr()); } b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 204 { return Err(ContractError::IoError("RenewParamsV1: too short".into())); } let subscription_id = SubscriptionId(read_base(&data[0..32])?); let subscriber_secret = read_base(&data[32..64])?; let new_lock_until_block = u64::from_le_bytes(data[64..72].try_into().unwrap()); let spent_nullifier = read_base(&data[72..104])?; let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[104..136].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RenewParamsV1: invalid value_commit".into()))?; let mp_count = SerializedLen::from_le_bytes(data[136..140].try_into().unwrap()).to_usize(); let expected = mp_count.saturating_mul(32).saturating_add(204); if data.len() != expected { return Err(ContractError::IoError(format!("RenewParamsV1: expected {} bytes, got {}", expected, data.len()))); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(read_base(&data[140+i*32..140+(i+1)*32])?); } let pair_at = 140 + mp_count * 32; Ok(RenewParamsV1 { subscription_id, subscriber_secret, new_lock_until_block, spent_nullifier, value_commit, merkle_proof, tx_binding: read_base(&data[pair_at..pair_at+32])?, tx_nonce: read_base(&data[pair_at+32..pair_at+64])? }) } }
 
 /// State update for `Subscription::RenewV1`
 #[derive(Debug, Clone)]
@@ -680,12 +720,21 @@ pub struct VerifyAccessParamsV1 {
     pub capability: pallas::Base,
     /// Nonce for the proof
     pub nonce: pallas::Base,
+    /// The transaction binding the proof is made against:
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])` (`OBL-C78`). Same reason and same shape as
+    /// `CancelParamsV1`'s pair: `verify_access.zk` instances it with `tx_nonce` after it, the
+    /// metadata can only publish what the call carries, and the arm published two literal zeros
+    /// before this — so `VerifyAccessV1` could not verify as built. Appended after the last existing
+    /// field, so an old-format call is refused by the length guard rather than decoded shifted.
+    pub tx_binding: pallas::Base,
+    /// The tx nonce half of the pair above — instanced separately by the circuit.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for VerifyAccessParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for VerifyAccessParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-impl VerifyAccessParamsV1 { pub const ENCODED_SIZE: usize = 96; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(96); b.extend_from_slice(&self.subscription_id.inner().to_repr()); b.extend_from_slice(&self.capability.to_repr()); b.extend_from_slice(&self.nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 96 { return Err(ContractError::IoError(format!("VerifyAccessParamsV1: expected 96 bytes, got {}", data.len()))); } Ok(VerifyAccessParamsV1 { subscription_id: SubscriptionId(read_base(&data[0..32])?), capability: read_base(&data[32..64])?, nonce: read_base(&data[64..96])? }) } }
+impl VerifyAccessParamsV1 { pub const ENCODED_SIZE: usize = 160; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(160); b.extend_from_slice(&self.subscription_id.inner().to_repr()); b.extend_from_slice(&self.capability.to_repr()); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 160 { return Err(ContractError::IoError(format!("VerifyAccessParamsV1: expected 160 bytes, got {}", data.len()))); } Ok(VerifyAccessParamsV1 { subscription_id: SubscriptionId(read_base(&data[0..32])?), capability: read_base(&data[32..64])?, nonce: read_base(&data[64..96])?, tx_binding: read_base(&data[96..128])?, tx_nonce: read_base(&data[128..160])? }) } }
 
 /// Parameters for `Subscription::UpdateUsageV1`
 #[derive(Debug, Clone,)]
@@ -706,13 +755,22 @@ pub struct UpdateUsageParamsV1 {
     pub spent_nullifier: pallas::Base,
     /// Merkle proof of the subscription state
     pub merkle_proof: Vec<pallas::Base>,
+    /// The transaction binding the proof is made against:
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])` (`OBL-C78`). Same reason and same shape as
+    /// `CancelParamsV1`'s pair: `update_usage.zk` instances it with `tx_nonce` after it, the metadata
+    /// can only publish what the call carries, and the arm published two literal zeros before this
+    /// — so `UpdateUsageV1` could not verify as built. Appended after the merkle proof, so an
+    /// old-format call is refused by the length guard rather than decoded shifted.
+    pub tx_binding: pallas::Base,
+    /// The tx nonce half of the pair above — instanced separately by the circuit.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for UpdateUsageParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdateUsageParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl UpdateUsageParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.merkle_proof.len())?; let mut b = Vec::with_capacity(204+self.merkle_proof.len()*32); b.extend_from_slice(&self.subscription_id.inner().to_repr()); b.extend_from_slice(&self.subscriber_pub_x.to_repr()); b.extend_from_slice(&self.subscriber_pub_y.to_repr()); b.extend_from_slice(&self.subscriber_secret.to_repr()); b.extend_from_slice(&self.current_block.to_le_bytes()); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&n.to_le_bytes()); for p in &self.merkle_proof { b.extend_from_slice(&p.to_repr()); } Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 204 { return Err(ContractError::IoError("UpdateUsageParamsV1: too short".into())); } let subscription_id = SubscriptionId(read_base(&data[0..32])?); let subscriber_pub_x = read_base(&data[32..64])?; let subscriber_pub_y = read_base(&data[64..96])?; let subscriber_secret = read_base(&data[96..128])?; let current_block = u64::from_le_bytes(data[128..136].try_into().unwrap()); let nonce = read_base(&data[136..168])?; let spent_nullifier = read_base(&data[168..200])?; let mp_count = SerializedLen::from_le_bytes(data[200..204].try_into().unwrap()).to_usize(); let expected = mp_count.saturating_mul(32).saturating_add(204); if data.len() != expected { return Err(ContractError::IoError(format!("UpdateUsageParamsV1: expected {} bytes, got {}", expected, data.len()))); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(read_base(&data[204+i*32..204+(i+1)*32])?); } Ok(UpdateUsageParamsV1 { subscription_id, subscriber_pub_x, subscriber_pub_y, subscriber_secret, current_block, nonce, spent_nullifier, merkle_proof }) } }
+impl UpdateUsageParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = SerializedLen::try_from_len(self.merkle_proof.len())?; let mut b = Vec::with_capacity(268+self.merkle_proof.len()*32); b.extend_from_slice(&self.subscription_id.inner().to_repr()); b.extend_from_slice(&self.subscriber_pub_x.to_repr()); b.extend_from_slice(&self.subscriber_pub_y.to_repr()); b.extend_from_slice(&self.subscriber_secret.to_repr()); b.extend_from_slice(&self.current_block.to_le_bytes()); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&n.to_le_bytes()); for p in &self.merkle_proof { b.extend_from_slice(&p.to_repr()); } b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 268 { return Err(ContractError::IoError("UpdateUsageParamsV1: too short".into())); } let subscription_id = SubscriptionId(read_base(&data[0..32])?); let subscriber_pub_x = read_base(&data[32..64])?; let subscriber_pub_y = read_base(&data[64..96])?; let subscriber_secret = read_base(&data[96..128])?; let current_block = u64::from_le_bytes(data[128..136].try_into().unwrap()); let nonce = read_base(&data[136..168])?; let spent_nullifier = read_base(&data[168..200])?; let mp_count = SerializedLen::from_le_bytes(data[200..204].try_into().unwrap()).to_usize(); let expected = mp_count.saturating_mul(32).saturating_add(268); if data.len() != expected { return Err(ContractError::IoError(format!("UpdateUsageParamsV1: expected {} bytes, got {}", expected, data.len()))); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(read_base(&data[204+i*32..204+(i+1)*32])?); } let pair_at = 204 + mp_count * 32; Ok(UpdateUsageParamsV1 { subscription_id, subscriber_pub_x, subscriber_pub_y, subscriber_secret, current_block, nonce, spent_nullifier, merkle_proof, tx_binding: read_base(&data[pair_at..pair_at+32])?, tx_nonce: read_base(&data[pair_at+32..pair_at+64])? }) } }
 
 /// State update for `Subscription::UpdateUsageV1`
 #[derive(Debug, Clone)]

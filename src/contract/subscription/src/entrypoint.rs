@@ -63,7 +63,7 @@ use crate::{
     model::{
         CancelParamsV1, CancelUpdateV1, DaoControlAction, DaoControlParamsV1, DaoControlUpdateV1,
         Plan, RenewParamsV1, RenewUpdateV1, SubscribeParamsV1, SubscribeUpdateV1, Subscription,
-        SubscriptionState, UpdateUsageParamsV1, UpdateUsageUpdateV1,
+        SubscriptionState, UpdateUsageParamsV1, UpdateUsageUpdateV1, VerifyAccessParamsV1,
     },
     SubscriptionFunction, SUBSCRIPTION_CONTRACT_INFO_TREE,
     SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
@@ -147,17 +147,35 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         SubscriptionFunction::SubscribeV1 => {
-            // SubscribeV2 circuit: [tx_binding, tx_nonce]
+            let params = match SubscribeParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[subscription::get_metadata] Error: Failed to deserialize SubscribeParamsV1: {:?}", e);
+                    let _ = wasm::util::set_return_data(&vec![]); return Ok(());
+                }
+            };
+            // SubscribeV2 circuit: [tx_binding, tx_nonce] — both from the call, because the circuit
+            // derives `tx_binding` from its witnesses and the host can only publish what it is given
+            // (OBL-C78). This arm published two literal zeros before, which no satisfiable proof can
+            // match, so `SubscribeV1` could not verify at all.
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.tx_binding, params.tx_nonce],
             ));
         }
         SubscriptionFunction::VerifyAccessV1 => {
-            // VerifyAccessV2 circuit: [tx_binding, tx_nonce]
+            let params = match VerifyAccessParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[subscription::get_metadata] Error: Failed to deserialize VerifyAccessParamsV1: {:?}", e);
+                    let _ = wasm::util::set_return_data(&vec![]); return Ok(());
+                }
+            };
+            // VerifyAccessV2 circuit: [tx_binding, tx_nonce] — same shape and same reason as
+            // `SubscribeV1` above (OBL-C78).
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.tx_binding, params.tx_nonce],
             ));
         }
         SubscriptionFunction::UpdateUsageV1 => {
@@ -171,24 +189,53 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 pallas::Base::from(params.current_block),
                 params.nonce,
             ]);
-            // Circuit constrain_instance order: [tx_binding, tx_nonce, derived_id]
+            // Circuit constrain_instance order: [tx_binding, tx_nonce, derived_id]. `derived_id` was
+            // already derived here; the first two were literals, which no satisfiable proof can
+            // match (OBL-C78).
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero(), derived_id],
+                vec![params.tx_binding, params.tx_nonce, derived_id],
             ));
         }
         SubscriptionFunction::CancelV1 => {
-            // CancelV2 circuit: [subscription_id, spent_nullifier, tx_binding, tx_nonce]
+            let params = match CancelParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[subscription::get_metadata] Error: Failed to deserialize CancelParamsV1: {:?}", e);
+                    let _ = wasm::util::set_return_data(&vec![]); return Ok(());
+                }
+            };
+            // CancelV2 circuit: [subscription_id, spent_nullifier, tx_binding, tx_nonce] — all four
+            // from the call. Every one of them was a literal zero before, including the two the
+            // params carried, so this arm could not match its own circuit for any input (OBL-C78).
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_CANCEL_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero()],
+                vec![
+                    params.subscription_id.inner(),
+                    params.spent_nullifier,
+                    params.tx_binding,
+                    params.tx_nonce,
+                ],
             ));
         }
         SubscriptionFunction::RenewV1 => {
-            // RenewV2 circuit: [subscription_id, spent_nullifier, tx_binding, tx_nonce]
+            let params = match RenewParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[subscription::get_metadata] Error: Failed to deserialize RenewParamsV1: {:?}", e);
+                    let _ = wasm::util::set_return_data(&vec![]); return Ok(());
+                }
+            };
+            // RenewV2 circuit: [subscription_id, spent_nullifier, tx_binding, tx_nonce] — same shape
+            // and same reason as `CancelV1` above (OBL-C78).
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_RENEW_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero()],
+                vec![
+                    params.subscription_id.inner(),
+                    params.spent_nullifier,
+                    params.tx_binding,
+                    params.tx_nonce,
+                ],
             ));
         }
         SubscriptionFunction::DaoControlV1 | SubscriptionFunction::InitializeV1 => {}
