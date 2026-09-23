@@ -1568,6 +1568,17 @@ breaking ties:
   it), and the diagnosis closes from there. Recorded because the alternative — three plausible
   explanations and no way to choose — is how a red test sits for a month.
 
+  *The derivation was then found, and it is one line of printing away.* Ids come from
+  `derive_contract_id_from_name` (`tests/blockchain.rs:831`): a `hash = hash*31 + byte` fold over the
+  *name*, then `pallas::Base::from(u64)` and `ContractId::from_base` — total by construction, and the
+  comment there explains why the older `Result`-returning form was collapsed. So the instrument is a
+  single `println!` of the ids the harness redeems against, or a check of that derivation — not
+  another six-minute run. **A quick reproduction of the derivation did not match the failing id, and
+  that is recorded rather than acted on**: either my hand-rolled base58 encoder is wrong (the target
+  begins `2` while every name I encoded began with a letter), or the id a *deployed* contract carries
+  is not the harness's name-derived one. The lesson is the same either way, and it is the one this
+  session keeps re-learning: do not re-implement what the tree already has and will print for free.
+
   What is known is uneven, and 2026-09-22 narrowed it twice. `insurance_market::UnderwriteV1`'s halo2
   synthesis error is OBL-Z16 arriving as a runtime symptom. `purse::WithdrawV1` fails its own
   post-condition ("nullifier must exist after withdrawal"). **`bridge`'s recorded cause was wrong**:
