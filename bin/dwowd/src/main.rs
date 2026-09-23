@@ -207,6 +207,38 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         blockchain_config.finality = Some(fc);
     }
 
+    // OBL-C80: merge mining and Monero verification are one decision, not two.
+    //
+    // A merge-mined block skips native PoW entirely, so the only thing that authenticates it is a
+    // Monero inclusion proof — and with `monerod_url` unset that proof is checked against nothing.
+    // The acceptor admits the block and says so in its log, which makes the log the whole
+    // mitigation: an operator has to read it to know. A node configured to merge-mine is therefore
+    // a node that can be handed a fabricated block it cannot tell from a real one, so the
+    // configuration that enables the first while leaving the second unset is refused here rather
+    // than accepted quietly (RC9 — safety that is opt-in).
+    //
+    // Bounds the producer, which is the configuration this gate can see. A node that does not
+    // merge-mine still receives merge-mined blocks from peers and admits them unverified; that
+    // residue is recorded in OBL-C80 rather than closed, because refusing them here would make a
+    // default-configured node reject blocks the rest of the network accepts — `PowSource` admits
+    // both `Native` and `Monero` blocks, so that would be a partition, not hardening.
+    if blockchain_config.mm_rpc.is_some()
+        && blockchain_config
+            .finality
+            .as_ref()
+            .and_then(|fc| fc.monerod_url.as_ref())
+            .is_none()
+    {
+        error!(
+            target: "dwowd",
+            "Merge mining is enabled (an `mm_rpc` section is configured) but no `monerod_url` is \
+             set, so a merge-mined block's Monero inclusion proof would be checked against nothing \
+             and a fabricated block would be admitted. Set `monerod_url` (or pass \
+             `--monerod-rpc-url`), or remove the `mm_rpc` section to stop merging. See OBL-C80."
+        );
+        return Err(Error::ParseFailed("merge mining requires monerod_url"));
+    }
+
     info!(target: "dwowd", "Starting DarkWow node...");
 
     // Initialize or open sled database

@@ -78,7 +78,11 @@ done
 # ---- Start dwowd ----
 ulimit -s 131072
 export RUST_MIN_STACK=67108864
-"$DWOWD_BIN" > "$TEST_DIR/dwowd.log" 2>&1 &
+# OBL-C80: merge mining requires the verifier that checks it. This script injects an `mm_rpc`
+# section above, and a merge-mined block's only authentication is a Monero inclusion proof — so
+# with no `monerod_url` dwowd now refuses to start rather than admitting blocks whose proof it
+# cannot check. The monerod started above is the verifier.
+"$DWOWD_BIN" --monerod-rpc-url "http://127.0.0.1:${MONERO_RPC_PORT}/json_rpc" > "$TEST_DIR/dwowd.log" 2>&1 &
 PIDS="$PIDS $!"
 
 for i in $(seq 1 30); do
