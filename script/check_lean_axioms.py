@@ -312,10 +312,24 @@ def declared_budgets():
 
     Finds the declaration regardless of how many lines the attribute and the declaration's
     name are apart, and regardless of whether the attribute is on its own line.
+
+    Comments are stripped first, and that is load-bearing rather than tidy. This function used
+    to read the raw text while `qualified_theorems` stripped it, and the inconsistency was
+    silently wrong in both directions:
+
+      * a deletion note that *quotes* the annotation it removed was read as a live
+        declaration — which is how `Capability/Concurrency.lean`'s record of the deleted
+        `@[axiom_budget 1] parallel_commutative` was attributed to `DarkFi.Semantics
+        .parallel_commutative`, producing a budget mismatch on a theorem that measures 0;
+      * `AxiomBudget.lean`'s own docstring contains `@[axiom_budget 1]` followed by a theorem
+        name as an *example*, and that was being collected as a real annotation.
+
+    The second is the worse one: an example in a docstring could satisfy the annotation
+    requirement for a real theorem, so the check could pass on a theorem nobody annotated.
     """
     budgets = {}
     for path in lean_sources():
-        text = open(path, encoding="utf-8").read()
+        text = strip_comments(open(path, encoding="utf-8").read())
         for m in BUDGET_RE.finditer(text):
             n = int(m.group(1))
             tail = text[m.end(): m.end() + 600]

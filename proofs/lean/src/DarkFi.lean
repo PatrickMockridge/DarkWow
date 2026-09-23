@@ -50,6 +50,9 @@ import DarkFi.Combinatorial.CeilingDerivation
 import DarkFi.Combinatorial.GeneralTheorem
 import DarkFi.Combinatorial.Combinations
 import DarkFi.Genesis.Ceremony
+import DarkFi.Semantics.Proc
+import DarkFi.Semantics.Congruence
+import DarkFi.Semantics.LTS
 
 /-!
 # DarkFi — ZK Circuit & Capability Type System Formal Verification

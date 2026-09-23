@@ -23,101 +23,91 @@ replaces was written against a namespace that did not exist; nothing was ever im
 namespace DarkFi.Capability.Concurrency
 
 /- ==========================================================================
-   Part 1: Parallel Composition
+   Parts 1–4 deleted: `parallelCompose`, the bisimulation definitions, their
+   two theorems, and `KeyDisjoint`
    ==========================================================================
-   P | Q: execute P and Q concurrently, synchronize on shared names.
-   Associative and commutative up to strong bisimulation.
+
+What was here, and why it is gone:
+
+    def parallelCompose (P Q : ConcurrentProcess) : ConcurrentProcess :=
+      { name := s!"({P.name}|{Q.name})"
+      , authorizationBarbs := P.authorizationBarbs ∪ Q.authorizationBarbs
+      , concurrencyBarbs := P.concurrencyBarbs ∪ Q.concurrencyBarbs
+      , canConcurrent := P.canConcurrent && Q.canConcurrent
+      , canMerge := P.canMerge && Q.canMerge
+      }
+
+    def barbedEquivalent (P Q : ConcurrentProcess) : Prop :=
+      concurrentProcessBarbs P = concurrentProcessBarbs Q
+    def authorizationBisimilar (P Q : ConcurrentProcess) : Prop :=
+      P.authorizationBarbs = Q.authorizationBarbs
+    def concurrencyBisimilar (P Q : ConcurrentProcess) : Prop :=
+      P.concurrencyBarbs = Q.concurrencyBarbs
+    def stronglyBisimilar (P Q : ConcurrentProcess) : Prop := barbedEquivalent P Q
+
+    @[axiom_budget 1] theorem parallel_commutative (P Q : ConcurrentProcess) :
+      stronglyBisimilar (parallelCompose P Q) (parallelCompose Q P)
+    @[axiom_budget 1] theorem parallel_associative (P Q R : ConcurrentProcess) : ...
+    @[axiom_budget 0] theorem authorization_preserved ...
+
+    structure KeyDisjoint (P Q : ConcurrentProcess) where writeSetDisjoint : Bool
+
+`concurrencyBisimilar` and `authorizationBisimilar` are quoted because the record is meant to be
+literal, not because they mattered. `concurrencyBisimilar` is in fact the same defect as `KeyDisjoint`
+— a definition nothing read, recording a claim rather than making one — and `authorizationBisimilar`
+was the hypothesis of the deleted `authorization_preserved` and appears nowhere else. Measured after
+the deletion: `grep -rn "concurrencyBisimilar\|authorizationBisimilar" proofs/lean/src` matches
+nothing, so neither has a replacement to name here.
+
+**`stronglyBisimilar` was not a bisimulation.** It was equality of a `Finset` of tags, so
+`parallel_commutative` reduced to `Finset.union_comm` — a true theorem about set union, and therefore
+not a theorem about parallel execution. The consequence is measurable rather than rhetorical:
+`barbedEquivalent` equates any two processes with the same barb set, so it equates two processes
+whose transitions carry *different payloads* — which no bisimulation may do (the witness is the second
+obligation recorded in `Semantics/LTS.lean`'s scope note, and `stronglyBisimilar` could not even
+state it as a falsehood).
+
+`KeyDisjoint`'s `writeSetDisjoint : Bool` had no invariant and no consumer: nothing read it, nothing
+constrained it, so the field recorded a claim rather than making one. The real write-set notion
+turned out to live in the Rust (`SledKey`, `ExecutionSchedule::build`, and the overlay diff), and its
+replacement is `writeSet : Key → Prop` with the disjointness lemma *proved* rather than assumed — the
+subject of `Semantics/Ledger.lean`, which **is not written yet**. Until it is, this deletion has no
+replacement in the tree, and that absence is written here rather than papered over.
+
+Replaced by, and this file's Part 5 note below is retained as the record:
+
+| deleted | replacement |
+|---|---|
+| `parallelCompose` | `Proc.par` (`Semantics/Proc.lean`), with no separate combinator |
+| `stronglyBisimilar` | `StrongBisim` (`Semantics/LTS.lean`) — the coinductive relation |
+| `parallel_commutative` | `DarkFi.Semantics.parallel_commutative`, with `SCong` as its witness |
+| `parallel_associative` | `DarkFi.Semantics.parallel_associative`, likewise |
+| `authorization_preserved` | subsumed: `StrongBisim` is a congruence, so it is preserved by `par` |
+| `KeyDisjoint` | `Disjoint δ.dom ε.dom` over the real key type, in `Semantics/Ledger.lean` — **owed; the module is not written yet** |
+
+**Deleted and not renamed, deliberately.** A bridge lemma between the two notions would have left the
+tree with two incompatible meanings of "bisimilar" — the situation this replacement exists to end. The
+zero blast radius was measured before deleting: `grep -rn "stronglyBisimilar\|barbedEquivalent\|
+parallelCompose\|KeyDisjoint" proofs/lean/src` matched nothing outside this file.
+
+The barb-set `exhibits_*` definitions in Part 6 below are **not** part of this deletion: they are
+tag-set membership tests too, but their replacement is the barb *realization* obligation (a predicate
+over the transition system plus a check against the Rust path), which is a separate stage. They are
+left in place with this note rather than deleted here, so that the deletion that lands is the one
+whose replacement is complete.
 -/
 
-def parallelCompose (P Q : ConcurrentProcess) : ConcurrentProcess :=
-  { name := s!"({P.name}|{Q.name})"
-  , authorizationBarbs := P.authorizationBarbs ∪ Q.authorizationBarbs
-  , concurrencyBarbs := P.concurrencyBarbs ∪ Q.concurrencyBarbs
-  , canConcurrent := P.canConcurrent && Q.canConcurrent
-  , canMerge := P.canMerge && Q.canMerge
-  }
-
 /- ==========================================================================
-   Part 2: Bisimulation with Concurrency Barbs
-   ==========================================================================
-   Two processes are strongly bisimilar (P ~ Q) iff an observer cannot
-   distinguish them through interaction — including concurrency observations.
--/
-
-def barbedEquivalent (P Q : ConcurrentProcess) : Prop :=
-  concurrentProcessBarbs P = concurrentProcessBarbs Q
-
-def authorizationBisimilar (P Q : ConcurrentProcess) : Prop :=
-  P.authorizationBarbs = Q.authorizationBarbs
-
-def concurrencyBisimilar (P Q : ConcurrentProcess) : Prop :=
-  P.concurrencyBarbs = Q.concurrencyBarbs
-
-/- Strong bisimulation: all barbs (authorization + concurrency) must match -/
-def stronglyBisimilar (P Q : ConcurrentProcess) : Prop :=
-  barbedEquivalent P Q
-
-/- ==========================================================================
-   Part 3: Fundamental Theorems
+   Part 2: Bisimulation with Concurrency Barbs — DELETED, see above
    ========================================================================== -/
 
--- Theorem 1: Parallel composition is commutative
---
--- `simp [Set.union_comm]` reported "made no progress": `parallelCompose` unions *`Finset`s*, not
--- `Set`s, so the set-level commutativity lemma never matched. The two are equal because
--- `Finset` union is commutative and associative as propositional membership — `ext b` turns the
--- `Finset` equality into `b ∈ _ ↔ b ∈ _` and `tauto` discharges it.
-@[axiom_budget 1]
-theorem parallel_commutative (P Q : ConcurrentProcess) :
-  stronglyBisimilar (parallelCompose P Q) (parallelCompose Q P) := by
-  simp only [stronglyBisimilar, barbedEquivalent, concurrentProcessBarbs, parallelCompose]
-  ext b
-  simp only [Finset.mem_union]
-  tauto
-
--- Theorem 2: Parallel composition is associative
-@[axiom_budget 1]
-theorem parallel_associative (P Q R : ConcurrentProcess) :
-  stronglyBisimilar
-    (parallelCompose (parallelCompose P Q) R)
-    (parallelCompose P (parallelCompose Q R)) := by
-  simp only [stronglyBisimilar, barbedEquivalent, concurrentProcessBarbs, parallelCompose]
-  ext b
-  simp only [Finset.mem_union]
-  tauto
-
--- Theorem 3: Authorization bisimulation is preserved under parallel composition
-@[axiom_budget 0]
-theorem authorization_preserved (P Q R : ConcurrentProcess)
-    (h : authorizationBisimilar P Q) :
-    authorizationBisimilar (parallelCompose P R) (parallelCompose Q R) := by
-  unfold authorizationBisimilar parallelCompose at *
-  simp [h]
+/- ==========================================================================
+   Part 3: Fundamental Theorems — DELETED, see above
+   ========================================================================== -/
 
 /- ==========================================================================
-   Part 4: Parallel Merge Correctness (Proof Sketch)
-   ==========================================================================
-   The fundamental theorem: if two contract calls write to disjoint key sets,
-   executing them in parallel is weak-bisimilar to executing them sequentially.
-
-   Full formalization requires:
-   1. A model of sled tree overlay state (key-value store)
-   2. A definition of "disjoint key sets" for contract calls
-   3. A model of WASM execution inside the zkVM (Halo2 prover)
-
-   This is stated as an axiom (PROOF SKETCH) pending full Halo2 formalization.
--/
-
-/- Two calls are key-disjoint if no key written by P₁ appears in P₂'s write set -/
-structure KeyDisjoint (P Q : ConcurrentProcess) where
-  writeSetDisjoint : Bool
-  deriving Repr
-
-/- Assumption: parallel execution ≈ sequential execution when keys are disjoint.
-   This is the formal justification for parallel contract execution (type-system.md §1.2).
-   Proving this requires: Halo2 prover model, sled overlay formalization, WASM execution model.
-   Currently assumed as a design invariant — the Rust implementation enforces key disjointness
-   via sled tree isolation. -/
+   Part 4: Parallel Merge Correctness — DELETED, see above
+   ========================================================================== -/
 
 /- ==========================================================================
    Part 5: Concurrency Safety — No Deadlock
