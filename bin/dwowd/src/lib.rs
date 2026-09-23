@@ -217,33 +217,37 @@ impl LastBlockTime {
     pub fn set_now(&self) { self.0.store(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(), Ordering::Release); }
 }
 
-/// Typed atomic block height for the current mining template.
-/// G3: .get() at atomic boundary — audited.
-/// G12: AtomicU64 internal — public API uses BlockHeight.
-pub struct TemplateHeight(AtomicU64);
-
-impl TemplateHeight {
-    pub const fn new() -> Self { Self(AtomicU64::new(0)) }
-    pub fn get(&self) -> dwow_sdk::blockchain::BlockHeight { dwow_sdk::blockchain::BlockHeight::new(self.0.load(Ordering::Acquire)) }
-    pub fn set(&self, h: dwow_sdk::blockchain::BlockHeight) { self.0.store(h.get(), Ordering::Release); }
-    // UNVERIFIED(HYG-3-4): removed pub fn reset — zero callers (set is used by
-    // stratum/mm_rpc, get by mm_rpc); needs cargo check -p dwowd -j 2
+/// The block template currently offered to miners, with the chain height it was generated at and the
+/// recipient its coinbase pays — **one value under one lock** (`OBL-C43`, `OBL-C54`).
+///
+/// These were three independently-locked fields (`current_linear_template`, `template_height`,
+/// `linear_recipient_config`), written in sequence by four call sites and read at four different moments
+/// by the submit paths. A concurrent login could therefore publish a template with the previous round's
+/// recipient or height, and a submit could pair one round's template with another's config. The stratum
+/// submit path carries a branch that exists only because of that race — `anchor_owner !=
+/// wallet.public_key()`, "the live template moved between login and submit" — and a mixed pair is not
+/// something to check for when it can be made unrepresentable.
+#[derive(Clone)]
+pub struct ActiveTemplate {
+    /// The template itself.
+    pub template: crate::registry::model::LinearBlockTemplate,
+    /// Chain height this template was generated at. A submission is rejected as stale against any other
+    /// height (type-system.md §9.3 — before PoW verification, not after).
+    pub height: dwow_sdk::blockchain::BlockHeight,
+    /// The recipient the template's coinbase pays. Deliberately **not** an `Option`: a published template
+    /// always has a recipient, so "template without recipient" is not a state this type can hold.
+    pub recipient_config: LinearMinerRewardsRecipientConfig,
 }
 
 /// Block production state shared between stratum, merge-mining, and miner RPC.
 pub struct MiningState {
     /// Last block timestamp for rate limiting
     pub last_block_time: LastBlockTime,
-    /// Current block template for the active mining round
-    pub current_linear_template: Mutex<Option<crate::registry::model::LinearBlockTemplate>>,
-    /// Chain height at which the current template was generated.
-    /// Set when a template is stored; checked at submission time to reject
-    /// stale templates before PoW verification (type-system.md §9.3).
-    pub template_height: TemplateHeight,
+    /// The template currently offered to miners, or `None` before the first login. Written only through
+    /// [`MiningState::store_template`], so the three parts cannot be published out of step.
+    pub active_template: Mutex<Option<ActiveTemplate>>,
     /// Publisher for pushing stratum job notifications to miners
     pub linear_stratum_publisher: Mutex<Option<PublisherPtr<JsonNotification>>>,
-    /// Recipient config for generating new block templates on submit
-    pub linear_recipient_config: Mutex<Option<LinearMinerRewardsRecipientConfig>>,
     /// Serializes block submission to prevent concurrent RandomX VM access
     pub linear_submit_lock: Mutex<()>,
     /// Genesis hash for merge-mining RPC
@@ -273,10 +277,8 @@ impl MiningState {
     pub fn new(sync_state: Arc<AtomicU8>) -> Self {
         Self {
             last_block_time: LastBlockTime::new(),
-            current_linear_template: Mutex::new(None),
-            template_height: TemplateHeight::new(),
+            active_template: Mutex::new(None),
             linear_stratum_publisher: Mutex::new(None),
-            linear_recipient_config: Mutex::new(None),
             linear_submit_lock: Mutex::new(()),
             linear_genesis_hash: Mutex::new(None),
             mm_jobs: Mutex::new(HashMap::new()),
@@ -285,6 +287,24 @@ impl MiningState {
             miner_config: MinerConfig::default(),
             sync_state,
         }
+    }
+
+    /// Publish `template` as the active one, with the height it was generated at and the recipient its
+    /// coinbase pays.
+    ///
+    /// **The only writer of [`MiningState::active_template`]** (`OBL-C43`, `OBL-C54`). Four call sites
+    /// used to write the three fields themselves, in sequence, and the pairing was left to each of them:
+    /// the stratum login wrote all three, the merge-mining login wrote the template and the height but
+    /// *dropped* the recipient it had just resolved, and both submit paths regenerated a template and then
+    /// depended on a recipient having been stored by some earlier stratum login. Passing them together
+    /// makes the publication atomic and removes the ordering question.
+    pub async fn store_template(
+        &self,
+        template: crate::registry::model::LinearBlockTemplate,
+        height: BlockHeight,
+        recipient_config: LinearMinerRewardsRecipientConfig,
+    ) {
+        *self.active_template.lock().await = Some(ActiveTemplate { template, height, recipient_config });
     }
 }
 
@@ -1897,5 +1917,104 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
             )).await;
         }
         node.mining_state.last_block_time.set_now();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// active_template — the unit test for OBL-C43/OBL-C54
+// ---------------------------------------------------------------------------
+//
+// Named `active_template_tests` rather than `tests` because the crate root already declares
+// `mod tests;` (the heavyweight pipeline harness) and a second `tests` module would collide.
+#[cfg(test)]
+mod active_template_tests {
+    use super::*;
+    use std::sync::atomic::AtomicU8;
+
+    const TEST_KEY_TOML: &str = "[node0]\nwallet_secret = \
+         \"755c6e8a21b3e15f146ba636a146c228b5f91202fc7e0bb0065efdd9fd685405\"\n";
+
+    /// A template whose `previous` hash identifies the publication it belongs to, so a test can tell two
+    /// publications apart field by field.
+    fn template(tag: u8) -> crate::registry::model::LinearBlockTemplate {
+        crate::registry::model::LinearBlockTemplate {
+            previous: [tag; 32],
+            height: BlockHeight::new(1),
+            target: BlockTarget::MAX,
+            timestamp: 1_700_000_000,
+            value: BlockReward::ZERO,
+            pow_reward_call_data: vec![tag],
+            miner: [tag; 32],
+            anchor_wallet: dwow_chain::caribina::CaribinaWallet::generate(),
+            transactions: vec![],
+            merkle_root: blake3::hash(&[tag]),
+            uncles: vec![],
+        }
+    }
+
+    fn keys_file() -> std::path::PathBuf {
+        let path = std::env::temp_dir()
+            .join(format!("dwow_active_template_{}.toml", std::process::id()));
+        std::fs::write(&path, TEST_KEY_TOML).expect("write test keys");
+        path
+    }
+
+    /// `OBL-C43`/`OBL-C54` — `store_template` publishes the template, its height and its recipient as
+    /// **one** value, so no reader can pair one round's template with another round's height or recipient.
+    ///
+    /// The assertion that matters is the one after the *second* publication: no field of the first survives.
+    /// A publication done in parts — template, then height, then recipient, as three separately-locked
+    /// fields — fails it, because a reader landing between two of those writes sees exactly such a mixture.
+    #[test]
+    fn test_store_template_publishes_the_triple_as_one_value() {
+        let state = MiningState::new(std::sync::Arc::new(AtomicU8::new(SyncState::CaughtUp as u8)));
+        assert!(
+            smol::block_on(state.active_template.lock()).is_none(),
+            "control: nothing is published before a login"
+        );
+
+        let path = keys_file();
+        let mgr = crate::accounts::AccountManager::open(&path, Network::Testnet, "node0")
+            .expect("open test keys");
+        let _ = std::fs::remove_file(&path);
+        let first = LinearMinerRewardsRecipientConfig::from_account(&mgr, BlockHeight::new(1))
+            .map_err(|_| "from_account failed at height 1")
+            .expect("recipient at height 1");
+        let second = LinearMinerRewardsRecipientConfig::from_account(&mgr, BlockHeight::new(2))
+            .map_err(|_| "from_account failed at height 2")
+            .expect("recipient at height 2");
+        assert_ne!(
+            first.recipient, second.recipient,
+            "control: per-block cycling must give two different recipients, or the pairing below could \
+             not be distinguished"
+        );
+
+        smol::block_on(state.store_template(template(0x11), BlockHeight::new(1), first.clone()));
+        {
+            let guard = smol::block_on(state.active_template.lock());
+            let published = guard.as_ref().expect("a published template");
+            assert_eq!(published.template.previous, [0x11; 32], "the template is the one published");
+            assert_eq!(published.height, BlockHeight::new(1), "with the height it was published at");
+            assert_eq!(published.recipient_config.recipient, first.recipient, "and its recipient");
+        }
+
+        // Republish a different triple, with a different height and a different recipient.
+        smol::block_on(state.store_template(template(0x22), BlockHeight::new(2), second.clone()));
+        let guard = smol::block_on(state.active_template.lock());
+        let published = guard.as_ref().expect("a published template");
+        assert_eq!(published.template.previous, [0x22; 32]);
+        assert_eq!(published.template.pow_reward_call_data, vec![0x22]);
+        assert_eq!(published.template.miner, [0x22; 32]);
+        assert_eq!(
+            published.height,
+            BlockHeight::new(2),
+            "OBL-C43/C54: the height must move with the template — a reader that takes them separately \
+             can see the new template against the previous round's height"
+        );
+        assert_eq!(
+            published.recipient_config.recipient, second.recipient,
+            "OBL-C43/C54: so must the recipient — a next-round template paid to the previous round's \
+             recipient is the outcome this bundles away"
+        );
     }
 }

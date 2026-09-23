@@ -250,9 +250,17 @@ impl DwowNode {
         // random key.
         let height = chain_state.get_height().succ();
         let recipient_config = {
-            let stored = self.mining_state.linear_recipient_config.lock().await;
-            match *stored {
-                Some(ref config) => config.clone(),
+            // The recipient of the template currently published, if any — this is a cache of the node's
+            // own declared key, not an independently-written setting any more (`OBL-C43`/`OBL-C54`).
+            let stored = self
+                .mining_state
+                .active_template
+                .lock()
+                .await
+                .as_ref()
+                .map(|active| active.recipient_config.clone());
+            match stored {
+                Some(config) => config,
                 None => match crate::registry::model::LinearMinerRewardsRecipientConfig::from_account(
                     &*self.account_manager.read().await, height,
                 ) {
@@ -358,9 +366,13 @@ impl DwowNode {
             mm_jobs.insert(job_id, self.mining_state.mm_jobs_seq.fetch_add(1, Ordering::Relaxed));
         }
 
-        // Store template in current_linear_template
-        *self.mining_state.current_linear_template.lock().await = Some(template);
-        self.mining_state.template_height.set(chain_state.get_height());
+        // Publish the template with the height it was generated at **and the recipient it was built
+        // from** (`OBL-C43`/`OBL-C54`). The config used to be dropped here — this call site stored the
+        // template and the height and nothing else — which left the submit path's next-round template
+        // regeneration (`:780`) guarding on a config that only a stratum login would ever have stored.
+        self.mining_state
+            .store_template(template, chain_state.get_height(), recipient_config)
+            .await;
 
         info!(
             target: "dwowd::rpc::mm_rpc::mm_get_aux_block",
@@ -597,14 +609,19 @@ impl DwowNode {
         // method in src/linear/src/monero/rpc.rs, Monero block hash computation
         // from the submitted blob (RandomX over block header).
 
-        // Get the block template
-        let template = {
-            let tmpl = self.mining_state.current_linear_template.lock().await;
+        // Get the block template — and with it the height and recipient it was published with
+        // (`OBL-C43`/`OBL-C54`). **One snapshot for the whole submission**: this handler used to read the
+        // template, then the height from a separate atomic, then the template again, so a login landing
+        // between two of those reads could pair one round's template with another round's height or
+        // recipient.
+        let active = {
+            let tmpl = self.mining_state.active_template.lock().await;
             match &*tmpl {
-                Some(t) => t.clone(),
+                Some(a) => a.clone(),
                 None => return miner_status_response(id, "rejected"),
             }
         };
+        let template = active.template.clone();
 
         // Build the DarkWow block
         let randomx_key: [u8; 32] = seed_hash_bytes_clone.try_into().unwrap_or([0u8; 32]);
@@ -702,14 +719,19 @@ impl DwowNode {
         // Check template staleness before PoW verification.
         // Per type-system.md §9.3: submissions against stale templates SHALL
         // be rejected before PoW verification.
+        //
+        // The height comes from the submission's snapshot, not from a re-read of a separate atomic, so it
+        // is the height **of the template being submitted**. The old `template_h != 0` guard existed
+        // because the atomic read 0 before any template was stored; a snapshot only exists once a template
+        // has been published with a real height, so that state is now unrepresentable and the guard is
+        // gone with it (`OBL-C43`/`OBL-C54`).
         {
-            let template_h = self.mining_state.template_height.get().get(); // G3: comparison uses raw u64
             let chain_h = chain_state.get_height().get();
-            if template_h != 0 && template_h != chain_h {
+            if active.height.get() != chain_h {
                 info!(
                     target: "dwowd::rpc::mm_rpc::mm_submit_solution",
                     "[RPC-MM] Template height {} != current {} — rejecting stale submission",
-                    template_h, chain_h,
+                    active.height.get(), chain_h,
                 );
                 return miner_status_response(id, "rejected");
             }
@@ -718,11 +740,9 @@ impl DwowNode {
         // Set finality flags
         block.header.finality_flags = chain_state.finality_config.mine_flags();
 
-        // Apply block with uncles from stored template
-        let uncles: Vec<dwow_chain::UncleBlock> = {
-            let tmpl = self.mining_state.current_linear_template.lock().await;
-            tmpl.as_ref().map(|t| t.uncles.clone()).unwrap_or_default()
-        };
+        // Apply block with uncles from the submission's snapshot — the same template the height and
+        // recipient above came from (`OBL-C43`/`OBL-C54`).
+        let uncles: Vec<dwow_chain::UncleBlock> = active.template.uncles.clone();
 
         // Accept block — single unified path (block_acceptor::accept_block).
         // Use pooled RandomXCache — 256 MB allocation reused.
@@ -776,9 +796,18 @@ impl DwowNode {
                     submitted.insert(job_id, self.mining_state.mm_jobs_seq.fetch_add(1, Ordering::Relaxed));
                 }
 
-                // Generate new template for next round.
-                if let Some(ref base_config) = *self.mining_state.linear_recipient_config.lock().await {
-                    let effective_recipient = base_config.clone();
+                // Generate new template for next round, paid to the same recipient as the template just
+                // submitted — taken from this submission's own snapshot, not from a separately-locked
+                // config (`OBL-C43`/`OBL-C54`).
+                //
+                // The guard this used to carry is gone with the bundle, and that is a behaviour change
+                // worth naming: the regeneration was wrapped in `if let Some(config)` over a field that
+                // **only a stratum login ever wrote**. On a node serving merge mining alone, the next
+                // round's template was therefore never generated, and every later merge-mining submission
+                // was rejected against a stale template. The recipient is no longer optional, so the
+                // branch cannot be skipped for that reason.
+                {
+                    let effective_recipient = active.recipient_config.clone();
 
                     let next_mempool_txs = match &self.mempool {
                         Some(mp) => mp.select_for_block(&self.mining_state.miner_config).await,
@@ -796,8 +825,13 @@ impl DwowNode {
                     .await
                     {
                         Ok(new_template) => {
-                            *self.mining_state.current_linear_template.lock().await = Some(new_template);
-                            self.mining_state.template_height.set(chain_state.get_height());
+                            self.mining_state
+                                .store_template(
+                                    new_template,
+                                    chain_state.get_height(),
+                                    effective_recipient,
+                                )
+                                .await;
                         }
                         Err(e) => {
                             error!(

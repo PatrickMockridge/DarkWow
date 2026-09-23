@@ -224,10 +224,12 @@ impl DwowNode {
             }
         };
 
-        // Store template and config for submit handler
-        *self.mining_state.current_linear_template.lock().await = Some(template.clone());
-        self.mining_state.template_height.set(chain_state.get_height());
-        *self.mining_state.linear_recipient_config.lock().await = Some(config);
+        // Store template, height and recipient as ONE value for the submit handler (`OBL-C43`/`OBL-C54`):
+        // three separate assignments let a submit observe a new template with the previous round's
+        // recipient or height.
+        self.mining_state
+            .store_template(template.clone(), chain_state.get_height(), config)
+            .await;
 
         // Create or reuse shared publisher for push notifications
         #[expect(clippy::unwrap_used, reason = "publisher is Some after the is_none guard above")]
@@ -460,9 +462,19 @@ impl DwowNode {
             }
         };
 
-        // Load stored template for the PoWRewardV1 call data and timestamp.
+        // Load the active template for the PoWRewardV1 call data and timestamp.
         // Timestamp MUST match the mining blob that xmrig hashed.
-        let template = self.mining_state.current_linear_template.lock().await.clone();
+        //
+        // **One snapshot for the whole submission** (`OBL-C43`/`OBL-C54`). The height, the recipient and
+        // the per-block anchor key travel with the template, and everything below — the PoW data, the
+        // anchor wallet, the uncles, the next round's recipient — reads this one clone rather than
+        // re-acquiring the lock. Three separate acquisitions were what let a login land between two of
+        // them and pair one round's template with another round's key, which the removed branch further
+        // down used to report as "the live template moved between login and submit".
+        //
+        // Cloned rather than held: the guard must not live across the awaits below.
+        let active = self.mining_state.active_template.lock().await.clone();
+        let template = active.as_ref().map(|active| active.template.clone());
         let template_timestamp = template.as_ref().map(|t| t.timestamp).unwrap_or(now);
         // Since b6bf44f79 the coinbase is a plaintext contract call — no ZK
         // proof rides in the template; only the pre-built call data is needed.
@@ -576,11 +588,13 @@ impl DwowNode {
         {
             let fc = &chain_state.finality_config;
             if fc.should_anchor() {
-                // The template's per-block key, whose public half the header already commits.
-                let anchor_wallet = {
-                    let tmpl = self.mining_state.current_linear_template.lock().await;
-                    tmpl.as_ref().map(|t| t.anchor_wallet.clone())
-                };
+                // The template's per-block key, whose public half the header already commits. Taken from
+                // the submission's snapshot, so it is the key of the template this block was built from
+                // (`OBL-C43`/`OBL-C54`) — it used to be a second lock acquisition, and *that* was the
+                // whole of the race the branch below described.
+                let anchor_wallet = active
+                    .as_ref()
+                    .map(|active| active.template.anchor_wallet.clone());
                 if let Some(wallet) = anchor_wallet {
                     if block.header.anchor_owner == wallet.public_key() {
                         block.header.caribina_anchor = Some(
@@ -593,13 +607,14 @@ impl DwowNode {
                              verifier disagree about the commitment and no block will ever be final"
                         );
                     } else {
-                        // The live template moved between login and submit, so this block commits an
-                        // owner we no longer hold the key for. Anchoring it would need the old
-                        // template's key; leaving it unanchored is the honest outcome, and the
-                        // submission will be rejected as stale by `accept_block` in any case.
+                        // Unreachable from this handler now, and kept as a guard rather than deleted: the
+                        // snapshot and the block were built from the same template, so the owner can only
+                        // differ if a block arrived from somewhere else. It used to fire whenever a login
+                        // landed between the template read and this one; leaving such a block unanchored
+                        // is still the right answer, and `accept_block` rejects it as stale in any case.
                         info!(
                             target: "dwowd::rpc::rpc_stratum::stratum_submit",
-                            "[RPC-STRATUM] Block {} commits anchor_owner {:?} but the live template \
+                            "[RPC-STRATUM] Block {} commits anchor_owner {:?} but the snapshot's template \
                              holds a different key — leaving it unanchored",
                             block.header.height, block.header.anchor_owner
                         );
@@ -660,11 +675,11 @@ impl DwowNode {
             }
         }
 
-        // Apply block with uncles from the stored template
-        let uncles: Vec<dwow_chain::UncleBlock> = {
-            let tmpl = self.mining_state.current_linear_template.lock().await;
-            tmpl.as_ref().map(|t| t.uncles.clone()).unwrap_or_default()
-        };
+        // Apply block with uncles from the submission's snapshot (`OBL-C43`/`OBL-C54`)
+        let uncles: Vec<dwow_chain::UncleBlock> = active
+            .as_ref()
+            .map(|active| active.template.uncles.clone())
+            .unwrap_or_default();
 
         // Accept block — single unified path (block_acceptor::accept_block).
         // Use pooled RandomXCache — 256 MB allocation reused.
@@ -711,10 +726,17 @@ impl DwowNode {
                 crate::proto::linear_broadcast::broadcast_block(
                     &self.p2p_handler.p2p, block.clone(), uncles.clone()).await;
 
-                // Push new mining job to all connected miners
+                // Push new mining job to all connected miners.
+                //
+                // The recipient comes from the **submission's own snapshot** (`OBL-C43`/`OBL-C54`), so the
+                // next round pays the same recipient as the round just submitted. The `if let` can only
+                // fail before a first login, when there is no template to have just submitted against; it
+                // used to depend on whether some login had happened to store a config elsewhere.
                 if let Some(ref publisher) = *self.mining_state.linear_stratum_publisher.lock().await {
-                    if let Some(ref recipient_config) = *self.mining_state.linear_recipient_config.lock().await {
-                        let effective_recipient = recipient_config.clone();
+                    if let Some(effective_recipient) = active
+                        .as_ref()
+                        .map(|active| active.recipient_config.clone())
+                    {
 
                         // Drain mempool for the next block template
                         let next_mempool_txs = match &self.mempool {
@@ -807,9 +829,15 @@ impl DwowNode {
                                         ),
                                     ]));
 
-                                *self.mining_state.current_linear_template.lock().await =
-                                    Some(new_template);
-                                self.mining_state.template_height.set(chain_state.get_height());
+                                // Published together with the recipient it was built from, so the next
+                                // submission observes one round's snapshot (`OBL-C43`/`OBL-C54`).
+                                self.mining_state
+                                    .store_template(
+                                        new_template,
+                                        chain_state.get_height(),
+                                        effective_recipient,
+                                    )
+                                    .await;
 
                                 let notification = dwow_core::rpc::jsonrpc::JsonNotification::new(
                                     "job", job_params,
