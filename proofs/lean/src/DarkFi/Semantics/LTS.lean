@@ -30,13 +30,17 @@ Two boundaries remain, and they are separate:
   enters the term-level recursion. That is deliberate rather than a shortcut: a synchronisation clause
   inside the `par` case would have to relate the clauses of two different associations in
   `par_assoc`, which is where the invariance proof would stop being structural.
-* **Strong bisimulation is still the only bisimulation, and §1.2's weak equation is not a law.**
-  Part 9 records both facts. The weak relation is not here; and the equation
-  `P | a?(x).Q | a!(v).R ≈ P | Q{v/x} | R` is *false* rather than merely unproved — its left side
-  retains both prefixes, so it exhibits barbs the right side need not, and
-  `section_1_2_equation_not_strong` settles the strong reading at `Q = R = 0`. What the equation is
-  reaching for is the reduction, which `Step.tau` now gives. The barb results are unaffected either
-  way: a barb is an action, and `Barb` never saw `τ`.
+* **§1.2's weak equation is a false law, and both its readings are refuted.** Part 9 records it: the
+  equation `P | a?(x).Q | a!(v).R ≈ P | Q{v/x} | R` fails at `Q = R = 0`, because its left side
+  retains both prefixes and so exhibits barbs the right side need not.
+  `section_1_2_equation_not_strong` settles the strong reading; `section_1_2_equation_not_weak` settles
+  the weak one, through Part 3c's `ActionFree`. What the equation is reaching for is the reduction,
+  which `Step.tau` now gives.
+
+  The weak relation `WeakBisim` is here (Part 9b) and carries **no laws yet** — no `SCong`-invariance,
+  no reflexivity, no transitivity, none of the τ-laws. It is here because the refutation needs its
+  definition; its laws belong with whatever consumes them. The barb results are unaffected either way:
+  a barb is an action, and `Barb` never saw `τ`.
 
 ## What the rules are, and which are derived
 
@@ -300,6 +304,83 @@ theorem canStep_of_step {P : Proc} {μ : Label} {P' : Proc} (h : Step P μ P') (
 theorem step_out_label {a b : Proc} {μ : Label} {P' : Proc} (h : Step (Proc.out a b) μ P')
     (hμ : IsAction μ) : ∃ c d : Proc, μ = Label.out c d ∧ SCong a c ∧ SCong b d :=
   canStep_of_step h hμ
+
+/-! ==========================================================================
+   Part 3c — Terms with no action atoms, and why they cannot step
+
+   `CanStep` approximates *which* labels a term can take. Refuting a claimed weak-bisimulation law
+   needed the opposite kind of fact — that a term can take *no* step at all, `τ` included — and that is
+   not a question a label set can answer.
+
+   This is the predicate that can, and its shape is what makes it cheap. It is *conjunctive*: a term is
+   action-free when it has no `out` and no `inp` anywhere in it. `CanSync`-style predicates ("can this
+   term synchronise?") need an existential over a pair of components, and then the `par_assoc` case of
+   the invariance proof has to distribute existentials over disjunctions. Conjunction distributes over
+   nothing, so every case below is a rearrangement or an immediate contradiction.
+
+   The definition is also forced in two places, and both were found by trying the other thing first.
+   A quote's interior is `ActionFree P`, because `cong_bang` relates `⌈P⌉` to `⌈Q⌉` for `P ≡ Q` and an
+   action could hide inside either. A binder is *ignored*, because `nu_nil` relates `νa.0` to `0` for
+   **every** `a` — so any predicate that inspected the binder would have to prove `ActionFree a` for an
+   arbitrary term, which is false. That is the congruence telling the definition what it may look at.
+   ========================================================================== -/
+
+/-- `ActionFree P`: `P` contains no output and no input anywhere — nothing for a transition to be on.
+
+    Not the negation of anything: it is the property that makes a term inert, and it is *not* preserved
+    by everything one might expect (a `ν` and a `rep` are fine, their binders are ignored and their
+    bodies are checked; see the Part 3c note for why the binder has to be ignored). -/
+def ActionFree : Proc → Prop
+  | .nil => True
+  | .bang P => ActionFree P
+  | .out _ _ => False
+  | .inp _ _ _ => False
+  | .nu _ P => ActionFree P
+  | .rep P => ActionFree P
+  | .par P Q => ActionFree P ∧ ActionFree Q
+
+/-- **`SCong` cannot introduce or remove an action atom** — the invariance that makes `ActionFree` a
+    fact about a term's *behaviour* rather than about its syntax. Sixteen cases, and every one is a
+    rearrangement of conjunctions, an immediate contradiction (`out` and `inp` are `False` outright,
+    so the cases that would need them are vacuous), or an induction hypothesis. -/
+@[axiom_budget 0]
+theorem actionFree_of_scong {P Q : Proc} (h : SCong P Q) : ActionFree P ↔ ActionFree Q := by
+  induction h with
+  | refl _ => exact Iff.rfl
+  | symm _ ih => exact ih.symm
+  | trans _ _ ih1 ih2 => exact ih1.trans ih2
+  | par_comm _ _ => simp only [ActionFree]; exact and_comm
+  | par_assoc _ _ _ => simp only [ActionFree]; exact and_assoc
+  | par_nil _ => simp only [ActionFree]; exact ⟨fun h => h.1, fun h => ⟨h, trivial⟩⟩
+  | nu_nil _ => simp only [ActionFree]
+  | nu_nu _ _ _ => simp only [ActionFree]
+  | nu_par _ => simp only [ActionFree]
+  | rep_unfold _ => simp only [ActionFree]; exact ⟨fun h => ⟨h, h⟩, fun h => h.1⟩
+  | cong_bang _ ih => simp only [ActionFree]; exact ih
+  | cong_out _ _ _ _ => simp only [ActionFree]
+  | cong_inp _ _ _ _ _ _ => simp only [ActionFree]
+  | cong_nu _ _ _ ih2 => simp only [ActionFree]; exact ih2
+  | cong_rep _ ih => simp only [ActionFree]; exact ih
+  | cong_par _ _ ih1 ih2 => simp only [ActionFree]; exact and_congr ih1 ih2
+
+/-- **A term with no action atoms cannot step at all** — not by an output or an input, and not by `τ`
+    either, because the synchronisation rule's source is a parallel composition of an output and an
+    input and so is not action-free. Every label, one statement.
+
+    This is the negative fact the LTS was missing: it is what lets a claimed weak-bisimulation law be
+    refuted by showing that one side can do nothing at all, `τ`-reachable or not. -/
+@[axiom_budget 0]
+theorem no_step_of_actionFree {P : Proc} {μ : Label} {P' : Proc} (h : ActionFree P) :
+    ¬ Step P μ P' := by
+  intro hs
+  revert h
+  induction hs with
+  | out x y => intro h; exact h
+  | inp x y P => intro h; exact h
+  | tau _ => intro h; exact h.1
+  | par _ ih => intro h; exact ih h.1
+  | nu _ _ ih => intro h; exact ih h
+  | scong h1 _ _ ih => intro h; exact ih ((actionFree_of_scong h1).1 h)
 
 /-- **A term can only step on a channel its congruence class mentions.** If `P` can engage in `μ`,
     then some `Q ≡ P` mentions `μ`'s subject.
@@ -693,16 +774,21 @@ theorem no_barb_nu_of_fresh {x P : Proc} (h : FreshUpToScong x P) : ¬ Barb (Pro
    π-calculus does not equate them either; the equation reads as a law because the `τ`-step is silent,
    and silence is not the same as absence.
 
-   Mechanized below: the strong reading. The weak reading has the same witness and a different reason —
-   the right side cannot match a step it cannot take, `τ`-reachable or not — and *that* reason needs one
-   negative fact this tree cannot yet prove: that `0 | 0 | 0` has no `τ`-steps. `CanStep` is a set of
-   *actions* by design (Part 3's definition has no `τ` clause, for the invariance reason recorded
-   there), so nothing here proves that a term *cannot* synchronise. Every route to it — a `CanSync`
-   predicate with its own `SCong`-invariance, a congruence-invariant shape invariant, or `Step`
-   inversion — meets the same wall, and it is the wall this file has now hit three times: `SCong`
-   relates terms of different syntactic shape, so a *negative* fact about a term's transitions has to be
-   proved invariant under the congruence rather than computed from the term. That is a unit of its own
-   and this part does not attempt it.
+   Both readings are mechanized below, and the weak one is why Part 3c exists. Its witness is the same;
+   its reason is different — the right side cannot match a step it cannot *take*, `τ`-reachable or not —
+   and that needed a negative fact about a term's transitions, which `CanStep` cannot supply because it
+   is a set of *actions* by design.
+
+   The route that works is a predicate whose invariance is cheap. `ActionFree` is conjunctive — "no
+   `out` and no `inp` anywhere" — so its sixteen cases are rearrangements of conjunctions rather than
+   existentials distributed over disjunctions. The first attempt was `CanSync`, "can this term
+   synchronise?", which is the natural formulation and the wrong one: its `par_assoc` case has to relate
+   the synchronisation clauses of `par (par P Q) R` and `par P (par Q R)`, and that is where the cost
+   sits. What the two share is the wall this file has now hit three times: `SCong` relates terms of
+   different syntactic *shape*, so a fact about a term's transitions has to be proved *invariant* rather
+   than computed from the term. `FreshUpToScong` answered it for the restriction rule by quantifying
+   over `SCong0`; `CanStep` answered it for actions by recursion plus a sixteen-case invariance;
+   `ActionFree` answers it for inertness by staying conjunctive.
    ========================================================================== -/
 
 /-- **§1.2's weak-bisimulation equation is false in its strong reading.** At `P = Q = R = 0`, `a = 0`,
@@ -731,5 +817,70 @@ theorem section_1_2_equation_not_strong :
         (by simp only [CanStep, false_or, or_false]; exact id)
   exact hright ((strongbisim_barb_eq h Proc.nil).1
     (Or.inl ⟨Proc.nil, _, step_par_right (Step.out Proc.nil Proc.nil)⟩))
+
+/-! ==========================================================================
+   Part 9b — Weak bisimulation, and the equation's weak reading
+   ========================================================================== -/
+
+/-- `StepTauStar P Q`: `Q` is reached from `P` by any number of `τ`-steps, zero included. -/
+inductive StepTauStar : Proc → Proc → Prop where
+  /-- No steps at all. -/
+  | refl (P : Proc) : StepTauStar P P
+  /-- One `τ`-step, then some more. -/
+  | step {P Q R : Proc} : Step P Label.tau Q → StepTauStar Q R → StepTauStar P R
+
+/-- `StepWeak P μ Q`: a run of `τ`s, then one `μ`-step, then another run. The standard weak
+    transition, and the reason `τ` is called unobservable: it can happen anywhere around an
+    observable step without being part of it. -/
+inductive StepWeak : Proc → Label → Proc → Prop where
+  /-- `P -[τ*]-> P' -[μ]-> Q -[τ*]-> Q'`. -/
+  | intro {P P' Q Q' : Proc} {μ : Label} :
+      StepTauStar P P' → Step P' μ Q → StepTauStar Q Q' → StepWeak P μ Q'
+
+/-- `IsWeakBisim R`: every step of either side is matched by the other, up to `τ*` on both sides. -/
+def IsWeakBisim (R : Proc → Proc → Prop) : Prop :=
+  ∀ {P Q : Proc}, R P Q →
+    (∀ {μ : Label} {P' : Proc}, Step P μ P' → ∃ Q' : Proc, StepWeak Q μ Q' ∧ R P' Q') ∧
+    (∀ {μ : Label} {Q' : Proc}, Step Q μ Q' → ∃ P' : Proc, StepWeak P μ P' ∧ R P' Q')
+
+/-- `P ≈ Q`: weak bisimilarity — some weak bisimulation relates them. Existential, like `StrongBisim`
+    and for the same reason: the union of weak bisimulations is one, so this *is* the greatest fixed
+    point, and composing two witnesses needs a relation to hand over. -/
+def WeakBisim (P Q : Proc) : Prop := ∃ R : Proc → Proc → Prop, IsWeakBisim R ∧ R P Q
+
+/-- An action-free term's `τ*`-closure is itself, because it has no `τ`-steps to take. -/
+@[axiom_budget 0]
+theorem actionFree_of_tauStar {P Q : Proc} (hs : StepTauStar P Q) : ActionFree P → ActionFree Q := by
+  induction hs with
+  | refl _ => intro h; exact h
+  | step hτ _ ih => intro h; exact ih (False.elim (no_step_of_actionFree h hτ))
+
+/-- **§1.2's weak-bisimulation equation is false in its weak reading too** — the same witness as the
+    strong one, at `P = Q = R = 0`, `a = v = 0`, `x = ⌈0⌉`.
+
+    The left side steps with the label `0!(0)` from its retained output prefix. A weak bisimulation
+    would have to match that label from *some* `τ`-reachable state of the right side, and the right side
+    is `0 | 0 | 0`: `ActionFree` holds of it, so `actionFree_of_tauStar` says every state it can reach
+    is action-free too, and `no_step_of_actionFree` says none of them steps at all. The prefix is not
+    merely unmatched after the `τ` — there is no `τ` to unmatch it with.
+
+    This is the fact the LTS could not state until Part 3c: `CanStep` is a set of actions, so "this term
+    can do nothing" needed a predicate of its own, and one whose invariance is provable. -/
+@[axiom_budget 0]
+theorem section_1_2_equation_not_weak :
+    ¬ WeakBisim
+      (Proc.par (Proc.par Proc.nil (Proc.inp Proc.nil (Proc.bang Proc.nil) Proc.nil))
+        (Proc.out Proc.nil Proc.nil))
+      (Proc.par (Proc.par Proc.nil (subst Proc.nil (Proc.bang Proc.nil) Proc.nil)) Proc.nil) := by
+  have hsub : subst Proc.nil (Proc.bang Proc.nil) Proc.nil = Proc.nil :=
+    subst_nil_of_ne (fun hc => by cases hc)
+  have hM : ActionFree (Proc.par (Proc.par Proc.nil (subst Proc.nil (Proc.bang Proc.nil) Proc.nil))
+      Proc.nil) := by
+    rw [hsub]
+    exact ⟨⟨trivial, trivial⟩, trivial⟩
+  rintro ⟨R, hR, hLM⟩
+  obtain ⟨_Q', hw, _⟩ := (hR hLM).1 (step_par_right (Step.out Proc.nil Proc.nil))
+  obtain ⟨hstar, hs, _⟩ := hw
+  exact no_step_of_actionFree (actionFree_of_tauStar hstar hM) hs
 
 end DarkFi.Semantics

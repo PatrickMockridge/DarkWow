@@ -184,8 +184,10 @@ other's steps, so no relation of either strength relates them; a τ-step is
 silent, which is not the same as the prefixes being absent. The same holds in the
 π-calculus, where the corresponding claim is the reduction `→` rather than an
 equivalence. Mechanized in `proofs/lean/src/DarkFi/Semantics/LTS.lean`:
-`Step.tau` is the reduction above, and `section_1_2_equation_not_strong` refutes
-the equation's strong reading through `strongbisim_barb_eq`.
+`Step.tau` is the reduction above, `section_1_2_equation_not_strong` refutes the
+equation read as a strong bisimulation, and `section_1_2_equation_not_weak`
+refutes it as a weak one at the same witness — the right-hand side is built from
+nothing, so it has no τ-reachable state that could match the retained prefix.
 
 **Barbed bisimulation** (`P ≅ Q`): two concurrent processes are equivalent if
 their observable concurrent barbs match, even if their internal scheduling
