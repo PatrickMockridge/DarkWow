@@ -310,10 +310,17 @@ impl dwow_serial::Decodable for InitializeParamsV1 { fn decode<D: std::io::Read>
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl InitializeParamsV1 { pub fn encode(&self) -> Vec<u8> { let dc = self.drain_config.encode(); let mut b = Vec::with_capacity(97+dc.len()); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.spend_authority.to_bytes()); b.extend_from_slice(&self.dao_escrow_bulla.to_repr()); b.extend_from_slice(&dc); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 97 { return Err(ContractError::IoError("InitializeParamsV1: too short".into())); } let instance_seed: [u8;32] = data[0..32].try_into().unwrap(); let fund_id = read_base(&data[32..64])?; let spend_authority = PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid spend_authority: {}", e)))?; let dao_escrow_bulla = read_base(&data[96..128])?; let drain_config = DrainConfig::decode(&data[128..])?; Ok(InitializeParamsV1 { instance_seed, fund_id, spend_authority, dao_escrow_bulla, drain_config }) } }
 
+/// The update `InitializeV1`'s exec phase hands to its apply phase.
+///
+/// **It carries the fund itself** (`OBL-C73`). The write it stands for is "store this fund in the funds
+/// tree", and apply may neither read nor validate — `§B.2.2` denies the read triad in `Update` — so the
+/// value to store has to travel in the update. It used to carry `{instance_seed, fund_id}` and no fund,
+/// which is why the write could not move: there was nothing to write from. `instance_seed` and `fund_id`
+/// were exactly `fund.instance_seed` and `fund.id`, so they are now the fund's own fields rather than
+/// copies beside it.
 #[derive(Debug, Clone)]
 pub struct InitializeUpdateV1 {
-    pub instance_seed: [u8; 32],
-    pub fund_id: FundId,
+    pub fund: ProtectedFund,
 }
 
 #[derive(Debug, Clone,)]
@@ -338,7 +345,18 @@ impl dwow_serial::Decodable for VoteParamsV1 { fn decode<D: std::io::Read>(d: &m
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl VoteParamsV1 { pub const ENCODED_SIZE: usize = 97; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(97); b.extend_from_slice(&self.proposal_id.to_repr()); b.extend_from_slice(&self.voter_pubkey.to_bytes()); b.push(self.vote as u8); b.extend_from_slice(&self.signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 97 { return Err(ContractError::IoError(format!("VoteParamsV1: expected 97 bytes, got {}", data.len()))); } Ok(VoteParamsV1 { proposal_id: read_base(&data[0..32])?, voter_pubkey: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("VoteParamsV1: invalid voter_pubkey: {}", e)))?, vote: data[64] != 0, signature: read_base(&data[65..97])? }) } }
 
-#[derive(Debug, Clone)] pub struct VoteUpdateV1 { pub proposal_id: pallas::Base, pub yes_votes: u64, pub no_votes: u64 }
+/// The update `VoteV1`'s exec phase hands to its apply phase.
+///
+/// **It carries the record it writes** (`OBL-C73`): the key the vote is filed under and the value filed
+/// there. The write is `votes_db[vote_key.to_repr()] = vote_value.to_repr()`, and apply cannot look the
+/// key up for itself. The two counters it used to carry were hard-coded to zero at the only construction
+/// site and read nowhere — they recorded nothing.
+#[derive(Debug, Clone)]
+pub struct VoteUpdateV1 {
+    pub proposal_id: pallas::Base,
+    pub vote_key: pallas::Base,
+    pub vote_value: pallas::Base,
+}
 
 #[derive(Debug, Clone,)] pub struct ExecuteParamsV1 { pub proposal_id: pallas::Base, pub signature: pallas::Base }
 impl dwow_serial::Encodable for ExecuteParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
@@ -376,7 +394,19 @@ impl dwow_serial::Decodable for TransferParamsV1 { fn decode<D: std::io::Read>(d
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TransferParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(106); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.recipient.to_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.push(self.exceeds_rate_limit as u8); b.push(self.vote_proposal_id.is_some() as u8); if let Some(v) = self.vote_proposal_id { b.extend_from_slice(&v.to_repr()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 106 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); } let fund_id = read_base(&data[0..32])?; let amount = u64::from_le_bytes(data[32..40].try_into().unwrap()); let recipient = PublicKey::from_bytes(data[40..72].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("TransferParamsV1: invalid recipient: {}", e)))?; let signature = read_base(&data[72..104])?; let exceeds_rate_limit = data[104] != 0; let has_vp = data[105] != 0; let vote_proposal_id = if has_vp { if data.len() != 138 { return Err(ContractError::IoError(format!("TransferParamsV1: expected 138 bytes, got {}", data.len()))); } Some(read_base(&data[106..138])?) } else { None }; Ok(TransferParamsV1 { fund_id, amount, recipient, signature, exceeds_rate_limit, vote_proposal_id }) } }
 
-#[derive(Debug, Clone)] pub struct TransferUpdateV1 { pub amount: u64, pub recipient: PublicKey, pub rate_limited: bool }
+/// The update `TransferV1`'s exec phase hands to its apply phase.
+///
+/// **It carries the transfer record and its key** (`OBL-C73`): the write is
+/// `transfers_db[transfer_key.to_repr()] = record.encode()`, and neither the key nor the record can be
+/// reconstructed in apply, which may not read.
+#[derive(Debug, Clone)]
+pub struct TransferUpdateV1 {
+    pub amount: u64,
+    pub recipient: PublicKey,
+    pub rate_limited: bool,
+    pub transfer_key: pallas::Base,
+    pub record: TransferRecord,
+}
 
 #[derive(Debug, Clone,)]
 pub struct LockParamsV1 { pub fund_id: FundId, pub duration_blocks: u64, pub signature: pallas::Base }
@@ -385,14 +415,27 @@ impl dwow_serial::Decodable for LockParamsV1 { fn decode<D: std::io::Read>(d: &m
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl LockParamsV1 { pub const ENCODED_SIZE: usize = 72; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(72); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.duration_blocks.to_le_bytes()); b.extend_from_slice(&self.signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 72 { return Err(ContractError::IoError(format!("LockParamsV1: expected 72 bytes, got {}", data.len()))); } Ok(LockParamsV1 { fund_id: read_base(&data[0..32])?, duration_blocks: u64::from_le_bytes(data[32..40].try_into().unwrap()), signature: read_base(&data[40..72])? }) } }
 
-#[derive(Debug, Clone)] pub struct LockUpdateV1 { pub locked_until: u64 }
+/// The update `LockV1`'s exec phase hands to its apply phase. Carries the fund, because the write is
+/// "store this fund" and apply cannot read it back (`OBL-C73`). `locked_until` was
+/// `fund.lock_expires_at` and is now read from the fund rather than copied beside it.
+#[derive(Debug, Clone)]
+pub struct LockUpdateV1 {
+    pub fund: ProtectedFund,
+}
 
 #[derive(Debug, Clone,)] pub struct UnlockParamsV1 { pub fund_id: FundId, pub signature: pallas::Base }
 impl dwow_serial::Encodable for UnlockParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UnlockParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UnlockParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("UnlockParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(UnlockParamsV1 { fund_id: read_base(&data[0..32])?, signature: read_base(&data[32..64])? }) } }
 
-#[derive(Debug, Clone)] pub struct UnlockUpdateV1 { pub unlocked_at: u64 }
+/// The update `UnlockV1`'s exec phase hands to its apply phase. Carries the fund (`OBL-C73`), and keeps
+/// `unlocked_at` because that value is *not* stored in the fund — it is the height the unlock happened at,
+/// and the fund records only that it is unlocked.
+#[derive(Debug, Clone)]
+pub struct UnlockUpdateV1 {
+    pub fund: ProtectedFund,
+    pub unlocked_at: u64,
+}
 
 #[derive(Debug, Clone,)]
 pub struct UpdateConfigParamsV1 { pub fund_id: FundId, pub rate_limit: Option<RateLimit>, pub multisig_group_id: Option<pallas::Base>, pub new_spend_authority: Option<PublicKey> }
@@ -401,9 +444,14 @@ impl dwow_serial::Decodable for UpdateConfigParamsV1 { fn decode<D: std::io::Rea
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl UpdateConfigParamsV1 { pub fn encode(&self) -> Vec<u8> { let rl = if let Some(ref r) = self.rate_limit { r.encode() } else { vec![] }; let mut b = Vec::with_capacity(34+rl.len()); b.extend_from_slice(&self.fund_id.to_repr()); b.push(self.rate_limit.is_some() as u8); b.extend_from_slice(&rl); b.push(self.multisig_group_id.is_some() as u8); if let Some(v) = self.multisig_group_id { b.extend_from_slice(&v.to_repr()); } b.push(self.new_spend_authority.is_some() as u8); if let Some(v) = self.new_spend_authority { b.extend_from_slice(&v.to_bytes()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 34 { return Err(ContractError::IoError("UpdateConfigParamsV1: too short".into())); } let fund_id = read_base(&data[0..32])?; let has_rl = data[32] != 0; let mut pos = 33; let rate_limit = if has_rl { let r = RateLimit::decode(&data[pos..pos+24])?; pos += 24; Some(r) } else { None }; let has_mg = data[pos] != 0; pos += 1; let multisig_group_id = if has_mg { let v = read_base(&data[pos..pos+32])?; pos += 32; Some(v) } else { None }; let has_sa = data[pos] != 0; let new_spend_authority = if has_sa { if data.len() != pos+33 { return Err(ContractError::IoError(format!("UpdateConfigParamsV1: expected {} bytes, got {}", pos+33, data.len()))); } Some(PublicKey::from_bytes(data[pos+1..pos+33].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("UpdateConfigParamsV1: invalid new_spend_authority: {}", e)))?) } else { None }; Ok(UpdateConfigParamsV1 { fund_id, rate_limit, multisig_group_id, new_spend_authority }) } }
 
+/// The update `UpdateConfigV1`'s exec phase hands to its apply phase.
+///
+/// **Carries the fund** (`OBL-C73`): the write is "store this fund", and apply cannot read the previous
+/// one to re-derive it. `authority_change_timelock` was `fund.authority_change_timelock` and travels in
+/// the fund.
 #[derive(Debug, Clone)]
 pub struct UpdateConfigUpdateV1 {
-    pub authority_change_timelock: Option<u64>,
+    pub fund: ProtectedFund,
 }
 
 // ============================================================================
@@ -689,26 +737,32 @@ impl ProtectedFund {
 
 // --- Bridge update structs ---
 
-impl dwow_serial::Encodable for InitializeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for InitializeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for InitializeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl InitializeUpdateV1 {
-    pub const ENCODED_SIZE: usize = 64;
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.instance_seed);
-        buf.extend_from_slice(&self.fund_id.to_repr());
-        buf
+    /// Length-prefixed, because the fund is variable-sized: `ProposeParamsV1`'s proof carries the same
+    /// shape in this file, and the prefix is what lets the decoder tell a truncated fund from a short one.
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let fund = self.fund.encode()?;
+        let len = SerializedLen::try_from_len(fund.len())?;
+        let mut buf = Vec::with_capacity(4 + fund.len());
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(&fund);
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!("InitializeUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        if data.len() < 4 {
+            return Err(ContractError::IoError("InitializeUpdateV1: too short for a length prefix".into()));
         }
-        Ok(InitializeUpdateV1 {
-            instance_seed: data[0..32].try_into().unwrap(),
-            fund_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
-                .ok_or_else(|| ContractError::IoError("InitializeUpdateV1: invalid fund_id".into()))?,
-        })
+        let len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let expected = len.checked_add(4).ok_or_else(|| {
+            ContractError::IoError("InitializeUpdateV1: length prefix overflows".into())
+        })?;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!("InitializeUpdateV1: expected {expected} bytes, got {}", data.len())));
+        }
+        Ok(InitializeUpdateV1 { fund: ProtectedFund::decode(&data[4..])? })
     }
 }
 
@@ -733,12 +787,12 @@ impl dwow_serial::Encodable for VoteUpdateV1 { fn encode<W: std::io::Write>(&sel
 impl dwow_serial::Decodable for VoteUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl VoteUpdateV1 {
-    pub const ENCODED_SIZE: usize = 48;
+    pub const ENCODED_SIZE: usize = 96;
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.proposal_id.to_repr());
-        buf.extend_from_slice(&self.yes_votes.to_le_bytes());
-        buf.extend_from_slice(&self.no_votes.to_le_bytes());
+        buf.extend_from_slice(&self.vote_key.to_repr());
+        buf.extend_from_slice(&self.vote_value.to_repr());
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -748,8 +802,10 @@ impl VoteUpdateV1 {
         Ok(VoteUpdateV1 {
             proposal_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
                 .ok_or_else(|| ContractError::IoError("VoteUpdateV1: invalid proposal_id".into()))?,
-            yes_votes: u64::from_le_bytes(data[32..40].try_into().unwrap()),
-            no_votes: u64::from_le_bytes(data[40..48].try_into().unwrap()),
+            vote_key: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("VoteUpdateV1: invalid vote_key".into()))?,
+            vote_value: Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("VoteUpdateV1: invalid vote_value".into()))?,
         })
     }
 }
@@ -806,77 +862,130 @@ impl ExitUpdateV1 {
     }
 }
 
-impl dwow_serial::Encodable for TransferUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for TransferUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TransferUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TransferUpdateV1 {
-    pub const ENCODED_SIZE: usize = 41;
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+    /// The fixed part is `amount(8) + recipient(32) + rate_limited(1) + transfer_key(32)` = 73 bytes, then
+    /// the record with a length prefix — the same prefix discipline the fund-carrying updates use, so a
+    /// truncated record cannot be read as a short one.
+    pub const ENCODED_SIZE: usize = 73;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let record = self.record.encode();
+        let len = SerializedLen::try_from_len(record.len())?;
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE + 4 + record.len());
         buf.extend_from_slice(&self.amount.to_le_bytes());
         buf.extend_from_slice(&self.recipient.to_bytes());
         buf.push(if self.rate_limited { 1 } else { 0 });
-        buf
+        buf.extend_from_slice(&self.transfer_key.to_repr());
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(&record);
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!("TransferUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        if data.len() < Self::ENCODED_SIZE + 4 {
+            return Err(ContractError::IoError(format!("TransferUpdateV1: expected at least {} bytes, got {}", Self::ENCODED_SIZE + 4, data.len())));
+        }
+        let record_len = SerializedLen::from_le_bytes(data[Self::ENCODED_SIZE..Self::ENCODED_SIZE + 4].try_into().unwrap()).to_usize();
+        let expected = Self::ENCODED_SIZE + 4 + record_len;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!("TransferUpdateV1: expected {expected} bytes, got {}", data.len())));
         }
         Ok(TransferUpdateV1 {
             amount: u64::from_le_bytes(data[0..8].try_into().unwrap()),
             recipient: PublicKey::from_bytes(data[8..40].try_into().unwrap())
                 .map_err(|e| ContractError::IoError(format!("TransferUpdateV1: invalid recipient: {:?}", e)))?,
             rate_limited: data[40] != 0,
+            transfer_key: Option::<pallas::Base>::from(pallas::Base::from_repr(data[41..73].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("TransferUpdateV1: invalid transfer_key".into()))?,
+            record: TransferRecord::decode(&data[Self::ENCODED_SIZE + 4..])?,
         })
     }
 }
 
-impl dwow_serial::Encodable for LockUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for LockUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for LockUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl LockUpdateV1 {
-    pub const ENCODED_SIZE: usize = 8;
-    pub fn encode(&self) -> Vec<u8> { self.locked_until.to_le_bytes().to_vec() }
+    /// Length-prefixed fund, as `InitializeUpdateV1`.
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let fund = self.fund.encode()?;
+        let len = SerializedLen::try_from_len(fund.len())?;
+        let mut buf = Vec::with_capacity(4 + fund.len());
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(&fund);
+        Ok(buf)
+    }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!("LockUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        if data.len() < 4 {
+            return Err(ContractError::IoError("LockUpdateV1: too short for a length prefix".into()));
         }
-        Ok(LockUpdateV1 { locked_until: u64::from_le_bytes(data[0..8].try_into().unwrap()) })
+        let len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let expected = len.checked_add(4).ok_or_else(|| {
+            ContractError::IoError("LockUpdateV1: length prefix overflows".into())
+        })?;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!("LockUpdateV1: expected {expected} bytes, got {}", data.len())));
+        }
+        Ok(LockUpdateV1 { fund: ProtectedFund::decode(&data[4..])? })
     }
 }
 
-impl dwow_serial::Encodable for UnlockUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for UnlockUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UnlockUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl UnlockUpdateV1 {
+    /// `unlocked_at(8)` then the length-prefixed fund.
     pub const ENCODED_SIZE: usize = 8;
-    pub fn encode(&self) -> Vec<u8> { self.unlocked_at.to_le_bytes().to_vec() }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let fund = self.fund.encode()?;
+        let len = SerializedLen::try_from_len(fund.len())?;
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE + 4 + fund.len());
+        buf.extend_from_slice(&self.unlocked_at.to_le_bytes());
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(&fund);
+        Ok(buf)
+    }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!("UnlockUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        if data.len() < Self::ENCODED_SIZE + 4 {
+            return Err(ContractError::IoError(format!("UnlockUpdateV1: expected at least {} bytes, got {}", Self::ENCODED_SIZE + 4, data.len())));
         }
-        Ok(UnlockUpdateV1 { unlocked_at: u64::from_le_bytes(data[0..8].try_into().unwrap()) })
+        let fund_len = SerializedLen::from_le_bytes(data[Self::ENCODED_SIZE..Self::ENCODED_SIZE + 4].try_into().unwrap()).to_usize();
+        let expected = Self::ENCODED_SIZE + 4 + fund_len;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!("UnlockUpdateV1: expected {expected} bytes, got {}", data.len())));
+        }
+        Ok(UnlockUpdateV1 {
+            unlocked_at: u64::from_le_bytes(data[0..8].try_into().unwrap()),
+            fund: ProtectedFund::decode(&data[Self::ENCODED_SIZE + 4..])?,
+        })
     }
 }
 
-impl dwow_serial::Encodable for UpdateConfigUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for UpdateConfigUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdateConfigUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl UpdateConfigUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-        match self.authority_change_timelock {
-            Some(v) => { buf.push(1); buf.extend_from_slice(&v.to_le_bytes()); }
-            None => { buf.push(0); }
-        }
-        buf
+    /// Length-prefixed fund, as `InitializeUpdateV1`.
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let fund = self.fund.encode()?;
+        let len = SerializedLen::try_from_len(fund.len())?;
+        let mut buf = Vec::with_capacity(4 + fund.len());
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(&fund);
+        Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.is_empty() { return Err(ContractError::IoError("UpdateConfigUpdateV1: empty data".into())); }
-        let authority_change_timelock = if data[0] == 1 {
-            if data.len() < 9 { return Err(ContractError::IoError("UpdateConfigUpdateV1: data too short".into())); }
-            Some(u64::from_le_bytes(data[1..9].try_into().unwrap()))
-        } else { None };
-        Ok(UpdateConfigUpdateV1 { authority_change_timelock })
+        if data.len() < 4 {
+            return Err(ContractError::IoError("UpdateConfigUpdateV1: too short for a length prefix".into()));
+        }
+        let len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let expected = len.checked_add(4).ok_or_else(|| {
+            ContractError::IoError("UpdateConfigUpdateV1: length prefix overflows".into())
+        })?;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!("UpdateConfigUpdateV1: expected {expected} bytes, got {}", data.len())));
+        }
+        Ok(UpdateConfigUpdateV1 { fund: ProtectedFund::decode(&data[4..])? })
     }
 }

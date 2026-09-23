@@ -5,7 +5,9 @@
 #
 # The key is the *content* of the call, not a line number, so an edit above a site moves nothing.
 # `scripts/check-phase-host-functions.sh` reports a matching finding as EXCEPTED and does not fail
-# the run on it; every other finding still fails.
+# the run on it; every other finding still fails. An entry that no longer matches anything is
+# reported as stale, because a stale entry still admits the next finding of the same shape in the
+# same function — that check was added on 2026-09-23 and is what proved this list was empty.
 #
 # WHAT BELONGS HERE. A site whose defect is understood, named and scheduled — the entry *is* the
 # schedule, and it must cite a register ID (`doc/src/arch/verification-hazop.md`) and say what the
@@ -15,20 +17,16 @@
 # an exception, so an entry whose justification was not verified by reading the code is worse than
 # a red gate — it is the defect wearing an audit badge.
 #
-# CURRENTLY SEVEN, and all seven are one contract and one shape: `drain_protection` writes state
-# from its exec phase. The rule is not stylistic — `vm_runtime.rs:954` runs apply as
-# `ContractSection::Update`, the host returns `CALLER_ACCESS_DENIED` when the section is outside a
-# function's `acl_allow` list, and no write function admits `Exec` at all. So every one of these
-# seven calls **cannot succeed**: as shipped, `drain_protection` is inert. That is exactly what
-# `OBL-C73` records, and the repair is that row's — move each write into the corresponding apply
-# function, carry the computed value through the update struct, and give the contract a `process_update`
-# that writes rather than the no-op it has. Each entry below is one of the seven sites `OBL-C73`
-# names, and when that row lands these lines come out with it.
-
-src/contract/drain_protection/src/entrypoint.rs : init_fund_process_instruction_v1() -> db_set() : OBL-C73 — §B.2.2 `CALLER_ACCESS_DENIED`; the write belongs in this call's apply function, which does not exist yet
-src/contract/drain_protection/src/entrypoint.rs : vote_process_instruction_v1() -> db_set() : OBL-C73 — §B.2.2 `CALLER_ACCESS_DENIED`; the write belongs in this call's apply function, which does not exist yet
-src/contract/drain_protection/src/entrypoint.rs : exit_process_instruction_v1() -> db_set() : OBL-C73 — §B.2.2 `CALLER_ACCESS_DENIED`; the write belongs in this call's apply function, which does not exist yet
-src/contract/drain_protection/src/entrypoint.rs : transfer_process_instruction_v1() -> db_set() : OBL-C73 — §B.2.2 `CALLER_ACCESS_DENIED`; the write belongs in this call's apply function, which does not exist yet
-src/contract/drain_protection/src/entrypoint.rs : lock_process_instruction_v1() -> db_set() : OBL-C73 — §B.2.2 `CALLER_ACCESS_DENIED`; the write belongs in this call's apply function, which does not exist yet
-src/contract/drain_protection/src/entrypoint.rs : unlock_process_instruction_v1() -> db_set() : OBL-C73 — §B.2.2 `CALLER_ACCESS_DENIED`; the write belongs in this call's apply function, which does not exist yet
-src/contract/drain_protection/src/entrypoint.rs : update_config_process_instruction_v1() -> db_set() : OBL-C73 — §B.2.2 `CALLER_ACCESS_DENIED`; the write belongs in this call's apply function, which does not exist yet
+# CURRENTLY EMPTY, and it was emptied by repairing the defect rather than by widening the list.
+# The seven entries that used to be here were all `drain_protection`, all `() -> db_set()`, all one
+# cause: the contract wrote its state from the exec phase, where every one of those calls returns
+# `CALLER_ACCESS_DENIED` — `vm_runtime.rs:954` runs apply as `ContractSection::Update`, and no write
+# function admits `Exec` at all — so as shipped the contract committed nothing anywhere.
+#
+# `OBL-C73` repaired it on 2026-09-23: each write moved into a new apply function beside a
+# `process_update` that had been a no-op, and each update struct now **carries the value to write**,
+# because apply may neither read nor validate (`§B.2.2`) and so cannot recompute it. That is why the
+# repair was a contract rework and not a move: five of the seven updates held only identifiers, and
+# there was nothing to write from. The gate found all seven entries stale in one run the moment the
+# last write moved, which is the check that makes this file's emptiness a measurement rather than a
+# claim.

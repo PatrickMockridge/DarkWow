@@ -401,11 +401,10 @@ fn init_fund_process_instruction_v1(
         observation_pending: vec![],
     };
 
-    // Store fund directly (InitializeUpdateV1 only has fund_id)
-    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode()?)?;
-
-    let update = crate::model::InitializeUpdateV1 { instance_seed: params.instance_seed, fund_id: fund.id };
-    Ok(encode_initialize_update_v1(&update))
+    // The fund travels in the update and is stored in apply (`OBL-C73`): the exec phase may read but not
+    // write, and apply may not read, so the value it must store has to be carried to it.
+    let update = crate::model::InitializeUpdateV1 { fund };
+    encode_initialize_update_v1(&update)
 }
 
 /// `process_instruction` for ProposeV1
@@ -432,7 +431,7 @@ fn propose_process_instruction_v1(
     let proposal_id = dwow_sdk::crypto::poseidon_hash([fund.id, params.message_hash]);
 
     let update = ProposeUpdateV1 { proposal_id };
-    Ok(encode_propose_update_v1(&update))
+    encode_propose_update_v1(&update)
 }
 
 /// `process_instruction` for VoteV1
@@ -449,17 +448,19 @@ fn vote_process_instruction_v1(
     // Each signer proves membership; the MultiSig group tracks partial signatures.
     // This function records the vote intent; threshold checking is in execute.
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-    let vote_key = poseidon_hash([params.proposal_id, params.voter_pubkey.x().expect("pk not identity"), params.voter_pubkey.y().expect("pk not identity")]).to_repr().to_vec();
+    let vote_key_base = poseidon_hash([params.proposal_id, params.voter_pubkey.x().expect("pk not identity"), params.voter_pubkey.y().expect("pk not identity")]);
+    let vote_key = vote_key_base.to_repr().to_vec();
     if wasm::db::db_contains_key(votes_db, &vote_key)? {
         return Err(DrainProtectionError::ConfigurationError("Already voted".to_string()).into())
     }
 
-    // Record vote yes/no via MultiSig-compatible signature
+    // Record vote yes/no via MultiSig-compatible signature.
+    // The key and the value travel in the update and are written in apply (`OBL-C73`) — apply may not
+    // read, so neither can be recomputed there.
     let vote_value = if params.vote { pallas::Base::one() } else { pallas::Base::zero() };
-    wasm::db::db_set(votes_db, &vote_key, &vote_value.to_repr())?;
 
-    let update = VoteUpdateV1 { proposal_id: params.proposal_id, yes_votes: 0, no_votes: 0 };
-    Ok(encode_vote_update_v1(&update))
+    let update = VoteUpdateV1 { proposal_id: params.proposal_id, vote_key: vote_key_base, vote_value };
+    encode_vote_update_v1(&update)
 }
 
 /// `process_instruction` for ExecuteV1
@@ -484,7 +485,7 @@ fn execute_process_instruction_v1(
     }
 
     let update = crate::model::ExecuteUpdateV1 { proposal_id: params.proposal_id, action: params.proposal_id };
-    Ok(encode_execute_update_v1(&update))
+    encode_execute_update_v1(&update)
 }
 
 /// `process_instruction` for ExitV1
@@ -527,15 +528,14 @@ fn exit_process_instruction_v1(
     ]);
     validate_child_value_commit(child_call_data, exit_value, value_blind)?;
 
-    wasm::db::db_set(exits_db, &exit_id.to_repr(), &[1])?;
-
+    // The exit marker is written in apply (`OBL-C73`); the update already carries the id it is keyed on.
     let update = ExitUpdateV1 {
         exit_id,
         member_pubkey: params.member_pubkey,
         payout_value: exit_value,
         haircut_collected: (member_weight * fund.total_funds / total_weight.max(1)) * haircut_bps / 10_000,
     };
-    Ok(encode_exit_update_v1(&update))
+    encode_exit_update_v1(&update)
 }
 
 /// `process_instruction` for TransferV1
@@ -583,17 +583,19 @@ fn transfer_process_instruction_v1(
     ]);
     validate_child_value_commit(child_call_data, params.amount, value_blind)?;
 
-    // Record transfer for rate limiting
+    // Record transfer for rate limiting — written in apply (`OBL-C73`), so the record and the key it is
+    // filed under both travel in the update.
     let record = crate::model::TransferRecord { version: 1, block: current_block, amount: params.amount };
     let transfer_key = dwow_sdk::crypto::poseidon_hash([current_block.into()]);
-    wasm::db::db_set(transfers_db, &transfer_key.to_repr(), &record.encode())?;
 
     let update = crate::model::TransferUpdateV1 {
         amount: params.amount,
         recipient: params.recipient,
         rate_limited,
+        transfer_key,
+        record,
     };
-    Ok(encode_transfer_update_v1(&update))
+    encode_transfer_update_v1(&update)
 }
 
 /// `process_instruction` for LockV1
@@ -620,10 +622,9 @@ fn lock_process_instruction_v1(
     fund.lock_state = crate::model::LockState::Locked;
     fund.lock_expires_at = current_block + params.duration_blocks;
 
-    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode()?)?;
-
-    let update = LockUpdateV1 { locked_until: fund.lock_expires_at };
-    Ok(encode_lock_update_v1(&update))
+    // Stored in apply (`OBL-C73`): the mutated fund travels in the update.
+    let update = LockUpdateV1 { fund };
+    encode_lock_update_v1(&update)
 }
 
 /// `process_instruction` for UnlockV1
@@ -652,10 +653,10 @@ fn unlock_process_instruction_v1(
 
     fund.lock_state = crate::model::LockState::Unlocked;
 
-    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode()?)?;
-
-    let update = UnlockUpdateV1 { unlocked_at: current_block };
-    Ok(encode_unlock_update_v1(&update))
+    // Stored in apply (`OBL-C73`): the mutated fund travels in the update, and `unlocked_at` with it
+    // because the fund records only *that* it is unlocked, not when.
+    let update = UnlockUpdateV1 { fund, unlocked_at: current_block };
+    encode_unlock_update_v1(&update)
 }
 
 /// `process_instruction` for UpdateConfigV1
@@ -692,104 +693,247 @@ fn update_config_process_instruction_v1(
         fund.spend_authority = new_authority;
     }
 
-    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode()?)?;
-
-    let update = crate::model::UpdateConfigUpdateV1 {
-        authority_change_timelock: if params.new_spend_authority.is_some() {
-            Some(fund.authority_change_timelock)
-        } else {
-            None
-        },
-    };
-    Ok(encode_update_config_update_v1(&update))
+    // Stored in apply (`OBL-C73`): the mutated fund travels in the update, `authority_change_timelock`
+    // included — it is a field of the fund.
+    let update = crate::model::UpdateConfigUpdateV1 { fund };
+    encode_update_config_update_v1(&update)
 }
 
 // ============================================================================
 // RHO-CALCULUS EXPLICIT BRIDGE ENCODE/DECODE
 // ============================================================================
 
-fn encode_initialize_update_v1(update: &crate::model::InitializeUpdateV1) -> Vec<u8> {
-    let inner = update.encode();
+fn encode_initialize_update_v1(update: &crate::model::InitializeUpdateV1) -> Result<Vec<u8>, ContractError> {
+    // `?` because the update's own encoder is fallible where it carries a variable-length value
+    // (a fund, a record): a length that does not fit the prefix is an error, not a short buffer.
+    let inner = update.encode()?;
     let mut buf = Vec::with_capacity(1 + inner.len());
     buf.push(DrainProtectionFunction::InitializeV1 as u8);
     buf.extend_from_slice(&inner);
-    buf
+    Ok(buf)
 }
 
-fn encode_propose_update_v1(update: &crate::model::ProposeUpdateV1) -> Vec<u8> {
+fn encode_propose_update_v1(update: &crate::model::ProposeUpdateV1) -> Result<Vec<u8>, ContractError> {
     let inner = update.encode();
     let mut buf = Vec::with_capacity(1 + inner.len());
     buf.push(DrainProtectionFunction::ProposeV1 as u8);
     buf.extend_from_slice(&inner);
-    buf
+    Ok(buf)
 }
 
-fn encode_vote_update_v1(update: &crate::model::VoteUpdateV1) -> Vec<u8> {
+fn encode_vote_update_v1(update: &crate::model::VoteUpdateV1) -> Result<Vec<u8>, ContractError> {
     let inner = update.encode();
     let mut buf = Vec::with_capacity(1 + inner.len());
     buf.push(DrainProtectionFunction::VoteV1 as u8);
     buf.extend_from_slice(&inner);
-    buf
+    Ok(buf)
 }
 
-fn encode_execute_update_v1(update: &crate::model::ExecuteUpdateV1) -> Vec<u8> {
+fn encode_execute_update_v1(update: &crate::model::ExecuteUpdateV1) -> Result<Vec<u8>, ContractError> {
     let inner = update.encode();
     let mut buf = Vec::with_capacity(1 + inner.len());
     buf.push(DrainProtectionFunction::ExecuteV1 as u8);
     buf.extend_from_slice(&inner);
-    buf
+    Ok(buf)
 }
 
-fn encode_exit_update_v1(update: &crate::model::ExitUpdateV1) -> Vec<u8> {
+fn encode_exit_update_v1(update: &crate::model::ExitUpdateV1) -> Result<Vec<u8>, ContractError> {
     let inner = update.encode();
     let mut buf = Vec::with_capacity(1 + inner.len());
     buf.push(DrainProtectionFunction::ExitV1 as u8);
     buf.extend_from_slice(&inner);
-    buf
+    Ok(buf)
 }
 
-fn encode_transfer_update_v1(update: &crate::model::TransferUpdateV1) -> Vec<u8> {
-    let inner = update.encode();
+fn encode_transfer_update_v1(update: &crate::model::TransferUpdateV1) -> Result<Vec<u8>, ContractError> {
+    // `?` because the update's own encoder is fallible where it carries a variable-length value
+    // (a fund, a record): a length that does not fit the prefix is an error, not a short buffer.
+    let inner = update.encode()?;
     let mut buf = Vec::with_capacity(1 + inner.len());
     buf.push(DrainProtectionFunction::TransferV1 as u8);
     buf.extend_from_slice(&inner);
-    buf
+    Ok(buf)
 }
 
-fn encode_lock_update_v1(update: &crate::model::LockUpdateV1) -> Vec<u8> {
-    let inner = update.encode();
+fn encode_lock_update_v1(update: &crate::model::LockUpdateV1) -> Result<Vec<u8>, ContractError> {
+    // `?` because the update's own encoder is fallible where it carries a variable-length value
+    // (a fund, a record): a length that does not fit the prefix is an error, not a short buffer.
+    let inner = update.encode()?;
     let mut buf = Vec::with_capacity(1 + inner.len());
     buf.push(DrainProtectionFunction::LockV1 as u8);
     buf.extend_from_slice(&inner);
-    buf
+    Ok(buf)
 }
 
-fn encode_unlock_update_v1(update: &crate::model::UnlockUpdateV1) -> Vec<u8> {
-    let inner = update.encode();
+fn encode_unlock_update_v1(update: &crate::model::UnlockUpdateV1) -> Result<Vec<u8>, ContractError> {
+    // `?` because the update's own encoder is fallible where it carries a variable-length value
+    // (a fund, a record): a length that does not fit the prefix is an error, not a short buffer.
+    let inner = update.encode()?;
     let mut buf = Vec::with_capacity(1 + inner.len());
     buf.push(DrainProtectionFunction::UnlockV1 as u8);
     buf.extend_from_slice(&inner);
-    buf
+    Ok(buf)
 }
 
-fn encode_update_config_update_v1(update: &crate::model::UpdateConfigUpdateV1) -> Vec<u8> {
-    let inner = update.encode();
+fn encode_update_config_update_v1(update: &crate::model::UpdateConfigUpdateV1) -> Result<Vec<u8>, ContractError> {
+    // `?` because the update's own encoder is fallible where it carries a variable-length value
+    // (a fund, a record): a length that does not fit the prefix is an error, not a short buffer.
+    let inner = update.encode()?;
     let mut buf = Vec::with_capacity(1 + inner.len());
     buf.push(DrainProtectionFunction::UpdateConfigV1 as u8);
     buf.extend_from_slice(&inner);
-    buf
+    Ok(buf)
 }
 
 // ============================================================================
 // STATE UPDATE
 // ============================================================================
 
-/// Write state update after successful verification.
-/// State is written directly in process_instruction to keep the DB write
-/// co-located with validation logic. This function is a no-op that confirms
-/// the update was accepted by consensus.
-fn process_update(_cid: dwow_sdk::crypto::ContractId, _update_data: &[u8]) -> ContractResult {
-    msg!("[drain_protection::process_update] Update applied");
+/// Apply the state update the exec phase produced. **This is where every write happens** (`OBL-C73`).
+///
+/// The contract used to write from its exec phase — seven `db_set` calls, each of them a call the host
+/// refuses at runtime, because apply is the only section whose ACL admits a write and `Exec` is in no
+/// write function's list. So as shipped `drain_protection` committed nothing and this function, which
+/// ignored both arguments, was the reason: the writes that should have been here were in the section
+/// that cannot perform them.
+///
+/// The dispatch mirrors `identity`'s: the selector byte the exec phase prepended picks the update type,
+/// and the update carries everything the write needs — apply may neither read nor validate (`§B.2.2`),
+/// so nothing is re-derived here. Trusting the update is sound because the update is produced *inside
+/// the contract's own exec phase* and handed to apply by the host; a client supplies call data, never
+/// an update.
+fn process_update(cid: dwow_sdk::crypto::ContractId, update_data: &[u8]) -> ContractResult {
+    let update_func = *update_data.first().ok_or_else(|| {
+        ContractError::IoError("empty update data: no selector byte".to_string())
+    })?;
+    let update_payload = update_data.get(1..).ok_or_else(|| {
+        ContractError::IoError("empty update data: no payload after selector".to_string())
+    })?;
+    let func = DrainProtectionFunction::try_from(update_func)?;
+
+    match func {
+        DrainProtectionFunction::InitializeV1 => {
+            let update = crate::model::InitializeUpdateV1::decode(update_payload)?;
+            apply_initialize_update(cid, update)
+        }
+        DrainProtectionFunction::ProposeV1 => {
+            let update = crate::model::ProposeUpdateV1::decode(update_payload)?;
+            apply_propose_update(cid, update)
+        }
+        DrainProtectionFunction::VoteV1 => {
+            let update = VoteUpdateV1::decode(update_payload)?;
+            apply_vote_update(cid, update)
+        }
+        DrainProtectionFunction::ExecuteV1 => {
+            let update = crate::model::ExecuteUpdateV1::decode(update_payload)?;
+            apply_execute_update(cid, update)
+        }
+        DrainProtectionFunction::ExitV1 => {
+            let update = ExitUpdateV1::decode(update_payload)?;
+            apply_exit_update(cid, update)
+        }
+        DrainProtectionFunction::TransferV1 => {
+            let update = crate::model::TransferUpdateV1::decode(update_payload)?;
+            apply_transfer_update(cid, update)
+        }
+        DrainProtectionFunction::LockV1 => {
+            let update = LockUpdateV1::decode(update_payload)?;
+            apply_lock_update(cid, update)
+        }
+        DrainProtectionFunction::UnlockV1 => {
+            let update = UnlockUpdateV1::decode(update_payload)?;
+            apply_unlock_update(cid, update)
+        }
+        DrainProtectionFunction::UpdateConfigV1 => {
+            let update = crate::model::UpdateConfigUpdateV1::decode(update_payload)?;
+            apply_update_config_update(cid, update)
+        }
+    }
+}
+
+// ============================================================================
+// APPLY — the write half of each instruction
+// ============================================================================
+
+/// Store the fund `InitializeV1` created.
+fn apply_initialize_update(
+    cid: dwow_sdk::crypto::ContractId,
+    update: crate::model::InitializeUpdateV1,
+) -> ContractResult {
+    let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
+    wasm::db::db_set(funds_db, &update.fund.id.to_repr(), &update.fund.encode()?)?;
+    msg!("[InitializeV1::apply] Fund stored");
+    Ok(())
+}
+
+/// `ProposeV1` writes nothing: a proposal is recorded by the votes cast on it. Kept as an explicit arm
+/// so the dispatch is total and the reason is visible rather than looking like a missing case.
+fn apply_propose_update(
+    _cid: dwow_sdk::crypto::ContractId,
+    _update: crate::model::ProposeUpdateV1,
+) -> ContractResult {
+    Ok(())
+}
+
+/// `ExecuteV1` writes nothing — execution is the proposal's effect, carried by its own child calls.
+fn apply_execute_update(
+    _cid: dwow_sdk::crypto::ContractId,
+    _update: crate::model::ExecuteUpdateV1,
+) -> ContractResult {
+    Ok(())
+}
+
+/// File the vote under the key the exec phase derived and the value it decided.
+fn apply_vote_update(cid: dwow_sdk::crypto::ContractId, update: VoteUpdateV1) -> ContractResult {
+    let votes_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_VOTES_TREE)?;
+    wasm::db::db_set(votes_db, &update.vote_key.to_repr(), &update.vote_value.to_repr())?;
+    msg!("[VoteV1::apply] Vote recorded");
+    Ok(())
+}
+
+/// Mark the exit processed. The value is the marker `[1]` the exec phase used to write.
+fn apply_exit_update(cid: dwow_sdk::crypto::ContractId, update: ExitUpdateV1) -> ContractResult {
+    let exits_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_EXITS_TREE)?;
+    wasm::db::db_set(exits_db, &update.exit_id.to_repr(), &[1])?;
+    msg!("[ExitV1::apply] Exit recorded");
+    Ok(())
+}
+
+/// Record the transfer for rate limiting, under the key and with the record the update carries.
+fn apply_transfer_update(
+    cid: dwow_sdk::crypto::ContractId,
+    update: crate::model::TransferUpdateV1,
+) -> ContractResult {
+    let transfers_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE)?;
+    wasm::db::db_set(transfers_db, &update.transfer_key.to_repr(), &update.record.encode())?;
+    msg!("[TransferV1::apply] Transfer recorded");
+    Ok(())
+}
+
+/// Store the fund `LockV1` mutated.
+fn apply_lock_update(cid: dwow_sdk::crypto::ContractId, update: LockUpdateV1) -> ContractResult {
+    let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
+    wasm::db::db_set(funds_db, &update.fund.id.to_repr(), &update.fund.encode()?)?;
+    msg!("[LockV1::apply] Fund locked");
+    Ok(())
+}
+
+/// Store the fund `UnlockV1` mutated.
+fn apply_unlock_update(cid: dwow_sdk::crypto::ContractId, update: UnlockUpdateV1) -> ContractResult {
+    let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
+    wasm::db::db_set(funds_db, &update.fund.id.to_repr(), &update.fund.encode()?)?;
+    msg!("[UnlockV1::apply] Fund unlocked");
+    Ok(())
+}
+
+/// Store the fund `UpdateConfigV1` mutated.
+fn apply_update_config_update(
+    cid: dwow_sdk::crypto::ContractId,
+    update: crate::model::UpdateConfigUpdateV1,
+) -> ContractResult {
+    let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
+    wasm::db::db_set(funds_db, &update.fund.id.to_repr(), &update.fund.encode()?)?;
+    msg!("[UpdateConfigV1::apply] Fund configuration stored");
     Ok(())
 }
 

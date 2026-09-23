@@ -103,10 +103,16 @@ run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instan
 # existed and was invoked by NOTHING until now, which is why the class it guards drifted: seven
 # live `db_set` calls in an exec phase, every one of them a call the host refuses at runtime
 # (§B.2.2 `CALLER_ACCESS_DENIED`), so `drain_protection` is inert as shipped. It is wired here as
-# a ratchet rather than a blocker: those seven are named and scheduled in
-# `script/phase_host_function_exceptions.txt` and print as EXCEPTED on every run, while a *new*
-# violation fails. Negative-controlled before wiring, both ways — with the exception file removed
-# the gate exits 1 with all seven, and with one entry dropped it exits 1 naming exactly that site.
+# a ratchet rather than a blocker: a site whose defect is understood and scheduled is named in
+# `script/phase_host_function_exceptions.txt` and prints as EXCEPTED, while a *new* violation
+# fails. Negative-controlled before wiring, both ways — with the exception file removed the gate
+# exits 1 with all seven, and with one entry dropped it exits 1 naming exactly that site.
+#
+# The list is now EMPTY, because OBL-C73's repair landed: the seven writes moved into apply
+# functions and their updates were widened to carry the values (apply may not read). The gate grew
+# a stale-entry check at the same time, so an exception whose site no longer matches is reported
+# rather than silently admitting the next finding of the same shape — that check is what showed the
+# list was empty in one run instead of leaving seven dead entries in it.
 run_gate "exec/apply phase rule"          bash "$SCRIPT_DIR/check-phase-host-functions.sh"
 # OBL-Z18: the vacuous-binding rule. Promoted from report-only to a ratchet on 2026-09-23, when
 # the sweep finished — all 57 candidates were read, circuit and host together, and each is listed

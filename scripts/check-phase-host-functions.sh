@@ -277,13 +277,30 @@ if exc_path.is_file():
         exceptions.setdefault((parts[0], parts[1]), parts[2])
 
 excepted, failing = [], []
+matched = set()
 for entry in sorted(set(report)):
     rel_f, line_f, name_f, h_f, secs_f, why_f = entry
     key = (str(rel_f), f"{name_f}() -> {h_f}()")
     if key in exceptions:
         excepted.append((entry, exceptions[key]))
+        matched.add(key)
     else:
         failing.append(entry)
+
+# STALE ENTRIES. An exception whose site no longer exists is an exception that has been earned and is
+# still being spent: the next finding of the same shape inside the same function would be admitted by
+# it. The list is content-keyed, so a fixed site silently stops matching — which is exactly what
+# happened when `OBL-C73`'s repair landed and left seven entries describing calls that are now in
+# apply. Reported like `check-hidden-tests.sh` and the Z18 ratchet report theirs, so removing them is
+# an instruction the gate gives rather than a chore someone remembers.
+stale = sorted(k for k in exceptions if k not in matched)
+if stale:
+    print("NOTE: excepted but no longer found — the repair landed, so remove these lines:")
+    for rel_s, sig_s in stale:
+        print(f"  {rel_s} : {sig_s}")
+    print(f"      {exceptions[(stale[0][0], stale[0][1])]}")
+    print("      A stale entry still admits the next finding of the same shape in that function.")
+    print()
 
 for (rel_f, line_f, name_f, h_f, secs_f, why_f), reason in excepted:
     print(f"EXCEPTED: {rel_f}:{line_f}: {name_f}() -> {h_f}()")

@@ -348,16 +348,46 @@ fn test_lock_params_encoding() {
     assert_eq!(decoded.duration_blocks, params.duration_blocks);
 }
 
+/// A small fund for the update round-trips: the four updates that carry a fund write it back whole, so
+/// what these tests check is that the value survives the length-prefixed encoding (`OBL-C73`). Small on
+/// purpose — the 256-member case above is the one that tests the fund's own encoding.
+fn update_test_fund() -> ProtectedFund {
+    ProtectedFund {
+        version: 1,
+        instance_seed: [9u8; 32],
+        id: pallas::Base::from(77),
+        total_funds: 4242,
+        spend_authority: make_pubkey(3),
+        lock_state: LockState::Locked,
+        rate_limit: RateLimit::default(),
+        multisig_group_id: pallas::Base::from(78),
+        purse_id: pallas::Base::from(79),
+        drain_config: DrainConfig::default(),
+        members: vec![],
+        lock_expires_at: 50600,
+        authority_change_timelock: 100000,
+        created_at: 12,
+        exit_queue_state: vec![],
+        circuit_breaker_state: None,
+        dead_mans_switch_state: None,
+        no_loss_reserve_balance: 0,
+        observation_pending: vec![],
+    }
+}
+
 #[test]
 fn test_lock_update_encoding() {
-    let update = LockUpdateV1 {
-        locked_until: 50600,
-    };
+    let update = LockUpdateV1 { fund: update_test_fund() };
 
     let encoded = serialize(&update);
     let decoded: LockUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.locked_until, update.locked_until);
+    assert_eq!(
+        decoded.fund.lock_expires_at, update.fund.lock_expires_at,
+        "the fund the lock produced must survive the update — apply stores it without reading anything back"
+    );
+    assert_eq!(decoded.fund.id, update.fund.id);
+    assert_eq!(decoded.fund.lock_state, LockState::Locked);
 }
 
 #[test]
@@ -375,14 +405,17 @@ fn test_unlock_params_encoding() {
 
 #[test]
 fn test_unlock_update_encoding() {
-    let update = UnlockUpdateV1 {
-        unlocked_at: 50000,
-    };
+    let update = UnlockUpdateV1 { fund: update_test_fund(), unlocked_at: 50000 };
 
     let encoded = serialize(&update);
     let decoded: UnlockUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.unlocked_at, update.unlocked_at);
+    assert_eq!(
+        decoded.fund.lock_state, LockState::Locked,
+        "the fund travels as it was handed over; apply writes it verbatim"
+    );
+    assert_eq!(decoded.fund.id, update.fund.id);
 }
 
 #[test]
@@ -409,6 +442,8 @@ fn test_transfer_update_encoding() {
         amount: 500,
         recipient: make_pubkey(1),
         rate_limited: true,
+        transfer_key: pallas::Base::from(1234),
+        record: TransferRecord { version: 1, block: 42, amount: 500 },
     };
 
     let encoded = serialize(&update);
@@ -416,6 +451,10 @@ fn test_transfer_update_encoding() {
 
     assert_eq!(decoded.amount, update.amount);
     assert_eq!(decoded.rate_limited, update.rate_limited);
+    // The two fields apply writes with: the key it files under and the record it files (`OBL-C73`).
+    assert_eq!(decoded.transfer_key, update.transfer_key);
+    assert_eq!(decoded.record.block, update.record.block);
+    assert_eq!(decoded.record.amount, update.record.amount);
 }
 
 #[test]
@@ -437,14 +476,16 @@ fn test_update_config_params_encoding() {
 
 #[test]
 fn test_update_config_update_encoding() {
-    let update = UpdateConfigUpdateV1 {
-        authority_change_timelock: Some(100000),
-    };
+    let update = UpdateConfigUpdateV1 { fund: update_test_fund() };
 
     let encoded = serialize(&update);
     let decoded: UpdateConfigUpdateV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.authority_change_timelock, update.authority_change_timelock);
+    assert_eq!(
+        decoded.fund.authority_change_timelock, update.fund.authority_change_timelock,
+        "the timelock is a field of the fund the update carries, not a copy beside it"
+    );
+    assert_eq!(decoded.fund.rate_limit.base_rate_bps, update.fund.rate_limit.base_rate_bps);
 }
 
 #[test]
