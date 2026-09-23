@@ -719,6 +719,8 @@ fn test_activate_best_chain_adopts_competing_block() {
         // Reorg: adopt the competing block 3b (fork point = block 2).
         crate::block_acceptor::activate_best_chain(
             &chain, &[block_3_b.clone()], BlockHeight::new(2), None,
+            // No mempool in this harness: the displaced transactions have nowhere to go (`OBL-C44`).
+            None,
         ).expect("activate_best_chain");
 
         // The canonical tip must now be block 3b (height unchanged).
@@ -780,6 +782,8 @@ fn test_reorg_state_consistency() {
         // Reorg onto 3b (fork point = block 2).
         crate::block_acceptor::activate_best_chain(
             &chain, &[block_3_b.clone()], BlockHeight::new(2), None,
+            // No mempool in this harness: the displaced transactions have nowhere to go (`OBL-C44`).
+            None,
         ).expect("activate_best_chain");
 
         // Displaced 3a fully reversed; competing 3b connected.
@@ -937,6 +941,7 @@ fn test_multi_block_reorg_state_consistency() {
         // Reorg onto [3b, 4b] at fork point 2 (2-block disconnect + reconnect).
         crate::block_acceptor::activate_best_chain(
             &chain, &[block_3b.clone(), block_4b.clone()], BlockHeight::new(2), None,
+            None,
         ).expect("activate_best_chain");
 
         assert_eq!(chain.get_height(), BlockHeight::new(4));
@@ -1012,7 +1017,7 @@ fn test_sync_path_reorg_to_heavier_chain() {
 
         // Drive the sync-path reorg directly with the extension block 4b.
         let outcome = crate::task::consensus_linear::reorg_to_heavier_chain(
-            &chain_a, &block_4b, &mut peer,
+            &chain_a, &block_4b, &mut peer, None,
         ).await;
 
         assert!(

@@ -693,8 +693,10 @@ impl DwowNode {
                 .expect("Failed to create RandomX VM for stratum execution"),
         );
 
-        match crate::block_acceptor::accept_block(
+        match crate::block_acceptor::accept_block_with_mempool(
             &chain_state, &block, &uncles, &exec_vm, block.header.target, None,
+            // The reorg this may trigger returns displaced transactions here (`OBL-C44`).
+            self.mempool.as_ref(),
         ) {
             Ok(dwow_chain::BlockConnectOutcome::CanonicalExtension { .. }) => {
                 drop(exec_vm);

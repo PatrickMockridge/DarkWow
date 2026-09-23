@@ -257,9 +257,11 @@ impl DwowNode {
         // Uses the mining_vm created above for PoW verification.
         info!(target: "dwowd::rpc::miner",
             "Block {} mined (nonce={}), applying to chain...", block_hash, mined_block.header.nonce);
-        match crate::block_acceptor::accept_block(
+        match crate::block_acceptor::accept_block_with_mempool(
             &chain_state, &mined_block, &prep.uncles, &mining_vm,
             latest_block.header.target, None,
+            // The reorg this may trigger returns displaced transactions here (`OBL-C44`).
+            self.mempool.as_ref(),
         ) {
             Ok(dwow_chain::BlockConnectOutcome::CanonicalExtension { .. }) => {
                 info!(target: "dwowd::rpc::miner", "Mined and applied block {} at height {}", block_hash, height);

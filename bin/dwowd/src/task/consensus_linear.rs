@@ -41,7 +41,7 @@ use dwow_chain::sync_connection::sync_batch_len;
 use crate::proto::linear_sync_client::{LinearSyncClient, PeerTip};
 use crate::{DwowNodePtr, Result, SyncState};
 
-use crate::block_acceptor::{accept_block, activate_best_chain};
+use crate::block_acceptor::{accept_block_with_mempool, activate_best_chain};
 use dwow_sdk::blockchain::BlockHeight;
 
 /// Proof of genesis authority possession — replaces bare `bool`.
@@ -139,6 +139,7 @@ pub(crate) async fn reorg_to_heavier_chain(
     blockchain: &Arc<dwow_chain::CChainState>,
     block: &dwow_chain::Block,
     peer: &mut dwow_chain::sync_connection::SyncPeer,
+    mempool: Option<&dwow_mempool::MempoolPtr>,
 ) -> ReorgOutcome {
     let local_height = blockchain.get_height();
     // Only a next-height block can extend a competing chain.
@@ -284,7 +285,10 @@ pub(crate) async fn reorg_to_heavier_chain(
     }
 
     // 3. Reorg: roll back cumulative commit, disconnect, connect competing chain.
-    if let Err(e) = activate_best_chain(blockchain, &competing, fork_point, None) {
+    // The reorg returns the displaced blocks' transactions to the mempool (`OBL-C44`) — this is the
+    // site the row names: the decision was made here, and the handle is threaded in from the caller
+    // rather than being out of reach.
+    if let Err(e) = activate_best_chain(blockchain, &competing, fork_point, None, mempool) {
         error!(target: "dwowd::task::consensus_linear_init_task",
             "Reorg failed at height {}: {}", block.header.height, e);
         return ReorgOutcome::Failed;
@@ -534,7 +538,7 @@ pub async fn consensus_linear_init_task(
                             }
                         }
                     }
-                    match accept_block(&blockchain, block, &[], &vm, block.header.target, None) {
+                    match accept_block_with_mempool(&blockchain, block, &[], &vm, block.header.target, None, node.mempool.as_ref()) {
                         Ok(outcome) => match outcome {
                             dwow_chain::BlockConnectOutcome::CanonicalExtension { .. }
                             | dwow_chain::BlockConnectOutcome::AlreadyKnown => {
@@ -550,9 +554,9 @@ pub async fn consensus_linear_init_task(
                             // Sync-path reorg: the block may build on a competing
                             // chain we do not hold. Fetch it and, if heavier,
                             // switch to it (Bitcoin ActivateBestChain).
-                            match reorg_to_heavier_chain(&blockchain, block, peer).await {
+                            match reorg_to_heavier_chain(&blockchain, block, peer, node.mempool.as_ref()).await {
                                 ReorgOutcome::Applied => {
-                                    match accept_block(&blockchain, block, &[], &vm, block.header.target, None) {
+                                    match accept_block_with_mempool(&blockchain, block, &[], &vm, block.header.target, None, node.mempool.as_ref()) {
                                         Ok(dwow_chain::BlockConnectOutcome::CanonicalExtension { .. })
                                         | Ok(dwow_chain::BlockConnectOutcome::AlreadyKnown) => {
                                             next_height = block.header.height.succ();

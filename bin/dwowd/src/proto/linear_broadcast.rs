@@ -425,8 +425,10 @@ async fn handle_receive_block(
 
         let target = msg.block.header.target;
 
-        match crate::block_acceptor::accept_block(
-            &blockchain, &msg.block, &msg.uncles, &vm, target, None,
+        // No mempool handle on the broadcast path, so a reorg triggered here returns no transactions
+        // (`OBL-C44`). Stated rather than silently passed: the other four entry points all have one.
+        match crate::block_acceptor::accept_block_with_mempool(
+            &blockchain, &msg.block, &msg.uncles, &vm, target, None, None,
         ) {
             Ok(outcome) => {
                 drop(vm);

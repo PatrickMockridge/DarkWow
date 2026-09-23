@@ -142,7 +142,7 @@ impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
 
 /// Single unified block acceptance — all five entry points call this
 mod block_acceptor;
-use block_acceptor::accept_block;
+use block_acceptor::accept_block_with_mempool;
 
 /// Atomic pointer to the DarkWow node
 pub type DwowNodePtr = Arc<DwowNode>;
@@ -654,12 +654,16 @@ async fn init_genesis(
     // Execute and commit genesis through the standard block acceptance path.
     // This runs WASM (pow_reward_v1), reads cumulative supply from overlay,
     // and commits block + contracts + supply_chain atomically.
-    crate::block_acceptor::accept_block(
+    // `accept_block_with_mempool`, with an explicit `None`: no mempool exists yet — genesis is accepted
+    // before the mempool is created, so a reorg triggered here has nowhere to return transactions to
+    // (`OBL-C44`), and the call site says so rather than relying on a default.
+    crate::block_acceptor::accept_block_with_mempool(
         chain_state,
         &genesis_block,
         &[],
         &vm,
         target,
+        None,
         None,
     )
     .map_err(|e| Error::Custom(format!("Genesis block acceptance failed: {}", e)))?;
@@ -1810,13 +1814,16 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
         // Accept block — single unified path (block_acceptor::accept_block).
         // Covers: proof-of-token-balance, WASM execution, overlay aggregation,
         // and atomic connect_block with contract state.
-        let apply_result = accept_block(
+        let apply_result = accept_block_with_mempool(
             &chain_state,
             &mined_block,
             &uncles,
             &vm,
             target,
             Some(&node.fee_estimator),
+            // A reorg triggered here returns the displaced blocks' transactions to the mempool
+            // (`OBL-C44`).
+            node.mempool.as_ref(),
         );
 
         // Drop VM reference after block acceptance — avoids concurrent

@@ -90,6 +90,16 @@ pub(crate) fn pow_reward_params(
         .and_then(|c| dwow_native_token_contract::model::PoWRewardParamsV1::decode(c.data.get(1..).unwrap_or(&[])).ok())
 }
 
+/// Accept a block for a caller that holds a mempool — the five production entry points.
+///
+/// Identical to [`accept_block`] except that a reorg triggered *inside* this call returns the displaced
+/// blocks' transactions to `mempool` (`OBL-C44`). The two are one implementation: this is the body, and
+/// `accept_block` is the same call with `None`, so no acceptance rule exists in two places.
+///
+/// The split is deliberate. A mempool parameter cannot be defaulted in Rust, so the alternative was
+/// either 39 call sites threading a value they do not have (the test harnesses and genesis all pass
+/// `None`) or this: the handle is threaded exactly where one exists, and the name at each call site says
+/// whether the caller has one.
 pub fn accept_block(
     chain_state: &CChainState,
     block: &Block,
@@ -97,6 +107,20 @@ pub fn accept_block(
     vm: &Arc<randomx::RandomXVM>,
     target: BlockTarget,
     fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
+) -> Result<BlockConnectOutcome> {
+    // No mempool: a reorg triggered inside this call returns no transactions to anybody, which is what a
+    // test harness and genesis both want — neither has a mempool to return them to.
+    accept_block_with_mempool(chain_state, block, uncles, vm, target, fee_estimator, None)
+}
+
+pub fn accept_block_with_mempool(
+    chain_state: &CChainState,
+    block: &Block,
+    uncles: &[UncleBlock],
+    vm: &Arc<randomx::RandomXVM>,
+    target: BlockTarget,
+    fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
+    mempool: Option<&dwow_mempool::MempoolPtr>,
 ) -> Result<BlockConnectOutcome> {
     // 1. Proof of token balance — no hidden darkw minting beyond the coinbase.
     // 0. Phase 0 structural validation — cheapest check first.
@@ -476,9 +500,10 @@ pub fn accept_block(
                 std::slice::from_ref(&competing_block),
                 fork_height.pred().unwrap_or(BlockHeight::new(0)),
                 fee_estimator,
+                mempool,
             )?;
             // Re-accept the extension against the competing chain.
-            return accept_block(chain_state, block, uncles, vm, target, fee_estimator);
+            return accept_block_with_mempool(chain_state, block, uncles, vm, target, fee_estimator, mempool);
         }
         dwow_chain::ReorgSignal::Lighter => {
             // Store the uncle-chain extension BEFORE WASM and return
@@ -799,11 +824,18 @@ fn rollback_cumulative_commit(chain_state: &CChainState, height: BlockHeight) ->
 /// extension block after this returns.
 ///
 /// Spec: consensus.md §Fork Choice Rule (heaviest-chain); sync-protocol.md §19.
+///
+/// `mempool` — when the caller has one — receives the displaced blocks' transactions back once the
+/// reconnect has succeeded (`OBL-C44`). A reorg removes canonical blocks from the chain but does not
+/// remove their transactions from the world: they were valid, they are now unconfirmed, and a node that
+/// simply drops them has silently discarded the fee-paying work it had already accepted. `None` where no
+/// handle exists (genesis) or where the caller has none to give (the test harnesses).
 pub fn activate_best_chain(
     chain_state: &CChainState,
     competing_blocks: &[Block],
     fork_point: BlockHeight,
     fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
+    mempool: Option<&dwow_mempool::MempoolPtr>,
 ) -> Result<()> {
     // Serialize the whole reorg (disconnect + reconnect) against other reorgs
     // and against the miner's block application, so the broadcast-path and
@@ -847,7 +879,7 @@ pub fn activate_best_chain(
             }
         };
         let target = competing.header.target;
-        let outcome = match accept_block(chain_state, competing, &[], &vm, target, fee_estimator) {
+        let outcome = match accept_block_with_mempool(chain_state, competing, &[], &vm, target, fee_estimator, mempool) {
             Ok(o) => o,
             Err(e) => {
                 log_reorg_failure(chain_state, fork_point, &disconnected, &format!("accept_block: {e}"));
@@ -865,6 +897,44 @@ pub fn activate_best_chain(
                 "Reorg: competing block at {} not accepted as canonical (got {:?})",
                 competing.header.height, outcome
             )));
+        }
+    }
+
+    // 4. Return the displaced blocks' transactions to the mempool (`OBL-C44`).
+    //
+    // The disconnected blocks are already collected above — stashed so a failed reconnect could be
+    // diagnosed — so this is where they stop being merely diagnostic. Their transactions were accepted
+    // once and are unconfirmed now; dropping them discards work the node had already validated, and on a
+    // deep reorg it discards a whole fork's worth of it.
+    //
+    // Two exclusions, and they are the same exclusion the mining paths make for the same reason: the
+    // **coinbase** and the **fee collection** are generated by the block that carried them — the coinbase
+    // pays that block's reward, and FeeCollectV1 claims that block's fee pot and closes its commitment
+    // merkle tree — so neither is a transaction the mempool can admit twice. Everything else goes back,
+    // and the mempool's own admission rules decide whether it is worth keeping.
+    //
+    // Ordered AFTER the reconnect: the mempool is not touched until the reorg has actually happened, so a
+    // failed reorg (every failure path above returns, with `log_reorg_failure`) leaves no trace of having
+    // been attempted. The rules are admission-time and this is a local policy, so the mempool's own
+    // `add` — which is async — is driven the way the fee estimator is a few lines below the caller.
+    if let Some(mempool) = mempool {
+        let mut readmitted = 0usize;
+        for block in &disconnected {
+            for tx in &block.transactions {
+                if tx.is_pow_reward_coinbase_tx() || tx.is_fee_collect_tx() {
+                    continue;
+                }
+                // A tx the mempool refuses (already spent, too large, now-invalid fee) is not an error
+                // here: admission is the mempool's decision and this path is returning opportunities,
+                // not asserting them.
+                let _ = smol::block_on(mempool.add(tx.clone()));
+                readmitted += 1;
+            }
+        }
+        if readmitted > 0 {
+            tracing::info!(target: "block_acceptor",
+                "Reorg: returned {} transaction(s) from {} disconnected block(s) to the mempool",
+                readmitted, disconnected.len());
         }
     }
     Ok(())
