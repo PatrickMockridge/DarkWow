@@ -79,7 +79,7 @@ run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain
 # OBL-Z1: the Orchard-class rule. The other two circuit gates are structural (counts, prefix
 # presence); this is the only one that asks whether an exposed public input is *determined*.
 # It is currently RED, and it is BLOCKING: re-measured 2026-09-24, it exits 1 on **5** unclassified
-# instances over **179** circuits / **886** `constrain_instance` sites — insurance_market's two
+# instances over **178** circuits / **880** `constrain_instance` sites — insurance_market's two
 # `required_capability_id`, bridge/withdraw's `token_minimum`, labor_market's `attestation_id`, and
 # oracle/attest_value's `threshold`.
 # This paragraph read "15 over 181 circuits / 897 sites" until 2026-09-24, and named sites that had
@@ -114,7 +114,7 @@ run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instan
 # WHAT A PASS MEANS, and it is narrower than "the circuits are safe": that the committed module is
 # what the generator produces today. The verdicts inside it are the *model's*
 # (`Circuits/InstanceDerivation`'s rule, one theorem per circuit closed by `decide`), and its header
-# decomposes where those verdicts differ from this gate's checker — 170 circuits fail the model's
+# decomposes where those verdicts differ from this gate's checker — 167 circuits fail the model's
 # strict rule, of which 155 are the checker's `redundant` class, 11 `declared-free`, 3 the checker's
 # own `OBL-Z16` failures, and 1 the model's declared-constant boundary. It is the *data* side of
 # `OBL-T7`'s `(r, s) ↦ circuit` bridge and not the bridge, which the module says it does not supply.
@@ -264,13 +264,23 @@ run_gate "Rust tests (make test)"          make test
 # scoped to this gate alone. It is guarded now too, through the wrapper's `--stream` mode.
 #
 # TWO TARGETS, and the second is load-bearing. The transcription is a library of its own so that
-# `lake build DarkFi` does not elaborate it — a generated module of 181 `decide` proofs over 2747
-# statements that most work in this tree does not depend on. That separation was made on 2026-09-24
+# `lake build DarkFi` does not elaborate it — a generated module of one `decide` proof per circuit,
+# 178 circuits over 2677 statements as this line is written (the generator now *derives* both counts
+# into the module's own header; it used to hold them as literals and contradict itself, so read the
+# header rather than this comment). That separation was made on 2026-09-24
 # while the artefact could not build at all: it exceeded 24 GiB in one `lean` process and took this
-# host down. The cause turned out to be an inline `if` in the model's `boundWalk` whose branches the
-# kernel's reduction duplicated, compounding per statement; with it extracted (`bindAssign` in
-# `DarkFi/Circuits/InstanceDerivation.lean`, which carries the measurement) the whole artefact builds
-# in 78 s and 743 MB. The separation is kept for the reason it is still owed: `CheckAxioms.lean`
+# host down. **What caused it is not established, and this comment used to state a cause as settled
+# fact.** It read: "The cause turned out to be an inline `if` in the model's `boundWalk` whose
+# branches the kernel's reduction duplicated, compounding per statement." That explanation is
+# **retracted** — `bindAssign`'s docstring in `DarkFi/Circuits/InstanceDerivation.lean` records it as
+# "not proved, and it cannot be the whole story" (a refuted circuit still forces the walk over every
+# statement before its first undetermined exposure, and `purse/withdraw` forces a deeper chain than
+# `burn` did), and `proofs/lean/README.md` says the mechanism is deliberately not asserted. What *is*
+# measured is the extraction's effect: extracting `bindAssign` removed the blow-up and the artefact
+# builds whole in 743 MB. This line said "78 s" where the other four records that quote a time say
+# "~71 s"; the disagreement is left visible rather than resolved by picking one, because nobody has
+# re-measured it since. The separation is kept
+# for the reason it is still owed: `CheckAxioms.lean`
 # imports this module by name, so its `.olean` must exist before the collector can run — and with
 # `--require-collector` that is a hard failure rather than a silent gap, which is why both targets are
 # named here rather than left for the axiom gate to discover.

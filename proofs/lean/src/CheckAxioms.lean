@@ -214,7 +214,7 @@ theorems, so it supplies the list.
 def main : IO UInt32 := do
   -- Signature in Lean 4.12: `importModules (imports : Array Import) (opts : Options)
   -- (trustLevel : UInt32 := 0) (leakEnv := false)`.
-  -- Both libraries. If `Transcribed` is left out, its 181 theorems are reported as unknown
+  -- Both libraries. If `Transcribed` is left out, its 178 theorems are reported as unknown
   -- declarations and — the failure that matters — never appear in the table at all, so their
   -- budgets go unchecked while the run still reads as clean.
   let env ← importModules #[{ module := `DarkFi }, { module := `Transcribed }] {}
