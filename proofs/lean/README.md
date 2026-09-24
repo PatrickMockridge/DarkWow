@@ -234,24 +234,33 @@ on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
 - **Nothing below is a claim about a build you have not run.** `lake build DarkFi` completes clean
   as of 2026-09-22 (no errors, no warnings — see "What the build currently says" above), but the
   build is what makes every statement below true, so run it before quoting any of them.
-- **The ρ-calculus is mechanized; its binding convention is not.** `Semantics/` defines the syntax,
-  structural congruence, a labelled transition system and a substitution layer, and proves §1.2's
-  parallel laws, the barb facts, and the weak relation's algebra as theorems about processes. What it
-  does **not** have: a binding convention for `bang`, so `Occurs` counts bound occurrences as well as
-  free ones — and that costs more than a weaker proviso somewhere. Repairing it by quantifying over the
-  congruence produced `FreshUpToScong`, a condition that is **unsatisfiable** (`not_freshUpToScong`),
-  so the extrusion rule could not fire for four commits while reading as available; that rule is now
-  deleted, and extrusion survives only in `SCong0`, the reachability relation. The restriction rule
-  does not wait on the convention, because its condition belongs on the **label**
-  (`¬ SCong x (subject μ)`), and its obligation is **discharged**: `barb_nu_iff` states
-  `Barb (νx.P) a ↔ ¬ SCong x a ∧ Barb P a` — a restriction blocks exactly its own name and nothing else
-  — and `not_barb_nu_self` is the case that was open. What closed it was `CanBarb`, a structural
-  reading of the barb predicate that keeps the restriction's binder, where `CanStep` had to drop it;
-  `Semantics/LTS.lean`'s scope note keeps all five answers the obligation took, because what each one
-  got wrong is the reusable part. Also absent: an α-rule on `SCong`, so `Step.tau` carries `CaptureFree` as a
+- **The ρ-calculus is mechanized; its α-rule is not.** `Semantics/` defines the syntax, structural
+  congruence, a labelled transition system and a substitution layer, and proves §1.2's parallel laws, the
+  barb calculus — a barb is computable from the syntax, `barb_par_iff`, `barb_rep_iff`, `barb_nu_iff` —
+  and the weak relation's algebra as theorems about processes. The binding convention is the one §0's
+  quote/eval and canonical-bytes reading fixes: `FreeOccurs` (binders bind, `bang` seals) and a `subst`
+  that arrests at both. Putting that convention against the observations yields one theorem and one
+  refutation, and the pair is the point: `canBarb_has_free_name` — every barb is on a channel congruent
+  to a name that occurs free in the term — holds, so the convention is not arbitrary; and
+  `not_barb_of_freshFree_is_false` refutes its converse, because `ν0.0 ≡ 0` lets a term barb on a name
+  it does not mention at all. Freeness is syntactic, and the congruence is exactly what it is not
+  invariant under — which is why every proviso in the LTS tests a **channel** with `SCong` rather than a
+  name, and why `Proc.lean`'s `Occurs` is not used as a proviso anywhere.
+
+  What the layer does **not** have is an α-rule on `SCong`, so `Step.tau` carries `CaptureFree` as a
   proviso and `subst` relabels the channels that labels are made of (`subst_moves_the_label`) — adding
   the rule is a redesign of the label predicates rather than a constructor, which is what that theorem
-  measures, and a corpus-wide search found no consumer for it; and `type-system.md` §9.2's
+  measures, and a corpus-wide search found no consumer for it. One repair failed and is kept as such:
+  quantifying the restriction rule's freshness over the congruence produced `FreshUpToScong`, a
+  condition that is **unsatisfiable** (`not_freshUpToScong`), so the extrusion rule could not fire for
+  four commits while reading as available; that rule is deleted, and extrusion survives only in
+  `SCong0`, the reachability relation. The restriction rule does not wait on the convention, because its
+  condition belongs on the **label** (`¬ SCong x (subject μ)`), and its obligation is **discharged**:
+  `barb_nu_iff` states `Barb (νx.P) a ↔ ¬ SCong x a ∧ Barb P a` — a restriction blocks exactly its own
+  name and nothing else — and `not_barb_nu_self` is the case that was open. What closed it was
+  `CanBarb`, a structural reading of the barb predicate that keeps the restriction's binder, where
+  `CanStep` had to drop it; `Semantics/LTS.lean`'s scope note keeps all five answers the obligation
+  took, because what each one got wrong is the reusable part. Also absent: `type-system.md` §9.2's
   `parallelMerge_correctness`, whose `≈` conclusion is not mechanized. `Semantics/Ledger.lean` proves
   the safety property it rests on instead — `exec_perm`, that every execution order of a list of
   pairwise-disjoint calls produces the same store — because §9.2's `parallel_execute` has no Rust
