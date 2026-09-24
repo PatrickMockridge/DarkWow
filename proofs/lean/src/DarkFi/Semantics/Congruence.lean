@@ -327,6 +327,25 @@ theorem scong_par_assoc' (P Q R : Proc) : SCong (par P (par Q R)) (par (par P Q)
 theorem scong_par_rep (P : Proc) : SCong (par P (rep P)) (rep P) :=
   SCong.symm (SCong.rep_unfold P)
 
+/-- **What this calculus gives at `!!P ≡ !P`: the fixpoint equation, and it needs no new rule.**
+    `!(!P) ≡ !P | !(!P)` is `rep_unfold` at `!P` — an instance of the equation the module already has —
+    and it is the *strongest* statement about replication idempotence the equations below supply, because
+    the equation says `!!P` is a fixpoint of `_ | !P` and says nothing about which fixpoint it is.
+
+    Recorded as a theorem rather than as prose because it is the answer to the question the deleted note
+    below asks: the merge law `!(P|Q) ≡ !P | !Q` was expected to turn `!!P` into `!P | !P` and then
+    "absorb one copy", and no derivation that uses it reaches past this equation. The measurement is
+    threefold and two thirds of it is in `LTS.lean`: the merge law yields `!!P ≡ !P | !!P`, which is
+    this theorem's statement; the "absorb one copy" step is `!P | !P ≡ !P`, whose reverse direction is
+    `!(P|!P) ≡ !P | !!P` and needs `P | P ≡ P`, which the calculus does not have; and the observables
+    cannot separate `P | P` from `P` at all (`barb_par_self`, `canBarb_par_self`, `canStep_par_self`,
+    `actionFree_par_self`), so nothing at the observation level justifies the step either. What *is*
+    unobservable is the collapse itself: `barb_rep_rep_iff`, `canBarb_rep_rep`, `canStep_rep_rep` and
+    `actionFree_rep_rep` say `!!P` and `!P` agree on every observable the layer defines. -/
+@[axiom_budget 0]
+theorem rep_rep_fixpoint (P : Proc) : SCong (rep (rep P)) (par (rep P) (rep (rep P))) :=
+  SCong.rep_unfold (rep P)
+
 /- `!!P ≡ !P` is **not** derivable here, and this note is the record of finding that out rather
     than assuming it.
 
@@ -341,9 +360,29 @@ theorem scong_par_rep (P : Proc) : SCong (par P (rep P)) (rep P) :=
     The standard presentation of the π-calculus' structural congruence has three replication
     equations — `!P ≡ P | !P`, `!0 ≡ 0` and `!(P | Q) ≡ !P | !Q` — and this module has only the
     first. Unfolding `!!P` with it gives `!P | !!P`, i.e. it makes the term *larger*; the collapse to
-    `!P` needs `!(P | Q) ≡ !P | !Q` to turn `!!P` into `!P | !P` and then use the first equation to
-    absorb one copy. So a proof of `!!P ≡ !P` from `rep_unfold` alone does not exist, and the reflex
-    to write one anyway is what produced this note.
+    `!P` is written above as needing `!(P | Q) ≡ !P | !Q` "to turn `!!P` into `!P | !P` and then use
+    the first equation to absorb one copy". So a proof of `!!P ≡ !P` from `rep_unfold` alone does not
+    exist, and the reflex to write one anyway is what produced this note.
+
+    **That route was read on 2026-09-24 and it does not exist — which makes the omission stand more
+    firmly than the sentence above did, not less.** There is no derivation that reaches `!P | !P`: the
+    merge law's product is `!!P ≡ !P | !!P`, which is `rep_rep_fixpoint` above — an instance of
+    `rep_unfold` at `!P`, available today with no new rule at all. The "absorb one copy" step is
+    `!P | !P ≡ !P`, and the merge law does not give it either: its reverse direction is
+    `!(P|!P) ≡ !P | !!P`, so collapsing needs `!(P|P) ≡ !P`, i.e. `P | P ≡ P`, which this calculus
+    does not have — and no *observable* here separates the two sides to supply it, because every
+    observable is idempotent under duplicating a parallel component (`barb_par_self`,
+    `canBarb_par_self`, `canStep_par_self`, `actionFree_par_self`, in `Semantics/LTS.lean`). So:
+    **adding these two equations would not close the gap they were to be added for**, and that is the
+    measurement, with the original claim kept verbatim above as the record of what was believed.
+
+    What the gap then consists of is stated rather than guessed, and it splits by level. At the
+    **equation** level it is a fixpoint equation and nothing better. At the **observation** level the
+    collapse already holds — `!!P` and `!P` agree on every observable the layer defines
+    (`barb_rep_rep_iff`, `canBarb_rep_rep`, `canStep_rep_rep`, `actionFree_rep_rep`) — so the equation
+    level is *behind* the observations rather than ahead of them. Whether some third route proves
+    `!!P ≡ !P` is not decided here and is not claimed; what is decided is that this one does not, and
+    that `rep_rep_fixpoint` is what the equations on hand give.
 
     The equations are omitted deliberately, not by oversight: they are not needed for the barb
     predicate (`Semantics/LTS.lean`) or for either bisimulation, and adding an equation costs a
@@ -351,7 +390,8 @@ theorem scong_par_rep (P : Proc) : SCong (par P (rep P)) (rep P) :=
     and the thing that would is a nullifier argument that treats the marker set as a set rather than
     as a stack** — which is `type-system.md` §0's reading of replication, and is exactly the claim
     `Combinatorial/NullifierStorage.lean` already makes about `markSpent_idempotent`. Until then the
-    omission is visible here rather than latent. -/
+    omission is visible here rather than latent; the correction above is what a later unit should read
+    before deciding the omission is what blocks the collapse. -/
 
 /-- Congruence in a parallel composition's *right* component alone, with the left held fixed. The
     constructor `cong_par` needs both sides; most rules need one, and writing `SCong.refl` at every

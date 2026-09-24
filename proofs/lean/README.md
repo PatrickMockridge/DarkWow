@@ -264,6 +264,18 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   invariant under — which is why every proviso in the LTS tests a **channel** with `SCong` rather than a
   name, and why `Proc.lean`'s `Occurs` is not used as a proviso anywhere.
 
+  **The replication equations are omitted, and the reason the tree gave for adding them was measured
+  and does not hold.** `Congruence.lean`'s note expected `!0 ≡ 0` and `!(P | Q) ≡ !P | !Q` to make
+  `!!P ≡ !P` derivable by turning `!!P` into `!P | !P` and absorbing a copy; no derivation does. Every
+  route through the merge law stops at the *fixpoint* equation `!!P ≡ !P | !!P`, which `rep_unfold` at
+  `!P` already gives (`rep_rep_fixpoint`, no new rule), and "absorb one copy" is `!P | !P ≡ !P`, whose
+  reverse needs `P | P ≡ P` — which this calculus does not have, and which no **observable** here can
+  supply either: `Barb`, `CanBarb`, `CanStep` and `ActionFree` are all idempotent under duplicating a
+  parallel component (`barb_par_self`, `canBarb_par_self`, `canStep_par_self`, `actionFree_par_self`).
+  What is unobservable is the collapse itself — `!!P` and `!P` agree on every observable the layer
+  defines — so the observation level is *ahead* of the equation level rather than behind it. Register
+  row `OBL-T14`. The row does not claim `!!P ≡ !P` is underivable; it claims this route does not exist.
+
   The substitution layer's own side condition is mechanized too, and it is *not* freeness: `NoSub` is
   subterm-freeness defined in lockstep with `subst`'s recursion — so `inp` visits its channel and not its
   binder, and `nu` does not visit its binder at all — and under it the identity law

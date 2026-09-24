@@ -890,6 +890,73 @@ theorem barb_rep_iff {P c : Proc} : Barb (Proc.rep P) c ↔ Barb P c :=
   ⟨fun h => barb_of_canBarb P c (canBarb_of_barb (P := Proc.rep P) h),
     fun h => barb_of_canBarb (Proc.rep P) c (canBarb_of_barb (P := P) h)⟩
 
+/-! ### Duplication and replication are invisible to every observable here
+
+   `Congruence.lean`'s note records what the standard replication equations would be for, and names the
+   step it expects them to supply: `!(P|Q) ≡ !P | !Q` "to turn `!!P` into `!P | !P` and then use the
+   first equation to absorb one copy". The eight laws below are the measurement that the last of those
+   steps is not available at this level — and they are stated here, next to the barb calculus, because
+   they are facts about the *observables* rather than about the congruence.
+
+   **Every observable is idempotent under duplicating a parallel component.** `Barb`, `CanBarb`,
+   `CanStep` and `ActionFree` cannot separate `P | P` from `P`: their parallel clauses are `∨`/`∧` over
+   the components, and `barb_par_iff` is the same statement for the barb read off the transitions. So a
+   structural "absorb one copy" step has no separating observation to justify it — and the reverse of
+   `!(P|Q) ≡ !P | !Q` would need `!(P|P) ≡ !P`, i.e. `P | P ≡ P`, which no observation here refutes
+   either.
+
+   **And replication of a replication is already unobservable.** `!!P` and `!P` have the same barbs,
+   `CanBarb`s, `CanStep`s and inertness, so the collapse `!!P ≡ !P` *holds at the observation level*
+   while being underivable at the equation level — which is the sharpest statement of where the gap
+   sits. `Congruence.lean`'s `rep_rep_fixpoint` is the equation level's own answer. -/
+
+/-- Duplicating a parallel component does not change a barb: `P | P` and `P` are indistinguishable by
+    `↓`. -/
+@[axiom_budget 0]
+theorem barb_par_self {P c : Proc} : Barb (Proc.par P P) c ↔ Barb P c := by
+  rw [barb_par_iff]
+  exact ⟨fun h => h.elim id id, fun h => Or.inl h⟩
+
+/-- The same for the syntactic barb: both clauses of `CanBarb`'s parallel case are the same
+    disjunction, so `CanBarb` is idempotent by definition rather than by a theorem about transitions. -/
+@[axiom_budget 0]
+theorem canBarb_par_self {a P : Proc} : CanBarb a (Proc.par P P) ↔ CanBarb a P := by
+  simp only [CanBarb, or_self]
+
+/-- And for the static label set: `CanStep`'s parallel clause is a disjunction of the same clause
+    twice. -/
+@[axiom_budget 0]
+theorem canStep_par_self {P : Proc} (μ : Label) : CanStep (Proc.par P P) μ ↔ CanStep P μ := by
+  simp only [CanStep, or_self]
+
+/-- And for inertness, whose parallel clause is a conjunction: `P | P` is inert exactly when `P` is. -/
+@[axiom_budget 0]
+theorem actionFree_par_self {P : Proc} : ActionFree (Proc.par P P) ↔ ActionFree P := by
+  simp only [ActionFree, and_self]
+
+/-- **`!!P` and `!P` have the same barbs** — the closed form of the collapse, as an observation. -/
+@[axiom_budget 0]
+theorem barb_rep_rep_iff {P c : Proc} : Barb (Proc.rep (Proc.rep P)) c ↔ Barb (Proc.rep P) c :=
+  barb_rep_iff
+
+/-- **`!!P` and `!P` have the same syntactic barbs.** `CanBarb`'s replication clause drops the `!`, so
+    this is the clause twice — which is why the observation-level collapse needs no proof about
+    transitions at all. -/
+@[axiom_budget 0]
+theorem canBarb_rep_rep {a P : Proc} : CanBarb a (Proc.rep (Proc.rep P)) ↔ CanBarb a (Proc.rep P) := by
+  simp only [CanBarb]
+
+/-- **And the same static labels.** -/
+@[axiom_budget 0]
+theorem canStep_rep_rep {P : Proc} (μ : Label) :
+    CanStep (Proc.rep (Proc.rep P)) μ ↔ CanStep (Proc.rep P) μ := by
+  simp only [CanStep]
+
+/-- **And the same inertness.** -/
+@[axiom_budget 0]
+theorem actionFree_rep_rep {P : Proc} : ActionFree (Proc.rep (Proc.rep P)) ↔ ActionFree (Proc.rep P) := by
+  simp only [ActionFree]
+
 /-- **Every barb is on a name that occurs in the term**, up to congruence. The *positive* half of the
     relation between the binding convention and the observations, and the half that is true: a barb has
     to come from somewhere, and where it comes from is a free occurrence of a congruent name.
