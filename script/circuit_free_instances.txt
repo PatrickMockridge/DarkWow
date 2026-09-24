@@ -88,20 +88,30 @@ src/contract/slot/proof/settle_bet.zk : payout : host: slot entrypoint.rs:596-60
 # itself, not a field the prover supplies (`CreateGroupParamsV1` has no total_keys member at all).
 src/contract/multisig/proof/create_group.zk : group_id : host: multisig entrypoint/mod.rs:93 `MultiSigGroup::derive_group_id(first_commitment, threshold, total_keys)` over the deduplicated member list; not taken from params
 src/contract/multisig/proof/create_group.zk : threshold : host: multisig entrypoint/mod.rs:274 rejects `params.threshold == 0 || params.threshold as usize > params.member_commitments.len()`, re-checked against the deduplicated count at :288 (MultiSigError::InvalidThreshold)
-src/contract/multisig/proof/create_group.zk : total_keys : host: multisig entrypoint/mod.rs:92 supplies `n = pallas::Base::from(total_keys as u64)` where `total_keys` is the deduplicated member count the host computed at :291; the proof's witness must match a length the host counted
+src/contract/multisig/proof/create_group.zk : total_keys : host: multisig entrypoint/mod.rs:92 supplies `n = pallas::Base::from(total_keys as u64)` where `total_keys` is the deduplicated member count the host computed at :296; the proof's witness must match a length the host counted
 
 # --- stablecoin: the reported totals are checked against the config DB ----------------------
+#
+# RE-PINNED 2026-09-24, and the reason is the point. These five all pointed at :1433/:1439/:1461/
+# :1471/:1553 as of the 2026-09-23 re-pin, and by the next day they pointed at a doc comment, a
+# blank line, a different error, and `liquidate`'s body -- because two commits landed on
+# 2026-09-24 (`c2f3e5725f` OBL-C119, `e2c8fa8619` OBL-C83) that moved `stablecoin/src/entrypoint.rs`
+# by ~290 lines. Nothing re-checks a citation when the Rust moves: the checker reads only the
+# `(circuit, instance)` key, so an entry whose line has rotted still classifies, still counts, and
+# still reads as a verified justification. That is the half-life this file's header warns about,
+# observed at one day. The mechanism is unchanged and was re-read at its new location; the lines
+# below are where each condition is NOW.
 # governance_report.zk's ratio and interest checks are arithmetic over `total_collateral`,
 # `total_debt` and `interest_accrued` — all prover-supplied — so the *circuit's* checks prove
 # nothing on their own. What makes them mean something is the entrypoint, which compares every one
 # of them against on-chain state and rejects a mismatch. `report_timestamp` is the exception: it
 # appears only in `get_metadata` and is never validated or stored, so it is NOT listed here.
-src/contract/stablecoin/proof/governance_report.zk : outstanding : host: stablecoin entrypoint.rs:1471 computes `outstanding = on_chain_debt - on_chain_redeemed` from the config DB and rejects `params.outstanding != outstanding`, so the exposed denominator is the host's own arithmetic re-derived from chain state
-src/contract/stablecoin/proof/governance_report.zk : collateral_ratio_bps : host: anchored indirectly and deliberately — entrypoint.rs:1433-1439 requires the exposed `total_collateral`/`total_debt` to equal the config DB values and :1471 requires `outstanding = total_debt - total_redeemed`; since the circuit pins the exposed ratio to those exposed amounts (`crb * debt <= collateral * BPS < (crb+1) * debt`), the stored ratio is a function of DB state, not of the reporter's choice
-src/contract/stablecoin/proof/governance_report.zk : total_collateral : host: stablecoin entrypoint.rs:1433 process_governance_report_instruction `if params.total_collateral != on_chain_collateral` (config DB CDP_TOTAL_COLLATERAL_KEY) -> ConfigError
-src/contract/stablecoin/proof/governance_report.zk : total_debt : host: stablecoin entrypoint.rs:1439 `if params.total_debt != on_chain_debt` (config DB CDP_TOTAL_DEBT_KEY) -> ConfigError
-src/contract/stablecoin/proof/governance_report.zk : interest_accrued : host: stablecoin entrypoint.rs:1461 `if params.interest_accrued != stored_interest` (config DB "last_interest_accrued"), carrying an explicit HAZOP CRIT-1 comment that this entrypoint check is the defence-in-depth
-src/contract/stablecoin/proof/accrue_interest.zk : old_total_debt : host: stablecoin entrypoint.rs:1553 `if params.old_total_debt != stored_debt` (config DB) -> CommitmentMismatch
+src/contract/stablecoin/proof/governance_report.zk : outstanding : host: stablecoin entrypoint.rs:1703-1705 computes `outstanding = on_chain_debt.saturating_sub(on_chain_redeemed)` from the config DB and rejects `params.outstanding != outstanding`, so the exposed denominator is the host's own arithmetic re-derived from chain state
+src/contract/stablecoin/proof/governance_report.zk : collateral_ratio_bps : host: anchored indirectly and deliberately — entrypoint.rs:1667-1673 requires the exposed `total_collateral`/`total_debt` to equal the config DB values and :1703-1705 requires `outstanding = total_debt.saturating_sub(total_redeemed)`; since the circuit pins the exposed ratio to those exposed amounts (`crb * debt <= collateral * BPS < (crb+1) * debt`), the stored ratio is a function of DB state, not of the reporter's choice
+src/contract/stablecoin/proof/governance_report.zk : total_collateral : host: stablecoin entrypoint.rs:1667 process_governance_report_instruction `if params.total_collateral != on_chain_collateral` (config DB CDP_TOTAL_COLLATERAL_KEY) -> ConfigError
+src/contract/stablecoin/proof/governance_report.zk : total_debt : host: stablecoin entrypoint.rs:1673 `if params.total_debt != on_chain_debt` (config DB CDP_TOTAL_DEBT_KEY) -> ConfigError
+src/contract/stablecoin/proof/governance_report.zk : interest_accrued : host: stablecoin entrypoint.rs:1695 `if params.interest_accrued != stored_interest` (config DB "last_interest_accrued"), carrying an explicit HAZOP CRIT-1 comment that this entrypoint check is the defence-in-depth
+src/contract/stablecoin/proof/accrue_interest.zk : old_total_debt : host: stablecoin entrypoint.rs:1825 `if params.old_total_debt != stored_debt` (in `process_accrue_interest_instruction`) (config DB) -> CommitmentMismatch
 
 # --- oracle_id: RETIRED 2026-09-21 — the entries had become dead text -------------------------
 # Five lines stood here, one per oracle circuit, each declaring `oracle_id` free against the
@@ -172,7 +182,7 @@ src/contract/tender/proof/reveal_bid.zk : tender_id : host: tender entrypoint.rs
 src/contract/tender/proof/select_winner.zk : tender_id : host: tender entrypoint.rs:748 `db_get(tenders_db, &params.tender_id.to_repr())?` -> "Tender not found"
 src/contract/tender/proof/select_winner.zk : winner_bid_id : host: tender entrypoint.rs:776 `db_get(bids_db, &params.winner_bid_id.to_repr())?` -> "Winner bid not found", then :786 rejects `winner_bid.tender_id != params.tender_id`
 src/contract/tender/proof/submit_bid_with_capability.zk : required_capability_id : host: tender entrypoint.rs:1010 rejects `params.required_capability_id != required_cap` (the stored `tender.required_capability`), under the `if let Some(required_cap)` guard at :1009
-src/contract/labor_market/proof/accept_job_with_capability.zk : capability_id : host: labor_market entrypoint.rs:1613-1644 requires exactly one child call, of function 0x06 (`Identity::VerifyCapabilityV1`), whose `contract_id` matches the configured Identity contract — a real on-chain capability check, the only one in the repository
+src/contract/labor_market/proof/accept_job_with_capability.zk : capability_id : host: labor_market entrypoint.rs:1631 and :1638 in `accept_job_with_capability_v1` (:1626) require exactly one child call, of function 0x06 (`Identity::VerifyCapabilityV1`), whose `contract_id` matches the configured Identity contract — a real on-chain capability check, the only one in the repository
 # --- multisig sign/finalize: RETIRED 2026-09-22 — the entries had become dead text -----------
 # Four lines stood here, declaring `group_id` and `message_hash` free in `sign.zk` and
 # `finalize.zk`. The OBL-Z11 remedy made all four dead, and one of them *wrong*:
