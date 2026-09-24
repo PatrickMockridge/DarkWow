@@ -102,6 +102,9 @@ constraint equations are satisfied, the output equals the mathematical function.
 | `base_mul_correctness_bounded` | 0x31 | No wraparound for 64-bit inputs |
 | `base_sub_ge_case` | 0x32 | No wraparound when a≥b≥0 |
 | `base_div_by_zero` | 0x58 | Division by zero returns 0 |
+| `chunkSum_lt_pow_of_short_last` | 0x50 | A value the deployed **windowed** range check accepts is `< 2^NUM_BITS` as an integer — the short check on the last chunk is what makes the bound exact |
+| `range_check_64_gives_bounded_bits` | 0x50 | The deployed `<10, 64>` instance hands the division bridge its `(bits, bits < 2^64, a = ↑bits)` triple, so `FieldLessThanOrEqual`'s bounds are obtainable rather than assumed |
+| `operand_products_fit_the_offset_window` | 0x55 | 64-bit-backed operands have `a·b − c·d` inside the `2^253` window the offset's check supplies |
 
 ### Part 3: Cross-Cutting & Arithmetic
 
@@ -257,6 +260,22 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
 
 ## What Is NOT Proved (Honest Scope)
 
+- **The range check is modelled from its `Int` content outward, and four things are outside it.**
+  `Comparison.lean` now transcribes `src/zk/gadget/native_range_check.rs` — the windowed running-sum
+  decomposition, its short check on the last chunk, and the bound those imply — which is the content
+  `Comparison.lean` itself had recorded as missing when it deleted `range_check_64_sound` for
+  assuming its own conclusion. What that model does **not** cover, stated here rather than left to
+  the module note: the gates constrain the running sum over `ZMod p` and the transcription is of the
+  *integer* equation the chip's comment writes, with the step between them being
+  `BaseDivGadget.zmod_eq_int_of_bounded` rather than anything in that section; the `k_values_table`
+  lookup is taken as its content (a chunk is `< 2^w`), so the table's own construction is not
+  modelled; `decompose_value`'s bit plumbing (`to_le_bits`, `chunks_exact`, the padding) is not
+  transcribed, which is why `exists_chunkSum_eq` proves decomposability arithmetically instead of
+  from that construction; and **nothing in these theorems reads a `.zk` file**, so the passage from a
+  circuit's `range_check(64, ·)` call to a chunk list of that shape is still the transcription
+  `Circuits/InstanceDerivation.lean` records for `OBL-T7`. What is proved is that *given* the
+  witness, the bound follows — one level of statement further in than the arithmetic, and no
+  further.
 - **Nothing below is a claim about a build you have not run.** `lake build DarkFi` completes clean
   as of 2026-09-22 (no errors, no warnings — see "What the build currently says" above), but the
   build is what makes every statement below true, so run it before quoting any of them.
