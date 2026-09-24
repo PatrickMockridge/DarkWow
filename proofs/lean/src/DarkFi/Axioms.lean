@@ -560,25 +560,38 @@ purse write path any more. -/
     about any particular resource or action — it names the premise so callers can supply it.
     DISCHARGED BY: the manual circuit audit over `src/contract/*/proof/*.zk`, mechanised;
     `doc/src/arch/verification-hazop.md` OBL-Z1 is that obligation, and it is currently
-    unchecked. **Corrected 2026-09-24: that is not the route, and the three measurements are these.**
+    unchecked. **Corrected 2026-09-24: that is not the route, and the measurements are these.**
     The audit **is** mechanised (`script/circuit_instance_derivation.py`, the register's only
-    MECHANIZED row); it is invoked by **no gate runner** (`scripts/run-all-tests.sh`, `hooks/`,
-    `contrib/ci/` — measured, none), so "unchecked" is right in the only sense that matters
-    operationally; and it currently **exits 1**, with 11 instances neither derived nor bound nor
-    redundant nor declared free. But **even a passing audit would not discharge this predicate**: the
-    audit is a checker over circuit *sources*, while this is `(r, s)`-indexed, and what sits between
-    them — `(r, s) ↦ the circuit source` — is a *transcription*, not a check. A Lean term cannot read
-    a `.zk` file, so the discharge needs the transcription to be *supplied* (a module generated from
-    the sources and freshness-gated, in the style of this tree's `check-artifact-freshness.sh`).
-    What the mechanisation does give is on the other side of the bridge:
-    `Circuits/InstanceDerivation.lean` defines the property over a statement list, proves the
-    soundness direction and refutes its converse, and checks one worked circuit — so the audit's
-    mechanisation yields the *definition* the axiom is a stand-in for, not the premise.
-    IF FALSE: NOTHING today. `Capability.capabilityType_of_circuitDerivable` is proved from
+    MECHANIZED row) **and it is a gate** — `scripts/check-circuit-instance-derivation.sh`, wired at
+    `scripts/run-all-tests.sh:101` as `run_gate "circuit instance derivation"`. This paragraph said
+    the opposite for an hour, from a grep that searched for the *Python* file's name while the
+    wrapper is *hyphenated*: one side of a two-sided pair read alone, and the correction is recorded
+    here rather than quietly edited. What is true is that the gate **exits 1** today — 11 instances
+    across 7 circuits are neither derived, nor bound, nor redundant, nor declared free (all eleven
+    named in `doc/src/arch/verification-hazop.md` `OBL-Z16`). But **even a passing audit would not
+    discharge this predicate**: the audit is a checker over circuit *sources*, while this is
+    `(r, s)`-indexed, and what sits between them — `(r, s) ↦ the circuit source` — is a
+    *transcription*, not a check. A Lean term cannot read a `.zk` file, so the discharge needs the
+    transcription to be *supplied* (a module generated from the sources and freshness-gated, in the
+    style of this tree's `check-artifact-freshness.sh`). What the mechanisation does give is on the
+    other side of the bridge: `Circuits/InstanceDerivation.lean` defines the property over a
+    statement list, proves the soundness direction and refutes its converse, and checks one worked
+    circuit — so the audit's mechanisation yields the *definition* the axiom is a stand-in for, not
+    the premise.
+    IF FALSE: NOTHING — an uninterpreted `Prop` is a name, not a claim, so there is no falsity to
+    detect; that is ELEV-26's point. **The sentence that stood here was wrong in a way worth
+    keeping**: it said `Capability.capabilityType_of_circuitDerivable` "is proved from
     `CircuitDerivable.coversBarbs` alone and never touches this predicate, because type
-    *existence* is purely combinatorial. This predicate is what a soundness theorem about
-    capabilities would need, and no such theorem exists. Recorded as SILENT in
-    `DarkFi.HAZOP.Elevated` ELEV-26. -/
+    *existence* is purely combinatorial". The first half is true of the *proof term*, which is
+    `CapabilityType.mk (CircuitDerivable.primitives h) (CircuitDerivable.coversBarbs h)` — and the
+    second half is false of the *budget*: that theorem's `@[axiom_budget 1]` is correct, and
+    `#print axioms capabilityType_of_circuitDerivable` reports `NoFreeInstances`. The reason is a
+    rule about the model rather than about the premise being load-bearing — **a structure with a
+    `Prop` field whose type names an axiom carries that axiom in every projection, including the
+    projections of its data fields** (`CircuitDerivable.primitives` and `.coversBarbs` each read 1
+    on their own) — measured minimally in `Capability/Inversion.lean`'s header. Recorded as
+    SILENT in `DarkFi.HAZOP.Elevated` ELEV-26, and as a budget-mechanism hazard in
+    `DarkFi.HAZOP.High` HIGH-16. -/
 axiom NoFreeInstances (r : Resource) (s : Action) : Prop
 
 /-! ===== AEAD: the note-opening primitive and its key-committing property =====
