@@ -31,7 +31,7 @@ The formal verification is organized in three layers:
 
 | Opcode | Code | Base Point | Verification |
 |--------|------|-----------|-------------|
-| `ec_add` | 0x01 | — | SOUND ✓ (incomplete addition) |
+| `ec_add` | 0x01 | — | SOUND ✓ — `EccChip::add`, the **complete** addition: its gate constrains the distinct-x slope, the doubling slope and the identity cases (`vendor/halo2/halo2_gadgets/src/ecc/chip/add.rs:79-173`). The "(incomplete addition)" this cell used to say named the other function |
 | `ec_mul` | 0x02 | CONSTANT (`EcFixedPoint`) | SOUND ✓ |
 | `ec_mul_base` | 0x03 | CONSTANT (`EcFixedPointBase`) | SOUND ✓ |
 | `ec_mul_short` | 0x04 | CONSTANT (`EcFixedPointShort`) | SOUND ✓ |

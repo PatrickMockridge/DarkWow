@@ -29,8 +29,12 @@ operation, so every law of that operation had to be postulated. Here the curve i
 * **The group.** `Mathlib/AlgebraicGeometry/EllipticCurve/Group.lean` provides
   `WeierstrassCurve.Affine.Point.instAddCommGroup`, and it is the **complete** law: it goes
   through the coordinate ring, so the point at infinity and the doubling case — the two cases the
-  opaque `add` sidestepped — are handled rather than assumed away. That also closes
-  `ECOps`' "`ec_add` doubling case not rejected" gap at the model level.
+  opaque `add` sidestepped — are handled rather than assumed away. **The sentence that stood here
+  said this "closes `ECOps`' '`ec_add` doubling case not rejected' gap at the model level", and
+  there was no such gap**: `ECOps.lean`'s note about it is corrected as of 2026-09-24 — the VM's
+  `ec_add` calls `EccChip::add`, which is the *complete* addition and constrains the doubling case
+  (`vendor/halo2/halo2_gadgets/src/ecc/chip/add.rs:129`) rather than needing it rejected. What this
+  bullet's completeness claim is about is the *model's* former opaque, and it stands.
 * **The four laws** are therefore `add_comm`, `add_assoc`, `add_zero` and `zero_add`, and the
   homomorphism is `add_nsmul` bookkeeping. Nothing is postulated.
 

@@ -287,15 +287,35 @@ If x1 = x2, the incomplete addition formula divides by zero.
 This theorem states that the constraint system must enforce
 x1 ≠ x2 (or handle the doubling case separately).
 
-CORRESPONDENCE: src/zk/vm.rs:898 — ec_add uses lhs.add(rhs) which
-performs incomplete Pallas addition. The VM does NOT explicitly
-reject the doubling case (x1 == x2). This is a known gap.
+CORRESPONDENCE: `src/zk/vm.rs:915-930` — `ec_add` calls `lhs.add(&rhs)`.
 
-For the Lean model: when x1 = x2, the slope formula
-(y2 - y1) / (x2 - x1) has denominator zero. The constraint system
-must ensure this case is handled (either rejected or handled via
-a complete addition formula). We document this as a constraint
-that the Rust VM should enforce.
+**CORRECTED 2026-09-24: this note recorded a gap that does not exist, and the cause is one word.**
+It read: "`ec_add` uses `lhs.add(rhs)` which performs incomplete Pallas addition. The VM does NOT
+explicitly reject the doubling case (x1 == x2). This is a known gap." Measured against the vendored
+gadget, `add` **is the complete addition**, and no rejection is needed because the gate constrains
+the case:
+
+* `vendor/halo2/halo2_gadgets/src/ecc/chip.rs:580` — `fn add` takes `self.config().add` and names the
+  region it assigns `"complete point addition"`. The incomplete variant is a *separate* function,
+  `add_incomplete` at `:567`, using `self.config().add_incomplete`.
+* `vendor/halo2/halo2_gadgets/src/ecc/chip/add.rs:79` — that config's gate is literally
+  `create_gate("complete addition", …)`, citing the specification at
+  `p.z.cash/halo2-0.1:ecc-complete-addition`. It constrains all four cases: the distinct-x slope
+  (`poly1`, `:120`), the **doubling** slope `2y_p·λ = 3x_p²` under the `(1 − (x_q−x_p)·α)` factor
+  (`poly2`, `:129`), the general output relation (`poly3a`–`poly3d`, `:145-155`), and the identity
+  cases including `x_p = x_q ∧ y_p = −y_q → r = 0` (`poly4`–`poly6`, `:158-173`).
+
+So the doubling case is *determined* rather than rejected, which is the stronger arrangement: a
+prover has no freedom in it. The sentence that stood here was reading `add` for `add_incomplete` —
+two functions one word apart — and the line number it cited had drifted from `:898` to `:915`.
+
+**Worth recording as the campaign's usual defect in the opposite direction.** Every other case of a
+tree claim outrunning the code found here was *optimistic* — a documented SOUND verdict with no proof
+(`OBL-Z20`, `OBL-Z21`). This one is *pessimistic*: a module note asserting a gap the code does not
+have, inherited by `Pedersen.lean`, which said the complete group law "closes `ECOps`' '`ec_add`
+doubling case not rejected' gap at the model level." Nothing needed closing. The register's silence
+about `ec_add` was, for once, correct — and it was correct by accident rather than by measurement,
+since nothing had read the vendor's chip.
 
 **A theorem stood here until 2026-09-24 and did not say that.**
 `ec_add_inputs_must_be_distinct (g : ECAddGadget) (h : g.x1 = g.x2) : g.x2 - g.x1 = 0` is its own
