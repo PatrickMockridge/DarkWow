@@ -212,7 +212,20 @@ impl SubscribeCallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            // `OBL-C107`: the **computed** value, not a literal zero.
+            //
+            // This passed `pallas::Base::zero()` under the comment `// tx_binding`, on the reading
+            // that the circuit's `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment,
+            // tx_nonce)` shadows the witness and its value is never read. It is read: the assignment
+            // *constrains* the declared witness to equal the hash, so a zero there is a constraint no
+            // proof can satisfy — and `Proof::create` returns bytes for an unsatisfied circuit all
+            // the same, which is why this surfaced as `invalid proof: call[1] namespace 'SubscribeV2'`
+            // at the L2 verify rather than as anything the exec phase could see.
+            //
+            // `OBL-C78` states the rule in the register's own words — the tx pair is never a literal
+            // zero — and the promissory_note clients follow it (`revoke.rs`, `transfer.rs`: "shadowed,
+            // recomputed in-circuit", with the computed value). This is the one client that did not.
+            Witness::Base(Value::known(super::tx_binding_of(&self.tx_commitment, &self.tx_nonce))),
         ]
     }
 }

@@ -122,6 +122,91 @@ mod client_side {
         input
     }
 
+    /// The counts, measured rather than assumed.
+    ///
+    /// Everything else in this file rests on the client producing one witness per declared witness
+    /// and one instance per `constrain_instance`; if either count is off, the proof cannot verify and
+    /// the reason is not a value at all.
+    #[test]
+    fn the_client_produces_one_witness_and_one_instance_per_declaration() {
+        use dwow_core::zkas::ZkBinary;
+        let zkbin = ZkBinary::decode(ZKBIN_BYTES, false).expect("subscribe.zk.bin decodes");
+        let input = call_data(&zkbin);
+        let public_inputs = input.compute_public_inputs();
+
+        // `witness "SubscribeV2"` declares fifteen; `constrain_instance` appears three times.
+        assert_eq!(
+            input.to_witnesses().len(),
+            15,
+            "the client's witness vector must have one entry per declared witness"
+        );
+        assert_eq!(
+            public_inputs.to_vec().len(),
+            3,
+            "the client's instance vector must have one entry per constrain_instance"
+        );
+    }
+
+    /// The fork: the same zkbin, the same instance vector, but the witness vector assembled **here**
+    /// in the declared order rather than by the client.
+    ///
+    /// A pass says the client's vector is the defect — compare it entry for entry with this one. A
+    /// failure says the compiled artifact is, and then the question is what `zkas` emits for this
+    /// file rather than what any Rust in the tree does.
+    #[test]
+    fn subscribe_proof_verifies_with_a_hand_built_witness_vector() {
+        use dwow_core::zk::{halo2::Value, Witness};
+
+        let zkbin = ZkBinary::decode(ZKBIN_BYTES, false).expect("subscribe.zk.bin decodes");
+        let pk = proving_key(&zkbin);
+        let input = call_data(&zkbin);
+        let public_inputs = input.compute_public_inputs();
+
+        /// `SubscribeV2`'s declaration order, read off the .zk.
+        #[expect(clippy::unwrap_used, reason = "PublicKey rejects identity, so x()/y() is always Some")]
+        let witnesses = vec![
+            Witness::Base(Value::known(input.subscription_id)),
+            Witness::Base(Value::known(input.subscriber_public.x().unwrap())),
+            Witness::Base(Value::known(input.subscriber_public.y().unwrap())),
+            Witness::Base(Value::known(pallas::Base::from(input.plan_id as u64))),
+            Witness::Base(Value::known(pallas::Base::from(input.deposit))),
+            Witness::Base(Value::known(input.asset_id)),
+            Witness::Base(Value::known(pallas::Base::from(input.lock_until_block))),
+            Witness::Base(Value::known(input.value_commit_x)),
+            Witness::Base(Value::known(input.value_commit_y)),
+            Witness::Base(Value::known(input.subscriber_secret)),
+            Witness::Base(Value::known(input.nonce)),
+            Witness::Scalar(Value::known(input.value_blind)),
+            Witness::Base(Value::known(input.tx_commitment)),
+            Witness::Base(Value::known(input.tx_nonce)),
+            Witness::Base(Value::known(public_inputs.tx_binding)),
+        ];
+        assert_eq!(witnesses.len(), 15, "one per declared witness");
+
+        let instances = vec![
+            public_inputs.tx_binding,
+            public_inputs.tx_nonce,
+            public_inputs.subscription_id,
+        ];
+
+        let proof = Proof::create(
+            &pk,
+            &[ZkCircuit::new(witnesses, &zkbin)],
+            &instances,
+            &mut rand::rngs::OsRng,
+        )
+        .expect("the hand-built vector must produce a proof");
+
+        match verify_zkp(&proof, ZKBIN_BYTES, &instances) {
+            ZkVerifyResult::Ok => {}
+            other => panic!(
+                "OBL-C107: a witness vector assembled in the declared order, with the same zkbin and \
+                 the same instances, does not verify either ({other:?}) — so the defect is in what \
+                 `zkas` emits for subscribe.zk, not in the client's vector."
+            ),
+        }
+    }
+
     /// The client's own proof must verify against the client's own public inputs.
     ///
     /// A failure here says the defect is *below* the metadata: the witnesses, the instance vector or
