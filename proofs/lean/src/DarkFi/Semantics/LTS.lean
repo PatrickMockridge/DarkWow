@@ -77,8 +77,9 @@ answered twice over. The first answer holds. The second does not, and the reason
    says the old `stronglyBisimilar` — `Finset` equality over a record of tags — was not a bisimulation,
    rather than only that it was inelegant.
 
-2. **No barb survives a fresh restriction** — this module has had three answers to this one, and the
-   third is that it is open. The record is the point, so all three are kept.
+2. **No barb survives a fresh restriction** — this module has had four answers to this one. The third
+   said it was open and named the wrong residual; the fourth is the measurement that corrects it. The
+   record is the point, so all four are kept.
 
    **First answer — refuted.** Under `Proc.lean`'s *syntactic* freshness the sentence is **false**, in
    two independent ways, and the witnesses are recorded rather than stated because neither proof nor
@@ -116,11 +117,25 @@ answered twice over. The first answer holds. The second does not, and the reason
    reached through a *congruent* term.
 
    `SCong.nu_par` was removed for that reason — it was the one rule that let the congruence move a `ν`
-   — and removing it is necessary but **not sufficient**, which is the precise state of this
-   obligation. What `scong` asks for is the fact that a `ν`-headed term's congruence class is
-   `ν`-headed, with a binder `SCong`-equal to the original: then `Step.nu` applies to `Q` and its
-   proviso contradicts the barb. That is a congruence-class *shape* lemma, it is not in this tree, and
-   it is what the obligation is waiting on.
+   — and removing it is necessary but **not sufficient**.
+
+   **Fourth answer — the residual is not a shape lemma, and both readings of it are settled.** The third
+   answer recorded the missing step as "a congruence-class shape lemma: that a `ν`-headed term's
+   congruence class is `ν`-headed, with a binder `SCong`-equal to the original". Neither reading of that
+   is a step towards the obligation:
+
+   * with `SCong` as the conclusion it is **free** — symmetry and transitivity give it from the
+     hypothesis alone, at `y := x` and `Q' := R`, so it is a restatement and constrains nothing;
+   * as an *equality* on `Q`'s head — which is what the `scong` case needs, since the step rules have to
+     be applied to a term whose head is syntactically visible — it is **false**, and
+     `scong_nu_shape_false` is the witness: `nu_nu` permutes two binders, so the head binder of a
+     congruent `ν`-headed term need not be congruent to the original, and `nu_nil` removes one outright.
+
+   What is left is a fact about the *chain* of restrictions rather than about its head — the set of
+   binders along it, modulo permutation (`nu_nu`), congruence (`cong_nu`) and collapse (`nu_nil`) — and
+   no predicate in this tree expresses that. The obligation's state is therefore sharp in both
+   directions: `barb_nu_of_not_scong` is its **sufficiency** half, that a restriction blocks nothing it
+   should not, and its **necessity** half is `¬ Barb (νx.P) x`, open.
 
    `no_barb_nu_of_fresh` is deleted rather than left standing, because a statement whose hypothesis is
    unsatisfiable is true of nothing and this corpus does not keep those for their names.
@@ -786,9 +801,42 @@ theorem parallel_nil (P : Proc) : StrongBisim (Proc.par P Proc.nil) P :=
 /-! ==========================================================================
    Part 8 — Obligation 2: what a restriction can and cannot hide
 
-   The obligation is `¬ Barb (νx.P) x` under the restriction rule's freshness, and it is now a theorem
-   about the rule rather than about the syntactic condition the rule used to carry. This part holds
-   the two halves of that: the lemma that does the work, and the obligation itself.
+   The obligation is `¬ Barb (νx.P) x`: a restriction never lets its own name out. It is **open**, and
+   what it is waiting on is not what this module's earlier record said it was. This part holds the three
+   things that are settled, in the order they were measured.
+
+   **The condition is sufficient, and that half is a theorem.** `barb_nu_of_not_scong`: a restriction is
+   *transparent* to a channel it does not bind. That is the positive content of the rule's proviso
+   `¬ SCong x (subject μ)` — everything the rule should let through, it lets through.
+
+   **Its necessity is the obligation**, and it is the second half of the same sentence: nothing gets
+   through on a channel the restriction does bind. Stated without a freshness hypothesis, because the
+   hypothesis that used to carry it was unsatisfiable (`not_freshUpToScong`) — so the obligation is the
+   unconditional `¬ Barb (νx.P) x`, and the rule's proviso is exactly as strong as the obligation says.
+
+   **What would close it is not a shape lemma.** The record this part replaces named the missing step as
+   "a congruence-class shape lemma: that a `ν`-headed term's congruence class is `ν`-headed, with a
+   binder `SCong`-equal to the original". Both readings of that are settled, and neither is a step:
+
+   * As a `SCong` conclusion it is **free**. Given `SCong (νx.P) Q` and `SCong P (νx.R)`, symmetry and
+     transitivity already give `Q ≡ νx.R`, so the statement holds with `y := x`, `Q' := R`. It is a
+     restatement of the hypothesis and says nothing about the class.
+   * As an *equality* on `Q`'s head — which is what the `scong` case needs, because the step rules have
+     to be applied to a term whose head is syntactically visible — it is **false**, and
+     `scong_nu_shape_false` below is the witness: `nu_nu` permutes two binders, so the head binder of a
+     congruent `ν`-headed term need not be congruent to the original, and `nu_nil` removes a binder
+     outright.
+
+   What the `scong` case needs is therefore a fact about the *chain* of restrictions rather than about
+   its head: the set of binders along it, modulo permutation (`nu_nu`), congruence (`cong_nu`) and the
+   collapse (`nu_nil`). No predicate in this tree expresses that, and it is not an oversight that
+   `CanStep` cannot: its `nu` clause drops the binder *by construction*, because Part 3c's note records
+   that `nu_nil` makes any binder-inspecting predicate non-invariant. This is the fourth wall of that
+   shape in this file, and the one predicate that would get past it has not been written.
+
+   `barb_nu_subject_occurs` is kept, and its hypothesis is the open question — which is worth knowing
+   when reading it: what it says about the obligation is nothing, because the mention of `x` it produces
+   may be a *bound* one.
 
    Read with §0's notation: `0` is `Proc.nil`, `⌈P⌉` is `Proc.bang P`, `νx.P` is `Proc.nu x P`,
    `x!(y)` is `Proc.out x y`.
@@ -802,7 +850,11 @@ theorem parallel_nil (P : Proc) : StrongBisim (Proc.par P Proc.nil) P :=
     `canStep_occurs_up_to_scong` then produces a congruent process mentioning `x`. Nothing about the
     restriction itself is used, and that is the finding: the *congruence*, not the restriction, is what
     can put a mention of `x` behind `νx`. It is also why the rule's proviso had to change — this lemma
-    says exactly what "fresh" has to exclude, and the syntactic notion excluded too little. -/
+    says exactly what "fresh" has to exclude, and the syntactic notion excluded too little.
+
+    Read against Part 8's account of the obligation: its hypothesis *is* the open question, so it is not
+    a step towards the answer, and its conclusion is the wrong kind of mention — `Occurs` counts the
+    binder, and the binder is precisely what `νx.P` may legitimately contain. -/
 @[axiom_budget 0]
 theorem barb_nu_subject_occurs {x P : Proc} (h : Barb (Proc.nu x P) x) :
     ∃ Q : Proc, SCong P Q ∧ Occurs x Q := by
@@ -823,10 +875,55 @@ theorem barb_nu_subject_occurs {x P : Proc} (h : Barb (Proc.nu x P) x) :
    replacement needs a notion which does not count binders, and `barb_nu_subject_occurs` — which
    survives, and is above — yields `Occurs`, not a free occurrence.
 
-   What the obligation is waiting on, measured rather than guessed: `Step.scong` can still reach a
-   restriction through a *congruent* term, and closing that needs a congruence-class shape lemma —
-   that a `ν`-headed term relates only to `ν`-headed terms, with a `SCong`-equal binder. The full
-   account is in this module's scope note. -/
+   What the obligation is waiting on has since been measured twice more, and the third answer was wrong.
+   The third said `Step.scong` needs "a congruence-class shape lemma — that a `ν`-headed term relates
+   only to `ν`-headed terms, with a `SCong`-equal binder"; Part 8's note and `scong_nu_shape_false`
+   below record why that is not it. What is left is the chain of restrictions rather than its head. -/
+
+/-- **A restriction is transparent to a channel it does not bind** — the proved half of obligation 2,
+    and the content of the rule's proviso from the direction that can be established.
+
+    `barb_nu_of_not_scong` is `Step.nu` read as a statement about *observations*: `νx.P` barbs on `a`
+    whenever `P` does and `a` is not congruent to `x`. Read beside the obligation it is the
+    *sufficiency* half — the rule blocks nothing it should not — and the obligation is its necessity.
+
+    The hypothesis is not decoration: at `a ≡ x` the conclusion fails, and *that* is the obligation.
+    Stated as an implication rather than as the `↔` it wants to be, because only one direction is
+    available. -/
+@[axiom_budget 0]
+theorem barb_nu_of_not_scong {x P a : Proc} (h : ¬ SCong x a) (hb : Barb P a) :
+    Barb (Proc.nu x P) a := by
+  rcases hb with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+  · exact Or.inl ⟨y, Proc.nu x P', Step.nu (by simpa only [Label.subject] using h) hs⟩
+  · exact Or.inr ⟨y, Proc.nu x P', Step.nu (by simpa only [Label.subject] using h) hs⟩
+
+/-- **The shape lemma this module's record named as the obligation's missing step is false in the form
+    the obligation needs.**
+
+    The `Step.scong` case has a step out of a term `Q` that is only *congruent* to `νx.P`, and the step
+    rules need `Q`'s head syntactically — so what it asks for is an **equality**: `Q = νy.Q'` with a
+    binder congruent to the original. That is what is refuted here.
+
+    The witness is `nu_nu`: `ν0.ν(0!(0)).0 ≡ ν(0!(0)).ν0.0`, and the head binder moves from `0` to
+    `0!(0)`, which is not congruent to `0` (`not_scong_nil_out`). `nu_nil` is the second mechanism and
+    is not needed for this witness: it removes a binder outright, `νx.0 ≡ 0`.
+
+    Recorded as a refutation of the universally quantified statement rather than as prose about the
+    witness, because the universally quantified statement is the one that was written down as the plan
+    of record — and the reason it was written down is that the congruence form *is* available
+    trivially, by symmetry, and so reads like a fact about the class without being one. -/
+@[axiom_budget 0]
+theorem scong_nu_shape_false :
+    ¬ (∀ (x P Q : Proc), SCong (Proc.nu x P) Q →
+        ∃ y Q', SCong x y ∧ SCong P Q' ∧ Q = Proc.nu y Q') := by
+  intro h
+  obtain ⟨y, _, hay, _, heq⟩ :=
+    h Proc.nil (Proc.nu (Proc.out Proc.nil Proc.nil) Proc.nil)
+      (Proc.nu (Proc.out Proc.nil Proc.nil) (Proc.nu Proc.nil Proc.nil))
+      (SCong.nu_nu Proc.nil (Proc.out Proc.nil Proc.nil) Proc.nil)
+  injection heq with hy _
+  rw [← hy] at hay
+  exact not_scong_nil_out Proc.nil Proc.nil hay
 
 /-! ==========================================================================
    Part 9 — §1.2's weak equation: what it says, what is true, and what is not
