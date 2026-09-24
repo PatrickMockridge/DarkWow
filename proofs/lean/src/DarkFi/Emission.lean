@@ -292,6 +292,20 @@ theorem fixedPowDecayGo_step_bound_even (m : Nat) {b : Nat} (hb : b ≤ FP_ONE) 
         · exact hb
       exact fixedPowDecayGo_mono_acc ((k + 1) / 2) hacc _ hbb
 
+/-- **The decay factor does not increase at any even step — proved, not scanned.** This is the even
+    half applied at the schedule's own base, and it is the first statement in this file about
+    `fixedPowDecay`'s monotonicity that is a theorem rather than a range check: it covers every even
+    step, where `RewardNonIncreasing`'s scans cover a prefix.
+
+    **What it does not cover, and this is the whole residue**: the odd steps. So the honest reading is
+    that half of the adjacent pairs are proved and the other half are `OddCaseStepBound` — a sharper
+    place to be than "checked over a range", because the unchecked part now has a name and a boundary
+    instead of a scan's edge. -/
+@[axiom_budget 1]
+theorem fixedPowDecay_nonincreasing_even (m : Nat) :
+    fixedPowDecay (2 * m + 1) ≤ fixedPowDecay (2 * m) :=
+  fixedPowDecayGo_step_bound_even m (b := DECAY_FP) DECAY_FP_lt_FP_ONE
+
 /-! ===== The odd case, stated =====
 
 `Axioms.reward_monotone` records the odd case as needing "a statement bounding the factor the extra
