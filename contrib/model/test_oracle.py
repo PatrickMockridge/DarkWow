@@ -234,15 +234,43 @@ def main():
 
     json_mode = "--json" in sys.argv
 
-    # Default fixtures
+    # Default fixtures.
+    #
+    # THE LIST IS EXPLICIT, and it is not a filter on `"name"`. `fixtures/` is shared: it also holds
+    # `finality_fork_vectors.json`, which is the *merge-mining* model's input
+    # (`contrib/docker/darkwow-testnet/merge_mining_model.py:2309`) and has no `"name"` at all, so the
+    # `*.json` glob this replaces crashed here with `KeyError: 'name'` — a failure that said nothing
+    # about the wallet and made this oracle ungateable. Naming the four wallet fixtures fixes that
+    # without the other half of the same mistake: a filter on `"name"` would silently *skip* a wallet
+    # fixture that had lost its `name`, so a missing one of these four is a hard failure and an
+    # unlisted `.json` is reported rather than quietly unread.
+    WALLET_FIXTURES = (
+        "coinbase_scan.json",
+        "escrow_create.json",
+        "multi_contract.json",
+        "pn_transfer.json",
+    )
     fixture_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
     fixture_files = [a for a in sys.argv[1:] if a.endswith(".json")]
 
     if not fixture_files:
-        fixture_files = sorted([
-            os.path.join(fixture_dir, f) for f in os.listdir(fixture_dir)
-            if f.endswith(".json")
-        ])
+        fixture_files = [os.path.join(fixture_dir, f) for f in WALLET_FIXTURES]
+        missing = [f for f in fixture_files if not os.path.exists(f)]
+        if missing:
+            print("FAIL: a wallet fixture this oracle is defined over is missing:")
+            for f in missing:
+                print(f"  {os.path.relpath(f)}")
+            sys.exit(1)
+        unowned = sorted(
+            f for f in os.listdir(fixture_dir)
+            if f.endswith(".json") and f not in WALLET_FIXTURES
+        )
+        if unowned:
+            print(f"  Note: {len(unowned)} fixture(s) here belong to another model and are not read:")
+            for f in unowned:
+                print(f"    {f}")
+        if not json_mode:
+            print(f"  Reading {len(fixture_files)} wallet fixture(s).")
 
     if not fixture_files:
         if json_mode:

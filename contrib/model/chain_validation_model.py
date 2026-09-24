@@ -3906,3 +3906,13 @@ if __name__ == "__main__":
     print(f"{'=' * 60}")
     print(f"  Results: {passed}/{len(tests)} passed")
     print(f"{'=' * 60}")
+
+    # The exit status is the whole interface of a specification model, because it is what a gate reads:
+    # `scripts/run-all-tests.sh`'s `run_gate` decides purely on it. The `try`/`except AssertionError`
+    # above catches a failing test *so that the run reports every failure rather than aborting at the
+    # first*, and until 2026-09-24 the process then fell off the end of this block and exited 0 either
+    # way — so this file could not be a gate, and a `run_gate` line on it would have reported PASS over
+    # a violated specification. Measured before the change: an injected failing test printed
+    # `FAIL: … — INJECTED FAILURE` and `Results: 41/42 passed`, and the process still exited 0.
+    # The shape is `chain_model.py`'s, which has always exited on its own result.
+    raise SystemExit(0 if passed == len(tests) else 1)
