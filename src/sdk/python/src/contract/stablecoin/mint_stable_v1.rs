@@ -38,8 +38,6 @@ impl FunctionParams for stablecoin_model::MintStableParams {
         let dict = PyDict::new(py);
         dict.set_item("mint_commitment", format!("{:?}", self.mint_commitment))?;
         dict.set_item("mint_amount", format!("{:?}", self.mint_amount))?;
-        dict.set_item("total_debt", format!("{:?}", self.total_debt))?;
-        dict.set_item("total_collateral", format!("{:?}", self.total_collateral))?;
         dict.set_item("proof", format!("{:?}", self.proof))?;
         dict.set_item("fee", format!("{:?}", self.fee))?;
         dict.set_item("zk_public_inputs", format!("{:?}", self.zk_public_inputs))?;
@@ -50,8 +48,6 @@ impl FunctionParams for stablecoin_model::MintStableParams {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}mint_commitment: {:?}", self.mint_commitment).unwrap();
         writeln!(out, "{prefix}mint_amount: {:?}", self.mint_amount).unwrap();
-        writeln!(out, "{prefix}total_debt: {:?}", self.total_debt).unwrap();
-        writeln!(out, "{prefix}total_collateral: {:?}", self.total_collateral).unwrap();
         writeln!(out, "{prefix}proof: {:?}", self.proof).unwrap();
         writeln!(out, "{prefix}fee: {:?}", self.fee).unwrap();
         writeln!(out, "{prefix}zk_public_inputs: {:?}", self.zk_public_inputs).unwrap();

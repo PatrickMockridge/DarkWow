@@ -352,8 +352,6 @@ impl StablecoinHarness {
         let params = MintStableParams {
             mint_commitment: to_intent_commitment(public_inputs.new_commitment),
             mint_amount,
-            total_debt: old_debt + mint_amount,
-            total_collateral: old_collateral,
             proof: vec![],
             fee: 0,
             zk_public_inputs: public_inputs.to_vec(),

@@ -75,6 +75,9 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
     // Runtime-captured commitments for verify_state (cross-block state check).
     let position_commitment: Arc<Mutex<Option<pallas::Base>>> = Arc::new(Mutex::new(None));
     let mint_commitment: Arc<Mutex<Option<pallas::Base>>> = Arc::new(Mutex::new(None));
+    // The second position in the mint chain (`MintStableV1Large`'s output), which the
+    // below-minimum mint below it acts on (`OBL-C119`).
+    let mint_commitment_2: Arc<Mutex<Option<pallas::Base>>> = Arc::new(Mutex::new(None));
 
     // OBL-Z14: the governance authority must be the identity that files reports —
     // this fixture's `sk` (10), which `GovernanceReportV1` below passes as the
@@ -161,6 +164,13 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 let mark0 = tree.mark().expect("tree.mark");
                 let path0: Vec<MerkleNode> = tree.witness(mark0, 0).expect("tree.witness");
                 let mut issued = vec![(token0.commitment.inner(), u64::from(mark0), path0, asset_id, pallas::Base::from(6u64))];
+                // OBL-C119: the note the below-minimum mint spends is the 500 the repay endpoint
+                // spends below it — and because that mint is refused, the note stays unspent and
+                // the repay still finds it. The value is also what keeps the two children apart:
+                // `pn_transfer_child` fixes every field of its output commitment but the value and
+                // the spend_hook, so a below-minimum mint of 1000 with this contract's hook would
+                // reproduce the positive mint's output commitment and be turned away by the
+                // promissory note for *that* reason instead of by the ratio check.
                 for (value, cb) in [(5000u64, 11u64), (1000, 12), (1000, 13), (500, 14), (5500, 15)] {
                     let n = pn
                         .issue(issue_secret, asset_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(cb))
@@ -267,8 +277,6 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                             let params = MintStableParams {
                                 mint_commitment: IntentCommitment::from_base(recorded),
                                 mint_amount: 1000,
-                                total_debt: 0,
-                                total_collateral: 0,
                                 proof: vec![],
                                 fee: 0,
                                 zk_public_inputs: r.public_inputs.to_vec(),
@@ -351,6 +359,80 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 })),
                 expectation: EndpointExpectation::Success,
             },
+            // OBL-C119's positive half: the second mint in the chain, large enough that the pool's
+            // ratio falls but not below the minimum. 10000 collateral against 1000 + 5500 = 6500
+            // debt is 15384 bp, above `CDP_MIN_COLLATERALIZATION_RATIO` (15000) — so this endpoint
+            // is also the fixture's own statement of where the threshold sits. If the amounts were
+            // mis-set the other way, this endpoint would be refused and the run would say so,
+            // rather than the below-minimum one passing for a reason nobody chose.
+            EndpointSpec {
+                name: "MintStableV1Large",
+                is_zk: true,
+                generate: Box::new({
+                    let notes = notes.clone();
+                    let mint_commitment = mint_commitment.clone();
+                    let mint_commitment_2 = mint_commitment_2.clone();
+                    move || {
+                        let previous = mint_commitment.lock().unwrap()
+                            .ok_or_else(|| dwow_core::Error::Custom(
+                                "first mint commitment not captured".into()))?;
+                        let r = h.mint_stable(sk, 10000, 6000, 5500,
+                            pallas::Base::from(1u64),
+                            BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
+                            previous)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        *mint_commitment_2.lock().unwrap() = Some(r.public_inputs.new_commitment);
+                        let n = notes.lock().unwrap();
+                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
+                        let blind_seed = poseidon_hash([pallas::Base::from(5500u64), r.public_inputs.new_commitment]);
+                        let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
+                        let child = pn_transfer_child(&n[5], 5500, blind_seed, cid.inner())?;
+                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                    }
+                }),
+                generate_with_coinbase: None,
+                verify_state: None,
+                expectation: EndpointExpectation::Success,
+            },
+            // NEGATIVE — OBL-C119, and its cause is single by construction.
+            //
+            // The same mint as `MintStableV1Large` one step further along the chain: a valid proof
+            // over a registered, unconsumed position, a valid child transfer, and every check this
+            // arm made before the repair passing. What refuses it is the pool ratio — 10000
+            // collateral against 1000 + 5500 + 500 = 7000 debt is 14285 bp, below the 15000 bp
+            // minimum — and the refusal names those figures.
+            //
+            // Remove the ratio check and this endpoint is accepted: the position is consumed, the
+            // pool's debt is written past its floor, and `EndpointExpectation::Rejection` asserts
+            // that the block must fail, so the run says so. If this endpoint is ever accepted, a
+            // mint can again walk `CDP_TOTAL_DEBT_KEY` up with no floor — and that key is the
+            // denominator of the redemption exchange rate and the input to the liquidation gate.
+            EndpointSpec {
+                name: "MintStableV1BelowPoolMinimum", is_zk: true,
+                expectation: EndpointExpectation::Rejection,
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new({
+                    let notes = notes.clone();
+                    let mint_commitment_2 = mint_commitment_2.clone();
+                    move || {
+                        let previous = mint_commitment_2.lock().unwrap()
+                            .ok_or_else(|| dwow_core::Error::Custom(
+                                "second mint commitment not captured".into()))?;
+                        let r = h.mint_stable(sk, 10000, 11500, 500,
+                            pallas::Base::from(1u64),
+                            BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
+                            previous)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let n = notes.lock().unwrap();
+                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
+                        let blind_seed = poseidon_hash([pallas::Base::from(500u64), r.public_inputs.new_commitment]);
+                        let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
+                        let child = pn_transfer_child(&n[4], 500, blind_seed, cid.inner())?;
+                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                    }
+                }),
+            },
             mk_ep("RepayStableV1", true, Box::new({
                 let notes = notes.clone();
                 move || {
@@ -372,13 +454,18 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
+            // OBL-C119: the report must state the pool's *actual* figures, so the two mints and the
+            // repay above it move what this endpoint reports. The host compares them against the
+            // stored totals and refuses a report that disagrees — 500 was the pre-chain value and
+            // the run says so verbatim (`GovernanceReport: debt mismatch — reported=500
+            // on_chain=6000`), which is what the fixture update is answering.
             mk_ep("GovernanceReportV1", true, Box::new(move || {
-                let r = h.governance_report(sk, 10000, 500, 0, 10, 3600)
+                let r = h.governance_report(sk, 10000, 6000, 0, 10, 3600)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("AccrueInterestV1", true, Box::new(move || {
-                let r = h.accrue_interest(sk, 500, 10, 3600)
+                let r = h.accrue_interest(sk, 6000, 10, 3600)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
@@ -400,7 +487,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.accrue_interest(pallas::Base::from(11u64), 500, 10, 3600)
+                    let r = h.accrue_interest(pallas::Base::from(11u64), 6000, 10, 3600)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),

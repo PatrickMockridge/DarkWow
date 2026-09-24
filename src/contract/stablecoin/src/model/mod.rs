@@ -513,13 +513,16 @@ pub struct MintStableParams {
     /// Amount of stablecoin to mint
     pub mint_amount: u64,
 
-    /// Current total debt in pool (for ratio check)
-    pub total_debt: u64,
-
-    /// Current total collateral in pool (for ratio check)
-    pub total_collateral: u64,
-
     /// ZK proof: mint doesn't violate pool collateralization
+    ///
+    /// `OBL-C119`: this comment was the whole of the claim for as long as the two fields below it
+    /// carried a caller-supplied copy of the totals — `total_debt` / `total_collateral`, marked
+    /// *"for ratio check"* — which no arm ever read, so the ratio check the comment named had
+    /// neither a reader nor an enforcer. The fields are gone and the claim is now true:
+    /// `process_mint_stable_instruction` compares the pool's post-mint ratio against
+    /// `CDP_MIN_RATIO_KEY`, from the contract's own stored totals rather than from anything on the
+    /// wire. Nothing on the wire could have made it true — a ratio over caller-supplied figures is
+    /// satisfiable by choosing the figures.
     pub proof: Vec<u8>,
 
     /// Fee paid for this operation
@@ -537,12 +540,10 @@ pub struct MintStableParams {
 
 impl MintStableParams {
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 66 + self.proof.len() + self.zk_public_inputs.len() * 32;
+        let cap = 50 + self.proof.len() + self.zk_public_inputs.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.mint_commitment.to_bytes());
         buf.extend_from_slice(&self.mint_amount.to_le_bytes());
-        buf.extend_from_slice(&self.total_debt.to_le_bytes());
-        buf.extend_from_slice(&self.total_collateral.to_le_bytes());
         buf.push(self.proof.len() as u8);
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.fee.to_le_bytes());
@@ -555,26 +556,24 @@ impl MintStableParams {
 
     #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 67 {
+        if data.len() < 50 {
             return Err(ContractError::IoError(format!(
-                "MintStableParams: expected at least 67 bytes, got {}", data.len()
+                "MintStableParams: expected at least 50 bytes, got {}", data.len()
             )));
         }
         let mint_commitment = IntentCommitment::from_bytes(data[0..32].try_into().unwrap())
             .map_err(|_| ContractError::IoError("MintStableParams: invalid mint_commitment".into()))?;
         let mint_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let total_debt = u64::from_le_bytes(data[40..48].try_into().unwrap());
-        let total_collateral = u64::from_le_bytes(data[48..56].try_into().unwrap());
-        let proof_len = data[56] as usize;
-        if data.len() < 57 + proof_len + 9 {
+        let proof_len = data[40] as usize;
+        if data.len() < 41 + proof_len + 9 {
             return Err(ContractError::IoError(format!(
-                "MintStableParams: proof truncated at offset {}", 57 + proof_len
+                "MintStableParams: proof truncated at offset {}", 41 + proof_len
             )));
         }
-        let proof = data[57..57 + proof_len].to_vec();
-        let fee = u64::from_le_bytes(data[57 + proof_len..65 + proof_len].try_into().unwrap());
-        let pi_count = data[65 + proof_len] as usize;
-        let expected = 66 + proof_len + pi_count * 32;
+        let proof = data[41..41 + proof_len].to_vec();
+        let fee = u64::from_le_bytes(data[41 + proof_len..49 + proof_len].try_into().unwrap());
+        let pi_count = data[49 + proof_len] as usize;
+        let expected = 50 + proof_len + pi_count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "MintStableParams: expected {} bytes, got {}", expected, data.len()
@@ -582,13 +581,13 @@ impl MintStableParams {
         }
         let mut zk_public_inputs = Vec::with_capacity(pi_count);
         for i in 0..pi_count {
-            let start = 66 + proof_len + i * 32;
+            let start = 50 + proof_len + i * 32;
             zk_public_inputs.push(
                 Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
                     .ok_or_else(|| ContractError::IoError(format!("MintStableParams: invalid zk_public_inputs[{}]", i)))?,
             );
         }
-        Ok(MintStableParams { mint_commitment, mint_amount, total_debt, total_collateral, proof, fee, zk_public_inputs })
+        Ok(MintStableParams { mint_commitment, mint_amount, proof, fee, zk_public_inputs })
     }
 }
 

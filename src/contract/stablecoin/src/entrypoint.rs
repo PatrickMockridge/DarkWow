@@ -1143,13 +1143,10 @@ fn process_mint_stable_instruction(
         }
     }
 
-    msg!(
-        "[stablecoin::process_instruction] MintStable: amount={}, total_debt={}",
-        params.mint_amount,
-        params.total_debt
-    );
-
-    // Get current total debt
+    // Get the pool's own totals. `MintStableParams` used to carry a caller-supplied copy of both,
+    // marked *"for ratio check"*, and this arm read neither — so the only figure a log line here
+    // could print was the caller's claim about the pool (`OBL-C119`). The real ones are below, and
+    // the log now waits for them.
     let config_db = wasm::db::db_lookup(cid, "config")?;
     let total_debt_bytes = wasm::db::db_get(config_db, CDP_TOTAL_DEBT_KEY)?
         .ok_or_else(|| ContractError::IoError("Total debt not found".to_string()))?;
@@ -1158,6 +1155,56 @@ fn process_mint_stable_instruction(
     );
 
     let new_total_debt = total_debt.saturating_add(params.mint_amount);
+
+    // OBL-C119: the pool must still be collateralized after the mint.
+    //
+    // `MintStableParams` documents its own proof as *"ZK proof: mint doesn't violate pool
+    // collateralization"*, and no arm enforced it: `mint_stable.zk` carries no `less_than_or_equal`
+    // while its four siblings each carry one, and this function read `CDP_TOTAL_DEBT_KEY` and
+    // nothing else. `total_debt` is the denominator of the redemption exchange rate
+    // (`collateral_return = redeem_amount * total_collateral / total_debt`) and the input to the
+    // liquidation gate (`collateral_ratio = total_collateral * 10000 / total_debt`), so a mint that
+    // walks it up with no floor is a write to both — and mint needs no authority.
+    //
+    // The check is here rather than in the circuit, and that is not a preference: a *pool* ratio is
+    // not a position's figures. `open_position.zk` and its siblings compare the position's own
+    // witnesses, which is the only thing a circuit can do — every operand it sees is prover-chosen,
+    // so a ratio check over them would be satisfiable by choosing the inputs to suit it, which is
+    // what `OBL-C82` records about a checked rate beside a caller-chosen period. This reads the
+    // contract's own stored totals, which the caller cannot choose.
+    let total_collateral_bytes = wasm::db::db_get(config_db, CDP_TOTAL_COLLATERAL_KEY)?
+        .ok_or_else(|| ContractError::IoError("Total collateral not found".to_string()))?;
+    let total_collateral = u64::from_le_bytes(
+        total_collateral_bytes.as_slice().try_into().map_err(|_| ContractError::IoError("Failed to read total collateral".to_string()))?,
+    );
+    let min_ratio_bytes = wasm::db::db_get(config_db, CDP_MIN_RATIO_KEY)?
+        .ok_or_else(|| ContractError::IoError("Minimum collateralization ratio not found".to_string()))?;
+    let min_ratio = u64::from_le_bytes(
+        min_ratio_bytes.as_slice().try_into().map_err(|_| ContractError::IoError("Failed to read minimum collateralization ratio".to_string()))?,
+    );
+
+    msg!(
+        "[stablecoin::process_instruction] MintStable: amount={}, pool_debt={}, pool_collateral={}, min_ratio={}",
+        params.mint_amount,
+        total_debt,
+        total_collateral,
+        min_ratio
+    );
+
+    // A pool with no debt has no ratio to violate. `saturating_mul` because the product of two u64s
+    // is not one: the liquidate arm computes the same ratio with a plain multiply over the same two
+    // totals, and the bound is a deposit sum rather than a constant.
+    if new_total_debt > 0 {
+        let collateral_ratio = total_collateral.saturating_mul(10000) / new_total_debt;
+        if collateral_ratio < min_ratio {
+            msg!(
+                "[stablecoin::MintStable] Error: mint would leave the pool at {} bp against a {} bp minimum",
+                collateral_ratio,
+                min_ratio
+            );
+            return Err(StablecoinError::InvalidCollateralizationRatio.into())
+        }
+    }
 
     // Create update data. `position_commitment` is the proven `new_commitment` rather than
     // `params.mint_commitment`, so the value written to the tree is the one the join above checked
