@@ -243,12 +243,12 @@ on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   so the extrusion rule could not fire for four commits while reading as available; that rule is now
   deleted, and extrusion survives only in `SCong0`, the reachability relation. The restriction rule
   does not wait on the convention, because its condition belongs on the **label**
-  (`¬ SCong x (subject μ)`) — and its obligation is **open in one direction only**: that the condition
-  is *sufficient* is a theorem (`barb_nu_of_not_scong`, a restriction blocks nothing it should not),
-  and that it is *necessary* is `¬ Barb (νx.P) x`, which needs a fact about the **chain** of
-  restrictions rather than about its head. The shape lemma this list named for it is not that fact:
-  vacuous as a congruence statement, false as the equality the step rules need
-  (`scong_nu_shape_false`). `Semantics/LTS.lean`'s scope note has the measurement. Also absent: an α-rule on `SCong`, so `Step.tau` carries `CaptureFree` as a
+  (`¬ SCong x (subject μ)`), and its obligation is **discharged**: `barb_nu_iff` states
+  `Barb (νx.P) a ↔ ¬ SCong x a ∧ Barb P a` — a restriction blocks exactly its own name and nothing else
+  — and `not_barb_nu_self` is the case that was open. What closed it was `CanBarb`, a structural
+  reading of the barb predicate that keeps the restriction's binder, where `CanStep` had to drop it;
+  `Semantics/LTS.lean`'s scope note keeps all five answers the obligation took, because what each one
+  got wrong is the reusable part. Also absent: an α-rule on `SCong`, so `Step.tau` carries `CaptureFree` as a
   proviso and `subst` relabels the channels that labels are made of (`subst_moves_the_label`) — adding
   the rule is a redesign of the label predicates rather than a constructor, which is what that theorem
   measures, and a corpus-wide search found no consumer for it; and `type-system.md` §9.2's
