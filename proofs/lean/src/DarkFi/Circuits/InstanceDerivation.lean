@@ -266,15 +266,31 @@ mutual
     | a :: rest => eval opVal v a :: evalList opVal v rest
 end
 
-/-- **A valuation satisfies a circuit**: it respects every assignment (`n`'s value *is* its expression's)
-    and every equality.
+/-- **A valuation satisfies a circuit**: it respects every assignment (`n`'s value *is* its expression's),
+    every equality, and every range check the circuit declares.
 
     This is the hypothesis the binding rule needs, and finding that out is the unit's modelling content —
-    see the module note. Neither conjunct is a fact about syntax, so without them the walk proves nothing
-    about agreement between two valuations. -/
+    see the module note. Neither of the first two conjuncts is a fact about syntax, so without them the walk
+    proves nothing about agreement between two valuations.
+
+    **The third conjunct is what makes a range check mean something, and it was added on 2026-09-24.**
+    Until then `Satisfies` said nothing about `Stmt.rangeCheck`, so a statement the model carried could not
+    be reasoned *from* — which is exactly `OBL-Z12`'s residue: the comparison chip's integer reading needs
+    each operand bounded below `2 ^ 64`, a circuit supplies that by calling `range_check(64, ·)`, and the
+    model had no way to carry the supply. `Comparison.range_check_64_is_bounded` is the kernel-checked fact
+    that the deployed chip *does* produce this bound, which is what makes the conjunct a statement about the
+    real gadget rather than a convenient assumption.
+
+    **The cost is recorded rather than glossed.** A stronger `Satisfies` is a *weaker* `soundness` and a
+    weaker `boundWalk_spec`, because their hypothesis narrows. Nothing in the tree produces a `Satisfies` —
+    it is consumed as a hypothesis — so no proof breaks; and for a valuation of a real circuit the conjunct
+    is not an extra obligation, because the chip enforces it. What is bought is the direction that was
+    missing: the model can now derive a bound from a check, which is what `rangeCheck_operand_is_bounded`
+    below does. -/
 def Satisfies (opVal : Name → List Nat → Nat) (v : Name → Nat) (cs : List Stmt) : Prop :=
   (∀ n e, Stmt.assign n e ∈ cs → v n = eval opVal v e) ∧
-  (∀ a b, Stmt.constrainEq a b ∈ cs → eval opVal v a = eval opVal v b)
+  (∀ a b, Stmt.constrainEq a b ∈ cs → eval opVal v a = eval opVal v b) ∧
+  (∀ w e, Stmt.rangeCheck w e ∈ cs → eval opVal v e < 2 ^ w)
 
 /-! ===== Agreement =====
 
@@ -342,8 +358,9 @@ theorem determinedExpr_agrees (opVal : Name → List Nat → Nat) {held bound : 
     only by names whose value is pinned, and an exposure is recorded determined only against the bound set
     it had.
 
-    The two `Satisfies` hypotheses are what make the binding arms go through — see the module note for why
-    a source analysis does not need them and this proof does. -/
+    The `Satisfies` hypotheses are what make the binding arms go through — see the module note for why
+    a source analysis does not need them and this proof does. They are carried unchanged through the walk,
+    including `Satisfies`' range-check conjunct, which the walk itself never reads. -/
 @[axiom_budget 0]
 theorem boundWalk_spec (opVal : Name → List Nat → Nat) (held : List Name) {v₁ v₂ : Name → Nat}
     (hheld : ∀ n ∈ held, v₁ n = v₂ n) :
@@ -359,10 +376,12 @@ theorem boundWalk_spec (opVal : Name → List Nat → Nat) (held : List Name) {v
     intro hsat₁ hsat₂ bound hb
     have hs₁ : Satisfies opVal v₁ rest :=
       ⟨fun n e h => hsat₁.1 n e (List.mem_cons_of_mem _ h),
-       fun a b h => hsat₁.2 a b (List.mem_cons_of_mem _ h)⟩
+       fun a b h => hsat₁.2.1 a b (List.mem_cons_of_mem _ h),
+       fun w e h => hsat₁.2.2 w e (List.mem_cons_of_mem _ h)⟩
     have hs₂ : Satisfies opVal v₂ rest :=
       ⟨fun n e h => hsat₂.1 n e (List.mem_cons_of_mem _ h),
-       fun a b h => hsat₂.2 a b (List.mem_cons_of_mem _ h)⟩
+       fun a b h => hsat₂.2.1 a b (List.mem_cons_of_mem _ h),
+       fun w e h => hsat₂.2.2 w e (List.mem_cons_of_mem _ h)⟩
     cases s with
     | assign n e =>
       by_cases h : derivedB held bound e = true
@@ -378,8 +397,8 @@ theorem boundWalk_spec (opVal : Name → List Nat → Nat) (held : List Name) {v
       · simpa [boundWalk, bindAssign, h] using ih hs₁ hs₂ bound hb
     | constrainEq a b =>
       have hin : Stmt.constrainEq a b ∈ Stmt.constrainEq a b :: rest := List.mem_cons_self _ _
-      have hsa := hsat₁.2 a b hin
-      have hsb := hsat₂.2 a b hin
+      have hsa := hsat₁.2.1 a b hin
+      have hsb := hsat₂.2.1 a b hin
       by_cases ha : determinedB held bound a = true
       · have hbn : ∀ m ∈ bindEq held bound a b, v₁ m = v₂ m := by
           intro m hm
@@ -423,6 +442,36 @@ theorem soundness (opVal : Name → List Nat → Nat) {held : List Name} {cs : L
   intro p hp
   have hb : p.2 = true := List.all_eq_true.mp h p hp
   exact (boundWalk_spec opVal held hheld cs hsat₁ hsat₂ [] (by simp)).2 p hp hb
+
+/-- **A range check's bound, as an elimination from `Satisfies`** — the fact `OBL-Z12`'s residue needed.
+
+    A circuit that bounds a comparison operand writes `range_check(64, x)`; the transcription carries it as
+    `.rangeCheck 64 (.var "x")`, and `Satisfies`' third conjunct turns that statement into `v x < 2 ^ 64`.
+    That is exactly the hypothesis `BaseDivGadget.less_than_or_equal_integer_reading` takes as given, so the
+    model can now **supply** the operand bound the comparison's integer reading consumes rather than assume
+    it — which is the direction that was missing, and the whole of what the third conjunct buys.
+
+    Stated at an arbitrary width because the chip's bound is width-dependent (`src/zk/vm.rs:559`/`:563` are a
+    64-bit and a 253-bit chip, and `Comparison.range_check_64_is_bounded` is the `⟨10, 64⟩` instance). The
+    deployed comparison case is `rangeCheck_64_bounds_the_operand` below.
+
+    **What this is not, stated because the wording invites the mistake**: it is not the bridge to a `.zk`
+    file. It reads a statement *list*, and the step from a circuit to that list is the `(r, s) ↦ a circuit`
+    transcription `OBL-T7` records — still absent. What changed is that the residue's *stating* side now
+    exists, so the remaining gap is that mapping and nothing else. -/
+@[axiom_budget 0]
+theorem rangeCheck_operand_is_bounded (opVal : Name → List Nat → Nat) {v : Name → Nat} {cs : List Stmt}
+    {w : Nat} {x : Name} (hsat : Satisfies opVal v cs) (hrc : Stmt.rangeCheck w (.var x) ∈ cs) :
+    v x < 2 ^ w := by
+  have h := hsat.2.2 w (.var x) hrc
+  simpa [eval] using h
+
+/-- The deployed comparison's case: a 64-bit range check bounds the operand it names. -/
+@[axiom_budget 0]
+theorem rangeCheck_64_bounds_the_operand (opVal : Name → List Nat → Nat) {v : Name → Nat}
+    {cs : List Stmt} {x : Name} (hsat : Satisfies opVal v cs) (hrc : Stmt.rangeCheck 64 (.var x) ∈ cs) :
+    v x < 2 ^ 64 :=
+  rangeCheck_operand_is_bounded opVal hsat hrc
 
 /-! ===== The converse: a free instance is observable =====
 

@@ -283,6 +283,21 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   `Circuits/InstanceDerivation.lean` records for `OBL-T7`. What is proved is that *given* the
   witness, the bound follows — one level of statement further in than the arithmetic, and no
   further.
+
+  **Corrected 2026-09-24: the last of those four moved one step further out, and the first sentence
+  above is now three things rather than four.** That final clause read "*given* the witness, the
+  bound follows". `Circuits/InstanceDerivation.lean`'s `Satisfies` gained a range-check conjunct —
+  `∀ w e, Stmt.rangeCheck w e ∈ cs → eval opVal v e < 2 ^ w` — and
+  `rangeCheck_operand_is_bounded` / `rangeCheck_64_bounds_the_operand` eliminate from it, so the
+  operand bound that `BaseDivGadget.less_than_or_equal_integer_reading` consumes is now **derived
+  from the circuit's statement list** instead of being supplied as a hypothesis. `Transcribed.lean`
+  is what supplies those lists — so what remains is exactly the `(r, s) ↦ a circuit` mapping and
+  nothing else, which is the residue `OBL-T7` records; that is why `OBL-Z12` stays `PARTLY` rather
+  than closing, since only one row should claim a single missing step. The conjunct's cost is
+  recorded where it was paid: a stronger `Satisfies` is a weaker `soundness`, and for a valuation of
+  a real circuit it is no extra obligation, because the chip enforces the bound
+  (`Comparison.range_check_64_is_bounded`). Measured after the change: 705 theorems, every budget
+  matching its axiom set, the two new ones at budget 0 as annotated, and no theorem a tautology.
 - **Nothing below is a claim about a build you have not run.** `scripts/lean-build.sh build DarkFi Transcribed` completes clean
   as of 2026-09-22 (no errors, no warnings — see "What the build currently says" above), but the
   build is what makes every statement below true, so run it before quoting any of them.
