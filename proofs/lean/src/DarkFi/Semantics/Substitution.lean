@@ -62,6 +62,18 @@ it only ever uses freeness in the direction that is sound.
   stated (`subst_nil_of_ne`), and the one that needs no hypothesis because the equality test *is* the
   case it is about (`subst_self`).
 
+  **Part 4 supplies that condition, and with it the law the paragraph above was waiting for.** `NoSub`
+  is defined in lockstep with `subst`'s recursion, so its clauses constrain exactly the nodes `subst`
+  visits — which is what makes the identity law provable, and what makes "no subterm equals `z`" the
+  wrong guess: `inp` visits its channel and not its binder, and `nu` does not visit its binder at all.
+  `subst_eq_self_of_noSub` is the law, for every `y` and with no capture reasoning; `subst_nil_of_ne` is
+  recognised below as its `nil` instance; and `noSub_self` is the other end of the same fact, since no
+  term satisfies `NoSub z z` — which is `subst_self`, the equality test firing, read as a property of the
+  condition. The relation to the refuted candidate is a strictness theorem in both directions
+  (`noSub_implies_freshFree`, `noSub_not_of_freshFree`, the second on the *same* witness as the
+  refutation above), so the two conditions are not near-misses of each other. The obligation is
+  registered as `OBL-T13` in `doc/src/arch/verification-hazop.md`.
+
 **The α-rule is not a mechanical extension, and that is measured rather than suspected.** The renaming
 rule that would remove `CaptureFree` from `LTS.lean`'s `Step.tau` relates `νx.P` to `νy.P{x/y}` — and
 `subst` *relabels*: an action that was on the channel `x` is on `y` afterwards. `CanStep` is a predicate
@@ -83,6 +95,13 @@ that reads one, since `Step.scong` closes steps under the congruence and a large
 `Step`. Said here, next to the gap it would close, and stated in `LTS.lean` as two theorems rather than as
 an estimate: the unit is not a constructor to add, and that is now a measured claim rather than a repeated
 guess.
+
+**The α-unit has four parts, and one of them is now done.** (1) the subterm-freeness predicate and the
+laws `subst` needs — Part 4 below; (2) what a label's channel *means* when names are defined only up to
+renaming; (3) the constructor on `SCong`/`SCong0`; (4) the invariance re-proofs, since `Step.scong` makes
+a larger congruence a larger `Step`. Parts 2–4 are the redesign the two paragraphs above measure, and (1)
+was the only one that was mechanical — which is the distinction worth keeping: this module's remaining gap
+is not a missing lemma.
 -/
 
 import DarkFi.Semantics.Proc
@@ -226,5 +245,216 @@ theorem subst_of_freshFree_is_false :
   have hbad := h Proc.nil (Proc.bang Proc.nil) (Proc.par Proc.nil (Proc.bang Proc.nil)) hfresh hne
   rw [hsub] at hbad
   exact absurd hbad (fun hc => by cases hc)
+
+/-! ==========================================================================
+   Part 4 — `NoSub`: the side condition the identity law needs
+
+   The note above says the missing laws wait on *subterm-freeness with `subst`'s own shadowing
+   structure*, and that `Proc.lean`'s `Occurs` cannot supply it — its `nil` clause is exactly right for
+   freshness and exactly wrong here. This part supplies it, and the condition is not the one a reader
+   writes down first.
+
+   `NoSub z P` is defined in **lockstep with `subst`'s recursion**: it constrains exactly the nodes
+   `subst` visits and nothing else, which is what makes the identity law provable. Two clauses carry
+   that, and neither is guessable from freeness:
+
+   * `inp a b P` — the *channel* `a` is visited, the binder `b` is not (it is kept as written), and the
+     body `P` is visited only when the binder does not shadow the substitution (`b ≠ z`); so the body's
+     clause is discharged by `b = z ∨ ·`;
+   * `nu a P` — the binder is *not* visited at all, unlike `inp`'s channel, so the clause carries no
+     condition on `a`, and a body under a shadowing binder is exempt.
+
+   From these two the shape of the condition follows, and so does the difference from freeness — in both
+   directions, as theorems rather than as a remark. `noSub_implies_freshFree` is the direction that
+   holds: every occurrence freeness excludes, subterm-freeness excludes too.
+   `noSub_not_of_freshFree` refutes the converse **on the same witness that refutes the `FreshFree`-based
+   law above**, so the two conditions are not near-misses of each other — freeness neither follows from
+   subterm-freeness nor implies it.
+
+   And what it buys is the law: `subst_eq_self_of_noSub`, for every `y`, with no capture reasoning. The
+   condition is about `subst`'s positions and the law is about those positions alone, which is why the
+   proof is a structural recursion with no side conditions left over. `subst_nil_of_ne` is that law's
+   `nil` instance — `NoSub z nil` *is* `z ≠ nil` — and `noSub_self` is the other end of the same fact:
+   no term satisfies `NoSub z z`, which is `subst_self` — the equality test firing — read as a property
+   of the condition rather than of the definition. `subst_identity_is_false` records that the hypothesis
+   is necessary rather than decorative, and `noSub_witness` measures the law where it is not vacuous.
+   ========================================================================== -/
+
+/-- `NoSub z P`: `subst P z y` replaces nothing in `P`, for every `y`.
+
+    Defined in lockstep with `subst`'s recursion, so each clause carries the node's own equality test
+    plus the tests of exactly the children the recursion descends into. The two clauses worth reading
+    twice are `inp`'s — the channel is visited, the binder is kept, and the body is exempt when the
+    binder shadows `z` — and `nu`'s, which has no condition on the binder at all because `subst` does
+    not visit it. "No subterm equals `z`" gets both wrong, which is why the predicate is written against
+    the definition rather than against occurrence. -/
+def NoSub (z : Proc) : Proc → Prop
+  | .nil => z ≠ Proc.nil
+  | .bang P => Proc.bang P ≠ z
+  | .out a b => Proc.out a b ≠ z ∧ NoSub z a ∧ NoSub z b
+  | .inp a b P => Proc.inp a b P ≠ z ∧ NoSub z a ∧ (b = z ∨ NoSub z P)
+  | .nu a P => Proc.nu a P ≠ z ∧ (a = z ∨ NoSub z P)
+  | .rep P => Proc.rep P ≠ z ∧ NoSub z P
+  | .par P Q => Proc.par P Q ≠ z ∧ NoSub z P ∧ NoSub z Q
+
+/-- **`NoSub` includes the equality test at every node it visits.** The clause that carries this for a
+    compound term is its first conjunct; for `nil` and `bang` the clause *is* the test, in the direction
+    the recursion evaluates it. Stated separately because it is the half of `NoSub` that is about the
+    root — the other half is about the children — and because `subst_eq_self_of_noSub` consumes it at
+    every case. -/
+@[axiom_budget 0]
+theorem noSub_ne {z : Proc} : ∀ P : Proc, NoSub z P → P ≠ z := by
+  intro P
+  induction P with
+  | nil => intro h hc; exact h hc.symm
+  | bang P _ => intro h; exact h
+  | out a b _ _ => intro h; exact h.1
+  | inp a b P _ _ _ => intro h; exact h.1
+  | nu a P _ _ => intro h; exact h.1
+  | rep P _ => intro h; exact h.1
+  | par P Q _ _ => intro h; exact h.1
+
+/-- **The law the module note says is missing, and the condition it needed.** `subst` leaves `P` alone
+    under `NoSub z P` — for every `y`, with no `CaptureFree` and no capture reasoning, because the
+    condition is stated at the positions `subst` visits and the proof is that recursion run once with
+    every equality test discharged. `subst_nil_of_ne` is its `nil` instance. -/
+@[axiom_budget 0]
+theorem subst_eq_self_of_noSub {z y : Proc} : ∀ P : Proc, NoSub z P → subst P z y = P := by
+  intro P
+  induction P with
+  | nil =>
+      intro h
+      show (if Proc.nil = z then y else Proc.nil) = Proc.nil
+      exact if_neg (fun hc => h hc.symm)
+  | bang P _ih =>
+      intro h
+      show (if Proc.bang P = z then y else Proc.bang P) = Proc.bang P
+      exact if_neg h
+  | out a b iha ihb =>
+      intro h
+      obtain ⟨hr, ha, hb⟩ := h
+      show (if Proc.out a b = z then y else Proc.out (subst a z y) (subst b z y)) = Proc.out a b
+      rw [if_neg hr, iha ha, ihb hb]
+  | inp a b P iha _ihb ihip =>
+      intro h
+      obtain ⟨hr, ha, hb⟩ := h
+      show (if Proc.inp a b P = z then y
+        else Proc.inp (subst a z y) b (if b = z then P else subst P z y)) = Proc.inp a b P
+      rw [if_neg hr, iha ha]
+      by_cases hc : b = z
+      · rw [if_pos hc]
+      · rw [if_neg hc, ihip (hb.resolve_left hc)]
+  | nu a P _iha ihip =>
+      intro h
+      obtain ⟨hr, hb⟩ := h
+      show (if Proc.nu a P = z then y else Proc.nu a (if a = z then P else subst P z y))
+        = Proc.nu a P
+      rw [if_neg hr]
+      by_cases hc : a = z
+      · rw [if_pos hc]
+      · rw [if_neg hc, ihip (hb.resolve_left hc)]
+  | rep P ih =>
+      intro h
+      obtain ⟨hr, hP⟩ := h
+      show (if Proc.rep P = z then y else Proc.rep (subst P z y)) = Proc.rep P
+      rw [if_neg hr, ih hP]
+  | par P Q ihp ihq =>
+      intro h
+      obtain ⟨hr, hP, hQ⟩ := h
+      show (if Proc.par P Q = z then y else Proc.par (subst P z y) (subst Q z y)) = Proc.par P Q
+      rw [if_neg hr, ihp hP, ihq hQ]
+
+/-- **No term is its own `NoSub`.** The equality test fires at the root of `subst z z y`, which is
+    `subst_self` — `subst z z y = y` — read as a property of the condition rather than of the
+    definition. It is also the reason the condition cannot be spelled "no subterm equals `z`" and be
+    equivalent to this one: that spelling says nothing about the root. -/
+@[axiom_budget 0]
+theorem noSub_self (z : Proc) : ¬ NoSub z z := by
+  cases z <;> simp [NoSub]
+
+/-- **`NoSub` is stronger than freeness.** Every occurrence `FreshFree` excludes, subterm-freeness
+    excludes too — so the false law's hypothesis was not wrong about *which terms* it let through, only
+    about which positions the substitution reaches. -/
+@[axiom_budget 0]
+theorem noSub_implies_freshFree {z : Proc} : ∀ P : Proc, NoSub z P → FreshFree z P := by
+  intro P
+  induction P with
+  | nil => intro _ hf; exact hf
+  | bang P _ => intro _ hf; exact hf
+  | out a b _ _ =>
+      intro h
+      obtain ⟨_, ha, hb⟩ := h
+      rintro (h1 | h2)
+      · exact noSub_ne a ha h1.symm
+      · exact noSub_ne b hb h2.symm
+  | inp a b P _ _ ihip =>
+      intro h
+      obtain ⟨_, ha, hb⟩ := h
+      rintro (h1 | ⟨h2, h3⟩)
+      · exact noSub_ne a ha h1.symm
+      · rcases hb with hbz | hP
+        · exact h2 hbz.symm
+        · exact ihip hP h3
+  | nu a P _ ihip =>
+      intro h
+      obtain ⟨_, hb⟩ := h
+      rintro ⟨h1, h2⟩
+      rcases hb with haz | hP
+      · exact h1 haz.symm
+      · exact ihip hP h2
+  | rep P ih =>
+      intro h
+      exact ih h.2
+  | par P Q ihp ihq =>
+      intro h
+      rintro (h1 | h2)
+      · exact ihp h.2.1 h1
+      · exact ihq h.2.2 h2
+
+/-- **And strictly so, on the witness that already refuted the freeness-based law.** The converse
+    `FreshFree z P → NoSub z P` is false at the same `z = nil`, `P = nil | ⌈nil⌉` as
+    `subst_of_freshFree_is_false`: `nil` is not free in `P` (`FreeOccurs z nil` is `False` **by
+    definition**, for every `z`) and is a position `subst` visits, so `NoSub nil P` fails on its `nil`
+    child. Together with `noSub_implies_freshFree` this makes the two conditions incomparable rather than
+    one a near-miss of the other, and it is why the repair is a *different* predicate rather than a
+    strengthened `FreshFree`. -/
+@[axiom_budget 0]
+theorem noSub_not_of_freshFree :
+    ¬ (∀ (z P : Proc), FreshFree z P → NoSub z P) := by
+  intro h
+  have hfresh : FreshFree Proc.nil (Proc.par Proc.nil (Proc.bang Proc.nil)) := by
+    rintro (h1 | h2)
+    · exact h1
+    · exact h2
+  have hno : ¬ NoSub Proc.nil (Proc.par Proc.nil (Proc.bang Proc.nil)) := by
+    simp [NoSub]
+  exact hno (h Proc.nil (Proc.par Proc.nil (Proc.bang Proc.nil)) hfresh)
+
+/-- **The identity law is not unconditional**, so `NoSub` is doing work rather than decorating a
+    theorem: at `z = nil`, `y = ⌈nil⌉` the substitution is `y` and not `P`. This is `subst_self` —
+    the equality test firing at the root — read as the negation of the hypothesis-free form, and it is
+    what makes the pair with `noSub_self` a partition rather than a coincidence. -/
+@[axiom_budget 0]
+theorem subst_identity_is_false :
+    ¬ (∀ (z y P : Proc), subst P z y = P) := by
+  intro h
+  have hc := h Proc.nil (Proc.bang Proc.nil) Proc.nil
+  rw [subst_self] at hc
+  exact absurd hc (fun he => by cases he)
+
+/-- **Non-vacuity, measured at a concrete term rather than assumed.** At `z = ⌈nil⌉` and `P = nil!(nil)`
+    the equality test is evaluated at three nodes — the root and both children — and fires at none, so
+    the law is instantiated where the recursion really descends rather than where it is stopped by a
+    clause. And the two children are `nil`, whose clause is the one the `FreshFree` witness above fails:
+    the distinction between the two witnesses is the distinction between the two conditions, with
+    `z = ⌈nil⌉` here and `z = nil` there. -/
+@[axiom_budget 0]
+theorem noSub_witness :
+    NoSub (Proc.bang Proc.nil) (Proc.out Proc.nil Proc.nil) ∧
+      subst (Proc.out Proc.nil Proc.nil) (Proc.bang Proc.nil)
+          (Proc.par (Proc.bang Proc.nil) Proc.nil) = Proc.out Proc.nil Proc.nil :=
+  ⟨by simp [NoSub],
+   subst_eq_self_of_noSub (z := Proc.bang Proc.nil)
+     (y := Proc.par (Proc.bang Proc.nil) Proc.nil) (Proc.out Proc.nil Proc.nil) (by simp [NoSub])⟩
 
 end DarkFi.Semantics

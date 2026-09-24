@@ -264,6 +264,15 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   invariant under — which is why every proviso in the LTS tests a **channel** with `SCong` rather than a
   name, and why `Proc.lean`'s `Occurs` is not used as a proviso anywhere.
 
+  The substitution layer's own side condition is mechanized too, and it is *not* freeness: `NoSub` is
+  subterm-freeness defined in lockstep with `subst`'s recursion — so `inp` visits its channel and not its
+  binder, and `nu` does not visit its binder at all — and under it the identity law
+  `subst_eq_self_of_noSub` holds for every `y`, where the tempting `FreshFree`-based form is **false**
+  (`subst_of_freshFree_is_false`) and the converse `FreshFree → NoSub` is refuted on the same witness
+  (`noSub_not_of_freshFree`). Register row `OBL-T13`. What remains of the α-unit is the other three
+  parts — the label's channel, the constructor, the invariance re-proofs — none of which is a missing
+  lemma.
+
   What the layer does **not** have is an α-rule on `SCong`, so `Step.tau` carries `CaptureFree` as a
   proviso and `subst` relabels the channels that labels are made of (`subst_moves_the_label`) — adding
   the rule is a redesign of the label predicates rather than a constructor, which is what that theorem
