@@ -203,6 +203,21 @@ a component" was supposed to mean, and it was right.
    stating. The list is down to header continuity and `validate_block_structure`'s remaining structural
    conditions.
 
+   Then the **coinbase's structural rules** — **landed 2026-09-24** as `Consensus/CoinbaseStructure.lean`
+   (13 theorems, all at budget 0, `OBL-C118` minted for it), and this closes the row. What it found is the
+   strongest result of the four validity units: the four opening checks of `validate_block_structure`
+   collapse to a *shape* — the block **is** `[powReward] :: rest` — and the payoff is that the
+   mass-balance rule's blind spot has size exactly one, and it is the pow reward's own call. The code's
+   comment states the reason and reads its own dependency backwards ("structural fix makes call-level skip
+   fixes defense-in-depth"); the refutation shows the structural rule is what gives the whole-transaction
+   skips their soundness, not a duplicate of them.
+
+   **So `validation.rs` is modelled, with one deliberate omission**: header continuity — `height ==
+   current + 1` and `previous == prev` — is two equalities with nothing to state, and the map records the
+   omission with its reason rather than leaving a gap that reads as an oversight. That is the distinction
+   this map has been making all along between what is *unmodelled* and what is *not worth modelling*, and
+   it is the first time the second category has been reached on purpose.
+
    This map's guess that validity was "the largest surface with the least existing structure" is the part
    of this row that still stands, and the qualifier is the part that does not.
 4. **The coinbase split** — **landed 2026-09-24** as `Consensus/CoinbaseSplit.lean` (16 theorems, 14 at

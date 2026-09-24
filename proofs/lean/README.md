@@ -313,8 +313,13 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   and the Monero anchor rule (ten laws, all at budget 0), and `Consensus/FeeCollect.lean` the fee-collect
   decision table — proved equivalent to the two-clause rule it presents (five laws, four at budget 1
   because `cases`/`simp` over `Bool` equalities reaches `Classical.choice` where an explicit `rw` does
-  not) — while the remainder of `src/linear/src/validation.rs` is unmodelled: header continuity and
-  `validate_block_structure`'s remaining structural conditions. As are the parts of these mechanisms their models stop
+  not), and `Consensus/CoinbaseStructure.lean` the coinbase's structural rules — the four opening checks,
+  proved to collapse to one shape, with the payoff that the mass-balance rule's blind spot has size one
+  and the refutation showing what dropping the single-call rule costs (thirteen laws, **all at budget
+  0**). **`src/linear/src/validation.rs` is now modelled except for header continuity**, which is a
+  deliberate omission rather than a gap: `height == current + 1` and `previous == prev` are two
+  equalities with nothing to state, and a unit for them would have only completeness as its
+  justification. As are the parts of these mechanisms their models stop
   short of — including, in the coinbase split, the *per-note* key binding, which the model's sum equation
   is necessary but not sufficient for, and in the uncle rules the RandomX verification itself and the
   dedup key's blake3 form, for which the model substitutes header distinctness and says so. The agreed
