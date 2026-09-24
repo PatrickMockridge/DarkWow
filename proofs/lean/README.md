@@ -305,6 +305,19 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   the supply-chain inductions do not use them: they are `rfl`/`simp`-level. This section used
   to say the operation "is implemented as `Nat` addition", which understated the gap in one
   direction (nothing is implemented) and overstated the proofs in the other.
+- **The Orchard Merkle CRH is substituted, and the substitution is now two gaps rather than one.**
+  The tree's per-level compression is Sinsemilla over `⟨altitude⟩₁₀ ‖ ⟨left⟩₂₅₅ ‖ ⟨right⟩₂₅₅` under
+  the domain `"z.cash:Orchard-MerkleCRH"` (`src/sdk/src/crypto/merkle_node.rs:149-171`), and
+  `HashOps.sinsemillaCrh` hashes three `Int`s with Poseidon instead. What has changed is that the
+  *width structure* is now modelled and half its injectivity is **proved** with no cryptography:
+  `merkleCrhMessage` carries the deployed message, `merkleCrhMessage_length` pins it at 520 bits
+  (budget 0), and `merkleCrhMessage_injective` proves it injective in altitude and both children on
+  the tree's own domain. So the residue is **(a)** the primitive — Poseidon for Sinsemilla — and
+  **(b)** the model's hash has no **codomain** bound, which is why the faithful message cannot be
+  wired into the fold at all: the fold's intermediate values are CRH outputs, and after one level
+  "the children are below `2^255`" is unavailable, where real Sinsemilla lands in `pallas::Base`.
+  (b) needs a *new* assumption about `poseidon_hash_output`'s range, and is not taken. Register row
+  `OBL-Z6`.
 - **Fermat's Little Theorem is not the blocker.** `base_div_mul_cancel` needs
   `Nat.Prime PALLAS_PRIME` — a 254-bit Pratt certificate. Mathlib *is* a dependency (pinned at
   `v4.12.0` in `lakefile.lean`), contrary to what this section and the file header claimed.

@@ -172,9 +172,15 @@ wrong about the implementation and the axiom was unnecessary:
   altitude, so the hypothesis at one level said nothing usable about the next. With the altitude
   in the domain, injectivity at each level composes and the theorem is a two-line induction.
 
-The remaining substitution is the primitive: Sinsemilla is not Poseidon, and this model uses the
-model's single hash. That is recorded as OBL-Z6 in `doc/src/arch/verification-hazop.md` and is
-narrower than before — the domain, the base case and the fold order now match. -/
+The remaining substitution is the primitive, and since 2026-09-24 it is **two** things rather than one
+— see "The Sinsemilla input, modelled" below for both. The width structure of the message is now
+modelled and half its injectivity is *proved* (`merkleCrhMessage_injective`, budget 0, with no
+cryptography in it). What remains is (a) that the hash is Poseidon rather than Sinsemilla, and (b) that
+the model's hash has **no codomain bound**, which is what stops the faithful message from being wired
+into the fold at all — `foldMerkleRoot`'s intermediate values are CRH *outputs*, so "the children are
+below `2^255`" is unavailable after one level. (b) was not known when this note was written, and it is
+the reason `sinsemillaCrh` still hashes three `Int`s. Recorded as OBL-Z6 in
+`doc/src/arch/verification-hazop.md`. -/
 
 /-- Orchard Merkle depth (`MERKLE_DEPTH_ORCHARD`). -/
 def merkleDepth : Nat := 32
@@ -260,6 +266,152 @@ theorem merkle_root_change_detection (level pos : Nat) (path : List Int) (leaf l
         exact poseidon_collision_resistance _ _ hne heq
       exact ⟨getD_eq_of_eq hlists 1, getD_eq_of_eq hlists 2⟩)
     level pos path leaf leaf' h_leaf_ne
+
+/-! ===== The Sinsemilla input, modelled — the structural half of the CRH's injectivity
+
+`MerkleNode::combine` (`src/sdk/src/crypto/merkle_node.rs:149-171`) hashes, under the fixed domain
+`MERKLE_CRH_PERSONALIZATION`, the bit string
+
+    ⟨altitude⟩₁₀ ‖ ⟨left⟩₂₅₅ ‖ ⟨right⟩₂₅₅          -- 10 + 255 + 255 = 520 bits
+
+with `i2lebsp_k` the 10-bit little-endian encoder (`src/sdk/src/crypto/constants/sinsemilla.rs:89`,
+which asserts `altitude < 2^10`) and `L_ORCHARD_MERKLE = 255` (`:44`).
+
+`sinsemillaCrh` above does not say that: it hashes `[level, left, right]` — three `Int`s — which is
+injective *for free*, because a three-element list carries each component's whole value. So the model
+has been taking the encoding's injectivity from the primitive, when part of it is **combinatorial and
+needs no cryptographic assumption at all**. And the part that is combinatorial is precisely the part
+the deployed code protects with a fixed width: a variable-width altitude would let two different
+altitudes concatenate to one message.
+
+What follows proves that half — `bitsOfWidth_injective` (a fixed-width little-endian encoding is
+injective on its width) and `merkleCrhMessage_injective` (the deployed message is therefore injective
+in its three components on the tree's own domain: altitudes below `2^10`, which a depth-32 tree stays
+under, and 255-bit children, which the deployed values are — they are `pallas::Base`, below
+`p < 2^255`). Both are budget 0 and use nothing but list algebra.
+
+**What is *not* done here, and the second half is newly understood.** `sinsemillaCrh` is **not**
+redefined to hash `merkleCrhMessage`, though that would be the faithful input, because the fold cannot
+carry the range hypothesis: `foldMerkleRoot`'s intermediate values are *outputs* of the CRH, and this
+model's hash is `Int`-valued with no bound — so after one level, "the children are below `2^255`" is
+unavailable. The deployed Sinsemilla lands in `pallas::Base` and stays in range; the model has no way
+to say that, because `Axioms.poseidon_hash_output` is a value-less `opaque` and says nothing about
+range. Wiring the encoding in therefore needs a **codomain** fact about the primitive, and that would
+be a *new* assumption — which is why this unit stops at the structural half instead of redefining the
+definition the fold runs on. So `OBL-Z6`'s state is: the width structure is modelled and half its
+injectivity is proved; the primitive and its codomain are the residue.
+
+(Contrast the SMT below, where the primitive is *right* — the SMT really does use Poseidon — and the
+injectivity is derived rather than assumed. The Orchard CRH is the one that is substituted.) -/
+
+/-- `bitsOfWidth w n`: `n` as a `w`-bit little-endian bit string — this model's `i2lebsp_k`. Bits are
+    `Nat`s that are always `0` or `1`, so that the message can be fed to `poseidon_hash_output` by a
+    cast, and so that no `Bool`-equality rewriting is needed to reason about one bit.
+
+    The deployed encoder asserts `n < 2^w`; here that is a *hypothesis of the theorems below* rather
+    than an assertion, because a definition that can panic is not one this layer can reason about. -/
+def bitsOfWidth : Nat → Nat → List Nat
+  | 0, _ => []
+  | w + 1, n => n % 2 :: bitsOfWidth w (n / 2)
+
+/-- The deployed altitude width: `i2lebsp_k` is 10 bits, which is what `K` is in
+    `src/sdk/src/crypto/constants/sinsemilla.rs`. -/
+def ALTITUDE_BITS : Nat := 10
+
+/-- The deployed child width: `L_ORCHARD_MERKLE = 255`. -/
+def LEAF_BITS : Nat := 255
+
+/-- The deployed domain string, so that a reader can compare the model's domain with the Rust's
+    without taking a docstring's word for it. It is a *parameter* of the hash rather than part of the
+    message, which is why it does not appear in `merkleCrhMessage`. -/
+def MERKLE_CRH_DOMAIN : String := "z.cash:Orchard-MerkleCRH"
+
+/-- **A `w`-bit encoding has exactly `w` bits.** Recorded because the widths are what make the
+    encoding injective, and because `10 + 2·255` is what the deployed total is: a reader can check
+    `merkleCrhMessage_length` against the three `.ith(..).take(..)` chains in `merkle_node.rs`. -/
+@[axiom_budget 0]
+theorem bitsOfWidth_length (w n : Nat) : (bitsOfWidth w n).length = w := by
+  induction w generalizing n with
+  | zero => rfl
+  | succ w ih => simp [bitsOfWidth, ih]
+
+/-- **A width-`w` encoding can be split off the front of a list.** If two width-`w` encodings agree
+    wherever they are followed by the same arbitrary tails, the encoded numbers agree and so do the
+    tails — and the induction is one bit at a time, because that is what the encoding is.
+
+    This is the engine of the message's injectivity and the reason `merkleCrhMessage` is split
+    *fixed-width first*: with a width fixed, the head bits identify the altitude uniquely; without
+    one, they do not. -/
+@[axiom_budget 1]
+theorem bitsOfWidth_append_inj (w a a' : Nat) (b b' : List Nat)
+    (ha : a < 2 ^ w) (ha' : a' < 2 ^ w)
+    (h : bitsOfWidth w a ++ b = bitsOfWidth w a' ++ b') : a = a' ∧ b = b' := by
+  induction w generalizing a a' with
+  | zero =>
+      simp only [pow_zero, Nat.lt_one_iff] at ha ha'
+      subst ha; subst ha'
+      simp only [bitsOfWidth, List.nil_append] at h
+      exact ⟨rfl, h⟩
+  | succ w ih =>
+      rw [bitsOfWidth, bitsOfWidth] at h
+      injection h with hbit htail
+      have ha2 : a / 2 < 2 ^ w := by
+        rw [Nat.div_lt_iff_lt_mul (by norm_num : 0 < 2)]
+        simp only [pow_succ] at ha ⊢
+        omega
+      have ha2' : a' / 2 < 2 ^ w := by
+        rw [Nat.div_lt_iff_lt_mul (by norm_num : 0 < 2)]
+        simp only [pow_succ] at ha' ⊢
+        omega
+      obtain ⟨hdiv, hb⟩ := ih (a / 2) (a' / 2) ha2 ha2' htail
+      exact ⟨by omega, hb⟩
+
+/-- **Fixed-width little-endian encoding is injective on its width.** The combinatorial half of the
+    CRH's injectivity, with no cryptography in it: two numbers agreeing in all `w` bits, both below
+    `2^w`, are the same number. -/
+@[axiom_budget 1]
+theorem bitsOfWidth_injective (w n n' : Nat) (hn : n < 2 ^ w) (hn' : n' < 2 ^ w)
+    (h : bitsOfWidth w n = bitsOfWidth w n') : n = n' :=
+  (bitsOfWidth_append_inj w n n' [] [] hn hn' (by simpa using h)).1
+
+/-- **The message `MerkleNode::combine` hashes**: `⟨altitude⟩₁₀ ‖ ⟨left⟩₂₅₅ ‖ ⟨right⟩₂₅₅`, as bits.
+
+    The children are `Int` in this model because that is what the field elements are modelled as
+    everywhere else in the file; the encoding takes `toNat`, so the two agree exactly on the
+    non-negative values the deployed tree passes and this is *not* injective on negative ones. That is
+    why the theorems below are stated over `Nat` and say so, rather than over `Int` and being
+    quietly wrong below zero. -/
+def merkleCrhMessage (altitude : Nat) (left right : Int) : List Nat :=
+  bitsOfWidth ALTITUDE_BITS altitude
+    ++ bitsOfWidth LEAF_BITS left.toNat
+    ++ bitsOfWidth LEAF_BITS right.toNat
+
+/-- The deployed message is `10 + 255 + 255 = 520` bits. A sanity fact about the *widths*, so the
+    constants in this model can be checked against `merkle_node.rs` by arithmetic rather than by
+    reading — and it is budget 0, so the arithmetic is checked with nothing assumed. -/
+@[axiom_budget 0]
+theorem merkleCrhMessage_length (a l r : Nat) :
+    (merkleCrhMessage a (l : Int) (r : Int)).length = 520 := by
+  simp [merkleCrhMessage, bitsOfWidth_length, ALTITUDE_BITS, LEAF_BITS]
+
+/-- **The deployed message is injective in its three components** — altitudes, and both children —
+    on the domain the tree operates in: `a < 2^10`, which a depth-32 tree stays under with room, and
+    children below `2^255`, which the deployed `pallas::Base` values are.
+
+    Proved from the encoding alone. This is the half of the Merkle CRH's injectivity that is not a
+    cryptographic claim, so the file no longer takes it from `poseidon_collision_resistance` along
+    with the rest. -/
+@[axiom_budget 1]
+theorem merkleCrhMessage_injective (a l r a' l' r' : Nat)
+    (ha : a < 2 ^ ALTITUDE_BITS) (hl : l < 2 ^ LEAF_BITS) (hr : r < 2 ^ LEAF_BITS)
+    (ha' : a' < 2 ^ ALTITUDE_BITS) (hl' : l' < 2 ^ LEAF_BITS) (hr' : r' < 2 ^ LEAF_BITS)
+    (h : merkleCrhMessage a (l : Int) (r : Int) = merkleCrhMessage a' (l' : Int) (r' : Int)) :
+    a = a' ∧ l = l' ∧ r = r' := by
+  simp only [merkleCrhMessage, Int.toNat_natCast] at h
+  obtain ⟨haa, h1⟩ := bitsOfWidth_append_inj ALTITUDE_BITS a a' _ _ ha ha' h
+  obtain ⟨hll, h2⟩ := bitsOfWidth_append_inj LEAF_BITS l l' _ _ hl hl' h1
+  obtain ⟨hrr, _⟩ := bitsOfWidth_append_inj LEAF_BITS r r' [] [] hr hr' (by simpa using h2)
+  exact ⟨haa, hll, hrr⟩
 
 /-! ===== The Sparse Merkle Tree's CRH — concrete, and its injectivity proved
 
