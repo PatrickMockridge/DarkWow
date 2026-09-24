@@ -316,7 +316,7 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   term cannot read a `.zk` file. So the property has a definition for that bridge to be *about*, and the
   bridge remains the gap.
 - **The consensus state core is only partly modelled here, and what is missing is named rather than
-  implied.** Four mechanisms have models now, all at **budget 0**: the block-level Pedersen mass-balance
+  implied.** Five mechanisms have models now, all at **budget 0**: the block-level Pedersen mass-balance
   rule (`Consensus/MassBalance.lean`, ten theorems, transcribed from
   `contrib/model/proof_of_token_balance.py`), the nullifier lifecycle
   (`Consensus/NullifierLifecycle.lean`, seven, which feeds the existing maturity gate from the store's
@@ -325,7 +325,18 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   destroys a maturity refusal), and the coinbase split
   (`Consensus/CoinbaseSplit.lean`, sixteen — the five equations three enforcement sites impose, with the
   finding that of the five checks the **uncle-note sum** is the load-bearing one and the three value
-  checks are over-determined). **Partly** modelled: the **validity predicates** — `Consensus/BlockTimestamp.lean`
+  checks are over-determined). **And a fifth, which is a composition of the first, the fourth and a
+  third** — the two trees that `OBL-C45` says are reconciled nowhere:
+  `Consensus/SupplyReconciliation.lean` (seven laws, **all at budget 0**) states that a block's net
+  creation of commitment value *is* the emission schedule's value at that height, and that summed over a
+  chain it is `Σ expected_reward(H)` — with the fee leg **proved load-bearing** rather than decorative
+  (`Balanced` alone leaves the net creation at `issuance − Σ fees`, because the fees are parked rather
+  than destroyed, and the witness that fails the identity has every value check in both models passing),
+  and with the bridge the two fee models need — `FeeCollect`'s rule counts FeeV3 *calls*, `MassBalance`
+  carries the fee *amounts*, and no code check ties them — taken as an explicit hypothesis and named as
+  that unit's residue. **Nothing in the code checks this property**: no Rust and no script reads the
+  contracts tree against the supply chain, so the module is a statement a later reconciliation would be
+  a check *of*. **Partly** modelled: the **validity predicates** — `Consensus/BlockTimestamp.lean`
   states the median-of-11 timestamp rule and its interface (four laws; the
   security bound the rule exists for is stated in its note and *not* proved, and nothing checks the rule
   on a concrete window because neither of Mathlib's sorts reduces in the kernel), and
@@ -547,10 +558,22 @@ proofs/lean/
         │   ├── Wire.lean           # Manifest wire-schema congruence
         │   ├── Concurrency.lean    # Record of the deleted parallel-composition layer — no theorems
         │   └── Gossip.lean         # Network definitions; its two theorems were `True` and are deleted
-        ├── Circuits/           # constrain_instance manual audit — NO declarations at all
-        │   ├── Token.lean      # witnesses/public inputs as `structure`s; every claim ends
-        │   ├── Bridge.lean     #   `-- NOT DECLARED IN LEAN`
-        │   ├── Exchange.lean
+        ├── Consensus/          # The consensus state core — ten modules, from the spec and the code
+        │   ├── MassBalance.lean          # The block-level Pedersen balance, from the spec
+        │   ├── NullifierLifecycle.lean   # The replay gate and the maturity gate, as one state
+        │   ├── CommitmentSet.lean        # The maturity window's prune
+        │   ├── BlockTimestamp.lean       # The median-of-11 timestamp rule
+        │   ├── CoinbaseSplit.lean        # The coinbase split's five equations
+        │   ├── UncleRules.lean           # The depth window, the re-derived pin, the alignment guard
+        │   ├── BlockHeader.lean          # The two-stage target rule, and the anchor rule
+        │   ├── FeeCollect.lean           # The fee-collect decision table
+        │   ├── CoinbaseStructure.lean    # The coinbase's structural rules
+        │   └── SupplyReconciliation.lean # The two trees, reconciled — a composition
+        ├── Circuits/           # constrain_instance: one model, checked against a worked circuit
+        │   ├── InstanceDerivation.lean # The statement model, `NoFreeInstance`, and its soundness
+        │   ├── Token.lean      # Witness/public-input `structure`s, whose claims are still the
+        │   ├── Bridge.lean     #   `-- NOT DECLARED IN LEAN` comments the model has not been
+        │   ├── Exchange.lean   #   transcribed to yet — that transcription is the residual
         │   └── All.lean
         ├── Fee/                # Fee-window boundary emission
         │   └── Window.lean

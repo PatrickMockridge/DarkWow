@@ -1,6 +1,7 @@
 # The Consensus State Core — a map, agreed before it is filled
 
-**Status: a plan, with five of its six mechanisms filled — and the sixth added by filling it.** Nothing
+**Status: a plan, with six of its six mechanisms filled, and every one of them amended by the unit that
+filled it.** Nothing
 here is a claim about how the code behaves;
 it is the agreed *shape* of the Lean models that the register's remaining consensus rows need, written
 down once so each one can be built against something reviewable rather than invented per unit. Where
@@ -43,7 +44,7 @@ those are.
 | 2 | nullifier replay gate, and maturity | `src/linear/src/chain_state.rs` (`connect_block`'s duplicate check; `check_coinbase_maturity`); `src/linear/src/lib.rs` (`COINBASE_MATURITY`) | `contrib/model/nullifier_lifecycle.py` (590) | the three fragments above | `OBL-C8`, `OBL-T4` |
 | 3 | commitment set | `src/linear/src/chain_state.rs` (`commitment_set : Mutex<BTreeMap<Commitment, BlockHeight>>`) | `contrib/model/chain_model.py`, `contrib/model/fee_model.py` | `Consensus/CommitmentSet.lean` | `OBL-C109` |
 | 4 | block and transaction validity | `src/linear/src/validation.rs` (`check_block_header`, `validate_block_structure`, `check_block_timestamp`) | `contrib/model/chain_validation_model.py` (3871) | `Consensus/BlockTimestamp.lean` (the timestamp rule only) | `OBL-C110` |
-| 5 | cumulative supply chain | `src/linear/src/supply_chain.rs` (`compute_next`) | `contrib/model/supply_chain_model.py` (1622) | `SupplyChain.lean` | `OBL-C45`, `OBL-C5` |
+| 5 | cumulative supply chain | `src/linear/src/supply_chain.rs` (`compute_next`) | `contrib/model/supply_chain_model.py` (1622) | `SupplyChain.lean` (the schedule half) + `Consensus/SupplyReconciliation.lean` (the two trees, reconciled) | `OBL-C45`, `OBL-C5` |
 | 6 | the coinbase split | `bin/dwowd/src/block_acceptor.rs` (the four value checks); `src/linear/src/validation.rs` (the coinbase's own consistency); `src/sdk/src/blockchain.rs` (`split_for_uncle`) | `contrib/model/chain_model.py` (`connect_block`, the split *and* the note-level rule) | `Consensus/CoinbaseSplit.lean` | `OBL-C4`, `OBL-C7`, `OBL-C85` |
 
 ## Two questions this map settles rather than assumes
@@ -249,6 +250,20 @@ a component" was supposed to mean, and it was right.
 5. **The supply chain** is already modelled. What remains is `OBL-C5`'s non-increase, which this
    campaign measured and left as a kernel-checked range plus a scan — see that row for why the obvious
    rescue lemmas are false.
+
+   **Amended 2026-09-24: this row named one remaining piece where there were two, and the second is a
+   composition rather than a schedule property.** `OBL-C45`'s first clause is that the *contracts* tree
+   and the *supply-chain* tree reconcile, and that clause was not on this row's list at all — because
+   the row reads `SupplyChain.lean` as the mechanism's whole and it is the mechanism's *schedule* half.
+   `Consensus/SupplyReconciliation.lean` now states the other half: a block's net creation of commitment
+   value is the schedule's value at that height, and summed over a chain it is `Σ expected_reward(H)`.
+   The row's three fields are therefore the composition's three legs — `MassBalance.lean`'s `Balanced`,
+   `CoinbaseSplit.lean`'s `accepts`, `FeeCollect.lean`'s `rule` — and the map's habit of listing
+   mechanisms separately is what hid it: **this is the fourth time a mechanism this map lists has turned
+   out to *compose* with a neighbour rather than stand beside it** (Steps 8, 12, 13 were the first
+   three), and the first where the composition was the *missing* half rather than a correction to a
+   stated one. What the new module does **not** do is the reconciliation itself: nothing in Rust and
+   nothing in a script reads the two trees against each other, so `OBL-C45` stays `PARTLY`.
 
 ## What this map does not do
 
