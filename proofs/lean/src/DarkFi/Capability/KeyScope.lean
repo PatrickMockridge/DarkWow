@@ -138,4 +138,41 @@ theorem scopeRestriction_is_false_for_unscopedDerive :
   intro h
   exact absurd (h 0 1 2 0 0 rfl).1 (by norm_num)
 
+/- ==========================================================================
+   §6.4.0's spending-key persistence — a measured *non*-theorem, and why
+   ==========================================================================
+   `wallet.md`:745-748 states it in two halves:
+
+   > A received `TransferV1`/`SpendV1` output carries a **fresh** `spend_secret` that is not derivable
+   > from any account. The wallet SHALL persist that `spend_secret` with the capability so the spend path
+   > can recover the commitment's spending key. `key_coords` (master/per-instance re-derivation) SHALL
+   > NOT be used to recover a fresh `spend_secret`.
+
+   The verification plan for this layer expected a theorem here — "prove that the scope-derived key is
+   not the `spend_secret`, an inequality the `unscopedDerive` falsifier already establishes" — and
+   **that theorem does not exist**, for a reason worth writing down rather than discovering twice.
+
+   * **The inequality is not available from this layer's assumptions.** `deriveInstance s c i ≠ s` says
+     no secret is a fixed point of the scoped derivation, and collision resistance does not give it: a
+     hash *may* have fixed points, and `s = H([8, s, c, i])` is not a collision between two distinct
+     inputs. Proving it would need an assumption this tree does not carry and should not add.
+   * **Without that, the obligation is its own premise.** Taking the specification's freshness clause as
+     a hypothesis and concluding "so the coordinate route cannot return it" is the hypothesis repackaged
+     through a `resolve` definition — the definitional-restatement class this register removes by name
+     (`wallet_construct_sound`, `walletConstruct_idempotent`). A theorem that unfolds a two-branch `def`
+     and hands back its own binder is not evidence, whatever it is called.
+   * **What the obligation actually constrains is a *call*, not a value** — which route the spend path
+     takes — and that is a property of the code, checkable by reading it, not of the arithmetic.
+
+   **So it was measured instead, 2026-09-24.** `bin/dww` persists the secret: `spend_secret` is a
+   nullable column on held capabilities (`walletdb.rs:105-109`, written at `:963`). And the one
+   `key_coords` fallback in the spend path is scoped by construction —
+   `fee_builder.rs:147-166` resolves via `account_mgr.resolve_key(cap.key_coords)` only where its own
+   comment says the value is *self-issued* and "derivable via `resolve_key`", i.e. for the wallet's own
+   coinbase and fee capabilities rather than for a received output. **The obligation is met, and met by
+   the distinction the specification draws rather than by the arithmetic this module models.** That is
+   recorded as `OBL-T21`; nothing is proved here, and this note is the reason a reader will not look for
+   a theorem that cannot be stated honestly.
+   ========================================================================== -/
+
 end DarkFi.Capability
