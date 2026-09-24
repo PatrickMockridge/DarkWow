@@ -33,10 +33,19 @@ reconciliation would be a check *of*. Three weaker things, stated rather than im
 * the level is the specification's. `Commitment` is an integer pair, as in `MassBalance.lean`, so the
   identity is about values and blinds as integers — not about `pallas::Point`, and not a statement
   about the deployed curve;
-* the fee leg rests on a **bridge no model enforces**. `FeeCollect`'s rule is written over FeeV3
-  *call counts* and `MassBalance` carries the fee *amounts*, so the step from "this block parks an
-  aggregate" to "this block collects" is a hypothesis `a_block_with_fees_collects` takes explicitly.
-  That bridge is this unit's residue and its docstring says so;
+* the fee leg rested on a **bridge no model enforced**, and this unit closed the model's half of it.
+  `FeeCollect`'s rule is written over FeeV3 *call counts* and `MassBalance` carries the fee *amounts*,
+  so the step from "this block parks an aggregate" to "this block collects" was a hypothesis
+  `a_block_with_fees_collects` takes explicitly. **It cannot be derived where it was being asked for and
+  it can where the shape allows it**, which is now both measured and stated: at the two-independent-fields
+  level the rule *permits* a block whose commitments park an amount while its fee shape reports zero
+  calls (`the_rule_permits_zero_calls_with_an_amount_parked` — a counterexample, so no proof at that
+  level could have existed), whereas a block whose fee material is **one list of calls** with both
+  projections defined from it satisfies the bridge by arithmetic
+  (`a_reconciled_block_that_parks_has_fee_calls`). So the proxy is fine as a *view* and it was the
+  two-fields shape that made it load-bearing. **What remains open is the code's half**, unchanged and
+  explicitly not claimed here: whether the accept path derives its count from the same calls it sums is
+  a property of that code, and nothing in this module is a statement about it;
 * the pot's arithmetic — that the collection's value is the aggregate the fee calls parked — is a WASM
   check (`FeeCollect`'s note records the proxy), not modelled here. What is modelled is its
   *consequence*: the aggregate is released in the block that parked it.
@@ -214,5 +223,80 @@ theorem a_block_with_fees_collects (bl : Block) (h : rule bl.fees)
     (hbridge : bl.commits.feeAmounts ≠ [] → bl.fees.feeCalls > 0)
     (hf : bl.commits.feeAmounts ≠ []) : bl.fees.collectPresent = true :=
   h.2.1.mpr (hbridge hf)
+
+/-- **The bridge is not a consequence of `FeeCollect.rule`, as a counterexample rather than as the
+    comment above.** A fee shape reporting zero calls while the block's commitments park an amount is
+    representable, and its shape *satisfies the rule* — "no fee calls, no collection" is a legal arm.
+    So `hbridge` in `a_block_with_fees_collects` cannot be derived from the two models as they stand,
+    which is what makes it a hypothesis there rather than an oversight. -/
+@[axiom_budget 0]
+theorem the_rule_permits_zero_calls_with_an_amount_parked :
+    ∃ (s : FeeShape) (amounts : List Int),
+      rule s ∧ amounts ≠ [] ∧ s.feeCalls = 0 :=
+  ⟨{ collectPresent := false, collectIsLast := false, feeCalls := 0, collectCalls := 0 },
+   [7], by unfold rule; decide, by decide, rfl⟩
+
+/- ==========================================================================
+   The residue, closed by refinement: one list behind both projections
+   ==========================================================================
+   The two models read different things off the same block — `MassBalance` the fee *amounts*, and
+   `FeeCollect.rule` a *count* — and because they are two independent fields a block can satisfy both
+   and still disagree with itself (`the_rule_permits_zero_calls_with_an_amount_parked`). So the bridge
+   is not derivable at that level, and no amount of proof at it would make it so.
+
+   What closes it is not a proof but a **shape**: a block whose fee material is one list of calls, with
+   both projections *defined* from it. Then the bridge is not assumed, it is arithmetic — and that is
+   the honest form of "the count is a proxy for the commitments rather than a reader of them": the
+   proxy is fine as a *view*, and it is the two-fields shape that made it load-bearing.
+
+   **What this does and does not close.** It closes the gap *in the model*: a block built through
+   `FeeCall`s cannot park an amount while reporting no calls, so `a_block_with_fees_collects`'s
+   hypothesis is discharged by construction for such a block. It does **not** close it for the Rust:
+   whether the deployed accept path derives its count from the same calls it sums is a property of that
+   code, and nothing here is a claim about it — the same boundary `FeeCollect`'s own note draws for its
+   detectors.
+   ========================================================================== -/
+
+/-- A `FeeV3` call as the two models need it: **the plaintext amount it parks, and nothing else.**
+    Deliberately one field — the count is `calls.length` and the amounts are `calls.map amount`, so a
+    field neither projection reads would invite a reader to think one of them reads it. -/
+structure FeeCall where
+  amount : Int
+
+/-- **A block's fee material with one source of truth.** Building a block through this shape is what
+    makes the bridge a theorem instead of a hypothesis. -/
+structure ReconciledFees where
+  calls : List FeeCall
+
+/-- `MassBalance`'s view: the amounts the fee commitments sum. -/
+def ReconciledFees.amounts (r : ReconciledFees) : List Int := r.calls.map FeeCall.amount
+
+/-- `FeeCollect.rule`'s view: the count of `FeeV3` calls. -/
+def ReconciledFees.callCount (r : ReconciledFees) : Nat := r.calls.length
+
+/-- **The bridge, derived — what the residue above was reduced to.** With one list behind both
+    projections, a block that parks anything has a positive call count, so
+    `a_block_with_fees_collects`'s `hbridge` holds by construction for a block built this way. The proof
+    is arithmetic on a list rather than a fact about two fields, which is the whole difference. -/
+@[axiom_budget 0]
+theorem a_reconciled_block_that_parks_has_fee_calls (r : ReconciledFees)
+    (h : r.amounts ≠ []) : r.callCount > 0 := by
+  cases hc : r.calls with
+  | nil => simp [ReconciledFees.amounts, hc] at h
+  -- `simp only` and `Nat.succ_pos`, not `simp`: the general simplifier reaches `Classical.choice` here
+  -- (measured — the annotation said 0 and this gate corrected it), and a length being positive is
+  -- `Nat.succ_pos` and nothing else.
+  | cons c t => simp only [ReconciledFees.callCount, hc, List.length_cons]; exact Nat.succ_pos _
+
+/-- **And the refinement is not vacuous**: a block that parks nothing has no calls, so the theorem above
+    is not true of every `ReconciledFees` — the pair with the theorem is the pair that carries content. -/
+@[axiom_budget 0]
+theorem a_reconciled_block_that_parks_nothing_has_none (r : ReconciledFees) (h : r.amounts = []) :
+    r.callCount = 0 := by
+  cases hc : r.calls with
+  | nil => simp [ReconciledFees.callCount, hc]
+  | cons c t =>
+    exfalso
+    simp [ReconciledFees.amounts, hc] at h
 
 end Consensus.SupplyReconciliation
