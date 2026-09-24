@@ -1,27 +1,41 @@
 -- DarkWow ZK Verification Suite (IO simulation tests)
 -- These are computational cross-checks, NOT formal proofs.
 -- For formal proofs, see the Prop-based theorems in the DarkFi/ modules.
--- Run with: lean --run src/Main.lean
+-- Run with: `scripts/lean-build.sh exe Main` (never a bare `lake`; see that script's header).
 --
--- **It does not compile, and has not for some time.** Measured 2026-09-24:
--- `lake env lean src/Main.lean` reports **21 errors** on this file *and on its version at HEAD*
--- (the same 21), so nothing here has run recently and no input to it has been checked by anything.
--- Two causes, both mechanical:
+-- **Repaired and gated 2026-09-24, after a long period in which it did neither ran nor compiled.**
+-- The account that stood here said "It does not compile, and has not for some time… two causes, both
+-- mechanical", and both halves of that sentence were wrong about the count and the causes. Measured
+-- before the repair, `lake env lean src/Main.lean` reported **23 error lines in five classes**, not
+-- 21 in two:
 --
---   1. `open DarkFi.Capability.{Pareto,Distinction,Inversion,Wallet}` (`:23-26`) — those four
---      modules do not declare a namespace of that name, so the `open` is an error rather than a
---      no-op. `Pareto.lean` and `Distinction.lean` declare `namespace DarkFi.Capability`, and
---      `Inversion.lean`/`Wallet.lean` declare none; only `Types.lean` and `Composition.lean` have
---      the names this file opens.
---   2. `s!"… {t.barbs} …"` at eleven sites — `Barb` has no `ToString (Finset Barb)` and cannot
---      derive one (`Finset.instRepr` is `unsafe`, see `Capability/Inversion.lean:211-214`), so
---      every line that interpolates a barb set fails to elaborate.
+--   1. `open DarkFi.Capability.{Pareto,Distinction,Inversion,Wallet}` — four `unknown namespace`
+--      errors. The note here claimed `Pareto.lean` and `Distinction.lean` declare `namespace
+--      DarkFi.Capability`; **none of the four declares a namespace at all**, so those four `open`s
+--      are gone and nothing needed replacing them: the definitions are at the root already.
+--   2. Twelve `failed to synthesize` errors — nine `ToString (Finset Barb)` and three `ToString Prop`.
+--      `Finset` has **no computable traversal in this toolchain** (`Finset.toList` and
+--      `Multiset.toList` both fail the compiler's IR check) and `Finset`'s `Repr` is `unsafe`, so
+--      `allBarbs` above is an explicit enumeration and `barbsToString` refuses to print a set it
+--      cannot enumerate in full. The propositions print as `decide`.
+--   3. Three `ambiguous` errors — `MERKLE_DEPTH` and `PRACTICAL_MAX_OBJECTS` are defined by both
+--      `Limits` and `CeilingDerivation`, and both are opened file-wide. Qualified to the section's
+--      module, whose values carry the theorems.
+--   4. One `maximum recursion depth` error — elaborating `Verification.main`, a single `do` block of
+--      ~350 statements, exceeds Lean's default limit. Raised by `set_option` below, with the
+--      measurement that shows it is the block's length and not any statement.
+--   5. One `unknown identifier 'Verification.main'` — a cascade of (4), not a defect of its own.
 --
--- This file is invoked by **no gate** (`grep` over `scripts/`, `Makefile`, `hooks/`: no
--- reference), which is why 21 errors survived — and why `README.md` quoted an "expected output"
--- block from it while it was broken. Repairing it means choosing between fixing those two
--- classes and gating the result, or deleting a file that asserts nothing a proof does not; that
--- choice is left open here rather than taken, because the file is not this change's to remove.
+-- **What the repair changed beyond compiling, which is the part that matters.** Every check in this
+-- file used to print its result and exit 0: the four counterexample scans printed `Bugs found: N`,
+-- eight combinatorial expectations printed a ✓/✗ marker, the HAZOP summary printed four literal
+-- counts, and the EC classification printed verdicts from a table of literals with no connection to
+-- the model. They throw now, the HAZOP counts are derived from `riskMatrix`, and the EC verdicts are
+-- derived from `ECMulKind.baseIsConstant` — so the gate that runs this file
+-- (`scripts/check-lean-suite.sh`, wired into `scripts/run-all-tests.sh`) can fail. Until 2026-09-24
+-- it could not: the file was in no `lean_lib`, so `lake build` never compiled it, and no gate
+-- invoked it, which is why `README.md` could quote an "expected output" block from a file that had
+-- never once run.
 
 import DarkFi.Capability.Types
 import DarkFi.Capability.Composition
@@ -29,6 +43,11 @@ import DarkFi.Capability.Pareto
 import DarkFi.Capability.Distinction
 import DarkFi.Capability.Inversion
 import DarkFi.Capability.Wallet
+-- `ECOps` for `ECMulKind`, whose `baseIsConstant` the classification section now reads instead of
+-- carrying its own booleans, and `HAZOP` for `riskMatrix`, which the summary now counts instead of
+-- printing literals. Both were added 2026-09-24 with those two checks.
+import DarkFi.ECOps
+import DarkFi.HAZOP
 import DarkFi.Combinatorial.StateSpace
 import DarkFi.Combinatorial.Transitions
 import DarkFi.Combinatorial.ComplexityJump
@@ -40,10 +59,12 @@ import DarkFi.AxiomBudget
 
 open DarkFi.Capability.Types
 open DarkFi.Capability.Composition
-open DarkFi.Capability.Pareto
-open DarkFi.Capability.Distinction
-open DarkFi.Capability.Inversion
-open DarkFi.Capability.Wallet
+-- There were four more `open`s here — `DarkFi.Capability.{Pareto,Distinction,Inversion,Wallet}` —
+-- and they were the file's first error class. **None of those four modules declares a namespace**:
+-- they `open DarkFi.Capability.{Types,Composition}` and put their definitions at the *root*, so the
+-- names were already visible and the `open`s named namespaces that do not exist. The comment here
+-- used to say "`Pareto.lean` and `Distinction.lean` declare `namespace DarkFi.Capability`"; measured
+-- 2026-09-24, no `namespace` line exists in any of the four.
 
 open Combinatorial
 open Combinatorial.Transitions
@@ -54,6 +75,51 @@ open Combinatorial.CeilingDerivation
 
 def PALLAS_PRIME : Int := 2^254 + 45560315531419706090280762371685220353
 def ltBool (a b : Int) : Bool := a < b
+
+-- `Verification.main` is one `do` block of ~350 statements, and elaborating it exceeds Lean's
+-- default `maxRecDepth` (1000) part way through — the fourth error class, and one neither the file's
+-- header nor the plan had recorded. It is a property of the block's *length*, not of any statement:
+-- measured 2026-09-24, `boxPutProfile.publicInputCount` and the interpolation around it elaborate
+-- cleanly in a file of their own, with the same opens, and fail only here. Raising the limit is the
+-- remedy Lean names for it; the alternative is splitting `main`, which is a refactor of a file whose
+-- sections are a printout. Nothing below this line is a proof, so the setting cannot weaken one.
+set_option maxRecDepth 8000
+
+/-- Every constructor of `Barb`, in declaration order. A set is rendered by filtering this list by
+    membership, because **`Finset` has no computable traversal in this toolchain**: measured
+    2026-09-24, `Finset.toList` and `Multiset.toList` both fail the compiler's IR check
+    ("unknown declaration"), and `Finset`'s own `Repr` is `unsafe`, so it cannot be called from the
+    safe `IO` this file is written in.
+
+    A table mirroring an inductive can drift from it, and that risk is **guarded rather than
+    trusted**: `barbsToString` below refuses to print a set it cannot enumerate in full, so a
+    constructor missing from this list is an error rather than a quietly shorter printout. -/
+def allBarbs : List Barb :=
+  [.spend, .view, .nullify, .commit, .prove, .verify, .dispatch, .gate, .denominate, .proveInclusion,
+   .encrypt, .derive, .discover, .mine, .concurrent, .merge, .syncBarrier, .broadcast, .rateLimit,
+   .gossipForward, .quorumQuery, .dagParent, .payFee, .collectFees, .badFeeAmount, .badMerkleRoot,
+   .zeroClaim, .badClaim, .feeWindowOpen, .feeWindowAdvertise, .feeWindowEnforce,
+   .feeWindowDiscover, .shard]
+
+/-- A constructor's short name. The derived `Repr` prints the qualified form
+    (`DarkFi.Capability.Types.Barb.spend`), and a set of twenty of those is unreadable, so the segment
+    after the last `.` is taken. This is a rendering choice and **not** a second name table: it is
+    derived from the constructor's own name, so it cannot disagree with the inductive. -/
+def barbShortName (b : Barb) : String :=
+  (toString (repr b)).splitOn "." |>.getLast!
+
+/-- Render a barb set, or fail. The count is checked against the set's `card` before anything is
+    printed, so this file cannot report a set smaller than the one it was given. -/
+def barbsToString (s : Finset Barb) : IO String := do
+  let listed := allBarbs.filter (fun b => decide (b ∈ s))
+  if listed.length ≠ s.card then
+    throw (IO.userError s!"barb enumeration incomplete: {listed.length} listed, {s.card} in the set")
+  return "{" ++ String.intercalate ", " (listed.map barbShortName) ++ "}"
+
+/-- `L1ComplexityClass` (`Combinatorial/GeneralTheorem.lean:110`) derives `Repr` but not `ToString`,
+    the same shape as `Barb` above, so the five sites that print a class go through `repr` rather
+    than through a hand-written name table. -/
+def l1ClassToString (c : L1ComplexityClass) : String := toString (repr c)
 
 namespace Verification
 
@@ -84,7 +150,11 @@ def test_lte : IO Unit := do
         if sat && (out ≠ correct) then
           bugs := bugs + 1
   IO.println s!"Bugs found in 1000×1000 scan: {bugs}"
-  if bugs = 0 then IO.println "IO test passed (no counterexamples found)"
+  -- This used to print the count and exit 0 either way, so the scan reported a number nothing
+  -- checked. A counterexample search that finds one and is not failed by it is a printout.
+  if bugs ≠ 0 then
+    throw (IO.userError s!"{bugs} counterexample(s): the 0x55 gate accepts an output it must reject")
+  IO.println "IO test passed (no counterexamples found)"
   IO.println "NOTE: This is an IO simulation, not a formal proof."
   IO.println "Formal proof: less_than_or_equal_sound in Gadgets.lean"
 
@@ -109,6 +179,8 @@ def test_lt_strict : IO Unit := do
         if lt_strict_satisfied a b out && (out ≠ (if a < b then 1 else 0)) then
           bugs := bugs + 1
   IO.println s!"Bugs found: {bugs}"
+  if bugs ≠ 0 then
+    throw (IO.userError s!"{bugs} counterexample(s): the 0x57 gate accepts an output it must reject")
   IO.println "Formal proof: less_than_strict_sound in Comparison.lean"
 
 /-- IsNotEqual (0x62) - IO purity test --/
@@ -133,7 +205,11 @@ def test_is_not_equal : IO Unit := do
           if sat && (out ≠ correct) then bugs := bugs + 1
           if sat && (a = b) && (out = 0) && (delta_inv ≠ 1) then impure := impure + 1
   IO.println s!"Output bugs: {bugs}, Impurity violations: {impure}"
-  if bugs = 0 && impure = 0 then IO.println "IO test passed (no counterexamples)"
+  if bugs ≠ 0 then
+    throw (IO.userError s!"{bugs} counterexample(s): the 0x62 gate accepts a wrong output")
+  if impure ≠ 0 then
+    throw (IO.userError s!"{impure} impurity violation(s): the 0x62 gate admits a non-pure delta_inv")
+  IO.println "IO test passed (no counterexamples)"
   IO.println "Formal proof: is_not_equal_fully_pure in Gadgets.lean"
 
 /-- IsEqualBase (0x54) - IO bug demo (FIXED in 0f69cd89 — purity constraint applied) --/
@@ -147,8 +223,16 @@ def test_is_equal_bug : IO Unit := do
   IO.println "=== IsEqualBase (0x54) — IO bug demonstration (FIXED in 0f69cd89) ==="
   let a : Int := 5
   let b : Int := 5
-  IO.println s!"a=b={a}: out=1, delta_inv=1 satisfies: {is_equal_buggy a b 1 1}"
-  IO.println s!"a=b={a}: out=1, delta_inv=999 satisfies: {is_equal_buggy a b 1 999}"
+  let honest := is_equal_buggy a b 1 1
+  let arbitrary := is_equal_buggy a b 1 999
+  IO.println s!"a=b={a}: out=1, delta_inv=1 satisfies: {honest}"
+  IO.println s!"a=b={a}: out=1, delta_inv=999 satisfies: {arbitrary}"
+  -- These assertions assert *acceptance*, which is unusual and is the point: this function exhibits the
+  -- pre-`0f69cd89` gate's defect, so its expected result is that the arbitrary witness is accepted.
+  -- Repairing `is_equal_buggy` would fail them, and that is correct behaviour rather than a nuisance —
+  -- the demonstration would otherwise go on printing two booleans after it had stopped demonstrating.
+  assert! honest = true
+  assert! arbitrary = true
   IO.println "OLD BUG (pre-0f69cd89): delta_invert UNCONSTRAINED when a=b"
   IO.println "FIX: purity constraint out*(delta_invert-1)=0 forces delta_invert=1"
   IO.println "Formal characterization: is_equal_bug_when_equal (Gadgets.lean)"
@@ -158,27 +242,60 @@ def test_is_equal_bug : IO Unit := do
 -- EC OPERATION CLASSIFICATION
 -- ============================================================
 
+/-- Taken from `DarkFi.ECOps`: each opcode's kind, and the constancy the library derives from it.
+    The list here used to be `(String × Bool)` literals with no connection to the model, so the
+    printout could have disagreed with `ECMulKind.baseIsConstant` and nothing would have said so.
+    The assertion below is what makes this a check rather than a caption. -/
 def test_ec_mul_classification : IO Unit := do
   IO.println "=== EC Multiplication Classification ==="
-  let ops : List (String × Bool) := [
-    ("ec_mul_short (0x04)", true),
-    ("ec_mul (0x02)", true),
-    ("ec_mul_base (0x03)", true),
-    ("ec_mul_var_base (0x05)", false)
+  let ops : List (String × ECOps.ECMulKind) := [
+    ("ec_mul_short (0x04)", .fixed_short),
+    ("ec_mul (0x02)", .fixed),
+    ("ec_mul_base (0x03)", .fixed_base),
+    ("ec_mul_var_base (0x05)", .var_base)
   ]
-  for (name, is_constant) in ops do
+  for (name, kind) in ops do
+    let is_constant := kind.baseIsConstant
     let verdict := if is_constant then "CONSTANT" else "PROVER-CHOSEN (needs binding)"
     IO.println s!"  {name}: {verdict}"
+  -- The verdicts above are now *derived* from `ECMulKind.baseIsConstant` rather than typed beside it,
+  -- which is the substantive repair: a literal `true`/`false` per row could disagree with the model and
+  -- nothing would have said so. The assertion adds the security-relevant fact the section is about —
+  -- exactly one of the four kinds is prover-chosen, and it is `var_base`. An assertion that restated
+  -- `baseIsConstant`'s own definition would hold for any table, which is the defect this file was
+  -- repaired for, so it asserts a property of the *library* instead.
+  let allKinds : List ECOps.ECMulKind := [.fixed_short, .fixed, .fixed_base, .var_base]
+  assert! (allKinds.filter (fun k => !k.baseIsConstant)) == [.var_base]
 
 -- ============================================================
 -- HAZOP FINDINGS DISPLAY
 -- ============================================================
 
+/-- The band a risk score falls in, read off `HAZOP.lean`'s own band comments: CRITICAL ≥ 60,
+    HIGH 40–59, ELEVATED 30–39, and MODERATE below that (the matrix's remaining rows are 20–29). -/
+def hazopBand (risk : Nat) : String :=
+  if 60 ≤ risk then "CRITICAL"
+  else if 40 ≤ risk then "HIGH"
+  else if 30 ≤ risk then "ELEVATED"
+  else "MODERATE"
+
+/-- The HAZOP summary, **counted from `riskMatrix` rather than typed here.** This used to be four
+    literal lines — "CRITICAL (>=60): 4 — governance_report, liquidate, withdraw, aggregate" — i.e.
+    a hand-typed claim about the matrix, in a file that is in no `lean_lib`, that nothing checked.
+    The counts are read off the data now and the assertions below are the regression guard: if the
+    matrix gains or loses a finding, this fails and a human decides whether it was intended. The
+    finding names printed are the matrix's own ids (`CRIT-1`, …); the prose names the old lines
+    carried named findings the matrix does not, and were the part nothing could check. -/
 def test_hazop_summary : IO Unit := do
   IO.println "=== HAZOP Audit Findings ==="
-  IO.println "CRITICAL (>=60): 4 — governance_report, liquidate, withdraw, aggregate"
-  IO.println "HIGH (40-59): 5 — burn_v1×2, labor refund, labor collision, governance L2"
-  IO.println "ELEVATED (30-39): 6 — deposit, cancel_swap, exit, redeem, slippage, execute_swap"
+  let byBand := fun (b : String) =>
+    (HAZOP.riskMatrix.filter (fun r => hazopBand r.2.2.1 == b)).map (fun r => r.1)
+  for band in ["CRITICAL", "HIGH", "ELEVATED", "MODERATE"] do
+    IO.println s!"{band}: {(byBand band).length} — {String.intercalate ", " (byBand band)}"
+  assert! (byBand "CRITICAL").length = 4
+  assert! (byBand "HIGH").length = 5
+  assert! (byBand "ELEVATED").length = 6
+  assert! (byBand "MODERATE").length = 7
   IO.println "NOTE: HAZOP findings are documented in DarkFi/HAZOP/ as defs, not theorems"
 
 -- ============================================================
@@ -252,7 +369,8 @@ def main : IO Unit := do
   let primitives := allPrimitiveTypes
   IO.println s!"Primitive types: {primitives.length}"
   for t in primitives do
-    IO.println s!"  {t.name}: {t.barbs}"
+    let bs ← barbsToString t.barbs
+    IO.println s!"  {t.name}: {bs}"
 
   -- 4b. Verify pareto-efficiency (all pairs distinct)
   IO.println ""
@@ -286,23 +404,31 @@ def main : IO Unit := do
     ("OwnedSecretKey ≠ SecretKey", ownedSecretKey, secretKey)
   ]
   for (label, t1, t2) in unifiable_checks do
-    IO.println s!"  {label}: {t1.barbs} vs {t2.barbs} — {(t1.barbs != t2.barbs)}"
+    let bs1 ← barbsToString t1.barbs
+    let bs2 ← barbsToString t2.barbs
+    IO.println s!"  {label}: {bs1} vs {bs2} — {(t1.barbs != t2.barbs)}"
 
   -- 4d. Verify capability type constructions
   IO.println ""
   IO.println "Capability type constructions:"
   let ct := nativeTokenTransferType
-  IO.println s!"  Native token transfer: {compose ct.primitives}"
-  IO.println s!"    Required: {nativeTokenResource.requiredBarbs}"
-  IO.println s!"    Covers: {nativeTokenResource.requiredBarbs ⊆ compose ct.primitives}"
+  let cbs ← barbsToString (compose ct.primitives)
+  let rbs ← barbsToString nativeTokenResource.requiredBarbs
+  IO.println s!"  Native token transfer: {cbs}"
+  IO.println s!"    Required: {rbs}"
+  IO.println s!"    Covers: {decide (nativeTokenResource.requiredBarbs ⊆ compose ct.primitives)}"
   let ct2 := daoVoteType
-  IO.println s!"  DAO vote: {compose ct2.primitives}"
-  IO.println s!"    Required: {daoResource.requiredBarbs}"
-  IO.println s!"    Covers: {daoResource.requiredBarbs ⊆ compose ct2.primitives}"
+  let cbs2 ← barbsToString (compose ct2.primitives)
+  let rbs2 ← barbsToString daoResource.requiredBarbs
+  IO.println s!"  DAO vote: {cbs2}"
+  IO.println s!"    Required: {rbs2}"
+  IO.println s!"    Covers: {decide (daoResource.requiredBarbs ⊆ compose ct2.primitives)}"
   let ct3 := tenderBidType
-  IO.println s!"  Tender bid: {compose ct3.primitives}"
-  IO.println s!"    Required: {tenderResource.requiredBarbs}"
-  IO.println s!"    Covers: {tenderResource.requiredBarbs ⊆ compose ct3.primitives}"
+  let cbs3 ← barbsToString (compose ct3.primitives)
+  let rbs3 ← barbsToString tenderResource.requiredBarbs
+  IO.println s!"  Tender bid: {cbs3}"
+  IO.println s!"    Required: {rbs3}"
+  IO.println s!"    Covers: {decide (tenderResource.requiredBarbs ⊆ compose ct3.primitives)}"
 
   -- 4e. Wallet construction — REMOVED, and why it is not repaired
   --
@@ -360,6 +486,12 @@ def main : IO Unit := do
     let putOk := if putCount == expectedPut then "✓" else "✗"
     let totalOk := if totalBox == expectedTotal then "✓" else "✗"
     IO.println s!"  N={N}: Take={takeCount} ({takeOk}) Put={putCount} ({putOk}) Total={totalBox} ({totalOk})"
+  -- The ✓/✗ above is printed and the same three facts are asserted, because a marker that
+  -- nothing fails on is the defect this sweep is for: eight of these printed `✗` and the run
+  -- still exited 0.
+    assert! takeCount == expectedTake
+    assert! putCount == expectedPut
+    assert! totalBox == expectedTotal
 
   IO.println ""
   IO.println "--- Purse transition counts (small N) ---"
@@ -374,6 +506,12 @@ def main : IO Unit := do
     let queryOk := if queryCount == expectedQuery then "✓" else "✗"
     let totalOk := if totalPurse == expectedTotal then "✓" else "✗"
     IO.println s!"  N={N}: Mutate={mutateCount} ({mutateOk}) Query={queryCount} ({queryOk}) Total={totalPurse} ({totalOk})"
+  -- The ✓/✗ above is printed and the same three facts are asserted, because a marker that
+  -- nothing fails on is the defect this sweep is for: eight of these printed `✗` and the run
+  -- still exited 0.
+    assert! mutateCount == expectedMutate
+    assert! queryCount == expectedQuery
+    assert! totalPurse == expectedTotal
 
   -- 5b. L2 determinism validation
   IO.println ""
@@ -382,6 +520,7 @@ def main : IO Unit := do
     let l2Count := l2TrajectoryCount K
     let ok := if l2Count == 1 then "✓" else "✗"
     IO.println s!"  K={K}: L2 trajectories={l2Count} ({ok})"
+    assert! l2Count == 1
 
   -- 5c. L1 combinatorial explosion validation
   IO.println ""
@@ -393,6 +532,7 @@ def main : IO Unit := do
     let ok := if l1Count == expected then "✓" else "✗"
     let ratio := if l2Count > 0 then l1Count / l2Count else 0
     IO.println s!"  N={N}, K={K}: L1={l1Count} ({ok}) L2={l2Count} ratio={ratio}x"
+    assert! l1Count == expected
 
   -- 5d. O-cap additive vs multiplicative comparison
   IO.println ""
@@ -411,14 +551,19 @@ def main : IO Unit := do
   if additive < multiplicative then
     IO.println "  ✓ O-cap composition is more efficient"
   else
-    IO.println "  ✗ Unexpected: additive ≥ multiplicative"
+    throw (IO.userError "additive ≥ multiplicative: the O-cap composition bound no longer holds")
 
   -- 5e. Practical limits
   IO.println ""
   IO.println "--- Practical L1 limits ---"
-  IO.println s!"  Merkle depth: {MERKLE_DEPTH}"
-  IO.println s!"  Theoretical max objects: 2^{MERKLE_DEPTH} - 1"
-  IO.println s!"  Practical max (mobile, 1000/s, 120s): {PRACTICAL_MAX_OBJECTS}"
+  -- Qualified to `Limits`: both it and `CeilingDerivation` define these two, and both opens are in
+  -- scope file-wide, so the unqualified form is `ambiguous` (the file's third error class). `Limits`
+  -- is the section's subject and its values carry the theorems — `practical_max_calculation` pins
+  -- `120000`, `theoretical_max_objects` pins `2 ^ MERKLE_DEPTH - 1 = 4294967295` — so the printed
+  -- number is traceable to a proof rather than to a second copy of the constant.
+  IO.println s!"  Merkle depth: {Limits.MERKLE_DEPTH}"
+  IO.println s!"  Theoretical max objects: 2^{Limits.MERKLE_DEPTH} - 1"
+  IO.println s!"  Practical max (mobile, 1000/s, 120s): {Limits.PRACTICAL_MAX_OBJECTS}"
   IO.println s!"  L1 ceiling: ≤{L1_CEILING_PUBLIC_INPUTS} PI, ≤{L1_CEILING_WITNESS_VALUES} WV, ≤{L1_CEILING_OPERATIONS} OPS"
 
   -- 5f. Box/Purse within safe bounds
@@ -445,8 +590,8 @@ def main : IO Unit := do
   -- 6a. Classify known contracts
   let boxClass := classifyL1Contract boxContract
   let purseClass := classifyL1Contract purseContract
-  IO.println s!"  Box    (k=11, P=9,  W=16, O=2): {boxClass}"
-  IO.println s!"  Purse  (k=13, P=25, W=37, O=3): {purseClass}"
+  IO.println s!"  Box    (k=11, P=9,  W=16, O=2): {l1ClassToString boxClass}"
+  IO.println s!"  Purse  (k=13, P=25, W=37, O=3): {l1ClassToString purseClass}"
   assert! boxClass == L1ComplexityClass.safeL1
   assert! purseClass == L1ComplexityClass.safeL1
   IO.println "  Box and Purse: safeL1 ✓"
@@ -462,7 +607,7 @@ def main : IO Unit := do
     , hasMerkleProof := true
     }
   let defiClass := classifyL1Contract defiContract
-  IO.println s!"  DeFi   (k=14, P=36, W=48, O=4): {defiClass}"
+  IO.println s!"  DeFi   (k=14, P=36, W=48, O=4): {l1ClassToString defiClass}"
   assert! defiClass == L1ComplexityClass.scrutinyL1
   IO.println "  DeFi hypothetical: scrutinyL1 ✓"
 
@@ -477,7 +622,7 @@ def main : IO Unit := do
     , hasMerkleProof := true
     }
   let exceedsClass := classifyL1Contract exceedsContract
-  IO.println s!"  Big    (k=16, P=60, W=90, O=8): {exceedsClass}"
+  IO.println s!"  Big    (k=16, P=60, W=90, O=8): {l1ClassToString exceedsClass}"
   assert! exceedsClass == L1ComplexityClass.exceedsL1
   IO.println "  Exceeds hypothetical: exceedsL1 ✓"
 
@@ -491,12 +636,12 @@ def main : IO Unit := do
   IO.println s!"  P_SCRUTINY: {P_SCRUTINY}"
   IO.println s!"  W_SCRUTINY: {W_SCRUTINY}"
   IO.println s!"  O_SCRUTINY: {O_SCRUTINY}"
-  IO.println s!"  PRACTICAL_MAX_OBJECTS: {PRACTICAL_MAX_OBJECTS}"
+  IO.println s!"  PRACTICAL_MAX_OBJECTS: {CeilingDerivation.PRACTICAL_MAX_OBJECTS}"
 
   -- 6e. Theorem 4: exceeds is terminal (increasing k doesn't help)
   let exceedsReclass := classifyL1Contract { exceedsContract with k := 20 }
   assert! exceedsReclass == L1ComplexityClass.exceedsL1
-  IO.println s!"  Reclassified with k=20: {exceedsReclass} (still exceedsL1) ✓"
+  IO.println s!"  Reclassified with k=20: {l1ClassToString exceedsReclass} (still exceedsL1) ✓"
 
   IO.println ""
   IO.println "=== General Theorem Validation Complete ==="

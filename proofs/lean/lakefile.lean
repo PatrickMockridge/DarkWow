@@ -30,3 +30,13 @@ lean_lib DarkFi where
 -- move costs this module no coverage. See `scripts/lean-build.sh`.
 lean_lib Transcribed where
   roots := #[`Transcribed]
+
+-- The IO simulation suite (`src/Main.lean`): the opcode counterexample scans, the barb-set printouts
+-- and the HAZOP/EC classification summaries. It is an `lean_exe` so that the build covers it and
+-- `lake exe Main` runs it. **Until 2026-09-24 it was in no `lean_lib` and no `lean_exe`**, so `lake
+-- build` never touched it, no gate invoked it, and its 21 compile errors survived in the tree for as
+-- long as they did — the file itself said "It does not compile, and has not for some time". Every
+-- check it performs now fails the run rather than printing a number beside it, which is what makes
+-- wiring it into `scripts/run-all-tests.sh` worth anything.
+lean_exe Main where
+  root := `Main

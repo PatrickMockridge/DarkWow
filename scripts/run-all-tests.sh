@@ -320,6 +320,19 @@ run_gate "Lean assumption boundary (axioms/budgets)" \
 run_gate "Axiom gate's record channel (negative control)" \
                                           python3 script/check_lean_axioms.py --self-test
 
+# The IO simulation suite, which is the third thing in `proofs/lean` and the only one that *runs*
+# anything. `src/Main.lean` was in no `lean_lib` and no `lean_exe` until 2026-09-24, so `lake build`
+# never compiled it, no gate invoked it, and it did not compile in any case — 21 errors on its HEAD
+# version as well, which is why it could be quoted as evidence while being broken. The file is an
+# `lean_exe` now, its checks throw instead of printing (`Bugs found: N` and eight ✓/✗ markers used to
+# exit 0 either way, and the HAZOP counts were literals), and this is the gate that refuses to swallow
+# a failure. It runs through the guard like every other Lean invocation, writes a per-run log under
+# `/tmp`, and requires the suite's two closing markers — an exit 0 from a `main` that returned early is
+# the failure mode this campaign exists to find. Falsified three ways before wiring, each on a copy of
+# the tree under `/tmp`: a scan's expected count off by one, the O-cap bound inverted, and a closing
+# marker renamed — each exits 1, the first two printing the suite's own assertion.
+run_gate "Lean IO simulation suite"        bash "$SCRIPT_DIR/check-lean-suite.sh"
+
 run_gate "Python: pipeline model"          python3 contrib/model/pipeline_model.py
 run_gate "Python: supply chain model"      python3 contrib/model/supply_chain_model.py
 
