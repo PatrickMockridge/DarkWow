@@ -10,7 +10,7 @@ A privacy-first blockchain rebuilt around six design commitments. Originally for
 
 3. **[Sovereign Keys](arch/key-management.md)** — Users hold their own keys. The wallet is a full node. No key material ever touches an RPC endpoint.
 
-4. **[Lean4-Verified ZK Opcodes](arch/zk/opcodes.md)** — 32 ZK opcodes with formal soundness proofs in the Lean4 proof assistant. Zero `sorry`, but **23 admitted axioms** — "no `sorry`" is a weak claim, because a proof can be admitted as an axiom instead. Each assumption is enumerated with four fields in `proofs/lean/src/DarkFi/Axioms.lean`, and every theorem carries an `@[axiom_budget]` saying how many of them it rests on.
+4. **[Lean4-Verified ZK Opcodes](arch/zk/opcodes.md)** — 32 ZK opcodes with formal soundness proofs in the Lean4 proof assistant. Zero `sorry`, but **6 admitted axioms** — "no `sorry`" is a weak claim, because a proof can be admitted as an axiom instead. Each assumption is enumerated with four fields in `proofs/lean/src/DarkFi/Axioms.lean`, and every theorem carries an `@[axiom_budget]` saying how many of them it rests on.
 
 5. **[Zero Premine](arch/genesis.md)** — No premine. No founder allocation. Every commitment in circulation was mined or earned.
 

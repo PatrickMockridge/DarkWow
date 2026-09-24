@@ -110,7 +110,7 @@ constraint equations are satisfied, the output equals the mathematical function.
 | `Field.lean` | `cross_mul_lt` (integer cross-multiplication soundness), `wraparound_safe` (bounded inputs preserve ordering) |
 | `CrossCutting.lean` | `pedersen_sum_equality_implies_value_equality` (a `congrArg`, named for what it proves), `value_conservation_no_wraparound` (16×64-bit values fit in Pallas field) |
 | `HashOps.lean` | Model scaffolding only — `MerklePath`, `SMTMembershipGadget`, `PoseidonHashGadget` and friends. Its former "theorems" `merkle_root_deterministic` (`x = x`) and `merkle_inclusion_soundness` (its own hypothesis, plus a `root = root` hypothesis) are deleted; `merkle_root_change_detection` is an assumption in `Axioms.lean` |
-| `ECOps.lean` | `ec_add_inputs_must_be_distinct`, and model scaffolding (`ECMulGadget`, `ECAddGadget`). `fixed_base_mul_uses_constant` and `variable_base_mul_is_prover_chosen` are assumptions in `Axioms.lean`; `pedersen_commitment_binding` was a tautology declared as an axiom and is **deleted**, not re-proved — re-proving it would have produced a budget-0 theorem named for Pedersen binding whose statement says nothing about a commitment |
+| `ECOps.lean` | `ec_add_inputs_must_be_distinct`, and model scaffolding (`ECMulGadget`, `ECAddGadget`). `fixed_base_mul_uses_constant` and `variable_base_mul_is_prover_chosen` are theorems in `ECOps.lean`; `pedersen_commitment_binding` was a tautology declared as an axiom and is **deleted**, not re-proved — re-proving it would have produced a budget-0 theorem named for Pedersen binding whose statement says nothing about a commitment |
 | `Soundness.lean` | `cross_mul_implies_ratio_bound` — a `theorem`, discharged from `Field.cross_mul_lt` rather than assumed. Its former `less_than_strict_sound` was `a < b → a < b` and is deleted |
 
 ### Part 4: Supply Chain Invariants (`SupplyChain.lean`)
@@ -164,12 +164,21 @@ All of them are in **`src/DarkFi/Axioms.lean`** and nowhere else. Each carries f
 
 | Class | Count | Members |
 |-------|-------|---------|
-| Cryptographic | 6 | `poseidon_hash_output` (value-less opaque), `poseidon_collision_resistance`, `commitment_binding`, `nullifier_binding`, `merkle_root_change_detection`, `purseNullifier_nonce_injective` |
-| Arithmetic | 1 | `Arithmetic.base_div_mul_cancel` |
-| Model-to-VM correspondence | 2 | `ECOps.fixed_base_mul_uses_constant`, `ECOps.variable_base_mul_is_prover_chosen` |
-| Pallas group model | 8 | `PedersenPoint.add`, `PedersenIdentity`, `pedersen_commit`, `pedersen_add_comm`, `pedersen_add_assoc`, `pedersen_add_identity`, `pedersen_additive_homomorphism`, `compute_merkle_root` |
-| Emission policy (free parameters) | 5 | `reward`, `MAX_SUPPLY`, `coinbase_blind`, `reward_monotone`, `total_reward_bounded` |
+| Cryptographic | 2 | `poseidon_hash_output` (value-less `opaque`), `poseidon_collision_resistance` |
+| Arithmetic | 1 | `pallasPrime` |
+| Emission policy (free parameters) | 2 | `coinbase_blind`, `reward_monotone` |
 | ZK-to-type bridge | 1 | `NoFreeInstances` |
+| **Total** | **6** | |
+
+This table is the one that produced the wrong number, so its history is worth keeping. Until 2026-09-24 it
+listed **23** members across six classes — a Cryptographic six that still named `commitment_binding`,
+`nullifier_binding`, `merkle_root_change_detection` and `purseNullifier_nonce_injective` (now theorems, or
+discharged, in `HashOps.lean` and `Capability/Purse.lean`), an Arithmetic row for
+`Arithmetic.base_div_mul_cancel` (a theorem since `BaseDiv.lean:56`), a Model-to-VM row for two `ECOps`
+declarations (theorems at `ECOps.lean:127` and `:134`), and a Pallas row of eight names whose seven
+postulates `DarkFi/Pedersen.lean` replaced with real curve theory. And it never listed `pallasPrime` at all,
+which is the one arithmetic fact the whole layer still rests on. Five documents under `doc/src/` had copied
+the total, so one stale table became five wrong statements about how much this layer assumes.
 
 ### What this file used to say, and why it was wrong
 
@@ -203,30 +212,32 @@ have computational content". Every claim in it was wrong in a different way:
 - **"None have computational content"** was false for the class of `: Prop` stubs it was
   describing — they had no content of any kind, which is worse.
 
-The count is now **9**, and the honest framing is not "these are cheap" but: **five of them have no
+The count is now **6**, and the honest framing is not "these are cheap" but: **two of them have no
 consumer at all.** Measured, not asserted — the collector's per-theorem axiom sets give the
-consumer count directly:
+consumer count directly, and these are the figures the table `script/check_lean_axioms.py` prints
+today:
 
 | assumption | consumers |
 |---|---|
-| `pallasPrime` | 14 (`Pedersen.*`, and everything downstream of the curve being a field) |
+| `pallasPrime` | 19 (`Pedersen.*`, and everything downstream of the curve being a field) |
 | `coinbase_blind` | 7 (`cumulative_auditable`, `cumulative_commit_theorem`, `no_hidden_inflation`, …) |
-| `HashOps.poseidon_collision_resistance` | 6 (`commitment_binding`, `nullifier_binding`, `smtCrh_injective`, `purseNullifier_nonce_injective`, …) |
+| `HashOps.poseidon_collision_resistance` | 6 (`commitment_binding`, `nullifier_binding`, `smtCrh_injective`, …) |
 | `NoFreeInstances` | 1 — `capabilityType_of_circuitDerivable` |
-| `Arithmetic.base_div_mul_cancel` | **none** |
-| `ECOps.fixed_base_mul_uses_constant` | **none** |
-| `ECOps.variable_base_mul_is_prover_chosen` | **none** |
 | `HashOps.poseidon_hash_output` | **none** |
 | `reward_monotone` | **none** |
+
+Three rows left this table on 2026-09-24 by ceasing to be assumptions: `Arithmetic.base_div_mul_cancel`
+(a theorem in `BaseDiv.lean`), and `ECOps.fixed_base_mul_uses_constant` and
+`variable_base_mul_is_prover_chosen` (theorems in `ECOps.lean`). `pallasPrime`'s count reads 19 rather
+than the 14 the old table carried, which is the same measurement over a tree with more theorems in it.
 
 `NoFreeInstances` used to be the register's example of an assumption "consumed by nothing". It now
 has a consumer, which is what §3 of the rewrite was for: `capabilityType_of_circuitDerivable` takes
 `CircuitDerivable r s` as a *hypothesis* rather than resting on a vacuous axiom, and that hypothesis
 is `NoFreeInstances` in the type system's vocabulary. A theorem that names its own gap is one a
 reader can act on; a `: Prop` axiom with a vacuous antecedent is not.
-Six more are reached only because `SupplyChain.lean`'s proofs unfold definitions that mention
-them. The rest cannot fail — their falsity would be undetectable here, because nothing depends
-on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
+The two with **no** consumer cannot fail — their falsity would be undetectable here, because nothing
+depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
 `silentAxiomFailures`: that list is the case for discharging them.
 
 ## What Is NOT Proved (Honest Scope)
@@ -303,10 +314,18 @@ on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   with the tie to `pasta_curves` as a budget-0 theorem (`pallasModulus_eq_pasta_curves`) and the
   old value's compositeness proved (`oldPallasModulus_was_composite`). `pallasPrime` is now a true
   statement that remains unproved. See `verification-hazop.md`, "The assumption that was false".
-- **The emission policy is not proved.** `reward`, `MAX_SUPPLY` and `total_reward_bounded` are
-  declared, not derived. `total_supply_theorem` proves that a running total equals the sum of a
-  schedule — for *every* schedule. It does not prove the schedule is capped, and
-  `doc/src/arch/genesis.md` no longer presents the cap as a Lean result.
+- **The emission policy is only partly proved.** `reward` *is* a definition now, transcribed from the
+  implementation (`Emission.lean`, from `src/sdk/src/blockchain.rs:1032-1069`), and `reward_tail_floor`
+  proves it never falls below `TAIL_REWARD` from genesis on. What is **not** proved is that it never
+  *increases*: `Axioms.reward_monotone` assumes that, and `Emission.RewardNonIncreasing` states it with
+  no theorem attached. It is not a missing routine — the exponentiation-by-squaring loop truncates at
+  every squaring, so the cumulative error in the decay passes the local gap once the exponent exceeds
+  about 5.5·10⁴ and no absolutely-bounded sandwich survives the middle range. Measured non-increasing
+  exhaustively over `e ∈ [0, 3·10⁵]` and over 200 000 sampled exponents in `[1, 3.4·10⁷]`, and
+  kernel-checked for the first step (`reward_nonincreasing_first_step`) — **checked over a range, not
+  proved.** `total_supply_theorem` does not reach it: it proves a running total equals the sum of a
+  schedule *for every* schedule. `MAX_SUPPLY` and `total_reward_bounded` are deleted rather than
+  declared, and `doc/src/arch/genesis.md` no longer presents a supply cap as a Lean result.
 - **No verified compiler from `.zk` files.** The ZKAS compiler produces Halo2 circuits; there is
   no formal semantics for the ZKAS language in Lean4.
 
@@ -361,8 +380,9 @@ planting the shapes and watching the check *not* fire.
 
 There also used to be an "expected output" block here, quoted from `lean --run src/Main.lean`,
 reporting `Proved theorems: ~40`, `Axioms: ~43` and `HAZOP findings: 15`. Those numbers were
-hardcoded in `Main.lean` and were wrong in every case (the counts are 222 theorem/lemma
-declarations, of which 128 are at budget 0, and 9 assumptions). They are gone from
+hardcoded in `Main.lean` and were wrong in every case (the counts, measured 2026-09-24, are 362
+`theorem`/`lemma` declarations — 357 of them gate-visible, since the gate's scanner does not match
+`private` — of which 259 are at budget 0, and 6 assumptions). They are gone from
 `Main.lean`: a summary that is typed by hand is a claim, not a measurement, and this file was
 quoting it as evidence.
 
@@ -375,17 +395,27 @@ proofs/lean/
 ├── lake-manifest.json          # Dependency manifest (mathlib, batteries, aesop, Qq, …)
 ├── README.md                   # This file
 └── src/
-    ├── Main.lean               # Verification suite entry point
-    ├── Examples.lean           # Interactive examples (lean --run via lake run)
+    ├── DarkFi.lean             # Library root — 57 imports. `lake build DarkFi` is the gate; a bare
+    │                           #   `lake build` compiles the default facet and builds nothing.
+    ├── Main.lean               # `lean --run` suite (IO simulation, NOT proofs) — not in the library
+    ├── Examples.lean           # `lean --run` examples — not in the library
+    ├── CheckAxioms.lean        # `lean --run` collector: the fact base for `@[axiom_budget]`
     └── DarkFi/
+        ├── Axioms.lean         # THE ASSUMPTION BOUNDARY — the one file allowed `axiom` and
+        │                       #   value-less `opaque` (6 live; see "The assumption classes")
+        ├── AxiomBudget.lean    # Registers the `@[axiom_budget N]` attribute the gate reads back
         ├── Field.lean          # Pallas field arithmetic foundations
         ├── Gadgets.lean        # LessThanOrEqual, IsEqual, IsNotEqual soundness
         ├── Soundness.lean      # Cross-multiplication theorems
         ├── Arithmetic.lean     # base_add, base_mul, base_sub, base_div correctness
+        ├── BaseDiv.lean        # base_div_mul_cancel, discharged (Fermat over ZMod)
+        ├── BaseDivGadget.lean  # The base_div exponentiation loop, and its quotient-remainder bound
         ├── Comparison.lean     # BoolCheck, CondSelect, ZeroCond, LessThanStrict
         ├── CrossCutting.lean   # Value conservation, nullifier determinism, signature binding
-        ├── HashOps.lean        # Merkle root, Poseidon hash, SMT membership
         ├── ECOps.lean          # EC operations, Orchard-class vulnerability detection
+        ├── Emission.lean       # The emission schedule, transcribed from blockchain.rs
+        ├── HashOps.lean        # Merkle root, Poseidon hash, SMT membership
+        ├── Pedersen.lean       # Pallas as a real curve: group laws + additive homomorphism
         ├── SupplyChain.lean    # Multi-block cumulative supply induction
         ├── HAZOP.lean          # HAZOP risk matrix and cross-cutting patterns
         ├── Semantics/            # The ρ-calculus: syntax, congruence, substitution, transitions
@@ -395,28 +425,48 @@ proofs/lean/
         │   ├── LTS.lean          # Transitions, barbs, and strong and weak bisimulation
         │   └── Ledger.lean       # The write set, the overlay diff, and disjoint calls commuting
         ├── Combinatorial/      # L1/L2 combinatorial state space
-        │   ├── StateSpace.lean      # L1 state space types
-        │   ├── Transitions.lean     # State transition combinatorics
-        │   ├── ComplexityJump.lean  # L2→L1 complexity jump theorems
+        │   ├── StateSpace.lean        # L1 state space types — definitions only, no theorems
+        │   ├── Transitions.lean       # State transition combinatorics
+        │   ├── ComplexityJump.lean    # L2→L1 complexity jump theorems
         │   ├── CompositionBounds.lean # O-cap composition bounds
         │   ├── CeilingDerivation.lean # Derivation of the L1 complexity ceiling
-        │   ├── Combinations.lean    # Growth in the number of contracts
-        │   ├── Limits.lean          # L1 practical limits
-        │   ├── GeneralTheorem.lean  # Halo2 L1 contract complexity limits
-        │   └── NullifierStorage.lean # Nullifier storage faithfulness
-        ├── Capability/         # ρ-calculus type system
-        │   ├── Types.lean      # 17 primitive types with barb sets
-        │   ├── Pareto.lean     # Pareto-efficiency (all types pairwise distinct)
-        │   ├── Distinction.lean # 10 non-unifiable pairs
-        │   ├── Composition.lean # 12 capability type constructions
-        │   ├── Wallet.lean     # walletConstruct soundness/completeness
-        │   └── Inversion.lean  # Authorization Inversion Theorem
-        ├── Circuits/           # constrain_instance manual audit (axioms)
-        │   ├── Token.lean
-        │   ├── Bridge.lean
+        │   ├── Combinations.lean      # Growth in the number of contracts
+        │   ├── Limits.lean            # L1 practical limits
+        │   ├── GeneralTheorem.lean    # Halo2 L1 contract complexity limits
+        │   └── NullifierStorage.lean  # Nullifier storage faithfulness
+        ├── Capability/         # ρ-calculus type system — 19 modules
+        │   ├── Types.lean          # 17 primitive types with barb sets (definitions only)
+        │   ├── Composition.lean    # `compose`, and 14 capability type constructions
+        │   ├── Pareto.lean         # Pareto-efficiency (all primitives pairwise distinct)
+        │   ├── Distinction.lean    # The 10 non-unifiable pairs of §8.4
+        │   ├── Wallet.lean         # walletConstruct soundness/completeness/determinism
+        │   ├── Inversion.lean      # Authorization Inversion Theorem, and `CircuitDerivable`
+        │   ├── DerivedChain.lean   # Intermediate-referencing witness DAGs
+        │   ├── Exercise.lean       # Single-use consume, nullifier completeness
+        │   ├── MultiProof.lean     # Transfer/redeem value conservation across burn+mint
+        │   ├── NativeToken.lean    # The coinbase maturity gate
+        │   ├── PerContractTree.lean # Zero-seeded contract-tree leaf positions
+        │   ├── PromissoryNote.lean # The RevokeV2 nested chain
+        │   ├── Prover.lean         # Generic-prover soundness, undeclared-field blocking
+        │   ├── PublicInputs.lean   # Public-input order congruence
+        │   ├── Purse.lean          # Purse nonce chaining, nullifier injectivity
+        │   ├── Value.lean          # Value-denominated capability conservation
+        │   ├── Wire.lean           # Manifest wire-schema congruence
+        │   ├── Concurrency.lean    # Record of the deleted parallel-composition layer — no theorems
+        │   └── Gossip.lean         # Network definitions; its two theorems were `True` and are deleted
+        ├── Circuits/           # constrain_instance manual audit — NO declarations at all
+        │   ├── Token.lean      # witnesses/public inputs as `structure`s; every claim ends
+        │   ├── Bridge.lean     #   `-- NOT DECLARED IN LEAN`
         │   ├── Exchange.lean
         │   └── All.lean
-        └── HAZOP/              # Structured audit findings
+        ├── Fee/                # Fee-window boundary emission
+        │   └── Window.lean
+        ├── Genesis/            # Genesis as a pure single-valued relation
+        │   └── Ceremony.lean
+        ├── Net/                # Frame alignment, and note-decrypt soundness
+        │   ├── Framing.lean
+        │   └── Receive.lean
+        └── HAZOP/              # Structured audit findings — data registers, no theorems
             ├── Critical.lean   # Risk ≥ 60
             ├── High.lean       # Risk 40-59
             └── Elevated.lean   # Risk 30-39
