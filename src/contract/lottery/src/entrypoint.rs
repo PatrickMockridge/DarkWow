@@ -94,6 +94,15 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         LotteryFunction::InitializeV1 => {
             // Non-ZK (setup-step, like roulette/slot InitializeV1): return a *valid
             // encoding of an empty* list, not raw `vec![]`.
+            //
+            // A port of `draw_winners`' five-value push was attempted here on 2026-09-24 and
+            // reverted the same hour, because it cannot be made sound: the circuit takes
+            // `lottery_id` as a *witness* and binds the exposed nullifier to it
+            // (`computed = poseidon_hash(1, lottery_id, house_secret)`), while this contract
+            // *derives* `lottery_id` from `get_verifying_block_height()` at exec (initialize.rs:57).
+            // A caller therefore cannot know the id when it builds the call, so any nullifier it put
+            // in the params would bind to a lottery this contract did not create — a satisfiable
+            // proof about nothing. See `OBL-C78`/`OBL-Z2`'s lottery site.
         }
         LotteryFunction::BuyTicketV1 => {
             let params = crate::model::BuyTicketParamsV1::decode(&self_.data[1..])?;
