@@ -304,15 +304,20 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   destroys a maturity refusal), and the coinbase split
   (`Consensus/CoinbaseSplit.lean`, sixteen — the five equations three enforcement sites impose, with the
   finding that of the five checks the **uncle-note sum** is the load-bearing one and the three value
-  checks are over-determined). **Partly** modelled: the **validity predicates** —
-  `Consensus/BlockTimestamp.lean` states the median-of-11 timestamp rule and its interface (four laws; the
+  checks are over-determined). **Partly** modelled: the **validity predicates** — `Consensus/BlockTimestamp.lean`
+  states the median-of-11 timestamp rule and its interface (four laws; the
   security bound the rule exists for is stated in its note and *not* proved, and nothing checks the rule
-  on a concrete window because neither of Mathlib's sorts reduces in the kernel) — while the rest of
-  `src/linear/src/validation.rs` is unmodelled, as are the parts of these mechanisms their models stop
+  on a concrete window because neither of Mathlib's sorts reduces in the kernel), and
+  `Consensus/UncleRules.lean` states the uncle depth window, the re-derived pin and the alignment guard
+  (fifteen laws, eleven at budget 0) — while the remainder of `src/linear/src/validation.rs` is
+  unmodelled: header continuity, both PoW stages, `validate_block_structure`'s structural conditions and
+  the fee-collect decision table. As are the parts of these mechanisms their models stop
   short of — including, in the coinbase split, the *per-note* key binding, which the model's sum equation
-  is necessary but not sufficient for. The agreed shape of each, with its Rust, its Python
+  is necessary but not sufficient for, and in the uncle rules the RandomX verification itself and the
+  dedup key's blake3 form, for which the model substitutes header distinctness and says so. The agreed
+  shape of each, with its Rust, its Python
   specification and its non-vacuity witness, is `doc/src/arch/consensus-core-map.md` — and a unit that
-  departs from it amends it in the same commit, which all five did (the fifth by *adding* a mechanism the
+  departs from it amends it in the same commit, which all six did (the fifth by *adding* a mechanism the
   map did not have). Separately: `Semantics/Ledger.lean`
   proves that disjoint calls commute without saying what a write set *is*, which is how `OBL-C100` was
   found; that gap is still open and is not part of the map.

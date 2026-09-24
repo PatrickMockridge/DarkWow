@@ -162,10 +162,24 @@ a component" was supposed to mean, and it was right.
    nothing here checks the rule on a concrete window, because neither of Mathlib's sorts reduces in the
    kernel. Both absences are recorded there rather than papered over.
 
-   What remains of validity is the bulk of `validation.rs`: header continuity, PoW stage checks, uncle
-   rules, and `validate_block_structure`'s coinbase conditions. That is a design pass of its own, and this
-   map's guess that it was "the largest surface with the least existing structure" is the part of this row
-   that still stands.
+   Then the **uncle rules** — the other end of the same reward path — **landed 2026-09-24** as
+   `Consensus/UncleRules.lean` (15 theorems, 11 at budget 0), and this is the second unit to *add* to the
+   map rather than fill it: `check_uncles` was named in this row's "what remains" list, and it turned out
+   to be a mechanism rather than a remainder — a depth window with both ends bounded, an alignment guard
+   over two parallel slices, and a pin **re-derived** because the merkle root commits only to the uncle's
+   header. So the row's list was two-thirds right and the third it named was a design pass of its own.
+
+   **What that unit found is a boundary statement about the map's own ordering.** The two modules that
+   model the block's reward — this one and `CoinbaseSplit.lean` — are the two halves of one check, and
+   neither bounds the sum alone: `three_uncles_at_one_depth_satisfy_every_rule` exhibits three uncles
+   that satisfy the count bound and the depth window, so the uncle rules are necessary and not
+   sufficient, and only `effective + Σ pin = base` bounds the payout. The map listed the split and the
+   uncle rules as separate mechanisms (6 and a part of 4), and the honest relation between them is
+   *composition* — the same relation this map got wrong for `Ledger.lean` and had to correct.
+
+   What remains of validity is header continuity, both PoW stages, the fee-collect decision table and
+   `validate_block_structure`'s remaining structural conditions. This map's guess that validity was "the
+   largest surface with the least existing structure" is the part of this row that still stands.
 4. **The coinbase split** — **landed 2026-09-24** as `Consensus/CoinbaseSplit.lean` (16 theorems, 14 at
    budget 0), and it is **a mechanism this map did not have**. It was not in the five when the map was
    agreed, and it was found by taking the validity row's own advice: the map said the rest of validity
