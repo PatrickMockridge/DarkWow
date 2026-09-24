@@ -33,11 +33,19 @@ import DarkFi.Fee.Window
 import DarkFi.Capability.Exercise
 import DarkFi.Capability.Value
 import DarkFi.Capability.NativeToken
+import DarkFi.Capability.KeyScope
 import DarkFi.Circuits.Token
 import DarkFi.Circuits.Bridge
 import DarkFi.Circuits.Exchange
 import DarkFi.Circuits.All
 import DarkFi.Circuits.InstanceDerivation
+-- `Transcribed` is deliberately NOT imported here, and re-adding this import would put the tree's
+-- most expensive elaboration back on the default build path. It is 181 `decide` proofs over 2747
+-- statements; while it rode on this module's import graph, a `LEAN_NUM_THREADS=4` build of `DarkFi`
+-- exhausted this host's memory and froze the machine (2026-09-24). It is now its own library —
+-- `lean_lib Transcribed`, built by the gate as `lake build DarkFi Transcribed` — and
+-- `CheckAxioms.lean` imports it directly, so the axiom walk still covers all 181 theorems.
+-- See scripts/lean-build.sh and proofs/lean/README.md.
 import DarkFi.HAZOP.Critical
 import DarkFi.HAZOP.High
 import DarkFi.HAZOP.Elevated

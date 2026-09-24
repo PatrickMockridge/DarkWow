@@ -20,3 +20,13 @@ require mathlib from git
 
 lean_lib DarkFi where
   roots := #[`DarkFi]
+
+-- The circuit transcription is a library of its own, and deliberately outside the `DarkFi` module
+-- subtree so that `lake build DarkFi` does not build it. It is 181 `decide` proofs over 2747
+-- statements — the tree's most expensive elaboration by an order of magnitude — and while it sat in
+-- `DarkFi`'s glob, a 4-threaded build of that library exhausted this host's memory and froze it
+-- (2026-09-24). Both libraries share the package `srcDir`, so this is a partition by glob rather
+-- than a second source tree, and `src/` is still scanned by `script/check_lean_axioms.py`, so the
+-- move costs this module no coverage. See `scripts/lean-build.sh`.
+lean_lib Transcribed where
+  roots := #[`Transcribed]

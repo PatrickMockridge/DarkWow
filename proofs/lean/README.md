@@ -336,6 +336,18 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   unconsumed: turning it into a definition needs the function `(r, s) ↦ the circuit source`, and a Lean
   term cannot read a `.zk` file. So the property has a definition for that bridge to be *about*, and the
   bridge remains the gap.
+  **The transcription that bridge needs now exists, and its verdicts are the tree's most surprising
+  number.** `Transcribed.lean` is generated from the `.zk` sources by
+  `scripts/gen_circuit_transcription.py` and freshness-gated (`--check`, wired in `run-all-tests.sh`), so
+  it is machine-transcribed rather than hand-typed: **181 circuits, 2747 statements, one `decide`
+  theorem each**, the kernel closing every verdict. Under the model's rule **170 of 181 refute the
+  property**, and the generator decomposes those 170 by asking the checker what it made of the same
+  exposure — 155 are the checker's `redundant` class (pinned by another exposed determination; the
+  model's rule is sequential and does not follow it), 11 its `declared-free`, 3 its own failures
+  (`OBL-Z16`), and 1 the model's declared-constant boundary. So the model **refines** the checker rather
+  than contradicting it, and `NoFreeInstances`' *name* is a strict reading of this tree rather than a
+  description of it — the property the tree enforces is the checker's four-verdict rule. Still not the
+  bridge: `(r, s) ↦ a circuit` is not in the tree, so this supplies the data the bridge needs.
 - **The consensus state core is only partly modelled here, and what is missing is named rather than
   implied.** Five mechanisms have models now, all at **budget 0**: the block-level Pedersen mass-balance
   rule (`Consensus/MassBalance.lean`, ten theorems, transcribed from
@@ -471,19 +483,22 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
 ## Verification
 
 ```bash
-cd proofs/lean
+# From the repository root. EVERY Lean invocation goes through scripts/lean-build.sh — it cd's to
+# proofs/lean itself, and it is not a convenience wrapper but the only thing between an unbounded
+# elaboration and this machine. Read "Never call `lake` directly" below before using it.
 
-# Type-check the proofs. `DarkFi` is required — a bare `lake build` compiles nothing.
-lake build DarkFi
+# Type-check the proofs. BOTH targets are required: `DarkFi` is the library, and `Transcribed` is a
+# library of its own, deliberately not on `DarkFi`'s path.
+scripts/lean-build.sh build DarkFi Transcribed
 
 # The assumption boundary: no sorry/admit, every assumption in Axioms.lean with its four
 # fields, every theorem annotated with its budget, no native_decide anywhere, no tautology,
 # and every `Recorded in DarkFi.HAZOP.X` citation resolving to an entry that exists.
-cd ..
+# It invokes the collector through the guard itself; no `lake` is called here.
 python3 script/check_lean_axioms.py
 
 # The axiom table, straight from the compiled environment.
-cd proofs/lean && lake env lean --run src/CheckAxioms.lean
+scripts/lean-build.sh --stream env lean --run src/CheckAxioms.lean
 
 # The Orchard-class rule over the 180 .zk circuit sources — a separate boundary.
 bash scripts/check-circuit-instance-derivation.sh
@@ -492,6 +507,44 @@ bash scripts/check-circuit-instance-derivation.sh
 `script/check_lean_axioms.py` prints a table of theorem → budget → the assumptions each
 theorem rests on. Use `--emit-annotations` to write measured budgets back into the sources, and
 `--require-collector` to make "the collector could not run" fatal rather than a `SKIP`.
+
+### Never call `lake` directly — the memory ceiling is not optional
+
+`LEAN_NUM_THREADS=4` was this tree's whole guardrail, and it is **not sufficient**. It bounds how many
+`lean` processes run at once; it says nothing about how much memory any one of them uses. On
+2026-09-24 a `LEAN_NUM_THREADS=4 lake build DarkFi` — the command this section used to document, and
+the gate `scripts/run-all-tests.sh` used to run — exhausted this 47 GiB host's memory and froze it,
+taking every open window with it. The previous boot's journal ends mid-chatter with **no shutdown
+sequence and no OOM-killer line**: swap thrash, not a clean OOM. The failed scope is still visible as
+`systemctl --user list-units --type=scope | grep lean`.
+
+The module responsible is `src/Transcribed.lean` — a generated module of 181 `decide` proofs over 2747
+transcribed statements, and the single most expensive elaboration in the tree. Until that day it was
+imported by `src/DarkFi.lean`, so it sat on the default path of *every* library build; it is now
+`lean_lib Transcribed`, built only when a gate asks for it.
+
+**But the explosion was fixed, not worked around.** The transcription exceeded 24 GiB in one `lean`
+process, and no `.olean` had ever been produced for it — its 181 verdicts were unverified in the only
+sense that counts, the kernel having closed none of them. The cause was not its size: an inline `if` in
+the model's `boundWalk` made the kernel's reduction duplicate *both* branches into the enclosing term,
+compounding per statement. Only the eleven circuits whose property **holds** were affected, because a
+refuted circuit short-circuits in `List.all` and never forces those branches — which is why the
+failures looked like a size problem for as long as they did, and why sharding the artefact did not help.
+With that arm extracted (`bindAssign` in `DarkFi/Circuits/InstanceDerivation.lean`, which carries the
+measurement) the **whole artefact builds in 78 s and 743 MB** as one module. The sharding tried while
+the cause was unknown has been withdrawn. The ceiling below still protects the machine; it is no longer
+what makes this artefact fit under it.
+
+`scripts/lean-build.sh` therefore bounds **both** axes: the thread cap, and a cgroup `MemoryMax`
+(default 16 GiB, with `MemorySwapMax=0`) under which the *build* is killed with an explanation while
+the desktop is untouched. It writes full output to `/tmp/lean-build.log` rather than the terminal, and
+holds a lock so two Lean lanes cannot run at once. It refuses to run at all if it cannot establish a
+ceiling — there is no bypass flag, deliberately.
+
+**The default ceiling is a guardrail, not a measured peak**, and saying so is the point: if a target
+legitimately exceeds it, raise `LEAN_MEMORY_MAX` in a commit that records the measured peak. If a
+*single* module cannot fit under any ceiling that is safe on this host, the answer is to partition it
+across several modules rather than to keep raising the wall.
 
 **Check 7 — no tautologies.** This is the bar that is easiest to state and hardest to keep, so it
 is measured on the *elaborated* term rather than on the text. `src/CheckAxioms.lean` emits, per
@@ -539,6 +592,10 @@ proofs/lean/
     ├── Main.lean               # `lean --run` suite (IO simulation, NOT proofs) — not in the library
     ├── Examples.lean           # `lean --run` examples — not in the library
     ├── CheckAxioms.lean        # `lean --run` collector: the fact base for `@[axiom_budget]`
+    ├── Transcribed.lean        # GENERATED (scripts/gen_circuit_transcription.py, freshness-gated):
+    │                           #   the account, and all 181 circuits' `List Stmt` + one `decide`
+    │                           #   verdict each, as one module. A library of its own (`lean_lib
+    │                           #   Transcribed`), NOT on `lake build DarkFi`'s path
     └── DarkFi/
         ├── Axioms.lean         # THE ASSUMPTION BOUNDARY — the one file allowed `axiom` and
         │                       #   value-less `opaque` (6 live; see "The assumption classes")
@@ -607,8 +664,8 @@ proofs/lean/
         ├── Circuits/           # constrain_instance: one model, checked against a worked circuit
         │   ├── InstanceDerivation.lean # The statement model, `NoFreeInstance`, and its soundness
         │   ├── Token.lean      # Witness/public-input `structure`s, whose claims are still the
-        │   ├── Bridge.lean     #   `-- NOT DECLARED IN LEAN` comments the model has not been
-        │   ├── Exchange.lean   #   transcribed to yet — that transcription is the residual
+        │   ├── Bridge.lean     #   `-- NOT DECLARED IN LEAN` comments; the transcription now exists
+        │   ├── Exchange.lean   #   for every circuit, so what these structures add is the naming
         │   └── All.lean
         ├── Fee/                # Fee-window boundary emission
         │   └── Window.lean

@@ -18,6 +18,20 @@ the property over a circuit's statement list and checks one worked circuit, and 
 `(r, s)` to a statement list is a Lean term that cannot read a `.zk` file. So the manual readings
 in this file are superseded by a gate on the reading side and unreplaced on the stating side, and
 that asymmetry is the honest description of the file.
+CORRECTED 2026-09-24 (same day, later): the *stating* side now exists too. `Transcribed.lean`
+is generated from the `.zk` sources by `scripts/gen_circuit_transcription.py` and freshness-gated
+(`run_gate "circuit transcription freshness (OBL-T7)"`), and it carries one `List Stmt` per circuit
+with the model's verdict closed by `decide` — every circuit this file reads by hand is now a kernel-
+checked statement about a transcription of it. **What remains missing is the mapping `(r, s) ↦ a
+circuit`, not the transcription of the circuits** — that mapping is not in the tree, so the axiom is
+still a name, and the numbers in this file's blocks are the checker's while `Transcribed.lean`'s are
+the model's, which disagree by design and whose disagreement that module decomposes.
+**It is also no longer on `lake build DarkFi`'s path, and that is a correctness requirement rather
+than tidiness**: the module is 181 `decide` proofs over 2747 statements, the tree's most expensive
+elaboration, and while it rode on that library a `LEAN_NUM_THREADS=4` build of `DarkFi` exhausted
+this host's memory and froze the machine (2026-09-24). It lives at `src/Transcribed.lean` and is
+built by the gate as `lake build DarkFi Transcribed` under `scripts/lean-build.sh`, which adds the
+memory ceiling the thread cap never was. See `proofs/lean/README.md`.
 -/
 /-!
 # All Remaining Contract Circuit Instance-Derivation Proofs

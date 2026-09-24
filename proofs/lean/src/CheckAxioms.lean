@@ -1,12 +1,15 @@
 /-
 # Axiom collector — the fact base for `@[axiom_budget]`
 
-Run with:
+Run with — through the repository's Lean guard, never a bare `lean` (see `scripts/lean-build.sh`):
 
-    cd proofs/lean && lake env lean --run src/CheckAxioms.lean
+    scripts/lean-build.sh --stream env lean --run src/CheckAxioms.lean
 
-It walks every theorem in the imported `DarkFi` environment and prints one TSV line per
-declaration:
+`script/check_lean_axioms.py` invokes it exactly that way. `--stream` is what keeps the TSV below on
+stdout; the wrapper's own progress lines go to stderr.
+
+It walks every theorem in the imported `DarkFi` and `Transcribed` environments and prints one TSV
+line per declaration:
 
     <declName>\t<count>\t<axioms,>\t<stmtConsts,>\t<trivial>\t<projection>
 
@@ -44,6 +47,10 @@ recurses through definitions and opaques used by the proof, which is what makes 
 import Lean
 import DarkFi
 import DarkFi.AxiomBudget
+-- `Transcribed` is a library of its own and is deliberately not reachable from `DarkFi` (see that
+-- module and `lakefile.lean`), so the collector names it explicitly rather than reaching it through
+-- the library it was split out of.
+import Transcribed
 
 open Lean
 
@@ -207,7 +214,10 @@ theorems, so it supplies the list.
 def main : IO UInt32 := do
   -- Signature in Lean 4.12: `importModules (imports : Array Import) (opts : Options)
   -- (trustLevel : UInt32 := 0) (leakEnv := false)`.
-  let env ← importModules #[{ module := `DarkFi }] {}
+  -- Both libraries. If `Transcribed` is left out, its 181 theorems are reported as unknown
+  -- declarations and — the failure that matters — never appear in the table at all, so their
+  -- budgets go unchecked while the run still reads as clean.
+  let env ← importModules #[{ module := `DarkFi }, { module := `Transcribed }] {}
   let stdin ← IO.getStdin
   let mut found := 0
   let mut unresolved := 0
