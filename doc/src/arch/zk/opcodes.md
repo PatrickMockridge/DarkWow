@@ -1,7 +1,10 @@
 # DarkWow Opcodes and Formal Verification
 
 > **Scope**: All **31 zkVM opcodes**, all **10 gadgets**, and the circuit set the Orchard-class gate walks — **178 circuits as of 2026-09-24**, not the 120 this line carried. The count moves; re-run `scripts/check-circuit-instance-derivation.sh` rather than quoting it.
-> (across 26 contracts + core proofs) have been **manually audited** for the Orchard-class
+> **Correction (2026-09-24) to the contract count.** The parenthetical that stood here read
+> "(across 26 contracts + core proofs)", and it was left dangling when the line above was rewritten.
+> The tree holds **34 contract directories**, **31 of them carrying a `proof/` directory**, and
+> **166 `.zk` circuits** under `src/contract/*/proof/`. Those have been **manually audited** for the Orchard-class
 > instance-derivation pattern. The audit is documented at
 > `proofs/lean/src/DarkFi/Circuits/`, which is **comment-only**: it contains no Lean
 > declarations, and the names it refers to are comments of the form
@@ -22,7 +25,7 @@ The formal verification is organized in three layers:
 | Layer | Scope | Files | Status |
 |-------|-------|-------|--------|
 | **Layer 1** | 31 zkVM opcodes × 10 gadgets | `ECOps.lean`, `HashOps.lean`, `Arithmetic.lean`, `Comparison.lean`, `Gadgets.lean` | PARTIAL — several of these are now *assumptions* in `Axioms.lean` (`fixed_base_mul_uses_constant`, `variable_base_mul_is_prover_chosen`, `poseidon_collision_resistance`, `base_div_mul_cancel`), not theorems |
-| **Layer 2** | 120 contract circuits — Orchard-class audit | `Circuits/Token.lean`, `Circuits/Bridge.lean`, `Circuits/Exchange.lean`, `Circuits/All.lean` | **MANUAL AUDIT, not Lean.** These four files contain no declarations at all. The one Lean declaration that ever claimed otherwise (`burn_v1_no_free_instances`, whose statement was `x = x ∧ y = y ∧ True`) is deleted |
+| **Layer 2** | the contract circuits — **166** under `src/contract/*/proof/` as of 2026-09-24, not the 120 this row carried (178 by the gate's own count, which adds `proofs/core/` and `bin/darkirc/proof/`) | `Circuits/Token.lean`, `Circuits/Bridge.lean`, `Circuits/Exchange.lean`, `Circuits/All.lean` | **MANUAL AUDIT, not Lean.** These four files contain no declarations at all. The one Lean declaration that ever claimed otherwise (`burn_v1_no_free_instances`, whose statement was `x = x ∧ y ∧ True`) is deleted |
 | **Layer 3** | Cross-cutting theorems | `CrossCutting.lean` | PARTIAL — only `value_conservation_no_wraparound` survives as a theorem; see the table below |
 
 ## Layer 1: Complete Opcode Reference
