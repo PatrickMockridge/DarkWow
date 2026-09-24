@@ -235,4 +235,60 @@ theorem diff_single_apply_other (k k' : Key) (v : Bytes) (s : Store) (h : k' ≠
     (Diff.single k v).apply s k' = s k' := by
   simp [Diff.apply, Diff.single, h]
 
+/-! ==========================================================================
+   Part 3 — Per-call updates commute
+   ========================================================================== -/
+
+/-- **`Disjoint` is symmetric.** Not an artefact to be avoided but a fact the argument needs: the case
+    analysis in `diff_apply_comm` reaches the disjointness in whatever order the two diffs' constructors
+    are split, and this is what makes the order irrelevant. -/
+@[axiom_budget 0]
+theorem disjoint_comm {A B : Key → Prop} (h : Disjoint A B) : Disjoint B A := by
+  intro k hB hA
+  exact h k hA hB
+
+/-- **Two diffs on disjoint key sets commute.** §9.2's safety property for a pair of *diffs*, and the
+    engine of everything below.
+
+    The case analysis splits only on `Option` constructors, which is what keeps this at budget 0 and is
+    a design constraint rather than a coincidence: the two `none` branches close by `getD`'s reduction
+    on both sides, and the `some`/`some` branch closes by the disjointness — never by comparing the two
+    recorded values, which are independent. No split is on a `Prop`, so `Classical.choice` is not
+    reachable. -/
+@[axiom_budget 0]
+theorem diff_apply_comm (d₁ d₂ : Diff) (h : Disjoint d₁.dom d₂.dom) (s : Store) :
+    d₁.apply (d₂.apply s) = d₂.apply (d₁.apply s) := by
+  funext k
+  cases h₁ : d₁.val k with
+  | none => simp [Diff.apply, h₁]
+  | some ov₁ =>
+    cases h₂ : d₂.val k with
+    | none => simp [Diff.apply, h₂]
+    | some ov₂ =>
+      exact False.elim (h k (by simp [Diff.dom, h₁]) (by simp [Diff.dom, h₂]))
+
+/-- **Declared disjointness implies touched disjointness**, and this is `writeSet_contains`'s consumer.
+
+    The step that makes the invariant a load-bearing field rather than a comment. Disjointness is a
+    hypothesis about the sets calls *declare* — that is what a schedule is built from — while
+    commutation is a fact about the sets they *touch*. Without this bridge the two never meet, and
+    `calljob_act_comm` could not be stated at all. -/
+@[axiom_budget 0]
+theorem disjoint_diff_of_disjoint_dom (c₁ c₂ : CallJob) (h : Disjoint c₁.dom c₂.dom) :
+    Disjoint c₁.diff.dom c₂.diff.dom := by
+  intro k h₁ h₂
+  exact h k (c₁.writeSet_contains k h₁) (c₂.writeSet_contains k h₂)
+
+/-- **Two calls on disjoint declared write sets commute.** This is what the schedule's wave partition
+    assumes when it puts two calls in one wave: the order they run in cannot change the store.
+
+    Worth naming the contrast with the record it replaces. The deleted `KeyDisjoint` carried
+    `writeSetDisjoint : Bool`; nothing read it, so nothing about parallel execution followed from it.
+    Here the corresponding statement is a theorem whose proof consumes the invariant, and the
+    hypothesis is about the *declared* sets precisely because those are what the schedule sees. -/
+@[axiom_budget 0]
+theorem calljob_act_comm (c₁ c₂ : CallJob) (h : Disjoint c₁.dom c₂.dom) (s : Store) :
+    c₁.act (c₂.act s) = c₂.act (c₁.act s) := by
+  exact diff_apply_comm c₁.diff c₂.diff (disjoint_diff_of_disjoint_dom c₁ c₂ h) s
+
 end DarkFi.Semantics
