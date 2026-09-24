@@ -247,6 +247,51 @@ theorem fpMul_nested_bound_fails_at_the_decay_constant :
     ¬ (fpMul 95872739 (fpMul DECAY_FP DECAY_FP) ≤ fpMul (fpMul 95872739 DECAY_FP) DECAY_FP) := by
   norm_num [fpMul, FP_ONE, DECAY_FP]
 
+/-- **The step bound's even half, closed.** `fixedPowDecayGo_mono_acc` does not reach this statement by
+    itself, because the two sides differ in *exponent*, not in accumulator — but one unfolding removes
+    the difference: at `e = 2m` the left side becomes `G m (fpMul FP_ONE b) (fpMul b b)` and the right
+    `G m FP_ONE (fpMul b b)`, and `fpMul FP_ONE b = b` makes the accumulators comparable **at the same
+    exponent**, so this is `mono_acc` fed `b ≤ FP_ONE`.
+
+    **This was prose until 2026-09-24.** The file said "the even case is proved
+    (`fixedPowDecayGo_mono_acc`)" — the *ingredient* was proved and the *half* was not stated, which is
+    the difference between a reader being told a case is handled and being able to cite it. With
+    `OddCaseStepBound` below as the odd half, the parity split is now one theorem and one named
+    statement rather than two sentences. -/
+@[axiom_budget 1]
+theorem fixedPowDecayGo_step_bound_even (m : Nat) {b : Nat} (hb : b ≤ FP_ONE) :
+    fixedPowDecayGo (2 * m + 1) FP_ONE b ≤ fixedPowDecayGo (2 * m) FP_ONE b := by
+  have hb' : fpMul b b ≤ FP_ONE := le_trans (fpMul_le_left hb) hb
+  have hmul : fpMul FP_ONE b = b := by simp [fpMul, FP_ONE]
+  have hmul' : ∀ c : Nat, fpMul FP_ONE c = c := fun c => by simp [fpMul, FP_ONE]
+  cases m with
+  | zero =>
+      have hz : fixedPowDecayGo (2 * 0 + 1) FP_ONE b = b := by
+        simp [fixedPowDecayGo, fpMul, FP_ONE]
+      rw [hz]
+      show b ≤ fixedPowDecayGo (2 * 0) FP_ONE b
+      simp [fixedPowDecayGo]
+      exact hb
+  | succ k =>
+      have h2 : 2 * (k + 1) = (2 * k + 1) + 1 := by omega
+      rw [h2]
+      have d1 : (2 * k + 1 + 1 + 1) / 2 = k + 1 := by omega
+      have m1 : (2 * k + 1 + 1 + 1) % 2 = 1 := by omega
+      have d2 : (2 * k + 1 + 1) / 2 = k + 1 := by omega
+      have m2 : (2 * k + 1 + 1) % 2 = 0 := by omega
+      simp only [fixedPowDecayGo, d1, m1, d2, m2, hmul, if_true]
+      simp only [Nat.reduceEqDiff, if_false]
+      -- both sides now share the exponent `(k + 1) / 2` and the base `fpMul (fpMul b b) (fpMul b b)`,
+      -- so only the accumulators differ, and each branch of the parity test bounds them
+      have hbb : fpMul (fpMul b b) (fpMul b b) ≤ FP_ONE := le_trans (fpMul_le_left hb') hb'
+      have hacc : (if (k + 1) % 2 = 1 then fpMul b (fpMul b b) else b) ≤
+          (if (k + 1) % 2 = 1 then fpMul FP_ONE (fpMul b b) else FP_ONE) := by
+        split_ifs with h
+        · rw [hmul']
+          simpa [fpMul, Nat.mul_comm] using fpMul_le_left (a := fpMul b b) (b := b) hb
+        · exact hb
+      exact fixedPowDecayGo_mono_acc ((k + 1) / 2) hacc _ hbb
+
 /-! ===== The odd case, stated =====
 
 `Axioms.reward_monotone` records the odd case as needing "a statement bounding the factor the extra
