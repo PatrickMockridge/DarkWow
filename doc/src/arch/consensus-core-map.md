@@ -41,7 +41,7 @@ those are.
 | 1 | block mass balance (Pedersen sum) | `src/linear/src/proof_of_token_balance.rs` (`verify_proof_of_token_balance`) | `contrib/model/proof_of_token_balance.py` (428) | `CrossCutting.value_conservation_no_wraparound`, and `Semantics/Ledger.lean`'s `exec_perm` | `OBL-C1` |
 | 2 | nullifier replay gate, and maturity | `src/linear/src/chain_state.rs` (`connect_block`'s duplicate check; `check_coinbase_maturity`); `src/linear/src/lib.rs` (`COINBASE_MATURITY`) | `contrib/model/nullifier_lifecycle.py` (590) | the three fragments above | `OBL-C8`, `OBL-T4` |
 | 3 | commitment set | `src/linear/src/chain_state.rs` (`commitment_set : Mutex<BTreeMap<Commitment, BlockHeight>>`) | `contrib/model/chain_model.py`, `contrib/model/fee_model.py` | `Consensus/CommitmentSet.lean` | `OBL-C109` |
-| 4 | block and transaction validity | `src/linear/src/validation.rs` (`check_block_header`, `validate_block_structure`) | `contrib/model/chain_validation_model.py` (3871) | none | `OBL-C78`, `OBL-Z2` |
+| 4 | block and transaction validity | `src/linear/src/validation.rs` (`check_block_header`, `validate_block_structure`, `check_block_timestamp`) | `contrib/model/chain_validation_model.py` (3871) | `Consensus/BlockTimestamp.lean` (the timestamp rule only) | `OBL-C110` |
 | 5 | cumulative supply chain | `src/linear/src/supply_chain.rs` (`compute_next`) | `contrib/model/supply_chain_model.py` (1622) | `SupplyChain.lean` | `OBL-C45`, `OBL-C5` |
 
 ## Two questions this map settles rather than assumes
@@ -143,8 +143,27 @@ a component" was supposed to mean, and it was right.
    maturity rule nothing while costing the *set* its ability to answer at all. A model of a uniqueness
    rule — which is what "a set of commitments" suggests — would have been a model of nothing.
 
-   Then **validity**: the largest surface, the least existing structure, and the last mechanism on the
-   list.
+   Then **validity** — **partly landed 2026-09-24** as `Consensus/BlockTimestamp.lean`, and it is the
+   *smallest* thing on the list rather than the largest, which is a correction to this map in two ways.
+
+   **The map's register citation for this row was wrong.** It named `OBL-C78` and `OBL-Z2`, which are
+   both about a contract's `get_metadata` publishing a public-input vector that agrees with its circuit —
+   ZK metadata rows, not validity rows. A reader following the map would have found two rows about
+   something else. The correct row is `OBL-C110`, minted by the unit.
+
+   **And what landed is one rule, not the surface.** `BlockTimestamp.lean` models
+   `check_block_timestamp` — the median-of-11 rule — because it is the piece of validity that is a
+   *rule* rather than plumbing, and because the unit's real content was three divergences in the
+   specification of it (now `OBL-C110`), which needed the rule stated precisely to be about. The model
+   is four interface laws; the security claim the rule exists for — that an adversary controlling at most
+   `len / 2` of the window cannot lower the floor — is *stated in the module note and not proved*, and
+   nothing here checks the rule on a concrete window, because neither of Mathlib's sorts reduces in the
+   kernel. Both absences are recorded there rather than papered over.
+
+   What remains of validity is the bulk of `validation.rs`: header continuity, PoW stage checks, uncle
+   rules, and `validate_block_structure`'s coinbase conditions. That is a design pass of its own, and this
+   map's guess that it was "the largest surface with the least existing structure" is the part of this row
+   that still stands.
 4. **The supply chain** is already modelled. What remains is `OBL-C5`'s non-increase, which this
    campaign measured and left as a kernel-checked range plus a scan — see that row for why the obvious
    rescue lemmas are false.

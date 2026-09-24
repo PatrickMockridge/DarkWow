@@ -301,9 +301,12 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   (`Consensus/NullifierLifecycle.lean`, seven, which feeds the existing maturity gate from the store's
   recorded height and refuses a second spend), and the chain-level commitment set
   (`Consensus/CommitmentSet.lean`, seven — the *prune*, and the proof that it neither creates nor
-  destroys a maturity refusal). Still unmodelled: the **validity predicates**
-  (`src/linear/src/validation.rs`, specified by `contrib/model/chain_validation_model.py`), and the parts
-  of these mechanisms their models stop short of. The agreed shape of each, with its Rust, its Python
+  destroys a maturity refusal). **Partly** modelled: the **validity predicates** —
+  `Consensus/BlockTimestamp.lean` states the median-of-11 timestamp rule and its interface (four laws; the
+  security bound the rule exists for is stated in its note and *not* proved, and nothing checks the rule
+  on a concrete window because neither of Mathlib's sorts reduces in the kernel) — while the rest of
+  `src/linear/src/validation.rs` is unmodelled, as are the parts of these mechanisms their models stop
+  short of. The agreed shape of each, with its Rust, its Python
   specification and its non-vacuity witness, is `doc/src/arch/consensus-core-map.md` — and a unit that
   departs from it amends it in the same commit, which all three did. Separately: `Semantics/Ledger.lean`
   proves that disjoint calls commute without saying what a write set *is*, which is how `OBL-C100` was
