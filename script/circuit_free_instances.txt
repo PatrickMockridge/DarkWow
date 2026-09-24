@@ -263,3 +263,24 @@ src/contract/labor_market/proof/milestone_payment.zk : milestone_payment_amount 
 # would drive it end-to-end needs an attestation created first through the attestation contract,
 # which this spec has no setup for. Recorded as a test gap, not claimed as a control.
 src/contract/labor_market/proof/create_job.zk : attestation_id : host: labor_market entrypoint.rs:561-606 create_job_v1 requires the `Attestation::CheckAttestationV1 (0x0d)` child, routed to the configured attestation cid, decodes its params and refuses a mismatch; the callee (`attestation/src/entrypoint.rs:971`) reverts on an unknown or inactive id
+
+# --- attest_value: the claim's own parameter, and why disclosing it grants nothing --------------
+# `threshold` joins `predicate` (already declared free, above) as the second parameter of one claim:
+# the circuit asserts that an observed value satisfies `predicate` against `threshold`, and both are
+# chosen by the prover — who must be **the registered oracle**, which is what makes the claim the
+# operator's rather than anyone's. `authorize_oracle` (`oracle/src/entrypoint.rs:272-284`) looks the
+# oracle up in `oracles_db` by `oracle_id` and rejects an unknown one; the handler calls it at `:406`
+# and publishes `params.threshold` as this circuit's public input (`:192`), so a verifier reads the
+# threshold the operator claimed. Unlike `predicate` there is no bound to impose — every field
+# element is a well-formed threshold — so the safety argument is the one this file already uses for
+# the oracle aggregate's `min_result`/`max_result`: the value is the operator's own declaration about
+# its own output, and the expose grants no freedom the claim did not already grant.
+#
+# THE HONEST LIMIT, stated rather than implied: a threshold is an *assertion*, not a fact. Nothing in
+# this tree consumes an attestation — no contract makes a child call to `attest_value` (grep finds
+# none outside the oracle) and no other contract reads a `threshold` — so no host compares it against
+# a requirement of its own. When a consumer exists it must do exactly that, and this entry is where
+# it is told. The alternative — removing the expose, as the bridge's `token_minimum` was removed —
+# was not taken, and the difference is why: there the host ignored a value it was supposed to
+# enforce, while here the value *is* the claim's content, so disclosing it is the point.
+src/contract/oracle/proof/attest_value.zk : threshold : host: oracle entrypoint.rs:406 authorizes the prover as the registered oracle (`authorize_oracle`, :272-284, `db_get(oracles_db, …)` -> unknown oracle rejected) and :192 publishes `params.threshold` as this circuit's public input; no bound exists to impose, and the value is the operator's own claim
