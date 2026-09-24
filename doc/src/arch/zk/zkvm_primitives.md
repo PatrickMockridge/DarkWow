@@ -427,9 +427,13 @@ constrained symmetric Boolean gate — both branches (equal and not-equal) are
 fully constrained, leaving no unconstrained witness variables for a malicious
 prover to exploit.
 
-**Formal Verification**: ✅ **Fully Pure** — Lean 4 exhaustive search + purity
-theorem. This is the first fully constrained Boolean operator in the zkVM.
-See [Opcodes and Formal Verification](opcodes.md) for the proof.
+**Formal Verification**: ✅ **Fully Pure** — **`Gadgets.is_not_equal_fully_pure`**, with its two
+companion cases `is_not_equal_pure_when_equal` and `is_not_equal_delta_invert_unique_when_unequal`
+(`Gadgets.lean:292,227,255`). This is the first fully constrained Boolean operator in the zkVM.
+**Corrected 2026-09-24**: this line said "Lean 4 exhaustive search + purity theorem" while the
+sentence below it pointed at `opcodes.md` "for the proof" — the proofs are the three named above, and
+the exhaustive loop the older wording meant is in `proofs/lean/src/Main.lean`, a file in no `lean_lib`
+that no gate reads and that does not compile.
 
 **What it unlocks**:
 

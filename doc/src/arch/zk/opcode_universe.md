@@ -130,12 +130,12 @@ This is sound but ** bloats circuits** — a 2-opcode check becomes 3-4x more ex
 | `LessThanStrict` | No | ✅ | ✅ Production |
 | `LessThanLoose` | No | ✅ | ✅ Production |
 | `IsEqualBase` | Yes | ❌ | ⚠️ Bug (delta_invert unconstrained when a==b) |
-| `LessThanOrEqual` | Yes | ✅ | ✅ **Verified Safe** — all 37 production uses pair with `range_check(64, a)` (2026-07-16 audit). Delta-invert bug present without range check (see §5.3). |
+| `LessThanOrEqual` | Yes | ✅ | ✅ **Verified Safe** — every production use pairs with `range_check(64, a)`, and the audit is a *gate* rather than a reading: `scripts/check-circuit-instance-derivation.sh` reports **0 comparison operands with no range check beneath them, 1 declared exception**. **Corrected 2026-09-24:** this row said "all 37 production uses pair with `range_check(64, a)` (2026-07-16 audit)", and today there are **20 call sites across 6 proof directories** — `stablecoin` (7), `dex` (3), `purse`, `oracle`, `identity`, `bearer_bond` (1 each). The count had drifted *and* the family list below was wrong in both directions. Delta-invert bug present without range check (see §5.3). |
 | `IsNotEqual` | Yes | ✅ | ✅ **Verified Sound** (Lean 4) |
 | `BaseLtStrict` | Yes | ✅ | ✅ Verified |
 | `NotBase` | Yes | ✅ | ✅ Verified |
 
-**Comparison Opcode Status**: `LessThanStrict` and `LessThanLoose` are **constrain-only** (no return value). `IsNotEqual` is verified sound via Lean 4 exhaustive testing. `LessThanOrEqual` is **verified safe** in DarkWow — all 37 production uses across 6 contract families (identity, labor_market, dex, stablecoin, purse, attestation) pair with `range_check(64, a)`, eliminating the field-wraparound surface (2026-07-16 audit). The delta-invert bug remains when used without range check (see §5.3 matrix). `IsEqualBase` was fixed in 0f69cd89.
+**Comparison Opcode Status**: `LessThanStrict` and `LessThanLoose` are **constrain-only** (no return value). **Corrected 2026-09-24, and the corrections are the same two the sibling documents needed**: "verified sound via Lean 4 exhaustive testing" is not this layer's evidence — the exhaustive loop it means is in `proofs/lean/src/Main.lean`, a file in no `lean_lib` that no gate reads and that does not compile — and the claims are backed by *proofs*: `is_not_equal_fully_pure`, `is_not_equal_pure_when_equal` and `is_not_equal_delta_invert_unique_when_unequal` (`Gadgets.lean:292,227,255`) for the first, and `Gadgets.less_than_or_equal_sound` with `BaseDivGadget.less_than_or_equal_integer_reading` for the second. The "37 production uses across 6 contract families (identity, labor_market, dex, stablecoin, purse, attestation)" is stale in both parts: **20 call sites across 6 proof directories**, and the families are `stablecoin`, `dex`, `purse`, `oracle`, `identity`, `bearer_bond` — `labor_market` and `attestation` have none, and `oracle` and `bearer_bond` were not named. The audit is `check-circuit-instance-derivation.sh`, whose measured output is 0 unchecked comparison operands with 1 declared exception. The delta-invert bug remains when used without range check (see §5.3 matrix). `IsEqualBase` was fixed in 0f69cd89.
 
 **IsEqualBase bug** (known issue):
 ```zk
@@ -172,7 +172,11 @@ delta_invert = field_inverse(delta)
 
 ## 3. Critical Missing Opcodes for Full DeFi
 
+**Status corrected 2026-09-24: two of the seven below have since landed, and this section is a gap analysis rather than a status table.** Measured against the opcode table in `src/zkas/opcode.rs`, which is the authority: **`BaseDiv` (0x58) and `SetMembership` (0x59) are implemented and proved**, and **`SignatureVerify`, `Sha256`/`Keccak`, `PedersenCommit` and `Power` are still missing**. `RangeProof` (§3.7) is not a missing opcode — `range_check` (0x50) exists and that section is about *batching* checks, which remains unbuilt. The sections below are kept as written because the reasoning is why the work was done; each of the two that landed carries its own note.
+
 ### 3.1 BaseDiv — Field Division
+
+**IMPLEMENTED — `base_div`, opcode 0x58, and it is proved.** Corrected 2026-09-24: this section is titled "critical missing", and the opcode has been in the table since it landed. Its cost is no longer estimated either — **331 field multiplications** (254 squarings + 76 conditional + 1 final), read off the loop and transcribed in `proofs/lean/src/DarkFi/BaseDivGadget.lean`, where `sqMul_is_inverse` is the division property and `base_div_by_zero` the `b = 0` case. The bullets below also add two *alternatives* into one "total", which is not a figure anyone can use: an implementation takes the extended-Euclidean route or the Fermat one, not both.
 
 **Why it's critical**: Every ratio check in DeFi requires division.
 
@@ -256,6 +260,8 @@ commitment = ec_add(tmp1, tmp2);
 ```
 
 ### 3.5 SetMembership — Prove x ∈ S Without Revealing x
+
+**IMPLEMENTED — `set_membership`, opcode 0x59, and it took Option A below**: the opcode's `expected_root` is `constrain_instance`'d, so membership is proved against a public root rather than against the polynomial commitment of Option B. Recorded 2026-09-24.
 
 **Why it's critical**: Allowlists, circuitbreakers, regulatory compliance.
 
