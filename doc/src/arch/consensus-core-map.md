@@ -1,6 +1,7 @@
 # The Consensus State Core — a map, agreed before it is filled
 
-**Status: a plan, with its first two units filled.** Nothing here is a claim about how the code behaves;
+**Status: a plan, with five of its six mechanisms filled — and the sixth added by filling it.** Nothing
+here is a claim about how the code behaves;
 it is the agreed *shape* of the Lean models that the register's remaining consensus rows need, written
 down once so each one can be built against something reviewable rather than invented per unit. Where
 this document and a model disagree, the model is the artefact and this document is the stale one — so a
@@ -43,6 +44,7 @@ those are.
 | 3 | commitment set | `src/linear/src/chain_state.rs` (`commitment_set : Mutex<BTreeMap<Commitment, BlockHeight>>`) | `contrib/model/chain_model.py`, `contrib/model/fee_model.py` | `Consensus/CommitmentSet.lean` | `OBL-C109` |
 | 4 | block and transaction validity | `src/linear/src/validation.rs` (`check_block_header`, `validate_block_structure`, `check_block_timestamp`) | `contrib/model/chain_validation_model.py` (3871) | `Consensus/BlockTimestamp.lean` (the timestamp rule only) | `OBL-C110` |
 | 5 | cumulative supply chain | `src/linear/src/supply_chain.rs` (`compute_next`) | `contrib/model/supply_chain_model.py` (1622) | `SupplyChain.lean` | `OBL-C45`, `OBL-C5` |
+| 6 | the coinbase split | `bin/dwowd/src/block_acceptor.rs` (the four value checks); `src/linear/src/validation.rs` (the coinbase's own consistency); `src/sdk/src/blockchain.rs` (`split_for_uncle`) | `contrib/model/chain_model.py` (`connect_block`, the split *and* the note-level rule) | `Consensus/CoinbaseSplit.lean` | `OBL-C4`, `OBL-C7`, `OBL-C85` |
 
 ## Two questions this map settles rather than assumes
 
@@ -164,7 +166,33 @@ a component" was supposed to mean, and it was right.
    rules, and `validate_block_structure`'s coinbase conditions. That is a design pass of its own, and this
    map's guess that it was "the largest surface with the least existing structure" is the part of this row
    that still stands.
-4. **The supply chain** is already modelled. What remains is `OBL-C5`'s non-increase, which this
+4. **The coinbase split** — **landed 2026-09-24** as `Consensus/CoinbaseSplit.lean` (16 theorems, 14 at
+   budget 0), and it is **a mechanism this map did not have**. It was not in the five when the map was
+   agreed, and it was found by taking the validity row's own advice: the map said the rest of validity
+   "is a design pass of its own", the pass was started in `validation.rs`, and the surface it opened was
+   the block's *reward* rather than its header. So the map was incomplete in the direction it predicted
+   it might be, and this is the first unit that *added* a mechanism rather than filling one.
+
+   **What it is**: five quantities — the header's reward, the coinbase's declared pin, the note's
+   effective value, the coinbase call's input value, and the uncle-mint notes' sum — constrained by five
+   equations spread across **three** enforcement sites (the host's accept path, `validation.rs`, and the
+   WASM `pow_reward_v1` guard). The model is the conjunction, which is not a function in the tree, and
+   that is the whole reason it is worth having: no single file can ask which conjunct is load-bearing.
+
+   **And one of the two preceding units' findings is reversed here.** `OBL-C109` and `OBL-C110` were each
+   about a specification that misdescribed the code. Here the specification had the *load-bearing
+   analysis* — `chain_model.py` says in prose that "the value-level `verify_uncle_split` is NOT
+   sufficient: it checks the header and the declared pins, not the SPENDABLE NOTE" — and this unit's
+   headline theorem, `note_sum_is_load_bearing`, is that sentence mechanized as a refutation with its
+   witness. So the map's own framing of the specification as unreliable is itself incomplete: the
+   specification here was *right*, and earlier than the model.
+
+   **Two corrections to this map's neighbouring row.** The validity row says the rest of `validation.rs`
+   is "the largest surface with the least existing structure", and that clause still stands for the
+   header rules. But the coinbase's own consistency check in `validation.rs` turned out to belong to a
+   mechanism with working structure elsewhere — so "the rest of validity" is not one surface but at least
+   two, and the second is the reward path.
+5. **The supply chain** is already modelled. What remains is `OBL-C5`'s non-increase, which this
    campaign measured and left as a kernel-checked range plus a scan — see that row for why the obvious
    rescue lemmas are false.
 

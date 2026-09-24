@@ -295,20 +295,25 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   manual audit of the `.zk` files, not machine-verified extraction. The obligation that would
   make it mechanized is `Axioms.NoFreeInstances`, which is uninterpreted and unconsumed.
 - **The consensus state core is only partly modelled here, and what is missing is named rather than
-  implied.** Three mechanisms have models now, all at **budget 0**: the block-level Pedersen mass-balance
+  implied.** Four mechanisms have models now, all at **budget 0**: the block-level Pedersen mass-balance
   rule (`Consensus/MassBalance.lean`, ten theorems, transcribed from
   `contrib/model/proof_of_token_balance.py`), the nullifier lifecycle
   (`Consensus/NullifierLifecycle.lean`, seven, which feeds the existing maturity gate from the store's
-  recorded height and refuses a second spend), and the chain-level commitment set
+  recorded height and refuses a second spend), the chain-level commitment set
   (`Consensus/CommitmentSet.lean`, seven — the *prune*, and the proof that it neither creates nor
-  destroys a maturity refusal). **Partly** modelled: the **validity predicates** —
+  destroys a maturity refusal), and the coinbase split
+  (`Consensus/CoinbaseSplit.lean`, sixteen — the five equations three enforcement sites impose, with the
+  finding that of the five checks the **uncle-note sum** is the load-bearing one and the three value
+  checks are over-determined). **Partly** modelled: the **validity predicates** —
   `Consensus/BlockTimestamp.lean` states the median-of-11 timestamp rule and its interface (four laws; the
   security bound the rule exists for is stated in its note and *not* proved, and nothing checks the rule
   on a concrete window because neither of Mathlib's sorts reduces in the kernel) — while the rest of
   `src/linear/src/validation.rs` is unmodelled, as are the parts of these mechanisms their models stop
-  short of. The agreed shape of each, with its Rust, its Python
+  short of — including, in the coinbase split, the *per-note* key binding, which the model's sum equation
+  is necessary but not sufficient for. The agreed shape of each, with its Rust, its Python
   specification and its non-vacuity witness, is `doc/src/arch/consensus-core-map.md` — and a unit that
-  departs from it amends it in the same commit, which all three did. Separately: `Semantics/Ledger.lean`
+  departs from it amends it in the same commit, which all five did (the fifth by *adding* a mechanism the
+  map did not have). Separately: `Semantics/Ledger.lean`
   proves that disjoint calls commute without saying what a write set *is*, which is how `OBL-C100` was
   found; that gap is still open and is not part of the map.
 - **Poseidon is an opaque function, not the sponge.** `poseidon_hash_output` is a value-less
