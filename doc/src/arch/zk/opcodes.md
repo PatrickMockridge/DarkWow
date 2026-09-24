@@ -101,9 +101,30 @@ the phrase.
 
 | Opcode | Code | Verification |
 |--------|------|-------------|
-| `constrain_equal_base` | 0xe0 | Correct ✓ (permutation) |
+| `constrain_equal_base` | 0xe0 | Correct ✓ (permutation) — **the opcode's mechanism**, which is sound; its *use* is a separate obligation with a different verdict: `OBL-Z18` is `FAILS`, on 49 sites of which fifteen are genuine vacuous bindings. A reader who takes this cell for the second claim will be wrong |
 | `constrain_instance` | 0xf0 | Correct ✓ (instance column) |
 | `debug` | 0xff | No constraints |
+
+**Layer 1's four tables were audited against the Lean on 2026-09-24, one opcode at a time, and the
+result is worth recording because it is not uniform.** The comparison/boolean table's corrections are
+above. For the EC, hash, field-arithmetic and constraint tables: every verdict in them is backed —
+`ec_mul`/`ec_mul_base`/`ec_mul_short` by `ECOps.fixed_base_mul_uses_constant`, `ec_mul_var_base` by
+`variable_base_mul_is_prover_chosen` (which is why its "needs binding constraint" verdict was already
+right), `base_add`/`base_mul`/`base_sub`/`base_div` by `base_add_correctness`,
+`base_mul_correctness_bounded`, `base_sub_ge_case` and `BaseDivGadget`'s four division theorems
+(`sqMulGo_eq`, `sqMul_eq`, `sqMul_is_inverse`, `sqMul_zero` — the module has eight, the other four
+being about the quotient's bounds),
+`merkle_root` by `merkle_root_change_detection` and `sparse_merkle_root` by `smtCrh_injective`, and
+the constraint opcodes' "Correct ✓ (permutation)" is a statement about a copy constraint, which is
+correct by construction. `ec_get_x`/`ec_get_y` and `witness_base` are **not** backed by a theorem of
+their own and are registered where their obligations actually live — `OBL-Z4` (the pubkey-binding
+rule) and `OBL-Z18` (binding) — which is the right place for them, since their "Correct ✓" is a claim
+about what the encodings do with the values rather than about the opcode.
+
+The one finding in this group is `ec_add`'s row, corrected above: the opcode was described as
+*incomplete* addition, and it is the complete one. That direction of error — a note claiming a gap
+the code does not have — is the opposite of the rest of this page's corrections, and it is the reason
+the audit was done opcode by opcode rather than by spot-checking the cells that looked doubtful.
 
 ## Layer 2: Orchard-Class Circuit Audit
 
