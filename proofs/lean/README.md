@@ -235,13 +235,16 @@ on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   as of 2026-09-22 (no errors, no warnings — see "What the build currently says" above), but the
   build is what makes every statement below true, so run it before quoting any of them.
 - **The ρ-calculus is mechanized; its binding convention is not.** `Semantics/` defines the syntax,
-  structural congruence and a labelled transition system, and proves §1.2's parallel laws and both
-  barb facts as theorems about processes. What it does **not** have: a binding convention for `bang`,
-  so `Occurs` counts bound occurrences as well as free ones — which is why the restriction rule's
-  freshness is `FreshUpToScong`, the strongest condition expressible without one, and *stronger* than
-  the standard rule's, rejecting extrusions the literature permits; a substitution layer, so
-  `Label.tau` has no rule and every statement is about the free-action fragment; and weak bisimulation,
-  which is what would make `type-system.md` §9.2's `parallelMerge_correctness` stateable.
+  structural congruence, a labelled transition system and a substitution layer, and proves §1.2's
+  parallel laws, both barb facts, and the weak relation's algebra as theorems about processes. What it
+  does **not** have: a binding convention for `bang`, so `Occurs` counts bound occurrences as well as
+  free ones — which is why the restriction rule's freshness is `FreshUpToScong`, the strongest condition
+  expressible without one, and *stronger* than the standard rule's, rejecting extrusions the literature
+  permits; an α-rule on `SCong`, so `Step.tau` carries `CaptureFree` as a proviso and `subst` relabels
+  the channels that labels are made of (`subst_moves_the_label`) — adding the rule is a redesign of the
+  label predicates rather than a constructor, which is what that theorem measures; and a mechanization
+  of `type-system.md` §9.2's `parallelMerge_correctness`, whose `≈` conclusion the weak relation is what
+  would state it in.
 - **Halo2 constraint system semantics are not modeled.** We prove properties of the
   mathematical functions the opcodes implement, not that the Halo2 gate/region/
   copy-constraint system correctly implements those functions.
@@ -359,10 +362,11 @@ proofs/lean/
         ├── ECOps.lean          # EC operations, Orchard-class vulnerability detection
         ├── SupplyChain.lean    # Multi-block cumulative supply induction
         ├── HAZOP.lean          # HAZOP risk matrix and cross-cutting patterns
-        ├── Semantics/          # The ρ-calculus: syntax, congruence, transition system
-        │   ├── Proc.lean       # Processes with names folded in; quote/eval
-        │   ├── Congruence.lean # Structural congruence, and the freshness it needs
-        │   └── LTS.lean        # Transitions, barbs, and strong bisimulation
+        ├── Semantics/            # The ρ-calculus: syntax, congruence, substitution, transitions
+        │   ├── Proc.lean         # Processes with names folded in; quote/eval
+        │   ├── Congruence.lean   # Structural congruence, and the freshness it needs
+        │   ├── Substitution.lean # The binding convention, and the substitution it defines
+        │   └── LTS.lean          # Transitions, barbs, and strong and weak bisimulation
         ├── Combinatorial/      # L1/L2 combinatorial state space
         │   ├── StateSpace.lean      # L1 state space types
         │   ├── Transitions.lean     # State transition combinatorics
