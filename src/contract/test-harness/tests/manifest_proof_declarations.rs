@@ -437,17 +437,27 @@ fn every_contract_manifest_agrees_with_its_own_circuits() {
     );
 
     // The control: a parser that quietly stopped finding functions or circuits would otherwise
-    // pass every check vacuously. The counts are measurements of the tree on 2026-09-24 and move
-    // only when a contract is added or removed — which is when a reader should look.
+    // pass every check vacuously. The counts are measurements of the tree and move only when a
+    // contract is added or removed — which is when a reader should look.
+    //
+    // **Re-measured 2026-09-24, and the movement is the reason the control is worth its
+    // maintenance cost**: they read 25 and 388 when this test was written, and the four checks had
+    // been *passing on every site* the whole time the numbers were wrong — the panic was the
+    // control's, after the loop, so the A–D results above it were real. Six more contracts ship
+    // both a manifest and a proof directory now (auction, drain_protection, game_room, pool_stake,
+    // relayer_endowment and darkbet_exchange), and the site count grew with them. A count that
+    // fails loudly on drift is the opposite of the hardcoded-coverage failure `OBL-C79` records;
+    // what it must not become is a number nobody re-measures.
     assert_eq!(
         contracts.len(),
-        25,
-        "25 contracts ship both a manifest.toml and a proof/ directory; a different count means \
-         the enumeration above changed, not that the tree did"
+        31,
+        "31 contracts ship both a manifest.toml and a proof/ directory (measured 2026-09-24); a \
+         different count means either the enumeration above changed or a contract moved — and the \
+         contract list is printed above, so the reader can tell which"
     );
     assert_eq!(
-        sites, 388,
-        "the four checks walk 388 sites over those manifests; a different count means a parser \
-         stopped seeing them"
+        sites, 673,
+        "the four checks walk 673 sites over those manifests (measured 2026-09-24); a different \
+         count means a parser stopped seeing them, or the tree moved"
     );
 }
