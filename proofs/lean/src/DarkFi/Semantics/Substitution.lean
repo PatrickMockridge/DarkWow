@@ -19,6 +19,24 @@ is `False` definitionally, and `freshFree_bang` records that it is. This is not 
 standing beside the project's: `Proc`'s own constructor table already says the same in its blockchain
 column — "code as data — the deployed contract bytes", and deployed bytes are closed.
 
+**What the convention is worth is a theorem, and the agreement is one-directional.** `LTS.lean`'s Part
+4c puts the convention against the observations, and the two do not line up the way one would write them
+down first:
+
+* **Every barb has a free name.** `canBarb_has_free_name`: a barb of `P` is on a channel congruent to a
+  name that *does* occur free in `P`. No observable comes from nowhere, which is the direction any
+  well-formedness argument needs.
+* **A fresh name does not block a barb.** `not_barb_of_freshFree_is_false` refutes the converse with `0`
+  and `out ⌈ν0.0⌉ ⌈0⌉`: `0` occurs nowhere in that term — `FreeOccurs 0` is the disjunction
+  `0 = ⌈ν0.0⌉ ∨ 0 = ⌈0⌉`, both false — and the term barbs on `0` anyway, because a barb compares
+  *channels up to `SCong`* and `ν0.0 ≡ 0`. It is `Congruence.lean`'s `occurs_not_invariant_nu_nil` read
+  operationally.
+
+So freeness is a syntactic notion here and the congruence is what it is not invariant under, which is
+why no proviso in `LTS.lean` tests a name syntactically: `Step.nu`'s condition and `CanBarb`'s `nu`
+clause both test the *channel* with `SCong`. The layer gets away with a non-invariant convention because
+it only ever uses freeness in the direction that is sound.
+
 ## What this module does not have, stated rather than implied
 
 **No α-conversion, and so no laws that would need an occurs-check.** `SCong` has no renaming rule:

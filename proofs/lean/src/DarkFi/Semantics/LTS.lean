@@ -777,6 +777,170 @@ theorem canBarb_of_barb {P a : Proc} (h : Barb P a) : CanBarb a P := by
   · exact canBarb_of_step hs ⟨a, y, Or.inl rfl⟩
   · exact canBarb_of_step hs ⟨a, y, Or.inr rfl⟩
 
+/-- **A restriction is transparent to a channel it does not bind** — one half of `barb_nu_iff`, and the
+    half the *rule* gives directly.
+
+    `Step.nu` read as a statement about observations: `νx.P` barbs on `a` whenever `P` does and `a` is
+    not congruent to `x`. The rule's proviso is the hypothesis verbatim, so this is the direction in
+    which the proviso is *used* — `barb_of_canBarb`'s `nu` case is where that happens. -/
+@[axiom_budget 0]
+theorem barb_nu_of_not_scong {x P a : Proc} (h : ¬ SCong x a) (hb : Barb P a) :
+    Barb (Proc.nu x P) a := by
+  rcases hb with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+  · exact Or.inl ⟨y, Proc.nu x P', Step.nu (by simpa only [Label.subject] using h) hs⟩
+  · exact Or.inr ⟨y, Proc.nu x P', Step.nu (by simpa only [Label.subject] using h) hs⟩
+
+/-- **A `CanBarb` is a barb** — the reading-back direction, and the one that makes the predicate mean
+    something instead of merely being invariant. By induction on the term: `nil` and `bang` are `False`
+    outright, `out` and `inp` are `barb_out_iff` and `barb_inp_iff`, `rep` and `par` push the inductive
+    hypothesis under the rule that mentions them, and `nu` is `barb_nu_of_not_scong` — the restriction's
+    clause *is* the conclusion of that theorem, which is why the obligation closes.
+
+    With `canBarb_of_barb` this is the `↔`. That matters beyond tidiness: without it `CanBarb` would be
+    an invariant whose only use is the first conjunct of its `nu` clause, and a reader would be right to
+    suspect it of having been shaped to fit. With it, the predicate *is* the barb, read off the syntax,
+    and the obligation is a statement about the calculus rather than about a device. -/
+@[axiom_budget 0]
+theorem barb_of_canBarb (P : Proc) : ∀ a : Proc, CanBarb a P → Barb P a := by
+  induction P with
+  | nil => intro a h; simp only [CanBarb] at h
+  | bang _ _ => intro a h; simp only [CanBarb] at h
+  | out c d => intro a h; exact (barb_out_iff (x := c) (y := d) (w := a)).2 h
+  | inp c b P => intro a h; exact (barb_inp_iff (c := c) (b := b) (P := P) (w := a)).2 h
+  | nu x P _ ih => intro a h; exact barb_nu_of_not_scong h.1 (ih a h.2)
+  | rep P ih =>
+    intro a h
+    rcases ih a h with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+    · exact (barb_rep_unfold (P := P) (x := a)).2 (Or.inl ⟨y, _, Step.par hs⟩)
+    · exact (barb_rep_unfold (P := P) (x := a)).2 (Or.inr ⟨y, _, Step.par hs⟩)
+  | par P Q ihP ihQ =>
+    intro a h
+    rcases h with hP | hQ
+    · rcases ihP a hP with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+      · exact Or.inl ⟨y, _, Step.par hs⟩
+      · exact Or.inr ⟨y, _, Step.par hs⟩
+    · rcases ihQ a hQ with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+      · exact Or.inl ⟨y, _, step_par_right (Q := P) hs⟩
+      · exact Or.inr ⟨y, _, step_par_right (Q := P) hs⟩
+
+/-! ==========================================================================
+   Part 4c — The barb calculus, and the binding convention it does not respect
+
+   With `CanBarb` proved both ways, `Barb` becomes a predicate a reader can *compute*: the cases below
+   are its recursion, and they are §1.1's sentence — "`P` exhibits barb `↓x` if `P` can engage in input
+   or output on channel `x`" — as equations rather than as prose. `barb_out_iff` and `barb_inp_iff` are
+   the atoms, `barb_nu_iff` is the restriction, and this part adds the four structural cases, so that a
+   barb set can be read off a term the way `CanStep` reads off a label set.
+
+   The second half of the part is a **correction to this layer's record**, and it is about the binding
+   convention `Substitution.lean` fixes. The obvious theorem connecting freeness to the observations —
+
+       ¬ FreeOccurs z P  →  SCong z c  →  ¬ Barb P c            ("a fresh name blocks a barb")
+
+   — is **false**, refuted below. `Barb` is a function of the channel *up to congruence* and `ν0.0 ≡ 0`,
+   so `out ⌈ν0.0⌉ b` barbs on `0` while `0` does not occur in that term *at all* — the barb-level
+   restatement of `Congruence.lean`'s `occurs_not_invariant_nu_nil`, and the reason every proviso in
+   this file tests a *channel* with `SCong` instead of testing a *name* syntactically.
+
+   The reverse implication is true (`canBarb_has_free_name`): every barb is on a channel congruent to a
+   name that does occur in the term. So freeness is the right notion in the direction a
+   well-formedness argument wants and the wrong one in the direction a proviso wants — and that
+   asymmetry is why the provisos look the way they do.
+   ========================================================================== -/
+
+/-- `0` exhibits no barb: it takes no transition at all. The `nil` case of the barb calculus, and the
+    first of the four structural equations. -/
+@[axiom_budget 0]
+theorem barb_nil (c : Proc) : ¬ Barb Proc.nil c :=
+  fun h => canBarb_of_barb h
+
+/-- A quote exhibits no barb, however much its interior does. The `bang` case, and §0's "treat name
+    `x` as data" read as an observation statement: the interior of `⌈P⌉` is reached through `eval`, so
+    nothing `P` can do is a barb of the quote. -/
+@[axiom_budget 0]
+theorem barb_bang {P c : Proc} : ¬ Barb (Proc.bang P) c :=
+  fun h => canBarb_of_barb h
+
+/-- **The barbs of a parallel composition are the union of the components'.** The law that makes a barb
+    set computable from the syntax, and the reason a `Finset` of tags could stand in for it in the
+    deleted layer *on the terms that layer considered* — the union is the right shape; what was missing
+    was the transition system underneath it. -/
+@[axiom_budget 0]
+theorem barb_par_iff {P Q c : Proc} : Barb (Proc.par P Q) c ↔ Barb P c ∨ Barb Q c :=
+  ⟨fun h => (canBarb_of_barb h).elim (fun hP => Or.inl (barb_of_canBarb P c hP))
+      (fun hQ => Or.inr (barb_of_canBarb Q c hQ)),
+    fun h => h.elim
+      (fun hP => barb_of_canBarb (Proc.par P Q) c (Or.inl (canBarb_of_barb hP)))
+      (fun hQ => barb_of_canBarb (Proc.par P Q) c (Or.inr (canBarb_of_barb hQ)))⟩
+
+/-- **A replicated process has its body's barbs, and no others.** Replication adds no observable of its
+    own — which is §0's reading of `!P` (a supply of fresh names, not a new action) stated as a barb
+    equation. `barb_rep_unfold` (Part 4) is the same fact one unfolding at a time; this one is the
+    closed form, and the two are consistent because unfolding is what the congruence gives. -/
+@[axiom_budget 0]
+theorem barb_rep_iff {P c : Proc} : Barb (Proc.rep P) c ↔ Barb P c :=
+  ⟨fun h => barb_of_canBarb P c (canBarb_of_barb (P := Proc.rep P) h),
+    fun h => barb_of_canBarb (Proc.rep P) c (canBarb_of_barb (P := P) h)⟩
+
+/-- **Every barb is on a name that occurs in the term**, up to congruence. The *positive* half of the
+    relation between the binding convention and the observations, and the half that is true: a barb has
+    to come from somewhere, and where it comes from is a free occurrence of a congruent name.
+
+    Read as a well-formedness statement, which is how the provisos use it: to show that `P` cannot barb
+    on `c` it suffices to know that nothing congruent to `c` occurs in `P` — not that `c` itself does
+    not, because the congruence moves names (`not_barb_of_freshFree_is_false` is the other half).
+
+    The binder case is where the convention is used: `νx.P`'s barb must come from `P` *and* not be `x`,
+    and the second is derived from the first component of the `nu` clause rather than assumed. -/
+@[axiom_budget 0]
+theorem canBarb_has_free_name (P : Proc) : ∀ c : Proc, CanBarb c P → ∃ z : Proc, FreeOccurs z P ∧ SCong z c := by
+  induction P with
+  | nil => intro c h; simp only [CanBarb] at h
+  | bang _ _ => intro c h; simp only [CanBarb] at h
+  | out a b => intro c h; exact ⟨a, Or.inl rfl, h⟩
+  | inp a b P => intro c h; exact ⟨a, Or.inl rfl, h⟩
+  | nu x P _ ih =>
+    intro c h
+    obtain ⟨z, hz, hsc⟩ := ih c h.2
+    exact ⟨z, ⟨fun hzx => h.1 (hzx ▸ hsc), hz⟩, hsc⟩
+  | rep P ih =>
+    intro c h
+    obtain ⟨z, hz, hsc⟩ := ih c h
+    exact ⟨z, hz, hsc⟩
+  | par P Q ihP ihQ =>
+    intro c h
+    rcases h with h | h
+    · obtain ⟨z, hz, hsc⟩ := ihP c h
+      exact ⟨z, Or.inl hz, hsc⟩
+    · obtain ⟨z, hz, hsc⟩ := ihQ c h
+      exact ⟨z, Or.inr hz, hsc⟩
+
+/-- **The tempting law about freshness is false**, by the same mechanism as `occurs_not_invariant_nu_nil`
+    — and this is that refutation read operationally.
+
+    "A name with no free occurrence in `P` blocks `P`'s barbs" fails at `z = 0` and
+    `P = out ⌈ν0.0⌉ ⌈0⌉`: `0` does not occur in `P` at all (`FreeOccurs 0 P` is the disjunction
+    `0 = ⌈ν0.0⌉ ∨ 0 = ⌈0⌉`, both false), and `P` barbs on `0` anyway, because its channel is the term
+    `⌈ν0.0⌉` and `SCong ⌈ν0.0⌉ ⌈0⌉` — a name the term does not literally mention.
+
+    That is the *only* mechanism: the failure needs the congruence to move a name into channel position,
+    which is why the positive direction holds and this one does not. Stated as the refutation of the
+    universal so that what fails is the tempting statement, the shape `Congruence.lean`'s
+    `occurs_not_scong_invariant` and `Substitution.lean`'s `subst_of_freshFree_is_false` use. -/
+@[axiom_budget 0]
+theorem not_barb_of_freshFree_is_false :
+    ¬ (∀ (z P c : Proc), FreshFree z P → SCong z c → ¬ Barb P c) := by
+  intro h
+  have hnf : FreshFree Proc.nil
+      (Proc.out (Proc.nu Proc.nil Proc.nil) (Proc.bang Proc.nil)) := by
+    rintro (hc | hc)
+    · cases hc
+    · cases hc
+  exact h Proc.nil (Proc.out (Proc.nu Proc.nil Proc.nil) (Proc.bang Proc.nil)) Proc.nil hnf
+    (SCong.refl Proc.nil)
+    ((barb_out_iff (x := Proc.nu Proc.nil Proc.nil) (y := Proc.bang Proc.nil)
+      (w := Proc.nil)).2 (SCong.nu_nil Proc.nil))
+
 /-! ==========================================================================
    Part 6 — Strong bisimulation
 
@@ -1012,52 +1176,6 @@ theorem parallel_nil (P : Proc) : StrongBisim (Proc.par P Proc.nil) P :=
    Read with §0's notation: `0` is `Proc.nil`, `⌈P⌉` is `Proc.bang P`, `νx.P` is `Proc.nu x P`,
    `x!(y)` is `Proc.out x y`.
    ========================================================================== -/
-
-/-- **A restriction is transparent to a channel it does not bind** — one half of `barb_nu_iff`, and the
-    half the *rule* gives directly.
-
-    `Step.nu` read as a statement about observations: `νx.P` barbs on `a` whenever `P` does and `a` is
-    not congruent to `x`. The rule's proviso is the hypothesis verbatim, so this is the direction in
-    which the proviso is *used* — `barb_of_canBarb`'s `nu` case is where that happens. -/
-@[axiom_budget 0]
-theorem barb_nu_of_not_scong {x P a : Proc} (h : ¬ SCong x a) (hb : Barb P a) :
-    Barb (Proc.nu x P) a := by
-  rcases hb with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
-  · exact Or.inl ⟨y, Proc.nu x P', Step.nu (by simpa only [Label.subject] using h) hs⟩
-  · exact Or.inr ⟨y, Proc.nu x P', Step.nu (by simpa only [Label.subject] using h) hs⟩
-
-/-- **A `CanBarb` is a barb** — the reading-back direction, and the one that makes the predicate mean
-    something instead of merely being invariant. By induction on the term: `nil` and `bang` are `False`
-    outright, `out` and `inp` are `barb_out_iff` and `barb_inp_iff`, `rep` and `par` push the inductive
-    hypothesis under the rule that mentions them, and `nu` is `barb_nu_of_not_scong` — the restriction's
-    clause *is* the conclusion of that theorem, which is why the obligation closes.
-
-    With `canBarb_of_barb` this is the `↔`. That matters beyond tidiness: without it `CanBarb` would be
-    an invariant whose only use is the first conjunct of its `nu` clause, and a reader would be right to
-    suspect it of having been shaped to fit. With it, the predicate *is* the barb, read off the syntax,
-    and the obligation is a statement about the calculus rather than about a device. -/
-@[axiom_budget 0]
-theorem barb_of_canBarb (P : Proc) : ∀ a : Proc, CanBarb a P → Barb P a := by
-  induction P with
-  | nil => intro a h; simp only [CanBarb] at h
-  | bang _ _ => intro a h; simp only [CanBarb] at h
-  | out c d => intro a h; exact (barb_out_iff (x := c) (y := d) (w := a)).2 h
-  | inp c b P => intro a h; exact (barb_inp_iff (c := c) (b := b) (P := P) (w := a)).2 h
-  | nu x P _ ih => intro a h; exact barb_nu_of_not_scong h.1 (ih a h.2)
-  | rep P ih =>
-    intro a h
-    rcases ih a h with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
-    · exact (barb_rep_unfold (P := P) (x := a)).2 (Or.inl ⟨y, _, Step.par hs⟩)
-    · exact (barb_rep_unfold (P := P) (x := a)).2 (Or.inr ⟨y, _, Step.par hs⟩)
-  | par P Q ihP ihQ =>
-    intro a h
-    rcases h with hP | hQ
-    · rcases ihP a hP with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
-      · exact Or.inl ⟨y, _, Step.par hs⟩
-      · exact Or.inr ⟨y, _, Step.par hs⟩
-    · rcases ihQ a hQ with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
-      · exact Or.inl ⟨y, _, step_par_right (Q := P) hs⟩
-      · exact Or.inr ⟨y, _, step_par_right (Q := P) hs⟩
 
 /-- **What a restriction hides: its own name, and nothing else.**
 
