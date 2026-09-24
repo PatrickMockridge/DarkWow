@@ -122,6 +122,20 @@ run_gate "exec/apply phase rule"          bash "$SCRIPT_DIR/check-phase-host-fun
 # too. The detector itself was left deliberately shallow — see that file's header for why a cleverer
 # classifier was rejected.
 run_gate "circuit pubkey binding"         bash "$SCRIPT_DIR/check-pubkey-binding.sh"
+# OBL-C99: a client builder's params are the params the contract decodes — the wallet's call is the
+# contract's call. A client that declares its own params type is a second encoder for one function,
+# and the two drift: `drain_protection`'s `initialize`, `execute` and `transfer` builders returned
+# four-to-five-field types where the contract decodes eight to ten, so a wallet following the builder
+# API built a call the entrypoint refused as truncated — and **nothing read both sides**, which is
+# why it survived. The three types are gone (removed in the same commit that added this gate), so
+# rule (B) — a client-declared params codec — is a clean ratchet with no exception list. Rule (A) —
+# a client type whose *name* is a model type's minus its version suffix — is name-based and therefore
+# shallow, stated as such in the script's header; `dao_escrow`'s two sites are declared in
+# `script/client_params_alignment_exceptions.txt` (OBL-C103) because those client files are another
+# session's in-flight rewrite, not because the sites are sound. Negative-controlled both ways before
+# wiring: with the exception list removed the gate exits 1 naming both dao_escrow sites, and with a
+# client codec injected into an unrelated contract it exits 1 naming that struct.
+run_gate "client params alignment"        bash "$SCRIPT_DIR/check-client-params-alignment.sh"
 # OBL-C76: the tests that do not run in their crate's DEFAULT configuration are enumerated and
 # declared. `make test` runs `--release --all-features --workspace`, so this gate's subject is not the gate run — it is the ad-hoc `cargo test -p <crate>` one reaches
 # for to check a single crate, and the claim that follows it: 172 tests where `--all-features` lists

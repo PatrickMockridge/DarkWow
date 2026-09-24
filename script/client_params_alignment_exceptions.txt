@@ -1,0 +1,22 @@
+# Rule-(A) exceptions for `scripts/check-client-params-alignment.sh` (OBL-C99 / OBL-C103)
+#
+# Format:  <contract> <client struct> : <reason, citing a register ID>
+#
+# The key is the contract and the struct's **name**, not a line number, so an edit above a site moves
+# nothing. The gate prints a matching finding as EXCEPTED with the reason and exits 0; every other
+# rule-(A) finding exits 1, a *new* one included.
+#
+# WHAT BELONGS HERE. A site whose two sides have been read — the client type and the model type, in
+# one command — and which is scheduled by a register row. The entry names that row.
+#
+# WHAT DOES NOT BELONG HERE. A site nobody has read. Rule (A) is name-based and therefore shallow: it
+# catches a client type that shadows a model type by name, and says nothing about a second params
+# type named something else. An entry here is the record of a reading, not a substitute for one.
+#
+# There are no rule-(B) entries, because rule (B) has no exceptions by design: a client-declared
+# params codec is the defect itself, and the three that existed (drain_protection's
+# `InitializeParams`, `ExecuteParams`, `TransferParams`) were removed on 2026-09-24 rather than
+# declared, in the same commit that added this gate.
+
+dao_escrow InitializeParams : OBL-C103 — the builder returns a two-field client type beside the model's `InitializeParamsV1` (instance_seed, dao_bulla, endowment_asset_id, bulla_blind, …), so it cannot build a decodable call. Declared rather than fixed because the six files of that client are being rewritten in flight for the V1-vs-V2 client hazard; editing one of them here would collide with that work.
+dao_escrow PayPremiumParams : OBL-C103 — the same shape: four fields (`dao_escrow_bulla`, `value`, `asset_id`, `period`) against the model's `PayPremiumParamsV1`, which also carries the membership note, the Pedersen value commitment and the member's exit fields.

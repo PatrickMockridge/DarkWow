@@ -33,11 +33,15 @@
 //!     .fund_id(fund_id)
 //!     .spend_authority(owner_key)
 //!     .dao_escrow_bulla(bulla)
+//!     .authority(AuthorityCallData::new(authority_secret, fund_id))
 //!     .build()?;
 //!
-//! // 2. Propose a large withdrawal
+//! // 2. Propose a large withdrawal. A proposal is identified by a **message hash** — the
+//! // `VoteAction` enum this example used to name was replaced by MultiSig composition, which is
+//! // why `propose` takes a hash and `vote`/`execute` name the id derived from it (`OBL-C98`).
 //! let propose = ProposeBuilder::new()
-//!     .action(VoteAction::LargeWithdrawal { amount: 1000, recipient: dest })
+//!     .fund_id(fund_id)
+//!     .message_hash(message_hash)
 //!     .prover_pubkey(proposer_key)
 //!     .vote_period_blocks(1000)
 //!     .build()?;
@@ -89,11 +93,7 @@ pub mod exit;
 pub mod zkbins;
 
 use dwow_sdk::{
-    crypto::{
-        constants::DRK_POSEIDON_DOMAIN_TX_BINDING, pasta_prelude::PrimeField, poseidon_hash,
-        PublicKey, SecretKey,
-    },
-    error::ContractError,
+    crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
 
@@ -105,33 +105,49 @@ use dwow_core::{
 };
 
 use crate::model::{
-    DrainConfig, ExitParamsV1, FundId, LockParamsV1, ProposeParamsV1, RateLimit,
-    UnlockParamsV1, UpdateConfigParamsV1, VoteParamsV1,
+    DrainConfig, ExecuteParamsV1, ExitParamsV1, FundId, InitializeParamsV1, LockParamsV1,
+    ProposeParamsV1, RateLimit, TransferParamsV1, UnlockParamsV1, UpdateConfigParamsV1,
+    VoteParamsV1,
 };
 
 // ============================================================================
-// NOTE: Placeholder implementations
+// Every builder returns the contract's own params type
 // ============================================================================
 //
-// The actual ZK proof generation requires the zkas circuit binary files
-// which are compiled from the .zk circuit definitions.
+// The circuits exist (`proof/*.zk`, nine of them), and `create_authority_proof` below is what makes
+// the proofs for the eight authority ones. Each `build()` here returns a `model::*V1` — the type the
+// entrypoint decodes — and the five authority values come from one `AuthorityCallData`, so the
+// params and the proof are derived from the same two secrets and cannot disagree (`OBL-C78`).
 //
-// These builders are structured to match the expected API once circuits exist.
+// Two encodings would be one too many: `OBL-C99` is what that cost while three of these builders
+// returned client-side types with fewer fields than the contract decodes.
 // ============================================================================
 
 /// Builder for `DrainProtection::InitializeV1`
 ///
 /// Creates a new protected fund with governance controls.
+///
+/// **It returns the model's `InitializeParamsV1`** (`OBL-C99`). It used to return a client-side
+/// `InitializeParams` with four fields where the contract decodes ten, so a wallet following this
+/// builder built a call the entrypoint refused as truncated. The type is gone; the two fields it
+/// lacks — the instance seed and the five authority values `initialize.zk` instances — are settable
+/// here, and the authority ones come from one `AuthorityCallData` so the params and the proof cannot
+/// disagree (`OBL-C78`).
 pub struct InitializeBuilder {
+    instance_seed: [u8; 32],
     fund_id: FundId,
     spend_authority: PublicKey,
     dao_escrow_bulla: pallas::Base,
     drain_config: DrainConfig,
+    /// The authority inputs `initialize.zk` instances (`OBL-C78`); zero by default, like the other
+    /// builders. A real call sets it with `authority`, and `create_authority_proof` is given the same.
+    authority: AuthorityCallData,
 }
 
 impl InitializeBuilder {
     pub fn new() -> Self {
         Self {
+            instance_seed: [0u8; 32],
             fund_id: pallas::Base::zero(),
             spend_authority: if crate::deterministic_zk_enabled() {
                 let mut rng = rand::rngs::StdRng::seed_from_u64(0);
@@ -141,7 +157,19 @@ impl InitializeBuilder {
             },
             dao_escrow_bulla: pallas::Base::zero(),
             drain_config: DrainConfig::default(),
+            authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()),
         }
+    }
+
+    /// The authority inputs the proof is made with (`OBL-C78`).
+    pub fn authority(mut self, call: AuthorityCallData) -> Self {
+        self.authority = call;
+        self
+    }
+
+    pub fn instance_seed(mut self, seed: [u8; 32]) -> Self {
+        self.instance_seed = seed;
+        self
     }
 
     pub fn fund_id(mut self, id: FundId) -> Self {
@@ -164,43 +192,20 @@ impl InitializeBuilder {
         self
     }
 
-    /// Build the initialize call parameters
-    pub fn build(&self) -> Result<InitializeParams, &'static str> {
-        Ok(InitializeParams {
+    /// Build the initialize call parameters — the contract's own type.
+    pub fn build(&self) -> Result<InitializeParamsV1, &'static str> {
+        let pi = self.authority.compute_public_inputs();
+        Ok(InitializeParamsV1 {
+            instance_seed: self.instance_seed,
             fund_id: self.fund_id,
             spend_authority: self.spend_authority,
             dao_escrow_bulla: self.dao_escrow_bulla,
             drain_config: self.drain_config.clone(),
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct InitializeParams {
-    pub fund_id: FundId,
-    pub spend_authority: PublicKey,
-    pub dao_escrow_bulla: pallas::Base,
-    pub drain_config: DrainConfig,
-}
-
-impl InitializeParams {
-    pub fn encode(&self) -> Vec<u8> {
-        let dc = self.drain_config.encode();
-        let mut b = Vec::with_capacity(97+dc.len());
-        b.extend_from_slice(&self.fund_id.to_repr());
-        b.extend_from_slice(&self.spend_authority.to_bytes());
-        b.extend_from_slice(&self.dao_escrow_bulla.to_repr());
-        b.extend_from_slice(&dc);
-        b
-    }
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 97 { return Err(ContractError::IoError("InitializeParams: too short".into())); }
-        Ok(InitializeParams {
-            fund_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeParams: invalid fund_id".into()))?,
-            spend_authority: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParams: invalid spend_authority: {}", e)))?,
-            dao_escrow_bulla: Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeParams: invalid dao_escrow_bulla".into()))?,
-            drain_config: DrainConfig::decode(&data[96..])?,
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
         })
     }
 }
@@ -388,10 +393,17 @@ impl VoteBuilder {
 
 /// Builder for `DrainProtection::ExecuteV1`
 ///
-/// Execute a concluded proposal.
+/// Execute a concluded proposal. **It returns the model's `ExecuteParamsV1`** (`OBL-C99`); the
+/// client-side `ExecuteParams` it used to return was the pre-`OBL-C78` shape — two fields where the
+/// contract decodes eight, with no authority values and no fund — so its builder could not produce a
+/// decodable call. The fund is not decoration: `OBL-C98` made `execute` act on the fund the call
+/// names, and `require_fund_authority` is checked against it.
 pub struct ExecuteBuilder {
     proposal_id: pallas::Base,
     signature: pallas::Base,
+    fund_id: FundId,
+    /// The authority inputs `execute.zk` instances (`OBL-C78`); zero by default.
+    authority: AuthorityCallData,
 }
 
 impl ExecuteBuilder {
@@ -399,7 +411,21 @@ impl ExecuteBuilder {
         Self {
             proposal_id: pallas::Base::zero(),
             signature: pallas::Base::zero(),
+            fund_id: pallas::Base::zero(),
+            authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()),
         }
+    }
+
+    /// The authority inputs the proof is made with (`OBL-C78`).
+    pub fn authority(mut self, call: AuthorityCallData) -> Self {
+        self.authority = call;
+        self
+    }
+
+    /// The fund the proposal belongs to (`OBL-C98`).
+    pub fn fund_id(mut self, id: FundId) -> Self {
+        self.fund_id = id;
+        self
     }
 
     pub fn proposal_id(mut self, id: pallas::Base) -> Self {
@@ -412,15 +438,19 @@ impl ExecuteBuilder {
         self
     }
 
-    pub fn build(&self) -> Result<ExecuteParams, &'static str> {
-        Ok(ExecuteParams { proposal_id: self.proposal_id, signature: self.signature })
+    pub fn build(&self) -> Result<ExecuteParamsV1, &'static str> {
+        let pi = self.authority.compute_public_inputs();
+        Ok(ExecuteParamsV1 {
+            proposal_id: self.proposal_id,
+            signature: self.signature,
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
+            fund_id: self.fund_id,
+        })
     }
-}
-
-#[derive(Debug, Clone, )]
-pub struct ExecuteParams {
-    pub proposal_id: pallas::Base,
-    pub signature: pallas::Base,
 }
 
 /// Builder for `DrainProtection::ExitV1`
@@ -531,18 +561,24 @@ impl ExitBuilder {
 
 /// Builder for `DrainProtection::TransferV1`
 ///
-/// Transfer funds with rate limiting.
+/// Transfer funds with rate limiting. **It returns the model's `TransferParamsV1`** (`OBL-C99`); the
+/// client-side `TransferParams` it used to return had no `fund_id` at all and none of the five
+/// authority values, so its `encode()` was 170 bytes short of what the contract decodes.
 pub struct TransferBuilder {
+    fund_id: FundId,
     amount: u64,
     recipient: PublicKey,
     signature: pallas::Base,
     exceeds_rate_limit: bool,
     vote_proposal_id: Option<pallas::Base>,
+    /// The authority inputs `transfer.zk` instances (`OBL-C78`); zero by default.
+    authority: AuthorityCallData,
 }
 
 impl TransferBuilder {
     pub fn new() -> Self {
         Self {
+            fund_id: pallas::Base::zero(),
             amount: 0,
             recipient: if crate::deterministic_zk_enabled() {
                 let mut rng = rand::rngs::StdRng::seed_from_u64(0);
@@ -553,7 +589,19 @@ impl TransferBuilder {
             signature: pallas::Base::zero(),
             exceeds_rate_limit: false,
             vote_proposal_id: None,
+            authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()),
         }
+    }
+
+    /// The authority inputs the proof is made with (`OBL-C78`).
+    pub fn authority(mut self, call: AuthorityCallData) -> Self {
+        self.authority = call;
+        self
+    }
+
+    pub fn fund_id(mut self, id: FundId) -> Self {
+        self.fund_id = id;
+        self
     }
 
     pub fn amount(mut self, amount: u64) -> Self {
@@ -581,24 +629,22 @@ impl TransferBuilder {
         self
     }
 
-    pub fn build(&self) -> Result<TransferParams, &'static str> {
-        Ok(TransferParams {
+    pub fn build(&self) -> Result<TransferParamsV1, &'static str> {
+        let pi = self.authority.compute_public_inputs();
+        Ok(TransferParamsV1 {
+            fund_id: self.fund_id,
             amount: self.amount,
             recipient: self.recipient,
             signature: self.signature,
             exceeds_rate_limit: self.exceeds_rate_limit,
             vote_proposal_id: self.vote_proposal_id,
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
         })
     }
-}
-
-#[derive(Debug, Clone, )]
-pub struct TransferParams {
-    pub amount: u64,
-    pub recipient: PublicKey,
-    pub signature: pallas::Base,
-    pub exceeds_rate_limit: bool,
-    pub vote_proposal_id: Option<pallas::Base>,
 }
 
 /// Builder for `DrainProtection::LockV1`
