@@ -13,12 +13,12 @@
 # module, has to name the path it is about. Those citations are evidence rather than claims, and the
 # gate cannot tell the two apart — so each is declared here with the reason that makes it evidence.
 
-# OBL-T7 — the transcription unit, in flight. The register records it before its artefacts are
-# committed, which is precisely the state this gate exists to catch; it is exempted rather than
-# ignored so that the exemption is visible and expires.
-scripts/gen_circuit_transcription.py : OBL-T7 : generator untracked in the working tree; the unit is in flight and the entry goes when it commits
-scripts/lean-build.sh : OBL-T7 : the one sanctioned Lean build guard (a cgroup around LEAN_NUM_THREADS=4); untracked, same unit
-src/Transcribed.lean : OBL-T7 : Lean shorthand for proofs/lean/src/Transcribed.lean, untracked; same unit
+# OBL-T7 — the transcription unit **landed** on 2026-09-24 (`3e5dc703ed` for the artefact and its
+# generator, `e5ef7c1c96` for the build guard), so the three exemptions that covered its artefacts
+# while they were untracked are gone — which is what this file says an entry does when its unit
+# commits ("the entry goes when it commits"). What the gate said when they went stale, for the record:
+# `stale exemption … it now resolves, or the register no longer cites it, so the entry is covering
+# nothing`. Kept below is the one line that is *evidence* rather than a claim.
 Circuits/Transcribed.lean : OBL-T7 : cited as the *rejected* name — the row's own words are that the file is "not Circuits/Transcribed.lean"
 
 # OBL-Z6 — a row whose subject IS a stale citation, so it names the stale path as its evidence. The

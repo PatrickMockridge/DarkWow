@@ -97,7 +97,9 @@ run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain
 # FAIL that day (OBL-C20), because a position where the circuit instances a value and the metadata
 # pushes a literal constant is not a name-mapping question. That class is the other session's
 # OBL-C78/OBL-C79, so it is named here and not duplicated. A "the full gate is green" claim is
-# therefore two obligations away, not one: 15 unclassified instances and 29 metadata findings.
+# therefore two obligations away, not one: **11 unclassified instances and 5 metadata findings,
+# re-measured 2026-09-24**. This sentence said 15 and 29, both stale — the numbers belong to the gates,
+# and both gates print their own on every run.
 run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instance-derivation.sh"
 # The same sources, transcribed into Lean as data. `Transcribed.lean` is a *generated*
 # artefact, so it is checked the way this tree checks generated artefacts — by re-running the
@@ -164,6 +166,15 @@ run_gate "hidden tests declared (OBL-C76)" bash "$SCRIPT_DIR/check-hidden-tests.
 # clean-up removed 25 documents and repointed ~30 referrers by hand; this is what
 # keeps that from silently un-happening.
 run_gate "documentation index"            bash "$SCRIPT_DIR/check-doc-index.sh"
+# A register row that cites a path is making a claim about the tree, and this is the gate that holds it
+# to one: every in-scope cited path must resolve against HEAD, with any deliberate exception declared in
+# `script/register_artifact_exceptions.txt` — and an exception whose path now resolves, or that its row
+# no longer cites, is reported **stale** rather than kept quietly. It was written for exactly the failure
+# it then caught and nobody saw: three OBL-T7 exemptions covering the transcription's artefacts while
+# they were untracked, which went stale the moment those artefacts landed here on 2026-09-24
+# (`3e5dc703ed`, `e5ef7c1c96`). It ran nowhere, so the signal was never delivered — the tree's own
+# "gate that cannot fail" class, in the shape of a gate that cannot *report*. Wired now; 0.23 s.
+run_gate "register artifacts resolve (OBL-T7)" bash "$SCRIPT_DIR/check-register-artifacts.sh"
 # The barb alphabet, in five representations: the Lean `inductive Barb`, the core `BarbId`, the sdk
 # `Barb`, the Python model, and `type-system.md` §1.1. `contrib/barb_alphabet_diff.sh` extracts and
 # diffs the four sets mechanically; `contrib/primitive_barbs_diff.sh` does the same for the *type→barb
@@ -276,11 +287,21 @@ run_gate "Python: supply chain model"      python3 contrib/model/supply_chain_mo
 # `chain_validation_model.py` caught its own `AssertionError`s per test, counted them, and fell off
 # the end of its `__main__` with exit 0 whether they passed or failed — so wiring it as it stood would
 # have added a gate that *cannot* fail, which is worse than leaving it ungated: an ungated model is
-# invisible, a vacuous gate is a false assurance counted in the tally. Each model below was given a
-# failure-sensitive exit and falsified before it was wired, by injecting a failure through the model's
-# own error path rather than by flipping an assertion — flipping one is a misleading control, because a
-# model that swallows test failures still exits non-zero when its first `assert` sits outside the
-# `try`. Measured aggregate ≈4.5 minutes, dominated by `chain_validation_model` (98 s) and
+# invisible, a vacuous gate is a false assurance counted in the tally. It was given a failure-sensitive
+# exit and falsified by injecting a failure through its own error path rather than by flipping an
+# assertion — flipping one is a misleading control, because a model that swallows test failures still
+# exits non-zero when its first `assert` sits outside the `try`. `test_oracle.py`, which could not be
+# run at all, was repaired the same way.
+#
+# **Two of the models below are wired with a caveat rather than a clean contract, and an independent
+# reader is why this says so rather than asserting they were all falsified.** `vm_state_model.py`
+# *demonstrates* known crash paths, so its printed `FAIL — …` lines are its expected output: it can
+# still fail (through the assertions on its mitigations), but its summary reads like a red gate, and
+# nothing ties its exit status to the findings it prints. `dockernet_model.py` likewise counts its own
+# `SKIP`/`FAIL` lines as passes under its runner. Both belong in the register as rows rather than being
+# rewritten here: what they should assert is a question about the models, not about the wiring.
+#
+# Measured aggregate ≈4.5 minutes, dominated by `chain_validation_model` (98 s) and
 # `wallet_simulation` (97 s); the other sixteen are 0–29 s. Two of the twenty-two are excluded, with
 # their reasons: `capability_discovery.py` is a report with no assertions and no exit, and
 # `generate_wallet_fixture.py` is a generator that needs an `--out`.

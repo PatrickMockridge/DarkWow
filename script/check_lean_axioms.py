@@ -620,7 +620,7 @@ def annotation_for(name, short, where, budgets):
     return (None, None)
 
 
-def check_budgets(rows, require_collector):
+def check_budgets(rows):
     """(4) Every theorem/lemma is annotated, and its annotation matches reality."""
     if rows is None:
         return None
@@ -804,7 +804,7 @@ def main():
         else:
             results["budgets"] = None
     else:
-        results["budgets"] = check_budgets(rows, require_collector)
+        results["budgets"] = check_budgets(rows)
 
     results["trust_declarations"] = check_trust_declarations(rows)
     results["tautologies"] = check_tautologies(rows)
@@ -826,10 +826,15 @@ def main():
         # checks printed a SKIP line, and then printed `PASS … intact` anyway. A reader had to notice
         # that the count and the number of SKIP lines disagreed. Each skipped check now prints its own
         # line (see the check functions) and the verdict is named here rather than claimed.
+        #
+        # And it exits **2, not 0**: this tree already has the convention that 2 means "ran, and did
+        # not check" (`scripts/check-circuit-domain-separation.sh:32`,
+        # `scripts/check-pubkey-binding.sh:38`), and with `run_gate` deciding on exit status alone a 0
+        # here is indistinguishable from a pass — which is the defect this whole file was repaired for.
         names = ", ".join(k for k, v in results.items() if v is None)
         print(f"{YELLOW}INCOMPLETE:{NC} {skipped} check(s) did not run: {names}")
         print(f"{YELLOW}INCOMPLETE:{NC} this run does NOT establish that the boundary is intact")
-        return 0
+        return 2
     print(f"{GREEN}PASS:{NC} Lean assumption boundary intact")
     return 0
 
