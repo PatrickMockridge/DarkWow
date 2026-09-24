@@ -507,9 +507,13 @@ def search_lt_strict_bugs : IO Unit := do
 a / b = a * b^{p-2} mod p
 ```
 
-**Cost**: 331 field multiplications (254 squarings + 77 conditional multiplications; `p - 2` is 255
-bits with 77 set). The "~500 (253 squarings + up to 249 multiplications)" this line used to carry
-was an estimate in both terms.
+**Cost**: 331 field multiplications (254 squarings + **76** conditional multiplications + **1**
+final; `p - 2` is 255 bits with 77 set). The "~500 (253 squarings + up to 249 multiplications)" this
+line used to carry was an estimate in both terms. **Corrected 2026-09-24**: this line said "77
+conditional multiplications", which is wrong — the loop at `src/zk/vm.rs:1608-1638` initializes
+`result = b` and so consumes bit 0, leaving 76 multiplies inside the loop, and the 77th is the final
+multiply by `a`. The total was right throughout, which is why the wrong terms survived; the three
+places that already had it right are named in `proofs/lean/src/DarkFi/Arithmetic.lean`.
 
 **Verified properties.** The block that used to sit here named
 `proofs/lean/src/DarkWow/Field.lean` (no such path — the project is `proofs/lean/src/DarkFi/`),

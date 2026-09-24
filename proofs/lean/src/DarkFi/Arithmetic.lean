@@ -146,11 +146,22 @@ its integer arithmetic rather than to itself. Recorded so the name is not re-add
 
 a / b = a * b^{p-2} mod p
 
-Cost: 331 multiplication gates — counted from the exponent, not estimated: `p - 2` is 255 bits
-with 77 set, and the loop (`src/zk/vm.rs:1555-1643`) performs one squaring per bit (254 of them,
-the top bit needing no squaring of its own) plus one multiplication per set bit (77), for
-254 + 77 = 331. This line said "~254 squarings + ~251 multiplications (~505 constraints)", which
-was a guess in both terms and wrong in both.
+Cost: 331 multiplication gates — counted from the loop rather than the exponent, and the two are not
+the same count. `p - 2` is 255 bits with 77 set; `src/zk/vm.rs:1608-1638` initializes `result = b`,
+which *is* bit 0's contribution, then loops `for i in 1..=254` squaring once (`:1617`) and
+multiplying once when bit `i` is set (`:1624`), and finally multiplies by `a` (`:1634`). That is
+254 squarings + **76** conditional multiplications + **1** final = 331. This line said "~254
+squarings + ~251 multiplications (~505 constraints)", which was a guess in both terms and wrong in
+both. **Corrected 2026-09-24, because its own first correction was also wrong in its terms**: it
+said "one squaring per bit (254 of them, the top bit needing no squaring of its own) plus one
+multiplication per set bit (77)". The top bit *is* squared — it is iteration `i = 254`, whose
+multiply is needed because bit 254 is set — and what is saved is *bit 0*: the initialization
+consumes it, so the loop's 77 set bits yield 76 in-loop multiplies and the 77th is the final `a *`.
+The total 331 was right throughout, which is exactly why the wrong decomposition survived: two
+errors cancelled, and nothing downstream noticed. Two other documents carried the same terms —
+`doc/src/arch/zk/opcodes.md:510` and `zkvm_primitives.md:375` — and are corrected with this line,
+while `BaseDivGadget.lean:18`, `consensus/fee-spec.md:1159` and `src/linear/src/opcode_cost.rs:40`
+already had the decomposition right, so the tree had been disagreeing with itself.
 
 CORRESPONDENCE: src/zk/vm.rs:1555-1643 — `base_div` computes `a * b^(p-2)` by exponentiation by
 squaring over the bits of the exponent. This pointed at 1503-1557, which is the *tail* of the

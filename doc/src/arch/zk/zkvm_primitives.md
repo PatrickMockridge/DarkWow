@@ -373,10 +373,13 @@ on input to ensure `a` is 0 or 1.
 
 **Implementation**: Binary exponentiation `a * b^{p-2} mod p`
 - Cost: 331 field multiplications — `p - 2` is 255 bits with 77 set, and the loop
-  (`src/zk/vm.rs:1555-1643`) squares once per bit below the top (254) and multiplies once per set
-  bit (77). The "~500 (253 squarings + up to 249 multiplications)" this line used to carry was an
-  estimate in both terms. `b = 0` returns `0` through an explicit early branch, with no prover
-  freedom (`sqMul_zero` in `proofs/lean/src/DarkFi/BaseDivGadget.lean`).
+  (`src/zk/vm.rs:1608-1638`) initializes `result = b` (bit 0's contribution), then squares once per
+  iteration over `i = 1..=254` and multiplies when bit `i` is set, finally multiplying by `a`:
+  **254 squarings + 76 conditional multiplications + 1 final**. The "~500 (253 squarings + up to 249
+  multiplications)" this line used to carry was an estimate in both terms, and its first correction
+  counted "one multiplication per set bit (77)" — wrong, because the initialization consumes bit 0.
+  The total 331 was right throughout. `b = 0` returns `0` through an explicit early branch, with no
+  prover freedom (`sqMul_zero` in `proofs/lean/src/DarkFi/BaseDivGadget.lean`).
 - Opcode: `0x58`
 
 **Usage**:

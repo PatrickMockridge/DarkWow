@@ -14,11 +14,22 @@ half and the six circuits it changed.
 Two things are modelled here, and they answer different questions.
 
 **Part 1 — what the opcode computes.** `vm.rs:1555-1643` computes `a · b^(p−2) mod p` by
-exponentiation by squaring: `p − 2` is 255 bits, 77 of them set, and the loop squares a running
-power and multiplies it into an accumulator for each set bit — 254 squarings + 76 conditional
-multiplications + 1 final multiplication = **331** multiplication gates. The `sqMulGo` definition
-below is that loop, transcribed in the shape `Emission.fixedPowDecayGo` uses, and `sqMul_is_inverse`
-is the content: for `b ≠ 0` the result times `b` is `a`, i.e. it really is division.
+exponentiation by squaring: `p − 2` is 255 bits, 77 of them set, and the loop (`:1608-1638`)
+initializes `result = b` — bit 0's contribution — then for `i` in `1..=254` squares a running power
+and multiplies it into the accumulator when bit `i` is set, and finally multiplies by `a`: 254
+squarings + **76** conditional multiplications + **1** final multiplication = **331** multiplication
+gates. The `sqMulGo` definition below is that loop **in value**, transcribed in the shape
+`Emission.fixedPowDecayGo` uses, and `sqMul_is_inverse` is the content: for `b ≠ 0` the result times
+`b` is `a`, i.e. it really is division.
+
+**One structural difference between the model and the deployed loop, and the count above is the
+deployed one's.** `sqMulGo` recurses while its exponent is nonzero, so at `p − 2` it iterates 255
+times and squares 255 times, where the deployed loop squares 254 — it consumes bit 0 in the
+initialization rather than in an iteration. The *value* is the same and `sqMulGo_eq` is about the
+value; but a reader who counted gates from the model would get 332 + the final multiply = 333, not
+331. Recorded because it is exactly how a wrong count arises: `Arithmetic.lean`'s cost line and two
+documents had "one multiplication per set bit (77)" — corrected 2026-09-24 — and this shape is where
+that reading comes from.
 
 There is a reason to prefer the field statement over an `Int`-with-`%` one, beyond brevity: the
 `Int` form needs `b % p ≠ 0` as a hypothesis and a bridge lemmas to move between `%` and `ZMod`. The
