@@ -196,6 +196,22 @@ run_gate "register artifacts resolve (OBL-T7)" bash "$SCRIPT_DIR/check-register-
 # the Rust does not, and needs no rebuild.
 run_gate "barb alphabet agreement (OBL-T3/T9)" bash "$REPO_ROOT/contrib/barb_alphabet_diff.sh"
 run_gate "primitive barb mapping (OBL-T3)"     bash "$REPO_ROOT/contrib/primitive_barbs_diff.sh"
+# The same correspondence one level up, where it was claimed in prose and checked nowhere. Both gates
+# above are about *primitives*; `src/sdk/src/capability.rs:509-510` promises *"Every construction that is
+# proved in Lean4 must also succeed here"* — a claim about **capability types** — and nothing mechanized
+# it. `contrib/capability_type_diff.sh` extracts the 14 `CapabilityType` defs from `Composition.lean`,
+# the 9 positive `wallet_construct(...)` calls from that file's test module, and the model's capability
+# tables from `wallet_model.py`, joins them on `(resource, action)` and diffs the primitive sets. The
+# five types the Rust cannot construct or does not test are **declared in the script with their reason**,
+# and an entry that goes stale — the type gains a test, the blocking primitive gains a variant —
+# fails the gate, so the declaration stays a statement about today's tree instead of a permanent excuse.
+# Falsified in six directions before wiring (a primitive dropped from a Rust list; a Lean type with no
+# Rust counterpart; a Rust type with no Lean one; a Python table renamed; an unregistered Python table;
+# and a declared entry going stale) — each exits 1 and names the cause, on a copy of the tree under
+# `/tmp`. No build, no rebuild, reports under `/tmp`. **A register row is owed** — the finding is F5 of
+# the wallet verification campaign, and the rows next to it (`OBL-T14`–`T16`) are the peer session's.
+run_gate "capability type correspondence (F5)" \
+                                          bash "$REPO_ROOT/contrib/capability_type_diff.sh"
 # The coinbase classifier, at every accept-path site. `first_call_is_pow_reward` matches `data[0] ==
 # 0x05` against **any** contract and ~20 contracts use 0x05 as a real function code, so it answers
 # "coinbase" for transactions that are not the coinbase. Where the exemption *skips a check* that is a
