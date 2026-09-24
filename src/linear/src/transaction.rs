@@ -466,6 +466,76 @@ mod tests {
         );
     }
 
+    /// The selector-only probe is **not** a coinbase classifier, and this is the input on which the
+    /// two disagree — the one that made an accept-path exemption unsound until 2026-09-24.
+    ///
+    /// `first_call_is_pow_reward` matches `data[0] == 0x05` **against any contract**, which its own
+    /// docstring states ("regardless of contract id … the structural variant used where the
+    /// block-structure rule is checked separately from contract identity"). Around twenty contracts
+    /// use 0x05 as a real function code — `IdentityFunction::IssueCapabilityV1`,
+    /// `AttestationFunction::ConsumeClaimV1`, `dex`/`relayer_endowment`'s `UpdateConfigV1`,
+    /// `CancelV1`, `RefundBidV1`, `RepayStableV1` and others — so for a transaction whose first call
+    /// is one of those the probe answers "coinbase" and the shared classifier answers "not the
+    /// coinbase".
+    ///
+    /// Every accept-path exemption needs the second answer, because the L2 witness loop is the only
+    /// place a transaction's proofs are verified at block acceptance: with the probe, such a
+    /// transaction was exempted from proof verification entirely and a fabricated proof rode in.
+    /// `execution.rs`, `block_acceptor.rs`, `chain_state.rs::check_coinbase_maturity`, the miner's
+    /// assembly filter and both RPC predicates are the sites that had to agree, and
+    /// `scripts/check-coinbase-classifier.sh` is the gate that keeps them agreeing.
+    #[test]
+    fn test_selector_only_probe_is_not_a_coinbase_classifier() {
+        let native = *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+        let other = *dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID;
+
+        let with = |contract_id: ContractId, selector: u8| Transaction {
+            version: BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![ContractCall { contract_id, data: vec![selector] }],
+            lock_time: 0,
+            nullifiers: vec![],
+            witness: vec![],
+        };
+
+        // The disagreement, asserted on both predicates so the test fails if either is widened or
+        // narrowed: 0x05 on a non-native contract fires the probe and is not the coinbase.
+        assert!(
+            with(other, 0x05).first_call_is_pow_reward(),
+            "the probe fires on 0x05 whatever the contract — this is the trap, not a bug in the probe"
+        );
+        assert!(
+            !with(other, 0x05).is_pow_reward_coinbase_tx(),
+            "the shared classifier requires the native token contract, and is what every exemption must use"
+        );
+
+        // And the two agree on the genuine coinbase, so the shared classifier is not simply narrower:
+        // an exemption keyed on it still exempts the transaction it is for.
+        assert!(with(native, 0x05).is_pow_reward_coinbase_tx());
+        assert!(with(native, 0x05).first_call_is_pow_reward());
+
+        // The probe is a *first-call* test, not a contract test: 0x05 anywhere but first does not fire
+        // it, which is why it is safe for a site that position-gates it anyway.
+        let second_call = Transaction {
+            version: BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![
+                ContractCall { contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID, data: vec![0x00] },
+                ContractCall { contract_id: other, data: vec![0x05] },
+            ],
+            lock_time: 0,
+            nullifiers: vec![],
+            witness: vec![],
+        };
+        assert!(
+            !second_call.first_call_is_pow_reward()
+                && !second_call.is_pow_reward_coinbase_tx(),
+            "a 0x05 call that is not first fires neither predicate"
+        );
+    }
+
     /// Transaction::hash() MUST be deterministic across serde round-trips.
     /// Serializing, deserializing, and re-serializing a transaction MUST
     /// produce the same hash — otherwise merkle roots diverge.

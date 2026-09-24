@@ -166,6 +166,15 @@ run_gate "documentation index"            bash "$SCRIPT_DIR/check-doc-index.sh"
 # the Rust does not, and needs no rebuild.
 run_gate "barb alphabet agreement (OBL-T3/T9)" bash "$REPO_ROOT/contrib/barb_alphabet_diff.sh"
 run_gate "primitive barb mapping (OBL-T3)"     bash "$REPO_ROOT/contrib/primitive_barbs_diff.sh"
+# The coinbase classifier, at every accept-path site. `first_call_is_pow_reward` matches `data[0] ==
+# 0x05` against **any** contract and ~20 contracts use 0x05 as a real function code, so it answers
+# "coinbase" for transactions that are not the coinbase. Where the exemption *skips a check* that is a
+# soundness bug: the L2 witness loop in `execution.rs` — the only place a transaction's proofs are
+# verified at block acceptance — exempted such transactions entirely, so a fabricated proof rode in.
+# Corrected at four sites on 2026-09-24 (`execution.rs`, the miner's assembly filter, and both RPC
+# predicates), and this gate is what keeps them corrected. It is a source gate rather than an
+# end-to-end test for the reason in its header: the fixtures here top out at selector 0x04.
+run_gate "coinbase classifier (shared, not selector-only)" bash "$SCRIPT_DIR/check-coinbase-classifier.sh"
 # OBL-C77: an empty get_metadata arm is the host's *rejection* signal, not "no public inputs".
 # `execution.rs` decodes the first encoded vector out of the metadata and fails the call at
 # `metadata-decode-zkp` on an empty buffer, before exec runs — so an arm whose success path returns

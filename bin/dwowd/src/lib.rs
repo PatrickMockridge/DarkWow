@@ -1295,9 +1295,15 @@ async fn prepare_block(
 
     // 3. Filter immature coinbase spends (soft gate, infallible)
     let mut mempool_txs: Vec<_> = mempool_txs.into_iter().filter(|tx| {
-        // P2-6: selector-only soft filter — keep the structural predicate.
-        // UNVERIFIED(P2-6): needs cargo test -p dwowd --lib -- daemon_sync_integration
-        if tx.first_call_is_pow_reward() { return true; }
+        // The exemption is the SHARED classifier (native token contract **and** 0x05),
+        // not the selector-only probe: `first_call_is_pow_reward` matches `data[0] == 0x05`
+        // against any contract, and ~20 contracts use 0x05 as a real function code, so the
+        // probe exempted those txs from the maturity filter below. Same classifier defect as
+        // the L2 witness loop in `src/linear/src/execution.rs`, corrected with it 2026-09-24.
+        // This site is a soft gate (worst case: a miner builds a block that
+        // `check_coinbase_maturity` then rejects — self-inflicted work, not a soundness
+        // gap), which is why the fix is one predicate rather than a new check.
+        if tx.is_pow_reward_coinbase_tx() { return true; }
         for nullifier in &tx.nullifiers {
             if let Some(nf_height) = chain_state.nullifier_height(nullifier) {
                 if height.saturating_sub(nf_height) < dwow_chain::COINBASE_MATURITY {

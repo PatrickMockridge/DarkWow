@@ -83,10 +83,12 @@ impl DwowNode {
         };
 
         // Reject coinbase transactions from the mempool — these are miner-only.
-        // Coinbase detected via PoWRewardV1 contract call (function 0x05).
-        // P2-6: selector-only classification lives in dwow_chain::Transaction.
-        // UNVERIFIED(P2-6): needs cargo test -p dwowd --lib
-        let is_coinbase = chain_tx.first_call_is_pow_reward();
+        // Coinbase detected via the SHARED classifier (native token contract + PoWRewardV1
+        // 0x05), not the selector-only probe: `first_call_is_pow_reward` matches `data[0] ==
+        // 0x05` against any contract, and ~20 contracts use 0x05 as a real function code, so
+        // the probe rejected those legitimate txs here. Same classifier defect as the L2
+        // witness loop in `src/linear/src/execution.rs`, corrected with it 2026-09-24.
+        let is_coinbase = chain_tx.is_pow_reward_coinbase_tx();
         if is_coinbase {
             error!(target: "dwowd::rpc::tx_submit_linear", "Rejecting coinbase transaction from mempool");
             return JsonError::new(InvalidParams, Some("Coinbase transactions cannot be submitted to mempool".to_string()), id).into()
@@ -211,10 +213,9 @@ impl DwowNode {
             }
         };
 
-        // Reject coinbase transactions (PoWRewardV1 call, function 0x05)
-        // P2-6: selector-only classification lives in dwow_chain::Transaction.
-        // UNVERIFIED(P2-6): needs cargo test -p dwowd --lib
-        if tx.first_call_is_pow_reward() {
+        // Reject coinbase transactions (PoWRewardV1 call, function 0x05) — via the shared
+        // classifier, for the reason recorded at the other site in this file.
+        if tx.is_pow_reward_coinbase_tx() {
             return JsonResponse::new(JsonValue::Boolean(false), id).into()
         }
 

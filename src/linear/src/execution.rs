@@ -589,8 +589,33 @@ pub fn execute_block(
     // Uses the metadata tables accumulated during the job loop above.
     // A fabricated tx (HAZOP C1 — no valid proof) is rejected here,
     // BEFORE any state changes are merged.
-    for tx in &block.transactions {
-        let is_coinbase = tx.first_call_is_pow_reward();
+    //
+    // The exemption must use the SHARED classifier — native token contract **and**
+    // PoWRewardV1 (0x05) — not the selector-only probe. `first_call_is_pow_reward`
+    // matches `data[0] == 0x05` against any contract, and roughly twenty contracts use
+    // 0x05 as a real function code (`IdentityFunction::IssueCapabilityV1`,
+    // `AttestationFunction::ConsumeClaimV1`, `UpdateConfigV1` in dex/relayer_endowment,
+    // `CancelV1`, `RefundBidV1`, `RepayStableV1`, …). With the probe, a transaction whose
+    // FIRST call is any of those was exempted from this loop entirely — and this loop is
+    // the only place a transaction's proofs are verified at block acceptance — so a
+    // fabricated proof rode in. Found 2026-09-24 by reading, not by a failing test; the
+    // two sibling exemptions that were already correct are `block_acceptor.rs`'s
+    // pre-witness loop and `chain_state.rs::check_coinbase_maturity`, whose docstring
+    // states the rule ("through the shared classifier … rather than a re-derived
+    // predicate").
+    //
+    // No index gate is needed alongside it: `validate_block_structure` requires exactly
+    // one transaction in the block to satisfy this same classifier, and to be tx 0, so
+    // the two coincide on every block that reaches this loop.
+    //
+    // The index gate is carried anyway, and deliberately: `execute_block` is `pub`, and
+    // with the gate the exemption states the whole classification — position *and*
+    // content — so it stays correct for a caller that reaches this loop without running
+    // `validate_block_structure` first. Strictly fewer exemptions is the safe direction.
+    // The sibling pre-witness loop in `block_acceptor.rs` omits the gate because
+    // validation provably precedes it there; the two agree on every block either can see.
+    for (tx_idx, tx) in block.transactions.iter().enumerate() {
+        let is_coinbase = tx_idx == 0 && tx.is_pow_reward_coinbase_tx();
         if is_coinbase {
             continue;
         }
