@@ -1,5 +1,15 @@
-//! ContractTestSpec for drain_protection. All endpoints use harness methods
-//! with empty_witnesses proofs. Client proof modules pending.
+//! ContractTestSpec for drain_protection.
+//!
+//! **Every endpoint's proof is now real** (`OBL-C88`): the harness proves through the contract's own
+//! client (`create_authority_proof` for the eight authority circuits, `create_exit_proof` for
+//! `exit`) and the params carry the same public inputs the proof was made with, where they used to
+//! be `empty_witnesses` fabrications. The declarations this header used to carry are gone with them.
+//!
+//! The endpoints are a **flow**: `propose` derives the proposal id that `vote` and `execute` name
+//! (`poseidon_hash([fund.id, message_hash])`), and `initialize` must run first for the fund the
+//! others act on. `ExecuteV1` is expected to fail inside the contract — it looks the funds tree up
+//! by the *proposal* id and requires a nonzero `multisig_group_id` that `init` stores as zero
+//! (`OBL-C98`), so the endpoint's expectation here is not evidence about the fixture.
 use dwow_contract_test_harness::harness::{DrainProtectionHarness, ContractHarness};
 use crate::tests::uniform_runner::*;
 use super::helpers::mk_ep;

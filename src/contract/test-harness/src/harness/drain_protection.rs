@@ -25,14 +25,36 @@
 //!
 //! Provides isolated testing for DrainProtection contract.
 //!
-//! Note: drain_protection has 9 ZK circuits loaded, but the client proof
-//! generation module is not yet implemented. This harness exposes the circuits and
-//! proving keys via the ContractHarness trait for direct use in tests.
+//! **Every endpoint builds a real proof** (`OBL-C88`). The nine circuits load as before, and each
+//! endpoint now proves through the contract's own client — `create_authority_proof` for the eight
+//! authority circuits, `create_exit_proof` for `exit` — with params carrying **the same public
+//! inputs the proof was made with**. Before this, `make_proof` fabricated a proof with one instance
+//! and no advice, so an endpoint could not fail for the reason its name implies.
+//!
+//! One authority secret for the whole harness, and `initialize` registers **its** point as the
+//! fund's `spend_authority` — the two are written to agree, which is what a host-side authority
+//! check compares. The contract has no such check today (recorded as `OBL-C97`); the fixture is
+//! built this way so that adding one does not require rewriting the fixture.
 
 use dwow_core::{
     zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
+};
+use dwow_drain_protection_contract::{
+    client::{
+        create_authority_proof,
+        exit::{create_exit_proof, ExitCallData},
+        AuthorityCallData,
+    },
+    model::{
+        DrainConfig, ExecuteParamsV1, ExitParamsV1, InitializeParamsV1, LockParamsV1,
+        ProposeParamsV1, TransferParamsV1, UnlockParamsV1, UpdateConfigParamsV1, VoteParamsV1,
+    },
+};
+use dwow_sdk::{
+    crypto::{PublicKey, SecretKey},
+    pasta::pallas,
 };
 
 /// DrainProtection Harness for isolated testing
@@ -167,39 +189,212 @@ impl DrainProtectionHarness {
         }
     }
 
-    fn make_proof(&self, zkbin: &ZkBinary, pk: &ProvingKey) -> dwow_core::Result<Proof> {
-        let w = dwow_core::zk::empty_witnesses(zkbin)?;
-        let c = ZkCircuit::new(w, zkbin);
-        Proof::create(pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))
+    /// The one fund every endpoint acts on, and the one `initialize` creates.
+    const FUND_ID: pallas::Base = pallas::Base::from_raw([1, 0, 0, 0]);
+
+    /// The authority secret every endpoint proves with. `initialize` registers its **point** as the
+    /// fund's `spend_authority`, so the two agree by construction (`OBL-C97`).
+    const AUTHORITY_SECRET: pallas::Base = pallas::Base::from_raw([1234, 0, 0, 0]);
+
+    /// The authority call data for an endpoint: the secret above, the one fund, and the zero
+    /// transaction pair the fixtures bind.
+    fn authority(&self) -> AuthorityCallData {
+        AuthorityCallData::new(Self::AUTHORITY_SECRET, Self::FUND_ID)
     }
 
+    /// The id `propose_process_instruction_v1` derives — `poseidon_hash([fund.id, message_hash])`
+    /// (`entrypoint.rs:531`) — and therefore the id `vote` and `execute` have to name. The three
+    /// endpoints are a flow, not three independent calls, which is what the first two runs of this
+    /// test said by failing at `vote` and then `execute`.
+    fn proposal_id(&self) -> pallas::Base {
+        dwow_sdk::crypto::poseidon_hash([Self::FUND_ID, Self::MESSAGE_HASH])
+    }
+
+    /// The message hash `propose` proposes.
+    const MESSAGE_HASH: pallas::Base = pallas::Base::from_raw([7, 0, 0, 0]);
+
     pub fn initialize(&self) -> dwow_core::Result<DrainInitResult> {
-        Ok(DrainInitResult { call_data: vec![0x00], proof: self.make_proof(&self.initialize_zkbin, &self.initialize_pk)? })
+        let authority = self.authority();
+        let (proof, pi) = create_authority_proof(&self.initialize_zkbin, &self.initialize_pk, &authority)
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let params = InitializeParamsV1 {
+            instance_seed: [0u8; 32],
+            fund_id: Self::FUND_ID,
+            spend_authority: authority.authority_pub(),
+            dao_escrow_bulla: pallas::Base::zero(),
+            drain_config: DrainConfig::default(),
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
+        };
+        let mut call_data = vec![0x00];
+        call_data.extend_from_slice(&params.encode());
+        Ok(DrainInitResult { call_data, proof })
     }
+
     pub fn propose(&self) -> dwow_core::Result<DrainProposeResult> {
-        Ok(DrainProposeResult { call_data: vec![0x01], proof: self.make_proof(&self.propose_zkbin, &self.propose_pk)? })
+        let authority = self.authority();
+        let (proof, pi) = create_authority_proof(&self.propose_zkbin, &self.propose_pk, &authority)
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let params = ProposeParamsV1 {
+            message_hash: Self::MESSAGE_HASH,
+            // `propose_process_instruction_v1` looks the **fund** up by this field
+            // (`entrypoint.rs:520`), so the fixture passes the fund's id — the name says multisig
+            // group and the key is the funds tree.
+            multisig_group_id: Self::FUND_ID,
+            prover_pubkey: authority.authority_pub(),
+            vote_period_blocks: 1000,
+            proof: vec![],
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
+        };
+        let mut call_data = vec![0x01];
+        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        Ok(DrainProposeResult { call_data, proof })
     }
+
     pub fn vote(&self) -> dwow_core::Result<DrainVoteResult> {
-        Ok(DrainVoteResult { call_data: vec![0x02], proof: self.make_proof(&self.vote_zkbin, &self.vote_pk)? })
+        let authority = self.authority();
+        let (proof, pi) = create_authority_proof(&self.vote_zkbin, &self.vote_pk, &authority)
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let params = VoteParamsV1 {
+            proposal_id: self.proposal_id(),
+            voter_pubkey: authority.authority_pub(),
+            vote: true,
+            signature: pallas::Base::zero(),
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
+        };
+        let mut call_data = vec![0x02];
+        call_data.extend_from_slice(&params.encode());
+        Ok(DrainVoteResult { call_data, proof })
     }
+
     pub fn execute(&self) -> dwow_core::Result<DrainExecuteResult> {
-        Ok(DrainExecuteResult { call_data: vec![0x03], proof: self.make_proof(&self.execute_zkbin, &self.execute_pk)? })
+        let authority = self.authority();
+        let (proof, pi) = create_authority_proof(&self.execute_zkbin, &self.execute_pk, &authority)
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let params = ExecuteParamsV1 {
+            proposal_id: self.proposal_id(),
+            signature: pallas::Base::zero(),
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
+        };
+        let mut call_data = vec![0x03];
+        call_data.extend_from_slice(&params.encode());
+        Ok(DrainExecuteResult { call_data, proof })
     }
+
     pub fn exit(&self) -> dwow_core::Result<DrainExitResult> {
-        Ok(DrainExitResult { call_data: vec![0x04], proof: self.make_proof(&self.exit_zkbin, &self.exit_pk)? })
+        let call = ExitCallData::new();
+        let (proof, pi) = create_exit_proof(&self.exit_zkbin, &self.exit_pk, &call)
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let params = ExitParamsV1 {
+            fund_id: Self::FUND_ID,
+            member_pubkey: PublicKey::from_secret(SecretKey::from_base(Self::AUTHORITY_SECRET)),
+            contribution_weight: 1000,
+            current_block: 0,
+            dao_escrow_bulla: pallas::Base::zero(),
+            dao_membership_note: pallas::Base::zero(),
+            effective_weight: pallas::Base::from(1000u64),
+            proof: vec![],
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
+        };
+        let mut call_data = vec![0x04];
+        call_data
+            .extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        Ok(DrainExitResult { call_data, proof })
     }
+
     pub fn transfer(&self) -> dwow_core::Result<DrainTransferResult> {
-        Ok(DrainTransferResult { call_data: vec![0x05], proof: self.make_proof(&self.transfer_zkbin, &self.transfer_pk)? })
+        let authority = self.authority();
+        let (proof, pi) = create_authority_proof(&self.transfer_zkbin, &self.transfer_pk, &authority)
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let params = TransferParamsV1 {
+            fund_id: Self::FUND_ID,
+            amount: 100,
+            recipient: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(4321u64))),
+            signature: pallas::Base::zero(),
+            exceeds_rate_limit: false,
+            vote_proposal_id: None,
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
+        };
+        let mut call_data = vec![0x05];
+        call_data.extend_from_slice(&params.encode());
+        Ok(DrainTransferResult { call_data, proof })
     }
+
     pub fn lock(&self) -> dwow_core::Result<DrainLockResult> {
-        Ok(DrainLockResult { call_data: vec![0x06], proof: self.make_proof(&self.lock_zkbin, &self.lock_pk)? })
+        let authority = self.authority();
+        let (proof, pi) = create_authority_proof(&self.lock_zkbin, &self.lock_pk, &authority)
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let params = LockParamsV1 {
+            fund_id: Self::FUND_ID,
+            duration_blocks: 6000,
+            signature: pallas::Base::zero(),
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
+        };
+        let mut call_data = vec![0x06];
+        call_data.extend_from_slice(&params.encode());
+        Ok(DrainLockResult { call_data, proof })
     }
+
     pub fn unlock(&self) -> dwow_core::Result<DrainUnlockResult> {
-        Ok(DrainUnlockResult { call_data: vec![0x07], proof: self.make_proof(&self.unlock_zkbin, &self.unlock_pk)? })
+        let authority = self.authority();
+        let (proof, pi) = create_authority_proof(&self.unlock_zkbin, &self.unlock_pk, &authority)
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let params = UnlockParamsV1 {
+            fund_id: Self::FUND_ID,
+            signature: pallas::Base::zero(),
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
+        };
+        let mut call_data = vec![0x07];
+        call_data.extend_from_slice(&params.encode());
+        Ok(DrainUnlockResult { call_data, proof })
     }
+
     pub fn update_config(&self) -> dwow_core::Result<DrainUpdateConfigResult> {
-        Ok(DrainUpdateConfigResult { call_data: vec![0x08], proof: self.make_proof(&self.update_config_zkbin, &self.update_config_pk)? })
+        let authority = self.authority();
+        let (proof, pi) = create_authority_proof(&self.update_config_zkbin, &self.update_config_pk, &authority)
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let params = UpdateConfigParamsV1 {
+            fund_id: Self::FUND_ID,
+            rate_limit: None,
+            multisig_group_id: None,
+            new_spend_authority: None,
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
+        };
+        let mut call_data = vec![0x08];
+        call_data.extend_from_slice(&params.encode());
+        Ok(DrainUpdateConfigResult { call_data, proof })
     }
 }
 
