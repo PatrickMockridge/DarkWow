@@ -496,6 +496,63 @@ theorem operand_products_fit_the_offset_window (a b c d : Nat)
   have h128 : (2 : ℤ) ^ 128 < (2 : ℤ) ^ 253 := by norm_num
   constructor <;> nlinarith [hab, hcd, ha0, hb0, hc0, hd0, h128]
 
+/-!
+## What the deployed check hands the gadgets that use it
+
+The bound above is about a *value*; what the gadgets need is that a value they hold is the image of a
+bounded integer. `BaseDivGadget.FieldLessThanOrEqual` carries exactly that as fields —
+`a_bits : Nat`, `a_bits_lt : a_bits < 2^64`, `a_eq : a = ↑a_bits`, and the same pair for `b` and the
+offset — and the section note there now records that those are the *shape*
+`BaseDivGadget.zmod_eq_int_of_bounded` consumes rather than a fact about arithmetic. What the two
+theorems below add is that the shape is not an assumption about the value at all: it follows from the
+check's own witness, so a caller who has a circuit's chunk list has the bound, and it is the check's
+chunks — not a hypothesis — that supply it.
+
+This is the step `OBL-Z12`'s residue named, one level of *statement* further in than the arithmetic.
+It is **not** the whole bridge: nothing here reads a `.zk` source, so the passage from a circuit's
+`range_check(64, ·)` call to the chunk list below is still the transcription
+`Circuits/InstanceDerivation.lean` records. What is proved is that *given* the witness, the bound is a
+consequence.
+-/
+
+/-- The chunks' standing for a value is never negative — every term is a `Nat` times a power. -/
+@[axiom_budget 1]
+theorem chunkSum_nonneg (w : Nat) (cs : List Nat) : 0 ≤ chunkSum w cs := by
+  induction cs with
+  | nil => simp only [chunkSum]; norm_num
+  | cons c cs ih =>
+    simp only [chunkSum]
+    have h2 : (0 : ℤ) < (2 : ℤ) ^ w := by positivity
+    nlinarith [ih, h2, Int.natCast_nonneg c]
+
+/-- **The bound a circuit's range check supplies, as a bounded integer rather than a proof
+    obligation.** Given the chunk witness the deployed chip accepts, some `bits : Nat` stands for
+    the same value and is below `2^N` — which is the `(a_bits, a_bits_lt, a_eq)` triple
+    `FieldLessThanOrEqual` carries, so those fields are obtainable rather than assumed. -/
+@[axiom_budget 1]
+theorem exists_bounded_bits_of_range_check (w N : Nat) (cs : List Nat) (last : Nat)
+    (h : ∀ c ∈ cs, c < 2 ^ w)
+    (hlast : last < 2 ^ (N - w * cs.length))
+    (hl : w * cs.length ≤ N) :
+    ∃ bits : Nat, (bits : ℤ) = chunkSum w (cs ++ [last]) ∧ bits < 2 ^ N := by
+  have hb : chunkSum w (cs ++ [last]) < (2 : ℤ) ^ N :=
+    chunkSum_lt_pow_of_short_last w N cs last h hlast hl
+  have hnn : 0 ≤ chunkSum w (cs ++ [last]) := chunkSum_nonneg w (cs ++ [last])
+  have htoNat : (((chunkSum w (cs ++ [last])).toNat : ℤ)) = chunkSum w (cs ++ [last]) :=
+    Int.toNat_of_nonneg hnn
+  refine ⟨(chunkSum w (cs ++ [last])).toNat, htoNat, ?_⟩
+  have : (((chunkSum w (cs ++ [last])).toNat : ℤ)) < (2 : ℤ) ^ N := by rw [htoNat]; exact hb
+  exact_mod_cast this
+
+/-- The 64-bit instance at the deployed parameters — `NativeRangeCheckChip<10, 64>` — which is the
+    exact shape `FieldLessThanOrEqual`'s `a_bits`/`a_bits_lt`/`a_eq` fields need. -/
+@[axiom_budget 1]
+theorem range_check_64_gives_bounded_bits (cs : List Nat) (last : Nat)
+    (hlen : cs.length = 6) (h : ∀ c ∈ cs, c < 2 ^ 10) (hlast : last < 2 ^ 4) :
+    ∃ bits : Nat, (bits : ℤ) = chunkSum 10 (cs ++ [last]) ∧ bits < 2 ^ 64 := by
+  have hlast' : last < 2 ^ (64 - 10 * cs.length) := by rw [hlen]; exact hlast
+  exact exists_bounded_bits_of_range_check 10 64 cs last h hlast' (by rw [hlen]; omega)
+
 /--
 ## THEOREM: Range Check Is Necessary for Value Conservation
 

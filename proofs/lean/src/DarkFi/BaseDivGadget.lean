@@ -72,12 +72,16 @@ true of *this file* and false of the layer: the arithmetic is
 the `2^253` window, as this note's own paragraph argues) and the bounds themselves are
 `Comparison.range_check_64_is_bounded`, which derives `< 2^64` from the **deployed** decomposition —
 `NativeRangeCheckChip<10, 64>` at `src/zk/vm.rs:116` — rather than assuming it, which is what the
-`a_bits_lt` / `b_bits_lt` fields of `FieldLessThanOrEqual` above carry. What is *not* proved, and is
-the honest residue, is the step from a circuit's `range_check(64, ·)` call to a chunk list of that
-shape: that is the same `(r, s) ↦ the circuit's statements` transcription `Circuits/InstanceDerivation
-.lean` records for `OBL-T7`, and it is not arithmetic. So `OBL-Z12`'s residue is no longer "the
-composition is unmade" but "the composition's inputs are supplied *by hypothesis* rather than read
-from the circuit" — which is a strictly smaller gap, and a different one.
+`a_bits_lt` / `b_bits_lt` fields of `FieldLessThanOrEqual` above carry. **And those fields are obtainable rather than assumed**:
+`Comparison.range_check_64_gives_bounded_bits` takes the chunk witness the deployed chip accepts and
+returns exactly the `(bits, bits < 2^64, a = ↑bits)` triple this structure's `a_bits`/`a_bits_lt`/
+`a_eq` are — so a caller holding a circuit's chunks has the bound, and it is the check's own
+decomposition that supplies it. What is *not* proved, and is the honest residue, is the step from a
+circuit's `range_check(64, ·)` call to a chunk list of that shape: that is the same
+`(r, s) ↦ the circuit's statements` transcription `Circuits/InstanceDerivation.lean` records for
+`OBL-T7`, and it is not arithmetic. So `OBL-Z12`'s residue is no longer "the composition is unmade"
+but "the composition's inputs come from the check's witness rather than from the circuit source" —
+which is a strictly smaller gap, and a different one.
 -/
 
 namespace BaseDivGadget
