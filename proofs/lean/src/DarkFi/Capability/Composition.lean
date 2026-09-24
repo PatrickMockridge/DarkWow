@@ -413,7 +413,8 @@ def bridgeWithdrawType : CapabilityType bridgeWithdrawResource bridgeWithdrawAct
    printed the same lines again.
 
    It is removed because it is no longer evidence of anything. Every one of the
-   twelve capability types now carries `coversBarbs := by decide`, which is a
+   fourteen capability types now carries `coversBarbs := by decide` (`contrib/capability_type_diff.sh`
+   measures the count, because this sentence said twelve while there were fourteen), which is a
    *kernel-checked proof* of exactly the proposition the block was computing at
    run time — so the printout stated a weaker thing (a `Bool` that could have
    been `false`) than the term beside it, and a reader had to trust the `#eval`
@@ -454,7 +455,7 @@ def bridgeWithdrawType : CapabilityType bridgeWithdrawResource bridgeWithdrawAct
      per-operation nullifier that the host checks unspent, exactly as `native_token/proof/burn.zk`
      does for a coin;
    * the barbs below are what the operation exhibits, so the same `coversBarbs` obligation the other
-     twelve types carry applies to this one.
+     thirteen types carry applies to this one.
 
    This is the *type-level* half. The circuit and entrypoint changes it describes are not made. -/
 
