@@ -254,10 +254,17 @@ pub fn purchase_coverage_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (buyer_x, buyer_y) = params.buyer.xy().expect("pk not identity");
+    // The circuit's five instances, in its own order: buyer_pub_x, buyer_pub_y, buyer_nullifier,
+    // tx_binding, tx_nonce. The tx pair was missing here — the circuit gained it and this vector did
+    // not follow, so the proof had no published input to be verified against — and it is the
+    // heavyweight convention its sibling arms use: `tx_binding = poseidon_hash([3, 0, 0])`,
+    // `tx_nonce = 0`, which is exactly what the circuit derives from `tx_commitment = 0`.
+    use dwow_sdk::crypto::poseidon_hash;
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
         INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_NS_V2.to_string(),
-        vec![buyer_x, buyer_y, params.buyer_nullifier],
+        vec![buyer_x, buyer_y, params.buyer_nullifier, tx_binding, pallas::Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;

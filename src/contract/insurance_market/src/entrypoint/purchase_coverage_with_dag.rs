@@ -27,13 +27,17 @@
 //! This is used when coverage tiers require proof of certain qualifications.
 
 use dwow_sdk::{
-    crypto::pasta_prelude::{Curve, CurveAffine, PrimeField},
+    crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, poseidon_hash, ContractId},
     error::ContractError,
     msg,
     pasta::pallas,
     wasm,
 };
-use dwow_serial::Encodable;
+use dwow_serial::{deserialize, Encodable};
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id,
+    validate_child_value_commit,
+};
 
 use crate::error::InsuranceMarketError;
 use crate::InsuranceMarketFunction;
@@ -44,7 +48,8 @@ use crate::model::{
     PurchaseCoverageWithDAGUpdateV1,
 };
 use crate::{
-    INSURANCE_CONTRACT_COVERAGES_TREE, INSURANCE_CONTRACT_MARKETS_TREE,
+    INSURANCE_CONTRACT_COVERAGES_TREE, INSURANCE_CONTRACT_INFO_TREE,
+    INSURANCE_CONTRACT_MARKETS_TREE, INSURANCE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     INSURANCE_CONTRACT_UNDERWRITERS_TREE, INSURANCE_MARKET_NULLIFIERS_TREE,
     INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_DAG_NS_V2,
 };
@@ -55,6 +60,35 @@ pub fn insurance_market_purchase_coverage_with_dag_process_instruction_v1(
     call_idx: usize,
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
+    // Validate the child call: PN::TransferV1 to pay the premium.
+    //
+    // This is the payment half of the same hole as the two capability paths. The function computes
+    // `premium = calculate_premium(...)`, credits `underwriter.earned_premiums += premium`, writes
+    // `premium_paid: premium` into the update — and required no transfer, so the premium was
+    // recorded as paid and credited to the underwriter while nothing moved. There is no capability
+    // hole here: this path is DAG-gated, not capability-gated. The guard is a port of
+    // `purchase_coverage.rs:62-86`.
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[insurance_market::purchase_coverage_with_dag] Error: Expected 1 child call (PN::transfer_v1), got {}", this_call.children_indexes.len());
+        return Err(InsuranceMarketError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[insurance_market::purchase_coverage_with_dag] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
+        return Err(InsuranceMarketError::InvalidChildCall.into())
+    }
+    let info_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_INFO_TREE)?;
+    let promissory_note_bytes = wasm::db::db_get(info_db, INSURANCE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
+        .ok_or(InsuranceMarketError::InvalidChildCall)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
+    }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+
     let self_ = &calls[call_idx].data;
     let params = PurchaseCoverageWithDAGParamsV1::decode(&self_.data[1..])?;
 
@@ -146,6 +180,15 @@ pub fn insurance_market_purchase_coverage_with_dag_process_instruction_v1(
         params.coverage_amount,
         current_block,
     );
+
+    // The child call must move *this* premium, not merely exist. `purchase_coverage.rs:167-169` is
+    // the source of the blind and of the comparison. Without it `premium_paid` below is a number the
+    // caller chose and never transferred.
+    let value_blind = poseidon_hash([
+        pallas::Base::from(premium),
+        coverage_id,
+    ]);
+    validate_child_value_commit(&child_call.data, premium, value_blind)?;
 
     // Check if coverage already exists
     let coverages_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_COVERAGES_TREE)?;
@@ -246,10 +289,15 @@ pub fn purchase_coverage_with_dag_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (buyer_x, buyer_y) = params.buyer.xy().expect("pk not identity");
+    // The circuit's five instances, in its own order: buyer_pub_x, buyer_pub_y, buyer_nullifier,
+    // tx_binding, tx_nonce — the same shape as `purchase_coverage`'s, and the same repair: the tx
+    // pair was missing from this vector while the circuit constrained it.
+    use dwow_sdk::crypto::poseidon_hash;
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
         INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_DAG_NS_V2.to_string(),
-        vec![buyer_x, buyer_y, params.buyer_nullifier],
+        vec![buyer_x, buyer_y, params.buyer_nullifier, tx_binding, pallas::Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;

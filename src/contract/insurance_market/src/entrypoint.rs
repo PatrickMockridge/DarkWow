@@ -82,6 +82,10 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize database trees
     let info_db = wasm::db::db_init(cid, crate::INSURANCE_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, crate::INSURANCE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
+    // The capability guards read this by name and refuse when it is zero (`labor_market`'s pattern,
+    // and its reason: a zero sentinel read as "unconfigured" used to *skip* the comparison, which
+    // left the capability child call free to target any contract).
+    wasm::db::db_set(info_db, crate::INSURANCE_CONTRACT_IDENTITY_CONTRACT_ID, &dwow_sdk::crypto::IDENTITY_CONTRACT_ID.to_bytes())?;
 
     wasm::db::db_init(cid, crate::INSURANCE_CONTRACT_RISK_TYPES_TREE)?;
     wasm::db::db_init(cid, crate::INSURANCE_CONTRACT_MARKETS_TREE)?;
@@ -179,11 +183,16 @@ fn underwrite_with_capability_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (ux, uy) = params.underwriter.xy().expect("pk not identity");
+    use dwow_sdk::crypto::poseidon_hash;
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
     let cap = Option::from(pallas::Base::from_repr(params.capability_secret))
         .ok_or(InsuranceMarketError::InvalidCapability)?;
     zk_public_inputs.push((
         crate::INSURANCE_MARKET_ZKAS_UNDERWRITE_WITH_CAPABILITY_NS_V2.to_string(),
-        vec![ux, uy, cap],
+        // The circuit's five instances, in its order: underwriter_pub_x, underwriter_pub_y,
+        // tx_binding, tx_nonce, required_capability_id. The tx pair was missing while the circuit
+        // constrained it; the value in the last position is unchanged.
+        vec![ux, uy, tx_binding, pallas::Base::zero(), cap],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -202,11 +211,16 @@ fn purchase_coverage_with_capability_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (bx, by) = params.buyer.xy().expect("pk not identity");
+    use dwow_sdk::crypto::poseidon_hash;
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
     let cap = Option::from(pallas::Base::from_repr(params.capability_secret))
         .ok_or(InsuranceMarketError::InvalidCapability)?;
     zk_public_inputs.push((
         crate::INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_CAPABILITY_NS_V2.to_string(),
-        vec![bx, by, cap],
+        // The circuit's six instances, in its order: buyer_pub_x, buyer_pub_y, tx_binding, tx_nonce,
+        // required_capability_id, buyer_nullifier. The tx pair and the nullifier were all missing
+        // while the circuit constrained them.
+        vec![bx, by, tx_binding, pallas::Base::zero(), cap, params.buyer_nullifier],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;

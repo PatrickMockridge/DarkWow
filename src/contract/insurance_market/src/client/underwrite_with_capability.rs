@@ -40,25 +40,25 @@ use rand::SeedableRng;
 pub struct UnderwriteWithCapabilityV1PublicInputs {
     pub underwriter_pub_x: pallas::Base,
     pub underwriter_pub_y: pallas::Base,
-    pub required_capability_id: pallas::Base,
-    pub capability_predicate_result: pallas::Base,
-    pub derived_pub_x: pallas::Base,
-    pub derived_pub_y: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
+    pub required_capability_id: pallas::Base,
 }
 
 impl UnderwriteWithCapabilityV1PublicInputs {
+    /// The five values the circuit's `constrain_instance` calls publish, in its order:
+    /// `underwriter_pub_x, underwriter_pub_y, tx_binding, tx_nonce, required_capability_id`.
+    ///
+    /// Eight until 2026-09-24, for the same reason as its `purchase_coverage_with_capability`
+    /// sibling: `capability_predicate_result` and `derived_pub_x/y` are witnesses of the V2 circuit,
+    /// not instances of it, and their presence displaced the three that are. See that file's note.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.underwriter_pub_x,
             self.underwriter_pub_y,
-            self.required_capability_id,
-            self.capability_predicate_result,
-            self.derived_pub_x,
-            self.derived_pub_y,
             self.tx_binding,
             self.tx_nonce,
+            self.required_capability_id,
         ]
     }
 }
@@ -98,34 +98,31 @@ impl UnderwriteWithCapabilityV1CallData {
         }
     }
 
+    /// The circuit's own derivation, host-side: `tx_binding = poseidon_hash([3, tx_commitment,
+    /// tx_nonce])` (`DOMAIN_TX_BINDING = witness_base(3)` in the `.zk`). The two `derived_pub_*`
+    /// values this used to compute are the *circuit's* `ec_mul_base(underwriter_secret, NULLIFIER_K)`
+    /// bound to `underwriter_pub_x/y` by `constrain_equal_base` — they are not public inputs, so
+    /// computing them here produced two values the verifier never asks for.
     pub fn compute_public_inputs(&self) -> UnderwriteWithCapabilityV1PublicInputs {
-        let derived_pub_x = poseidon_hash([
-            self.underwriter_pub_x,
-            self.underwriter_pub_y,
-            self.required_capability_id,
-            self.capability_predicate_result,
-        ]);
-        let derived_pub_y = poseidon_hash([
-            self.underwriter_secret,
-            self.required_capability_id,
-            self.capability_predicate_result,
-        ]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         UnderwriteWithCapabilityV1PublicInputs {
             underwriter_pub_x: self.underwriter_pub_x,
             underwriter_pub_y: self.underwriter_pub_y,
-            required_capability_id: self.required_capability_id,
-            capability_predicate_result: self.capability_predicate_result,
-            derived_pub_x,
-            derived_pub_y,
-            tx_binding: pallas::Base::zero(),
+            tx_binding,
             tx_nonce: self.tx_nonce,
+            required_capability_id: self.required_capability_id,
         }
     }
 
+    /// The circuit's witnesses, in the order its `witness` block declares them: `underwriter_secret,
+    /// underwriter_pub_x, underwriter_pub_y, required_capability_id, capability_predicate_result,
+    /// tx_commitment, tx_nonce, tx_binding` — eight, where this emitted nine beginning with a
+    /// `Witness::Scalar(nullifier_k)` the circuit does not declare (`NULLIFIER_K` is a constant
+    /// there). See the sibling client's note for why `nullifier_k` remains a parameter of `new`.
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        let public_inputs = self.compute_public_inputs();
         vec![
             // Private inputs
-            Witness::Scalar(Value::known(self.nullifier_k)),
             Witness::Base(Value::known(self.underwriter_secret)),
             Witness::Base(Value::known(self.underwriter_pub_x)),
             Witness::Base(Value::known(self.underwriter_pub_y)),
@@ -133,7 +130,7 @@ impl UnderwriteWithCapabilityV1CallData {
             Witness::Base(Value::known(self.capability_predicate_result)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(public_inputs.tx_binding)),
         ]
     }
 }

@@ -40,25 +40,31 @@ use rand::SeedableRng;
 pub struct PurchaseCoverageWithCapabilityV1PublicInputs {
     pub buyer_pub_x: pallas::Base,
     pub buyer_pub_y: pallas::Base,
-    pub required_capability_id: pallas::Base,
-    pub capability_predicate_result: pallas::Base,
-    pub derived_pub_x: pallas::Base,
-    pub derived_pub_y: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
+    pub required_capability_id: pallas::Base,
+    pub buyer_nullifier: pallas::Base,
 }
 
 impl PurchaseCoverageWithCapabilityV1PublicInputs {
+    /// The six values the circuit's `constrain_instance` calls publish, in its order:
+    /// `buyer_pub_x, buyer_pub_y, tx_binding, tx_nonce, required_capability_id, buyer_nullifier`.
+    ///
+    /// This emitted **eight** values until 2026-09-24, four of which belonged to a V1 design that no
+    /// longer exists — `capability_predicate_result` and `derived_pub_x/y` are not instances of the
+    /// V2 circuit, and the two positions they occupied displaced `tx_binding`, `tx_nonce` and
+    /// `buyer_nullifier`. So a proof would have been created over a vector the verifier never asks
+    /// for, which is the failure the metadata gate names in its own words ("the proof would be
+    /// created over a different public-input vector than the verifier uses") and the class the
+    /// V1-vs-V2 hazard memory records for auction and dao_escrow.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.buyer_pub_x,
             self.buyer_pub_y,
-            self.required_capability_id,
-            self.capability_predicate_result,
-            self.derived_pub_x,
-            self.derived_pub_y,
             self.tx_binding,
             self.tx_nonce,
+            self.required_capability_id,
+            self.buyer_nullifier,
         ]
     }
 }
@@ -98,42 +104,51 @@ impl PurchaseCoverageWithCapabilityV1CallData {
         }
     }
 
+    /// The circuit's own derivations, host-side: `buyer_nullifier` is
+    /// `poseidon_hash([4, buyer_pub_x, buyer_pub_y, buyer_secret])` (`DOMAIN_COMMITMENT =
+    /// witness_base(4)` in the `.zk`) and `tx_binding` is `poseidon_hash([3, tx_commitment,
+    /// tx_nonce])`. The circuit *binds* the nullifier with `constrain_equal_base`, so a client that
+    /// computed it differently would produce an unsatisfiable proof rather than a wrong one.
     pub fn compute_public_inputs(&self) -> PurchaseCoverageWithCapabilityV1PublicInputs {
-        let derived_pub_x = poseidon_hash([
+        let buyer_nullifier = poseidon_hash([
+            pallas::Base::from(4u64),
             self.buyer_pub_x,
             self.buyer_pub_y,
-            self.required_capability_id,
-            self.capability_predicate_result,
-        ]);
-        let derived_pub_y = poseidon_hash([
             self.buyer_secret,
-            self.required_capability_id,
-            self.capability_predicate_result,
         ]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         PurchaseCoverageWithCapabilityV1PublicInputs {
             buyer_pub_x: self.buyer_pub_x,
             buyer_pub_y: self.buyer_pub_y,
-            required_capability_id: self.required_capability_id,
-            capability_predicate_result: self.capability_predicate_result,
-            derived_pub_x,
-            derived_pub_y,
-            tx_binding: pallas::Base::zero(),
+            tx_binding,
             tx_nonce: self.tx_nonce,
+            required_capability_id: self.required_capability_id,
+            buyer_nullifier,
         }
     }
 
+    /// The circuit's witnesses, in the order its `witness` block declares them:
+    /// `buyer_secret, buyer_pub_x, buyer_pub_y, required_capability_id, capability_predicate_result,
+    /// buyer_nullifier, tx_commitment, tx_nonce, tx_binding`.
+    ///
+    /// The list used to lead with `Witness::Scalar(nullifier_k)`, which the circuit does not declare —
+    /// `NULLIFIER_K` is a `constant` there, not a witness — so every witness after it was offset by
+    /// one and the wrong type. `nullifier_k` stays a parameter of `new` for its callers (the test
+    /// harness passes it positionally) and is no longer read, which is the honest half of a
+    /// signature this unit could not change without editing a directory another session holds.
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        let public_inputs = self.compute_public_inputs();
         vec![
             // Private inputs
-            Witness::Scalar(Value::known(self.nullifier_k)),
             Witness::Base(Value::known(self.buyer_secret)),
             Witness::Base(Value::known(self.buyer_pub_x)),
             Witness::Base(Value::known(self.buyer_pub_y)),
             Witness::Base(Value::known(self.required_capability_id)),
             Witness::Base(Value::known(self.capability_predicate_result)),
+            Witness::Base(Value::known(public_inputs.buyer_nullifier)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(public_inputs.tx_binding)),
         ]
     }
 }

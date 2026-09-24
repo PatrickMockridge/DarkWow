@@ -284,3 +284,21 @@ src/contract/labor_market/proof/create_job.zk : attestation_id : host: labor_mar
 # was not taken, and the difference is why: there the host ignored a value it was supposed to
 # enforce, while here the value *is* the claim's content, so disclosing it is the point.
 src/contract/oracle/proof/attest_value.zk : threshold : host: oracle entrypoint.rs:406 authorizes the prover as the registered oracle (`authorize_oracle`, :272-284, `db_get(oracles_db, …)` -> unknown oracle rejected) and :192 publishes `params.threshold` as this circuit's public input; no bound exists to impose, and the value is the operator's own claim
+
+# --- insurance_market's capability requirement: the market's own record is the requirement -------
+# `required_capability_id` is a witness the circuit neither derives nor binds, and it cannot: it is
+# the *requirement* the operation is checked against, not a value the circuit computes. The host is
+# what makes it mean something, and it is a two-child check — `underwrite_with_capability.rs:79`
+# requires a child `Identity::VerifyCapabilityV1 (0x06)` routed to the configured Identity contract
+# (`:100-115`), reads the requirement from the **market's own stored record**
+# (`:148` `market.required_underwriter_capability`), and rejects unless the `capability_id` the child
+# actually verified equals it (`:162-164`). So the exposed witness is the value the host compares the
+# verified capability against: a disclosure of the rule, not a prover-chosen parameter.
+#
+# HONEST LIMIT: that arm `.unwrap()`s the stored requirement (`:148`) instead of failing closed, so a
+# market with no requirement configured panics rather than refusing by name. Its sibling
+# (`purchase_coverage_with_capability.rs:131`) checks `is_none()` first and is the shape both should
+# have — the `OBL-C16` class in miniature, recorded here rather than smoothed.
+src/contract/insurance_market/proof/underwrite_with_capability.zk : required_capability_id : host: insurance_market entrypoint/underwrite_with_capability.rs:148-164 the requirement is read from the market's stored record and compared against the `capability_id` the child `Identity::VerifyCapabilityV1 (0x06)` verified, with the child routed to the configured Identity contract
+# --- the same rule for the buyer side, and this arm is the fail-closed one ----------------------
+src/contract/insurance_market/proof/purchase_coverage_with_capability.zk : required_capability_id : host: insurance_market entrypoint/purchase_coverage_with_capability.rs:131-144 `market.required_buyer_capability` is checked `is_none()` first (fail-closed) and then compared against the child's verified `capability_id` -> reject on mismatch
