@@ -69,6 +69,31 @@ theorem barbPreservation (primitives : List PrimitiveType) (p : PrimitiveType)
         simp [compose, hb_in_compose_qs]
 
 /- ==========================================================================
+   Part 2b: The converse — a composed barb has a carrier
+   ==========================================================================
+   `barbPreservation` goes member → composition. This goes the other way, and
+   it is the direction a "the primitive that exhibits this barb must be
+   present" argument needs: a barb in the composed set is carried by *some*
+   primitive in the list. `Capability/Inversion.lean`'s
+   `capabilityPredicateBypass_prevention` is its first consumer.
+-/
+
+@[axiom_budget 0]
+theorem exists_carrier_of_barb_mem (primitives : List PrimitiveType) (b : Barb) :
+    b ∈ compose primitives → ∃ p ∈ primitives, b ∈ p.barbs := by
+  induction primitives with
+  | nil =>
+      intro h
+      simp [compose] at h
+  | cons q qs ih =>
+      intro h
+      simp [compose] at h
+      rcases h with hq | hqs
+      · exact ⟨q, by simp, hq⟩
+      · rcases ih hqs with ⟨p, hp, hb⟩
+        exact ⟨p, by simp [hp], hb⟩
+
+/- ==========================================================================
    Part 3: Resource and Action Types
    ==========================================================================
    A Resource specifies what barbs a capability must cover. An Action

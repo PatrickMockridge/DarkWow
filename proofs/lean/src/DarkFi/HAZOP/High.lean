@@ -353,6 +353,18 @@ def highAxiomFindings : List (String × Nat × String) := [
    "the four `poseidon_hash_output` corollaries are the *instantiation*, and their budgets are " ++
    "exactly the assumption. The Merkle induction in particular is now unconditional — only the " ++
    "claim that `sinsemillaCrh` is injective is not"),
+  ("HIGH-16: a Prop field's type infects its structure's projections", 40,
+   "A HAZARD OF THE BUDGET MECHANISM, not an assumption. `structure S where a : Nat; p : Foo` " ++
+   "for an axiom-named `Prop` `Foo` makes `#print axioms S.a` report `[Foo]` — every projection, " ++
+   "including the data ones, depends on the axiom, whether or not any proof touches it. Measured " ++
+   "minimally, and it is 10 lines a reader can re-run. The live instance is " ++
+   "`Capability.Inversion.CircuitDerivable`, whose third field is `NoFreeInstances r s`: " ++
+   "`capabilityType_of_circuitDerivable` reads budget 1 while its proof term never mentions " ++
+   "`noFreeInstances`, and the file said for months that its `#print axioms` was empty. Both " ++
+   "readings were defensible from the source and only one is true of the budget. This is the same " ++
+   "class as HIGH-13's disclosure that the budget cannot record *what kind* of dependency a " ++
+   "citation is — here it cannot record that the dependency is a projection's rather than the " ++
+   "proof's"),
   ("HIGH-15: aead_key_committing", 45,
    "PRESENT, CONSISTENT, AND THE UNCONDITIONAL FORM OF A COMPUTATIONAL PROPERTY. The axiom " ++
    "states that a ciphertext authenticates under at most one key, which is what makes a " ++
