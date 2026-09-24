@@ -40,7 +40,7 @@ those are.
 |---|---|---|---|---|---|
 | 1 | block mass balance (Pedersen sum) | `src/linear/src/proof_of_token_balance.rs` (`verify_proof_of_token_balance`) | `contrib/model/proof_of_token_balance.py` (428) | `CrossCutting.value_conservation_no_wraparound`, and `Semantics/Ledger.lean`'s `exec_perm` | `OBL-C1` |
 | 2 | nullifier replay gate, and maturity | `src/linear/src/chain_state.rs` (`connect_block`'s duplicate check; `check_coinbase_maturity`); `src/linear/src/lib.rs` (`COINBASE_MATURITY`) | `contrib/model/nullifier_lifecycle.py` (590) | the three fragments above | `OBL-C8`, `OBL-T4` |
-| 3 | commitment set | `src/linear/src/chain_state.rs` (`commitment_set : Mutex<BTreeMap<Commitment, BlockHeight>>`) | `contrib/model/chain_model.py`, `contrib/model/fee_model.py` | none | — |
+| 3 | commitment set | `src/linear/src/chain_state.rs` (`commitment_set : Mutex<BTreeMap<Commitment, BlockHeight>>`) | `contrib/model/chain_model.py`, `contrib/model/fee_model.py` | `Consensus/CommitmentSet.lean` | `OBL-C109` |
 | 4 | block and transaction validity | `src/linear/src/validation.rs` (`check_block_header`, `validate_block_structure`) | `contrib/model/chain_validation_model.py` (3871) | none | `OBL-C78`, `OBL-Z2` |
 | 5 | cumulative supply chain | `src/linear/src/supply_chain.rs` (`compute_next`) | `contrib/model/supply_chain_model.py` (1622) | `SupplyChain.lean` | `OBL-C45`, `OBL-C5` |
 
@@ -125,9 +125,26 @@ a component" was supposed to mean, and it was right.
    **Still not connected, deliberately**: `Capability/Exercise.lean`'s `validExercise` /
    `consume_is_single_use` is the *same rule* over a `List` on the contract side, and bridging a `List`
    to a predicate is a unit nothing consumes yet.
-3. **The commitment set**, then **validity**. After the first two, because the coupling with maturity is
-   what makes the set interesting, and validity's pure functions are the largest surface with the least
-   existing structure to build on.
+3. **The commitment set** — **landed 2026-09-24** as `Consensus/CommitmentSet.lean` (7 theorems, all at
+   budget 0). **And this map's framing of it was wrong in a way worth recording**: it said "the new
+   content is the coupling: a creation height per commitment, and the maturity read that consults it".
+   Measured, that coupling is precisely what the *code* deliberately does not do and what the
+   *specification* wrongly does. `check_coinbase_maturity` keys by **nullifier**, and its own docstring
+   records the commitment-set route as considered and rejected — a second source of truth. Meanwhile
+   `chain_model.py`'s `is_commitment_mature` keys by commitment *and* claims to mirror
+   `chain_state.rs:is_commitment_mature()`, a function that does not exist. Both are now register row
+   `OBL-C109`.
+
+   So what the model is, is the **prune**. The set is written at the coinbase and fee-collect paths,
+   pruned at the maturity window, restored from sled on restart, and read in production by **nobody** —
+   its only accessor is called from `daemon_sync_integration.rs`'s reorg assertions.
+   `prune_preserves_refusal` proves the prune neither creates nor destroys a refusal, so the conflation
+   it introduces (a pruned commitment reads as `none`, exactly like one never recorded) costs the
+   maturity rule nothing while costing the *set* its ability to answer at all. A model of a uniqueness
+   rule — which is what "a set of commitments" suggests — would have been a model of nothing.
+
+   Then **validity**: the largest surface, the least existing structure, and the last mechanism on the
+   list.
 4. **The supply chain** is already modelled. What remains is `OBL-C5`'s non-increase, which this
    campaign measured and left as a kernel-checked range plus a scan — see that row for why the obvious
    rescue lemmas are false.

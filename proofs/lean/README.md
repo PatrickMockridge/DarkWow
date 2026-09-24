@@ -295,18 +295,19 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   manual audit of the `.zk` files, not machine-verified extraction. The obligation that would
   make it mechanized is `Axioms.NoFreeInstances`, which is uninterpreted and unconsumed.
 - **The consensus state core is only partly modelled here, and what is missing is named rather than
-  implied.** Two mechanisms have models now, both at **budget 0**: the block-level Pedersen mass-balance
+  implied.** Three mechanisms have models now, all at **budget 0**: the block-level Pedersen mass-balance
   rule (`Consensus/MassBalance.lean`, ten theorems, transcribed from
-  `contrib/model/proof_of_token_balance.py`) and the nullifier lifecycle
+  `contrib/model/proof_of_token_balance.py`), the nullifier lifecycle
   (`Consensus/NullifierLifecycle.lean`, seven, which feeds the existing maturity gate from the store's
-  recorded height and refuses a second spend). Still unmodelled: the **commitment set**, the
-  **validity predicates** (`src/linear/src/validation.rs`, specified by
-  `contrib/model/chain_validation_model.py`), and the parts of the nullifier mechanism those two models
-  stop short of. The agreed shape of each, with its Rust, its Python specification and its non-vacuity
-  witness, is `doc/src/arch/consensus-core-map.md` — and a unit that departs from it amends it in the
-  same commit, which the first two both did. Separately: `Semantics/Ledger.lean` proves that disjoint
-  calls commute without saying what a write set *is*, which is how `OBL-C100` was found; that gap is
-  still open and is not part of the map.
+  recorded height and refuses a second spend), and the chain-level commitment set
+  (`Consensus/CommitmentSet.lean`, seven — the *prune*, and the proof that it neither creates nor
+  destroys a maturity refusal). Still unmodelled: the **validity predicates**
+  (`src/linear/src/validation.rs`, specified by `contrib/model/chain_validation_model.py`), and the parts
+  of these mechanisms their models stop short of. The agreed shape of each, with its Rust, its Python
+  specification and its non-vacuity witness, is `doc/src/arch/consensus-core-map.md` — and a unit that
+  departs from it amends it in the same commit, which all three did. Separately: `Semantics/Ledger.lean`
+  proves that disjoint calls commute without saying what a write set *is*, which is how `OBL-C100` was
+  found; that gap is still open and is not part of the map.
 - **Poseidon is an opaque function, not the sponge.** `poseidon_hash_output` is a value-less
   `opaque`, so nothing about the P128Pow5T3 permutation is proved — not even determinism, which
   is a consequence of its being a function and needs no proof. (This section used to say it was
