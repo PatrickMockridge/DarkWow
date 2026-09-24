@@ -210,19 +210,39 @@ def isEventGraphBarb (b : Barb) : Bool :=
    alone. "No barb in the set satisfies `isBlockchainBarb`" is stated as the cardinality of the
    filtered set being zero, which needs only `Finset.filter` and `Finset.card`.
 
-   NOTE: both branches below are the *same* predicate, which is almost certainly a copy-paste
-   error rather than the intent — the comments describe opposite directions ("only
-   dagParent/quorumQuery/rateLimit allowed" versus "blockchain barbs blocked") but the code
-   checks the same thing in both. Recorded rather than changed: the fix is a semantics decision
-   about which barbs each direction permits, not a compile error. -/
+   **Both branches were the same predicate until 2026-09-24**, and the note that stood here called
+   the repair "a semantics decision about which barbs each direction permits" and declined to make
+   it. It is not a decision: the comments on the two branches state the two intentions exactly, and
+   they are opposite **in kind** — the first is a *whitelist* ("only dagParent, quorumQuery,
+   rateLimit allowed", which is `isEventGraphBarb`'s three barbs) and the second is a *blacklist*
+   ("blockchain barbs blocked"). Those are different conditions whenever the barb is in neither
+   list, and the alphabet has fourteen barbs against eight in the two lists. So reading the comment
+   as the specification and the code as the defect identifies the copy-paste without a decision,
+   and `bridgeSafe_directions_differ` below is the check that it did. -/
 def bridgeSafe (P : ConcurrentProcess) (target : String) : Bool :=
   if target = "blockchain" then
     -- event-graph → blockchain: only dagParent, quorumQuery, rateLimit allowed
-    (P.authorizationBarbs.filter (fun b => isBlockchainBarb b = true)).card == 0
+    (P.authorizationBarbs.filter (fun b => isEventGraphBarb b = false)).card == 0
   else if target = "event-graph" then
     -- blockchain → event-graph: blockchain barbs blocked
     (P.authorizationBarbs.filter (fun b => isBlockchainBarb b = true)).card == 0
   else
     false
+
+/-- A probe process whose only authorization barb is `↓prove` — a barb that is in *neither* of the
+    two lists, which is what makes the two directions' verdicts differ. -/
+def bridgeProbe : ConcurrentProcess :=
+  { name := "probe", authorizationBarbs := {Barb.prove}, concurrencyBarbs := ∅
+  , canConcurrent := false, canMerge := false }
+
+/-- **The two directions are distinguishable**, which is the property the copy-paste destroyed: a
+    process carrying only `↓prove` is *permitted* toward the event graph (the blacklist does not look
+    at it) and *refused* toward the blockchain (the whitelist does). Before the repair both branches
+    returned the same `Bool` for every input, so no such witness existed and the definition could not
+    have told them apart for any process. -/
+@[axiom_budget 0]
+theorem bridgeSafe_directions_differ :
+    bridgeSafe bridgeProbe "blockchain" ≠ bridgeSafe bridgeProbe "event-graph" := by
+  decide
 
 end DarkFi.Capability.Concurrency

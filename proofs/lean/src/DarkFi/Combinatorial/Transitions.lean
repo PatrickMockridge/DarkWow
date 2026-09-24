@@ -145,22 +145,38 @@ def trajectoryRatio (N K : Nat) : Nat :=
   l1TrajectoryCount N K / l2TrajectoryCount K
 
 /-! ==========================================================================
-   Part 5: Invariant — Consume+Create Keeps Active Set Bounded
-   ==========================================================================
-   The consume+create model ensures that each non-terminal operation removes
-   one object (via nullifier) and adds one object (via new leaf). The active
-   object count stays constant at N.
+   Part 5: Invariant — Consume+Create Keeps the Active Set's Size
 
-   Without this model, each operation would ADD an object without removing
-   the old one, leading to unbounded state growth: N, N+1, N+2, ...
--/
+   The consume+create model: each non-terminal operation removes one object (via nullifier) and adds
+   one object (via a new leaf), so the count of active objects is unchanged. Without it, each
+   operation would ADD an object without removing the old one, and the state would grow without
+   bound: N, N+1, N+2, …
 
-/--
-After K Box Put operations on N objects, the active set size is still N.
-Each Put consumes one object and creates one new object.
--/
+   **Until 2026-09-24 this section's theorem was not about this model at all.** What stood here was
+   `theorem consumeCreatePreservesCount (N K : Nat) : N + K - K = N`, closed by `omega` — true of
+   every `N` and `K`, mentioning nothing in this file, and named for an invariant of a step function
+   that did not exist. It survived the tautology check because that check compares the two sides
+   *syntactically* and `N + K - K` is not written as `N`; the soft signal that fires on a statement
+   mentioning no constant this project declares **did** fire on it, and this is the first of those
+   16 it has been acted on.
+
+   The restatement is about the model, and its hypothesis is its whole content: there has to be an
+   object to consume. At `objects = []` the claim is **false** — `(([]).drop 1 ++ [w]).length` is 1
+   against 0 — so the empty set is the boundary the old statement stepped over by being about `Nat`
+   rather than about objects.
+   ========================================================================== -/
+
+/-- **One consume+create step preserves the number of active objects.** The object at the head of
+    the set is consumed and one new object takes its place, so the count is unchanged — and it is
+    unchanged *because* something was consumed, which is what `h` supplies. The hypothesis is
+    load-bearing rather than defensive: see the section note for why the statement is false without
+    it, and note that the old form of this theorem had no place to put that fact. -/
 @[axiom_budget 0]
-theorem consumeCreatePreservesCount (N K : Nat) : N + K - K = N := by
-  omega
+theorem consumeCreatePreservesCount (s : L1AnonymitySet) (w : WitnessState)
+    (h : s.objects ≠ []) :
+    ((s.objects.drop 1) ++ [w]).length = s.objects.length := by
+  cases hobj : s.objects with
+  | nil => exact absurd hobj h
+  | cons o rest => simp [hobj]
 
 end Combinatorial.Transitions

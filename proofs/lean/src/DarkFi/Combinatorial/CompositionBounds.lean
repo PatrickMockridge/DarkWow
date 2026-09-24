@@ -51,14 +51,41 @@ namespace Combinatorial.CompositionBounds
    4. Delegation is mediated by the wallet kernel (not by direct state access)
 
    This is the DISJOINT STATE invariant — the foundation of all proofs below.
+
+   **It used to be a comment.** Until 2026-09-24 the structure below carried the invariant as a
+   `-- INVARIANT:` line with no field, no theorem and no consumer — a `structure` named for a
+   property it did not require, which is the same defect class as the deleted `KeyDisjoint` type
+   whose `writeSetDisjoint : Bool` nothing read (`Capability/Concurrency.lean` records that one).
+   The whole of the comment is expressible over these field types, so all three halves are fields
+   now and a caller supplies proof terms rather than receiving the invariant for free — the shape
+   `Capability/Inversion.lean`'s `CircuitDerivable` uses for the ZK premise. `DisjointPair.empty`
+   below keeps the structure demonstrably inhabited, because a structure with proof fields can be
+   empty and a comment cannot.
 -/
 
 structure DisjointPair where
   boxState   : L1AnonymitySet
   purseState : L1AnonymitySet
-  -- INVARIANT: boxState and purseState share no objects, nullifiers, or roots.
-  -- The wallet kernel ensures this by assigning distinct contract IDs.
-  deriving BEq, Repr
+  /-- No object appears in both sets. The wallet kernel ensures this by assigning distinct contract
+      IDs, which is *why* it can be supplied as a proof rather than assumed as data. -/
+  noSharedObjects : ∀ w ∈ boxState.objects, ∀ w' ∈ purseState.objects,
+      w.objectId ≠ w'.objectId
+  /-- No spent nullifier appears in both sets. -/
+  noSharedNullifiers : ∀ n ∈ boxState.public.spentNullifiers,
+      n ∉ purseState.public.spentNullifiers
+  /-- No historical root appears in both sets — the "own roots DB" clause above. -/
+  noSharedRoots : ∀ r ∈ boxState.public.historicalRoots,
+      r ∉ purseState.public.historicalRoots
+
+/-- **The structure is inhabited**, which a comment could not be asked to show: two empty anonymity
+    sets are disjoint, and every clause holds vacuously. A structure carrying proofs is a place a
+    vacuity can hide, so it gets a witness. -/
+def DisjointPair.empty (depth : Nat) : DisjointPair where
+  boxState := ⟨depth, [], ⟨0, [], []⟩⟩
+  purseState := ⟨depth, [], ⟨0, [], []⟩⟩
+  noSharedObjects := by simp
+  noSharedNullifiers := by simp
+  noSharedRoots := by simp
 
 /-! ==========================================================================
    Part 2: Transition Counts Under O-Cap Composition
@@ -71,18 +98,27 @@ structure DisjointPair where
    within a single operation's state transition.
 -/
 
-/--
-THEOREM: O-cap composition is additive.
+/-- **What additivity means for these counts, and it is a definition.** That a composed system's
+    transition count is the *sum* of its components' is not proved here and is not provable here: it
+    is what `boxTotalTransitionCount` and `purseTotalTransitionCount` were defined to be
+    (`boxPut + boxTake` and the Purse analogue), so this theorem is those two definitions unfolded
+    and composed by `rw`. Its content is the *choice of definitions*, and that choice is the
+    modelling claim — not the equation.
 
-Under the disjoint state invariant, the total transition count for a
-composed system of Box (with N_B objects, M contents options) and
-Purse (with N_P objects, A amount options) is:
+    This docstring said "THEOREM: O-cap composition is additive" until 2026-09-24, which is a claim
+    about a system that the proof does not make. `doc/src/arch/verification-hazop.md:337` and
+    `doc/src/arch/contract-wasm-type-system.md:2512` had already recorded that — "`ocap_additive_composition`
+    does not establish it" — so the documents were right and this file was the stale one, the
+    reverse of the direction the rest of this sweep has been running in.
 
-  Total = Box transitions + Purse transitions
-        = N_B × (M + 1) + N_P × (2A + 1)
+    What *is* a theorem rather than a definition is the comparison that gives the choice its point:
+    `additive_vs_multiplicative_gap` below, which shows the additive count is strictly below the
+    product whenever both components are active. The figures are the ones the identity produces:
 
-NOT: N_B × (M + 1) × N_P × (2A + 1)  (the multiplicative nightmare)
--/
+      Total = Box transitions + Purse transitions
+            = N_B × (M + 1) + N_P × (2A + 1)
+
+    NOT: N_B × (M + 1) × N_P × (2A + 1) — the figure the additive count is strictly less than. -/
 @[axiom_budget 0]
 theorem ocap_additive_composition (nb np m a : Nat) :
     boxTotalTransitionCount nb m + purseTotalTransitionCount np a =
