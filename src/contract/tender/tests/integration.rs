@@ -529,3 +529,128 @@ fn test_constants() {
     assert_eq!(TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V1, "RevealBid");
     assert_eq!(TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V1, "SelectWinner");
 }
+
+// ============================================================================
+// OBL-C78 — does the client's proof verify against the circuit the contract embeds?
+//
+// The instrument, not the fix, and the distinction is the reason it lives here rather than in a
+// heavyweight run: a proof that will not verify has two possible homes — the proof and the circuit
+// disagree, or the proof is sound and the instance vector the contract's `get_metadata` publishes
+// is not the one the proof was made with. This test removes the host from the question entirely by
+// verifying the client's proof against the **same** `.zk.bin` `init_contract` embeds, with the
+// inputs the client's own `to_vec()` produces.
+//
+// Proving *and* verifying, because an unsatisfied circuit still produces proof bytes: an assertion
+// on `Proof::create` alone reports success for exactly the circuits it exists to catch.
+// ============================================================================
+
+// No `#[cfg(feature = "client")]` here, deliberately. This test target always has it: the
+// `dwow-contract-test-harness` dev-dependency enables `dwow_tender_contract/client`, and cargo
+// unifies that into the test build. A gate that is always true is not the hazard — a gate that
+// *can* be false is, because it makes the test vanish rather than fail to compile, and `OBL-C76`
+// is the row about tests that do not run in the configuration used to claim verification.
+mod proof_self_verification {
+    use dwow_core::zk::{
+        empty_witnesses, verify_zkp, Proof, ProvingKey, ZkCircuit, ZkVerifyResult,
+    };
+    use dwow_core::zkas::ZkBinary;
+    use dwow_sdk::crypto::{PublicKey, SecretKey};
+    use dwow_sdk::pasta::pallas;
+    use dwow_tender_contract::client::select_winner::{
+        select_winner_v1_proof, SelectWinnerV1CallData,
+    };
+
+    /// The circuit the contract's `init_contract` compiles into its wasm.
+    const ZKBIN_BYTES: &[u8] = include_bytes!("../proof/select_winner.zk.bin");
+
+    fn select_winner_zkbin() -> ZkBinary {
+        ZkBinary::decode(ZKBIN_BYTES, false).expect("select_winner.zk.bin decodes")
+    }
+
+    fn proving_key(zkbin: &ZkBinary) -> ProvingKey {
+        let circuit = ZkCircuit::new(empty_witnesses(zkbin).expect("witnesses"), zkbin);
+        ProvingKey::build(zkbin.k, &circuit).expect("ProvingKey::build")
+    }
+
+    /// `select_winner.zk` declares a `tx_binding` witness *and* assigns it
+    /// `poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`. An assignment to a declared
+    /// witness constrains it rather than shadowing it, so a client that passes a placeholder there
+    /// builds a proof no verifier accepts — and `Proof::create` returns bytes all the same, which is
+    /// how this presents as a metadata-verification failure rather than as a client error.
+    #[test]
+    fn select_winner_proof_verifies_against_its_own_circuit() {
+        let zkbin = select_winner_zkbin();
+        let pk = proving_key(&zkbin);
+
+        // The circuit derives `requester_pub = ec_mul_base(requester_secret, NULLIFIER_K)` and
+        // constrains it equal to the instanced pair, so the key and the secret are one value:
+        // `PublicKey::from_secret` is the `NULLIFIER_K` point (`crypto/keypair.rs`), which is what
+        // makes `SecretKey::from_base(s)` the right pairing for a witness secret of `s`.
+        let requester_secret = pallas::Base::from(3u64);
+        let requester = PublicKey::from_secret(SecretKey::from_base(requester_secret));
+        let call_data = SelectWinnerV1CallData::new(
+            pallas::Base::from(1u64),
+            pallas::Base::from(2u64),
+            requester_secret,
+            requester,
+        );
+
+        let (proof, public_inputs) = select_winner_v1_proof(&zkbin, &pk, &call_data)
+            .expect("the client must build a proof");
+        let inputs = public_inputs.to_vec();
+
+        assert_eq!(
+            inputs.len(),
+            6,
+            "select_winner.zk instances six values: tender_id, winner_bid_id, requester_pub_x, \
+             requester_pub_y, tx_binding, tx_nonce"
+        );
+
+        match verify_zkp(&proof, ZKBIN_BYTES, &inputs) {
+            ZkVerifyResult::Ok => {}
+            other => panic!(
+                "OBL-C78: the client's select_winner proof does not verify against its own circuit \
+                 with its own public inputs ({other:?}). The defect is in the client, the witnesses \
+                 or the zkbin — not in the contract's metadata, which this test never touches."
+            ),
+        }
+    }
+
+    /// The same with a non-zero transaction pair, so a witness that happens to satisfy the
+    /// derivation at zero cannot pass for the derivation itself.
+    #[test]
+    fn select_winner_proof_verifies_with_a_non_zero_tx_pair() {
+        let zkbin = select_winner_zkbin();
+        let pk = proving_key(&zkbin);
+
+        let requester_secret = pallas::Base::from(6u64);
+        let requester = PublicKey::from_secret(SecretKey::from_base(requester_secret));
+        let mut call_data = SelectWinnerV1CallData::new(
+            pallas::Base::from(4u64),
+            pallas::Base::from(5u64),
+            requester_secret,
+            requester,
+        );
+        call_data.tx_commitment = pallas::Base::from(0xC0FFEEu64);
+        call_data.tx_nonce = pallas::Base::from(9u64);
+
+        let (proof, public_inputs) = select_winner_v1_proof(&zkbin, &pk, &call_data)
+            .expect("the client must build a proof");
+        let inputs = public_inputs.to_vec();
+
+        // The published binding is the one the circuit derives from the pair — not a constant.
+        let expected = dwow_tender_contract::client::tx_binding_of(
+            &call_data.tx_commitment,
+            &call_data.tx_nonce,
+        );
+        assert_eq!(inputs[4], expected, "instance 4 is tx_binding");
+
+        match verify_zkp(&proof, ZKBIN_BYTES, &inputs) {
+            ZkVerifyResult::Ok => {}
+            other => panic!(
+                "OBL-C78: the client's select_winner proof does not verify for a non-zero tx pair \
+                 ({other:?})."
+            ),
+        }
+    }
+}
