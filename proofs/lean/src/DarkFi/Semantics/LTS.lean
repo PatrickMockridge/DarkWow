@@ -23,7 +23,13 @@ because `SCong` has no renaming rule; that incompleteness is recorded in `Substi
 than hidden by a silent α-renaming — and so is the *size* of the unit that would close it. `α` renames
 the channels that labels are made of, so closing it means redesigning this file's label predicates as
 well as adding a constructor to the congruence; `subst_moves_the_label` in Part 3 is that fact stated,
-and `Substitution.lean`'s note says what it implies for `CanStep` and everything built on it.
+and `Substitution.lean`'s note says what it implies for `CanStep` and everything built on it. **Part 10
+measures the omission rather than estimating it**, and the measurement is larger than that estimate: the
+α-variant pair `νx.(out b x)` and `νy.(out b y)` is separated not only by the congruence but by every
+relation in this file, because a label's channel and payload are *free* names and renaming a bound one is
+relabelling. A rule on `SCong` is therefore not something that could be checked against the system that
+exists — `Step.scong` closes steps under the congruence, so a larger congruence is a larger `Step` — and
+what would close the gap is the *bound-output* label the `Label` docstring records as absent.
 
 Two boundaries remain, and they are separate:
 
@@ -182,7 +188,9 @@ namespace DarkFi.Semantics
 
     Bound-output labels (`x!(⌈y⌉)`, the form the ρ-calculus needs to move a *name* rather than a
     value) are not here. They belong with the reflection rules, which are the same layer as the
-    τ-rule and the substitution it needs. -/
+    τ-rule and the substitution it needs — and Part 10 shows they are what α would need as well: a
+    *free* payload makes a renaming of a bound name observable, so the gap `Substitution.lean`
+    records as an omission is a difference in what this label type can say. -/
 inductive Label : Type where
   /-- Internal synchronisation `τ`. -/
   | tau : Label
@@ -1581,5 +1589,95 @@ theorem section_1_2_equation_not_weak :
   obtain ⟨_Q', hw, _⟩ := (hR hLM).1 (step_par_right (Step.out Proc.nil Proc.nil))
   obtain ⟨hstar, hs, _⟩ := hw
   exact no_step_of_actionFree (actionFree_of_tauStar hstar hM) hs
+
+/-! ==========================================================================
+   Part 10 — The α-gap is observable, and the label is what makes it so
+
+   `Substitution.lean`'s note records the missing α-rule as an omission: `SCong` has no renaming rule, so
+   `νx.P` is not congruent to `νy.P{y/x}`, and the absence is why `Step.tau` carries `CaptureFree`. What
+   that note could not settle — because it is a question about the transition system rather than about the
+   congruence — is how deep the omission goes. This part settles it: the two terms below are not merely
+   non-congruent, **no strong bisimulation relates them**, and the coarsest relation in the file separates
+   them too.
+
+   The pair is
+
+       P = νx.(out b x)        Q = νy.(out b y)
+
+   which differ only in the name of the binder and in the occurrences of that name in the payload — the
+   shape a renaming rule equates, written out rather than referred to through `subst`, which does not
+   carry the law that would take one to the other (`Substitution.lean`'s note says why not).
+
+   `P` steps with the label `b!(x)`: the output rule gives `out b x -[b!(x)]-> 0`, and the restriction
+   rule passes it because its proviso is `¬ SCong x b`. `Q` cannot take that label at all — its labels are
+   `b!(d)` with `SCong y d`, and `¬ SCong x y` says `x` and `y` are different names, so `Q`'s payload is
+   never `x`. The separation is therefore in the *label*, not in the congruence and not in the choice of
+   bisimulation.
+
+   That answers the question `Substitution.lean`'s note left to the α-unit, "what does a label's channel
+   *mean* when names are defined only up to renaming": at this label type, nothing — a label's channel and
+   payload are **free** names, so renaming a bound name is relabelling, and a relabelling is observable.
+   The α-rule is consequently not a constructor that could be added to `SCong` and then checked against
+   the transition system as it stands: `Step.scong` closes every step under the congruence, so a bigger
+   congruence is a bigger `Step`, and the result is a different calculus whose bisimilarity has to be
+   re-established rather than inherited. What the literature uses instead is the **bound-output label** —
+   the form `Label`'s own docstring records as absent, `x!(⌈y⌉)`, whose payload is bound rather than free
+   — and that is a change to `Label`, `Label.subject`, `CanStep`, `CanBarb` and every rule that reads a
+   label, which is why the unit keeps being deferred and is now deferred by measurement rather than by
+   absence of demand.
+
+   Neither theorem below says the α-rule is *unsound*: `SCong` is this LTS's congruence, and a larger one
+   is a larger calculus rather than a false one. What they establish is that the gap is not cosmetic — a
+   reader who took "α is unimplemented" to mean "the calculus is α-invariant in spirit" would be wrong
+   about the terms it relates, and the two terms are separated at the coarsest as well as the finest level.
+
+   The **weak** relation is not settled here, and the reason is the wall Part 3's note describes:
+   `¬ WeakBisim P Q` needs `Q` to have no `τ`-reachable state carrying the label `b!(x)`, and `Q`'s being a
+   `ν`-headed term does not by itself say which `SCong`-variants of it step. `CanStep`'s `nu` clause drops
+   the binder entirely, which is what makes the theorems below provable — the looseness over-approximates,
+   so a *negative* fact survives it, and that is the direction both proofs use.
+   ========================================================================== -/
+
+/-- **The α-variant pair is not related by any strong bisimulation.** `νx.(out b x)` and `νy.(out b y)`
+    differ only in the name of the binder and in the occurrences of that name in the payload, and no
+    bisimulation relates them: the first steps with the label `b!(x)` — the restriction passes it because
+    `¬ SCong x b` — while the second has no transition with that label, since its payload is always
+    congruent to `y` and `x` is not congruent to `y`.
+
+    `CanStep` is what makes this provable, and the clause that does the work is the looseness Part 3's
+    note apologises for: `CanStep (νy.(out b y)) μ` is `CanStep (out b y) μ`, the binder dropped. That
+    over-approximates, so a negative fact about the transition system survives it — which is the use here,
+    and the reason a label *set* can decide a question about derivations.
+
+    Both hypotheses are satisfiable — at `x = 0`, `b = out 0 0` and `y = out 0 (out 0 0)` each is an
+    instance of `not_scong_nil_out` — so this is a separation rather than an implication true of nothing. -/
+@[axiom_budget 0]
+theorem alpha_variants_not_strongbisim {x y b : Proc} (hxy : ¬ SCong x y) (hxb : ¬ SCong x b) :
+    ¬ StrongBisim (Proc.nu x (Proc.out b x)) (Proc.nu y (Proc.out b y)) := by
+  rintro ⟨R, hR, hPQ⟩
+  have hstep : Step (Proc.nu x (Proc.out b x)) (Label.out b x) (Proc.nu x Proc.nil) :=
+    Step.nu (x := x) (by simpa only [Label.subject] using hxb) (Step.out b x)
+  obtain ⟨Q', hQ', _⟩ := (hR hPQ).1 hstep
+  have hcan : CanStep (Proc.nu y (Proc.out b y)) (Label.out b x) :=
+    canStep_of_step hQ' ⟨b, x, Or.inl rfl⟩
+  simp only [CanStep] at hcan
+  obtain ⟨c, d, heq, _, hyd⟩ := hcan
+  injection heq with _ hd
+  rw [← hd] at hyd
+  exact hxy (SCong.symm hyd)
+
+/-- **The same pair, separated by the coarsest relation in the file.** Barb-equality is *necessary* for
+    bisimilarity (`strongbisim_barb_eq`), so this is the stronger of the two statements even though it is
+    stated second: it says the pair is distinguishable by an observation, not only by a bisimulation
+    argument. `νx.(out b x)` barbs on `y` — `barb_nu_iff` reduces that to `¬ SCong x y` and `SCong b y` —
+    and `νy.(out b y)` cannot, because its own `nu` clause would ask for `¬ SCong y y`. -/
+@[axiom_budget 0]
+theorem alpha_variants_not_barbedEq {x y b : Proc} (hxy : ¬ SCong x y) (hby : SCong b y) :
+    ¬ BarbedEq (Proc.nu x (Proc.out b x)) (Proc.nu y (Proc.out b y)) := by
+  intro h
+  have hPy : Barb (Proc.nu x (Proc.out b x)) y :=
+    (barb_nu_iff (x := x) (P := Proc.out b x) (a := y)).2
+      ⟨hxy, (barb_out_iff (x := b) (y := x) (w := y)).2 hby⟩
+  exact not_barb_nu_self y (Proc.out b y) ((h y).1 hPy)
 
 end DarkFi.Semantics

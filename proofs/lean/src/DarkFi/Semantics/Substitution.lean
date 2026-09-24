@@ -70,10 +70,19 @@ label sets. `LTS.lean`'s `subst_moves_the_label` is that fact, carrying the hypo
 makes it non-vacuous. Adding α to the congruence would therefore make `CanStep` — and with it
 `canStep_occurs_up_to_scong` and the barb predicates that rest on the same channel test, `CanBarb` and
 `scong_channel` among them — fail to be invariant, unless "the same channel" is relaxed to an α-aware
-notion everywhere it appears. So the unit is a redesign of the label-level predicates *and* a
-constructor on the congruence,
-and its first question is what a label's channel *means* when names are defined only up to renaming. Said
-here, next to the gap it would close, rather than discovered halfway into it.
+notion everywhere it appears.
+
+**And the design question that unit was waiting on is now answered, against the relaxation above.**
+`LTS.lean`'s Part 10 asks whether the gap is a missing rule or a difference in what a label can express,
+and settles it by measurement: α-variants are *separated* — no strong bisimulation relates `νx.(out b x)`
+to `νy.(out b y)`, and the coarsest relation in the file distinguishes them too, because the extruded name
+occurs free in the label. "Relax the channel test to an α-aware notion" is therefore not a repair that can
+be applied at this label type. What α needs is a label whose payload is *bound* — the bound-output form
+`LTS.lean`'s `Label` docstring records as absent — and that is a change to the label type and to every rule
+that reads one, since `Step.scong` closes steps under the congruence and a larger congruence is a larger
+`Step`. Said here, next to the gap it would close, and stated in `LTS.lean` as two theorems rather than as
+an estimate: the unit is not a constructor to add, and that is now a measured claim rather than a repeated
+guess.
 -/
 
 import DarkFi.Semantics.Proc
