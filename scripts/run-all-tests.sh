@@ -321,9 +321,20 @@ run_gate "Python: supply chain model"      python3 contrib/model/supply_chain_mo
 # reader is why this says so rather than asserting they were all falsified.** `vm_state_model.py`
 # *demonstrates* known crash paths, so its printed `FAIL — …` lines are its expected output: it can
 # still fail (through the assertions on its mitigations), but its summary reads like a red gate, and
-# nothing ties its exit status to the findings it prints. `dockernet_model.py` likewise counts its own
-# `SKIP`/`FAIL` lines as passes under its runner. Both belong in the register as rows rather than being
-# rewritten here: what they should assert is a question about the models, not about the wiring.
+# nothing ties its exit status to the findings it prints. **In fact it has no exit call at all** —
+# measured 2026-09-24, `python3 contrib/model/vm_state_model.py` exits 0 while printing
+# `2/5 tests found crash paths`, so the green this gate records is Python's default. That model
+# belongs in the register as a row rather than being rewritten here: what it should assert is a
+# question about the model, not about the wiring — and it is now `OBL-C122`.
+#
+# `dockernet_model.py`'s caveat **used to be stated here as a fact and is not one**: it read "likewise
+# counts its own `SKIP`/`FAIL` lines as passes under its runner". Measured the same day by running it
+# exactly as the gate does, it exits 0 with **0** `SKIP` lines, **0** `FAIL` lines and
+# `ALL TESTS PASSED`, and its exit *is* tied to its failures (`total_failed`, below). The caveat is a
+# **conditional** failure mode: it needs `wallet_model` to be unimportable for the eleven
+# `SKIP (no wallet_model)` paths to be taken, and in this invocation the import succeeds. Stated as
+# current behaviour it was a caveat asserted rather than measured — the species this file's own
+# neighbour comment spends a paragraph correcting, in the other direction. `OBL-C122` carries it.
 #
 # Measured aggregate ≈4.5 minutes, dominated by `chain_validation_model` (98 s) and
 # `wallet_simulation` (97 s); the other sixteen are 0–29 s. Two of the twenty-two are excluded, with
