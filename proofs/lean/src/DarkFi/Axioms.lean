@@ -322,10 +322,23 @@ OBL-C5 in `doc/src/arch/verification-hazop.md`. -/
 
 /-- ASSUMES: the coinbase blind in block `height` is a `Nat`, used as the Pedersen blinding
     factor.
-    NOT PROVED BECAUSE: the real blind is `f(prev_commitment, H)` for a deterministic `f`,
-    and the choice of `f` is an implementation detail this model deliberately does not
-    commit to. This declares a free parameter, not a claim about one.
-    DISCHARGED BY: defining `coinbase_blind` from `prev_commitment` and `height`.
+    NOT PROVED BECAUSE: the real blind is `poseidon_hash([sk_H, H, DOMAIN_COMMITMENT_BLIND])` with
+    `sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H)` (`consensus-coinbase.md`
+    §2.2–§2.3, and §2.7's "no random keys"): deterministic, but a function of the **miner's owner
+    secret** and the height. **Corrected 2026-09-24: this field claimed the real blind is
+    `f(prev_commitment, H)`, and nothing in the tree derives a blind from a previous commitment**
+    — measured both ways, against the specification and by grep: the tree's pattern is
+    `poseidon_hash([secret, …])`, and `src/linear/src/supply_chain.rs:104`'s chain *sums* per-block
+    blinds (`blind_H = blind_{H-1} + coinbase_blind_H`) rather than deriving them. So the model's
+    `Nat → Nat` typing is **stronger than the specification**: it makes the blind a function of the
+    height alone, where two miners at one height carry different blinds. That over-determination is
+    the deliberate simplification this axiom is — a free parameter, not a claim about the code.
+    DISCHARGED BY: a model of the cycled key derivation (`derive_instance`, whose own route is the
+    Poseidon sponge that `poseidon_hash_output` waits on) and of the commitment hash. **The route
+    this field named — "defining `coinbase_blind` from `prev_commitment` and `height`" — does not
+    exist**: the blind is not a function of those two arguments, so no such definition can be
+    written. A discharge would *re-type* this to take the owner secret, and the `Nat → Nat` shape is
+    then the part the specification contradicts.
     IF FALSE: NOTHING — "there is no such function" is a type error. Recorded as SILENT in
     `DarkFi.HAZOP.Elevated` ELEV-20. -/
 axiom coinbase_blind (height : Nat) : Nat
@@ -547,7 +560,20 @@ purse write path any more. -/
     about any particular resource or action — it names the premise so callers can supply it.
     DISCHARGED BY: the manual circuit audit over `src/contract/*/proof/*.zk`, mechanised;
     `doc/src/arch/verification-hazop.md` OBL-Z1 is that obligation, and it is currently
-    unchecked.
+    unchecked. **Corrected 2026-09-24: that is not the route, and the three measurements are these.**
+    The audit **is** mechanised (`script/circuit_instance_derivation.py`, the register's only
+    MECHANIZED row); it is invoked by **no gate runner** (`scripts/run-all-tests.sh`, `hooks/`,
+    `contrib/ci/` — measured, none), so "unchecked" is right in the only sense that matters
+    operationally; and it currently **exits 1**, with 11 instances neither derived nor bound nor
+    redundant nor declared free. But **even a passing audit would not discharge this predicate**: the
+    audit is a checker over circuit *sources*, while this is `(r, s)`-indexed, and what sits between
+    them — `(r, s) ↦ the circuit source` — is a *transcription*, not a check. A Lean term cannot read
+    a `.zk` file, so the discharge needs the transcription to be *supplied* (a module generated from
+    the sources and freshness-gated, in the style of this tree's `check-artifact-freshness.sh`).
+    What the mechanisation does give is on the other side of the bridge:
+    `Circuits/InstanceDerivation.lean` defines the property over a statement list, proves the
+    soundness direction and refutes its converse, and checks one worked circuit — so the audit's
+    mechanisation yields the *definition* the axiom is a stand-in for, not the premise.
     IF FALSE: NOTHING today. `Capability.capabilityType_of_circuitDerivable` is proved from
     `CircuitDerivable.coversBarbs` alone and never touches this predicate, because type
     *existence* is purely combinatorial. This predicate is what a soundness theorem about
