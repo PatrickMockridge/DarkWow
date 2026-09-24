@@ -433,7 +433,7 @@ registered one.
 * every push or attestation proves the opening in-circuit and consumes a **per-operation
   nullifier** the host checks unspent, exactly as `native_token/proof/burn.zk` does for a coin;
 * the operation's **barbs** carry it in the type system, so the same `coversBarbs` obligation the
-  other twelve capability types carry applies here.
+  other thirteen capability types carry applies here.
 
 The type-level half is `Capability.Composition.oracleOperatorType` — resource
 `{commit, nullify, prove, dispatch}`, primitives `[commitment, nullifier, dleqProof, contractId]`,

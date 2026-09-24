@@ -75,15 +75,29 @@ barbs required by a resource.
 | `Types.lean` | 17 primitive types with barb sets, 3 raw byte containers (for distinction proofs) | — (definitions) |
 | `Pareto.lean` | All primitive pairs have distinct barb sets | `primitiveTypesAreParetoEfficient` (by `decide`), 15 pairwise lemmas, `barbEqualityImpliesTypeEquality` |
 | `Distinction.lean` | 10 non-unifiable type pairs (e.g. nullifier ≠ `[u8;32]`) | All 10 proved by `decide` (kernel-checked), `allUnifiablePairsProved` |
-| `Composition.lean` | 12 concrete capability types (native token transfer, DAO vote, tender bid, coinbase claim, purse balance/withdraw, identity credential, box take, multisig approval, attestation, bridge deposit/withdraw) | `barbPreservation` (induction over primitives list), `coversBarbs` for each type |
+| `Composition.lean` | 14 concrete capability types (native token transfer, DAO vote, tender bid, coinbase claim, purse balance/withdraw/deposit, identity credential, box take, multisig approval, attestation, bridge deposit/withdraw, oracle operator) | `barbPreservation` (induction over primitives list), `coversBarbs` for each type |
 | `Wallet.lean` | Wallet capability construction function | `walletConstruct_sound`, `_complete`, `_preservesPrimitives`, `_deterministic`, `_rejects_emptyPrimitives` (`_idempotent` was `x = x` and is deleted) |
+| `KeyScope.lean` | `deriveInstance`, and the §7.3 scope restriction | `scopeRestriction`, `scopeRestriction_is_false_for_unscopedDerive` (the falsifier) |
+| `Selection.lean` | §6.2's coverage predicate and the spent-capability exclusion | the coverage monotonicity laws, and the refutation §6.2 asks for |
+| `WritePath.lean` | §6.1's `f(SelectedCapabilities, Action, Params, Secrets, Seed)` | `construct_sound` (from `walletConstruct_sound`), `construct_deterministic`, `params_are_not_read`, `nullifier_completeness` |
+| `WalletState.lean` | §1's rescan fold, §6.5's provisional layer, the spend lifecycle | `insertOrIgnore_idempotent`, `scan_order_is_load_bearing`, `provisional_never_mutates_confirmed`, `spent_is_entered_only_from_processing`, `repair_restores_consistency` |
 | `Axioms.lean` | **The assumption boundary** — the only file permitted to contain an `axiom` or a value-less `opaque`. Every assumption carries four fields, and `script/check_lean_axioms.py` enforces it |
 | `Inversion.lean` | The circuit bridge as a *hypothesis* (`CircuitDerivable`) and `capabilityType_of_circuitDerivable` (one-directional). `authorizationInversion_TypeLevel` (bidirectional: type exists iff barbs covered — a claim about barb coverage, **not** about ZK proof systems), `verifierLearnsOnlyRequiredBarbs`. The former `circuitSoundnessBridge` axiom asserted that every capability type exists and is deleted |
 
-**Capability types defined (12):** `nativeTokenTransferType`, `nativeTokenCoinbaseType`,
-`daoVoteType`, `tenderBidType`, `purseBalanceType`, `purseWithdrawType`,
+**Capability types defined (14):** `nativeTokenTransferType`, `nativeTokenCoinbaseType`,
+`daoVoteType`, `tenderBidType`, `purseBalanceType`, `purseWithdrawType`, `purseDepositType`,
 `identityCredentialType`, `boxCapType`, `multisigApprovalType`, `attestationType`,
-`bridgeDepositType`, `bridgeWithdrawType`.
+`bridgeDepositType`, `bridgeWithdrawType`, `oracleOperatorType`.
+
+The count is **measured, not asserted**: `contrib/capability_type_diff.sh` extracts the
+`CapabilityType` defs from `Composition.lean`, the positive `wallet_construct` calls from
+`src/sdk/src/capability.rs`'s test module and the capability tables from the Python model, joins
+them on `(resource, action)` and fails on any pair whose primitive sets disagree. This file said
+**12** for as long as there were 14 — `purseDepositType` and `oracleOperatorType` were added to
+`Composition.lean` and the two lists here were not — and nothing could see the drift, which is what
+the gate is for. It also reports the four types Rust cannot construct at all and the one it can and
+does not test; the numbers and the reasons are in the gate's output and in the Honest Scope entry
+below.
 
 ### Part 2: ZK Opcode Gadgets (`Gadgets.lean`, `Comparison.lean`, `Arithmetic.lean`)
 
@@ -359,6 +373,54 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   the safety property it rests on instead — `exec_perm`, that every execution order of a list of
   pairwise-disjoint calls produces the same store — because §9.2's `parallel_execute` has no Rust
   counterpart: the schedule is a diagnostic and calls execute sequentially today.
+
+- **The wallet's write path is modelled at the *type* level, and the empty layer below it is named
+  rather than implied.** `KeyScope.lean`, `Selection.lean`, `WritePath.lean` and `WalletState.lean`
+  landed 2026-09-24 and §7.8's three obligations are now discharged **by name**. Two of them
+  (`construct_sound`, `construct_deterministic`) were declared nowhere in the tree; the third is
+  subtler and is the reason this entry exists — `nullifier_completeness` *did* exist, in
+  `Exercise.lean:115`, where it is about a **consume**, and §7.8 asks it of a **transaction**, which
+  is the object §6.3 step 4 is about. A reader who grepped the name and found it would have concluded
+  the obligation was met. §7.3's scope restriction, §6.2's coverage predicate with its spent-capability
+  exclusion, §1's rescan fold and §6.5's provisional layer all have models, and the spend lifecycle has
+  a theorem for the direction that matters (`spent_is_entered_only_from_processing`). What none of them
+  reaches, stated here so that a reader does not infer it from a theorem name:
+
+  * **`construct_sound` is derived, and what it derives from is a composition rule, not a proof
+    system.** It is proved *from* `walletConstruct_sound`, which unfolds `walletConstruct` and returns
+    the `if`'s own condition — the reason F3 recorded it as content-free. What the pair establishes is
+    that a capability whose primitives cover its resource's barbs constructs, and that the write path
+    cannot construct one that does not. The ZK half — that a circuit *inhabits* the type — is the
+    hypothesis `CircuitDerivable` in `Inversion.lean`, and it is an assumption, not a theorem.
+  * **`deriveInstance` is a function on `Nat`s.** The real `derive_instance(secret, contract_id,
+    instance)` is a hash; what `KeyScope.lean` proves is the *discipline* — a key derived for one
+    instance is not the key for another — not anything about the curve.
+  * **`construct_deterministic` is determinism, not byte-identity.** Two calls agreeing on the
+    selection and the `Seed` agree, whatever else they were given. §1's *"byte-identical state"* and
+    §0.1.5's purity rules are **not** mechanized: `WritePath.Transaction` and `WalletState`'s state are
+    structures of `Nat`s that are not encoded into any of `Wire.lean`'s schemas, so there is no theorem
+    here about bytes, and none about the Rust or Python writers agreeing with this model.
+  * **Nothing in these four modules reads a `wallet_db`, a `.zk` file, or the Rust wallet.** §6.3's
+    steps 5–7 (encoding, signature, fee) are outside them; `WalletState`'s Merkle root is a `Nat`
+    field rather than a computed tree, which is why §6.4.0's obligation is stated against
+    `PerContractTree.findPos` instead; and the selection predicate is stated over a capability list,
+    not over what discovery finds.
+
+  **And the correspondence the type system's Rust side claims is now measured, with the gap
+  registered rather than closed.** `src/sdk/src/capability.rs:509-510` says *"Every construction that
+  is proved in Lean4 must also succeed here"*. `contrib/capability_type_diff.sh` (wired into
+  `scripts/run-all-tests.sh`) extracts the `CapabilityType` defs, that file's positive
+  `wallet_construct` calls and the Python model's tables, and diffs them: **9 of the 14** are
+  constructed in Rust, **4 cannot be** — `tenderBidType`, `bridgeDepositType`, `bridgeWithdrawType`
+  and `oracleOperatorType` name `dleqProof`, `bridgeAddress`, `chainDepositProof` and
+  `bridgeCapNullifier`, and `Primitive` has no variant carrying those barbs, so no input can build
+  them — and **1 is untested** (`purseDepositType`, which Rust could construct). By decision that is
+  gated and registered, not fixed in code: the barb alphabet is held (`OBL-T9`). Two further facts the
+  gate reports and this file repeats rather than smooths: the Python model states a table for **1 of
+  the 14**, and for that one pair it requires `prove-inclusion` where Lean and Rust require six barbs —
+  the composition covers it either way, so nothing is unconstructible, but the three implementations do
+  not state the same requirement. A register row for the whole finding is owed; the rows beside it
+  (`OBL-T14`–`T16`) are a peer session's.
 - **Halo2 constraint system semantics are not modeled.** We prove properties of the
   mathematical functions the opcodes implement, not that the Halo2 gate/region/
   copy-constraint system correctly implements those functions.
@@ -633,6 +695,22 @@ hardcoded in `Main.lean` and were wrong in every case (the counts, measured 2026
 `Main.lean`: a summary that is typed by hand is a claim, not a measurement, and this file was
 quoting it as evidence.
 
+**Re-measured 2026-09-24, later the same day, because the figures above had moved**: 741
+`theorem`/`lemma` declarations, **736 gate-visible** (five are `private`), **738
+`@[axiom_budget]` annotations** — 736 on the visible theorems and 2 on private ones — of which
+**605 are at budget 0**, and the same **8** assumptions. The scanner is the gate's own
+(`script/check_lean_axioms.py`'s `qualified_theorems()` over `lean_sources()`), so the two
+counts are the same measurement rather than two that look alike; the collector is fed exactly
+`sorted(qualified_theorems())`, which is why a green run reconciles at that number and no other.
+Where the 741 are, measured in the same pass rather than argued: `Transcribed.lean` 178,
+`Capability/` 142, `Semantics/` 121, the top-level `DarkFi/` modules 97, `Consensus/` 94,
+`Combinatorial/` 59, `Genesis/` 31, `Circuits/` 11, `Net/` 6, `Fee/` 2. **Nothing in this file
+claims a cause for the 357 → 736 difference**: both endpoints were measured and the step between
+them was not, so what the earlier scan covered is unknown rather than inferable, and a plausible
+story told here would be the same defect as the `#eval` output this section is about. The lesson
+is the one line 40 states: the number belongs to the tree, so quote it with the date you ran the
+command, or not at all.
+
 ## Project Structure
 
 ```
@@ -685,13 +763,17 @@ proofs/lean/
         │   ├── Limits.lean            # L1 practical limits
         │   ├── GeneralTheorem.lean    # Halo2 L1 contract complexity limits
         │   └── NullifierStorage.lean  # Nullifier storage faithfulness
-        ├── Capability/         # ρ-calculus type system — 19 modules
+        ├── Capability/         # ρ-calculus type system — 23 modules
         │   ├── Types.lean          # 17 primitive types with barb sets (definitions only)
         │   ├── Composition.lean    # `compose`, and 14 capability type constructions
         │   ├── Pareto.lean         # Pareto-efficiency (all primitives pairwise distinct)
         │   ├── Distinction.lean    # The 10 non-unifiable pairs of §8.4
         │   ├── Wallet.lean         # walletConstruct soundness/completeness/determinism
         │   ├── Inversion.lean      # Authorization Inversion Theorem, and `CircuitDerivable`
+        │   ├── KeyScope.lean       # `deriveInstance`, and the §7.3 scope restriction
+        │   ├── Selection.lean      # §6.2's coverage predicate, and the spent-capability exclusion
+        │   ├── WritePath.lean      # §6.1's `f`, over the argument order §6.1 gives
+        │   ├── WalletState.lean    # §1's rescan fold, §6.5's provisional layer, spend lifecycle
         │   ├── DerivedChain.lean   # Intermediate-referencing witness DAGs
         │   ├── Exercise.lean       # Single-use consume, nullifier completeness
         │   ├── MultiProof.lean     # Transfer/redeem value conservation across burn+mint
