@@ -35,6 +35,7 @@ import DarkFi.Capability.Value
 import DarkFi.Capability.NativeToken
 import DarkFi.Capability.KeyScope
 import DarkFi.Capability.Selection
+import DarkFi.Capability.WritePath
 import DarkFi.Circuits.Token
 import DarkFi.Circuits.Bridge
 import DarkFi.Circuits.Exchange

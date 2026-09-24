@@ -1065,39 +1065,49 @@ Run `lake build` in `proofs/lean/` to type-check.
 ### 7.8 Write-Path Obligations (Exercise)
 
 The write path (§6) is subject to the following obligations — the exercise-time duals of
-§7.1, §7.4, and the nullifier discipline. **Status as of 2026-09-24, stated per obligation rather
-than as a block**, because this section used to say all three "are to be discharged in
-`proofs/lean/src/DarkFi/Capability/Wallet.lean`" and that was wrong in both directions: one was
-already discharged, in a different file, and the other two are so far absent that the file named
-is not where they belong.
+§7.1, §7.4, and the nullifier discipline. **All four are DISCHARGED as of 2026-09-24**, and this
+section states each one's file because the grouping it used to have was wrong in both directions:
+it said all three "are to be discharged in `proofs/lean/src/DarkFi/Capability/Wallet.lean`", where
+one had already been discharged elsewhere and the other two did not belong — `Wallet.lean` models
+*type construction* (§7.1/§7.4), not the write path.
 
-- **`nullifier_completeness`** — **DISCHARGED**, and not in `Wallet.lean`:
-  `proofs/lean/src/DarkFi/Capability/Exercise.lean`. For every input of an `Exercise`, its
-  nullifier is in the post-apply spent set — the property the mempool relies on for double-spend
-  detection ([mempool.md](mempool.md)). Its statement is about the *public state*, not about a
-  `Transaction`, and part 2 of §6.3 step 4 needs the latter. **Its dual is discharged in the same
-  file as of 2026-09-24**: `create_completeness` — every output commitment of an exercise is in
-  the post-apply recognized set — beside `recognized_monotone` and
-  `consume_and_create_are_independent`. Before that the create side was not modelled at all:
-  `Exercise.outputs` was a dead field and `applyExercise` read neither it nor anything derived
-  from it, so a module named for Exercise+Consume modelled Consume alone.
-- **`construct_sound`** — **NOT DECLARED.** No theorem of this name exists anywhere in
-  `proofs/lean/`. If `f(SelectedCapabilities, Action, Params, Secrets, Seed)` returns a
-  transaction, the proofs it carries inhabit the predicate language L_{r,s} of the action's
-  capability type; equivalently, the composed barbs of the selected capabilities cover the
-  action's `requiredBarbs` (§6.2). Dual of `walletConstruct_sound` (§7.1).
-- **`construct_deterministic`** — **NOT DECLARED.** Given identical `(SelectedCapabilities,
-  Action, Params, Secrets, Seed)`, `f` returns a byte-identical transaction (§6.1); §0.1.5's seed
-  rule is the same obligation in the form the *code* can be checked against. The write-path
-  expression of the wallet's pure-function property; dual of `walletConstruct_deterministic`
-  (§7.4), which as §7.4 now records is not that property.
-- **`scoped_derivation`** — **NOT DECLARED**, and not on this list before 2026-09-24:
-  `type-system.md` §7.3's scope restriction ("a `SecretKey` derived for contract instance `A`
-  SHALL NOT be usable in contract instance `B`") has no Lean model at all. The only occurrence of
-  `derive_instance` in the whole proof tree is a comment.
+- **`nullifier_completeness`** — **DISCHARGED twice, in two forms, and neither in `Wallet.lean`.**
+  On the *public state*: `proofs/lean/src/DarkFi/Capability/Exercise.lean` — for every input of an
+  `Exercise`, its nullifier is in the post-apply spent set, the property the mempool relies on for
+  double-spend detection ([mempool.md](mempool.md)). On the *transaction*, which is the form §6.3
+  step 4 needs: `proofs/lean/src/DarkFi/Capability/WritePath.lean` — for every selected capability,
+  its nullifier is in `Transaction.nullifiers`. Its dual is discharged in the same `Exercise.lean`:
+  `create_completeness` — every output commitment of an exercise is in the post-apply recognized set
+  — beside `recognized_monotone` and `consume_and_create_are_independent`. Before that the create
+  side was not modelled at all: `Exercise.outputs` was a dead field and `applyExercise` read neither
+  it nor anything derived from it, so a module named for Exercise+Consume modelled Consume alone.
+- **`construct_sound`** — **DISCHARGED**: `WritePath.lean`, `construct_sound`. If
+  `f(SelectedCapabilities, Action, Params, Secrets, Seed)` returns a transaction, the proofs it
+  carries inhabit the predicate language L_{r,s} of the action's capability type; equivalently, the
+  composed barbs of the selected capabilities cover the action's `requiredBarbs` (§6.2). What is
+  mechanized is the half a `CapabilityType` carries — barb coverage — and the theorem is derived
+  **from** `walletConstruct_sound` rather than restating its own branch; the ZK premise is the
+  boundary `Axioms.lean` names, and `WritePath.lean`'s module note says so.
+- **`construct_deterministic`** — **DISCHARGED**: `WritePath.lean`, `construct_deterministic`. Given
+  identical `(SelectedCapabilities, Action, Params, Secrets, Seed)`, `f` returns a byte-identical
+  transaction (§6.1); §0.1.5's seed rule is the same obligation in the form the *code* can be checked
+  against. It is stated over two calls that share the selection and the `Seed` and differ in
+  everything else, which is the content §7.4's trivial form lacks, and it is paired with two
+  witnesses that keep it from being vacuous: `params_are_not_read` (nothing but the selection and the
+  seed reaches the transaction, so §6.1's "the capability is NEVER in the params" is checkable) and
+  `seed_changes_the_binding` (the seed is load-bearing, so "derive the randomness from `Seed`" is not
+  satisfied by a constant). Dual of `walletConstruct_deterministic` (§7.4), which as §7.4 now records
+  is not that property.
+- **`scoped_derivation`** — **DISCHARGED**: `proofs/lean/src/DarkFi/Capability/KeyScope.lean`,
+  `scopeRestriction` (with `scopeRestriction_is_false_for_unscopedDerive` as its falsifier — the same
+  statement with the scope arguments dropped is *false*, which is what makes the model's `deriveInstance`
+  load-bearing). `type-system.md` §7.3's scope restriction ("a `SecretKey` derived for contract
+  instance `A` SHALL NOT be usable in contract instance `B`") was previously not modelled at all —
+  before 2026-09-24 the only occurrence of `derive_instance` in the whole proof tree was a comment.
 
-Drafting these belongs in modules that model the write path — a selection module for §6.2, a
-construction module for §6.1/§6.3 — not in `Wallet.lean`, which models type construction alone.
+They are drafted where the *write path* is modelled — `Selection.lean` for §6.2's predicate,
+`WritePath.lean` for §6.1/§6.3/§0.1.5, `KeyScope.lean` for §7.3 — not in `Wallet.lean`, which models
+type construction alone. That placement is the reason this section states a file per obligation.
 
 ### 7.9 Constructibility Is Not Universal, and the Rust Is Narrower
 
