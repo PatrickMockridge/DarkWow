@@ -98,6 +98,7 @@
 ## Audit Reports
   - [Audit Index](arch/audit/README.md)
   - [Verification Obligation Register](arch/verification-hazop.md) ← what must be proved, what checks it, and every open obligation
+  - [Consensus Core Map](arch/consensus-core-map.md) ← the consensus mechanisms with no Lean model, their Python specs, and the agreed shape of each
 
 # Contracts
 

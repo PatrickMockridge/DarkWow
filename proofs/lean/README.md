@@ -294,6 +294,15 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
 - **Circuit-to-Lean correspondence is not mechanized.** The `Circuits/` directory documents a
   manual audit of the `.zk` files, not machine-verified extraction. The obligation that would
   make it mechanized is `Axioms.NoFreeInstances`, which is uninterpreted and unconsumed.
+- **The consensus state core has no model here at all, and that is the largest gap in this layer.**
+  The nullifier replay gate, the commitment set, the block-level Pedersen mass-balance rule and the
+  validity predicates are specified in `contrib/model/*.py`, enforced in `src/linear/`, and have no
+  Lean counterpart: `Combinatorial/NullifierStorage.lean` mechanizes the *storage* half of one of them,
+  `Capability/{NativeToken,Exercise}.lean` model one rule each, and `Semantics/Ledger.lean` proves that
+  disjoint calls commute without saying what a write set *is* (which is how `OBL-C100` was found). The
+  agreed shape of each model, with its Rust, its Python specification and its non-vacuity witness, is
+  `doc/src/arch/consensus-core-map.md` — a plan rather than a result, and the reason this list has no
+  bullet for it until now is that the gap was about a *subject*, not about a statement.
 - **Poseidon is an opaque function, not the sponge.** `poseidon_hash_output` is a value-less
   `opaque`, so nothing about the P128Pow5T3 permutation is proved — not even determinism, which
   is a consequence of its being a function and needs no proof. (This section used to say it was
