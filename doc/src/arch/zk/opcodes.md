@@ -68,12 +68,34 @@ The formal verification is organized in three layers:
 | `less_than_loose` | 0x52 | No | LOOSE (remaining bits not enforced) |
 | `bool_check` | 0x53 | No | SOUND ✓ (polynomial product) |
 | `is_equal_base` | 0x54 | Yes | ✅ SOUND (purity constraint fixed in 0f69cd89) |
-| `less_than_or_equal` | 0x55 | Yes | ✅ SOUND (exhaustive 1000×1000 + range_check audit: all 37 uses safe) |
+| `less_than_or_equal` | 0x55 | Yes | ✅ SOUND — proved (`Gadgets.less_than_or_equal_sound`); audit: 0 unchecked operands, 1 declared exception |
 | `not_base` | 0x56 | Yes | ✅ SOUND (deterministic) |
-| `base_lt_strict` | 0x57 | Yes | ✅ SOUND (exhaustive 1000×1000) |
+| `base_lt_strict` | 0x57 | Yes | ✅ SOUND — proved (`Comparison.base_lt_strict_sound`), added 2026-09-24 |
 | `cond_select` | 0x60 | Yes | ✅ SOUND (boolean guard + selection) |
 | `zero_cond` | 0x61 | Yes | ✅ SOUND (used in BurnV1 for dummy inputs) |
 | `is_not_equal` | 0x62 | Yes | ✅ **FULLY PURE** (all witnesses constrained in all cases) |
+
+**The evidence column was corrected on 2026-09-24, and for one opcode the verdict was ahead of the
+proof.** Two rows cited "exhaustive 1000×1000", which is the `lt_strict_offset`/`lt_strict_satisfied`
+loop in `proofs/lean/src/Main.lean:91-110`. That file is in **no `lean_lib`** — `lakefile.lean`
+declares `DarkFi` and `Transcribed` and nothing else — so `lake build DarkFi` never compiles it and
+no gate reads its output; it also does not compile at all (21 errors, `Comparison.lean`'s own note,
+measured 2026-09-24). And for
+`base_lt_strict` (0x57) there was **no theorem at all**: the Lean section described the gate's shape,
+then claimed "VERIFIED SOUND by `less_than_strict_sound`", a theorem about the *other* strict
+opcode's constraint (`a_offset = a + 2^m - b`, the `s_lt` selector at
+`src/zk/gadget/less_than.rs:126-137`) rather than this one's (`s_lt_out`, `:163-180`). So a reader
+found a citation in the docs and a citation in the Lean, and neither named a proof of this gate.
+`Comparison.base_lt_strict_sound` is that proof, and the two rows above now cite it and
+`Gadgets.less_than_or_equal_sound` instead of a search.
+
+The same correction reaches the 0x55 row's second clause: it said "range_check audit: all 37 uses
+safe", and today `less_than_or_equal` has **20 call sites across 14 `.zk` files**, so 37 is a count
+of something else that no command re-derives. The audit's own instrument is the gate —
+`scripts/check-circuit-instance-derivation.sh` — and its measured output is **0 comparison operands
+with no range check beneath them, in 0 circuits, with 1 declared exception** (`proofs/core/lead.zk`,
+registered per entry in `script/circuit_comparison_exceptions.txt`). Quote that command rather than
+the phrase.
 
 ### Constraint Operations
 

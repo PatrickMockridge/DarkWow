@@ -624,12 +624,73 @@ Constraint: out ∈ {0,1}
 a_offset = out*(b-a-1) + (1-out)*(a-b)
 range_check(253, a_offset)
 
-VERIFIED SOUND by `less_than_strict_sound` below (`:331`) — a proof, not a search. This line
-used to read "VERIFIED SOUND in Main.lean (exhaustive 1000×1000)", and that citation cannot be
-good for anything now: `src/Main.lean` does not compile (21 errors, measured 2026-09-24, on its
-version at HEAD as well — see its header), so no exhaustive search in it has run recently, and
-none of its output is checked by any gate.
+**Corrected 2026-09-24: both of the citations that stood here were wrong, and the theorem they
+should have pointed at did not exist.** The line read "VERIFIED SOUND by `less_than_strict_sound`
+below" after replacing "VERIFIED SOUND in Main.lean (exhaustive 1000×1000)", and the replacement is
+no better than what it replaced:
+
+* `less_than_strict_sound` is **about a different constraint system.** Its hypothesis is
+  `offset = a + 2^m - b`, which is the *other* strict opcode's gate — `s_lt` at
+  `src/zk/gadget/less_than.rs:126-137`, opcode 0x51. This opcode's gate is `s_lt_out`
+  (`less_than.rs:163-180`), whose offset is `out·(b − a − 1) + (1 − out)·(a − b)`, and the shape
+  printed above is that gate's ✓. A theorem about 0x51's constraint says nothing about 0x57's.
+* `src/Main.lean`'s search is not evidence either: that file is in **no `lean_lib`** — `lakefile.lean`
+  declares `DarkFi` and `Transcribed` and nothing else — so `lake build DarkFi` never compiles it and
+  no gate reads its output. It also does not compile at all (21 errors, measured 2026-09-24; see its
+  header). The search it contains is the `lt_strict_offset`/`lt_strict_satisfied` loop at `:91-110`,
+  which is exactly the "exhaustive 1000×1000" the documentation cites.
+
+**So the opcode had no soundness theorem, and the documentation said it was SOUND.** The proof
+below is that theorem, stated over the gate's own shape. `Gadgets.lean` has no 0x57 row either, and
+this section had nothing but the shape description — which is why the absence survived: a reader
+found a citation in both places. Registered as `OBL-Z20` in `doc/src/arch/verification-hazop.md`,
+minted for the absence rather than for a defect, the way `OBL-C115`/`C116` were.
 -/
+
+/-- **`BaseLtStrict` (0x57): the deployed gate, and its soundness.** `src/zk/gadget/less_than.rs`
+    constrains, under `s_lt_out`, `out·(1 − out) = 0` and
+    `a_offset = out·(b − a − 1) + (1 − out)·(a − b)` (`:172`, `:177`), and the offset carries a
+    `range_check(253, ·)`. From those, `out = 1` exactly when `a < b` — so the returned bit is the
+    comparison, and neither value of it is available when the comparison says otherwise.
+
+    The range check's *upper* bound (`a_offset < 2^253`) is deliberately not a hypothesis:
+    soundness uses `0 ≤ a_offset` alone, and an unused hypothesis is what this tree removes rather
+    than carries for the look of it — the same reason `less_than_strict_sound` below records for
+    having dropped `h_a_range`. What the upper bound is *for* is stated at `Gadgets.lean:116`, in
+    `less_than_or_equal_sound`'s docstring: "wrong `out` → negative `a_offset` → field wrap >
+    2^253 → range check fails". That is the field-versus-integer reading, which is `OBL-Z12`'s
+    subject (`BaseDivGadget.less_than_or_equal_integer_reading`) rather than this theorem's. -/
+@[axiom_budget 1]
+theorem base_lt_strict_sound (a b offset out : Int)
+    (h_out : out = 0 ∨ out = 1)
+    (h_offset : offset = out * (b - a - 1) + (1 - out) * (a - b))
+    (h_low : 0 ≤ offset) :
+    (out = 1 ↔ a < b) ∧ (out = 0 ↔ b ≤ a) := by
+  have h1 : out = 1 → a < b := by
+    intro h
+    rw [h] at h_offset
+    norm_num at h_offset
+    omega
+  have h0 : out = 0 → b ≤ a := by
+    intro h
+    rw [h] at h_offset
+    norm_num at h_offset
+    omega
+  constructor
+  · refine ⟨h1, ?_⟩
+    intro hab
+    rcases h_out with h | h
+    · rw [h] at h_offset
+      norm_num at h_offset
+      omega
+    · exact h
+  · refine ⟨h0, ?_⟩
+    intro hba
+    rcases h_out with h | h
+    · exact h
+    · rw [h] at h_offset
+      norm_num at h_offset
+      omega
 
 /-
 ## `boolean_output_must_be_constrained` — deleted

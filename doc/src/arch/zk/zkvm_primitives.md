@@ -257,12 +257,12 @@ needed to deliver functionality already discussed publicly.
 
 | Opcode | Status | Notes |
 |--------|--------|-------|
-| `LessThanOrEqual` (0x55) | ✅ Verified Sound | Lean 4 exhaustive testing, no counterexamples |
+| `LessThanOrEqual` (0x55) | ✅ Verified Sound | A proof, not a search: `Gadgets.less_than_or_equal_sound`, with the chip-level integer reading in `BaseDivGadget.less_than_or_equal_integer_reading` |
 | `IsEqualBase` (0x54) | ❌ Bug | delta_invert unconstrained when `a == b` |
 | `IsNotEqual` (0x62) | ✅ **Fully Pure** | All witnesses constrained in all cases; purity theorem |
 | `NotBase` (0x56) | ✅ Verified Sound | Input range-checked to `{0,1}` |
-| `BaseLtStrict` (0x57) | ✅ Verified Sound | Lean 4 exhaustive testing |
-| `BaseDiv` (0x58) | ✅ **Implemented** | Binary exponentiation (~254 field muls) |
+| `BaseLtStrict` (0x57) | ✅ Verified Sound | `Comparison.base_lt_strict_sound` — **added 2026-09-24; this row said "Lean 4 exhaustive testing" and there was no theorem** |
+| `BaseDiv` (0x58) | ✅ **Implemented** | Binary exponentiation (331 field muls — 254 squarings + 76 conditional + 1 final) |
 
 #### `IsEqualBase` Bug Detail
 
