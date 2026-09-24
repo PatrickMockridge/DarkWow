@@ -84,8 +84,7 @@
 //! ```
 
 // The proof modules need the optional `dwow_core` dependency, which the wasm build does not
-// enable — the same gating `subscription/src/lib.rs:88` applies to its whole client module.
-#[cfg(feature = "client")]
+// enable — `lib.rs` gates this whole module on the `client` feature for that reason.
 pub mod exit;
 pub mod zkbins;
 
@@ -99,6 +98,11 @@ use dwow_sdk::{
 };
 
 use rand::SeedableRng;
+
+use dwow_core::{
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
+    zkas::ZkBinary,
+};
 
 use crate::model::{
     DrainConfig, ExitParamsV1, FundId, LockParamsV1, ProposeParamsV1, RateLimit,
@@ -211,6 +215,10 @@ pub struct ProposeBuilder {
     prover_pubkey: PublicKey,
     vote_period_blocks: u64,
     proof: Vec<u8>,
+    /// The authority inputs `propose.zk` instances (`OBL-C78`). The default is a zero secret, which
+    /// is a placeholder like the rest of this builder — a real call sets it with `authority`, and
+    /// `create_authority_proof` is what builds the proof these fields have to match.
+    authority: AuthorityCallData,
 }
 
 impl ProposeBuilder {
@@ -226,7 +234,14 @@ impl ProposeBuilder {
             },
             vote_period_blocks: 1000,
             proof: vec![],
+            authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()),
         }
+    }
+
+    /// The authority inputs the proof is made with (`OBL-C78`).
+    pub fn authority(mut self, call: AuthorityCallData) -> Self {
+        self.authority = call;
+        self
     }
 
     pub fn message_hash(mut self, hash: pallas::Base) -> Self {
@@ -255,12 +270,18 @@ impl ProposeBuilder {
     }
 
     pub fn build(&self) -> Result<ProposeParamsV1, &'static str> {
+        let pi = self.authority.compute_public_inputs();
         Ok(ProposeParamsV1 {
             message_hash: self.message_hash,
             multisig_group_id: self.multisig_group_id,
             prover_pubkey: self.prover_pubkey,
             vote_period_blocks: self.vote_period_blocks,
             proof: self.proof.clone(),
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
         })
     }
 }
@@ -273,6 +294,8 @@ pub struct VoteBuilder {
     voter_pubkey: PublicKey,
     vote: bool,
     signature: pallas::Base,
+    /// The authority inputs `vote.zk` instances (`OBL-C78`); zero by default.
+    authority: AuthorityCallData,
 }
 
 impl VoteBuilder {
@@ -287,6 +310,7 @@ impl VoteBuilder {
             },
             vote: true,
             signature: pallas::Base::zero(),
+            authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()),
         }
     }
 
@@ -320,12 +344,24 @@ impl VoteBuilder {
         self
     }
 
+    /// The authority inputs the proof is made with (`OBL-C78`).
+    pub fn authority(mut self, call: AuthorityCallData) -> Self {
+        self.authority = call;
+        self
+    }
+
     pub fn build(&self) -> Result<VoteParamsV1, &'static str> {
+        let pi = self.authority.compute_public_inputs();
         Ok(VoteParamsV1 {
             proposal_id: self.proposal_id,
             voter_pubkey: self.voter_pubkey,
             vote: self.vote,
             signature: self.signature,
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
         })
     }
 }
@@ -552,12 +588,17 @@ pub struct LockBuilder {
     fund_id: FundId,
     duration_blocks: u64,
     signature: pallas::Base,
+    /// The authority inputs `lock.zk` instances (`OBL-C78`); a zero secret by default, like the rest
+    /// of this builder. `authority` sets it, and `create_authority_proof` must be given the same.
+    authority: AuthorityCallData,
 }
 
 impl LockBuilder {
     pub fn new() -> Self {
-        Self { fund_id: pallas::Base::zero(), duration_blocks: 6000, signature: pallas::Base::zero() }
+        Self { fund_id: pallas::Base::zero(), duration_blocks: 6000, signature: pallas::Base::zero(), authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()) }
     }
+
+    pub fn authority(mut self, call: AuthorityCallData) -> Self { self.authority = call; self }
 
     pub fn fund_id(mut self, id: FundId) -> Self {
         self.fund_id = id;
@@ -575,7 +616,8 @@ impl LockBuilder {
     }
 
     pub fn build(&self) -> Result<LockParamsV1, &'static str> {
-        Ok(LockParamsV1 { fund_id: self.fund_id, duration_blocks: self.duration_blocks, signature: self.signature })
+        let pi = self.authority.compute_public_inputs();
+        Ok(LockParamsV1 { fund_id: self.fund_id, duration_blocks: self.duration_blocks, signature: self.signature, authority_pub_x: pi.authority_pub_x, authority_pub_y: pi.authority_pub_y, authority_nullifier: pi.authority_nullifier, tx_binding: pi.tx_binding, tx_nonce: pi.tx_nonce })
     }
 }
 
@@ -585,12 +627,16 @@ impl LockBuilder {
 pub struct UnlockBuilder {
     fund_id: FundId,
     signature: pallas::Base,
+    /// The authority inputs `unlock.zk` instances (`OBL-C78`); zero by default.
+    authority: AuthorityCallData,
 }
 
 impl UnlockBuilder {
     pub fn new() -> Self {
-        Self { fund_id: pallas::Base::zero(), signature: pallas::Base::zero() }
+        Self { fund_id: pallas::Base::zero(), signature: pallas::Base::zero(), authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()) }
     }
+
+    pub fn authority(mut self, call: AuthorityCallData) -> Self { self.authority = call; self }
 
     pub fn fund_id(mut self, id: FundId) -> Self {
         self.fund_id = id;
@@ -603,7 +649,8 @@ impl UnlockBuilder {
     }
 
     pub fn build(&self) -> Result<UnlockParamsV1, &'static str> {
-        Ok(UnlockParamsV1 { fund_id: self.fund_id, signature: self.signature })
+        let pi = self.authority.compute_public_inputs();
+        Ok(UnlockParamsV1 { fund_id: self.fund_id, signature: self.signature, authority_pub_x: pi.authority_pub_x, authority_pub_y: pi.authority_pub_y, authority_nullifier: pi.authority_nullifier, tx_binding: pi.tx_binding, tx_nonce: pi.tx_nonce })
     }
 }
 
@@ -615,12 +662,16 @@ pub struct UpdateConfigBuilder {
     rate_limit: Option<RateLimit>,
     multisig_group_id: Option<pallas::Base>,
     new_spend_authority: Option<PublicKey>,
+    /// The authority inputs `update_config.zk` instances (`OBL-C78`); zero by default.
+    authority: AuthorityCallData,
 }
 
 impl UpdateConfigBuilder {
     pub fn new() -> Self {
-        Self { fund_id: pallas::Base::zero(), rate_limit: None, multisig_group_id: None, new_spend_authority: None }
+        Self { fund_id: pallas::Base::zero(), rate_limit: None, multisig_group_id: None, new_spend_authority: None, authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()) }
     }
+
+    pub fn authority(mut self, call: AuthorityCallData) -> Self { self.authority = call; self }
 
     pub fn fund_id(mut self, id: FundId) -> Self {
         self.fund_id = id;
@@ -643,11 +694,154 @@ impl UpdateConfigBuilder {
     }
 
     pub fn build(&self) -> Result<UpdateConfigParamsV1, &'static str> {
+        let pi = self.authority.compute_public_inputs();
         Ok(UpdateConfigParamsV1 {
             fund_id: self.fund_id,
             rate_limit: self.rate_limit.clone(),
             multisig_group_id: self.multisig_group_id,
             new_spend_authority: self.new_spend_authority,
+            authority_pub_x: pi.authority_pub_x,
+            authority_pub_y: pi.authority_pub_y,
+            authority_nullifier: pi.authority_nullifier,
+            tx_binding: pi.tx_binding,
+            tx_nonce: pi.tx_nonce,
         })
     }
+}
+
+// ============================================================================
+// AUTHORITY PROOFS — one shape for eight circuits (OBL-C78)
+// ============================================================================
+//
+// `execute`, `initialize`, `lock`, `propose`, `transfer`, `unlock`, `update_config` and `vote` are
+// one proof shape wearing eight names, and that is measured rather than assumed: all eight declare
+//
+//     witness { fund_id, authority_secret, authority_pub_x, authority_pub_y, authority_nullifier,
+//               tx_commitment, tx_nonce, tx_binding }
+//
+// and all eight instance `[authority_pub_x, authority_pub_y, authority_nullifier, tx_binding,
+// tx_nonce]`, deriving each from the witnesses — the point from `authority_secret`, the nullifier
+// from `poseidon_hash([1, fund_id, authority_secret])`, the binding from the pair. So the derivation,
+// the witness list and the public inputs are written **once**, here, and the eight circuits differ
+// only in the zkbin a caller passes. The ninth circuit, `exit`, has a different witness list and its
+// own module (`client/exit.rs`).
+//
+// **Why this module has to exist at all.** Before it, no proof of any of these nine circuits could
+// be built: `client/` held `mod.rs` and `zkbins.rs`, and the metadata arms published two literal
+// zeros under five-instance circuits. The harness fabricated proofs instead, which is what made
+// `test_heavyweight_drain_protection` fail at its first endpoint.
+
+/// The public inputs the eight authority circuits instance, in their order.
+#[derive(Debug, Clone)]
+pub struct AuthorityPublicInputs {
+    pub authority_pub_x: pallas::Base,
+    pub authority_pub_y: pallas::Base,
+    pub authority_nullifier: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
+}
+
+impl AuthorityPublicInputs {
+    /// Convert to vector for ZK proof creation. Order must match `constrain_instance` in all eight
+    /// circuits: `authority_pub_x`, `authority_pub_y`, `authority_nullifier`, `tx_binding`,
+    /// `tx_nonce` — and the metadata arms publish the same five in the same places.
+    pub fn to_vec(&self) -> Vec<pallas::Base> {
+        vec![
+            self.authority_pub_x,
+            self.authority_pub_y,
+            self.authority_nullifier,
+            self.tx_binding,
+            self.tx_nonce,
+        ]
+    }
+}
+
+/// Input data for the eight authority proofs: the two secrets the circuit derives from, and the
+/// transaction pair it binds.
+#[derive(Debug, Clone)]
+pub struct AuthorityCallData {
+    /// The authority's secret — a witness, never published. Its point is.
+    pub authority_secret: pallas::Base,
+    /// The fund the nullifier is bound to.
+    pub fund_id: FundId,
+    pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
+}
+
+impl AuthorityCallData {
+    /// A call with no transaction to bind — both halves zero, the fixture default.
+    pub fn new(authority_secret: pallas::Base, fund_id: FundId) -> Self {
+        Self { authority_secret, fund_id, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
+    }
+
+    /// Bind the proof to a transaction (`OBL-C78`): the pair the witnesses and the public inputs both
+    /// use, so the params and the proof agree.
+    pub fn tx_pair(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Self {
+        self.tx_commitment = tx_commitment;
+        self.tx_nonce = tx_nonce;
+        self
+    }
+
+    /// The authority's point, derived from the secret the circuit will check it against.
+    pub fn authority_pub(&self) -> PublicKey {
+        PublicKey::from_secret(SecretKey::from_base(self.authority_secret))
+    }
+
+    /// `poseidon_hash([1, fund_id, authority_secret])` — the circuit's `DOMAIN_NULLIFIER = witness_base(1)`
+    /// derivation, from the same two values.
+    pub fn authority_nullifier(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(1u64), self.fund_id, self.authority_secret])
+    }
+
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])` — `DOMAIN_TX_BINDING` in every circuit here.
+    pub fn tx_binding(&self) -> pallas::Base {
+        poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, self.tx_commitment, self.tx_nonce])
+    }
+
+    pub fn compute_public_inputs(&self) -> AuthorityPublicInputs {
+        // `PublicKey::from_secret` is a point for every secret, so this is total — the same
+        // `expect` the sibling clients use for the same derivation.
+        let (x, y) = self.authority_pub().xy().expect("pk not identity");
+        AuthorityPublicInputs {
+            authority_pub_x: x,
+            authority_pub_y: y,
+            authority_nullifier: self.authority_nullifier(),
+            tx_binding: self.tx_binding(),
+            tx_nonce: self.tx_nonce,
+        }
+    }
+
+    /// Prover witnesses, in the order all eight circuits declare them.
+    pub fn to_witnesses(&self) -> Vec<Witness> {
+        let inputs = self.compute_public_inputs();
+        vec![
+            Witness::Base(Value::known(self.fund_id)),
+            Witness::Base(Value::known(self.authority_secret)),
+            Witness::Base(Value::known(inputs.authority_pub_x)),
+            Witness::Base(Value::known(inputs.authority_pub_y)),
+            Witness::Base(Value::known(inputs.authority_nullifier)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(inputs.tx_binding)),
+        ]
+    }
+}
+
+/// Generate a proof for any of the eight authority circuits, given that circuit's zkbin and key.
+///
+/// The caller passes the zkbin rather than a name, because the eight differ in nothing else: a
+/// mismatch between this function and a circuit would be a mismatch between the derivation above and
+/// the circuit's own, which the instance check catches rather than a lookup table.
+pub fn create_authority_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &AuthorityCallData,
+) -> dwow_core::Result<(Proof, AuthorityPublicInputs)> {
+    let public_inputs = input.compute_public_inputs();
+    let prover_witnesses = input.to_witnesses();
+
+    let circuit = ZkCircuit::new(prover_witnesses, zkbin);
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rand::rngs::OsRng)?;
+
+    Ok((proof, public_inputs))
 }

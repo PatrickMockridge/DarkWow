@@ -25,7 +25,8 @@
 
 use dwow_drain_protection_contract::{
     model::{
-        DrainConfig, ExitParamsV1, ExitQueueEntry, ExitRequest, ExitUpdateV1, LockParamsV1,
+        DrainConfig, ExitParamsV1, ExitQueueEntry, ExitRequest, ExitUpdateV1, InitializeParamsV1,
+        LockParamsV1,
         LockState, LockUpdateV1, MemberWeight, ObservationPending, ProposeParamsV1, ProposeUpdateV1,
         ProtectedFund, RateLimit, TransferParamsV1, TransferRecord, TransferUpdateV1, UnlockParamsV1,
         UnlockUpdateV1, UpdateConfigParamsV1, UpdateConfigUpdateV1, VoteParamsV1, VoteUpdateV1,
@@ -196,6 +197,37 @@ fn test_exit_queue_entry_encoding() {
     assert_eq!(decoded.processed, entry.processed);
 }
 
+/// `InitializeParamsV1` carries a variable-length `DrainConfig` and, since `OBL-C78`, the authority
+/// quintet **after** it — the one encoding in this contract whose tail the decoder has to locate
+/// rather than count. So it is the one a wrong offset reads the pair out of the middle of, and the
+/// one this test exists for; the others' round-trips are beside it.
+#[test]
+fn test_initialize_params_encoding() {
+    let params = InitializeParamsV1 {
+        instance_seed: [7u8; 32],
+        fund_id: pallas::Base::from(3),
+        spend_authority: make_pubkey(4),
+        dao_escrow_bulla: pallas::Base::from(5),
+        drain_config: DrainConfig::default(),
+        authority_pub_x: pallas::Base::from(51),
+        authority_pub_y: pallas::Base::from(52),
+        authority_nullifier: pallas::Base::from(53),
+        tx_binding: pallas::Base::from(54),
+        tx_nonce: pallas::Base::from(55),
+    };
+
+    let encoded = params.encode();
+    let decoded = InitializeParamsV1::decode(&encoded).unwrap();
+
+    assert_eq!(decoded.instance_seed, params.instance_seed);
+    assert_eq!(decoded.fund_id, params.fund_id);
+    assert_eq!(decoded.authority_pub_x, params.authority_pub_x);
+    assert_eq!(decoded.authority_pub_y, params.authority_pub_y);
+    assert_eq!(decoded.authority_nullifier, params.authority_nullifier);
+    assert_eq!(decoded.tx_binding, params.tx_binding);
+    assert_eq!(decoded.tx_nonce, params.tx_nonce);
+}
+
 #[test]
 fn test_exit_params_encoding() {
     let params = ExitParamsV1 {
@@ -259,15 +291,23 @@ fn test_propose_params_proof_length_is_not_a_byte() {
         prover_pubkey: make_pubkey(3),
         vote_period_blocks: 77,
         proof: vec![0xFA; 700],
+        authority_pub_x: pallas::Base::from(61),
+        authority_pub_y: pallas::Base::from(62),
+        authority_nullifier: pallas::Base::from(63),
+        tx_binding: pallas::Base::from(64),
+        tx_nonce: pallas::Base::from(65),
     };
 
     let encoded = params.encode().unwrap();
-    assert_eq!(encoded.len(), 108 + 700);
+    assert_eq!(encoded.len(), 268 + 700);
 
     let decoded = ProposeParamsV1::decode(&encoded).unwrap();
     assert_eq!(decoded.proof.len(), 700);
     assert_eq!(decoded.vote_period_blocks, 77);
     assert_eq!(decoded.message_hash, params.message_hash);
+    assert_eq!(decoded.tx_binding, params.tx_binding);
+    assert_eq!(decoded.tx_nonce, params.tx_nonce);
+    assert_eq!(decoded.authority_nullifier, params.authority_nullifier);
 }
 
 /// `ProtectedFund` is **stored state** with five prefixes, three of them vector counts whose fields
@@ -349,12 +389,19 @@ fn test_lock_params_encoding() {
         fund_id: pallas::Base::from(1),
         duration_blocks: 600,
         signature: pallas::Base::from(1),
+        authority_pub_x: pallas::Base::from(11),
+        authority_pub_y: pallas::Base::from(12),
+        authority_nullifier: pallas::Base::from(13),
+        tx_binding: pallas::Base::from(14),
+        tx_nonce: pallas::Base::from(15),
     };
 
     let encoded = serialize(&params);
     let decoded: LockParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.duration_blocks, params.duration_blocks);
+    assert_eq!(decoded.authority_pub_x, params.authority_pub_x);
+    assert_eq!(decoded.tx_nonce, params.tx_nonce);
 }
 
 /// A small fund for the update round-trips: the four updates that carry a fund write it back whole, so
@@ -404,12 +451,18 @@ fn test_unlock_params_encoding() {
     let params = UnlockParamsV1 {
         fund_id: pallas::Base::from(1),
         signature: pallas::Base::from(1),
+        authority_pub_x: pallas::Base::from(21),
+        authority_pub_y: pallas::Base::from(22),
+        authority_nullifier: pallas::Base::from(23),
+        tx_binding: pallas::Base::from(24),
+        tx_nonce: pallas::Base::from(25),
     };
 
     let encoded = serialize(&params);
     let decoded: UnlockParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.signature, params.signature);
+    assert_eq!(decoded.authority_nullifier, params.authority_nullifier);
 }
 
 #[test]
@@ -436,6 +489,11 @@ fn test_transfer_params_encoding() {
         signature: pallas::Base::from(1),
         exceeds_rate_limit: false,
         vote_proposal_id: None,
+        authority_pub_x: pallas::Base::from(31),
+        authority_pub_y: pallas::Base::from(32),
+        authority_nullifier: pallas::Base::from(33),
+        tx_binding: pallas::Base::from(34),
+        tx_nonce: pallas::Base::from(35),
     };
 
     let encoded = serialize(&params);
@@ -443,6 +501,7 @@ fn test_transfer_params_encoding() {
 
     assert_eq!(decoded.amount, params.amount);
     assert_eq!(decoded.exceeds_rate_limit, params.exceeds_rate_limit);
+    assert_eq!(decoded.tx_binding, params.tx_binding);
 }
 
 #[test]
@@ -473,6 +532,11 @@ fn test_update_config_params_encoding() {
         rate_limit: Some(RateLimit::default()),
         multisig_group_id: Some(pallas::Base::from(7)),
         new_spend_authority: Some(make_pubkey(1)),
+        authority_pub_x: pallas::Base::from(41),
+        authority_pub_y: pallas::Base::from(42),
+        authority_nullifier: pallas::Base::from(43),
+        tx_binding: pallas::Base::from(44),
+        tx_nonce: pallas::Base::from(45),
     };
 
     let encoded = serialize(&params);
@@ -481,6 +545,8 @@ fn test_update_config_params_encoding() {
     assert!(decoded.rate_limit.is_some());
     assert!(decoded.multisig_group_id.is_some());
     assert!(decoded.new_spend_authority.is_some());
+    assert_eq!(decoded.authority_pub_x, params.authority_pub_x);
+    assert_eq!(decoded.tx_nonce, params.tx_nonce);
 }
 
 #[test]

@@ -303,12 +303,21 @@ pub struct InitializeParamsV1 {
     pub spend_authority: PublicKey,
     pub dao_escrow_bulla: pallas::Base,
     pub drain_config: DrainConfig,
+    /// The five values `initialize.zk` instances (`OBL-C78`), derived by the client
+    /// (`client::create_authority_proof`) and published by the arm. Appended after `drain_config`,
+    /// whose decoding consumes a prefix rather than the whole tail, so the length check below is
+    /// what fixes where the pair starts.
+    pub authority_pub_x: pallas::Base,
+    pub authority_pub_y: pallas::Base,
+    pub authority_nullifier: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for InitializeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for InitializeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl InitializeParamsV1 { pub fn encode(&self) -> Vec<u8> { let dc = self.drain_config.encode(); let mut b = Vec::with_capacity(97+dc.len()); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.spend_authority.to_bytes()); b.extend_from_slice(&self.dao_escrow_bulla.to_repr()); b.extend_from_slice(&dc); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 97 { return Err(ContractError::IoError("InitializeParamsV1: too short".into())); } let instance_seed: [u8;32] = data[0..32].try_into().unwrap(); let fund_id = read_base(&data[32..64])?; let spend_authority = PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid spend_authority: {}", e)))?; let dao_escrow_bulla = read_base(&data[96..128])?; let drain_config = DrainConfig::decode(&data[128..])?; Ok(InitializeParamsV1 { instance_seed, fund_id, spend_authority, dao_escrow_bulla, drain_config }) } }
+impl InitializeParamsV1 { pub fn encode(&self) -> Vec<u8> { let dc = self.drain_config.encode(); let mut b = Vec::with_capacity(161+dc.len()); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.spend_authority.to_bytes()); b.extend_from_slice(&self.dao_escrow_bulla.to_repr()); b.extend_from_slice(&dc); b.extend_from_slice(&self.authority_pub_x.to_repr()); b.extend_from_slice(&self.authority_pub_y.to_repr()); b.extend_from_slice(&self.authority_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 161 { return Err(ContractError::IoError("InitializeParamsV1: too short".into())); } let instance_seed: [u8;32] = data[0..32].try_into().unwrap(); let fund_id = read_base(&data[32..64])?; let spend_authority = PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid spend_authority: {}", e)))?; let dao_escrow_bulla = read_base(&data[96..128])?; let drain_config = DrainConfig::decode(&data[128..])?; /* `DrainConfig::decode` consumes a prefix of what it is given and does not report where it stopped, so the pair's offset is where that config *re-encodes* to — deterministic, because the encoding is canonical. `OBL-C78`. */ let dc_len = drain_config.encode().len(); let pair_at = 128usize.saturating_add(dc_len); if data.len() != pair_at.saturating_add(160) { return Err(ContractError::IoError(format!("InitializeParamsV1: expected {} bytes, got {}", pair_at.saturating_add(160), data.len()))); } Ok(InitializeParamsV1 { instance_seed, fund_id, spend_authority, dao_escrow_bulla, drain_config, authority_pub_x: read_base(&data[pair_at..pair_at+32])?, authority_pub_y: read_base(&data[pair_at+32..pair_at+64])?, authority_nullifier: read_base(&data[pair_at+64..pair_at+96])?, tx_binding: read_base(&data[pair_at+96..pair_at+128])?, tx_nonce: read_base(&data[pair_at+128..pair_at+160])? }) } }
 
 /// The update `InitializeV1`'s exec phase hands to its apply phase.
 ///
@@ -330,20 +339,35 @@ pub struct ProposeParamsV1 {
     pub prover_pubkey: PublicKey,
     pub vote_period_blocks: u64,
     pub proof: Vec<u8>,
+    /// The five values `propose.zk` instances (`OBL-C78`), same shape as `LockParamsV1`'s. Appended
+    /// after the proof, so the declared proof length is what keeps the pair from being sliced out of
+    /// the proof's tail.
+    pub authority_pub_x: pallas::Base,
+    pub authority_pub_y: pallas::Base,
+    pub authority_nullifier: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for ProposeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ProposeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl ProposeParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(100+self.proof.len()); b.extend_from_slice(&self.message_hash.to_repr()); b.extend_from_slice(&self.multisig_group_id.to_repr()); b.extend_from_slice(&self.prover_pubkey.to_bytes()); b.extend_from_slice(&self.vote_period_blocks.to_le_bytes()); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 100 { return Err(ContractError::IoError("ProposeParamsV1: too short".into())); } let message_hash = read_base(&data[0..32])?; let multisig_group_id = read_base(&data[32..64])?; let prover_pubkey = PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ProposeParamsV1: invalid prover_pubkey: {}", e)))?; let vote_period_blocks = u64::from_le_bytes(data[96..104].try_into().unwrap()); let proof_len = SerializedLen::from_le_bytes(data[104..108].try_into().unwrap()).to_usize(); let expected = proof_len.saturating_add(108); if data.len() != expected { return Err(ContractError::IoError(format!("ProposeParamsV1: expected {} bytes, got {}", expected, data.len()))); } let proof = data[108..].to_vec(); Ok(ProposeParamsV1 { message_hash, multisig_group_id, prover_pubkey, vote_period_blocks, proof }) } }
+impl ProposeParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(164+self.proof.len()); b.extend_from_slice(&self.message_hash.to_repr()); b.extend_from_slice(&self.multisig_group_id.to_repr()); b.extend_from_slice(&self.prover_pubkey.to_bytes()); b.extend_from_slice(&self.vote_period_blocks.to_le_bytes()); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.authority_pub_x.to_repr()); b.extend_from_slice(&self.authority_pub_y.to_repr()); b.extend_from_slice(&self.authority_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 164 { return Err(ContractError::IoError("ProposeParamsV1: too short".into())); } let message_hash = read_base(&data[0..32])?; let multisig_group_id = read_base(&data[32..64])?; let prover_pubkey = PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ProposeParamsV1: invalid prover_pubkey: {}", e)))?; let vote_period_blocks = u64::from_le_bytes(data[96..104].try_into().unwrap()); let proof_len = SerializedLen::from_le_bytes(data[104..108].try_into().unwrap()).to_usize(); let expected = proof_len.saturating_add(268); if data.len() != expected { return Err(ContractError::IoError(format!("ProposeParamsV1: expected {} bytes, got {}", expected, data.len()))); } let proof = data[108..108+proof_len].to_vec(); let pair_at = 108 + proof_len; Ok(ProposeParamsV1 { message_hash, multisig_group_id, prover_pubkey, vote_period_blocks, proof, authority_pub_x: read_base(&data[pair_at..pair_at+32])?, authority_pub_y: read_base(&data[pair_at+32..pair_at+64])?, authority_nullifier: read_base(&data[pair_at+64..pair_at+96])?, tx_binding: read_base(&data[pair_at+96..pair_at+128])?, tx_nonce: read_base(&data[pair_at+128..pair_at+160])? }) } }
 
 #[derive(Debug, Clone)] pub struct ProposeUpdateV1 { pub proposal_id: pallas::Base }
 
-#[derive(Debug, Clone,)] pub struct VoteParamsV1 { pub proposal_id: pallas::Base, pub voter_pubkey: PublicKey, pub vote: bool, pub signature: pallas::Base }
+#[derive(Debug, Clone,)] pub struct VoteParamsV1 { pub proposal_id: pallas::Base, pub voter_pubkey: PublicKey, pub vote: bool, pub signature: pallas::Base,
+    /// The five values `vote.zk` instances (`OBL-C78`), same shape as `LockParamsV1`'s.
+    pub authority_pub_x: pallas::Base,
+    pub authority_pub_y: pallas::Base,
+    pub authority_nullifier: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
+}
 impl dwow_serial::Encodable for VoteParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for VoteParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl VoteParamsV1 { pub const ENCODED_SIZE: usize = 97; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(97); b.extend_from_slice(&self.proposal_id.to_repr()); b.extend_from_slice(&self.voter_pubkey.to_bytes()); b.push(self.vote as u8); b.extend_from_slice(&self.signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 97 { return Err(ContractError::IoError(format!("VoteParamsV1: expected 97 bytes, got {}", data.len()))); } Ok(VoteParamsV1 { proposal_id: read_base(&data[0..32])?, voter_pubkey: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("VoteParamsV1: invalid voter_pubkey: {}", e)))?, vote: data[64] != 0, signature: read_base(&data[65..97])? }) } }
+impl VoteParamsV1 { pub const ENCODED_SIZE: usize = 257; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(257); b.extend_from_slice(&self.proposal_id.to_repr()); b.extend_from_slice(&self.voter_pubkey.to_bytes()); b.push(self.vote as u8); b.extend_from_slice(&self.signature.to_repr()); b.extend_from_slice(&self.authority_pub_x.to_repr()); b.extend_from_slice(&self.authority_pub_y.to_repr()); b.extend_from_slice(&self.authority_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 257 { return Err(ContractError::IoError(format!("VoteParamsV1: expected 257 bytes, got {}", data.len()))); } Ok(VoteParamsV1 { proposal_id: read_base(&data[0..32])?, voter_pubkey: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("VoteParamsV1: invalid voter_pubkey: {}", e)))?, vote: data[64] != 0, signature: read_base(&data[65..97])?, authority_pub_x: read_base(&data[97..129])?, authority_pub_y: read_base(&data[129..161])?, authority_nullifier: read_base(&data[161..193])?, tx_binding: read_base(&data[193..225])?, tx_nonce: read_base(&data[225..257])? }) } }
 
 /// The update `VoteV1`'s exec phase hands to its apply phase.
 ///
@@ -358,10 +382,22 @@ pub struct VoteUpdateV1 {
     pub vote_value: pallas::Base,
 }
 
-#[derive(Debug, Clone,)] pub struct ExecuteParamsV1 { pub proposal_id: pallas::Base, pub signature: pallas::Base }
+#[derive(Debug, Clone,)] pub struct ExecuteParamsV1 { pub proposal_id: pallas::Base, pub signature: pallas::Base,
+    /// The five values `execute.zk` instances — `authority_pub_x`, `authority_pub_y`,
+    /// `authority_nullifier`, `tx_binding`, `tx_nonce` (`OBL-C78`). The circuit derives all five from
+    /// its witnesses and the metadata can only publish what the call carries, so the client computes
+    /// them (`client::create_authority_proof`) and the arm publishes them. Appended after the last
+    /// existing field, so every prior position is unchanged and an old-format call is refused by the
+    /// length guard rather than decoded shifted.
+    pub authority_pub_x: pallas::Base,
+    pub authority_pub_y: pallas::Base,
+    pub authority_nullifier: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
+}
 impl dwow_serial::Encodable for ExecuteParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ExecuteParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl ExecuteParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.proposal_id.to_repr()); b.extend_from_slice(&self.signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("ExecuteParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(ExecuteParamsV1 { proposal_id: read_base(&data[0..32])?, signature: read_base(&data[32..64])? }) } }
+impl ExecuteParamsV1 { pub const ENCODED_SIZE: usize = 224; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(224); b.extend_from_slice(&self.proposal_id.to_repr()); b.extend_from_slice(&self.signature.to_repr()); b.extend_from_slice(&self.authority_pub_x.to_repr()); b.extend_from_slice(&self.authority_pub_y.to_repr()); b.extend_from_slice(&self.authority_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 224 { return Err(ContractError::IoError(format!("ExecuteParamsV1: expected 224 bytes, got {}", data.len()))); } Ok(ExecuteParamsV1 { proposal_id: read_base(&data[0..32])?, signature: read_base(&data[32..64])?, authority_pub_x: read_base(&data[64..96])?, authority_pub_y: read_base(&data[96..128])?, authority_nullifier: read_base(&data[128..160])?, tx_binding: read_base(&data[160..192])?, tx_nonce: read_base(&data[192..224])? }) } }
 
 #[derive(Debug, Clone)]
 pub struct ExecuteUpdateV1 {
@@ -399,11 +435,19 @@ impl ExitParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let
 
 #[derive(Debug, Clone)] pub struct ExitUpdateV1 { pub exit_id: pallas::Base, pub member_pubkey: PublicKey, pub payout_value: u64, pub haircut_collected: u64 }
 
-#[derive(Debug, Clone,)] pub struct TransferParamsV1 { pub fund_id: FundId, pub amount: u64, pub recipient: PublicKey, pub signature: pallas::Base, pub exceeds_rate_limit: bool, pub vote_proposal_id: Option<pallas::Base> }
+#[derive(Debug, Clone,)] pub struct TransferParamsV1 { pub fund_id: FundId, pub amount: u64, pub recipient: PublicKey, pub signature: pallas::Base, pub exceeds_rate_limit: bool, pub vote_proposal_id: Option<pallas::Base>,
+    /// The five values `transfer.zk` instances (`OBL-C78`), same shape as `LockParamsV1`'s. Appended
+    /// after the optional tail, so the decoder reads them from a position the length check fixes.
+    pub authority_pub_x: pallas::Base,
+    pub authority_pub_y: pallas::Base,
+    pub authority_nullifier: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
+}
 impl dwow_serial::Encodable for TransferParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TransferParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl TransferParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(106); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.recipient.to_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.push(self.exceeds_rate_limit as u8); b.push(self.vote_proposal_id.is_some() as u8); if let Some(v) = self.vote_proposal_id { b.extend_from_slice(&v.to_repr()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 106 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); } let fund_id = read_base(&data[0..32])?; let amount = u64::from_le_bytes(data[32..40].try_into().unwrap()); let recipient = PublicKey::from_bytes(data[40..72].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("TransferParamsV1: invalid recipient: {}", e)))?; let signature = read_base(&data[72..104])?; let exceeds_rate_limit = data[104] != 0; let has_vp = data[105] != 0; let vote_proposal_id = if has_vp { if data.len() != 138 { return Err(ContractError::IoError(format!("TransferParamsV1: expected 138 bytes, got {}", data.len()))); } Some(read_base(&data[106..138])?) } else { None }; Ok(TransferParamsV1 { fund_id, amount, recipient, signature, exceeds_rate_limit, vote_proposal_id }) } }
+impl TransferParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(170); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.recipient.to_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.push(self.exceeds_rate_limit as u8); b.push(self.vote_proposal_id.is_some() as u8); if let Some(v) = self.vote_proposal_id { b.extend_from_slice(&v.to_repr()); } b.extend_from_slice(&self.authority_pub_x.to_repr()); b.extend_from_slice(&self.authority_pub_y.to_repr()); b.extend_from_slice(&self.authority_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 170 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); } let fund_id = read_base(&data[0..32])?; let amount = u64::from_le_bytes(data[32..40].try_into().unwrap()); let recipient = PublicKey::from_bytes(data[40..72].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("TransferParamsV1: invalid recipient: {}", e)))?; let signature = read_base(&data[72..104])?; let exceeds_rate_limit = data[104] != 0; let has_vp = data[105] != 0; let vote_proposal_id = if has_vp { Some(read_base(&data[106..138])?) } else { None }; /* The pair starts where the optionals end — fixed, so the exact length is what refuses an old-format call rather than reading the pair out of the middle of one. OBL-C78. */ let pair_at = if has_vp { 138usize } else { 106usize }; if data.len() != pair_at.saturating_add(160) { return Err(ContractError::IoError(format!("TransferParamsV1: expected {} bytes, got {}", pair_at.saturating_add(160), data.len()))); } Ok(TransferParamsV1 { fund_id, amount, recipient, signature, exceeds_rate_limit, vote_proposal_id, authority_pub_x: read_base(&data[pair_at..pair_at+32])?, authority_pub_y: read_base(&data[pair_at+32..pair_at+64])?, authority_nullifier: read_base(&data[pair_at+64..pair_at+96])?, tx_binding: read_base(&data[pair_at+96..pair_at+128])?, tx_nonce: read_base(&data[pair_at+128..pair_at+160])? }) } }
 
 /// The update `TransferV1`'s exec phase hands to its apply phase.
 ///
@@ -420,11 +464,21 @@ pub struct TransferUpdateV1 {
 }
 
 #[derive(Debug, Clone,)]
-pub struct LockParamsV1 { pub fund_id: FundId, pub duration_blocks: u64, pub signature: pallas::Base }
+pub struct LockParamsV1 { pub fund_id: FundId, pub duration_blocks: u64, pub signature: pallas::Base,
+    /// The five values `lock.zk` instances: `authority_pub_x`, `authority_pub_y`,
+    /// `authority_nullifier`, `tx_binding`, `tx_nonce` (`OBL-C78`). Derived by the client
+    /// (`client::create_authority_proof`), published by the arm; appended after the last existing
+    /// field so an old-format call is refused by the length guard.
+    pub authority_pub_x: pallas::Base,
+    pub authority_pub_y: pallas::Base,
+    pub authority_nullifier: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
+}
 impl dwow_serial::Encodable for LockParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for LockParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl LockParamsV1 { pub const ENCODED_SIZE: usize = 72; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(72); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.duration_blocks.to_le_bytes()); b.extend_from_slice(&self.signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 72 { return Err(ContractError::IoError(format!("LockParamsV1: expected 72 bytes, got {}", data.len()))); } Ok(LockParamsV1 { fund_id: read_base(&data[0..32])?, duration_blocks: u64::from_le_bytes(data[32..40].try_into().unwrap()), signature: read_base(&data[40..72])? }) } }
+impl LockParamsV1 { pub const ENCODED_SIZE: usize = 232; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(232); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.duration_blocks.to_le_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.extend_from_slice(&self.authority_pub_x.to_repr()); b.extend_from_slice(&self.authority_pub_y.to_repr()); b.extend_from_slice(&self.authority_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 232 { return Err(ContractError::IoError(format!("LockParamsV1: expected 232 bytes, got {}", data.len()))); } Ok(LockParamsV1 { fund_id: read_base(&data[0..32])?, duration_blocks: u64::from_le_bytes(data[32..40].try_into().unwrap()), signature: read_base(&data[40..72])?, authority_pub_x: read_base(&data[72..104])?, authority_pub_y: read_base(&data[104..136])?, authority_nullifier: read_base(&data[136..168])?, tx_binding: read_base(&data[168..200])?, tx_nonce: read_base(&data[200..232])? }) } }
 
 /// The update `LockV1`'s exec phase hands to its apply phase. Carries the fund, because the write is
 /// "store this fund" and apply cannot read it back (`OBL-C73`). `locked_until` was
@@ -434,10 +488,18 @@ pub struct LockUpdateV1 {
     pub fund: ProtectedFund,
 }
 
-#[derive(Debug, Clone,)] pub struct UnlockParamsV1 { pub fund_id: FundId, pub signature: pallas::Base }
+#[derive(Debug, Clone,)] pub struct UnlockParamsV1 { pub fund_id: FundId, pub signature: pallas::Base,
+    /// The five values `unlock.zk` instances (`OBL-C78`), same shape and same reason as
+    /// `LockParamsV1`'s.
+    pub authority_pub_x: pallas::Base,
+    pub authority_pub_y: pallas::Base,
+    pub authority_nullifier: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
+}
 impl dwow_serial::Encodable for UnlockParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UnlockParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl UnlockParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("UnlockParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(UnlockParamsV1 { fund_id: read_base(&data[0..32])?, signature: read_base(&data[32..64])? }) } }
+impl UnlockParamsV1 { pub const ENCODED_SIZE: usize = 224; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(224); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.signature.to_repr()); b.extend_from_slice(&self.authority_pub_x.to_repr()); b.extend_from_slice(&self.authority_pub_y.to_repr()); b.extend_from_slice(&self.authority_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 224 { return Err(ContractError::IoError(format!("UnlockParamsV1: expected 224 bytes, got {}", data.len()))); } Ok(UnlockParamsV1 { fund_id: read_base(&data[0..32])?, signature: read_base(&data[32..64])?, authority_pub_x: read_base(&data[64..96])?, authority_pub_y: read_base(&data[96..128])?, authority_nullifier: read_base(&data[128..160])?, tx_binding: read_base(&data[160..192])?, tx_nonce: read_base(&data[192..224])? }) } }
 
 /// The update `UnlockV1`'s exec phase hands to its apply phase. Carries the fund (`OBL-C73`), and keeps
 /// `unlocked_at` because that value is *not* stored in the fund — it is the height the unlock happened at,
@@ -449,11 +511,19 @@ pub struct UnlockUpdateV1 {
 }
 
 #[derive(Debug, Clone,)]
-pub struct UpdateConfigParamsV1 { pub fund_id: FundId, pub rate_limit: Option<RateLimit>, pub multisig_group_id: Option<pallas::Base>, pub new_spend_authority: Option<PublicKey> }
+pub struct UpdateConfigParamsV1 { pub fund_id: FundId, pub rate_limit: Option<RateLimit>, pub multisig_group_id: Option<pallas::Base>, pub new_spend_authority: Option<PublicKey>,
+    /// The five values `update_config.zk` instances (`OBL-C78`), same shape as `LockParamsV1`'s.
+    /// Appended after the optional tail; the decoder reads them from the position its cursor reaches.
+    pub authority_pub_x: pallas::Base,
+    pub authority_pub_y: pallas::Base,
+    pub authority_nullifier: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
+}
 impl dwow_serial::Encodable for UpdateConfigParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdateConfigParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl UpdateConfigParamsV1 { pub fn encode(&self) -> Vec<u8> { let rl = if let Some(ref r) = self.rate_limit { r.encode() } else { vec![] }; let mut b = Vec::with_capacity(34+rl.len()); b.extend_from_slice(&self.fund_id.to_repr()); b.push(self.rate_limit.is_some() as u8); b.extend_from_slice(&rl); b.push(self.multisig_group_id.is_some() as u8); if let Some(v) = self.multisig_group_id { b.extend_from_slice(&v.to_repr()); } b.push(self.new_spend_authority.is_some() as u8); if let Some(v) = self.new_spend_authority { b.extend_from_slice(&v.to_bytes()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 34 { return Err(ContractError::IoError("UpdateConfigParamsV1: too short".into())); } let fund_id = read_base(&data[0..32])?; let has_rl = data[32] != 0; let mut pos = 33; let rate_limit = if has_rl { let r = RateLimit::decode(&data[pos..pos+24])?; pos += 24; Some(r) } else { None }; let has_mg = data[pos] != 0; pos += 1; let multisig_group_id = if has_mg { let v = read_base(&data[pos..pos+32])?; pos += 32; Some(v) } else { None }; let has_sa = data[pos] != 0; let new_spend_authority = if has_sa { if data.len() != pos+33 { return Err(ContractError::IoError(format!("UpdateConfigParamsV1: expected {} bytes, got {}", pos+33, data.len()))); } Some(PublicKey::from_bytes(data[pos+1..pos+33].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("UpdateConfigParamsV1: invalid new_spend_authority: {}", e)))?) } else { None }; Ok(UpdateConfigParamsV1 { fund_id, rate_limit, multisig_group_id, new_spend_authority }) } }
+impl UpdateConfigParamsV1 { pub fn encode(&self) -> Vec<u8> { let rl = if let Some(ref r) = self.rate_limit { r.encode() } else { vec![] }; let mut b = Vec::with_capacity(98+rl.len()); b.extend_from_slice(&self.fund_id.to_repr()); b.push(self.rate_limit.is_some() as u8); b.extend_from_slice(&rl); b.push(self.multisig_group_id.is_some() as u8); if let Some(v) = self.multisig_group_id { b.extend_from_slice(&v.to_repr()); } b.push(self.new_spend_authority.is_some() as u8); if let Some(v) = self.new_spend_authority { b.extend_from_slice(&v.to_bytes()); } b.extend_from_slice(&self.authority_pub_x.to_repr()); b.extend_from_slice(&self.authority_pub_y.to_repr()); b.extend_from_slice(&self.authority_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 98 { return Err(ContractError::IoError("UpdateConfigParamsV1: too short".into())); } let fund_id = read_base(&data[0..32])?; let has_rl = data[32] != 0; let mut pos = 33; let rate_limit = if has_rl { let r = RateLimit::decode(&data[pos..pos+24])?; pos += 24; Some(r) } else { None }; let has_mg = data[pos] != 0; pos += 1; let multisig_group_id = if has_mg { let v = read_base(&data[pos..pos+32])?; pos += 32; Some(v) } else { None }; let has_sa = data[pos] != 0; let new_spend_authority = if has_sa { let v = PublicKey::from_bytes(data[pos+1..pos+33].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("UpdateConfigParamsV1: invalid new_spend_authority: {}", e)))?; pos += 33; Some(v) } else { pos += 1; None }; /* One exact check after the optionals, covering every branch: the pair starts where the cursor stops, and an old-format call is refused rather than read from the middle. OBL-C78. */ if data.len() != pos.saturating_add(160) { return Err(ContractError::IoError(format!("UpdateConfigParamsV1: expected {} bytes, got {}", pos.saturating_add(160), data.len()))); } Ok(UpdateConfigParamsV1 { fund_id, rate_limit, multisig_group_id, new_spend_authority, authority_pub_x: read_base(&data[pos..pos+32])?, authority_pub_y: read_base(&data[pos+32..pos+64])?, authority_nullifier: read_base(&data[pos+64..pos+96])?, tx_binding: read_base(&data[pos+96..pos+128])?, tx_nonce: read_base(&data[pos+128..pos+160])? }) } }
 
 /// The update `UpdateConfigV1`'s exec phase hands to its apply phase.
 ///

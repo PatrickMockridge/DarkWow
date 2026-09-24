@@ -165,73 +165,170 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
             drain_protection_exit_get_metadata_v1(params)?
         }
         DrainProtectionFunction::InitializeV1 => {
+            let params = match crate::model::InitializeParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[drain_protection::get_metadata] Error: Failed to deserialize InitializeParamsV1: {:?}", e);
+                    // An empty metadata vector is the host's rejection signal (OBL-C77), and this
+                    // function's return type is `ContractResult`, so the refusal is expressed by
+                    // publishing nothing rather than by returning a `Vec`.
+                    let _ = wasm::util::set_return_data(&vec![]);
+                    return Ok(());
+                }
+            };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // OBL-C78: the five values `initialize.zk` instances, in its order. They were two literal
+            // zeros, which no satisfiable proof can match.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_INITIALIZE_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
         }
         DrainProtectionFunction::ProposeV1 => {
+            let params = match ProposeParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[drain_protection::get_metadata] Error: Failed to deserialize ProposeParamsV1: {:?}", e);
+                    // An empty metadata vector is the host's rejection signal (OBL-C77), and this
+                    // function's return type is `ContractResult`, so the refusal is expressed by
+                    // publishing nothing rather than by returning a `Vec`.
+                    let _ = wasm::util::set_return_data(&vec![]);
+                    return Ok(());
+                }
+            };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // OBL-C78: the five values `propose.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_PROPOSE_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
         }
         DrainProtectionFunction::VoteV1 => {
+            let params = match VoteParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[drain_protection::get_metadata] Error: Failed to deserialize VoteParamsV1: {:?}", e);
+                    // An empty metadata vector is the host's rejection signal (OBL-C77), and this
+                    // function's return type is `ContractResult`, so the refusal is expressed by
+                    // publishing nothing rather than by returning a `Vec`.
+                    let _ = wasm::util::set_return_data(&vec![]);
+                    return Ok(());
+                }
+            };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // OBL-C78: the five values `vote.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_VOTE_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
         }
         DrainProtectionFunction::ExecuteV1 => {
+            let params = match crate::model::ExecuteParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[drain_protection::get_metadata] Error: Failed to deserialize ExecuteParamsV1: {:?}", e);
+                    // An empty metadata vector is the host's rejection signal (OBL-C77), and this
+                    // function's return type is `ContractResult`, so the refusal is expressed by
+                    // publishing nothing rather than by returning a `Vec`.
+                    let _ = wasm::util::set_return_data(&vec![]);
+                    return Ok(());
+                }
+            };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // OBL-C78: the five values `execute.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_EXECUTE_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
         }
         DrainProtectionFunction::TransferV1 => {
+            let params = match crate::model::TransferParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[drain_protection::get_metadata] Error: Failed to deserialize TransferParamsV1: {:?}", e);
+                    // An empty metadata vector is the host's rejection signal (OBL-C77), and this
+                    // function's return type is `ContractResult`, so the refusal is expressed by
+                    // publishing nothing rather than by returning a `Vec`.
+                    let _ = wasm::util::set_return_data(&vec![]);
+                    return Ok(());
+                }
+            };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // OBL-C78: the five values `transfer.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_TRANSFER_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
         }
         DrainProtectionFunction::LockV1 => {
+            let params = match LockParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[drain_protection::get_metadata] Error: Failed to deserialize LockParamsV1: {:?}", e);
+                    // An empty metadata vector is the host's rejection signal (OBL-C77), and this
+                    // function's return type is `ContractResult`, so the refusal is expressed by
+                    // publishing nothing rather than by returning a `Vec`.
+                    let _ = wasm::util::set_return_data(&vec![]);
+                    return Ok(());
+                }
+            };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // OBL-C78: the five values `lock.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_LOCK_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
         }
         DrainProtectionFunction::UnlockV1 => {
+            let params = match UnlockParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[drain_protection::get_metadata] Error: Failed to deserialize UnlockParamsV1: {:?}", e);
+                    // An empty metadata vector is the host's rejection signal (OBL-C77), and this
+                    // function's return type is `ContractResult`, so the refusal is expressed by
+                    // publishing nothing rather than by returning a `Vec`.
+                    let _ = wasm::util::set_return_data(&vec![]);
+                    return Ok(());
+                }
+            };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // OBL-C78: the five values `unlock.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_UNLOCK_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
         }
         DrainProtectionFunction::UpdateConfigV1 => {
+            let params = match crate::model::UpdateConfigParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[drain_protection::get_metadata] Error: Failed to deserialize UpdateConfigParamsV1: {:?}", e);
+                    // An empty metadata vector is the host's rejection signal (OBL-C77), and this
+                    // function's return type is `ContractResult`, so the refusal is expressed by
+                    // publishing nothing rather than by returning a `Vec`.
+                    let _ = wasm::util::set_return_data(&vec![]);
+                    return Ok(());
+                }
+            };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // OBL-C78: the five values `update_config.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2.to_string(),
-                vec![pallas::Base::zero(), pallas::Base::zero()],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()

@@ -39,6 +39,11 @@
 //! The protections described here are provisionally specified
 //! and require full implementation and security review.
 
+/// Client API for interaction with this smart contract. Gated on the feature because the proof
+/// modules need the optional `dwow_core` dependency, which the wasm build does not enable —
+/// `subscription/src/lib.rs:88` gates its own module the same way, and every consumer of this one
+/// (`dwowd`, the test harness, the Python SDK) already enables the feature.
+#[cfg(feature = "client")]
 pub mod client;
 pub mod error;
 pub mod model;
