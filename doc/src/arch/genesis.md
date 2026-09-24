@@ -182,6 +182,18 @@ are linked into all nine, which is why four of them carry no first-party panic s
 panic machinery. The artifact-level invariant is the one `contrib/wasm_artifact_check.sh` checks — no
 marker strings, no embedded first-party path — and its header states what that is narrower than.
 
+One boundary on the sentence above, because it is easy to generalise past its evidence: it is a claim
+about files the contracts **link**. A comment in `src/sdk/src/**` or in a contract's own sources is
+compiled into the artifact, and the levers are what stop it moving. A `src/sdk/**` *leaf crate* that no
+contract depends on — the Python bindings, say — never changed the built bytes at all: an edit there
+still moves **every** contract's `.source_hash`, because the manifest globs all of `src/sdk/**`, so the
+rebuild obligation is real, while the artifact — and therefore the hash this document is about — is
+unchanged. Measured by another session on 2026-09-24: rebuilding `purse` after an edit to
+`src/sdk/python/src/contract/bridge/withdraw_v1.rs` left the artifact at `28819142faa7a9bc…`, identical,
+with only `.source_hash` moving. So an sdk edit is a *staleness* event for all 32 artifacts and a *pin*
+event only when the crate it touches is one the contracts link.
+
+
 This is also what makes the account align with the process calculus the rest of this specification is
 built on — [type-system.md](type-system.md) §0 derives the type system from the ρ-calculus, and §1
 defines a type as a behavioural position whose barbs are its observable actions. The observable
