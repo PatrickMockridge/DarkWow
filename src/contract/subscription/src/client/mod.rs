@@ -28,7 +28,6 @@ use dwow_sdk::pasta::pallas;
 pub mod zkbins;
 
 pub mod cancel;
-pub mod rate_limit;
 pub mod renew;
 pub mod subscribe;
 pub mod update_usage;

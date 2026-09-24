@@ -250,7 +250,6 @@ impl dwow_serial::AsyncEncodable for Plan {
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncDecodable for Plan {
     async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
-        use dwow_sdk::pasta::group::GroupEncoding;
         use dwow_serial::AsyncReadExt;
 
         let mut buf1 = [0u8; 1];

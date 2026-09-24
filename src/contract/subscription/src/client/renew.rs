@@ -32,7 +32,7 @@ use dwow_core::{
     zkas::ZkBinary,
     Result,
 };
-use dwow_sdk::{crypto::PublicKey, pasta::pallas};
+use dwow_sdk::pasta::pallas;
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
