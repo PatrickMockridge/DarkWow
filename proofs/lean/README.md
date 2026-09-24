@@ -309,9 +309,10 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   security bound the rule exists for is stated in its note and *not* proved, and nothing checks the rule
   on a concrete window because neither of Mathlib's sorts reduces in the kernel), and
   `Consensus/UncleRules.lean` states the uncle depth window, the re-derived pin and the alignment guard
-  (fifteen laws, eleven at budget 0) — while the remainder of `src/linear/src/validation.rs` is
-  unmodelled: header continuity, both PoW stages, `validate_block_structure`'s structural conditions and
-  the fee-collect decision table. As are the parts of these mechanisms their models stop
+  (fifteen laws, eleven at budget 0), and `Consensus/BlockHeader.lean` the two-stage proof-of-work rule
+  and the Monero anchor rule (ten laws, **all at budget 0**) — while the remainder of
+  `src/linear/src/validation.rs` is unmodelled: header continuity, `validate_block_structure`'s
+  structural conditions and the fee-collect decision table. As are the parts of these mechanisms their models stop
   short of — including, in the coinbase split, the *per-note* key binding, which the model's sum equation
   is necessary but not sufficient for, and in the uncle rules the RandomX verification itself and the
   dedup key's blake3 form, for which the model substitutes header distinctness and says so. The agreed

@@ -55,6 +55,7 @@ import DarkFi.Consensus.CommitmentSet
 import DarkFi.Consensus.BlockTimestamp
 import DarkFi.Consensus.CoinbaseSplit
 import DarkFi.Consensus.UncleRules
+import DarkFi.Consensus.BlockHeader
 import DarkFi.Genesis.Ceremony
 import DarkFi.Semantics.Proc
 import DarkFi.Semantics.Congruence

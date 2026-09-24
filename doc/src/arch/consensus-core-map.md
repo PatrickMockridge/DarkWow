@@ -177,9 +177,23 @@ a component" was supposed to mean, and it was right.
    uncle rules as separate mechanisms (6 and a part of 4), and the honest relation between them is
    *composition* — the same relation this map got wrong for `Ledger.lean` and had to correct.
 
-   What remains of validity is header continuity, both PoW stages, the fee-collect decision table and
-   `validate_block_structure`'s remaining structural conditions. This map's guess that validity was "the
-   largest surface with the least existing structure" is the part of this row that still stands.
+   Then the **header rules** — **landed 2026-09-24** as `Consensus/BlockHeader.lean` (10 theorems, all at
+   budget 0), and it produced the map's *third* correction of the same shape. The validity row's "what
+   remains" list is now down to header continuity, the fee-collect decision table and
+   `validate_block_structure`'s remaining structural conditions — but the two rules that landed were not
+   what the list implied. The **two-stage proof-of-work** turned out to be a *redundancy*: stage 1 is an
+   up-set in the target the header declares, so it is vacuous in isolation, and stage 1-for-some-target
+   plus stage 2 is exactly the consensus comparison — an existential, and the same statement with the
+   declared target free is **false**. And the ordering comments in `check_block_header`, which read as
+   rules ("fork detection MUST come before Stage 2 target"), measure as **diagnostics**: acceptance is
+   invariant under any permutation of the checks, because the module is pure and the checks are
+   conjunctive. So this row's framing of validity as a surface of *rules* needs one qualifier: it is a
+   surface of rules and diagnostics, and telling them apart is a part of the work rather than a
+   preliminary to it. `OBL-C115` and `OBL-C116` are the two rows minted for the pair, because neither
+   proposition had a row.
+
+   This map's guess that validity was "the largest surface with the least existing structure" is the part
+   of this row that still stands, and the qualifier is the part that does not.
 4. **The coinbase split** — **landed 2026-09-24** as `Consensus/CoinbaseSplit.lean` (16 theorems, 14 at
    budget 0), and it is **a mechanism this map did not have**. It was not in the five when the map was
    agreed, and it was found by taking the validity row's own advice: the map said the rest of validity
