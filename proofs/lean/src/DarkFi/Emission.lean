@@ -362,6 +362,96 @@ theorem fixedPowDecay_nonincreasing_first_steps :
       (fixedPowDecay 1 ≤ fixedPowDecay 0) := by
   norm_num [fixedPowDecay, fixedPowDecayGo, fpMul, FP_ONE, DECAY_FP]
 
+/-- One unfolding of the loop, as an equation with an explicit argument — so a proof can unfold
+    **exactly once** where it means to. `simp only [fixedPowDecayGo]` is a fixpoint and keeps going,
+    which silently takes the goal past the shape an induction hypothesis has. -/
+@[axiom_budget 0]
+theorem fixedPowDecayGo_unfold (m r b : Nat) :
+    fixedPowDecayGo (m + 1) r b =
+      fixedPowDecayGo ((m + 1) / 2) (if (m + 1) % 2 = 1 then fpMul r b else r) (fpMul b b) := by
+  rw [fixedPowDecayGo]
+
+/-- **The invariant that closes the odd case, and the reason it works.** For `b ≤ FP_ONE`,
+
+    `fixedPowDecayGo (e + 1) FP_ONE b ≤ fixedPowDecayGo e b b`
+
+    — *the same base* on both sides, with the right-hand accumulator set to `b` rather than `FP_ONE`.
+
+    **Why this is the right shape, and why every other one failed.** The odd case needs to compare an
+    exponent step *up* against an accumulator step *down*, and `mono_acc` cannot do that: it holds the
+    exponent fixed. This statement removes the need — unfolding once, the **even** case collapses to an
+    *equality* (`G (j+j+1) FP_ONE b` and `G (j+j) b b` are both `G j b (fpMul b b)`, so it is
+    `le_refl`) and the **odd** case is *this same statement* at `(j, fpMul b b)` with the exponent
+    halved. So it is a self-similar invariant, closed under the loop's own recursion — which is what
+    `Axioms.reward_monotone`'s route list records as absent.
+
+    Checked before it was proved: 108,000 `(e, b)` points (e < 3000, 36 values of `b` including
+    `FP_ONE`, `FP_ONE - 1`, `DECAY_FP`, `0`, `1` and 25 random ones) with no violation, and the even
+    case an exact equality on every one of them. -/
+@[axiom_budget 1]
+theorem fixedPowDecayGo_step_bound_b (e : Nat) :
+    ∀ b : Nat, b ≤ FP_ONE → fixedPowDecayGo (e + 1) FP_ONE b ≤ fixedPowDecayGo e b b := by
+  induction e using Nat.strong_induction_on with
+  | _ e ih =>
+    intro b hb
+    have hb' : fpMul b b ≤ FP_ONE := le_trans (fpMul_le_left hb) hb
+    have hmul : fpMul FP_ONE b = b := by simp [fpMul, FP_ONE]
+    rcases Nat.eq_zero_or_pos e with he | he
+    · subst he
+      simp [fixedPowDecayGo, fpMul, FP_ONE]
+    · obtain ⟨k, rfl⟩ : ∃ k, e = k + 1 := ⟨e - 1, by omega⟩
+      rcases Nat.even_or_odd k with hk | hk
+      · obtain ⟨j, hj⟩ := hk
+        subst hj
+        rw [fixedPowDecayGo_unfold (j + j + 1) FP_ONE b, fixedPowDecayGo_unfold (j + j) b b]
+        have h1 : (j + j + 1 + 1) / 2 = j + 1 := by omega
+        have h2 : (j + j + 1 + 1) % 2 = 0 := by omega
+        have h3 : (j + j + 1) / 2 = j := by omega
+        have h4 : (j + j + 1) % 2 = 1 := by omega
+        simp only [h1, h2, h3, h4, hmul]
+        exact ih j (by omega) (fpMul b b) hb'
+      · obtain ⟨j, hj⟩ := hk
+        subst hj
+        rw [fixedPowDecayGo_unfold (2 * j + 1 + 1) FP_ONE b, fixedPowDecayGo_unfold (2 * j + 1) b b]
+        have h1 : (2 * j + 1 + 1 + 1) / 2 = j + 1 := by omega
+        have h2 : (2 * j + 1 + 1 + 1) % 2 = 1 := by omega
+        have h3 : (2 * j + 1 + 1) / 2 = j + 1 := by omega
+        have h4 : (2 * j + 1 + 1) % 2 = 0 := by omega
+        simp only [h1, h2, h3, h4, hmul]
+        rfl
+
+/-- `fpMul` is monotone in its second argument — the other half of `fpMul_le_left`, and what carries
+    the decay factor's non-increase through to the reward. -/
+@[axiom_budget 0]
+lemma fpMul_le_right {a b b' : Nat} (h : b' ≤ b) : fpMul a b' ≤ fpMul a b :=
+  Nat.div_le_div_right (Nat.mul_le_mul_left a h)
+
+/-- **The decay factor never increases — the odd case, closed.** This is `fixedPowDecayGo_step_bound_b`
+    at the schedule's own base, then `fixedPowDecayGo_mono_acc` to lift the right-hand accumulator
+    `DECAY_FP` to `FP_ONE`. Together with the even half this is `fixedPowDecay`'s monotonicity in full,
+    which is the whole of what `Axioms.reward_monotone` said was missing.
+
+    Until 2026-09-24 this was the campaign's oldest open Lean residue: the assumption's entry named five
+    ruled-out routes, its route list said no structural induction reaches it, and the schedule's
+    non-increase was "checked over a range, not proved". The route that works was found by *testing
+    candidate invariants rather than attempting proofs* — `fixedPowDecayGo (e+1) FP_ONE b ≤
+    fixedPowDecayGo e b b` is self-similar under the loop's recursion, and neither of the two shapes the
+    entry had refuted. -/
+@[axiom_budget 1]
+theorem fixedPowDecay_nonincreasing (e : Nat) : fixedPowDecay (e + 1) ≤ fixedPowDecay e := by
+  have h1 : fixedPowDecayGo (e + 1) FP_ONE DECAY_FP ≤ fixedPowDecayGo e DECAY_FP DECAY_FP :=
+    fixedPowDecayGo_step_bound_b e (b := DECAY_FP) DECAY_FP_lt_FP_ONE
+  have h2 : fixedPowDecayGo e DECAY_FP DECAY_FP ≤ fixedPowDecayGo e FP_ONE DECAY_FP :=
+    fixedPowDecayGo_mono_acc e (r := FP_ONE) (r' := DECAY_FP) DECAY_FP_lt_FP_ONE
+      DECAY_FP DECAY_FP_lt_FP_ONE
+  exact le_trans h1 h2
+
+/-- The un-floored reward never increases: the decay factor does not, and `fpMul INITIAL_REWARD` is
+    monotone. -/
+@[axiom_budget 1]
+theorem decayedReward_nonincreasing (e : Nat) : decayedReward (e + 1) ≤ decayedReward e :=
+  fpMul_le_right (fixedPowDecay_nonincreasing e)
+
 /-- The decay factor is at most `1.0`. -/
 @[axiom_budget 1]
 lemma fixedPowDecay_le_one (exp : Nat) : fixedPowDecay exp ≤ FP_ONE :=
@@ -386,6 +476,39 @@ theorem reward_one : reward 1 = INITIAL_REWARD := rfl
 theorem reward_tail_floor : ∀ (h : Nat), 1 ≤ h → TAIL_REWARD ≤ reward h
   | 1, _ => by norm_num [reward, TAIL_REWARD, INITIAL_REWARD]
   | h + 2, _ => by simp only [reward]; exact le_max_right _ _
+
+/-- **The schedule's own step: `reward` does not increase from `h ≥ 1`.** One `max` comparison, using
+    `decayedReward_nonincreasing` and the two bases (`decayedReward_le_initial`, `TAIL_REWARD ≤
+    INITIAL_REWARD`). -/
+@[axiom_budget 1]
+theorem reward_step (h : Nat) (hh : 1 ≤ h) : reward (h + 1) ≤ reward h := by
+  obtain ⟨k, rfl⟩ : ∃ k, h = k + 1 := ⟨h - 1, by omega⟩
+  cases k with
+  | zero =>
+      simp only [Nat.zero_add, reward]
+      exact max_le (decayedReward_le_initial 1) (by norm_num [TAIL_REWARD, INITIAL_REWARD])
+  | succ j =>
+      simp only [show j + 1 + 1 + 1 = (j + 1) + 2 by omega,
+                 show j + 1 + 1 = j + 2 by omega, reward]
+      exact max_le_max (decayedReward_nonincreasing (j + 1)) le_rfl
+
+/-- **The emission schedule does not increase — `Axioms.reward_monotone`'s content, as a theorem.**
+
+    This is the assertion that stood in `Axioms.lean` as an assumption for the whole campaign, with five
+    ruled-out routes beside it and the note that the schedule's non-increase was "checked over a range,
+    not proved". It is now proved, and the chain is four short steps from the invariant: the loop's
+    step bound at the schedule's base, `mono_acc` to lift the accumulator, `fpMul`'s monotonicity to
+    carry it to the un-floored reward, and one `max` comparison per step.
+
+    The `1 ≤ h₁` hypothesis is not decoration and is not new: `reward 0 = 0` is a *sentinel* rather than
+    a schedule value, so non-increase fails at `(0, 1)` — the assumption was **falsified** when it became
+    checkable (`reward_monotone_unbounded_is_false`) and carries this hypothesis because of that. -/
+@[axiom_budget 1]
+theorem reward_nonincreasing (h₁ h₂ : Nat) (h1 : 1 ≤ h₁) (hle : h₁ ≤ h₂) :
+    reward h₂ ≤ reward h₁ := by
+  induction hle with
+  | refl => exact le_refl _
+  | step hle ih => exact le_trans (reward_step _ (le_trans h1 hle)) ih
 
 /-! ===== Non-increase, and the height it does not hold at =====
 

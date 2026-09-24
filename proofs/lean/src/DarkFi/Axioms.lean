@@ -441,12 +441,33 @@ axiom coinbase_blind (height : Nat) : Nat
     the two machine-checked refutations above are the two shapes that route takes. Plus a domain
     bound, which is free: `fixedPowDecay e = 0` for `e ≥ 2²⁵+1` and `decayedReward` is below
     `TAIL_REWARD` from `e ≈ 4.32·10⁶`, so the range that matters is finite.
-    IF FALSE: NOTHING. No theorem consumes it. `total_supply_theorem` and
-    `cumulative_commit_theorem` are structural inductions that hold for *any* `reward`, so they
-    are proved without it. What checks this claim today is `Emission.reward_nonincreasing_first_step`
-    (the first step, kernel-checked) and the schedule's own Rust test over a range.
-    Silence recorded as `DarkFi.HAZOP.Elevated` ELEV-22. -/
-axiom reward_monotone (h₁ h₂ : Nat) (h₁_ge : 1 ≤ h₁) (hle : h₁ ≤ h₂) : reward h₂ ≤ reward h₁
+    **DISCHARGED 2026-09-24, and the route that worked is none of the five this entry ruled out.**
+    The claim is now `reward_nonincreasing` in `Emission.lean` — a theorem, budget 1, measured — and
+    this declaration is a re-export of it rather than an assumption. (That name is bare, not
+    `Emission.reward_nonincreasing`: `Emission.lean` declares **no namespace**, so this file's own
+    prose prefix is a convention rather than a path — worth knowing before citing any of them.)
+    What closed it was *testing candidate invariants instead of attempting the five refuted shapes*:
+    `fixedPowDecayGo (e+1) FP_ONE b ≤ fixedPowDecayGo e b b` is self-similar under the loop's own
+    recursion — its **even** case is an *equality*, its **odd** case is itself at the squared base with
+    the exponent halved — and neither shape above is that. Nor was it reachable by the induction this
+    entry's earlier prose assumed: the three formulations tried while closing it each reduce, in one
+    unfolding, to "one more exponent with a smaller accumulator", which is exactly where `fpMul`'s
+    non-associativity bites. The chain from the invariant is three steps: `fixedPowDecayGo_mono_acc`
+    lifts the right-hand accumulator to `FP_ONE`, `fpMul_le_right` carries it to `decayedReward`, and
+    one `max` comparison per height gives `reward`'s. **What the route list above was still worth**: it
+    is why the wrong shapes were not retried — and the three facts added to it while closing this are
+    what made the right one visible.
+    **On falsity, and why this entry no longer has a field for it**: a theorem carries a proof rather
+    than a falsity condition, so the `IF FALSE` field that the assumption had — it read "NOTHING. No
+    theorem consumes it" — is retired with the assumption. That is also why the discharge is a
+    *progress* change rather than a behavioural one: `total_supply_theorem` and
+    `cumulative_commit_theorem` are structural inductions that hold for *any* `reward`, so they were
+    proved without it. What checked the claim before today was `reward_nonincreasing_first_step` and
+    the schedule's own Rust test over a range.
+    Silence recorded as `DarkFi.HAZOP.Elevated` ELEV-22, which this now answers. -/
+@[axiom_budget 1]
+theorem reward_monotone (h₁ h₂ : Nat) (h₁_ge : 1 ≤ h₁) (hle : h₁ ≤ h₂) : reward h₂ ≤ reward h₁ :=
+  reward_nonincreasing h₁ h₂ h₁_ge hle
 
 /-! ===== The Pallas curve: one arithmetic fact replaces seven structural ones
 
