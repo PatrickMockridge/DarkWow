@@ -53,6 +53,31 @@
 # without the levers (`1c89c9d4…` vs `27ad85fc…`) and does **not** change it with them (`e539f88c…`
 # either way).
 #
+# WHICH LEVERS MAKE IT CLEAN, measured 2026-09-24 on the four genesis contracts that span the shapes —
+# oracle (cheapest), multisig (same shape), deployooor (whose residue is an `sdk/` path reached from a
+# *different* crate, so it tests whether a flag on the contract's invocation reaches the sdk crate), and
+# native_token (the hardest, three paths). Predictions are kept beside the results, refutations intact:
+#
+#   `-C panic=abort`                     predicted a no-op, and it is: the artifact is BYTE-IDENTICAL,
+#                                        because wasm32-unknown-unknown is already abort.
+#   `strip = "symbols"` (in the profile) removes all four marker strings, and the Code section stays
+#                                        byte-identical while the Data section differs — so it is
+#                                        *code*-metadata-only, which is the precise statement.
+#   `-Zlocation-detail=none`             removes the first-party paths for real: native_token's three
+#                                        go 1 → 0, and five of the nine sysroot locations with them.
+#   `lto = true` + `codegen-units = 1`   folds some machinery — calls into panic symbols 18 → 14, the
+#                                        artifact 417,500 → 390,018 B, Code hash changed. Measured, and
+#                                        NOT recommended: it is not needed for this invariant and it
+#                                        changes what the optimiser emits. It is also this file's
+#                                        negative control — it is what shows the "Code IDENTICAL" result
+#                                        above is capable of reporting a difference.
+#
+# With `strip` + `-Zlocation-detail=none`: oracle 139,532 → 118,699 · multisig 123,786 → 106,450 ·
+# deployooor 1,494,590 → 1,067,405 · native_token 417,500 → 373,496 — all four CLEAN. The profile route
+# and the rustc-flag route produce byte-identical artifacts, and the container builds contracts with
+# bare cargo rather than through the Makefiles, which is why `strip` belongs in the profile (inherited
+# by both) while the location flag has to be added in both places.
+#
 # A companion "inventory the locations" script was written on 2026-09-24 and **deleted the same day**:
 # emitting the final crate's LLVM IR cannot see the *dependencies'* locations — the ones that matter
 # are generated in `src/sdk` — and an artifact-side parse needs the data segment's memory offset, not
