@@ -110,23 +110,24 @@ inductive SCong0 : Proc → Proc → Prop where
 
 /-- `FreshUpToScong x P`: nothing reachable from `P` by rearrangement mentions `x`.
 
-    The notion the restriction rule and scope extrusion need, and **strictly stronger** than
-    `Proc.lean`'s syntactic `Fresh` — `fresh_of_freshUpToScong` is that direction, and the difference
-    is not exotic: `⌈νx.0⌉` is `⌈0⌉` under the congruence, so a term whose channel is written `⌈0⌉`
-    mentions `⌈0⌉` however its own syntax reads.
+    **No `x` and no `P` satisfy this**, and `not_freshUpToScong` below is the proof. It is not a
+    condition that is expensive to discharge; it is one that is false, so the two rules carrying it —
+    `SCong.nu_par` and `Semantics/LTS.lean`'s `Step.nu` — are rules that cannot fire.
 
-    Stated against `SCong0` rather than `SCong` because it has to be — see the module note. Being
-    stated against the over-approximating relation makes it the *stronger* hypothesis, which is the
-    sound direction for a side condition.
+    What went wrong is worth keeping beside it, because the shape recurs. The proviso quantifies over
+    `SCong0`, the *unconditional* reachability relation, and that relation can put a binder of any name
+    anywhere: `cong_par` composed with `nu_nil` and `par_nil` gives `SCong0 P (P | νx.0)` for every `P`
+    and every `x`, and `Occurs` counts a binder as an occurrence. So the quantifier always reaches a
+    term that mentions `x`.
 
-    Two things this does **not** claim, recorded rather than discovered later. It quantifies over
-    `Occurs`, which counts bound occurrences, so it is stronger than "`x` is not free in `P`" and
-    therefore rejects extrusions the standard rule would permit: it is the strongest condition
-    expressible without a binding convention, and a free-occurrence reading is what would tighten it
-    to exactly non-freeness. And it is not cheap to discharge — no instance is proved in this tree,
-    the derivations that used to pass through extrusion being exactly the ones this proviso exists to
-    reject. A side condition carrying a semantic requirement costs what a semantic requirement costs;
-    what it buys is that the rule no longer fires where its own witness says it should not. -/
+    The note that stood here called this "the strongest condition expressible without a binding
+    convention" and said it was "not cheap to discharge". Both were wrong in the same direction: a
+    condition no term satisfies is not the strongest of anything, it is empty, and the missing
+    instances were not a cost. What survives from the diagnosis is that the *body* side of the two
+    provisos needs a notion which does not count binders — a free-occurrence reading — and that is
+    where the binding convention stays owed. What does not survive is that `Step.nu` needs it at all:
+    its condition is about the *label*, `¬ SCong x (Label.subject μ)`, which is satisfiable and is what
+    the two refuted witnesses were describing. -/
 def FreshUpToScong (x P : Proc) : Prop := ∀ Q : Proc, SCong0 P Q → ¬ Occurs x Q
 
 /-! ==========================================================================
@@ -226,6 +227,27 @@ theorem scong0_of_scong {P Q : Proc} (h : SCong P Q) : SCong0 P Q := by
 @[axiom_budget 0]
 theorem fresh_of_freshUpToScong {x P : Proc} (h : FreshUpToScong x P) : Fresh x P :=
   h P (SCong0.refl P)
+
+/-- **`FreshUpToScong` is unsatisfiable.** For every `x` and every `P` there is a term reachable from
+    `P` that mentions `x`: `P | νx.0`, which `cong_par` with `nu_nil` and `par_nil` puts in `SCong0`'s
+    reach of `P`, and in which `Occurs` counts the binder.
+
+    Stated at arbitrary `x` and `P` rather than as the refutation of a `∀`, because that is the form a
+    caller needs: to show that a rule premised on this can never fire, one instantiates it. It is the
+    reason `SCong.nu_par` — scope extrusion — and the restriction rule `Step.nu` are dead as written,
+    and the reason `no_barb_nu_of_fresh`, the theorem that closed this layer's obligation 2, is true of
+    nothing: its hypothesis is what this refutes.
+
+    Its companion `fresh_of_freshUpToScong` is not contradicted — that theorem says the invariant
+    notion implies the syntactic one, and it does, vacuously. The pair is the whole content of the
+    notion: it implies `Fresh`, and it is false. -/
+@[axiom_budget 0]
+theorem not_freshUpToScong (x P : Proc) : ¬ FreshUpToScong x P := by
+  intro h
+  have hreach : SCong0 P (Proc.par P (Proc.nu x Proc.nil)) :=
+    SCong0.symm (SCong0.trans (SCong0.cong_par (SCong0.refl P) (SCong0.nu_nil x))
+      (SCong0.par_nil P))
+  exact h (Proc.par P (Proc.nu x Proc.nil)) hreach (Or.inr (Or.inl rfl))
 
 /-- **`Occurs` is not invariant under `SCong` — mechanism 1: `nu_nil`.** `νx.0 ≡ 0`, and `x` occurs in
     `νx.0` as the binder while it does not occur in `0` at all.
