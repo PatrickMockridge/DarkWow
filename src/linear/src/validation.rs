@@ -195,8 +195,14 @@ pub fn check_block_header(
 /// This function is **pure** — deterministic function of block data only.
 /// Per type-system.md §9, consensus validation SHALL NOT depend on wall-clock time.
 ///
-/// The future-timestamp check (Bitcoin Core's MAX_FUTURE) is a network policy,
-/// not a consensus rule. It is enforced at the P2P layer before relaying a block.
+/// The future-timestamp check (Bitcoin Core's MAX_FUTURE) is a network policy, not a
+/// consensus rule — a predicate reading the local clock is not a function of block
+/// data (`type-system.md` §9). **No such policy is implemented in this tree**: nothing
+/// in the relay path compares a timestamp against the local clock, so a block dated
+/// arbitrarily far ahead is relayed and accepted, and the median rule below — a
+/// *lower* bound — is the only constraint on this field. This sentence read "It is
+/// enforced at the P2P layer before relaying a block", which was false; the consequence
+/// and what would close it are recorded as `OBL-C120`.
 ///
 /// Median time warp protection (Bitcoin Core CheckBlockTimestamp pattern):
 /// timestamp MUST be strictly greater than the median of the last

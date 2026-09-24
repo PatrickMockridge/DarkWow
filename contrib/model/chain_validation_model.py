@@ -863,32 +863,45 @@ def block_hash_bytes(header: BlockHeader) -> bytes:
 
 def validate_timestamp(chain: Dict[int, Block], height: int, timestamp: int) -> bool:
     """
-    Validate block timestamp against consensus rules (CRITICAL-4 fix).
+    The consensus timestamp rule (CRITICAL-4): time-warp protection.
 
-    Bitcoin Core's CheckBlockTimestamp pattern:
-    1. Timestamp must be greater than the median of the last 11 block timestamps
-       (prevents time warp attacks where miners set timestamps backward).
-    2. Timestamp must not be more than 2 hours in the future from local clock
-       (prevents difficulty manipulation via future timestamps).
+    The timestamp MUST be strictly greater than the median of the timestamps in the
+    window preceding `height` — the blocks at heights
+    `[max(1, height - 11), height)`, which is the window
+    `CChainState::recent_timestamps` builds (`chain_state.rs:559-568`; missing
+    heights are skipped, not padded). The median is `sorted[len // 2]`, the
+    *upper* median: the ordinary middle for the 11 samples the rule is named for,
+    and the upper of the two middles for the shorter bootstrap window.
 
-    Matches: Bitcoin Core ContextualCheckBlockHeader.
-    Not yet implemented in Rust.
+    The rule applies **whenever the window is non-empty**, including the bootstrap
+    window: the Rust guards on `height > GENESIS && !recent_timestamps.is_empty()`
+    and takes whatever exists, with the reason stated in `chain_state.rs` — "For
+    blocks 2-11 this uses whatever timestamps exist (fewer than
+    `MEDIAN_BLOCK_COUNT`), preventing difficulty/time manipulation during
+    bootstrap." A window-length gate here would skip exactly the window the code
+    protects (register `OBL-C110`).
+
+    The rule takes no clock. The future-timestamp bound (Bitcoin Core's
+    `MAX_FUTURE`) is **not** a consensus rule and is **not** modelled: a consensus
+    predicate that reads the local clock is not a function of block data
+    (type-system.md §9). `validation.rs:198-199` used to say the check "is enforced at
+    the P2P layer before relaying a block"; **no such enforcement exists in this tree**
+    — that is `OBL-C120`, and the comment was corrected in the same change — so this
+    model accepts a far-future timestamp because the code does.
+
+    Matches `src/linear/src/validation.rs:check_block_timestamp()`, reached from
+    `CChainState::connect_block` immediately after `check_block_header`
+    (`chain_state.rs:1093`) and from `CChainState::validate_competing_block`
+    (`:1691`). The earlier note here read "Not yet implemented in Rust", which the
+    code contradicts (register `OBL-C110`, divergence (iii)).
     """
-    MAX_FUTURE = 2 * 60 * 60  # 2 hours in seconds
-
-    # Future timestamp check
-    if timestamp > int(time.time()) + MAX_FUTURE:
-        return False
-
-    # Median of last 11 blocks (time warp protection)
+    # Median time-warp protection, over whatever window exists.
     if height > 1:
         recent_heights = sorted(
-            [h for h in chain if h < height and h >= max(1, height - 11)]
+            h for h in chain if h < height and h >= max(1, height - 11)
         )
-        if len(recent_heights) >= 11:
-            recent_timestamps = sorted(
-                [chain[h].header.timestamp for h in recent_heights[-11:]]
-            )
+        if recent_heights:
+            recent_timestamps = sorted(chain[h].header.timestamp for h in recent_heights)
             median_ts = recent_timestamps[len(recent_timestamps) // 2]
             if timestamp <= median_ts:
                 return False
@@ -2414,12 +2427,14 @@ def test_reorg_does_not_leak_canonical_to_competing():
 
 def test_timestamp_validation():
     """
-    CRITICAL-4: Timestamp validation — time warp protection and
-    future timestamp limit.
+    CRITICAL-4: the consensus timestamp rule — time-warp protection.
 
     Validates:
-    1. Future timestamp > 2 hours ahead is rejected
-    2. Timestamp <= median of last 11 is rejected (time warp)
+    1. Timestamp <= the median of the window is rejected (time warp), over the
+       11-sample window and over the shorter bootstrap window
+    2. A timestamp above the median is accepted
+    3. A future timestamp is ACCEPTED: the two-hour bound is a relay policy, not
+       a consensus rule, and the code does not enforce it (register OBL-C110)
     """
     print("=" * 70)
     print("Test: Timestamp Validation (CRITICAL-4)")
@@ -2431,19 +2446,15 @@ def test_timestamp_validation():
     for i in range(15):
         n0.miner_cycle(1000 + i * 60)
 
-    # Test: future timestamp rejected
+    # Test: a future timestamp is NOT a consensus rule (OBL-C110 divergence (ii)).
+    # validation.rs: "The non-deterministic future-timestamp check is a P2P policy,
+    # not a consensus rule." This model must agree with the code, so it accepts.
     far_future = int(time.time()) + 3 * 60 * 60  # 3 hours ahead
-    assert not validate_timestamp(n0.chain.blocks, 16, far_future), (
-        "Future timestamp should be rejected"
+    assert validate_timestamp(n0.chain.blocks, 16, far_future), (
+        "A future timestamp is a relay policy, not a consensus rule — the code "
+        "accepts it, so the specification must too (OBL-C110)"
     )
-    print("  Future timestamp (3h): rejected ✓")
-
-    # Test: reasonable future timestamp accepted
-    near_future = int(time.time()) + 60 * 60  # 1 hour ahead
-    assert validate_timestamp(n0.chain.blocks, 16, near_future), (
-        "Reasonable future timestamp should be accepted"
-    )
-    print("  Near future timestamp (1h): accepted ✓")
+    print("  Future timestamp (3h): accepted, as the code does (policy, not consensus) ✓")
 
     # Test: time warp attack — timestamp behind median rejected
     # The last 11 timestamps are approximately [1000+4*60, ..., 1000+14*60]
@@ -2459,6 +2470,32 @@ def test_timestamp_validation():
         f"Timestamp after median ({median_11 + 1}) should be accepted"
     )
     print(f"  After median ({median_11 + 1}): accepted ✓")
+
+    # Test: the bootstrap window is NOT exempt (OBL-C110 divergence (i)).
+    # For heights 2..11 the window holds fewer than 11 samples and the code
+    # applies the rule over whatever exists; the specification used to require
+    # len(window) >= 11 and therefore skipped exactly the window the code's own
+    # comment says the protection is for.
+    for h in (2, 3, 11):
+        window = sorted(
+            n0.chain.blocks[j].header.timestamp
+            for j in range(max(1, h - 11), h)
+            if j in n0.chain.blocks
+        )
+        assert len(window) < 11, (
+            f"h={h}: this control must exercise a shorter-than-11 window, got {len(window)}"
+        )
+        bootstrap_median = window[len(window) // 2]
+        assert not validate_timestamp(n0.chain.blocks, h, bootstrap_median), (
+            f"h={h}: a timestamp at the {len(window)}-sample median "
+            f"({bootstrap_median}) must be rejected — the bootstrap window is "
+            "not exempt (OBL-C110)"
+        )
+        assert validate_timestamp(n0.chain.blocks, h, bootstrap_median + 1), (
+            f"h={h}: a timestamp above the median ({bootstrap_median + 1}) must "
+            "be accepted"
+        )
+    print("  Bootstrap window (heights 2, 3, 11): rule applies ✓")
 
     print("  PASS: Timestamp validation correct\n")
     return True
