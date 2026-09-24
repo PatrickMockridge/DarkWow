@@ -186,11 +186,23 @@ namespace DarkFi.Semantics
 /-- Transition labels. `out x y` is the free output `x!(y)`, `inp x y` the free input `x?(y)`, and
     `tau` internal synchronisation.
 
-    Bound-output labels (`x!(⌈y⌉)`, the form the ρ-calculus needs to move a *name* rather than a
-    value) are not here. They belong with the reflection rules, which are the same layer as the
-    τ-rule and the substitution it needs — and Part 10 shows they are what α would need as well: a
-    *free* payload makes a renaming of a bound name observable, so the gap `Substitution.lean`
-    records as an omission is a difference in what this label type can say. -/
+    **`bout x y` is the bound output `x!(⌈y⌉)`, and it was added on 2026-09-25** — the form the
+    ρ-calculus needs to move a *name* rather than a value, and the one Part 10 identifies as what α
+    would need: a *free* payload makes a renaming of a bound name observable, so a bound payload is
+    what lets a renaming be matched rather than seen. It is produced by exactly one rule,
+    `Step.extrude`, which is the standard `open` rule: an output on a name that the restriction binds.
+
+    **What its presence does *not* yet do, stated here because the label is the easy half.** The two
+    α-variant separations in Part 10 (`alpha_variants_not_strongbisim`, `alpha_variants_not_barbedEq`)
+    remain **true** — they are not retracted by this — because `Step.nu` still passes the *free* output
+    `x!(y)` for a name the restriction binds, so a bound-output step is an *additional* transition
+    rather than the replacement the standard calculus makes it. Closing the gap needs two further
+    things, measured: `Step.nu` must stop passing an output whose payload is its own binder, and
+    `IsStrongBisim` must match bound payloads **up to renaming** — it matches labels by exact equality
+    today, so `bout b x` and `bout b y` are distinct labels and the two variants stay separated at the
+    label rather than in the successor. The second is a change to `IsStrongBisim`, `IsWeakBisim` and
+    their metatheory (reflexivity, symmetry, transitivity, `scong_isStrongBisim`, the congruence laws),
+    which is why `OBL-T13`'s ~20-declaration count covers this and the rules but not the closure. -/
 inductive Label : Type where
   /-- Internal synchronisation `τ`. -/
   | tau : Label
@@ -198,6 +210,9 @@ inductive Label : Type where
   | out : Proc → Proc → Label
   /-- Free input `x?(y)`. -/
   | inp : Proc → Proc → Label
+  /-- Bound output `x!(⌈y⌉)`: the name `y` is passed *bound*, so a renaming of it is not an
+      observation. Produced by `Step.extrude`. -/
+  | bout : Proc → Proc → Label
 
 /-- The channel a label acts on. For `tau` this is `nil`, chosen so that the restriction rule's
     freshness proviso is *automatically discharged* for τ — `Occurs x nil` is false for every `x`, so
@@ -207,6 +222,7 @@ def Label.subject : Label → Proc
   | .tau => Proc.nil
   | .out x _ => x
   | .inp x _ => x
+  | .bout x _ => x
 
 /-- `IsAction μ`: `μ` is a free action — an output or an input, not `τ`.
 
@@ -215,8 +231,16 @@ def Label.subject : Label → Proc
     `CanStep` — the static label set the barb obligations are proved through — is an approximation of
     the *actions* only. Stating that as a hypothesis rather than folding it into `CanStep` is what
     keeps `τ` out of the term-level recursion, which is where the invariance proof would otherwise
-    have to relate the synchronisation clauses of two different associations. -/
-def IsAction (μ : Label) : Prop := ∃ x y : Proc, μ = Label.out x y ∨ μ = Label.inp x y
+    have to relate the synchronisation clauses of two different associations.
+
+    **`bout` joined the disjunction on 2026-09-25, and it is an action by the same criterion `τ`
+    fails**: it is an output, on a channel, and a process stepping with it barbs on that channel — so
+    leaving it out would have made `IsAction` mean "action, unless it passes a name bound", which is
+    not a criterion any rule uses. Its two destructors (`step_out_label` and `step_inp_label`) each
+    gain a case that the step's *shape* refutes, since neither a bare `out` nor a bare `inp` is
+    `ν`-headed and only `Step.extrude` produces this label. -/
+def IsAction (μ : Label) : Prop :=
+  ∃ x y : Proc, μ = Label.out x y ∨ μ = Label.inp x y ∨ μ = Label.bout x y
 
 /-! ==========================================================================
    Part 2 — Transitions
@@ -268,6 +292,20 @@ inductive Step : Proc → Label → Proc → Prop where
       needs — that is still waiting on the binding convention. -/
   | nu {x P P' : Proc} {μ : Label} :
       ¬ SCong x (Label.subject μ) → Step P μ P' → Step (Proc.nu x P) μ (Proc.nu x P')
+  /-- **Extrusion** — the bound output, the standard `open` rule. `P` steps with the *free* output
+      `x!(y)`, the restriction binds `y`, and the name is passed **bound**:
+      `νy.P -[x!(⌈y⌉)]-> νy.P'`. The proviso `¬ SCong x y` is the standard one — an action cannot
+      extrude the name it acts on — and it is a congruence rather than a syntactic inequality for the
+      reason the `nu` rule's docstring gives: the channel is a term the congruence rewrites.
+
+      **An additional transition rather than a replacement, and that is deliberate.** `Step.nu` still
+      passes an output on a name it binds, so `νy.(out b y)` steps with *both* `b!(y)` and `b!(⌈y⌉)`,
+      and Part 10's two separations survive because of the first of those. The standard calculus keeps
+      only the bound form — the name is not free, so the free-output rule has nothing to act on — and
+      narrowing `nu` is what would make those two theorems false. See `Label`'s docstring for what
+      that narrowing additionally needs in the *bisimulation* rather than here. -/
+  | extrude {x y P P' : Proc} (h : ¬ SCong x y) :
+      Step P (.out x y) P' → Step (Proc.nu y P) (.bout x y) (Proc.nu y P')
   /-- Closure under structural congruence: `P ≡ Q`, `Q` steps to `Q'`, `Q' ≡ P'`, therefore `P`
       steps to `P'`. One constructor rather than two, because two would let a proof normalise
       halfway and stop, and there is never a reason to. -/
@@ -297,14 +335,23 @@ inductive Step : Proc → Label → Proc → Prop where
 
     `out a b` and `inp a b _` contribute their action closed up to `SCong` on the channel and the
     payload — `cong_out` rearranges `out a b` into `out c d` for any `c ≡ a`, `d ≡ b`, and the label
-    records the rearranged form. `par` is the union; `nu` and `rep` are the body's, ignoring the
-    binder; the atoms with no rule (`nil`, `bang`) contribute nothing. -/
+    records the rearranged form. `par` is the union; `rep` is the body's; the atoms with no rule
+    (`nil`, `bang`) contribute nothing.
+
+    **`nu` is the body's *or* the bound form of one of the body's free outputs, and that disjunct is
+    where bound output enters the static set** (2026-09-25). `Step.extrude` steps `νy.P` with
+    `bout x y` from a free-output step of `P`, so the clause must admit that label — and it is here
+    rather than in the `out` clause for a reason that is not stylistic: putting it on `out` would make
+    `CanStep (out a b) (bout c d)` *true* whenever `a ≡ c ∧ b ≡ d`, which is exactly the fact
+    `step_out_label` needs to be *false*, and that theorem is stated over a general label and so cannot
+    recover. On `nu` the disjunct is reachable only under a restriction, which is where the rule that
+    produces the label lives. -/
 def CanStep : Proc → Label → Prop
   | .nil, _ => False
   | .bang _, _ => False
   | .out a b, μ => ∃ c d : Proc, μ = Label.out c d ∧ SCong a c ∧ SCong b d
   | .inp a b _, μ => ∃ c d : Proc, μ = Label.inp c d ∧ SCong a c ∧ SCong b d
-  | .nu _ P, μ => CanStep P μ
+  | .nu _ P, μ => CanStep P μ ∨ (∃ c d : Proc, μ = Label.bout c d ∧ CanStep P (Label.out c d))
   | .rep P, μ => CanStep P μ
   | .par P Q, μ => CanStep P μ ∨ CanStep Q μ
 
@@ -320,22 +367,33 @@ def CanStep : Proc → Label → Prop
 @[axiom_budget 0]
 theorem canStep_of_scong {P Q : Proc} (h : SCong P Q) (μ : Label) :
     CanStep P μ ↔ CanStep Q μ := by
-  induction h with
-  | refl _ => exact Iff.rfl
-  | symm _ ih => exact ih.symm
-  | trans _ _ ih1 ih2 => exact ih1.trans ih2
-  | par_comm _ _ => simp only [CanStep]; exact or_comm
-  | par_assoc _ _ _ => simp only [CanStep]; exact or_assoc
+  -- `μ` is bound *inside* the motive, and that is forced by the `nu` clause: since bound output
+  -- entered it the clause names *two* labels — `μ` and, inside the exposed bound form, `out c d` —
+  -- so `cong_nu` must instantiate its hypothesis at both, and a hypothesis fixed at `μ` cannot.
+  -- **`induction h generalizing μ` does not achieve this** — measured: the hypotheses still come out
+  -- at the fixed label and the applications fail with "argument μ has type Label but is expected to
+  -- have type CanStep P μ" — so the quantification is written into the statement instead.
+  have aux : ∀ (P Q : Proc), SCong P Q → ∀ μ : Label, CanStep P μ ↔ CanStep Q μ := by
+    intro P Q h
+    induction h with
+  | refl _ => intro μ; exact Iff.rfl
+  | symm _ ih => intro μ; exact (ih μ).symm
+  | trans _ _ ih1 ih2 => intro μ; exact (ih1 μ).trans (ih2 μ)
+  | par_comm _ _ => intro μ; simp only [CanStep]; exact or_comm
+  | par_assoc _ _ _ => intro μ; simp only [CanStep]; exact or_assoc
   | par_nil _ =>
+    intro μ
     simp only [CanStep]
     exact ⟨fun h => h.elim id False.elim, Or.inl⟩
-  | nu_nil _ => exact Iff.rfl
-  | nu_nu _ _ _ => exact Iff.rfl
+  | nu_nil _ => intro μ; simp only [CanStep, false_or, and_false, exists_false]
+  | nu_nu _ _ _ => intro μ; exact Iff.rfl
   | rep_unfold _ =>
+    intro μ
     simp only [CanStep]
     exact ⟨Or.inl, fun h => h.elim id id⟩
-  | cong_bang _ _ => exact Iff.rfl
+  | cong_bang _ _ => intro μ; exact Iff.rfl
   | cong_out h1 h2 _ _ =>
+    intro μ
     simp only [CanStep]
     constructor
     · rintro ⟨c, d, he, hac, hbd⟩
@@ -343,15 +401,21 @@ theorem canStep_of_scong {P Q : Proc} (h : SCong P Q) (μ : Label) :
     · rintro ⟨c, d, he, hcc, hdd⟩
       exact ⟨c, d, he, SCong.trans h1 hcc, SCong.trans h2 hdd⟩
   | cong_inp h1 h2 _ _ _ _ =>
+    intro μ
     simp only [CanStep]
     constructor
     · rintro ⟨c, d, he, hac, hbd⟩
       exact ⟨c, d, he, SCong.trans (SCong.symm h1) hac, SCong.trans (SCong.symm h2) hbd⟩
     · rintro ⟨c, d, he, hcc, hdd⟩
       exact ⟨c, d, he, SCong.trans h1 hcc, SCong.trans h2 hdd⟩
-  | cong_nu _ _ _ ih2 => simp only [CanStep]; exact ih2
-  | cong_rep _ ih => simp only [CanStep]; exact ih
-  | cong_par _ _ ih1 ih2 => simp only [CanStep]; exact or_congr ih1 ih2
+  | cong_nu _ _ _ ih2 =>
+    intro μ
+    simp only [CanStep]
+    exact or_congr (ih2 μ) (exists_congr fun c => exists_congr fun d =>
+      and_congr_right fun _ => ih2 (Label.out c d))
+  | cong_rep _ ih => intro μ; simp only [CanStep]; exact ih μ
+  | cong_par _ _ ih1 ih2 => intro μ; simp only [CanStep]; exact or_congr (ih1 μ) (ih2 μ)
+  exact aux P Q h μ
 
 /-- Every *action* a term can take is in the static set. This is the direction that makes `CanStep`
     usable: it is an over-approximation, and an over-approximation of `Step` is what a proof gets to
@@ -374,9 +438,10 @@ theorem canStep_of_step {P : Proc} {μ : Label} {P' : Proc} (h : Step P μ P') (
   induction h with
   | out x y => intro _; simp only [CanStep]; exact ⟨x, y, rfl, SCong.refl x, SCong.refl y⟩
   | inp x y P => intro _; simp only [CanStep]; exact ⟨x, y, rfl, SCong.refl x, SCong.refl y⟩
-  | tau _ => intro hμ; exact absurd hμ (by rintro ⟨x, y, h | h⟩ <;> cases h)
+  | tau _ => intro hμ; exact absurd hμ (by rintro ⟨x, y, h | h | h⟩ <;> cases h)
   | par _ ih => intro hμ; simp only [CanStep]; exact Or.inl (ih hμ)
-  | nu _ _ ih => intro hμ; simp only [CanStep]; exact ih hμ
+  | nu _ _ ih => intro hμ; simp only [CanStep]; exact Or.inl (ih hμ)
+  | extrude _ _ ih => intro _; simp only [CanStep]; exact Or.inr ⟨_, _, rfl, ih ⟨_, _, Or.inl rfl⟩⟩
   | scong h1 _ _ ih => intro hμ; exact (canStep_of_scong h1 _).2 (ih hμ)
 
 /-- **The labels out of a bare `out`.** `Step (out a b) μ P'` pins `μ` to `c!(d)` with `SCong a c` and
@@ -476,6 +541,7 @@ theorem no_step_of_actionFree {P : Proc} {μ : Label} {P' : Proc} (h : ActionFre
   | tau _ => intro h; exact h.1
   | par _ ih => intro h; exact ih h.1
   | nu _ _ ih => intro h; exact ih h
+  | extrude _ _ ih => intro h; exact ih h
   | scong h1 _ _ ih => intro h; exact ih ((actionFree_of_scong h1).1 h)
 
 /-- **A term can only step on a channel its congruence class mentions.** If `P` can engage in `μ`,
@@ -489,33 +555,45 @@ theorem no_step_of_actionFree {P : Proc} {μ : Label} {P' : Proc} (h : ActionFre
 @[axiom_budget 0]
 theorem canStep_occurs_up_to_scong {P : Proc} {μ : Label} (h : CanStep P μ) :
     ∃ Q : Proc, SCong P Q ∧ Occurs (Label.subject μ) Q := by
-  revert h
-  induction P with
-  | nil => intro h; exact False.elim h
-  | bang _ _ => intro h; exact False.elim h
+  -- `μ` bound inside the motive, for `canStep_of_scong`'s measured reason: the `nu` clause names two
+  -- labels, and the bound-output branch must instantiate the hypothesis at `out c d` as well.
+  have aux : ∀ (P : Proc), ∀ μ : Label,
+      CanStep P μ → ∃ Q : Proc, SCong P Q ∧ Occurs (Label.subject μ) Q := by
+    intro P
+    induction P with
+  | nil => intro μ h; exact False.elim h
+  | bang _ _ => intro μ h; exact False.elim h
   | out a b =>
-    intro h
+    intro μ h
     obtain ⟨c, d, rfl, hac, hbd⟩ := h
     exact ⟨Proc.out c d, SCong.cong_out hac hbd, Or.inl rfl⟩
   | inp a b P =>
-    intro h
+    intro μ h
     obtain ⟨c, d, rfl, hac, hbd⟩ := h
     exact ⟨Proc.inp c d P, SCong.cong_inp hac hbd (SCong.refl P), Or.inl rfl⟩
   | nu x A _ ih =>
-    intro h
-    obtain ⟨Q, hQ, hocc⟩ := ih h
-    exact ⟨Proc.nu x Q, SCong.cong_nu (SCong.refl x) hQ, Or.inr hocc⟩
+    intro μ h
+    -- `CanStep`'s `nu` clause admits the bound form of the body's free outputs since 2026-09-25, so
+    -- this case splits: the body's own label, or `bout c d`, whose *subject* is `c` — which is what
+    -- the goal's `Label.subject μ` reduces to under the branch's `rfl`.
+    simp only [CanStep] at h
+    rcases h with h | ⟨c, d, rfl, hcd⟩
+    · obtain ⟨Q, hQ, hocc⟩ := ih μ h
+      exact ⟨Proc.nu x Q, SCong.cong_nu (SCong.refl x) hQ, Or.inr hocc⟩
+    · obtain ⟨Q, hQ, hocc⟩ := ih (Label.out c d) hcd
+      exact ⟨Proc.nu x Q, SCong.cong_nu (SCong.refl x) hQ, Or.inr hocc⟩
   | rep A ih =>
-    intro h
-    obtain ⟨Q, hQ, hocc⟩ := ih h
+    intro μ h
+    obtain ⟨Q, hQ, hocc⟩ := ih μ h
     exact ⟨Proc.rep Q, SCong.cong_rep hQ, hocc⟩
   | par A B ihA ihB =>
-    intro h
+    intro μ h
     rcases h with h | h
-    · obtain ⟨A', hA', hocc⟩ := ihA h
+    · obtain ⟨A', hA', hocc⟩ := ihA μ h
       exact ⟨Proc.par A' B, SCong.cong_par hA' (SCong.refl B), Or.inl hocc⟩
-    · obtain ⟨B', hB', hocc⟩ := ihB h
+    · obtain ⟨B', hB', hocc⟩ := ihB μ h
       exact ⟨Proc.par A B', SCong.cong_par (SCong.refl A) hB', Or.inr hocc⟩
+  exact aux P μ h
 
 /-- **Substitution relabels.** `subst` moves an action from the channel it replaces to the one it
     replaces it with, so the *label* changes — and that is the obstacle to the α-rule on `SCong`, the
@@ -560,7 +638,8 @@ theorem subst_moves_the_label {x y b : Proc} (hne : Proc.out x b ≠ x) (hsc : �
 
 /-- `Barb P x`: `P` exhibits the barb `↓x` — it can engage in input or output on channel `x`. -/
 def Barb (P x : Proc) : Prop :=
-  (∃ (y P' : Proc), Step P (.out x y) P') ∨ (∃ (y P' : Proc), Step P (.inp x y) P')
+  (∃ (y P' : Proc), Step P (.out x y) P') ∨ (∃ (y P' : Proc), Step P (.inp x y) P') ∨
+  (∃ (y P' : Proc), Step P (.bout x y) P')
 
 /-- **The barbs of a bare `out` are exactly the processes congruent to its channel.** `out x y`
     exhibits `↓w` iff `w ≡ x` — the payload does not appear in the barb, and the input disjunct is
@@ -572,12 +651,16 @@ def Barb (P x : Proc) : Prop :=
 @[axiom_budget 0]
 theorem barb_out_iff {x y w : Proc} : Barb (Proc.out x y) w ↔ SCong x w := by
   constructor
-  · rintro (⟨y', P', hs⟩ | ⟨y', P', hs⟩)
+  · rintro (⟨y', P', hs⟩ | ⟨y', P', hs⟩ | ⟨y', P', hs⟩)
     · obtain ⟨c, d, he, hxc, _⟩ := step_out_label hs ⟨w, y', Or.inl rfl⟩
       injection he with hwc _
       rw [← hwc] at hxc
       exact hxc
-    · obtain ⟨c, d, he, _, _⟩ := step_out_label hs ⟨w, y', Or.inr rfl⟩
+    · obtain ⟨c, d, he, _, _⟩ := step_out_label hs ⟨w, y', Or.inr (Or.inl rfl)⟩
+      cases he
+    -- A bare `out` cannot step with a bound-output label: `step_out_label` reduces it to an `out`
+    -- label, and the constructors differ.
+    · obtain ⟨c, d, he, _, _⟩ := step_out_label hs ⟨w, y', Or.inr (Or.inr rfl)⟩
       cases he
   · intro h
     exact Or.inl ⟨y, Proc.nil,
@@ -594,17 +677,19 @@ theorem barb_out_iff {x y w : Proc} : Barb (Proc.out x y) w ↔ SCong x w := by
 @[axiom_budget 0]
 theorem barb_inp_iff {c b P w : Proc} : Barb (Proc.inp c b P) w ↔ SCong c w := by
   constructor
-  · rintro (⟨y, P', hs⟩ | ⟨y, P', hs⟩)
+  · rintro (⟨y, P', hs⟩ | ⟨y, P', hs⟩ | ⟨y, P', hs⟩)
     · obtain ⟨c', d', he, _, _⟩ := step_inp_label hs ⟨w, y, Or.inl rfl⟩
       cases he
-    · obtain ⟨c', d', he, hcc', _⟩ := step_inp_label hs ⟨w, y, Or.inr rfl⟩
+    · obtain ⟨c', d', he, hcc', _⟩ := step_inp_label hs ⟨w, y, Or.inr (Or.inl rfl)⟩
       injection he with hwc _
       rw [← hwc] at hcc'
       exact hcc'
+    · obtain ⟨c', d', he, _, _⟩ := step_inp_label hs ⟨w, y, Or.inr (Or.inr rfl)⟩
+      cases he
   · intro h
-    exact Or.inr ⟨b, P,
+    exact Or.inr (Or.inl ⟨b, P,
       Step.scong (SCong.cong_inp h (SCong.refl b) (SCong.refl P)) (Step.inp w b P)
-        (SCong.refl _)⟩
+        (SCong.refl _)⟩)
 
 /-! ==========================================================================
    Part 5 — Derived rules
@@ -638,12 +723,14 @@ theorem step_rep {P P' : Proc} {μ : Label} (h : Step P μ P') :
 @[axiom_budget 0]
 theorem barb_of_scong {P Q : Proc} (h : SCong P Q) (x : Proc) : Barb P x ↔ Barb Q x := by
   constructor
-  · rintro (⟨y, P', hs⟩ | ⟨y, P', hs⟩)
+  · rintro (⟨y, P', hs⟩ | ⟨y, P', hs⟩ | ⟨y, P', hs⟩)
     · exact Or.inl ⟨y, P', Step.scong (SCong.symm h) hs (SCong.refl _)⟩
-    · exact Or.inr ⟨y, P', Step.scong (SCong.symm h) hs (SCong.refl _)⟩
-  · rintro (⟨y, P', hs⟩ | ⟨y, P', hs⟩)
+    · exact Or.inr (Or.inl ⟨y, P', Step.scong (SCong.symm h) hs (SCong.refl _)⟩)
+    · exact Or.inr (Or.inr ⟨y, P', Step.scong (SCong.symm h) hs (SCong.refl _)⟩)
+  · rintro (⟨y, P', hs⟩ | ⟨y, P', hs⟩ | ⟨y, P', hs⟩)
     · exact Or.inl ⟨y, P', Step.scong h hs (SCong.refl _)⟩
-    · exact Or.inr ⟨y, P', Step.scong h hs (SCong.refl _)⟩
+    · exact Or.inr (Or.inl ⟨y, P', Step.scong h hs (SCong.refl _)⟩)
+    · exact Or.inr (Or.inr ⟨y, P', Step.scong h hs (SCong.refl _)⟩)
 
 /-- `P` and `P | 0` have the same barbs. The smallest instance of `barb_of_scong`, recorded because
     it is the case a reader checks when deciding whether the closure rule is wired correctly. -/
@@ -768,9 +855,10 @@ theorem canBarb_of_step {P : Proc} {μ : Label} {P' : Proc} (h : Step P μ P')
   induction h with
   | out x y => intro _; exact SCong.refl x
   | inp x y _ => intro _; exact SCong.refl x
-  | tau _ => intro hμ; exact absurd hμ (by rintro ⟨x, y, h | h⟩ <;> cases h)
+  | tau _ => intro hμ; exact absurd hμ (by rintro ⟨x, y, h | h | h⟩ <;> cases h)
   | par _ ih => intro hμ; exact Or.inl (ih hμ)
   | nu hprov _ ih => intro hμ; exact ⟨hprov, ih hμ⟩
+  | extrude hxy _ ih => intro _; exact ⟨fun hc => hxy (SCong.symm hc), ih ⟨_, _, Or.inl rfl⟩⟩
   | scong h1 _ _ ih => intro hμ; exact (canBarb_of_scong h1 _).2 (ih hμ)
 
 /-- **A barb produces a `CanBarb`** — the reading direction, and the bridge from the transition system
@@ -781,9 +869,10 @@ theorem canBarb_of_step {P : Proc} {μ : Label} {P' : Proc} (h : Step P μ P')
     `step_out_label`: the labels a barb can be are given by the barb's own definition. -/
 @[axiom_budget 0]
 theorem canBarb_of_barb {P a : Proc} (h : Barb P a) : CanBarb a P := by
-  rcases h with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+  rcases h with ⟨y, P', hs⟩ | ⟨y, P', hs⟩ | ⟨y, P', hs⟩
   · exact canBarb_of_step hs ⟨a, y, Or.inl rfl⟩
-  · exact canBarb_of_step hs ⟨a, y, Or.inr rfl⟩
+  · exact canBarb_of_step hs ⟨a, y, Or.inr (Or.inl rfl)⟩
+  · exact canBarb_of_step hs ⟨a, y, Or.inr (Or.inr rfl)⟩
 
 /-- **A restriction is transparent to a channel it does not bind** — one half of `barb_nu_iff`, and the
     half the *rule* gives directly.
@@ -794,9 +883,10 @@ theorem canBarb_of_barb {P a : Proc} (h : Barb P a) : CanBarb a P := by
 @[axiom_budget 0]
 theorem barb_nu_of_not_scong {x P a : Proc} (h : ¬ SCong x a) (hb : Barb P a) :
     Barb (Proc.nu x P) a := by
-  rcases hb with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+  rcases hb with ⟨y, P', hs⟩ | ⟨y, P', hs⟩ | ⟨y, P', hs⟩
   · exact Or.inl ⟨y, Proc.nu x P', Step.nu (by simpa only [Label.subject] using h) hs⟩
-  · exact Or.inr ⟨y, Proc.nu x P', Step.nu (by simpa only [Label.subject] using h) hs⟩
+  · exact Or.inr (Or.inl ⟨y, Proc.nu x P', Step.nu (by simpa only [Label.subject] using h) hs⟩)
+  · exact Or.inr (Or.inr ⟨y, Proc.nu x P', Step.nu (by simpa only [Label.subject] using h) hs⟩)
 
 /-- **A `CanBarb` is a barb** — the reading-back direction, and the one that makes the predicate mean
     something instead of merely being invariant. By induction on the term: `nil` and `bang` are `False`
@@ -818,18 +908,21 @@ theorem barb_of_canBarb (P : Proc) : ∀ a : Proc, CanBarb a P → Barb P a := b
   | nu x P _ ih => intro a h; exact barb_nu_of_not_scong h.1 (ih a h.2)
   | rep P ih =>
     intro a h
-    rcases ih a h with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+    rcases ih a h with ⟨y, P', hs⟩ | ⟨y, P', hs⟩ | ⟨y, P', hs⟩
     · exact (barb_rep_unfold (P := P) (x := a)).2 (Or.inl ⟨y, _, Step.par hs⟩)
-    · exact (barb_rep_unfold (P := P) (x := a)).2 (Or.inr ⟨y, _, Step.par hs⟩)
+    · exact (barb_rep_unfold (P := P) (x := a)).2 (Or.inr (Or.inl ⟨y, _, Step.par hs⟩))
+    · exact (barb_rep_unfold (P := P) (x := a)).2 (Or.inr (Or.inr ⟨y, _, Step.par hs⟩))
   | par P Q ihP ihQ =>
     intro a h
     rcases h with hP | hQ
-    · rcases ihP a hP with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+    · rcases ihP a hP with ⟨y, P', hs⟩ | ⟨y, P', hs⟩ | ⟨y, P', hs⟩
       · exact Or.inl ⟨y, _, Step.par hs⟩
-      · exact Or.inr ⟨y, _, Step.par hs⟩
-    · rcases ihQ a hQ with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+      · exact Or.inr (Or.inl ⟨y, _, Step.par hs⟩)
+      · exact Or.inr (Or.inr ⟨y, _, Step.par hs⟩)
+    · rcases ihQ a hQ with ⟨y, P', hs⟩ | ⟨y, P', hs⟩ | ⟨y, P', hs⟩
       · exact Or.inl ⟨y, _, step_par_right (Q := P) hs⟩
-      · exact Or.inr ⟨y, _, step_par_right (Q := P) hs⟩
+      · exact Or.inr (Or.inl ⟨y, _, step_par_right (Q := P) hs⟩)
+      · exact Or.inr (Or.inr ⟨y, _, step_par_right (Q := P) hs⟩)
 
 /-! ==========================================================================
    Part 4c — The barb calculus, and the binding convention it does not respect
@@ -1110,16 +1203,20 @@ theorem strongbisim_barb_eq {P Q : Proc} (h : StrongBisim P Q) (x : Proc) :
     Barb P x ↔ Barb Q x := by
   obtain ⟨R, hR, hPQ⟩ := h
   constructor
-  · rintro (⟨y, P', hs⟩ | ⟨y, P', hs⟩)
+  · rintro (⟨y, P', hs⟩ | ⟨y, P', hs⟩ | ⟨y, P', hs⟩)
     · obtain ⟨Q', hsQ, _⟩ := (hR hPQ).1 hs
       exact Or.inl ⟨y, Q', hsQ⟩
     · obtain ⟨Q', hsQ, _⟩ := (hR hPQ).1 hs
-      exact Or.inr ⟨y, Q', hsQ⟩
-  · rintro (⟨y, Q', hs⟩ | ⟨y, Q', hs⟩)
+      exact Or.inr (Or.inl ⟨y, Q', hsQ⟩)
+    · obtain ⟨Q', hsQ, _⟩ := (hR hPQ).1 hs
+      exact Or.inr (Or.inr ⟨y, Q', hsQ⟩)
+  · rintro (⟨y, Q', hs⟩ | ⟨y, Q', hs⟩ | ⟨y, Q', hs⟩)
     · obtain ⟨P', hsP, _⟩ := (hR hPQ).2 hs
       exact Or.inl ⟨y, P', hsP⟩
     · obtain ⟨P', hsP, _⟩ := (hR hPQ).2 hs
-      exact Or.inr ⟨y, P', hsP⟩
+      exact Or.inr (Or.inl ⟨y, P', hsP⟩)
+    · obtain ⟨P', hsP, _⟩ := (hR hPQ).2 hs
+      exact Or.inr (Or.inr ⟨y, P', hsP⟩)
 
 /-- Two processes that disagree on a label cannot be congruent — the contrapositive of
     `canStep_of_scong`, and the only tool in this file for proving a *non*-congruence.
@@ -1387,10 +1484,12 @@ theorem section_1_2_equation_not_strong :
   have hright : ¬ Barb (Proc.par (Proc.par Proc.nil (subst Proc.nil (Proc.bang Proc.nil) Proc.nil))
       Proc.nil) Proc.nil := by
     rw [hsub]
-    rintro (⟨y, P', hs⟩ | ⟨y, P', hs⟩)
+    rintro (⟨y, P', hs⟩ | ⟨y, P', hs⟩ | ⟨y, P', hs⟩)
     · exact absurd (canStep_of_step hs ⟨Proc.nil, y, Or.inl rfl⟩)
         (by simp only [CanStep, false_or, or_false]; exact id)
-    · exact absurd (canStep_of_step hs ⟨Proc.nil, y, Or.inr rfl⟩)
+    · exact absurd (canStep_of_step hs ⟨Proc.nil, y, Or.inr (Or.inl rfl)⟩)
+        (by simp only [CanStep, false_or, or_false]; exact id)
+    · exact absurd (canStep_of_step hs ⟨Proc.nil, y, Or.inr (Or.inr rfl)⟩)
         (by simp only [CanStep, false_or, or_false]; exact id)
   exact hright ((strongbisim_barb_eq h Proc.nil).1
     (Or.inl ⟨Proc.nil, _, step_par_right (Step.out Proc.nil Proc.nil)⟩))
@@ -1728,10 +1827,15 @@ theorem alpha_variants_not_strongbisim {x y b : Proc} (hxy : ¬ SCong x y) (hxb 
   have hcan : CanStep (Proc.nu y (Proc.out b y)) (Label.out b x) :=
     canStep_of_step hQ' ⟨b, x, Or.inl rfl⟩
   simp only [CanStep] at hcan
-  obtain ⟨c, d, heq, _, hyd⟩ := hcan
-  injection heq with _ hd
-  rw [← hd] at hyd
-  exact hxy (SCong.symm hyd)
+  -- `CanStep`'s `nu` clause is a disjunction since bound output entered it: the body's own `out x y`,
+  -- or the *bound* form of one of the body's free outputs. Only the first is compatible with the label
+  -- `out b x`, and the second is refuted by the label constructors differing.
+  rcases hcan with hcan | ⟨c, d, heq, _⟩
+  · obtain ⟨c, d, heq, _, hyd⟩ := hcan
+    injection heq with _ hd
+    rw [← hd] at hyd
+    exact hxy (SCong.symm hyd)
+  · cases heq
 
 /-- **The same pair, separated by the coarsest relation in the file.** Barb-equality is *necessary* for
     bisimilarity (`strongbisim_barb_eq`), so this is the stronger of the two statements even though it is
@@ -1746,5 +1850,58 @@ theorem alpha_variants_not_barbedEq {x y b : Proc} (hxy : ¬ SCong x y) (hby : S
     (barb_nu_iff (x := x) (P := Proc.out b x) (a := y)).2
       ⟨hxy, (barb_out_iff (x := b) (y := x) (w := y)).2 hby⟩
   exact not_barb_nu_self y (Proc.out b y) ((h y).1 hPy)
+
+/-! ===== Part 10b — Bound output: the rule firing, and the measurement of what it does not close
+
+`Label.bout` and `Step.extrude` were added on 2026-09-25 as the α-unit's first two slices. The
+constructor needs a consumer or it is a rule nothing reads, so the two theorems below are that: one
+shows the extrusion fires and that `CanStep` finds it, and the other is the *measurement* the
+redesign has to be sized from. -/
+
+/-- **The extrusion rule fires.** `νx.(out b x)` steps with `b!(⌈x⌉)` — the *bound* output — whenever
+    the channel is not the bound name. That is the standard `open` rule's proviso and nothing else, and
+    the successor keeps the restriction, which is what makes the name bound rather than free. -/
+@[axiom_budget 0]
+theorem extrude_step {x b : Proc} (h : ¬ SCong b x) :
+    Step (Proc.nu x (Proc.out b x)) (Label.bout b x) (Proc.nu x Proc.nil) :=
+  Step.extrude h (Step.out b x)
+
+/-- And the static label set finds it — the direction `canStep_of_step` gives, through the `nu`
+    clause's new disjunct rather than through the `out` clause. -/
+@[axiom_budget 0]
+theorem canStep_bout_of_extrude {x b : Proc} (h : ¬ SCong b x) :
+    CanStep (Proc.nu x (Proc.out b x)) (Label.bout b x) :=
+  canStep_of_step (extrude_step h) ⟨b, x, Or.inr (Or.inr rfl)⟩
+
+/-- **Bound output does not close the α-gap, and this is the measurement that says where the closure
+    has to happen instead.** The form that makes a renaming of a bound name *matchable* is now
+    available — `νx.(out b x)` has the label `b!(⌈x⌉)` — and the two α-variants are still separated
+    **at that label**, because the label carries the bound name: the first has `b!(⌈x⌉)`, the second
+    `b!(⌈y⌉)`, and `¬ SCong x y` is exactly what makes those two labels differ.
+
+    So the closure is not in the label type and not in the rules. `IsStrongBisim` matches labels by
+    **exact equality**, so what a renaming-aware bisimulation needs is the *successor* matched up to the
+    renaming of the bound name — the standard π-calculus clause, whose statement is about `IsStrongBisim`
+    and `IsWeakBisim` and whose proof obligations are their metatheory (reflexivity, symmetry and
+    transitivity under a renaming). That is why `OBL-T13`'s ~20-declaration count covers these two
+    slices and not the closure, and it is stated here rather than in the row alone so that the next
+    reader meets it beside the code rather than in a plan. -/
+@[axiom_budget 0]
+theorem bound_label_separates {x y b : Proc} (hxy : ¬ SCong x y) (hxb : ¬ SCong b x) :
+    CanStep (Proc.nu x (Proc.out b x)) (Label.bout b x) ∧
+      ¬ CanStep (Proc.nu y (Proc.out b y)) (Label.bout b x) := by
+  refine ⟨canStep_bout_of_extrude hxb, ?_⟩
+  simp only [CanStep]
+  rintro (⟨c, d, he, _, _⟩ | ⟨c, d, he, hcd⟩)
+  · cases he
+  · obtain ⟨_, f, hef, _, hdf⟩ := hcd
+    -- Two injections, one per label equality: the `out` step pins its payload to `d`, and the `bout`
+    -- label of the *other* disjunct pins `d` to `x` — so the payload is congruent to `x`, which
+    -- `¬ SCong x y` refuses.
+    injection hef with _ hfd
+    rw [← hfd] at hdf
+    injection he with _ hd
+    rw [← hd] at hdf
+    exact hxy (SCong.symm hdf)
 
 end DarkFi.Semantics
