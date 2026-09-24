@@ -337,8 +337,12 @@ impl DrainProtectionHarness {
             amount: 100,
             recipient: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(4321u64))),
             signature: pallas::Base::zero(),
-            exceeds_rate_limit: false,
-            vote_proposal_id: None,
+            // The pool's `total_funds` is zero and nothing raises it, so `check_rate_limit`'s
+            // threshold is zero and *every* transfer is rate-limited — which is why this endpoint
+            // takes the multisig path, naming the proposal `propose` created. `exceeds_rate_limit`
+            // without a `vote_proposal_id` is `Unauthorized` (`entrypoint.rs:674`).
+            exceeds_rate_limit: true,
+            vote_proposal_id: Some(self.proposal_id()),
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
