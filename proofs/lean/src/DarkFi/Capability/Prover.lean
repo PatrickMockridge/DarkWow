@@ -97,13 +97,27 @@ theorem undeclared_field_blocks (map : List WitnessSource) (noteFields paramFiel
   unfold bindable at h_bind
   exact h_undeclared h_bind
 
-/- Theorem (derivedWitness_computable): a derived witness slot is always
-   bindable — it is computed by the circuit's closed rule table from the
-   already-bound input slots, so it requires no note: or param: declaration. -/
+/- Theorem (bindable_intrinsic_sources_are_unconditional): a derived witness slot, `tx_commitment` and
+   `tx_nonce` are bindable **whatever** the note:/param: declarations say — a derived slot is computed
+   by the circuit's closed rule table from the already-bound inputs, and the other two are carried by
+   the transaction binding — so none of the three requires a declaration.
+
+   Three theorems stood here until 2026-09-24 and each was vacuous: `bindable`'s `_` catch-all sends
+   these constructors to `True`, so `bindable (derived r) nf pf` **is** `∀ …, True` and the proofs said
+   so (`simp [bindable]`, ignoring every argument). The gate could not see it — its triviality test
+   compared the statement *syntactically* against `True`, and an unreduced `def` application is not
+   `True` — which is why the arm now reduces the statement first. Deleted and restated in the form that
+   has content: "always bindable" for a `True`-valued case says nothing on its own, and the way to say
+   it checkably is beside the case where bindability *is* conditional. The conditional side is a real
+   theorem in its own right and already exists — `undeclared_field_blocks` below. -/
 @[axiom_budget 0]
-theorem derivedWitness_computable (r : DerivedRule) (noteFields paramFields : List String) :
-    bindable (WitnessSource.derived r) noteFields paramFields := by
-  simp [bindable]
+theorem bindable_intrinsic_sources_are_unconditional :
+    (∀ (r : DerivedRule) (nf pf : List String), bindable (WitnessSource.derived r) nf pf) ∧
+    (∀ nf pf : List String, bindable WitnessSource.txCommitment nf pf) ∧
+    (∀ nf pf : List String, bindable WitnessSource.txNonce nf pf) ∧
+    (∃ f g : String, ¬ bindable (WitnessSource.note f) [g] [g]) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> simp [bindable]
+  exact ⟨"undeclared", "declared", by simp [bindable]⟩
 
 /- Theorem (namedBlind_distinct): distinct blind names yield distinct blind
    sources — the name is load-bearing, so the Rust prover's per-name Seed domain
@@ -135,17 +149,9 @@ theorem witnessMap_arity (map : List WitnessSource) (noteFields paramFields : Li
 def bindsRealTxBinding (txCommitment txNonce : Nat) : Prop :=
   txCommitment ≠ 0 ∨ txNonce ≠ 0
 
-/-- T6 (well-typed): `tx_commitment` is an intrinsic witness source — always
-    bindable, never requiring a note:/param: declaration. -/
-@[axiom_budget 0]
-theorem txCommitment_source_bindable (noteFields paramFields : List String) :
-    bindable WitnessSource.txCommitment noteFields paramFields := by
-  simp [bindable]
-
-/-- T6 (well-typed): `tx_nonce` is an intrinsic witness source — always bindable. -/
-@[axiom_budget 0]
-theorem txNonce_source_bindable (noteFields paramFields : List String) :
-    bindable WitnessSource.txNonce noteFields paramFields := by
-  simp [bindable]
+/- T6 (well-typed): `tx_commitment` and `tx_nonce` are intrinsic witness sources — always bindable,
+   never requiring a note:/param: declaration. Stated with `derived` and with the conditional case
+   beside it, in `bindable_intrinsic_sources_are_unconditional` above, because two separate theorems
+   saying "always bindable" for a `True`-valued case were vacuous and were deleted. -/
 
 end DarkFi.Capability
