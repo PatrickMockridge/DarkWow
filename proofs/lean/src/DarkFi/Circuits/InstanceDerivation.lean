@@ -98,12 +98,26 @@ inductive Expr where
   | op : Name → List Expr → Expr
 
 /-- A statement, as a `.zk` `circuit` block declares them. `rangeCheck` is carried because a model that
-    dropped it would have to say so, and the checker treats it as binding and determining nothing. -/
+    dropped it would have to say so, and the checker treats it as binding and determining nothing.
+
+    **Its two fields are the width first and the checked value second**, because the deployed opcode
+    takes them in that order — `range_check(64, amount)` — and because the bound the check *supplies*
+    is width-dependent: `src/zk/vm.rs:559`/`:563` configure a 64-bit and a 253-bit chip, so a
+    `rangeCheck 253 _` does not give the 64-bit bound a comparison's integer reading needs
+    (`Comparison.range_check_64_is_bounded` is the `<10, 64>` instance).
+
+    **It still binds and determines nothing** (`boundWalk` discards it), so the property
+    `noFreeInstance` computes is unchanged by carrying the fields — which is what lets the transcribed
+    module's verdicts stay byte-identical across the correction that added them. What the fields exist
+    for is the step this model could not previously make: reasoning *from* a range check, which is
+    `OBL-Z12`'s residue. The generator that emits them had recorded `args[0]` — the width — in the
+    operand position, so until 2026-09-24 every constructed `rangeCheck` statement in `Transcribed.lean`
+    named its width and nothing else. -/
 inductive Stmt where
   | assign : Name → Expr → Stmt
   | constrainEq : Expr → Expr → Stmt
   | constrainInstance : Expr → Stmt
-  | rangeCheck : Expr → Stmt
+  | rangeCheck : Nat → Expr → Stmt
 
 /-- The bare name an expression is, if it is one. This is what a `constrainEq` can *bind*: an equality
     whose other side is determined turns its variable side into a determined name. -/
@@ -217,7 +231,12 @@ def boundWalk (held bound : List Name) : List Stmt → List Name × List (Expr �
     | .constrainInstance e =>
       let (bound', exps) := boundWalk held bound rest
       (bound', (e, determinedB held bound e) :: exps)
-    | .rangeCheck _ => boundWalk held bound rest
+    -- Discarded deliberately, and it has to stay discarded: the checker's own rule for a
+    -- `less_than_*` operand is separate (`comparison_operand_findings` in
+    -- `script/circuit_instance_derivation.py`), and a range check neither binds a name nor
+    -- determines an exposure. So the fields this constructor now carries change no verdict -- the
+    -- split below is identical to the one the width-only form produced.
+    | .rangeCheck _ _ => boundWalk held bound rest
 
 /-- The exposures a circuit makes, in order, each with whether it was determined by what preceded it. -/
 def exposures (held : List Name) (cs : List Stmt) : List (Expr × Bool) := (boundWalk held [] cs).2
@@ -389,7 +408,7 @@ theorem boundWalk_spec (opVal : Name → List Nat → Nat) (held : List Name) {v
       · intro hv
         exact determinedExpr_agrees opVal hheld hb e hv
       · exact h2 p hp
-    | rangeCheck _ => simpa [boundWalk] using ih hs₁ hs₂ bound hb
+    | rangeCheck _ _ => simpa [boundWalk] using ih hs₁ hs₂ bound hb
 
 /-- **Soundness — the property's point.** If every instance the circuit exposes is determined before that
     exposure, then two **satisfying** valuations agreeing on the circuit's held inputs produce the same

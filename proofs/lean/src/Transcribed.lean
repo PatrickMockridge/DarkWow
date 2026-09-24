@@ -13,10 +13,12 @@ speed one.** This module lives at `src/Transcribed.lean` in the library `lean_li
 by the gate as `lake build DarkFi Transcribed`, and is not reachable from `lake build DarkFi`. It held
 that place in the `DarkFi` library until 2026-09-24, when a `LEAN_NUM_THREADS=4` build of that library
 exhausted this host's memory and froze the machine: a thread cap bounds how many `lean` processes run,
-not how much memory one of them uses, and 181 kernel `decide` evaluations is where in this tree that
-difference bites. The gate builds it under `scripts/lean-build.sh`, which adds the cgroup memory
+not how much memory one of them uses, and kernel `decide` evaluations at this scale is where in this
+tree that difference bites — 181 of them the day it froze, 178 now. The gate builds it under
+`scripts/lean-build.sh`, which adds the cgroup memory
 ceiling the thread cap never was. **A `lake build DarkFi` therefore does not type-check this file; the
-gate does.** `CheckAxioms.lean` imports it directly, so the axiom walk still covers all 181 theorems.
+gate does.** `CheckAxioms.lean` imports it directly, so the axiom walk still covers all 178
+theorems.
 
 What is here is one `List Stmt` per circuit in `InstanceDerivation`'s vocabulary, the names the
 circuit holds (its `constant` and `witness` declarations), and one verdict per circuit closed by
@@ -25,31 +27,34 @@ asks whether every exposed value is *determined* by what precedes it, while the 
 accepts an exposed value that the circuit pins elsewhere (`redundant`) or that a host-side
 justification declares free (`script/circuit_free_instances.txt`).
 
-Measured: **168** of 179 circuits expose at least one value the model does not
+Measured: **167** of 178 circuits expose at least one value the model does not
 find determined in-circuit, and **11** hold. Each refuted circuit names the first such
 exposure **and the checker's class for that exposure**.
 
-**The 170 are decomposed rather than asserted, and the decomposition is the finding.** For each
+**The 167 are decomposed rather than asserted, and the decomposition is the finding.** For each
 refuted circuit the generator asks the *checker* — `classify`, the gate's own classifier — what it
 made of the exposure the model refused, and the answer is that the two rules disagree by design
 almost everywhere:
 
-* **154** of the 168 — The checker resolves it as `redundant` — pinned by another exposed
+* **154** of the 167 — The checker resolves it as `redundant` — pinned by another exposed
   determination, which the model's sequential rule does not follow.
-* **11** of the 168 — The checker resolves it as `declared-free`, from a host-side justification
+* **11** of the 167 — The checker resolves it as `declared-free`, from a host-side justification
   in `script/circuit_free_instances.txt`.
-* **2** of the 168 — **The checker fails it too** — one of the instances `OBL-Z16` names, where
-  the model and the checker agree.
-* **1** of the 168 — The checker resolves it as `bound`, through a `constrain_equal_base` whose
+* **1** of the 167 — The checker resolves it as `bound`, through a `constrain_equal_base` whose
   determining side is a declared constant.
+* **1** of the 167 — **The checker fails it too** — one of the instances `OBL-Z16` names, where
+  the model and the checker agree.
 
-So the model does not contradict the checker; it **refines** it, and every one of the 170 is the
+So the model does not contradict the checker; it **refines** it, and every one of the 167 is the
 checker's weaker rule or the single boundary the model note names. Two consequences a reader should
 take from this file rather than infer:
 
-* `Axioms.NoFreeInstances`' *name* is a **strict** reading this tree mostly does not meet — 170 of
-  181 circuits are refuted under it — while the property the tree actually enforces is the checker's
-  four-verdict rule, whose failures are the 11 instances of `OBL-Z16`. The axiom is uninterpreted, so
+* `Axioms.NoFreeInstances`' *name* is a **strict** reading this tree mostly does not meet — 167 of
+  178 circuits are refuted under it — while the property the tree actually enforces is the checker's
+  four-verdict rule, whose failures are the instances `OBL-Z16` names (11 when this sentence was
+  written on 2026-09-24, and re-run `scripts/check-circuit-instance-derivation.sh` for the count now —
+  it is 4 as of that evening, because one site was repaired and one circuit deleted).
+  The axiom is uninterpreted, so
   nothing false is assumed; a reader who takes its name literally is over-reading it, and the
   per-circuit class recorded below is where that is written down;
 * the model's *one* disagreement with the checker that is not a documented weaker class is `bound`:
@@ -65,10 +70,10 @@ reason the generator is allowed to predict at all.
 One boundary in the *other* direction stays untested, stated because it would show up as a false
 positive the day a circuit meets it: a bare `constant` exposed by `constrain_instance` would fail the
 model's property, where the checker accepts a constant by declaration. No circuit in this tree exposes
-one — measured, every undetermined exposure across the 170 refutations is a witness and none is a
+one — measured, every undetermined exposure across the 167 refutations is a witness and none is a
 constant — so that direction is untested rather than settled, while the direction above is met.
 
-Not transcribed, and counted rather than dropped silently: 22 bare opcode-call statements
+Not transcribed, and counted rather than dropped silently: 21 bare opcode-call statements
 (`less_than_strict`, `bool_check`, `less_than_loose`) which constrain but expose nothing, so the
 instance property is unaffected — the checker skips them for the same reason. Everything else in the
 sources is here; an unrecognised statement form fails the generator rather than being omitted.
@@ -81,7 +86,8 @@ needs without supplying the bridge. See `OBL-T7` in `doc/src/arch/verification-h
 2026-09-24 this module exceeded 24 GiB in a single `lean` process and was OOM-killed at both a 16 GiB
 and a 24 GiB ceiling, so no `.olean` had ever been produced and the kernel had closed none of the
 verdicts below. Extracting `boundWalk`'s `assign` arm into `bindAssign` removed it: the whole
-transcription — all 181 verdicts — builds in **~71 s and 743 MB** as one module. **Which circuits were
+transcription — all 178 verdicts as it now stands, 181 when that was measured — builds in
+**~71 s and 743 MB** as one module. **Which circuits were
 expensive, and why, is not established** — see `bindAssign`'s docstring, which carries the controlled
 comparison that justifies the change and the rival explanations it does not settle, and retracts the
 short-circuit story this header first told. Sharding the artefact was tried while the cause was unknown
@@ -96,7 +102,7 @@ open Circuits.InstanceDerivation
 
 /-! ===== The circuits, in source order =====
 
-179 circuits, 2692 statements transcribed; **11** satisfy the model's property and **168** do not, the latter named by the
+178 circuits, 2677 statements transcribed; **11** satisfy the model's property and **167** do not, the latter named by the
 first undetermined exposure in each, with the checker's class for that exposure named beneath it.
 -/
 
@@ -109,8 +115,8 @@ def darkirc_rlnv2_diff_signal_stmts : List Stmt :=
 [
   .constrainInstance (.var "epoch"),
   .constrainInstance (.var "external_nullifier"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "message_id"),
+  .rangeCheck 64 (.var "user_message_limit"),
   .assign "a_0" (.op "poseidon_hash" [.var "identity_nullifier", .var "identity_trapdoor"]),
   .assign "a_1" (.op "poseidon_hash" [.var "a_0", .var "external_nullifier", .var "message_id"]),
   .assign "x_a_1" (.op "base_mul" [.var "x", .var "a_1"]),
@@ -365,8 +371,8 @@ def opcodes_stmts : List Stmt :=
   .constrainInstance (.var "d"),
   .assign "d2" (.op "poseidon_hash" [.var "one", .var "blind", .op "ec_get_x" [.var "value_commit2"], .op "ec_get_y" [.var "value_commit2"]]),
   .constrainEq (.var "d") (.var "d2"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 253),
+  .rangeCheck 64 (.var "a"),
+  .rangeCheck 253 (.var "b"),
   .assign "root" (.op "merkle_root" [.var "leaf_pos", .var "path", .var "c"]),
   .constrainInstance (.var "root"),
   .assign "public" (.op "ec_mul_base" [.var "secret", .var "NULLIFIER_K"]),
@@ -1087,7 +1093,7 @@ def bearer_bond_blind_output_stmts : List Stmt :=
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
-  .rangeCheck (.lit 64)
+  .rangeCheck 64 (.var "value")
 ]
 
 
@@ -1139,7 +1145,7 @@ def bearer_bond_burn_stmts : List Stmt :=
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
-  .rangeCheck (.lit 64)
+  .rangeCheck 64 (.var "value")
 ]
 
 
@@ -1163,10 +1169,10 @@ def bearer_bond_prove_coverage_stmts : List Stmt :=
   .assign "ZERO" (.op "witness_base" [.lit 0]),
   .assign "ONE" (.op "witness_base" [.lit 1]),
   .assign "BPS" (.op "witness_base" [.lit 10000]),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "reserve_amount"),
+  .rangeCheck 64 (.var "total_outstanding"),
+  .rangeCheck 64 (.var "total_interest_obligation"),
+  .rangeCheck 64 (.var "coverage_ratio_bps"),
   .assign "total_obligation" (.op "base_add" [.var "total_outstanding", .var "total_interest_obligation"]),
   .assign "crb_times_obligation" (.op "base_mul" [.var "coverage_ratio_bps", .var "total_obligation"]),
   .assign "res_times_bps" (.op "base_mul" [.var "reserve_amount", .var "BPS"]),
@@ -1243,7 +1249,7 @@ def betting_stake_claim_stmts : List Stmt :=
   .assign "staker_pub" (.op "ec_mul_base" [.var "staker_secret", .var "NULLIFIER_K"]),
   .constrainEq (.op "ec_get_x" [.var "staker_pub"]) (.var "staker_pub_x"),
   .constrainEq (.op "ec_get_y" [.var "staker_pub"]) (.var "staker_pub_y"),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "current_amount"),
   .assign "derived_stake_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "table_id", .var "staker_pub_x", .var "staker_pub_y", .var "current_amount", .var "nonce"]),
   .constrainInstance (.var "derived_stake_id"),
   .assign "vcv" (.op "ec_mul_short" [.var "current_amount", .var "VALUE_COMMIT_VALUE"]),
@@ -1310,7 +1316,7 @@ def betting_stake_stake_stmts : List Stmt :=
   .assign "staker_pub" (.op "ec_mul_base" [.var "staker_secret", .var "NULLIFIER_K"]),
   .constrainEq (.op "ec_get_x" [.var "staker_pub"]) (.var "staker_pub_x"),
   .constrainEq (.op "ec_get_y" [.var "staker_pub"]) (.var "staker_pub_y"),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "amount"),
   .assign "derived_stake_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "table_id", .var "staker_pub_x", .var "staker_pub_y", .var "amount", .var "nonce"]),
   .constrainInstance (.var "derived_stake_id"),
   .assign "vcv" (.op "ec_mul_short" [.var "amount", .var "VALUE_COMMIT_VALUE"]),
@@ -1350,8 +1356,8 @@ def betting_stake_unstake_stmts : List Stmt :=
   .assign "staker_pub" (.op "ec_mul_base" [.var "staker_secret", .var "NULLIFIER_K"]),
   .constrainEq (.op "ec_get_x" [.var "staker_pub"]) (.var "staker_pub_x"),
   .constrainEq (.op "ec_get_y" [.var "staker_pub"]) (.var "staker_pub_y"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "original_amount"),
+  .rangeCheck 64 (.var "current_amount"),
   .assign "derived_stake_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "table_id", .var "staker_pub_x", .var "staker_pub_y", .var "original_amount", .var "nonce"]),
   .constrainInstance (.var "derived_stake_id"),
   .assign "vcv" (.op "ec_mul_short" [.var "original_amount", .var "VALUE_COMMIT_VALUE"]),
@@ -1387,9 +1393,9 @@ def betting_stake_update_risk_stmts : List Stmt :=
 [
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "total_stake"),
+  .rangeCheck 64 (.var "accumulated_losses"),
+  .rangeCheck 64 (.var "house_edge_bp"),
   .assign "derived_table_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "betting_contract_id", .var "nonce"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
@@ -1496,7 +1502,7 @@ def bridge_deposit_stmts : List Stmt :=
   .assign "bridge_address" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "bridge_pub_x", .var "bridge_pub_y"]),
   .assign "derived_commitment" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "secret", .var "amount", .var "bridge_address"]),
   .constrainInstance (.var "derived_commitment"),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "amount"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
@@ -1513,9 +1519,9 @@ theorem bridge_deposit_has_a_free_instance :
   decide
 
 
-/-- `src/contract/bridge/proof/withdraw.zk` — 5 exposure(s). -/
+/-- `src/contract/bridge/proof/withdraw.zk` — 4 exposure(s). -/
 
-def bridge_withdraw_held : List Name := ["NULLIFIER_K", "amount", "nullifier", "recipient_hash", "secret", "token_minimum", "tx_binding", "tx_commitment", "tx_nonce"]
+def bridge_withdraw_held : List Name := ["NULLIFIER_K", "amount", "nullifier", "recipient_hash", "secret", "tx_binding", "tx_commitment", "tx_nonce"]
 
 
 def bridge_withdraw_stmts : List Stmt :=
@@ -1528,9 +1534,7 @@ def bridge_withdraw_stmts : List Stmt :=
   .constrainEq (.var "computed_nullifier") (.var "nullifier"),
   .assign "derived_recipient" (.op "poseidon_hash" [.var "DOMAIN_SIGNATURE_SECRET", .var "recipient_hash"]),
   .constrainInstance (.var "derived_recipient"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .constrainInstance (.var "token_minimum"),
+  .rangeCheck 64 (.var "amount"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
@@ -1538,8 +1542,8 @@ def bridge_withdraw_stmts : List Stmt :=
 
 
 /-- **The property fails** for `src/contract/bridge/proof/withdraw.zk`: its first undetermined exposure is
-    `.var "token_minimum"`, which the circuit does not bind before exposing.
-    **The checker fails it too** — one of the instances `OBL-Z16` names, where the model and the checker agree. -/
+    `.var "tx_nonce"`, which the circuit does not bind before exposing.
+    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
 @[axiom_budget 0]
 theorem bridge_withdraw_has_a_free_instance :
     ¬ NoFreeInstance bridge_withdraw_held bridge_withdraw_stmts := by
@@ -1587,8 +1591,8 @@ def dao_escrow_pay_premium_stmts : List Stmt :=
 [
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "current_block"),
+  .rangeCheck 64 (.var "expiry"),
   .assign "member_pub" (.op "ec_mul_base" [.var "member_secret", .var "NULLIFIER_K"]),
   .constrainEq (.op "ec_get_x" [.var "member_pub"]) (.var "member_pub_x"),
   .constrainEq (.op "ec_get_y" [.var "member_pub"]) (.var "member_pub_y"),
@@ -2242,7 +2246,7 @@ def dex_accept_swap_stmts : List Stmt :=
   .constrainEq (.var "derived_sig_pub_y") (.var "signature_public_y"),
   .constrainInstance (.var "signature_public_x"),
   .constrainInstance (.var "signature_public_y"),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "offer_amount"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
@@ -2279,7 +2283,7 @@ def dex_cancel_swap_stmts : List Stmt :=
   .constrainInstance (.var "computed_nullifier"),
   .assign "computed_swap_id" (.op "poseidon_hash" [.var "DOMAIN_CAP_COMMIT", .var "lock_commitment", .var "request_token", .var "request_amount"]),
   .constrainInstance (.var "computed_swap_id"),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "amount"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
@@ -2323,8 +2327,8 @@ def dex_create_swap_stmts : List Stmt :=
   .constrainEq (.var "derived_sig_pub_y") (.var "signature_public_y"),
   .constrainInstance (.var "signature_public_x"),
   .constrainInstance (.var "signature_public_y"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "offer_amount"),
+  .rangeCheck 64 (.var "request_amount"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
@@ -2368,9 +2372,9 @@ def dex_execute_swap_stmts : List Stmt :=
   .constrainInstance (.var "bob_otc_func_id"),
   .assign "computed_swap_id" (.op "poseidon_hash" [.var "DOMAIN_CAP_COMMIT", .var "alice_lock", .var "bob_token", .var "bob_amount"]),
   .constrainInstance (.var "computed_swap_id"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "alice_amount"),
+  .rangeCheck 64 (.var "bob_amount"),
+  .rangeCheck 64 (.var "fill_amount"),
   .assign "ONE" (.op "witness_base" [.lit 1]),
   .assign "is_lte" (.op "less_than_or_equal" [.var "fill_amount", .var "alice_amount"]),
   .constrainEq (.var "is_lte") (.var "ONE"),
@@ -2415,11 +2419,11 @@ def dex_execute_swap_fee_stmts : List Stmt :=
   .constrainInstance (.var "bob_nullifier_check"),
   .assign "computed_swap_id" (.op "poseidon_hash" [.var "DOMAIN_CAP_COMMIT", .var "alice_lock", .var "bob_token", .var "bob_amount"]),
   .constrainInstance (.var "computed_swap_id"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "alice_amount"),
+  .rangeCheck 64 (.var "bob_amount"),
+  .rangeCheck 64 (.var "fill_amount"),
+  .rangeCheck 64 (.var "fee_bps"),
+  .rangeCheck 64 (.var "fee"),
   .assign "ONE" (.op "witness_base" [.lit 1]),
   .assign "BPS" (.op "witness_base" [.lit 10000]),
   .assign "is_lte" (.op "less_than_or_equal" [.var "fill_amount", .var "alice_amount"]),
@@ -2474,10 +2478,10 @@ def dex_execute_swap_slippage_stmts : List Stmt :=
   .constrainInstance (.var "bob_nullifier_check"),
   .assign "computed_swap_id" (.op "poseidon_hash" [.var "DOMAIN_CAP_COMMIT", .var "alice_lock", .var "bob_token", .var "bob_amount"]),
   .constrainInstance (.var "computed_swap_id"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "alice_amount"),
+  .rangeCheck 64 (.var "bob_amount"),
+  .rangeCheck 64 (.var "fill_amount"),
+  .rangeCheck 64 (.var "slippage_bps"),
   .assign "ONE" (.op "witness_base" [.lit 1]),
   .assign "is_lte" (.op "less_than_or_equal" [.var "fill_amount", .var "alice_amount"]),
   .constrainEq (.var "is_lte") (.var "ONE"),
@@ -3466,8 +3470,8 @@ def identity_verify_capability_stmts : List Stmt :=
   .constrainEq (.var "commitment_check") (.var "commitment"),
   .assign "computed_nullifier" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "credential_secret", .var "commitment"]),
   .constrainInstance (.var "computed_nullifier"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "attribute_1"),
+  .rangeCheck 64 (.var "threshold"),
   .assign "is_lte" (.op "less_than_or_equal" [.var "threshold", .var "attribute_1"]),
   .constrainEq (.var "is_lte") (.var "predicate_result"),
   .constrainInstance (.var "schema_hash"),
@@ -3813,7 +3817,7 @@ def labor_market_milestone_payment_stmts : List Stmt :=
   .assign "employer_pub" (.op "ec_mul_base" [.var "employer_secret", .var "NULLIFIER_K"]),
   .constrainEq (.op "ec_get_x" [.var "employer_pub"]) (.var "employer_pub_x"),
   .constrainEq (.op "ec_get_y" [.var "employer_pub"]) (.var "employer_pub_y"),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "milestone_payment_amount"),
   .assign "spent_nullifier" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "MILESTONE_TAG", .var "job_id", .var "employer_secret"]),
   .constrainInstance (.var "spent_nullifier"),
   .constrainInstance (.var "job_id"),
@@ -3849,9 +3853,9 @@ def labor_market_refund_stmts : List Stmt :=
   .assign "employer_pub" (.op "ec_mul_base" [.var "employer_secret", .var "NULLIFIER_K"]),
   .constrainEq (.op "ec_get_x" [.var "employer_pub"]) (.var "employer_pub_x"),
   .constrainEq (.op "ec_get_y" [.var "employer_pub"]) (.var "employer_pub_y"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "completed_payment"),
+  .rangeCheck 64 (.var "refund_amount"),
+  .rangeCheck 64 (.var "total_payment"),
   .assign "spent_nullifier" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "REFUND_TAG", .var "job_id", .var "employer_secret"]),
   .constrainInstance (.var "spent_nullifier"),
   .constrainInstance (.var "job_id"),
@@ -4066,39 +4070,6 @@ theorem lottery_expire_lottery_has_a_free_instance :
   decide
 
 
-/-- `src/contract/lottery/proof/initialize.zk` — 5 exposure(s). -/
-
-def lottery_initialize_held : List Name := ["NULLIFIER_K", "house_nullifier", "house_pub_x", "house_pub_y", "house_secret", "lottery_id", "tx_binding", "tx_commitment", "tx_nonce"]
-
-
-def lottery_initialize_stmts : List Stmt :=
-[
-  .assign "DOMAIN_NULLIFIER" (.op "witness_base" [.lit 1]),
-  .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
-  .assign "house_pub" (.op "ec_mul_base" [.var "house_secret", .var "NULLIFIER_K"]),
-  .constrainEq (.op "ec_get_x" [.var "house_pub"]) (.var "house_pub_x"),
-  .constrainEq (.op "ec_get_y" [.var "house_pub"]) (.var "house_pub_y"),
-  .assign "computed" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "lottery_id", .var "house_secret"]),
-  .constrainEq (.var "computed") (.var "house_nullifier"),
-  .constrainInstance (.var "house_pub_x"),
-  .constrainInstance (.var "house_pub_y"),
-  .constrainInstance (.var "house_nullifier"),
-  .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
-  .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce")
-]
-
-
-/-- **The property fails** for `src/contract/lottery/proof/initialize.zk`: its first undetermined exposure is
-    `.var "tx_nonce"`, which the circuit does not bind before exposing.
-    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
-@[axiom_budget 0]
-theorem lottery_initialize_has_a_free_instance :
-    ¬ NoFreeInstance lottery_initialize_held lottery_initialize_stmts := by
-  unfold NoFreeInstance
-  decide
-
-
 /-- `src/contract/lottery/proof/reveal_ticket.zk` — 2 exposure(s). -/
 
 def lottery_reveal_ticket_held : List Name := ["NULLIFIER_K", "lottery_id", "ticket_number", "ticket_pub_x", "ticket_pub_y", "ticket_secret", "tx_binding", "tx_commitment", "tx_nonce"]
@@ -4131,7 +4102,7 @@ def multisig_create_group_held : List Name := ["group_id", "threshold", "total_k
 def multisig_create_group_stmts : List Stmt :=
 [
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "threshold"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
@@ -4258,7 +4229,7 @@ def native_token_burn_stmts : List Stmt :=
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
-  .rangeCheck (.lit 64)
+  .rangeCheck 64 (.var "value")
 ]
 
 
@@ -4324,12 +4295,12 @@ def native_token_fee_stmts : List Stmt :=
   .assign "fee_value_commit" (.op "ec_add" [.var "fee_vcv", .var "fee_vcr"]),
   .constrainInstance (.op "ec_get_x" [.var "fee_value_commit"]),
   .constrainInstance (.op "ec_get_y" [.var "fee_value_commit"]),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "input_value"),
+  .rangeCheck 64 (.var "output_value"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
-  .rangeCheck (.lit 64)
+  .rangeCheck 64 (.var "fee")
 ]
 
 
@@ -4380,15 +4351,15 @@ def native_token_mint_stmts : List Stmt :=
   .constrainEq (.var "new_cum_y") (.var "new_cumulative_y"),
   .constrainInstance (.var "new_cumulative_x"),
   .constrainInstance (.var "new_cumulative_y"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "value"),
+  .rangeCheck 64 (.var "effective_value"),
   .assign "effective_plus_pin" (.op "base_add" [.var "effective_value", .var "total_pin"]),
   .constrainEq (.var "effective_plus_pin") (.var "value"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
   .constrainInstance (.var "total_pin"),
-  .rangeCheck (.lit 64)
+  .rangeCheck 64 (.var "old_cumulative_value")
 ]
 
 
@@ -4414,18 +4385,18 @@ def oracle_aggregate_stmts : List Stmt :=
   .assign "DOMAIN_NULLIFIER" (.op "witness_base" [.lit 1]),
   .assign "ZERO" (.op "witness_base" [.lit 0]),
   .assign "ONE" (.op "witness_base" [.lit 1]),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "value_0"),
+  .rangeCheck 64 (.var "value_1"),
+  .rangeCheck 64 (.var "value_2"),
+  .rangeCheck 64 (.var "value_3"),
+  .rangeCheck 64 (.var "weight_0"),
+  .rangeCheck 64 (.var "weight_1"),
+  .rangeCheck 64 (.var "weight_2"),
+  .rangeCheck 64 (.var "weight_3"),
+  .rangeCheck 64 (.var "sum_weights"),
+  .rangeCheck 64 (.var "result"),
+  .rangeCheck 64 (.var "min_result"),
+  .rangeCheck 64 (.var "max_result"),
   .assign "weighted_0" (.op "base_mul" [.var "value_0", .var "weight_0"]),
   .assign "weighted_1" (.op "base_mul" [.var "value_1", .var "weight_1"]),
   .assign "weighted_2" (.op "base_mul" [.var "value_2", .var "weight_2"]),
@@ -4443,9 +4414,9 @@ def oracle_aggregate_stmts : List Stmt :=
   .assign "res_plus_one" (.op "base_add" [.var "result", .var "ONE"]),
   .assign "upper" (.op "base_mul" [.var "res_plus_one", .var "sum_weights"]),
   .assign "diff_max" (.op "base_sub" [.var "max_result", .var "result"]),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "diff_max"),
   .assign "diff_min" (.op "base_sub" [.var "result", .var "min_result"]),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "diff_min"),
   .assign "oracle_commitment" (.op "poseidon_hash" [.var "DOMAIN_OPERATOR_COMMITMENT", .var "oracle_secret", .var "oracle_id"]),
   .assign "nullifier" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "oracle_secret", .var "oracle_id", .var "result"]),
   .constrainInstance (.var "oracle_id"),
@@ -4909,7 +4880,7 @@ def promissory_note_issue_stmts : List Stmt :=
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
-  .rangeCheck (.lit 64)
+  .rangeCheck 64 (.var "value")
 ]
 
 
@@ -4986,7 +4957,7 @@ def promissory_note_register_type_stmts : List Stmt :=
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
-  .rangeCheck (.lit 64)
+  .rangeCheck 64 (.var "value")
 ]
 
 
@@ -5038,7 +5009,7 @@ def promissory_note_revoke_stmts : List Stmt :=
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
-  .rangeCheck (.lit 64)
+  .rangeCheck 64 (.var "value")
 ]
 
 
@@ -5075,7 +5046,7 @@ def promissory_note_transfer_stmts : List Stmt :=
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
-  .rangeCheck (.lit 64)
+  .rangeCheck 64 (.var "value")
 ]
 
 
@@ -5124,7 +5095,7 @@ def purse_balance_stmts : List Stmt :=
   .constrainEq (.var "tb_circuit") (.var "tx_binding"),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
-  .rangeCheck (.lit 64)
+  .rangeCheck 64 (.var "balance")
 ]
 
 
@@ -5188,9 +5159,9 @@ def purse_deposit_stmts : List Stmt :=
   .constrainEq (.var "tb_circuit") (.var "tx_binding"),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64)
+  .rangeCheck 64 (.var "old_balance"),
+  .rangeCheck 64 (.var "deposit_amount"),
+  .rangeCheck 64 (.var "new_balance")
 ]
 
 
@@ -5257,9 +5228,9 @@ def purse_withdraw_stmts : List Stmt :=
   .constrainEq (.var "tb_circuit") (.var "tx_binding"),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64)
+  .rangeCheck 64 (.var "old_balance"),
+  .rangeCheck 64 (.var "withdraw_amount"),
+  .rangeCheck 64 (.var "new_balance")
 ]
 
 
@@ -5586,11 +5557,11 @@ def stablecoin_accrue_interest_stmts : List Stmt :=
   .constrainInstance (.var "accumulator_pub_x"),
   .constrainInstance (.var "accumulator_pub_y"),
   .constrainInstance (.var "old_total_debt"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "old_total_debt"),
+  .rangeCheck 64 (.var "new_total_debt"),
+  .rangeCheck 64 (.var "rate_per_second"),
+  .rangeCheck 64 (.var "time_elapsed"),
+  .rangeCheck 64 (.var "interest_amount"),
   .assign "DENOM" (.op "witness_base" [.lit 315360000000]),
   .assign "debt_times_rate" (.op "base_mul" [.var "old_total_debt", .var "rate_per_second"]),
   .assign "debt_rate_time" (.op "base_mul" [.var "debt_times_rate", .var "time_elapsed"]),
@@ -5632,8 +5603,8 @@ def stablecoin_add_collateral_stmts : List Stmt :=
   .assign "owner_pub_check" (.op "poseidon_hash" [.var "DOMAIN_SIGNATURE_SECRET", .var "owner_secret"]),
   .constrainEq (.var "owner_pub_check") (.var "owner_pub"),
   .assign "new_collateral" (.op "base_add" [.var "old_collateral", .var "added_collateral"]),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "new_collateral"),
+  .rangeCheck 64 (.var "added_collateral"),
   .assign "collateral_commit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "new_collateral", .var "collateral_blind"]),
   .assign "debt_commit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "old_debt", .var "debt_blind"]),
   .assign "position_check" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "collateral_commit", .var "debt_commit", .var "owner_pub", .var "collateral_type"]),
@@ -5643,7 +5614,7 @@ def stablecoin_add_collateral_stmts : List Stmt :=
   .constrainInstance (.var "nullifier_check"),
   .constrainEq (.var "nullifier_check") (.var "position_nullifier"),
   .assign "two_times_debt" (.op "base_add" [.var "old_debt", .var "old_debt"]),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "two_times_debt"),
   .assign "ONE" (.op "witness_base" [.lit 1]),
   .assign "is_lte" (.op "less_than_or_equal" [.var "two_times_debt", .var "new_collateral"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
@@ -5680,13 +5651,13 @@ def stablecoin_governance_report_stmts : List Stmt :=
   .constrainEq (.var "reporter_public_y") (.var "reporter_pub_y"),
   .constrainInstance (.var "reporter_pub_x"),
   .constrainInstance (.var "reporter_pub_y"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "total_collateral"),
+  .rangeCheck 64 (.var "total_debt"),
+  .rangeCheck 64 (.var "outstanding"),
+  .rangeCheck 64 (.var "rate_per_second"),
+  .rangeCheck 64 (.var "time_elapsed"),
+  .rangeCheck 64 (.var "collateral_ratio_bps"),
+  .rangeCheck 64 (.var "interest_accrued"),
   .constrainInstance (.var "total_collateral"),
   .constrainInstance (.var "total_debt"),
   .constrainInstance (.var "outstanding"),
@@ -5783,9 +5754,9 @@ def stablecoin_liquidate_stmts : List Stmt :=
   .assign "collat_plus_one" (.op "base_add" [.var "collateral_value", .var "ONE"]),
   .assign "is_undercollateralized" (.op "less_than_or_equal" [.var "collat_plus_one", .var "threshold_debt"]),
   .constrainEq (.var "is_undercollateralized") (.var "ONE"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "collateral_amount"),
+  .rangeCheck 64 (.var "debt_amount"),
+  .rangeCheck 64 (.var "liquidator_reward"),
   .assign "ONE" (.op "witness_base" [.lit 1]),
   .assign "is_lte" (.op "less_than_or_equal" [.var "liquidator_reward", .var "collateral_amount"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
@@ -5833,7 +5804,7 @@ def stablecoin_mint_stable_stmts : List Stmt :=
   .assign "new_position" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "new_collateral_commit", .var "new_debt_commit", .var "owner_pub", .var "collateral_type"]),
   .constrainEq (.var "new_position") (.var "new_commitment"),
   .constrainInstance (.var "new_position"),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "mint_amount"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
@@ -5871,10 +5842,10 @@ def stablecoin_open_position_stmts : List Stmt :=
   .assign "nullifier_check" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "owner_secret", .var "position_commitment"]),
   .constrainInstance (.var "nullifier_check"),
   .constrainEq (.var "nullifier_check") (.var "position_nullifier"),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "collateral_amount"),
+  .rangeCheck 64 (.var "debt_amount"),
   .assign "two_times_debt" (.op "base_add" [.var "debt_amount", .var "debt_amount"]),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "two_times_debt"),
   .assign "ONE" (.op "witness_base" [.lit 1]),
   .assign "is_lte" (.op "less_than_or_equal" [.var "two_times_debt", .var "collateral_amount"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
@@ -5908,8 +5879,8 @@ def stablecoin_remove_collateral_stmts : List Stmt :=
   .assign "owner_pub_check" (.op "poseidon_hash" [.var "DOMAIN_SIGNATURE_SECRET", .var "owner_secret"]),
   .constrainEq (.var "owner_pub_check") (.var "owner_pub"),
   .assign "new_collateral" (.op "base_sub" [.var "old_collateral", .var "removed_collateral"]),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "new_collateral"),
+  .rangeCheck 64 (.var "removed_collateral"),
   .assign "collateral_commit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "new_collateral", .var "collateral_blind"]),
   .assign "debt_commit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "old_debt", .var "debt_blind"]),
   .assign "position_check" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "collateral_commit", .var "debt_commit", .var "owner_pub", .var "collateral_type"]),
@@ -5919,7 +5890,7 @@ def stablecoin_remove_collateral_stmts : List Stmt :=
   .constrainInstance (.var "nullifier_check"),
   .constrainEq (.var "nullifier_check") (.var "position_nullifier"),
   .assign "two_times_debt" (.op "base_add" [.var "old_debt", .var "old_debt"]),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "two_times_debt"),
   .assign "ONE" (.op "witness_base" [.lit 1]),
   .assign "is_lte" (.op "less_than_or_equal" [.var "two_times_debt", .var "new_collateral"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
@@ -5953,8 +5924,8 @@ def stablecoin_repay_stable_stmts : List Stmt :=
   .assign "owner_pub_check" (.op "poseidon_hash" [.var "DOMAIN_SIGNATURE_SECRET", .var "owner_secret"]),
   .constrainEq (.var "owner_pub_check") (.var "owner_pub"),
   .assign "new_debt" (.op "base_sub" [.var "old_debt", .var "repaid_debt"]),
-  .rangeCheck (.lit 64),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "new_debt"),
+  .rangeCheck 64 (.var "repaid_debt"),
   .assign "collateral_commit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "old_collateral", .var "collateral_blind"]),
   .assign "debt_commit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "new_debt", .var "debt_blind"]),
   .assign "position_check" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "collateral_commit", .var "debt_commit", .var "owner_pub", .var "collateral_type"]),
@@ -5964,7 +5935,7 @@ def stablecoin_repay_stable_stmts : List Stmt :=
   .constrainInstance (.var "nullifier_check"),
   .constrainEq (.var "nullifier_check") (.var "position_nullifier"),
   .assign "two_times_debt" (.op "base_add" [.var "new_debt", .var "new_debt"]),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "two_times_debt"),
   .assign "ONE" (.op "witness_base" [.lit 1]),
   .assign "is_lte" (.op "less_than_or_equal" [.var "two_times_debt", .var "old_collateral"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
@@ -6219,7 +6190,7 @@ def tender_reveal_bid_stmts : List Stmt :=
   .assign "derived_pub_y" (.op "ec_get_y" [.var "bidder_pub"]),
   .constrainEq (.var "derived_pub_x") (.var "bidder_pub_x"),
   .constrainEq (.var "derived_pub_y") (.var "bidder_pub_y"),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "revealed_amount"),
   .constrainInstance (.var "tender_id"),
   .constrainInstance (.var "bid_id"),
   .constrainInstance (.var "revealed_amount"),
@@ -6288,7 +6259,7 @@ def tender_submit_bid_stmts : List Stmt :=
   .assign "derived_pub_y" (.op "ec_get_y" [.var "bidder_pub"]),
   .constrainEq (.var "derived_pub_x") (.var "bidder_pub_x"),
   .constrainEq (.var "derived_pub_y") (.var "bidder_pub_y"),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "amount"),
   .constrainInstance (.var "bidder_pub_x"),
   .constrainInstance (.var "bidder_pub_y"),
   .assign "bid_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "tender_id", .var "bidder_pub_x", .var "bidder_pub_y", .var "amount", .var "bid_nonce"]),
@@ -6324,7 +6295,7 @@ def tender_submit_bid_with_capability_stmts : List Stmt :=
   .assign "derived_pub_y" (.op "ec_get_y" [.var "bidder_pub"]),
   .constrainEq (.var "derived_pub_x") (.var "bidder_pub_x"),
   .constrainEq (.var "derived_pub_y") (.var "bidder_pub_y"),
-  .rangeCheck (.lit 64),
+  .rangeCheck 64 (.var "amount"),
   .constrainInstance (.var "bidder_pub_x"),
   .constrainInstance (.var "bidder_pub_y"),
   .assign "ONE" (.op "witness_base" [.lit 1]),

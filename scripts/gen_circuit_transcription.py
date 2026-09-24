@@ -51,7 +51,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 # A module of its own library, and under `src/` rather than under `src/DarkFi/` on purpose: this
-# module is the tree's most expensive elaboration (181 `decide` proofs over 2747 statements), and
+# module is the tree's most expensive elaboration (one `decide` proof per circuit, each over the
+# statements that circuit transcribes — 179 circuits and 2692 statements when the count last moved,
+# and derived into the emitted header rather than typed into it), and
 # while it sat on `lake build DarkFi`'s path a 4-threaded build of that library exhausted this host's
 # memory and froze it (2026-09-24). Lake's `Glob` has no exclusion constructor, so "off the default
 # path" has to mean "outside `DarkFi`'s module subtree" — `lakefile.lean` declares `lean_lib
@@ -152,12 +154,33 @@ def stmt_of(ner, path, s):
             UNHANDLED.append((path, s))
             return None
         return ("constrainInstance", e)
-    if name == "range_check" and len(args) >= 1:
-        e = expr_of(ner, args[0])
+    if name == "range_check":
+        # The opcode is `range_check(width, value)`, and **both** arguments are carried.
+        #
+        # Until 2026-09-24 this read `args[0]` alone — the *width* — so every statement it emitted
+        # was `.rangeCheck (.lit 64)`: the width in the operand position and the checked value
+        # recorded nowhere. `Stmt`'s docstring said the constructor is carried "because the checker
+        # treats it as binding and determining nothing", and the checker binds `args[1]`
+        # (`script/circuit_instance_derivation.py`: `range_check\(\s*\d+\s*,\s*([A-Za-z_]\w*)\s*\)`),
+        # so the two sides disagreed about which argument the statement is about.
+        #
+        # Carrying both is what makes `OBL-Z12`'s residue *statable*: the bound a check supplies is
+        # width-dependent (`src/zk/vm.rs:559`/`:563` are a 64-bit and a 253-bit chip, and
+        # `Comparison.range_check_64_is_bounded` is the `<10, 64>` instance), so a model that cannot
+        # see the width cannot conclude a comparison's integer reading from the check.
+        #
+        # The guard is stricter than the old `len(args) >= 1`: a call that does not carry a literal
+        # width and a value is now *unhandled* rather than silently half-recorded, and the generator
+        # fails on unhandled statements. Measured before the change: all 110 `range_check` calls in
+        # the tree are two-argument.
+        if len(args) < 2 or not NUM_RE.match(args[0].strip()):
+            UNHANDLED.append((path, s))
+            return None
+        e = expr_of(ner, args[1])
         if e is None:
             UNHANDLED.append((path, s))
             return None
-        return ("rangeCheck", e)
+        return ("rangeCheck", args[0].strip(), e)
     if name in IGNORED_CALLS:
         return None
     UNHANDLED.append((path, s))
@@ -180,7 +203,11 @@ def render_stmt(s):
         return "  .constrainEq (" + render_expr(s[1]) + ") (" + render_expr(s[2]) + ")"
     if s[0] == "constrainInstance":
         return "  .constrainInstance (" + render_expr(s[1]) + ")"
-    return "  .rangeCheck (" + render_expr(s[1]) + ")"
+    if s[0] == "rangeCheck":
+        # Width first, then the value: `range_check(64, amount)` renders as
+        # `.rangeCheck 64 (.var "amount")`, matching the opcode's own argument order.
+        return "  .rangeCheck " + s[1] + " (" + render_expr(s[2]) + ")"
+    raise ValueError("unrenderable statement kind: " + repr(s[0]))
 
 
 def model_verdict(held, stmts):
@@ -292,10 +319,12 @@ speed one.** This module lives at `src/Transcribed.lean` in the library `lean_li
 by the gate as `lake build DarkFi Transcribed`, and is not reachable from `lake build DarkFi`. It held
 that place in the `DarkFi` library until 2026-09-24, when a `LEAN_NUM_THREADS=4` build of that library
 exhausted this host's memory and froze the machine: a thread cap bounds how many `lean` processes run,
-not how much memory one of them uses, and 181 kernel `decide` evaluations is where in this tree that
-difference bites. The gate builds it under `scripts/lean-build.sh`, which adds the cgroup memory
+not how much memory one of them uses, and kernel `decide` evaluations at this scale is where in this
+tree that difference bites — 181 of them the day it froze, {n_circuits} now. The gate builds it under
+`scripts/lean-build.sh`, which adds the cgroup memory
 ceiling the thread cap never was. **A `lake build DarkFi` therefore does not type-check this file; the
-gate does.** `CheckAxioms.lean` imports it directly, so the axiom walk still covers all 181 theorems.
+gate does.** `CheckAxioms.lean` imports it directly, so the axiom walk still covers all {n_circuits}
+theorems.
 
 What is here is one `List Stmt` per circuit in `InstanceDerivation`'s vocabulary, the names the
 circuit holds (its `constant` and `witness` declarations), and one verdict per circuit closed by
@@ -306,20 +335,23 @@ justification declares free (`script/circuit_free_instances.txt`).
 
 {measured}
 
-**The 170 are decomposed rather than asserted, and the decomposition is the finding.** For each
+**The {n_refuted} are decomposed rather than asserted, and the decomposition is the finding.** For each
 refuted circuit the generator asks the *checker* — `classify`, the gate's own classifier — what it
 made of the exposure the model refused, and the answer is that the two rules disagree by design
 almost everywhere:
 
 {decomposition}
 
-So the model does not contradict the checker; it **refines** it, and every one of the 170 is the
+So the model does not contradict the checker; it **refines** it, and every one of the {n_refuted} is the
 checker's weaker rule or the single boundary the model note names. Two consequences a reader should
 take from this file rather than infer:
 
-* `Axioms.NoFreeInstances`' *name* is a **strict** reading this tree mostly does not meet — 170 of
-  181 circuits are refuted under it — while the property the tree actually enforces is the checker's
-  four-verdict rule, whose failures are the 11 instances of `OBL-Z16`. The axiom is uninterpreted, so
+* `Axioms.NoFreeInstances`' *name* is a **strict** reading this tree mostly does not meet — {n_refuted} of
+  {n_circuits} circuits are refuted under it — while the property the tree actually enforces is the checker's
+  four-verdict rule, whose failures are the instances `OBL-Z16` names (11 when this sentence was
+  written on 2026-09-24, and re-run `scripts/check-circuit-instance-derivation.sh` for the count now —
+  it is 4 as of that evening, because one site was repaired and one circuit deleted).
+  The axiom is uninterpreted, so
   nothing false is assumed; a reader who takes its name literally is over-reading it, and the
   per-circuit class recorded below is where that is written down;
 * the model's *one* disagreement with the checker that is not a documented weaker class is `bound`:
@@ -335,7 +367,7 @@ reason the generator is allowed to predict at all.
 One boundary in the *other* direction stays untested, stated because it would show up as a false
 positive the day a circuit meets it: a bare `constant` exposed by `constrain_instance` would fail the
 model's property, where the checker accepts a constant by declaration. No circuit in this tree exposes
-one — measured, every undetermined exposure across the 170 refutations is a witness and none is a
+one — measured, every undetermined exposure across the {n_refuted} refutations is a witness and none is a
 constant — so that direction is untested rather than settled, while the direction above is met.
 
 Not transcribed, and counted rather than dropped silently: {ignored} bare opcode-call statements
@@ -351,7 +383,8 @@ needs without supplying the bridge. See `OBL-T7` in `doc/src/arch/verification-h
 2026-09-24 this module exceeded 24 GiB in a single `lean` process and was OOM-killed at both a 16 GiB
 and a 24 GiB ceiling, so no `.olean` had ever been produced and the kernel had closed none of the
 verdicts below. Extracting `boundWalk`'s `assign` arm into `bindAssign` removed it: the whole
-transcription — all 181 verdicts — builds in **~71 s and 743 MB** as one module. **Which circuits were
+transcription — all {n_circuits} verdicts as it now stands, 181 when that was measured — builds in
+**~71 s and 743 MB** as one module. **Which circuits were
 expensive, and why, is not established** — see `bindAssign`'s docstring, which carries the controlled
 comparison that justifies the change and the rival explanations it does not settle, and retracts the
 short-circuit story this header first told. Sharding the artefact was tried while the cause was unknown
@@ -401,7 +434,13 @@ def block_text(block):
 
 
 def render(blocks, ignored, holds, fails_):
-    """The whole transcription as one module: the account, the preamble, and the 181 verdicts."""
+    """The whole transcription as one module: the account, the preamble, and the verdicts.
+
+    The account's counts are **substituted from the data**, not typed into the prose. Until
+    2026-09-24 they were literals in `HEADER`, so deleting two circuits left the module stating
+    `181 circuits / 2747 statements / 170 refuted` in its own header and `179 / 2692 / 168` in the
+    line below it — and re-running the generator reproduced the contradiction rather than repairing
+    it, because the generator was the source of both numbers and only one of them was computed."""
     counts = Counter(b[6] for b in blocks if not b[4])
     decomposition = "\n".join(
         textwrap.fill(f"* **{n}** of the {fails_} — {CLASS_TEXT[k]}", width=98,
@@ -409,6 +448,8 @@ def render(blocks, ignored, holds, fails_):
         for k, n in sorted(counts.items(), key=lambda kv: -kv[1]))
     doc = (HEADER
            .replace("{ignored}", str(ignored))
+           .replace("{n_circuits}", str(len(blocks)))
+           .replace("{n_refuted}", str(fails_))
            .replace("{decomposition}", decomposition)
            .replace("{measured}",
                     f"Measured: **{fails_}** of {len(blocks)} circuits expose at least one value the model does "
