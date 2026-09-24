@@ -109,14 +109,21 @@ answered twice over. The first answer holds. The second does not, and the reason
    it in one step, each being an action whose channel is `SCong`-equal to the restricted name.
 
    What that does **not** do is close the obligation, and the measurement says exactly where it stops.
-   Case-analysing a derivation of `Step (νx.P) μ P'` now closes the `nu` constructor immediately
-   (`hprov (SCong.refl x)`), and every other constructor but one is a head-shape contradiction — a
-   `ν`-headed term is not an `out`, an `inp`, a `tau`-source or a `par`. The exception is `scong`: a
-   restriction reached through a *congruent* term. That route is `nu_par`, which is the one rule that
-   lets the congruence move a `ν`, and it is what the next unit removes. Until it is removed the
-   obligation stays open, and `no_barb_nu_of_fresh` is deleted rather than left standing, because a
-   statement whose hypothesis is unsatisfiable is true of nothing and this corpus does not keep those
-   for their names.
+   Case-analysing a derivation of `Step (νx.P) μ P'` closes the `nu` constructor immediately
+   (`hprov (SCong.refl x)`), and `cases` eliminates every other constructor as a head-shape
+   contradiction on its own — a `ν`-headed term is not an `out`, an `inp`, a `tau`-source or a `par`.
+   Exactly one case survives: `scong`, carrying `SCong (νx.P) Q` and `Step Q μ Q'`, a restriction
+   reached through a *congruent* term.
+
+   `SCong.nu_par` was removed for that reason — it was the one rule that let the congruence move a `ν`
+   — and removing it is necessary but **not sufficient**, which is the precise state of this
+   obligation. What `scong` asks for is the fact that a `ν`-headed term's congruence class is
+   `ν`-headed, with a binder `SCong`-equal to the original: then `Step.nu` applies to `Q` and its
+   proviso contradicts the barb. That is a congruence-class *shape* lemma, it is not in this tree, and
+   it is what the obligation is waiting on.
+
+   `no_barb_nu_of_fresh` is deleted rather than left standing, because a statement whose hypothesis is
+   unsatisfiable is true of nothing and this corpus does not keep those for their names.
 
    `barb_nu_subject_occurs` survives and is unaffected: a barb on `x` out of `νx.P` still produces a
    term congruent to `P` that mentions `x`, and that is the lemma naming what a barb through a
@@ -239,9 +246,11 @@ inductive Step : Proc → Label → Proc → Prop where
 
    It is deliberately *loose*, and the looseness is load-bearing. The `nu` and `rep` clauses drop
    their structure entirely, because `SCong` moves terms in and out of a restriction
-   (`nu_nil : νx.0 ≡ 0`, `nu_par : νx.(P | Q) ≡ P | νx.Q`) and a proviso tracking scope syntactically
-   does not survive that. What the looseness costs is precision on terms under a `ν`; what it buys is
-   `canStep_of_scong`, and with it every obligation in this file.
+   (`nu_nil : νx.0 ≡ 0`) and a proviso tracking scope syntactically does not survive that. What the
+   looseness costs is precision on terms under a `ν`; what it buys is `canStep_of_scong`, and with it
+   every obligation in this file. Extrusion used to be the second such equation and is no longer in
+   `SCong` at all — `Congruence.lean`'s module note has that account, and it makes this looseness the
+   more necessary rather than the less.
    ========================================================================== -/
 
 /-- `CanStep P μ`: `μ` is a label `P` can engage in, read off the term rather than off the transition
@@ -264,10 +273,11 @@ def CanStep : Proc → Label → Prop
     on, and it is provable *because* `CanStep` was defined structurally and then checked against the
     congruence — the opposite order to the one `Step` allows.
 
-    Sixteen cases, one per constructor. Three are worth naming. `par_nil` and `nu_nil` hold because
-    the atom clauses return `False`; `nu_par` needs nothing at all, because the `nu` clause ignores
-    its binder — the freshness proviso that constructor carries is what *extrusion* needs, not what
-    the label set needs, and this proof is where that distinction becomes visible. -/
+    Fifteen cases, one per constructor. Three are worth naming. `par_nil` and `nu_nil` hold because the
+    atom clauses return `False`; `nu_nu` needs nothing at all, because the `nu` clause ignores its
+    binder — the restriction rule's side condition is what the *rule* needs, not what the label set
+    needs, and this proof is where that distinction becomes visible. It was sixteen cases until the
+    extrusion constructor was deleted; see `Congruence.lean`'s module note for why. -/
 @[axiom_budget 0]
 theorem canStep_of_scong {P Q : Proc} (h : SCong P Q) (μ : Label) :
     CanStep P μ ↔ CanStep Q μ := by
@@ -282,7 +292,6 @@ theorem canStep_of_scong {P Q : Proc} (h : SCong P Q) (μ : Label) :
     exact ⟨fun h => h.elim id False.elim, Or.inl⟩
   | nu_nil _ => exact Iff.rfl
   | nu_nu _ _ _ => exact Iff.rfl
-  | nu_par _ => exact Iff.rfl
   | rep_unfold _ =>
     simp only [CanStep]
     exact ⟨Or.inl, fun h => h.elim id id⟩
@@ -394,7 +403,6 @@ theorem actionFree_of_scong {P Q : Proc} (h : SCong P Q) : ActionFree P ↔ Acti
   | par_nil _ => simp only [ActionFree]; exact ⟨fun h => h.1, fun h => ⟨h, trivial⟩⟩
   | nu_nil _ => simp only [ActionFree]
   | nu_nu _ _ _ => simp only [ActionFree]
-  | nu_par _ => simp only [ActionFree]
   | rep_unfold _ => simp only [ActionFree]; exact ⟨fun h => ⟨h, h⟩, fun h => h.1⟩
   | cong_bang _ ih => simp only [ActionFree]; exact ih
   | cong_out _ _ _ _ => simp only [ActionFree]
@@ -815,9 +823,10 @@ theorem barb_nu_subject_occurs {x P : Proc} (h : Barb (Proc.nu x P) x) :
    replacement needs a notion which does not count binders, and `barb_nu_subject_occurs` — which
    survives, and is above — yields `Occurs`, not a free occurrence.
 
-   What the obligation is waiting on, measured rather than guessed: `Step.scong` below can still reach
-   a restriction through a *congruent* term, and the only rule that lets the congruence move a `ν` is
-   `SCong.nu_par`. The full account is in this module's scope note. -/
+   What the obligation is waiting on, measured rather than guessed: `Step.scong` can still reach a
+   restriction through a *congruent* term, and closing that needs a congruence-class shape lemma —
+   that a `ν`-headed term relates only to `ν`-headed terms, with a `SCong`-equal binder. The full
+   account is in this module's scope note. -/
 
 /-! ==========================================================================
    Part 9 — §1.2's weak equation: what it says, what is true, and what is not

@@ -17,38 +17,44 @@ same call for the genesis stages (`Genesis/Ceremony.lean`: "relations, so that d
 theorem") and for the same reason: an equality-of-normal-forms definition would make every law below
 true by `rfl` and therefore unreadable.
 
-## The freshness proviso, and why it needs a second relation
+## Scope extrusion, and why it is not in this relation
 
-`nu_par` is scope extrusion — `νx.(P | Q)  ≡  P | νx.Q` — and it is only sound when `x` is not free in
-`P`. The proviso is a field of the constructor rather than a side condition bolted onto uses, so that
-**a reader of the relation cannot miss it**: every extrusion in the tree carries its freshness
-witness, and a proof that needs one has to produce it.
+`nu_par` was scope extrusion — `νx.(P | Q) ≡ P | νx.Q` — and it is only sound when `x` is not free in
+`P`. It is **deleted**, and the reason is worth more than the rule was.
 
-*Which* freshness notion is not a detail, and the syntactic one does not work. `Proc.lean`'s `Fresh` is
-`¬ Occurs x P` over the term as written, and this relation changes what a term mentions: `cong_bang`
-with `nu_nil` identifies `⌈νx.0⌉` and `⌈0⌉`, so the *channel* of `out ⌈νx.0⌉ b` can be read as `⌈0⌉` —
-a name that does not occur in that term at all. An extrusion asking only `Fresh x P` therefore lets
-`x` out through the back door, and `Semantics/LTS.lean` carries the witness. The two mechanisms are
+*Which* freshness notion the rule needs is not a detail, and the syntactic one does not work.
+`Proc.lean`'s `Fresh` is `¬ Occurs x P` over the term as written, and this relation changes what a term
+mentions: `cong_bang` with `nu_nil` identifies `⌈νx.0⌉` and `⌈0⌉`, so the *channel* of `out ⌈νx.0⌉ b`
+can be read as `⌈0⌉` — a name that does not occur in that term at all. An extrusion asking only
+`Fresh x P` therefore lets `x` out through the back door. The two mechanisms are
 `occurs_not_invariant_nu_nil` and `occurs_not_invariant_cong_bang` below, refuting
 `occurs_not_scong_invariant`.
 
-The notion the rule needs is the invariant one — "no term congruent to `P` mentions `x`" — and that is
-what `FreshUpToScong` below is. It cannot be defined in terms of `SCong`, because `SCong` is the
-relation whose constructor wants it: the definition would be circular, and no well-formedness trick
-removes that. A congruence-invariant *structural* occurrence predicate does not replace it either —
-its clauses for name position would have to compare terms up to the congruence, which is the same
-reference — and a mutual inductive fails because the freshness rules would need a negative occurrence
-of `SCong`. So this file carries two relations, and the first is not a modelling choice: it is what
-makes the second's proviso sayable.
+The repair was to ask for the invariant notion instead — "no term reachable from `P` mentions `x`" —
+and it cannot be defined from `SCong`, because `SCong` is the relation whose constructor wants it, and
+no well-formedness trick removes that circularity. So the file carried two relations:
 
 * `SCong0` — the same equations with extrusion **unconditional**. A *reachability* closure and nothing
   else: never used to reason about processes, and deliberately unsound as a congruence.
 * `FreshUpToScong x P` — `P`, and everything reachable from it, never mentions `x`.
-* `SCong` — the relation the rest of the tree uses, with `FreshUpToScong` as extrusion's proviso.
+* `SCong` — the relation the rest of the tree uses.
 
-`scong0_of_scong` embeds the second into the first, which is what every argument reaching a term by
-`SCong` needs; `fresh_of_freshUpToScong` records that the new notion is strictly stronger than
-`Proc.lean`'s syntactic one.
+**That repair made the rule dead, and `not_freshUpToScong` is the proof.** Quantifying over the
+*unconditional* relation is what breaks it: `SCong0` can put a binder of any name anywhere, so
+`SCong0 P (P | νx.0)` holds for every `P` and every `x`, and `Occurs` counts a binder as an occurrence.
+The condition was never expensive to discharge, it was empty — so extrusion could not be applied at
+all, and for four commits it read as an available rule while being unusable.
+
+**Extrusion is therefore not in `SCong`, and the equation lives on in `SCong0.nu_par`** —
+unconditionally, as the reachability rule it always was. What would bring it back is the proviso the
+*body* side genuinely needs: a freshness notion that does not count binders, which is what a binding
+convention supplies and what `Proc.lean` deliberately does not invent. `Semantics/LTS.lean`'s
+restriction rule does not wait on it, because its condition is on the **label** rather than the body —
+and the difference between the two sides is the finding this section records.
+
+`scong0_of_scong` embeds `SCong` into the reachability relation. It is what a reader needs in order to
+see that `FreshUpToScong` quantifies over strictly more than `SCong` reaches, which is the whole reason
+the condition came out empty rather than strong.
 -/
 
 import DarkFi.Semantics.Proc
@@ -111,8 +117,8 @@ inductive SCong0 : Proc → Proc → Prop where
 /-- `FreshUpToScong x P`: nothing reachable from `P` by rearrangement mentions `x`.
 
     **No `x` and no `P` satisfy this**, and `not_freshUpToScong` below is the proof. It is not a
-    condition that is expensive to discharge; it is one that is false, so the two rules carrying it —
-    `SCong.nu_par` and `Semantics/LTS.lean`'s `Step.nu` — are rules that cannot fire.
+    condition that is expensive to discharge; it is one that is false — and it is why `SCong`'s
+    extrusion rule and `Semantics/LTS.lean`'s `Step.nu` could not fire as they were written.
 
     What went wrong is worth keeping beside it, because the shape recurs. The proviso quantifies over
     `SCong0`, the *unconditional* reachability relation, and that relation can put a binder of any name
@@ -123,11 +129,16 @@ inductive SCong0 : Proc → Proc → Prop where
     The note that stood here called this "the strongest condition expressible without a binding
     convention" and said it was "not cheap to discharge". Both were wrong in the same direction: a
     condition no term satisfies is not the strongest of anything, it is empty, and the missing
-    instances were not a cost. What survives from the diagnosis is that the *body* side of the two
+    instances were not a cost. What survives from the diagnosis is that the *body* side of the
     provisos needs a notion which does not count binders — a free-occurrence reading — and that is
-    where the binding convention stays owed. What does not survive is that `Step.nu` needs it at all:
+    where the binding convention stays owed. What does not survive is that `Step.nu` needed it at all:
     its condition is about the *label*, `¬ SCong x (Label.subject μ)`, which is satisfiable and is what
-    the two refuted witnesses were describing. -/
+    the two refuted witnesses were describing.
+
+    The definition stays, with its refutation beside it, while the extrusion rule that used it does
+    not — and the difference is not sentiment. A definition with a theorem saying it is false records a
+    mistake. A *rule* whose hypothesis can never hold records one while still reading as an available
+    rule, which is what it did for four commits. -/
 def FreshUpToScong (x P : Proc) : Prop := ∀ Q : Proc, SCong0 P Q → ¬ Occurs x Q
 
 /-! ==========================================================================
@@ -156,11 +167,14 @@ inductive SCong : Proc → Proc → Prop where
   | nu_nil (x : Proc) : SCong (nu x nil) nil
   /-- `νx.νy.P ≡ νy.νx.P` — two restrictions commute. -/
   | nu_nu (x y P : Proc) : SCong (nu x (nu y P)) (nu y (nu x P))
-  /-- **Scope extrusion**, `νx.(P | Q) ≡ P | νx.Q`, **with its freshness proviso**.
-
-      `FreshUpToScong`, not `Proc.lean`'s syntactic `Fresh`: the syntactic condition lets `x` out
-      through a term the congruence rewrites, and the module note above records where. -/
-  | nu_par {x P Q : Proc} (h : FreshUpToScong x P) : SCong (nu x (par P Q)) (par P (nu x Q))
+  -- **Scope extrusion stood here, and is deleted.** `νx.(P | Q) ≡ P | νx.Q` carried
+  -- `FreshUpToScong x P` as its proviso; `not_freshUpToScong` below proves that is false for every
+  -- argument, so the constructor could never be applied — and a rule that cannot fire reads as an
+  -- available rule and is not one. It is removed rather than repaired because the repair is the
+  -- *body-side* freshness notion, which is what a binding convention would supply and what this
+  -- layer does not have. `SCong0.nu_par` is where the equation still lives, unconditionally, as a
+  -- reachability rule the calculus deliberately does not reason with; and the LTS's restriction rule
+  -- no longer depended on this constructor, because its condition was moved onto the label.
   /-- `!P ≡ P | !P` — replication is its own unfolding. This is the equation that makes the
       nullifier marker set a *replication* in §0's reading: consuming a name does not exhaust it,
       the supply of fresh names is infinite. -/
@@ -195,11 +209,13 @@ inductive SCong : Proc → Proc → Prop where
 /-- **`SCong` embeds in `SCong0`**: everything the sound relation relates, the unconditional one
     relates too.
 
-    This is what makes the stronger proviso usable. An argument that reaches a term `Q` by `SCong` —
-    `barb_nu_subject_occurs` in `Semantics/LTS.lean` is the one that matters — needs `Q` inside the
-    reachability closure before `FreshUpToScong` can say anything about it, and this is that step.
-    A 16-case induction; the `nu_par` case is the easy one, because `SCong0`'s extrusion has no
-    proviso to discharge. -/
+    Retained after the extrusion rule's deletion even though nothing consumes it now: it is the
+    statement that this file's two relations are *ordered*, and a reader who meets `SCong0` and
+    `FreshUpToScong` below needs to know that the second quantifies over strictly more terms than
+    `SCong` reaches. That is precisely why the condition it carries turned out to be empty rather than
+    strong — see `not_freshUpToScong`.
+
+    A 15-case induction, which was sixteen until the extrusion rule left. -/
 @[axiom_budget 0]
 theorem scong0_of_scong {P Q : Proc} (h : SCong P Q) : SCong0 P Q := by
   induction h with
@@ -211,7 +227,6 @@ theorem scong0_of_scong {P Q : Proc} (h : SCong P Q) : SCong0 P Q := by
   | par_nil P => exact SCong0.par_nil P
   | nu_nil x => exact SCong0.nu_nil x
   | nu_nu x y P => exact SCong0.nu_nu x y P
-  | nu_par _ => exact SCong0.nu_par
   | rep_unfold P => exact SCong0.rep_unfold P
   | cong_bang _ ih => exact SCong0.cong_bang ih
   | cong_out _ _ ih1 ih2 => exact SCong0.cong_out ih1 ih2
@@ -220,27 +235,25 @@ theorem scong0_of_scong {P Q : Proc} (h : SCong P Q) : SCong0 P Q := by
   | cong_rep _ ih => exact SCong0.cong_rep ih
   | cong_par _ _ ih1 ih2 => exact SCong0.cong_par ih1 ih2
 
-/-- **`FreshUpToScong` is strictly stronger than `Fresh`.** The direction a reader needs to connect
-    the rules' proviso to `Proc.lean`'s definition: whatever satisfies the invariant notion satisfies
-    the syntactic one, by instantiating its quantifier at `P` itself. The converse is false, and the
-    witness is the one `Semantics/LTS.lean`'s record carries. -/
-@[axiom_budget 0]
-theorem fresh_of_freshUpToScong {x P : Proc} (h : FreshUpToScong x P) : Fresh x P :=
-  h P (SCong0.refl P)
+-- **`fresh_of_freshUpToScong` stood here and is deleted.** It said the invariant notion implies
+-- `Proc.lean`'s syntactic `Fresh`, by instantiating the quantifier at `P`. It is a true implication
+-- between two definitions and it is **vacuous**, because the hypothesis is unsatisfiable
+-- (`not_freshUpToScong`, below) — so it is a statement true of nothing, and this corpus deletes those
+-- rather than keeping them for their names. What it recorded — that the two notions are ordered, and
+-- the invariant one is the stronger — is in `FreshUpToScong`'s docstring.
 
 /-- **`FreshUpToScong` is unsatisfiable.** For every `x` and every `P` there is a term reachable from
     `P` that mentions `x`: `P | νx.0`, which `cong_par` with `nu_nil` and `par_nil` puts in `SCong0`'s
     reach of `P`, and in which `Occurs` counts the binder.
 
     Stated at arbitrary `x` and `P` rather than as the refutation of a `∀`, because that is the form a
-    caller needs: to show that a rule premised on this can never fire, one instantiates it. It is the
-    reason `SCong.nu_par` — scope extrusion — and the restriction rule `Step.nu` are dead as written,
-    and the reason `no_barb_nu_of_fresh`, the theorem that closed this layer's obligation 2, is true of
-    nothing: its hypothesis is what this refutes.
+    caller needs: to show that a rule premised on this can never fire, one instantiates it. It is why
+    `SCong.nu_par` and the restriction rule `Step.nu` could not fire as written, and why
+    `no_barb_nu_of_fresh` — the theorem that stated this layer's obligation 2 — was true of nothing.
 
-    Its companion `fresh_of_freshUpToScong` is not contradicted — that theorem says the invariant
-    notion implies the syntactic one, and it does, vacuously. The pair is the whole content of the
-    notion: it implies `Fresh`, and it is false. -/
+    This is the notion's whole remaining content, and it is why the notion is kept while the rule that
+    carried it is not: a definition with a refutation beside it records a mistake, whereas a *rule*
+    with an unsatisfiable hypothesis records one while still reading as available. -/
 @[axiom_budget 0]
 theorem not_freshUpToScong (x P : Proc) : ¬ FreshUpToScong x P := by
   intro h
@@ -305,14 +318,9 @@ theorem scong_nil_par (P : Proc) : SCong (par nil P) P :=
 theorem scong_par_assoc' (P Q R : Proc) : SCong (par P (par Q R)) (par (par P Q) R) :=
   SCong.symm (SCong.par_assoc P Q R)
 
-/-- Extrusion in the other direction: `P | νx.Q ≡ νx.(P | Q)` when nothing reachable from `P`
-    mentions `x`. Recorded separately rather than left as an application of `symm` because it is the
-    direction the LTS's restriction rule needs, and a reader should be able to find the rule's
-    shape. -/
-@[axiom_budget 0]
-theorem scong_par_nu {x P Q : Proc} (h : FreshUpToScong x P) :
-    SCong (par P (nu x Q)) (nu x (par P Q)) :=
-  SCong.symm (SCong.nu_par h)
+-- **`scong_par_nu` stood here and is deleted with the rule it mirrored.** It was extrusion in the
+-- other direction, `P | νx.Q ≡ νx.(P | Q)`, and it was an application of `symm` to `SCong.nu_par` —
+-- which no longer exists. The LTS's restriction rule does not need it: its condition is on the label.
 
 /-- Replication unfolding in the other direction: `P | !P ≡ !P`. -/
 @[axiom_budget 0]

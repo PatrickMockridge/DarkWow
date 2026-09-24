@@ -206,11 +206,13 @@ def Occurs (x : Proc) : Proc → Prop
 
 /-- `Fresh x P`: `x` does not occur in `P` at all.
 
-    The *syntactic* freshness, and **not** the side condition of the restriction rule or of scope
-    extrusion — those carry `Congruence.lean`'s `FreshUpToScong`, which quantifies over every term
-    the congruence can reach, because this one does not survive the congruence (see `Occurs` above).
-    `fresh_of_freshUpToScong` is the direction that relates them: the invariant notion implies this
-    one, strictly. -/
+    The *syntactic* freshness, and **not** a side condition of any rule. This one does not survive the
+    congruence — `cong_bang` with `nu_nil` identifies `⌈νx.0⌉` with `⌈0⌉`, so a term whose channel is
+    written `⌈0⌉` mentions `⌈0⌉` however its own syntax reads (see `Occurs` above) — and whether an
+    *occurrence* condition of any kind could serve as one is answered in the negative by
+    `Congruence.lean`'s `FreshUpToScong` and `not_freshUpToScong`: quantifying over the congruence
+    makes such a condition unsatisfiable rather than invariant, because a binder of any name can always
+    be reached. What a rule can use instead depends on which side of the rule it is on. -/
 def Fresh (x P : Proc) : Prop := ¬ Occurs x P
 
 /-- A process is `fresh`-determined: `Fresh x P` is decidable in the sense that matters for the
