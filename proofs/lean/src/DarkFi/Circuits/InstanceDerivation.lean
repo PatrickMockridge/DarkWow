@@ -58,6 +58,21 @@ So "no free instance" is not vacuous, and the failure it names is the prover's d
 A worked circuit closes the property by `decide` and its negative control fails it, so the worked instance
 exercises both verdicts rather than only the positive one.
 
+## The module carries a *second* predicate, and it is weaker by a measured amount
+
+`NoFreeInstance` is a **strict** reading of the tree and the tree does not meet it: of the 178 transcribed
+circuits, 167 expose at least one value it refuses, and `Transcribed.lean`'s own header decomposes those
+167 exactly — **154** are one class the checker admits and the strict rule does not (`redundant`), **12**
+are `declared-free`, and **1** is the constant boundary below. So the module carries `DisclosureRule`,
+which is the strict property plus the checker's third classification, and the difference between the two
+is a **recorded strength change** rather than a refinement nobody asked for.
+
+It is the predicate the twelve `(r, s)` pairs `Capability/*.lean` instantiates actually need, and that is
+a measurement rather than a hope: every one of those twelve circuits' failures is a `redundant` one, and
+**none of the twelve has a `declared-free` site at all** — so their proofs rest on the structural rule
+with no exception list behind them. A reader comparing this to the usual shape of a weakened predicate
+should notice that direction: nothing here can be discharged by declaring it so.
+
 ## What this does not model, stated rather than implied
 
 * **The bridge to `(r, s)`.** This module defines the property **over a circuit's statement list**.
@@ -75,6 +90,12 @@ exercises both verdicts rather than only the positive one.
   and it is why nothing here rests on the zkas VM's dispatch.
 * **`rangeCheck`.** Modelled as binding and determining nothing, which is what the checker does with it.
   Its own semantics is `Comparison.lean`'s subject.
+* **Three of the checker's classifications are outside `DisclosureRule`, and each is counted rather than
+  assumed**: `declared-free` (12 circuits — deliberately *not* a parameter, see the rule's section); a
+  `constrain_equal_base` whose determining side is a declared `constant` (1 circuit, `bearer_bond/redeem`,
+  because this model's `held` is one list holding constants and witnesses together); and an exposed
+  `constant` (0 circuits — the transcription records that direction as untested). So the second predicate
+  is exactly the checker's rule on the twelve pairs and narrower than it elsewhere, in the safe direction.
 * **Nothing here is a claim about the Rust or the `.zk` files.** The worked circuit is an instance *of the
   model*; that it is a faithful transcription of any particular file is exactly the residual above. -/
 
@@ -532,6 +553,175 @@ theorem worked_circuit_has_no_free_instance : NoFreeInstance ["a", "b"] workedCi
 theorem worked_circuit_without_the_binding_fails :
     ¬ NoFreeInstance ["a", "b"] workedCircuitUnbound := by
   unfold NoFreeInstance
+  decide
+
+/-! ===== The rule the tree enforces: the checker's third classification =====
+
+`NoFreeInstance` above is the **strict** reading, and the tree does not meet it: of the 178 transcribed
+circuits, 167 expose at least one value the strict rule refuses. That is not a defect report — the
+transcription's own header decomposes the 167 exactly, and **154** of them are one class the checker
+admits and the strict rule does not. The checker's third classification
+(`script/circuit_instance_derivation.py`):
+
+> **redundant** — `X` is a witness that already appears inside some *other* exposed expression which is
+> itself derived. Exposing a witness the prover was going to choose anyway grants no additional freedom:
+> the prover's degree of freedom in `X` is the same before and after the expose.
+
+`disclosureRule` below is that admission added to the strict one, and it is what the twelve `(r, s)` pairs
+`Capability/*.lean` instantiates need — measured: every one of those twelve circuits' failures is a
+`redundant` one, and none of the twelve has a `declared-free` site at all, so their proofs rest on this
+structural rule with **no** external exception list behind them.
+
+**Order is not part of the rule, and that is the checker's choice rather than this model's.** Its
+`classify` holds raw-witness exposures back and resolves them against *every* determination the circuit
+ever exposes, before or after, because "classification 3 is a property of the exposure set as a whole".
+`isDisclosed` below is written the same way, and the pending exposure itself cannot discharge itself
+because it is the conjunct `p.2` that fails for it.
+
+**The resolution is transitive, and that is why there is a support function at all.** An exposure of
+`tx_binding` records the *name*; the witness it pins is inside the expression that name was assigned. So
+support follows `lhs -> rhs` like the checker's `support`, and it is computed by iterating a single
+expansion step over a frontier rather than by recursion through the assignment graph — the same rule, with
+the iteration bound (`assigns.length + 1`, the longest chain a circuit with no repeated left-hand side can
+have) standing in for the checker's fixed `resolve` depth of 16. Running out of iterations yields a
+*smaller* support, so a `redundant` admission can be missed but none is granted falsely. This is also why
+the walk is untouched: `boundWalk` does not record *by what* a name was determined, and extending it would
+change the module the transcription's 178 `decide` verdicts are computed from.
+
+**The three classes this does not model, each counted rather than assumed.**
+
+* **`declared-free`** (12 circuits) needs `script/circuit_free_instances.txt`, a reviewed host-side
+  justification per entry. It is deliberately *not* a parameter here: none of the twelve pairs needs it,
+  and a predicate taking an arbitrary free list would be exactly the "grows the exception" act that file's
+  own header warns is worse than a red gate.
+* **A determination whose determining side is a declared `constant`** — the checker's `bound`
+  classification accepts one; the model's `determinedB` does not, because its `held` is one list holding
+  constants and witnesses together. That costs 1 circuit (`bearer_bond/redeem`), not among the twelve.
+* **An exposed `constant`** — the checker accepts one by declaration, the model refuses it, and the
+  transcription records the direction as untested because no circuit in this tree does it.
+
+**What the admission does not say, stated here rather than left to inference.** `redundant` buys that the
+exposure adds no freedom — *not* that the witness is safe. The witness stays prover-chosen, and whether
+that matters depends on what the entrypoint does with the sibling it is disclosed beside, which is a
+property of the Rust and not of the statement list. That obligation is `OBL-Z1`'s, and nothing in this
+module discharges it. -/
+
+/- A `mutual` block for `derivedB`'s reason: the list case has to recurse structurally, and written with
+   a higher-order `bind` the structural checker cannot see the descent. -/
+mutual
+  /-- The names an expression mentions. `Name` is `String`, so this is the checker's identifier scan
+      without its regex. -/
+  def namesOf : Expr → List Name
+    | .lit _ => []
+    | .var n => [n]
+    | .op _ args => namesOfList args
+
+  /-- The names an argument list mentions, in order. -/
+  def namesOfList : List Expr → List Name
+    | [] => []
+    | a :: rest => namesOf a ++ namesOfList rest
+end
+
+/-- The circuit's `lhs -> rhs` assignment map, in source order — the checker's `assign` dict. A name
+    assigned twice keeps both entries and `find?` takes the first; a `.zk` circuit does not repeat a
+    left-hand side, so first-wins and the dict's last-wins are not distinguishable here. -/
+def assignsOf : List Stmt → List (Name × Expr)
+  | [] => []
+  | .assign n e :: rest => (n, e) :: assignsOf rest
+  | _ :: rest => assignsOf rest
+
+/-- **One hop of the assignment chain over a frontier of names** — the frontier, plus the names each of
+    its members is assigned. Deduplicated, so a cyclic assignment map grows the frontier no further than
+    the number of distinct names. -/
+def expand (assigns : List (Name × Expr)) (frontier : List Name) : List Name :=
+  (frontier ++ frontier.bind (fun n =>
+    match assigns.find? (fun p => p.1 == n) with
+    | some p => namesOf p.2
+    | none => [])).dedup
+
+/-- **Every name reachable from `n` by the assignment chain, `n` included** — the checker's `support`.
+    Iterated `assigns.length + 1` times: one hop per member of the longest chain a circuit with no
+    repeated left-hand side can have, plus the initial frontier. -/
+def supportOf (assigns : List (Name × Expr)) (n : Name) : List Name :=
+  (List.range (assigns.length + 1)).foldl (fun fr _ => expand assigns fr) [n]
+
+/-- **The resolved support of an expression**: every name reachable from its leaves by the chain. For a
+    bare name this is `supportOf` itself, which is the case that matters — a determined exposure recorded
+    as a name still pins the witnesses inside the expression that name was assigned. -/
+def supportExpr (assigns : List (Name × Expr)) (e : Expr) : List Name :=
+  ((namesOf e).bind (supportOf assigns)).dedup
+
+/-- **The checker's `redundant` class, as a computation**: `n` occurs in the resolved support of an
+    exposure the walk recorded as *determined*. Order-free, like the checker's classification 3. -/
+def isDisclosed (held : List Name) (cs : List Stmt) (n : Name) : Bool :=
+  let assigns := assignsOf cs
+  (exposures held cs).any (fun p => p.2 && (supportExpr assigns p.1).contains n)
+
+/-- **The rule the tree enforces**: every exposure is determined, or is a bare name disclosed inside some
+    other exposure that is. The strict property plus the checker's third classification. -/
+def disclosureRule (held : List Name) (cs : List Stmt) : Bool :=
+  (exposures held cs).all (fun p =>
+    p.2 || (match varOf p.1 with
+            | some n => isDisclosed held cs n
+            | none => false))
+
+/-- The rule above, as a proposition. -/
+def DisclosureRule (held : List Name) (cs : List Stmt) : Prop := disclosureRule held cs = true
+
+/-- **The tree's rule is weaker than the strict one, in the direction a discharge needs** — a circuit
+    satisfying the strict property satisfies the rule. So replacing one with the other loses nothing that
+    was proved and admits strictly more: the strength change, as a theorem rather than a claim. -/
+@[axiom_budget 0]
+theorem noFreeInstance_imp_disclosureRule (held : List Name) (cs : List Stmt) :
+    NoFreeInstance held cs → DisclosureRule held cs := by
+  intro h
+  unfold NoFreeInstance noFreeInstance DisclosureRule disclosureRule at *
+  rw [List.all_eq_true] at h ⊢
+  intro p hp
+  rw [Bool.or_eq_true]
+  exact Or.inl (h p hp)
+
+/-- **The canonical `redundant` shape** — the checker's own example: the binding is assigned from a
+    domain constant, a commitment and the nonce, the binding is exposed, then the nonce. Two exposures,
+    both bare names, and the second is discharged only by resolving the first through the assignment. -/
+def disclosedCircuit : List Stmt :=
+  [ .assign "tx_binding"
+      (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"])
+  , .constrainInstance (.var "tx_binding")
+  , .constrainInstance (.var "tx_nonce")
+  ]
+
+/-- **The strict rule refuses it** — `tx_nonce` is a bare witness at its exposure. -/
+@[axiom_budget 0]
+theorem disclosed_circuit_fails_the_strict_rule :
+    ¬ NoFreeInstance ["DOMAIN_TX_BINDING", "tx_commitment", "tx_nonce"] disclosedCircuit := by
+  unfold NoFreeInstance
+  decide
+
+/-- **And the tree's rule admits it**, which is the whole content of the difference: the nonce is inside
+    the binding, and the binding is determined. This is the direction the twelve pairs need, at a
+    concrete witness. -/
+@[axiom_budget 0]
+theorem disclosed_circuit_satisfies_the_disclosure_rule :
+    DisclosureRule ["DOMAIN_TX_BINDING", "tx_commitment", "tx_nonce"] disclosedCircuit := by
+  unfold DisclosureRule
+  decide
+
+/-- **The rule is still refutable, so it is not a predicate that passes everything.** `workedCircuitUnbound`
+    exposes `other`, a declared witness that appears in no determined exposure — neither the derivation nor
+    the binding nor the disclosure class reaches it, and it is not declared free either. -/
+@[axiom_budget 0]
+theorem worked_circuit_without_the_binding_fails_the_disclosure_rule :
+    ¬ DisclosureRule ["a", "b", "other"] workedCircuitUnbound := by
+  unfold DisclosureRule
+  decide
+
+/-- **And it is not a new failure on a circuit that already held**: the worked circuit satisfies the rule
+    as it satisfies the strict property, so the admission widens the predicate rather than replacing it. -/
+@[axiom_budget 0]
+theorem worked_circuit_satisfies_the_disclosure_rule :
+    DisclosureRule ["a", "b"] workedCircuit := by
+  unfold DisclosureRule
   decide
 
 end Circuits.InstanceDerivation
