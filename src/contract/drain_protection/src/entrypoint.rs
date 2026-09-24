@@ -561,10 +561,14 @@ fn propose_process_instruction_v1(
 
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
 
-    // Verify fund exists and multisig group is configured
-    let fund_data = wasm::db::db_get(funds_db, &params.multisig_group_id.to_repr())?
+    // Verify the fund the proposal belongs to exists. `OBL-C98`: this looked the funds tree up by
+    // `params.multisig_group_id` — a field whose name says multisig and whose key is the funds tree,
+    // so a caller had to pass a fund id in the multisig slot for a proposal to be recorded at all.
+    let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::NotInitialized)?;
     let fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
+    // OBL-C97: the proposal is the authority's act, and this is where that is checked.
+    require_fund_authority(&fund, params.authority_pub_x, params.authority_pub_y)?;
 
     if fund.lock_state == crate::model::LockState::Locked {
         if (wasm::util::get_verifying_block_height()?.get()) < fund.lock_expires_at {
@@ -587,7 +591,17 @@ fn vote_process_instruction_v1(
     msg!("[VoteV1] Casting vote on proposal");
 
     let _proposals_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE)?;
+    let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
     let votes_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_VOTES_TREE)?;
+
+    // OBL-C98: the vote names the fund its proposal belongs to, so a vote is recorded only against
+    // a fund that exists. The arm does **not** compare the caller's `authority_pub` against the
+    // fund's registered authority, and that is deliberate rather than an omission: the authority is
+    // the fund's operator, while a vote is a *member's* act. Which members may vote, and against
+    // what threshold, is the governance model `OBL-C101` records as unimplemented.
+    let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
+        .ok_or(DrainProtectionError::NotInitialized)?;
+    let _fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
 
     // MultiSig composition: voting is MultiSig::SignV1.
     // Each signer proves membership; the MultiSig group tracks partial signatures.
@@ -615,15 +629,22 @@ fn execute_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[ExecuteV1] Executing proposal");
 
-    let _proposals_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE)?;
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
 
     // MultiSig composition: execute validates fund's multisig_group_id is configured.
     // The MultiSig::FinalizeV1 child call produces an approval_commit verified in
     // the process_instruction layer (has access to calls/self_).
-    let fund_data = wasm::db::db_get(funds_db, &params.proposal_id.to_repr())?
+    //
+    // OBL-C98: this looked the funds tree up by `params.proposal_id` — a proposal id used as a fund
+    // key, which nothing writes — so `ExecuteV1` could not succeed for any call. The call names the
+    // fund, and the fund is what is looked up. (The proposals tree was also looked up here into an
+    // unused binding and is still written by nothing, which `OBL-C101` records: a proposal exists
+    // only as the id `propose` derives.)
+    let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::NotInitialized)?;
     let fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
+    // OBL-C97: executing a proposal is the authority's act.
+    require_fund_authority(&fund, params.authority_pub_x, params.authority_pub_y)?;
 
     if fund.multisig_group_id == pallas::Base::zero() {
         return Err(DrainProtectionError::Unauthorized.into());

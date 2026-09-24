@@ -199,6 +199,10 @@ impl DrainProtectionHarness {
     /// A secret that is not the fund's authority, for the negative control.
     const STRANGER_SECRET: pallas::Base = pallas::Base::from_raw([4321, 0, 0, 0]);
 
+    /// The multisig group `update_config` gives the fund, because `execute` requires one and
+    /// `initialize` stores zero. A placeholder group id, since nothing joins it yet (`OBL-C101`).
+    const MULTISIG_GROUP_ID: pallas::Base = pallas::Base::from_raw([9, 0, 0, 0]);
+
     /// The authority call data for an endpoint: the secret above, the one fund, and the zero
     /// transaction pair the fixtures bind.
     fn authority(&self) -> AuthorityCallData {
@@ -250,6 +254,7 @@ impl DrainProtectionHarness {
             prover_pubkey: authority.authority_pub(),
             vote_period_blocks: 1000,
             proof: vec![],
+            fund_id: Self::FUND_ID,
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
@@ -270,6 +275,7 @@ impl DrainProtectionHarness {
             voter_pubkey: authority.authority_pub(),
             vote: true,
             signature: pallas::Base::zero(),
+            fund_id: Self::FUND_ID,
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
@@ -288,6 +294,7 @@ impl DrainProtectionHarness {
         let params = ExecuteParamsV1 {
             proposal_id: self.proposal_id(),
             signature: pallas::Base::zero(),
+            fund_id: Self::FUND_ID,
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
@@ -399,7 +406,11 @@ impl DrainProtectionHarness {
         let params = UpdateConfigParamsV1 {
             fund_id: Self::FUND_ID,
             rate_limit: None,
-            multisig_group_id: None,
+            // `execute_process_instruction_v1` requires the fund to have a multisig group
+            // (`entrypoint.rs:632`), and `initialize` stores zero — this endpoint is the only path
+            // that sets one (`:836`), so the fixture uses it, which is why the flow needs this call
+            // before `execute` rather than merely tolerating it.
+            multisig_group_id: Some(Self::MULTISIG_GROUP_ID),
             new_spend_authority: None,
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,

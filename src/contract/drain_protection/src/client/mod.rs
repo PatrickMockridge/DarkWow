@@ -219,6 +219,8 @@ pub struct ProposeBuilder {
     /// is a placeholder like the rest of this builder — a real call sets it with `authority`, and
     /// `create_authority_proof` is what builds the proof these fields have to match.
     authority: AuthorityCallData,
+    /// The fund the proposal belongs to (`OBL-C98`). Zero by default; a real call sets it.
+    fund_id: FundId,
 }
 
 impl ProposeBuilder {
@@ -235,7 +237,14 @@ impl ProposeBuilder {
             vote_period_blocks: 1000,
             proof: vec![],
             authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()),
+            fund_id: pallas::Base::zero(),
         }
+    }
+
+    /// The fund the proposal belongs to (`OBL-C98`).
+    pub fn fund_id(mut self, id: FundId) -> Self {
+        self.fund_id = id;
+        self
     }
 
     /// The authority inputs the proof is made with (`OBL-C78`).
@@ -282,6 +291,7 @@ impl ProposeBuilder {
             authority_nullifier: pi.authority_nullifier,
             tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
+            fund_id: self.fund_id,
         })
     }
 }
@@ -296,6 +306,8 @@ pub struct VoteBuilder {
     signature: pallas::Base,
     /// The authority inputs `vote.zk` instances (`OBL-C78`); zero by default.
     authority: AuthorityCallData,
+    /// The fund the vote's proposal belongs to (`OBL-C98`). Zero by default.
+    fund_id: FundId,
 }
 
 impl VoteBuilder {
@@ -311,7 +323,14 @@ impl VoteBuilder {
             vote: true,
             signature: pallas::Base::zero(),
             authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()),
+            fund_id: pallas::Base::zero(),
         }
+    }
+
+    /// The fund the vote's proposal belongs to (`OBL-C98`).
+    pub fn fund_id(mut self, id: FundId) -> Self {
+        self.fund_id = id;
+        self
     }
 
     pub fn proposal_id(mut self, id: pallas::Base) -> Self {
@@ -362,6 +381,7 @@ impl VoteBuilder {
             authority_nullifier: pi.authority_nullifier,
             tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
+            fund_id: self.fund_id,
         })
     }
 }

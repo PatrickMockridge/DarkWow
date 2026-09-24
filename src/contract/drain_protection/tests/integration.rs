@@ -25,11 +25,11 @@
 
 use dwow_drain_protection_contract::{
     model::{
-        DrainConfig, ExitParamsV1, ExitQueueEntry, ExitRequest, ExitUpdateV1, InitializeParamsV1,
-        LockParamsV1,
-        LockState, LockUpdateV1, MemberWeight, ObservationPending, ProposeParamsV1, ProposeUpdateV1,
-        ProtectedFund, RateLimit, TransferParamsV1, TransferRecord, TransferUpdateV1, UnlockParamsV1,
-        UnlockUpdateV1, UpdateConfigParamsV1, UpdateConfigUpdateV1, VoteParamsV1, VoteUpdateV1,
+        DrainConfig, ExecuteParamsV1, ExitParamsV1, ExitQueueEntry, ExitRequest, ExitUpdateV1,
+        InitializeParamsV1, LockParamsV1, LockState, LockUpdateV1, MemberWeight, ObservationPending,
+        ProposeParamsV1, ProposeUpdateV1, ProtectedFund, RateLimit, TransferParamsV1, TransferRecord,
+        TransferUpdateV1, UnlockParamsV1, UnlockUpdateV1, UpdateConfigParamsV1, UpdateConfigUpdateV1,
+        VoteParamsV1, VoteUpdateV1,
     },
     DrainProtectionFunction,
     // Constants
@@ -282,6 +282,50 @@ fn test_exit_params_proof_length_is_not_a_byte() {
     assert_eq!(decoded.tx_nonce, pallas::Base::from(46));
 }
 
+/// `VoteParamsV1` and `ExecuteParamsV1` gained the fund their proposal belongs to (`OBL-C98`) — the
+/// field that replaced a funds-tree lookup by `multisig_group_id` in one arm and by `proposal_id` in
+/// the other. Round-tripped here because the last time this contract gained fields (`OBL-C78`) the
+/// three encodings *without* a round-trip test were the three that decoded their tails wrongly.
+#[test]
+fn test_vote_and_execute_params_carry_the_fund() {
+    let vote = VoteParamsV1 {
+        proposal_id: pallas::Base::from(71),
+        voter_pubkey: make_pubkey(4),
+        vote: true,
+        signature: pallas::Base::from(72),
+        authority_pub_x: pallas::Base::from(73),
+        authority_pub_y: pallas::Base::from(74),
+        authority_nullifier: pallas::Base::from(75),
+        tx_binding: pallas::Base::from(76),
+        tx_nonce: pallas::Base::from(77),
+        fund_id: pallas::Base::from(78),
+    };
+    let decoded = VoteParamsV1::decode(&vote.encode()).unwrap();
+    assert_eq!(decoded.fund_id, vote.fund_id);
+    assert_eq!(decoded.proposal_id, vote.proposal_id);
+    assert_eq!(decoded.vote, vote.vote);
+
+    let execute = ExecuteParamsV1 {
+        proposal_id: pallas::Base::from(81),
+        signature: pallas::Base::from(82),
+        authority_pub_x: pallas::Base::from(83),
+        authority_pub_y: pallas::Base::from(84),
+        authority_nullifier: pallas::Base::from(85),
+        tx_binding: pallas::Base::from(86),
+        tx_nonce: pallas::Base::from(87),
+        fund_id: pallas::Base::from(88),
+    };
+    let decoded = ExecuteParamsV1::decode(&execute.encode()).unwrap();
+    assert_eq!(decoded.fund_id, execute.fund_id);
+    assert_eq!(decoded.tx_nonce, execute.tx_nonce);
+
+    // The fund is the *last* field, so a call that predates it is refused by the length check rather
+    // than read with the fund sliced out of whatever precedes it.
+    let mut short = execute.encode();
+    short.truncate(short.len() - 32);
+    assert!(ExecuteParamsV1::decode(&short).is_err());
+}
+
 /// `ProposeParamsV1` carries its proof last too, with the same `u8` prefix.
 #[test]
 fn test_propose_params_proof_length_is_not_a_byte() {
@@ -296,10 +340,11 @@ fn test_propose_params_proof_length_is_not_a_byte() {
         authority_nullifier: pallas::Base::from(63),
         tx_binding: pallas::Base::from(64),
         tx_nonce: pallas::Base::from(65),
+        fund_id: pallas::Base::from(66),
     };
 
     let encoded = params.encode().unwrap();
-    assert_eq!(encoded.len(), 268 + 700);
+    assert_eq!(encoded.len(), 300 + 700);
 
     let decoded = ProposeParamsV1::decode(&encoded).unwrap();
     assert_eq!(decoded.proof.len(), 700);
