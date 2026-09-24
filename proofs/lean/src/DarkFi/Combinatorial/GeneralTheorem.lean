@@ -7,15 +7,19 @@ import DarkFi.AxiomBudget
 /-!
 # General Theorem — Halo2 L1 Smart Contract Complexity Limits
 
-Lifts the specific Box/Purse combinatorial analysis to a universal theorem
-that classifies ANY Halo2-based L1 contract as safe / scrutiny / exceeds
-based on its structural parameters (k, P, W, O, D).
+Lifts the specific Box/Purse combinatorial analysis to a classifier for **any** Halo2-based L1
+contract by its structural parameters (k, P, W, O, D), and proves the classifier sound against the
+per-operation ceilings.
 
-The theorem proves that the L1 complexity ceiling is NOT empirical — it is
-a structural consequence of:
-  - Halo2 circuit architecture (k rows, advice/instance columns)
-  - Merkle tree structure (depth D, Sinsemilla MerkleCRH)
-  - Wallet scan economics (objects/sec × block interval)
+**What is proved here is the classifier, not the ceiling.** This header said until 2026-09-24 that
+"the theorem proves that the L1 complexity ceiling is NOT empirical — it is a structural consequence
+of: Halo2 circuit architecture; Merkle tree structure; wallet scan economics". The ceiling is not
+what this file establishes: `L1_CEILING_PUBLIC_INPUTS`, `L1_CEILING_WITNESS_VALUES` and
+`L1_CEILING_OPERATIONS` are constants computed in `Combinatorial/CeilingDerivation.lean`, whose own
+header says it "documents the derivation" from those three inputs. So the chain is: three stated
+inputs → a computed ceiling (documented, not proved) → a classifier whose agreement with that
+ceiling is **proved** here (`safe_l1_classification_sound`). The first arrow is where the modelling
+assumption lives, and saying so is the point of this paragraph.
 
 Parameter semantics:
   k = circuit size exponent (2^k usable rows)
@@ -128,8 +132,11 @@ def classifyL1Contract (c : Halo2L1Contract) : L1ComplexityClass :=
 /-! ==========================================================================
    Part 3: General Theorems
    ==========================================================================
-   Four theorems that form the complete statement of L1 contract complexity
-   limits for the Halo2 proof system.
+   **Two** theorems, not four. This header said "Four theorems that form the complete statement of L1
+   contract complexity limits" until 2026-09-24, while the two that are left below are `THEOREM 2`
+   and `THEOREM 4` — each of the other two having been deleted for a reason worth keeping, and each
+   record standing where its statement stood. A heading that counts theorems it does not have is the
+   same defect as a `def : Prop` nothing proves, one level up.
 -/
 
 /-

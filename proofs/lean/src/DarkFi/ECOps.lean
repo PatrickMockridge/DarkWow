@@ -296,16 +296,21 @@ For the Lean model: when x1 = x2, the slope formula
 must ensure this case is handled (either rejected or handled via
 a complete addition formula). We document this as a constraint
 that the Rust VM should enforce.
+
+**A theorem stood here until 2026-09-24 and did not say that.**
+`ec_add_inputs_must_be_distinct (g : ECAddGadget) (h : g.x1 = g.x2) : g.x2 - g.x1 = 0` is its own
+hypothesis rewritten — `rw [h]; simp` — and the claim it was named for ("the incomplete addition
+formula is undefined") is about a formula this module does not define. Deleted rather than
+restated: there is no well-formedness predicate on `ECAddGadget` here for it to be about, and the
+constraint is the VM's, as the paragraph above says.
+
+It passed the gate's tautology check, and that is worth recording: the check reads the *proof term*
+for a bare projection of a hypothesis and the *statement* for syntactically equal sides, and
+`rw`-then-`simp` is neither — so a false statement is reachable through a true one by a tactic
+rather than by a term. `Combinatorial/Transitions.lean`'s old `consumeCreatePreservesCount` was the
+same blind spot in the other direction, a `Nat` tautology whose sides were written differently.
 -/
-@[axiom_budget 0]
-theorem ec_add_inputs_must_be_distinct (g : ECAddGadget)
-  (h : g.x1 = g.x2) :
-  -- When x1 = x2, the denominator (x2 - x1) = 0.
-  -- The incomplete addition formula is undefined.
-  -- Circuit constraint must ensure inputs are distinct.
-  g.x2 - g.x1 = 0 := by
-  rw [h]
-  simp
+
 
 /-
 ## Orchard-Class Audit Helper

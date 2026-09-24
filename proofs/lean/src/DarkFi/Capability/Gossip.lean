@@ -1,13 +1,19 @@
 /-
-DarkWow Gossip — Structured P2P Dissemination Theorems
+DarkWow Gossip — Structured P2P Dissemination
 
-Formalizes the gossip protocols from type-system.md §10.2-§10.3.
-Proves that structured fan-out gossip (k = log₂(N)) reaches all
-honest nodes in O(log N) rounds, and that the event graph 2/3-majority
-tip consensus converges under honest-majority assumptions.
+Formalizes the network *shapes* of `type-system.md` §10.2-§10.3 as data: `Network`, flood relay and
+structured-gossip fan-out (`floodRelayTargets`, `fanOutTargets`), the consideration threshold, and
+the three process nets the barb tables are stated over — collections of `ConcurrentProcess` values
+communicating via broadcast channels.
 
-These theorems are proofs about process nets — collections of
-ConcurrentProcess values communicating via broadcast channels.
+**It proves nothing about them, and this header said otherwise until 2026-09-24.** It opened
+"Proves that structured fan-out gossip (k = log₂(N)) reaches all honest nodes in O(log N) rounds, and
+that the event graph 2/3-majority tip consensus converges under honest-majority assumptions." Both
+theorems existed and both concluded `True`; each is deleted with its statement quoted below, and the
+account of why is there rather than here. The `def`s are the part of this file that is real — they
+are what the type system uses — which is why the file survives the deletion of its theorems. The
+nearest thing to a proof of the convergence claims is the prose they were deferred to, and that is a
+statement about what is not modelled rather than a result.
 -/
 
 import DarkFi.Capability.Types
