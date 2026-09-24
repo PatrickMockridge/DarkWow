@@ -1226,11 +1226,16 @@ statement. `exec_perm` in `proofs/lean/src/DarkFi/Semantics/Ledger.lean` proves 
 every execution order of a list of pairwise-disjoint calls produces the same store,
 and `no_duplicate_of_pairwise_disjoint` is the obligation the two checks above share.
 The `≈` reading is not mechanized, because there is no `parallel_execute` to relate it
-to. One caveat belongs here rather than only in the Lean: the write set the schedule
-is built from is *presence*-sensitive — `execution.rs` snapshots
+to.
+
+One caveat belongs here rather than only in the Lean, and it is mechanized there as
+`presence_diff_is_not_sufficient`. The write set the schedule is built from is a
+delta of the overlay's *touched* keys — `execution.rs` snapshots
 `cache.keys() ∪ removed` before a call and subtracts it after — so a call that
 overwrites an already-present key with a different value records as touching nothing,
-and two such calls read as disjoint without commuting.
+and two such calls read as disjoint without commuting. The deltas alone are therefore
+not a sufficient safety condition: what `exec_perm` proves assumes a value-sensitive
+write set, which is the one `Semantics/Ledger.lean` models.
 
 ### 9.3 Block Production Concurrency
 

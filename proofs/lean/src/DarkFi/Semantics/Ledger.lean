@@ -58,14 +58,19 @@ says the algorithm is "conservative: if two calls share ANY sled key, they are s
 bisimulation safety condition from type-system.md §9.2". Mechanizing the partition would restate that
 property, not establish it.
 
-**The Rust's write set is presence-sensitive; this model's is value-sensitive.** `execution.rs`
+**The Rust's write set is a delta, not a set, and it misses the case that matters.** `execution.rs`
 snapshots `before := cache.keys() ∪ removed` and then computes
-`call_keys := (cache.keys() ∪ removed) \ before`. A key that was already present and is overwritten
-with a *different value* lands in neither set, so two calls overwriting the same live key record as
-disjoint — and they do not commute. This model's `Diff.dom` is the value-sensitive notion, and
-`diff_dom_of_apply_ne` is the bridge that makes writing a different value a write. The Rust's set is
-therefore too small to be the safety condition §9.2 calls it, which is consistent with its being
-consumed only by a log line.
+`call_keys := (cache.keys() ∪ removed) \ before` — the keys a call newly *touches*, where touched
+means "has a record in `cache` or in `removed`". A key that is already present and is overwritten
+with a *different value* is touched before and touched after, so it lands in neither set: two calls
+overwriting the same live key record as disjoint and do not commute.
+
+That is a theorem here and not a remark — Part 7's `presence_diff_is_not_sufficient`, with the
+witness written out so a reader can evaluate it: at a store where every key holds `[9]`, one call
+writes `[1]` and the other `[2]` to the same key, both recorded write sets are empty, and the two
+orders disagree at that key. It is the reason §9.2's safety argument should not lean on the schedule
+as built. This model's `Diff.dom` is the value-sensitive notion instead, and `diff_dom_of_apply_ne`
+is the bridge that makes writing a different value a write.
 
 **§9.2's cited witness is stale.** It names `src/linear/src/execution.rs:398-405`
 (`written_keys.insert(key)`) as the bisimulation witness. Those lines are `Runtime::new`'s failure
@@ -448,5 +453,104 @@ theorem exec_two_singles_swap {k₁ k₂ : Key} {v₁ v₂ : Bytes} (h : k₁ �
     exec [CallJob.single k₁ v₁, CallJob.single k₂ v₂] s
       = exec [CallJob.single k₂ v₂, CallJob.single k₁ v₁] s := by
   exact exec_pair_swap (singles_disjoint h) s
+
+/-! ==========================================================================
+   Part 7 — Why the Rust's write set is not the safety condition it is called
+   ========================================================================== -/
+
+/-- `Present s k`: the store holds a value at `k` — the Rust's `k ∈ cache.keys()`, as opposed to `k`
+    being in `removed` or never having been written at all.
+
+    `Store` cannot separate those last two; `none` is both. That conflation is `Present`'s whole
+    subject, and Part 7 says where it matters below. -/
+def Present (s : Store) (k : Key) : Prop := ∃ b : Bytes, s k = some b
+
+/-- `presenceDiff d s`: the keys whose *presence* in the store applying `d` changes. This is the
+    shape of the per-call write set `src/linear/src/execution.rs` computes — a delta taken over an
+    overlay-key set before the call and subtracted from the same set after it.
+
+    What the Rust deltas is its **touched** keys (`cache.keys() ∪ removed`), not its present ones, and
+    `Store` cannot tell those apart. The two notions agree on the witness
+    `presence_diff_is_not_sufficient` uses — the key there is present throughout, so it is touched
+    throughout too — which is why that refutation lands on the Rust's set as actually computed rather
+    than on a substitute for it. Where they differ in general is prose and is left as prose: a key
+    removed after being written is a change of presence and not a change of touch.
+
+    Written as an explicit disjunction rather than as `Present s k ≠ Present (d.apply s) k`, so that
+    the proof below stays inside `Prop` without appealing to `propext` for the negation. -/
+def presenceDiff (d : Diff) (s : Store) : Key → Prop :=
+  fun k => (Present s k ∧ ¬ Present (d.apply s) k) ∨ (¬ Present s k ∧ Present (d.apply s) k)
+
+/-- **A one-key diff's touched set contains its key.** The contrast the refutation below turns on: the
+    value-sensitive notion sees the write, and the presence-delta does not. -/
+@[axiom_budget 0]
+theorem diff_single_dom_self (k : Key) (v : Bytes) : (Diff.single k v).dom k := by
+  simp [Diff.dom, Diff.single]
+
+/-- **A write set computed as a presence delta is not a sufficient safety condition.**
+
+    The tempting statement is that disjointness of the deltas — which is what
+    `ExecutionSchedule::build` partitions waves by — makes two calls commute. It is false, and the
+    witness is the case the Rust's own `per_call_keys` cannot see: both calls write the *same*,
+    already-present key, so neither delta changes any key's presence, and the two are disjoint while
+    failing to commute.
+
+    Concretely, at `s` where every key holds `[9]`: `d₁` writes `[1]` to `k` and `d₂` writes `[2]` to
+    the same `k`. Both presence-diffs are empty, so `Disjoint` holds vacuously; and
+    `d₁.apply (d₂.apply s) k = some [1]` while `d₂.apply (d₁.apply s) k = some [2]`, which is the
+    whole failure — the two orders disagree, so no safety argument can be read off the deltas.
+
+    This is the theorem the module note's third divergence and `type-system.md` §9.2 point at. It is
+    a fact about the Rust as it is written, not about this model: the witness's key is present, hence
+    touched, hence in `before_keys` on both calls, so the Rust records both write sets as empty too.
+    `diff_single_dom_self` is the other half — the notion this module uses does catch it. -/
+@[axiom_budget 0]
+theorem presence_diff_is_not_sufficient :
+    ¬ (∀ (d₁ d₂ : Diff) (s : Store),
+        Disjoint (presenceDiff d₁ s) (presenceDiff d₂ s) →
+        d₁.apply (d₂.apply s) = d₂.apply (d₁.apply s)) := by
+  intro h
+  -- the witness is written out rather than bound with `let`: a local definition is opaque to `simp`,
+  -- so every step below would need an unfolding lemma named for it, and the point of a refutation is
+  -- that a reader can evaluate it.
+  have hd₁ : ∀ k' : Key, ¬ presenceDiff (Diff.single [0] [1]) (fun _ => some [9]) k' := by
+    intro k' hpd
+    simp only [presenceDiff] at hpd
+    rcases hpd with ⟨_, hn⟩ | ⟨hn, _⟩
+    · exact hn (by
+        by_cases hk : k' = [0]
+        · subst hk
+          exact ⟨[1], diff_single_apply_self [0] [1] (fun _ => some [9])⟩
+        · exact ⟨[9], by simp [Diff.apply, Diff.single, hk]⟩)
+    · exact hn ⟨[9], rfl⟩
+  have hd₂ : ∀ k' : Key, ¬ presenceDiff (Diff.single [0] [2]) (fun _ => some [9]) k' := by
+    intro k' hpd
+    simp only [presenceDiff] at hpd
+    rcases hpd with ⟨_, hn⟩ | ⟨hn, _⟩
+    · exact hn (by
+        by_cases hk : k' = [0]
+        · subst hk
+          exact ⟨[2], diff_single_apply_self [0] [2] (fun _ => some [9])⟩
+        · exact ⟨[9], by simp [Diff.apply, Diff.single, hk]⟩)
+    · exact hn ⟨[9], rfl⟩
+  -- Both calls' recorded write sets are empty. Only the first is needed for `Disjoint`, which is
+  -- vacuous when either side is empty — but the finding is that *both* are, which is what makes the
+  -- schedule's test pass rather than merely be inapplicable, so both are proved and bound.
+  have hempty : (∀ k' : Key, ¬ presenceDiff (Diff.single [0] [1]) (fun _ => some [9]) k')
+      ∧ (∀ k' : Key, ¬ presenceDiff (Diff.single [0] [2]) (fun _ => some [9]) k') := ⟨hd₁, hd₂⟩
+  have hdisj : Disjoint (presenceDiff (Diff.single [0] [1]) (fun _ => some [9]))
+      (presenceDiff (Diff.single [0] [2]) (fun _ => some [9])) := by
+    intro k' h₁ _
+    exact hempty.1 k' h₁
+  have heq := h (Diff.single [0] [1]) (Diff.single [0] [2]) (fun _ => some [9]) hdisj
+  have h₁ : (Diff.single [0] [1]).apply ((Diff.single [0] [2]).apply (fun _ => some [9])) [0]
+      = some ([1] : Bytes) :=
+    diff_single_apply_self [0] [1] _
+  have h₂ : (Diff.single [0] [2]).apply ((Diff.single [0] [1]).apply (fun _ => some [9])) [0]
+      = some ([2] : Bytes) :=
+    diff_single_apply_self [0] [2] _
+  have hbad : some ([1] : Bytes) = some ([2] : Bytes) := by
+    rw [← h₁, heq, h₂]
+  exact absurd hbad (by decide)
 
 end DarkFi.Semantics
