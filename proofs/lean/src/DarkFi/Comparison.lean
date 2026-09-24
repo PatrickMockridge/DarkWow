@@ -263,8 +263,19 @@ range_check(64, x) decomposes x into K-bit chunks and does
 a table lookup for each chunk. The running sum propagates:
   z_{i+1} = (z_i - k_i) / 2^K
 
-For 64-bit range check: K=8, 8 chunks.
-For 253-bit range check: K=3, 85 chunks.
+**Corrected 2026-09-24: both of the constants that stood here were wrong.** The block said "For
+64-bit range check: K=8, 8 chunks. For 253-bit range check: K=3, 85 chunks." Measured, the deployed
+window is **K = 10**: `src/zk/vm.rs:28` imports `K` from
+`src/sdk/src/crypto/constants/sinsemilla.rs:31`, where it is `pub const K: usize = 10`, and `vm.rs`
+uses it for exactly these two chips (`NativeRange64(NativeRangeCheckConfig<K, 64>)` at `:116`,
+`NativeRange253(NativeRangeCheckConfig<K, 253>)` at `:119`, built at `:560` and `:564`). So the
+deployed instances are `NativeRangeCheckChip<10, 64>` and `<10, 253>`:
+
+  * 64-bit:  `⌈64/10⌉  = 7`  windows — 6 full chunks and a **4-bit** last chunk;
+  * 253-bit: `⌈253/10⌉ = 26` windows — 25 full chunks and a **3-bit** last chunk.
+
+Neither is a multiple, so the short check on the last chunk is what makes each bound exact — see the
+section below, which transcribes the chip and proves it.
 -/
 
 /-
@@ -291,7 +302,199 @@ rather than here.
 The neighbours in this file are genuine and are untouched: `range_check_prevents_value_wraparound`
 and `less_than_strict_sound` both take the gadget's parameters and derive something the hypotheses
 do not contain.
+
+**Amended 2026-09-24: the content is supplied below, and the sentence that said otherwise was half
+wrong.** This block said the real thing "needs the chunk decomposition, which lives in
+`src/zk/gadget/` rather than here" — true of the *gadget*, false of the *model*: the decomposition is
+an algorithm with a transcribable shape, and the section below transcribes it from
+`src/zk/gadget/native_range_check.rs` and proves what the deleted theorem only assumed. What the
+withdrawal got right is kept: the ring `z ∈ [0, 2^k)` cannot be *derived* from an `Int` hypothesis,
+which is why the old statement was a tautology rather than a proof.
 -/
+
+/-!
+## The deployed range check, and what its decomposition proves
+
+`NativeRangeCheckChip<WINDOW_SIZE, NUM_BITS>` — `src/zk/gadget/native_range_check.rs` — accepts a
+value by **decomposing** it, and it is the decomposition, not any inequality, that bounds it. The
+chip's own comment (`:206-208`) states the identity its gates enforce:
+
+    z = c₀ + 2ʷc₁ + 2²ʷc₂ + ⋯ + 2ᵐʷcₘ
+
+with `m = ⌈NUM_BITS / WINDOW_SIZE⌉` chunks, each looked up in `k_values_table` so that it is a
+`WINDOW_SIZE`-bit value — and, when `NUM_BITS` is not a multiple of `WINDOW_SIZE`, the *last* chunk
+gets a **short** check of `NUM_BITS - WINDOW_SIZE·(m - 1)` bits instead (`:236-245`).
+
+`chunkSum` is that identity, accumulated right-to-left so the recursion mirrors the chip's running
+sum `zᵢ = (zᵢ₋₁ - cᵢ₋₁)/2ʷ` rather than a flat sum. What follows is what it proves.
+
+**What this does NOT model, stated rather than implied.** The gates constrain the running sum over
+`ZMod p`, and here it is the *integer* equation the chip's comment writes — the step from one to the
+other is `BaseDivGadget.zmod_eq_int_of_bounded`, which already exists and is not repeated. The
+`k_values_table` lookup is taken as its content (a chunk is `< 2^w`); its own soundness is not
+modelled. And `decompose_value`'s bit plumbing — `to_le_bits`, `chunks_exact`, the padding — is not
+transcribed: the chunk *values* are, the bit vector they are cut from is not, which is why
+`exists_chunkSum_eq` proves decomposability arithmetically instead of from that construction.
+-/
+
+/-- The value a chunk sequence stands for: `c₀ + 2ʷc₁ + 2²ʷc₂ + ⋯`, accumulated right-to-left so the
+    recursion is structural — and so it mirrors the chip's running sum rather than a flat sum. -/
+def chunkSum (w : Nat) : List Nat → ℤ
+  | [] => 0
+  | c :: cs => (c : ℤ) + (2 : ℤ) ^ w * chunkSum w cs
+
+-- `chunkSum`'s two defining equations are *not* restated as theorems: they would be statements whose
+-- content is their own definition, which is the species this tree's anti-vacuity arm exists to catch.
+-- `simp only [chunkSum]` unfolds the definition by name wherever a proof needs it.
+--
+/-- Appending chunks shifts the tail: the head's contribution is the head length's worth of powers. -/
+@[axiom_budget 0]
+theorem chunkSum_append (w : Nat) (xs ys : List Nat) :
+    chunkSum w (xs ++ ys) = chunkSum w xs + (2 : ℤ) ^ (w * xs.length) * chunkSum w ys := by
+  induction xs with
+  | nil =>
+    simp only [List.nil_append, chunkSum, List.length_nil, Nat.mul_zero, pow_zero, one_mul, zero_add]
+  | cons c cs ih =>
+    simp only [List.cons_append, chunkSum, List.length_cons]
+    -- Restated in `List.append` form: after the unfold above the goal carries `List.append`, where
+    -- the induction hypothesis carries the `++` notation, and `rw` matches one but not the other.
+    have ihapp : chunkSum w (List.append cs ys)
+        = chunkSum w cs + (2 : ℤ) ^ (w * cs.length) * chunkSum w ys := ih
+    rw [ihapp, Nat.mul_succ, pow_add]
+    ring
+
+/-- **A full decomposition is bounded by its width.** `n` chunks of `w` bits each stand for a value
+    below `2^(w·n)` — the induction the running sum's invariant gives, and the thing the deleted
+    theorem assumed. -/
+@[axiom_budget 1]
+theorem chunkSum_lt_pow (w : Nat) (cs : List Nat) (h : ∀ c ∈ cs, c < 2 ^ w) :
+    chunkSum w cs < (2 : ℤ) ^ (w * cs.length) := by
+  induction cs with
+  | nil =>
+    simp only [chunkSum, List.length_nil, Nat.mul_zero, pow_zero]
+    norm_num
+  | cons c cs ih =>
+    have hc' : c < 2 ^ w := h c (by simp)
+    have hc : (c : ℤ) < (2 : ℤ) ^ w := by exact_mod_cast hc'
+    have htail : chunkSum w cs < (2 : ℤ) ^ (w * cs.length) := ih fun x hx => h x (by simp [hx])
+    have hS : chunkSum w cs ≤ (2 : ℤ) ^ (w * cs.length) - 1 := by omega
+    have hw : (0 : ℤ) < (2 : ℤ) ^ w := by positivity
+    simp only [chunkSum, List.length_cons, Nat.mul_succ, pow_add]
+    nlinarith [hc, hS, hw]
+
+/-- **Every value decomposes**, so the predicate above is about the chip rather than about an empty
+    set. The chunks are `z`'s base-`2^w` digits, which is what `decompose_value` computes — proved
+    here from the arithmetic rather than from that construction (see the section note). -/
+@[axiom_budget 1]
+theorem exists_chunkSum_eq (w : Nat) (hw : 0 < w) (z : Nat) :
+    ∃ cs : List Nat, (∀ c ∈ cs, c < 2 ^ w) ∧ chunkSum w cs = (z : ℤ) := by
+  induction z using Nat.strong_induction_on with
+  | _ z ih =>
+    rcases Nat.lt_or_ge z (2 ^ w) with hsmall | hbig
+    · refine ⟨[z], by simpa using hsmall, ?_⟩
+      simp only [chunkSum]
+      ring
+    · have hpos : 0 < 2 ^ w := by positivity
+      have h2 : 1 < 2 ^ w := by
+        have hle : 2 ^ 1 ≤ 2 ^ w := Nat.pow_le_pow_right (by norm_num) hw
+        omega
+      have hq : z / 2 ^ w < z := Nat.div_lt_self (by omega) h2
+      obtain ⟨cs, hcs, hsum⟩ := ih (z / 2 ^ w) hq
+      have hmod : z % 2 ^ w < 2 ^ w := Nat.mod_lt _ hpos
+      refine ⟨z % 2 ^ w :: cs, ?_, ?_⟩
+      · intro c hc
+        rcases List.mem_cons.mp hc with rfl | hc
+        · exact hmod
+        · exact hcs c hc
+      · simp only [chunkSum, hsum]
+        have hnat : z % 2 ^ w + 2 ^ w * (z / 2 ^ w) = z := by
+          have := Nat.div_add_mod z (2 ^ w)
+          omega
+        have hcast : ((z % 2 ^ w : Nat) : ℤ) + ((2 ^ w : Nat) : ℤ) * ((z / 2 ^ w : Nat) : ℤ)
+            = (z : ℤ) := by
+          rw [← Nat.cast_mul, ← Nat.cast_add, hnat]
+        rw [Nat.cast_pow] at hcast
+        exact hcast
+
+/-- A concrete evaluation at the deployed window, so the definition is visibly not the zero function:
+    `5 + 2¹⁰·2 + 2²⁰·0 = 2053`. -/
+@[axiom_budget 0]
+theorem chunkSum_example : chunkSum 10 [5, 2, 0] = 2053 := by
+  simp only [chunkSum]
+  norm_num
+
+/-- **The deployed short check.** `NUM_BITS` is not generally a multiple of `WINDOW_SIZE`, so the chip
+    gives the *last* chunk a check of `NUM_BITS - WINDOW_SIZE·(m - 1)` bits rather than `WINDOW_SIZE`
+    (`native_range_check.rs:236-245`). That is what makes the bound `2^NUM_BITS` **exact**: without it
+    the decomposition only gives `2^(WINDOW_SIZE·m)`, which at the deployed window is `2^70` for the
+    64-bit instance rather than `2^64`. -/
+@[axiom_budget 1]
+theorem chunkSum_lt_pow_of_short_last (w N : Nat) (cs : List Nat) (last : Nat)
+    (h : ∀ c ∈ cs, c < 2 ^ w)
+    (hlast : last < 2 ^ (N - w * cs.length))
+    (hl : w * cs.length ≤ N) :
+    chunkSum w (cs ++ [last]) < (2 : ℤ) ^ N := by
+  have hcs' : chunkSum w cs ≤ (2 : ℤ) ^ (w * cs.length) - 1 := by
+    have := chunkSum_lt_pow w cs h
+    omega
+  have hlastI : (last : ℤ) < (2 : ℤ) ^ (N - w * cs.length) := by exact_mod_cast hlast
+  have hlastI' : (last : ℤ) ≤ (2 : ℤ) ^ (N - w * cs.length) - 1 := by omega
+  have happ : chunkSum w (cs ++ [last]) =
+      chunkSum w cs + (2 : ℤ) ^ (w * cs.length) * (last : ℤ) := by
+    rw [chunkSum_append]
+    simp only [chunkSum]
+    ring
+  rw [happ]
+  have hpow : (2 : ℤ) ^ N = (2 : ℤ) ^ (w * cs.length) * (2 : ℤ) ^ (N - w * cs.length) := by
+    rw [← pow_add, Nat.add_sub_of_le hl]
+  rw [hpow]
+  have hX : (0 : ℤ) < (2 : ℤ) ^ (w * cs.length) := by positivity
+  nlinarith [hcs', hlastI', hX]
+
+/-- **The 64-bit instance at the deployed parameters** — `NativeRangeCheckChip<10, 64>`
+    (`src/zk/vm.rs:116`, `:560`, with `K = 10` from `src/sdk/src/crypto/constants/sinsemilla.rs:31`).
+    `⌈64/10⌉ = 7` windows: 6 full chunks and a 4-bit last chunk. So a value the deployed check accepts
+    is below `2^64` as an *integer* — the bound `BaseDivGadget`'s bridge needs for its operands. -/
+@[axiom_budget 1]
+theorem range_check_64_is_bounded (cs : List Nat) (last : Nat)
+    (hlen : cs.length = 6) (h : ∀ c ∈ cs, c < 2 ^ 10) (hlast : last < 2 ^ 4) :
+    chunkSum 10 (cs ++ [last]) < (2 : ℤ) ^ 64 := by
+  have hlast' : last < 2 ^ (64 - 10 * cs.length) := by rw [hlen]; exact hlast
+  exact chunkSum_lt_pow_of_short_last 10 64 cs last h hlast' (by rw [hlen]; omega)
+
+/-- And the 253-bit one: `NativeRangeCheckChip<10, 253>` (`src/zk/vm.rs:119`, `:564`) has
+    `⌈253/10⌉ = 26` windows — 25 full chunks and a 3-bit last chunk. This is the width the offset of
+    the comparison chip is checked against. -/
+@[axiom_budget 1]
+theorem range_check_253_is_bounded (cs : List Nat) (last : Nat)
+    (hlen : cs.length = 25) (h : ∀ c ∈ cs, c < 2 ^ 10) (hlast : last < 2 ^ 3) :
+    chunkSum 10 (cs ++ [last]) < (2 : ℤ) ^ 253 := by
+  have hlast' : last < 2 ^ (253 - 10 * cs.length) := by rw [hlen]; exact hlast
+  exact chunkSum_lt_pow_of_short_last 10 253 cs last h hlast' (by rw [hlen]; omega)
+
+/-- **The composition `OBL-Z12`'s residue names.** `BaseDivGadget`'s bridge needs the operands of each
+    comparison to be in range, and its `FieldLessThanOrEqual` carries those bounds as *supplied* —
+    `a_bits_lt : a_bits < 2^64` and its neighbours. This is the step they were waiting on, one level
+    out from the chip: with every operand 64-bit range-checked, `a·b - c·d` lies inside the `2^253`
+    window the offset's own range check supplies, so the bounds meet with room to spare. -/
+@[axiom_budget 1]
+theorem operand_products_fit_the_offset_window (a b c d : Nat)
+    (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) (hc : c < 2 ^ 64) (hd : d < 2 ^ 64) :
+    -((2 : ℤ) ^ 253) < (a : ℤ) * b - (c : ℤ) * d ∧
+      (a : ℤ) * b - (c : ℤ) * d < (2 : ℤ) ^ 253 := by
+  have hp : (2 : ℤ) ^ 128 = (2 : ℤ) ^ 64 * (2 : ℤ) ^ 64 := by norm_num
+  have ha' : (a : ℤ) < (2 : ℤ) ^ 64 := by exact_mod_cast ha
+  have hb' : (b : ℤ) < (2 : ℤ) ^ 64 := by exact_mod_cast hb
+  have hc' : (c : ℤ) < (2 : ℤ) ^ 64 := by exact_mod_cast hc
+  have hd' : (d : ℤ) < (2 : ℤ) ^ 64 := by exact_mod_cast hd
+  have ha0 : (0 : ℤ) ≤ (a : ℤ) := Int.natCast_nonneg a
+  have hb0 : (0 : ℤ) ≤ (b : ℤ) := Int.natCast_nonneg b
+  have hc0 : (0 : ℤ) ≤ (c : ℤ) := Int.natCast_nonneg c
+  have hd0 : (0 : ℤ) ≤ (d : ℤ) := Int.natCast_nonneg d
+  have hab : (a : ℤ) * b < (2 : ℤ) ^ 128 := by nlinarith [ha', hb', ha0, hb0, hp]
+  have hcd : (c : ℤ) * d < (2 : ℤ) ^ 128 := by nlinarith [hc', hd', hc0, hd0, hp]
+  have h128 : (2 : ℤ) ^ 128 < (2 : ℤ) ^ 253 := by norm_num
+  constructor <;> nlinarith [hab, hcd, ha0, hb0, hc0, hd0, h128]
 
 /--
 ## THEOREM: Range Check Is Necessary for Value Conservation

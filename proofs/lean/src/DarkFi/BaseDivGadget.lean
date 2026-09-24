@@ -53,6 +53,20 @@ to each comparison are in the range the bridge needs. The `2^64` bound makes eve
 so a difference of two products lies in `(-2^129, 2^129)`, well inside the `2^253` the chip's range
 check supplies; but that composition is the quotient-remainder circuits' own argument and is not made
 here. So the residue of `OBL-Z12` is that composition, not the chip's reading.
+
+**Corrected 2026-09-24: the composition's two halves are now both theorems, and what remains is a
+transcription rather than arithmetic.** The sentence above said the composition "is not made here" —
+true of *this file* and false of the layer: the arithmetic is
+`Comparison.operand_products_fit_the_offset_window` (64-bit-bounded operands have `a·b - c·d` inside
+the `2^253` window, as this note's own paragraph argues) and the bounds themselves are
+`Comparison.range_check_64_is_bounded`, which derives `< 2^64` from the **deployed** decomposition —
+`NativeRangeCheckChip<10, 64>` at `src/zk/vm.rs:116` — rather than assuming it, which is what the
+`a_bits_lt` / `b_bits_lt` fields of `FieldLessThanOrEqual` above carry. What is *not* proved, and is
+the honest residue, is the step from a circuit's `range_check(64, ·)` call to a chunk list of that
+shape: that is the same `(r, s) ↦ the circuit's statements` transcription `Circuits/InstanceDerivation
+.lean` records for `OBL-T7`, and it is not arithmetic. So `OBL-Z12`'s residue is no longer "the
+composition is unmade" but "the composition's inputs are supplied *by hypothesis* rather than read
+from the circuit" — which is a strictly smaller gap, and a different one.
 -/
 
 namespace BaseDivGadget
