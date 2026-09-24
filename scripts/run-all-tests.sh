@@ -282,6 +282,19 @@ run_gate "build contract ZK circuits"     "$SCRIPT_DIR/build-contract-zk.sh"
 # `SOURCE_MANIFEST`, so an edited circuit makes the contract stale and `contract artifact freshness`
 # (gate 1) names it. What was missing is exactly this: nobody checked the *output* is well-formed.
 run_gate "ZK binaries well-formed"        bash "$SCRIPT_DIR/validate_zk_bins.sh"
+# OBL-C122's shape in the circuit layer, and the two halves of what the comment above does not claim.
+# It walks *sources* — 178 of them, the same set `script/circuit_instance_derivation.py` analyses, so
+# the two cannot drift — compiles each with the compiler's `-e`, and compares the decoded bytecode
+# against the source-level analysis: the `constrain_instance` count must equal the `ConstrainInstance`
+# opcode count, and the compiled `namespace` must equal the source's `circuit "..."`. That is the one
+# relation nothing above establishes: make proves the binary is *newer* than its source and `validate`
+# proves it is *well-formed*, and neither proves it is the artifact the layer's rule is about.
+# Measured 2026-09-24: 178 checked, 0 failures, 0.9 s — and negative-controlled by planting the drift
+# it exists to catch, a copy with one `constrain_instance` removed against the real source's compiled
+# form, which it reports as 2 against 3. Sources are self-contained (`include` occurs in this corpus
+# only inside English prose in comments), so it compiles temp copies and writes nothing into the tree.
+run_gate "circuit fidelity (source vs compiled)" \
+                                          python3 "$REPO_ROOT/scripts/check-circuit-fidelity.py" --quiet
 run_gate "pre-build guard (dwowd + wallet + 32 contracts→wasm32)" \
                                           "$SCRIPT_DIR/check_pipeline_build.sh"
 run_gate "Rust tests (make test)"          make test
