@@ -58,8 +58,12 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&draw_winners_v2_bincode[..])?;
     let expire_lottery_v2_bincode = include_bytes!("../proof/expire_lottery.zk.bin");
     wasm::db::zkas_db_set(&expire_lottery_v2_bincode[..])?;
-    let initialize_v2_bincode = include_bytes!("../proof/initialize.zk.bin");
-    wasm::db::zkas_db_set(&initialize_v2_bincode[..])?;
+    // `InitializeV2` was registered here until 2026-09-24 (an `include_bytes!` of
+    // `proof/initialize.zk.bin` plus its `zkas_db_set`). Both the circuit and the registration are
+    // gone: the circuit binds the exposed nullifier to a `lottery_id` this contract *derives* from
+    // the exec-time block height (`entrypoint/initialize.rs:57`), so a caller cannot know the id when
+    // it builds the call and a proof against it could only bind to a lottery that was never created.
+    // `InitializeV1` above stays a non-ZK setup step.
 
     // Initialize database trees
     wasm::db::db_init(cid, crate::LOTTERY_CONTRACT_LOTTERIES_TREE)?;

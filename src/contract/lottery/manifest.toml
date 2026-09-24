@@ -72,10 +72,13 @@ namespace = "lottery"
 name = "RevealTicketV2"
 namespace = "lottery"
 
-# Registered by `init_contract`, but absent from this list.
-[[circuits]]
-name = "InitializeV2"
-namespace = "lottery"
+# `InitializeV2` was listed here with the note "Registered by `init_contract`, but absent from this
+# list" — and it is now absent from the tree too. It was deleted on 2026-09-24, not declared away: its
+# circuit binds the exposed nullifier to a `lottery_id` the contract *derives from the exec-time block
+# height* (`entrypoint/initialize.rs:57`), so no caller can know the id when it builds the call, and a
+# proof against it could only bind to a lottery the contract never created. `initialize` stays a
+# non-ZK setup step, which is what the `[[functions]]` entry above already says by omitting
+# `requires_proof`.
 
 [[circuits]]
 name = "DrawWinnersV2"

@@ -21,9 +21,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Lottery house-auth ZK proof generation (DrawWinnersV2 / ExpireLotteryV2 / InitializeV2).
+//! Lottery house-auth ZK proof generation (DrawWinnersV2 / ExpireLotteryV2).
 //!
-//! All three house-auth circuits share the same witness/instance layout:
+//! This named `InitializeV2` as a third caller until 2026-09-24, when that circuit was deleted: it
+//! binds the exposed nullifier to a `lottery_id` the contract derives from the exec-time block
+//! height, so no caller can supply one that means anything. The layout below is shared by the two
+//! circuits that remain, and by the deleted one only in shape.
 //! witness (8): lottery_id, house_secret, house_pub_x, house_pub_y, house_nullifier,
 //!   tx_commitment, tx_nonce, tx_binding.
 //! `house_pub = ec_mul_base(house_secret, NULLIFIER_K)` bound to house_pub_x/y;

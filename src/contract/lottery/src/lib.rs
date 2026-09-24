@@ -134,7 +134,11 @@ pub const LOTTERY_CONTRACT_ZKAS_REVEAL_NS_V2: &str = "RevealTicketV2";
 pub const LOTTERY_CONTRACT_ZKAS_CLAIM_NS_V2: &str = "ClaimPrizeV2";
 pub const LOTTERY_CONTRACT_ZKAS_DRAW_NS_V2: &str = "DrawWinnersV2";
 pub const LOTTERY_CONTRACT_ZKAS_EXPIRE_NS_V2: &str = "ExpireLotteryV2";
-pub const LOTTERY_CONTRACT_ZKAS_INIT_NS_V2: &str = "InitializeV2";
+// `LOTTERY_CONTRACT_ZKAS_INIT_NS_V2 = "InitializeV2"` stood here until 2026-09-24, for a circuit that
+// was registered and shipped but could never be proved: it binds the exposed nullifier to a
+// `lottery_id` the contract derives at exec time (`entrypoint/initialize.rs:57`), which no caller
+// knows when building the call. The circuit and its `.zk.bin` were deleted, and `initialize` remains
+// a non-ZK setup step. See `OBL-Z2`.
 
 // ============================================================================
 // CONSTANTS
