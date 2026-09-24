@@ -419,6 +419,8 @@ full in [wallet.md §6.4.1](wallet.md):
   `merkle_path` / `merkle_path:current` / `merkle_path:cumulative` (the
   inclusion proof; trajectory-relative per
   [contract-wasm-type-system.md §C.6](contract-wasm-type-system.md)),
+  `merkle_root` (the root that anchored the consumed object — the wallet's stored
+  proof; accepted by `parse_source`, `src/sdk/src/prover.rs:243`),
   `leaf_position`, and `tx_commitment` / `tx_nonce`.
 - **Named blinds** — `blind:<name>`: a fresh blind derived from `Seed` with a
   distinct per-name domain. Carried blinds that arrive in the note are
