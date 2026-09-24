@@ -323,14 +323,20 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
 - **The emission policy is only partly proved.** `reward` *is* a definition now, transcribed from the
   implementation (`Emission.lean`, from `src/sdk/src/blockchain.rs:1032-1069`), and `reward_tail_floor`
   proves it never falls below `TAIL_REWARD` from genesis on. What is **not** proved is that it never
-  *increases*: `Axioms.reward_monotone` assumes that, and `Emission.RewardNonIncreasing` states it with
-  no theorem attached. It is not a missing routine — the exponentiation-by-squaring loop truncates at
-  every squaring, so the cumulative error in the decay passes the local gap once the exponent exceeds
-  about 5.5·10⁴ and no absolutely-bounded sandwich survives the middle range. Measured non-increasing
+  *increases*: `Axioms.reward_monotone` assumes that, and `Emission.lean`'s `RewardNonIncreasing` states
+  it with no theorem attached. It is not a missing routine — the exponentiation-by-squaring loop
+  truncates at every squaring, so the cumulative error in the decay passes the local gap once the
+  exponent exceeds about 5.5·10⁴ and no absolutely-bounded sandwich survives the middle range; a proof
+  has to compare the errors of *adjacent* exponents, which nearly cancel. Measured non-increasing
   exhaustively over `e ∈ [0, 3·10⁵]` and over 200 000 sampled exponents in `[1, 3.4·10⁷]`, and
   kernel-checked for the first step (`reward_nonincreasing_first_step`) — **checked over a range, not
-  proved.** `total_supply_theorem` does not reach it: it proves a running total equals the sum of a
-  schedule *for every* schedule. `MAX_SUPPLY` and `total_reward_bounded` are deleted rather than
+  proved.** Two of the five ruled-out routes are machine-checked rather than argued
+  (`fixedPowDecayGo_step_bound_is_false`, `fpMul_nested_bound_is_false`, each with a witness off by
+  one), and a kernel check over a useful range is not available either: a fuel-indexed restatement of
+  the loop was tried and abandoned, because a range check costs about 1.8s per 500 blocks and **aborts
+  with a kernel stack overflow** between 500 and 2000, against the 3·10⁵ exponents the scan covers.
+  `total_supply_theorem` does not reach it: it proves a running total equals the sum of a schedule *for
+  every* schedule. `MAX_SUPPLY` and `total_reward_bounded` are deleted rather than
   declared, and `doc/src/arch/genesis.md` no longer presents a supply cap as a Lean result.
 - **No verified compiler from `.zk` files.** The ZKAS compiler produces Halo2 circuits; there is
   no formal semantics for the ZKAS language in Lean4.

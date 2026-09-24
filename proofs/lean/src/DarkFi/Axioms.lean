@@ -357,12 +357,19 @@ axiom coinbase_blind (height : Nat) : Nat
     * **`n = 2k` — done.** The sides are `G k (fpMul r b) b'` and `G k r b'`, so it is
       `fpMul r b ≤ r` fed to `Emission.fixedPowDecayGo_mono_acc`, which is now a **theorem**.
     * **`n = 2k+1` — the obstruction.** The sides are `G (k+1) r b'` and `G k (fpMul r b) b'`.
-      The inequality is true, but the induction hypothesis at `k` gives `G (k+1) r b' ≤ G k r b'`,
-      and `G k (fpMul r b) b'` is *smaller* than `G k r b'` because `fpMul r b ≤ r` — so the
-      hypothesis lands on the wrong side of the target. What is needed is a statement about the
-      *size of the factors* each loop multiplies by: the extra step the `k+1` loop performs
-      multiplies by some power of `b'` (hence at most `b`), while the target's pre-multiplication
-      is by exactly `b`. Truncation at every squaring is what stops that from being bookkeeping.
+      The inequality is true — **measured 2026-09-24**, not merely believed: it holds over 300 steps
+      at the state the schedule reaches (`r = FP_ONE`, `b = DECAY_FP`) and over grids of `(k, r, b)`.
+      But the induction hypothesis at `k` gives `G (k+1) r b' ≤ G k r b'`, and `G k (fpMul r b) b'` is
+      *smaller* than `G k r b'` because `fpMul r b ≤ r` — so the hypothesis lands on the wrong side of
+      the target. What is needed is a statement about the *size of the factors* each loop multiplies
+      by: the extra step the `k+1` loop performs multiplies by some power of `b'` (hence at most `b`),
+      while the target's pre-multiplication is by exactly `b`. Truncation at every squaring is what
+      stops that from being bookkeeping. **And the missing ingredient is quantitative**, which the
+      analysis above did not say: the cumulative error in the decay passes the *local* gap between
+      successive ideal values once the exponent exceeds about 5.5·10⁴, so no absolutely-bounded
+      sandwich survives the middle range, and a proof has to compare the truncation errors of
+      *adjacent* exponents, which nearly cancel because they differ by one carry. Estimated 30–60
+      lemmas.
 
     **Routes already checked and ruled out, so they are not retried:**
 
@@ -370,15 +377,31 @@ axiom coinbase_blind (height : Nat) : Nat
       `FP_ONE · DECAY_FP^34 / FP_ONE^34 = 4294871043`, off by one and compounding;
     * `G (n+1) r b ≤ fpMul (G n r b) b` is **false** (fails at `n = 6, b = 2147482232`, again by
       one), so the contraction cannot be applied at the outer step;
-    * a kernel-checked *range* bound by reflection is blocked: `fixedPowDecayGo` recurses on
-      `(exp+1)/2`, so it is well-founded rather than structural recursion, and `decide` cannot
-      reduce it. `simp` does evaluate it through `fixedPowDecayGo.eq_1`/`eq_2`, but a range scan
-      hits `maxHeartbeats` and kernel deep recursion at the half-life. A fuel-indexed structural
-      restatement of the loop would unblock that, at the cost of changing the transcription.
+    * the step bound `G (k+1) r b ≤ G k (fpMul r b) b` is **false** — machine-checked now, as
+      `Emission.fixedPowDecayGo_step_bound_is_false`, at `k = 1, r = 95872739, b = 1363349908`
+      (`9660288` against `9660287`);
+    * `fpMul`'s nested bound `fpMul r (fpMul b b) ≤ fpMul (fpMul r b) b` is **false** —
+      machine-checked as `Emission.fpMul_nested_bound_is_false` at `r = 346803675, b = 4229726225`
+      (`336347717` against `336347716`). This one needs no loop at all: truncating fixed-point
+      multiplication is not associative, and that is what makes the "fold the extra step into the
+      accumulator" rescue fail;
+    * a kernel-checked *range* bound by reflection is blocked, and **the fix this entry proposed for it
+      was tried and does not pay** — measured 2026-09-24. Making the loop structural does let the
+      kernel reduce it (both refutations above are kernel-checked that way), but a range check over
+      `reward` costs about 1.8s at 500 blocks and **aborts with a kernel stack overflow** somewhere
+      between 500 and 2000, against the 3·10⁵ exponents a plain scan covers. The instrument was
+      strictly weaker than the measurement it would have replaced, so it was not landed: a definition
+      nothing consumes is what this tree deletes.
+
     The pieces are in `Emission.lean`: `fpMul_le_left`, `fixedPowDecayGo_mono_acc`,
-    `fixedPowDecay_le_one`, `decayedReward_le_initial`, `reward_nonincreasing_first_step`.
-    DISCHARGED BY: the odd case of the single-step lemma — a statement bounding the factor the
-    extra step multiplies by, not a strengthening of the accumulator induction.
+    `fixedPowDecay_le_one`, `decayedReward_le_initial`, `reward_nonincreasing_first_step`, and the two
+    refutations above.
+    DISCHARGED BY: a quantitative error-propagation argument — comparing the truncation errors of
+    *adjacent* exponents, rather than bounding the factor the extra step multiplies by. That
+    distinction is the correction of 2026-09-24: this field named the factor bound as the route, and
+    the two machine-checked refutations above are the two shapes that route takes. Plus a domain
+    bound, which is free: `fixedPowDecay e = 0` for `e ≥ 2²⁵+1` and `decayedReward` is below
+    `TAIL_REWARD` from `e ≈ 4.32·10⁶`, so the range that matters is finite.
     IF FALSE: NOTHING. No theorem consumes it. `total_supply_theorem` and
     `cumulative_commit_theorem` are structural inductions that hold for *any* `reward`, so they
     are proved without it. What checks this claim today is `Emission.reward_nonincreasing_first_step`

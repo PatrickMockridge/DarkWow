@@ -60,8 +60,16 @@ fixed-point multiplication by the decay is a contraction, but `fixed_pow_decay` 
 squaring, so the value is not `DECAY_FP^e / 2^(32e)` and the induction obstructs on the odd/even
 case — `Axioms.reward_monotone` states the obstruction precisely. Kernel-checked today:
 `reward_nonincreasing_first_step` (the step after genesis, and the sentinel jump it excludes),
-`fixedPowDecay_le_one`, `decayedReward_le_initial`, `fpMul_le_left`. The schedule's own Rust test
-covers a range; that test and the first-step theorem are what check the claim now.
+`fixedPowDecay_le_one`, `decayedReward_le_initial`, `fpMul_le_left` — and, since 2026-09-24, the two
+factor-bounding lemmas that do *not* work (`fixedPowDecayGo_step_bound_is_false`,
+`fpMul_nested_bound_is_false`), so that the routes already tried are machine-checked rather than
+recalled from prose.
+
+**The claim itself is checked over a range, not proved**, and that is the state the register records:
+the schedule's own Rust test, the scans on `RewardNonIncreasing` below, and the first-step theorem are
+what check it. `doc/src/arch/verification-hazop.md`'s `OBL-C5` says so in those words, and
+`RewardNonIncreasing` records why a kernel check over a useful range is not available (a stack
+overflow between 500 and 2000 blocks, against a scan that covers 3·10⁵).
 -/
 
 /-- `1.0` in the fixed-point representation the schedule uses (`1 << 32`). -/
@@ -161,7 +169,11 @@ lemma fixedPowDecayGo_le_start (exp : Nat) :
       `Axioms.reward_monotone` for what that case still needs.
 
     So this is the even case, and the obstruction is entirely in the odd one — which is a smaller
-    target than "the parity analysis" and is where a further attempt should start. -/
+    target than "the parity analysis" and is where a further attempt should start. **Two candidate
+    lemmas for that target are refuted below** (`fixedPowDecayGo_step_bound_is_false`,
+    `fpMul_nested_bound_is_false`), which narrows it further and in an unexpected direction: the odd
+    case's *own* inequality is true and measured, so what is missing is a lemma that reaches it, and
+    the two shapes such a lemma would take do not hold. -/
 @[axiom_budget 1]
 lemma fixedPowDecayGo_mono_acc (exp : Nat) :
     ∀ {r r' : Nat}, r' ≤ r → ∀ base, base ≤ FP_ONE →
@@ -179,6 +191,50 @@ lemma fixedPowDecayGo_mono_acc (exp : Nat) :
           · exact ih _ hlt (Nat.div_le_div_right (Nat.mul_le_mul_right base h))
               (fpMul base base) hb'
           · exact ih _ hlt h (fpMul base base) hb'
+
+/-! ===== The two factor-bounding lemmas that do not exist =====
+
+`Axioms.reward_monotone` records the odd case as needing "a statement bounding the factor the extra
+step multiplies by, not a strengthening of the accumulator induction". These are the two forms that
+statement takes when reached for from the loop's own recursion, and **both are false**, with witnesses
+that are each off by one.
+
+**What this does *not* say, and it matters.** It does not refute the odd case itself, which is a
+different inequality and is **true**. Measured: `G (k+1) r (fpMul b b) ≤ G k (fpMul r b) (fpMul b b)`
+holds over 300 steps at the state the schedule actually reaches (`r = FP_ONE`, `b = DECAY_FP`) and over
+grids of `(k, r, b)` (60×40×40 and 60×200, by evaluation of the definition, and the earlier analysis of
+the same shape is in `Axioms.lean`). So the obstruction is neither that the goal is false nor that it is
+unreachable in principle: it is that no lemma bounding that factor has been found, and these two are the
+forms it would have to take.
+
+The off-by-one is the whole content, and it is the truncation `fixedPowDecayGo` performs at *every*
+squaring: the loop is not `DECAY_FP^e / 2^(32e)`, so no law of `fpMul` alone recovers it. That is also
+why the closed form fails — `fixedPowDecay 34 = 4294871042` against `FP_ONE · DECAY_FP^34 / FP_ONE^34 =
+4294871043`, the third route `Axioms.lean` already rules out. -/
+
+/-- **The step bound is false.** `G (k+1) r b ≤ G k (fpMul r b) b` would say one step of the loop is
+    bounded by pushing the accumulator through, at the same base. It fails at `k = 1`,
+    `r = 95872739`, `b = 1363349908`, where the two sides are `9660288` and `9660287`. -/
+@[axiom_budget 1]
+theorem fixedPowDecayGo_step_bound_is_false :
+    ¬ (∀ (k r b : Nat), fixedPowDecayGo (k + 1) r b ≤ fixedPowDecayGo k (fpMul r b) b) := by
+  intro h
+  have hw := h 1 95872739 1363349908
+  norm_num [fixedPowDecayGo, fpMul, FP_ONE] at hw
+
+/-- **The nested bound is false.** `fpMul r (fpMul b b) ≤ fpMul (fpMul r b) b` would let the extra
+    step be folded into the accumulator by associativity, which is the other way the odd case could be
+    made to go through. It fails at `r = 346803675`, `b = 4229726225`: `336347717` against `336347716`.
+
+    Note this one needs no loop at all — it is a statement about `fpMul` — so its refutation is not a
+    statement about the schedule's size or the parity analysis. `fpMul` is not associative, and that is
+    a fact about truncating fixed-point multiplication rather than about this schedule. -/
+@[axiom_budget 1]
+theorem fpMul_nested_bound_is_false :
+    ¬ (∀ (r b : Nat), fpMul r (fpMul b b) ≤ fpMul (fpMul r b) b) := by
+  intro h
+  have hw := h 346803675 4229726225
+  norm_num [fpMul, FP_ONE] at hw
 
 /-- The decay factor is at most `1.0`. -/
 @[axiom_budget 1]
@@ -231,8 +287,30 @@ theorem reward_monotone_unbounded_is_false :
 /-- **Non-increase holds from genesis on**, which is the range the schedule is defined over:
     `reward` is non-increasing on `h ≥ 1`.
 
-    This is what `Axioms.reward_monotone` now assumes. It remains unproved — see that entry for
-    the obstruction — but it is at least true, which its predecessor was not. -/
+    This is what `Axioms.reward_monotone` assumes, and it is **stated here with no theorem
+    attached** — the honest state rather than a stopgap, and everything known about it is measured:
+
+    * **It is true.** `fixedPowDecay` is non-increasing exhaustively over `e ∈ [0, 3·10⁵]` and over
+      200 000 sampled exponents in `[1, 3.4·10⁷]`, with no violation and no equal-step plateau;
+      `reward` is non-increasing for `1 ≤ h ≤ 200 000`. Two facts worth having for an attempt:
+      `fixedPowDecay e = 0` for all `e ≥ 2²⁵+1`, and `decayedReward` falls below `TAIL_REWARD` at
+      `e ≈ 4.32·10⁶`, after which `reward` is constant.
+    * **It is not a missing routine.** The truncation at every squaring means the cumulative error in
+      the decay passes the *local* gap between successive ideal values once the exponent exceeds about
+      5.5·10⁴ — so no absolutely-bounded sandwich survives the middle range, and a proof has to compare
+      the errors of *adjacent* exponents, which nearly cancel because they differ by one carry.
+      Estimated 30–60 lemmas. One instrument is unavailable: `native_decide`, because `OBL-T10` is a
+      closed row whose whole content is that no proof rests on `Lean.ofReduceBool`.
+    * **The kernel cannot check it over a useful range**, which is why the bullet above says
+      "measured" and not "verified". A fuel-indexed restatement of the loop — structural recursion, so
+      the kernel *can* reduce it, unlike the well-founded definition — was written on 2026-09-24 and
+      abandoned on measurement: a range check costs about 1.8s at 500 blocks and **aborts with a kernel
+      stack overflow** somewhere between 500 and 2000, against the 3·10⁵ exponents the scan covers. The
+      instrument was strictly weaker than the measurement it would have replaced, so it was not landed
+      — a definition nothing consumes is what this tree deletes.
+
+    Five routes are ruled out rather than rediscovered: three in `Axioms.reward_monotone`'s
+    `DISCHARGED BY:` field and its `NOT PROVED BECAUSE:` list, and two machine-checked above. -/
 def RewardNonIncreasing : Prop := ∀ h₁ h₂ : Nat, 1 ≤ h₁ → h₁ ≤ h₂ → reward h₂ ≤ reward h₁
 
 /-- The corrected statement is not vacuous at the point the old one failed, and the old one's
