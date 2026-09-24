@@ -96,112 +96,34 @@ impl dwow_serial::AsyncDecodable for SubscriptionId {
 
 impl dwow_serial::Encodable for Plan {
     fn encode<W: Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let mut len = 0;
-        w.write_all(&[self.version])?;
-        len += 1;
-        w.write_all(&self.id.to_le_bytes())?;
-        len += 4;
-        w.write_all(&self.name_hash.to_repr())?;
-        len += 32;
-        w.write_all(&self.price.to_le_bytes())?;
-        len += 8;
-        w.write_all(&self.asset_id.to_repr())?;
-        len += 32;
-        w.write_all(&self.duration_blocks.to_le_bytes())?;
-        len += 8;
-        w.write_all(&self.treasury_share.to_le_bytes())?;
-        len += 4;
-        w.write_all(&self.endowment_share.to_le_bytes())?;
-        len += 4;
-        w.write_all(&[self.active as u8])?;
-        len += 1;
-        w.write_all(&self.dao_escrow_discount.to_le_bytes())?;
-        len += 4;
-        w.write_all(&[self.required_dao_escrow.is_some() as u8])?;
-        len += 1;
-        if let Some(ref v) = self.required_dao_escrow {
-            w.write_all(&v.to_repr())?;
-            len += 32;
-        }
-        // `OBL-C105`: the allowance, appended past the optional bulla.
-        w.write_all(&self.uses_allowed.to_le_bytes())?;
-        len += 8;
-        w.write_all(&self.rate_period.to_le_bytes())?;
-        len += 8;
-        Ok(len)
+        // `OBL-C112`: one codec per struct. The layout lives in `Plan::encode` alone, so a field
+        // added to `Plan` cannot land in three of its four codecs and be dropped by the fourth —
+        // which is what happened to `OBL-C105`'s two allowance fields, and the failure it produced
+        // was a wasm panic in `Plan::decode`, not a `ContractError`.
+        let bytes = self.encode();
+        w.write_all(&bytes)?;
+        Ok(bytes.len())
     }
 }
 
 impl dwow_serial::Decodable for Plan {
     fn decode<D: Read>(d: &mut D) -> Result<Self, std::io::Error> {
-        
+        // A stream has no length to hand `Plan::decode`, so it is read in the two pieces `Plan`'s
+        // layout is made of: the fixed prefix, whose last byte says whether the optional bulla is
+        // there, and then exactly what that byte declares (`OBL-C112`). The allowance follows the
+        // bulla either way. Nothing here lays a field out; `Plan::decode` is the one reader.
+        const FIXED_PREFIX: usize = Plan::FIXED_PREFIX;
+        let mut prefix = [0u8; FIXED_PREFIX];
+        d.read_exact(&mut prefix)?;
+        let has_bulla = prefix[FIXED_PREFIX - 1] != 0;
+        let tail_len = if has_bulla { Plan::OPTIONAL_BULLA } else { 0 } + Plan::ALLOWANCE;
+        let mut tail = [0u8; Plan::OPTIONAL_BULLA + Plan::ALLOWANCE];
+        d.read_exact(&mut tail[..tail_len])?;
 
-        let mut buf1 = [0u8; 1];
-        d.read_exact(&mut buf1)?;
-        let version = buf1[0];
-
-        let mut buf4 = [0u8; 4];
-        d.read_exact(&mut buf4)?;
-        let id = u32::from_le_bytes(buf4);
-
-        let mut buf32 = [0u8; 32];
-        d.read_exact(&mut buf32)?;
-        let name_hash = Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid name_hash"))?;
-
-        let mut buf8 = [0u8; 8];
-        d.read_exact(&mut buf8)?;
-        let price = u64::from_le_bytes(buf8);
-
-        d.read_exact(&mut buf32)?;
-        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid asset_id"))?;
-
-        d.read_exact(&mut buf8)?;
-        let duration_blocks = u64::from_le_bytes(buf8);
-
-        d.read_exact(&mut buf4)?;
-        let treasury_share = u32::from_le_bytes(buf4);
-
-        d.read_exact(&mut buf4)?;
-        let endowment_share = u32::from_le_bytes(buf4);
-
-        d.read_exact(&mut buf1)?;
-        let active = buf1[0] != 0;
-
-        d.read_exact(&mut buf4)?;
-        let dao_escrow_discount = u32::from_le_bytes(buf4);
-
-        d.read_exact(&mut buf1)?;
-        let required_dao_escrow = if buf1[0] != 0 {
-            d.read_exact(&mut buf32)?;
-            Some(Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
-                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid required_dao_escrow"))?)
-        } else {
-            None
-        };
-        // `OBL-C105`: the allowance, appended past the optional bulla.
-        let mut buf8 = [0u8; 8];
-        d.read_exact(&mut buf8)?;
-        let uses_allowed = u64::from_le_bytes(buf8);
-        d.read_exact(&mut buf8)?;
-        let rate_period = u64::from_le_bytes(buf8);
-
-        Ok(Plan {
-            version,
-            id,
-            name_hash,
-            price,
-            asset_id,
-            duration_blocks,
-            treasury_share,
-            endowment_share,
-            active,
-            dao_escrow_discount,
-            required_dao_escrow,
-            uses_allowed,
-            rate_period,
-        })
+        let mut bytes = Vec::with_capacity(FIXED_PREFIX + tail_len);
+        bytes.extend_from_slice(&prefix);
+        bytes.extend_from_slice(&tail[..tail_len]);
+        Plan::decode(&bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e}")))
     }
 }
 
@@ -209,40 +131,12 @@ impl dwow_serial::Decodable for Plan {
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncEncodable for Plan {
     async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let mut len = 0;
+        // `OBL-C112`: as the sync pair above — this is an adapter over `Plan::encode`, not a second
+        // layout of `Plan`.
+        let bytes = self.encode();
         use dwow_serial::AsyncWriteExt;
-        w.write_slice_async(&[self.version]).await?;
-        len += 1;
-        w.write_slice_async(&self.id.to_le_bytes()).await?;
-        len += 4;
-        w.write_slice_async(&self.name_hash.to_repr()).await?;
-        len += 32;
-        w.write_slice_async(&self.price.to_le_bytes()).await?;
-        len += 8;
-        w.write_slice_async(&self.asset_id.to_repr()).await?;
-        len += 32;
-        w.write_slice_async(&self.duration_blocks.to_le_bytes()).await?;
-        len += 8;
-        w.write_slice_async(&self.treasury_share.to_le_bytes()).await?;
-        len += 4;
-        w.write_slice_async(&self.endowment_share.to_le_bytes()).await?;
-        len += 4;
-        w.write_slice_async(&[self.active as u8]).await?;
-        len += 1;
-        w.write_slice_async(&self.dao_escrow_discount.to_le_bytes()).await?;
-        len += 4;
-        w.write_slice_async(&[self.required_dao_escrow.is_some() as u8]).await?;
-        len += 1;
-        if let Some(ref v) = self.required_dao_escrow {
-            w.write_slice_async(&v.to_repr()).await?;
-            len += 32;
-        }
-        // `OBL-C105`: the allowance, appended past the optional bulla.
-        w.write_slice_async(&self.uses_allowed.to_le_bytes()).await?;
-        len += 8;
-        w.write_slice_async(&self.rate_period.to_le_bytes()).await?;
-        len += 8;
-        Ok(len)
+        w.write_slice_async(&bytes).await?;
+        Ok(bytes.len())
     }
 }
 
@@ -250,74 +144,20 @@ impl dwow_serial::AsyncEncodable for Plan {
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncDecodable for Plan {
     async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
+        // `OBL-C112`: the same two pieces the sync decoder reads, from the same constants.
         use dwow_serial::AsyncReadExt;
+        const FIXED_PREFIX: usize = Plan::FIXED_PREFIX;
+        let mut prefix = [0u8; FIXED_PREFIX];
+        d.read_slice_async(&mut prefix).await?;
+        let has_bulla = prefix[FIXED_PREFIX - 1] != 0;
+        let tail_len = if has_bulla { Plan::OPTIONAL_BULLA } else { 0 } + Plan::ALLOWANCE;
+        let mut tail = [0u8; Plan::OPTIONAL_BULLA + Plan::ALLOWANCE];
+        d.read_slice_async(&mut tail[..tail_len]).await?;
 
-        let mut buf1 = [0u8; 1];
-        d.read_slice_async(&mut buf1).await?;
-        let version = buf1[0];
-
-        let mut buf4 = [0u8; 4];
-        d.read_slice_async(&mut buf4).await?;
-        let id = u32::from_le_bytes(buf4);
-
-        let mut buf32 = [0u8; 32];
-        d.read_slice_async(&mut buf32).await?;
-        let name_hash = Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid name_hash"))?;
-
-        let mut buf8 = [0u8; 8];
-        d.read_slice_async(&mut buf8).await?;
-        let price = u64::from_le_bytes(buf8);
-
-        d.read_slice_async(&mut buf32).await?;
-        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid asset_id"))?;
-
-        d.read_slice_async(&mut buf8).await?;
-        let duration_blocks = u64::from_le_bytes(buf8);
-
-        d.read_slice_async(&mut buf4).await?;
-        let treasury_share = u32::from_le_bytes(buf4);
-
-        d.read_slice_async(&mut buf4).await?;
-        let endowment_share = u32::from_le_bytes(buf4);
-
-        d.read_slice_async(&mut buf1).await?;
-        let active = buf1[0] != 0;
-
-        d.read_slice_async(&mut buf4).await?;
-        let dao_escrow_discount = u32::from_le_bytes(buf4);
-
-        d.read_slice_async(&mut buf1).await?;
-        let required_dao_escrow = if buf1[0] != 0 {
-            d.read_slice_async(&mut buf32).await?;
-            Some(Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
-                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid required_dao_escrow"))?)
-        } else {
-            None
-        };
-        // `OBL-C105`: the allowance, appended past the optional bulla.
-        let mut buf8 = [0u8; 8];
-        d.read_slice_async(&mut buf8).await?;
-        let uses_allowed = u64::from_le_bytes(buf8);
-        d.read_slice_async(&mut buf8).await?;
-        let rate_period = u64::from_le_bytes(buf8);
-
-        Ok(Plan {
-            version,
-            id,
-            name_hash,
-            price,
-            asset_id,
-            duration_blocks,
-            treasury_share,
-            endowment_share,
-            active,
-            dao_escrow_discount,
-            required_dao_escrow,
-            uses_allowed,
-            rate_period,
-        })
+        let mut bytes = Vec::with_capacity(FIXED_PREFIX + tail_len);
+        bytes.extend_from_slice(&prefix);
+        bytes.extend_from_slice(&tail[..tail_len]);
+        Plan::decode(&bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e}")))
     }
 }
 
@@ -1057,14 +897,28 @@ impl SubscriptionState {
 }
 
 impl Subscription {
-    /// Minimum canonical byte size (without optional fields present).
-    pub const MIN_ENCODED_SIZE: usize = 264;
+    /// The canonical bytes every record carries before the two optional fields, ending at
+    /// `created_at` — the offset of the first presence byte (`OBL-C112`).
+    pub const FIXED_PREFIX: usize = 190;
+    /// One optional field's value: the escrow bulla or the DAO membership note, when its presence
+    /// byte says it is there.
+    const OPTIONAL_VALUE: usize = 32;
+    /// The two presence bytes, one per optional field.
+    const PRESENCE_BYTES: usize = 2;
+    /// What trails the optional fields: `uses_allowed`, `rate_period`, `period_uses`,
+    /// `last_access_block`, `uses_remaining` and `instance_seed`.
+    const TRAILING: usize = 72;
+
+    /// Minimum canonical byte size (with neither optional field present). Derived from the layout
+    /// constants above, so it cannot drift from what `encode` writes (`OBL-C112`).
+    pub const MIN_ENCODED_SIZE: usize =
+        Self::FIXED_PREFIX + Self::PRESENCE_BYTES + Self::TRAILING;
 
     /// Encode to canonical bytes (ρ-calculus: quote).
     pub fn encode(&self) -> Vec<u8> {
         let cap = Self::MIN_ENCODED_SIZE
-            + if self.dao_escrow_bulla.is_some() { 32 } else { 0 }
-            + if self.dao_membership_note.is_some() { 32 } else { 0 };
+            + if self.dao_escrow_bulla.is_some() { Self::OPTIONAL_VALUE } else { 0 }
+            + if self.dao_membership_note.is_some() { Self::OPTIONAL_VALUE } else { 0 };
         let mut b = Vec::with_capacity(cap);
         b.push(self.version);
         b.extend_from_slice(&self.id.to_bytes());
@@ -1098,12 +952,43 @@ impl Subscription {
 
     /// Decode from canonical bytes (ρ-calculus: eval).
     #[allow(unused_assignments)]
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
+    #[expect(clippy::unwrap_used, reason = "exact length proven by the guard below")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < Self::MIN_ENCODED_SIZE {
+        // The two presence bytes are read first and the total length then checked **exactly**, the
+        // way `RenewParamsV1::decode` checks its merkle proof. A minimum was not enough: a record
+        // whose flag said "bulla" without carrying one stayed above `MIN_ENCODED_SIZE` while the
+        // reads below ran past its end — measured 2026-09-24 as `range end index 296 out of range
+        // for slice of length 264`, a panic no `ContractError` path can see (`OBL-C112`).
+        let has_bulla = *data
+            .get(Self::FIXED_PREFIX)
+            .ok_or_else(|| {
+                ContractError::IoError(format!(
+                    "Subscription: expected at least {} bytes, got {}",
+                    Self::MIN_ENCODED_SIZE,
+                    data.len()
+                ))
+            })?
+            != 0;
+        let note_flag_at = Self::FIXED_PREFIX
+            + 1
+            + if has_bulla { Self::OPTIONAL_VALUE } else { 0 };
+        let has_note = *data
+            .get(note_flag_at)
+            .ok_or_else(|| {
+                ContractError::IoError(format!(
+                    "Subscription: expected at least {} bytes, got {}",
+                    Self::MIN_ENCODED_SIZE,
+                    data.len()
+                ))
+            })?
+            != 0;
+        let expected = Self::MIN_ENCODED_SIZE
+            + if has_bulla { Self::OPTIONAL_VALUE } else { 0 }
+            + if has_note { Self::OPTIONAL_VALUE } else { 0 };
+        if data.len() != expected {
             return Err(ContractError::IoError(format!(
-                "Subscription: expected at least {} bytes, got {}",
-                Self::MIN_ENCODED_SIZE,
+                "Subscription: expected {} bytes, got {}",
+                expected,
                 data.len()
             )));
         }
@@ -1242,17 +1127,49 @@ impl Subscription {
 }
 
 impl Plan {
-    /// Minimum canonical byte size (without optional fields present).
-    pub const MIN_ENCODED_SIZE: usize = 99;
+    /// The canonical bytes a `Plan` always carries, ending with the escrow bulla's presence byte.
+    /// Every field before the optional bulla is a fixed size, so this is a constant of the layout
+    /// rather than of any particular `Plan` (`OBL-C112`). The decoders that a stream hands no
+    /// length to read the prefix, then `OPTIONAL_BULLA` and `ALLOWANCE` as this byte declares.
+    pub const FIXED_PREFIX: usize = 99;
+    /// The escrow bulla, when the presence byte above says it is there.
+    const OPTIONAL_BULLA: usize = 32;
+    /// The allowance `OBL-C105` added: `uses_allowed` and `rate_period`.
+    const ALLOWANCE: usize = 16;
+
+    /// Minimum canonical byte size (without the optional bulla present). Derived from the layout
+    /// constants above rather than written as a literal, so it cannot drift from what `encode`
+    /// writes — the drift that made `OBL-C105`'s new fields a wasm panic.
+    pub const MIN_ENCODED_SIZE: usize = Self::FIXED_PREFIX + Self::ALLOWANCE;
 
     /// Decode from canonical bytes (ρ-calculus: eval).
     #[allow(unused_assignments)]
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
+    #[expect(clippy::unwrap_used, reason = "exact length proven by the guard below")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < Self::MIN_ENCODED_SIZE {
+        // The bulla's presence byte is the last byte of the fixed prefix and it decides how long
+        // the rest is, so it is read first and the total length then checked **exactly**. A buffer
+        // whose flag promises a bulla it does not carry — or an old-format buffer written before
+        // the allowance existed — is refused here as a `ContractError`. The guard used to be a bare
+        // minimum, which no length check could satisfy for the reads below: they ran off the end of
+        // the slice into a panic (`range end index 107 out of range for slice of length 99`, at the
+        // allowance read) rather than a contract error, measured 2026-09-24 (`OBL-C112`).
+        let has_bulla = *data
+            .get(Self::FIXED_PREFIX - 1)
+            .ok_or_else(|| {
+                ContractError::IoError(format!(
+                    "Plan: expected at least {} bytes, got {}",
+                    Self::MIN_ENCODED_SIZE,
+                    data.len()
+                ))
+            })?
+            != 0;
+        let expected = Self::FIXED_PREFIX
+            + if has_bulla { Self::OPTIONAL_BULLA } else { 0 }
+            + Self::ALLOWANCE;
+        if data.len() != expected {
             return Err(ContractError::IoError(format!(
-                "Plan: expected at least {} bytes, got {}",
-                Self::MIN_ENCODED_SIZE,
+                "Plan: expected {} bytes, got {}",
+                expected,
                 data.len()
             )));
         }
@@ -1337,10 +1254,12 @@ impl Plan {
         })
     }
 
-    /// Encode to canonical bytes (ρ-calculus: quote).
-    /// Fixed 115 + 32 optional = 147 max.
+    /// Encode to canonical bytes (ρ-calculus: quote). The one codec: every other codec of `Plan`
+    /// — the sync `Encodable`/`Decodable` pair and the async pair — delegates here (`OBL-C112`).
+    /// `MIN_ENCODED_SIZE` + the optional bulla, so 115 or 147.
     pub fn encode(&self) -> Vec<u8> {
-        let cap = if self.required_dao_escrow.is_some() { 147 } else { 115 };
+        let cap = Self::MIN_ENCODED_SIZE
+            + if self.required_dao_escrow.is_some() { Self::OPTIONAL_BULLA } else { 0 };
         let mut b = Vec::with_capacity(cap);
         b.push(self.version);
         b.extend_from_slice(&self.id.to_le_bytes());
@@ -1356,10 +1275,10 @@ impl Plan {
         if let Some(ref v) = self.required_dao_escrow {
             b.extend_from_slice(&v.to_repr());
         }
-        // `OBL-C105`: the allowance, appended past the optional bulla. Without these two lines the
-        // decode's `MIN_ENCODED_SIZE` guard reads past the end of what this wrote, which is a wasm
-        // panic rather than a decode error — and it is what the row's four-codec note is about: the
-        // three other codecs had the fields and this one did not.
+        // `OBL-C105`'s allowance, appended past the optional bulla. These two lines are why the
+        // other three codecs of `Plan` are now adapters over this one (`OBL-C112`): when it was
+        // `OBL-C105`'s turn, the field reached the serial pair and the async pair but not this
+        // function, and the contract read past the end of what the host wrote.
         b.extend_from_slice(&self.uses_allowed.to_le_bytes());
         b.extend_from_slice(&self.rate_period.to_le_bytes());
         b
