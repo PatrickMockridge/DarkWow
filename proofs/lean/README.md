@@ -422,10 +422,15 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
     instance)` is a hash; what `KeyScope.lean` proves is the *discipline* — a key derived for one
     instance is not the key for another — not anything about the curve.
   * **`construct_deterministic` is determinism, not byte-identity.** Two calls agreeing on the
-    selection and the `Seed` agree, whatever else they were given. §1's *"byte-identical state"* and
-    §0.1.5's purity rules are **not** mechanized: `WritePath.Transaction` and `WalletState`'s state are
-    structures of `Nat`s that are not encoded into any of `Wire.lean`'s schemas, so there is no theorem
-    here about bytes, and none about the Rust or Python writers agreeing with this model.
+    selection and the `Seed` agree, whatever else they were given. §1's *"byte-identical state"* is now
+    **half mechanized, and the half that was in doubt is the one that landed**: `WalletState.lean` has
+    `encodeConfirmed` (the five parts in a fixed order, each length-prefixed) and
+    **`encodeConfirmed_injective`**, so byte-equality is *faithful* — it implies state-equality rather
+    than being a weaker relation a hash-like rendering would also satisfy. The other half,
+    "identical inputs give identical bytes", was never the hard part: it follows from `scan` being a
+    function, and dressing that as a theorem would be a tautology. What remains untouched is the part
+    this file never claimed: `WritePath.Transaction` still has no encoder, and nothing here says the
+    Rust or Python writers agree with the model's rendering.
   * **Nothing in these four modules reads a `wallet_db`, a `.zk` file, or the Rust wallet.** §6.3's
     steps 5–7 (encoding, signature, fee) are outside them; `WalletState`'s Merkle root is a `Nat`
     field rather than a computed tree, which is why §6.4.0's obligation is stated against

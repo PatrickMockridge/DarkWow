@@ -162,6 +162,102 @@ def ConfirmedState.empty : ConfirmedState :=
   { merkleRoot := 0, spentNullifiers := [], historicalRoots := [0]
   , recognizedCommitments := [], held := [] }
 
+/- ==========================================================================
+   §1's bytes: an encoding of the confirmed state, and its faithfulness
+   ==========================================================================
+   §1's claim is that identical inputs give a *byte-identical* state, and this module's own note (and
+   `proofs/lean/README.md`'s honest-scope entry) recorded for weeks that **no encoder existed**, so
+   there was no theorem about bytes at all — the state was a structure of `Nat`s nothing rendered.
+
+   The encoder is below. **What it is worth is worth stating precisely, because the claim's content is
+   not where it looks.** "Identical inputs give identical bytes" is a consequence of `scan` being a
+   *function* and nothing more — once any encoder exists, that half is free. The half with content is
+   **faithfulness**: that the encoding loses nothing, so byte-equality implies state-equality rather
+   than being a weaker relation that a hash-like rendering would also satisfy. So the theorem proved
+   here is the injectivity, and the note in the module header says which half was ever in doubt.
+
+   The **length prefix is load-bearing and not decoration**: `xs.length :: xs` is what makes the parts
+   readable back, which is the `SerializedLen` shape this tree uses elsewhere. Without it the
+   concatenation below could not be split, and an encoding that cannot be split cannot be proved
+   injective.
+   ========================================================================== -/
+
+/-- A byte-level rendering of one part: its length, then its elements. The prefix is what makes the
+    part recoverable from a concatenation — see `encodeList_append_split`. -/
+def encodeList (xs : List Nat) : List Nat := xs.length :: xs
+
+/-- **The prefix is readable**: two length-prefixed blocks are equal only if their contents are. -/
+@[axiom_budget 0]
+theorem encodeList_injective : Function.Injective encodeList := by
+  intro x y h
+  injection h with _ hxy
+
+/-- **The first block is recoverable by taking its prefixed length** — the property the prefix exists
+    for, and the reason an encoding without it could not be split and so could not be proved injective. -/
+@[axiom_budget 0]
+theorem encodeList_take (xs ys : List Nat) :
+    (encodeList xs ++ ys).take (xs.length + 1) = encodeList xs := by
+  simp [encodeList]
+
+/-- And the remainder is what is left after that boundary. -/
+@[axiom_budget 0]
+theorem encodeList_drop (xs ys : List Nat) :
+    (encodeList xs ++ ys).drop (xs.length + 1) = ys := by
+  simp [encodeList]
+
+/-- **A prefixed block splits off the front with no ambiguity**: from an equality of concatenations the
+    head block and the remainder are recovered separately. The three lemmas above are the whole proof —
+    the boundary is read (head), not guessed (which is what a length-free encoding would force). -/
+@[axiom_budget 0]
+theorem encodeList_append_split (x y u v : List Nat)
+    (h : encodeList x ++ y = encodeList u ++ v) : x = u ∧ y = v := by
+  -- `encodeList x ++ y` *is* `x.length :: (x ++ y)`, definitionally, so the two prefixes are read by
+  -- cons-injection. (`List.head?` is avoided deliberately: the simplifier rewrites it on an append into
+  -- `.or`, which is a form the recovery lemmas cannot match.)
+  have hlen : x.length = u.length := by
+    have hcons : x.length :: (x ++ y) = u.length :: (u ++ v) := h
+    exact (List.cons.inj hcons).1
+  -- `calc` rather than `rw`: the recovery lemmas need the *bound* to match syntactically
+  -- (`x.length + 1` on the left, `u.length + 1` on the right once `hlen` is used), and a rewrite over
+  -- both sides can only match one of the two. The calc states each step's justification directly.
+  have hxu : x = u := encodeList_injective (by
+    calc encodeList x = (encodeList x ++ y).take (x.length + 1) := (encodeList_take x y).symm
+      _ = (encodeList u ++ v).take (x.length + 1) := congrArg (fun l => l.take (x.length + 1)) h
+      _ = encodeList u := by rw [hlen]; exact encodeList_take u v)
+  have hyv : y = v := by
+    calc y = (encodeList x ++ y).drop (x.length + 1) := (encodeList_drop x y).symm
+      _ = (encodeList u ++ v).drop (x.length + 1) := congrArg (fun l => l.drop (x.length + 1)) h
+      _ = v := by rw [hlen]; exact encodeList_drop u v
+  exact ⟨hxu, hyv⟩
+
+/-- **§1's state, encoded.** The five parts in a fixed order, each length-prefixed, concatenated — the
+    order is the only thing that makes the rendering canonical, and every field is `Nat`-valued so the
+    encoding is total. Written right-nested so that each of the four splits below is syntactic. -/
+def encodeConfirmed (s : ConfirmedState) : List Nat :=
+  encodeList [s.merkleRoot] ++
+    (encodeList s.spentNullifiers ++
+      (encodeList s.historicalRoots ++
+        (encodeList s.recognizedCommitments ++ encodeList s.held)))
+
+/-- **The encoding is faithful**: it loses nothing, so byte-equality is not weaker than state-equality.
+    This is the half of §1's byte-identity claim that had content — the other half follows from `scan`
+    being a function, and the module header says so rather than dressing a tautology as a theorem.
+
+    The proof is four splits, one per boundary the prefix makes unambiguous, and the last boundary is
+    closed by the encoding's own injectivity rather than by a fifth split. -/
+@[axiom_budget 0]
+theorem encodeConfirmed_injective : Function.Injective encodeConfirmed := by
+  intro s t h
+  unfold encodeConfirmed at h
+  obtain ⟨h₁, h₂⟩ := encodeList_append_split [s.merkleRoot] _ [t.merkleRoot] _ h
+  obtain ⟨h₃, h₄⟩ := encodeList_append_split s.spentNullifiers _ t.spentNullifiers _ h₂
+  obtain ⟨h₅, h₆⟩ := encodeList_append_split s.historicalRoots _ t.historicalRoots _ h₄
+  obtain ⟨h₇, h₈⟩ := encodeList_append_split s.recognizedCommitments _ t.recognizedCommitments _ h₆
+  have h₉ : s.held = t.held := encodeList_injective h₈
+  have hroot : s.merkleRoot = t.merkleRoot := by simpa using h₁
+  cases s; cases t
+  simp_all
+
 /-- §1's scan of one block: publish its observed nullifiers, recognize its commitments, hold the
     capabilities it produced. Three `INSERT OR IGNORE`s (step 7) over a sequential iteration (step 6),
     and nothing else — which is what `applyBlock_idempotent` below turns into a law. -/
