@@ -429,7 +429,15 @@ def run_collector():
     names = sorted(qualified_theorems())
     if not names:
         return None, "no theorem/lemma declarations found in the sources"
-    cmd = ["lake", "env", "lean", "--run", "src/CheckAxioms.lean"]
+    # Through the repository's Lean guard, never bare. The collector is a `lean` process like any
+    # other and carries the same hazard; `--stream` is what keeps its TSV on stdout, where the parser
+    # below reads it. Refusing to run unguarded is deliberate — a fallback here would be a bypass of
+    # the memory ceiling this tree added after a 4-threaded `lake build DarkFi` froze the host
+    # (2026-09-24; see `scripts/lean-build.sh`).
+    guard = os.path.join(REPO_ROOT, "scripts", "lean-build.sh")
+    if not os.path.exists(guard):
+        return None, f"{rel(guard)} does not exist — refusing to run the collector unguarded"
+    cmd = [guard, "--stream", "env", "lean", "--run", "src/CheckAxioms.lean"]
     try:
         proc = subprocess.run(cmd, cwd=LEAN_DIR, input="\n".join(names) + "\n",
                               capture_output=True, text=True, timeout=3600)
@@ -458,6 +466,20 @@ def run_collector():
     if not rows:
         err = (proc.stderr or "").strip().splitlines()
         return None, f"collector reported no theorems ({err[-1] if err else 'no diagnostics'})"
+    # The collector ends with `check_axioms: N theorems reported, M unresolved`. Its stream is merged
+    # into the guard's `--stream` output, so both pipes are searched rather than assuming one.
+    #
+    # `M` matters because `check_budgets` iterates over what the collector *found*: a declaration the
+    # sources declare but the environment does not hold would otherwise have no row, no message, and
+    # no budget check — the shape of "181 theorems nobody has measured" that this whole file exists to
+    # prevent. Measured before making this fatal: `694 theorems reported, 0 unresolved`, so it cannot
+    # fire for a pre-existing reason. The disposition follows the register's rule — a gate that is red
+    # for a reason nobody is working on is one people learn to read past — and the number is zero.
+    combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    m = re.search(r"(\d+) theorems reported, (\d+) unresolved", combined)
+    if m and int(m.group(2)) > 0:
+        return None, (f"{m.group(2)} of {m.group(1)} declared declarations did not resolve, so their "
+                      "budgets are unverified rather than checked")
     return rows, None
 
 
@@ -509,6 +531,7 @@ def check_tautologies(rows):
     off within a week; that is the test the hard arms above are held to, and the reason they block.
     """
     if rows is None:
+        skip("anti-vacuity: the collector could not run, so no theorem's statement was seen")
         return None
     roots = project_roots()
     fails, soft, soft_binders = [], [], []
@@ -650,6 +673,7 @@ def check_trust_declarations(rows):
     near-identical headers to this tree and no information beyond what the budget table prints.
     """
     if rows is None:
+        skip("trust declarations: the collector could not run, so no theorem's axiom set is known")
         return None
     # Which file declares which theorem, and which files carry a DECLARED: line.
     where = {}
@@ -686,6 +710,8 @@ def check_trust_declarations(rows):
 
 def emit_table(rows):
     if rows is None:
+        print()
+        print("(budget table unavailable: the collector could not run, so no budget was measured)")
         return
     print()
     print(f"{'theorem':<62} {'budget':>6}  assumptions")
@@ -796,7 +822,14 @@ def main():
         print(f"{RED}FAIL:{NC} the Lean assumption boundary is not intact")
         return 1
     if skipped:
-        print(f"{YELLOW}INCOMPLETE:{NC} {skipped} check(s) could not run — see SKIP above")
+        # The tally used to read `could not run — see SKIP above` while only *one* of the skipped
+        # checks printed a SKIP line, and then printed `PASS … intact` anyway. A reader had to notice
+        # that the count and the number of SKIP lines disagreed. Each skipped check now prints its own
+        # line (see the check functions) and the verdict is named here rather than claimed.
+        names = ", ".join(k for k, v in results.items() if v is None)
+        print(f"{YELLOW}INCOMPLETE:{NC} {skipped} check(s) did not run: {names}")
+        print(f"{YELLOW}INCOMPLETE:{NC} this run does NOT establish that the boundary is intact")
+        return 0
     print(f"{GREEN}PASS:{NC} Lean assumption boundary intact")
     return 0
 

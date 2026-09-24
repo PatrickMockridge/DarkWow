@@ -11,7 +11,7 @@ capability modules all `import Mathlib`, and several proofs cite mathlib lemmas 
 **To verify everything:**
 
 ```bash
-cd proofs/lean && lake build DarkFi
+scripts/lean-build.sh build DarkFi Transcribed
 ```
 
 Note the target. A bare `lake build` builds "the default facet of the root package", which for
@@ -20,9 +20,14 @@ said `lake build` for a long time, and the CI gate in `scripts/run-all-tests.sh`
 the verification that was supposed to be happening was not. `lake build DarkFi` type-checks the
 proofs.
 
+**And run it through `scripts/lean-build.sh`, never `lake` directly.** The wrapper adds the cgroup
+memory ceiling whose absence froze this host on 2026-09-24 — the `LEAN_NUM_THREADS=4` this README
+used to document bounds thread count and not memory. See "Never call `lake` directly" under
+Verification below, which also gives the axiom-boundary command.
+
 ## What the build currently says
 
-Run `lake build DarkFi` before trusting anything below. As of 2026-09-20 it completes with **no
+Run `scripts/lean-build.sh build DarkFi Transcribed` before trusting anything below. As of 2026-09-20 it completes with **no
 errors and no warnings**. It previously carried 22 `unused variable` warnings — a hypothesis or
 binder no proof step consumed — and those turned out to be the same defect as the tautologies at a
 smaller scale: `l1_combinatorial_asymmetry` was `l1_exceeds_l2` under a name whose `(c : Halo2L1Contract)
@@ -276,7 +281,7 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   `Circuits/InstanceDerivation.lean` records for `OBL-T7`. What is proved is that *given* the
   witness, the bound follows — one level of statement further in than the arithmetic, and no
   further.
-- **Nothing below is a claim about a build you have not run.** `lake build DarkFi` completes clean
+- **Nothing below is a claim about a build you have not run.** `scripts/lean-build.sh build DarkFi Transcribed` completes clean
   as of 2026-09-22 (no errors, no warnings — see "What the build currently says" above), but the
   build is what makes every statement below true, so run it before quoting any of them.
 - **The ρ-calculus is mechanized; its α-rule is not.** `Semantics/` defines the syntax, structural
@@ -704,13 +709,13 @@ proofs/lean/
 To add a new primitive type:
 1. Define it in `Capability/Types.lean` with its barb set
 2. Add it to `allPrimitiveTypes`
-3. `lake build` — Pareto-efficiency is automatically checked for all new pairs
+3. `scripts/lean-build.sh build DarkFi Transcribed` — Pareto-efficiency is automatically checked for all new pairs
 
 To add a new capability type:
 1. Define `Resource` (required barbs) and `Action` in `Capability/Composition.lean`
 2. Construct `CapabilityType` with `primitives` list and `coversBarbs` proof
 3. Add an `IO.println` check to the `#eval do` block
-4. `lake build` — the `coversBarbs` proof is checked by the Lean4 kernel
+4. `scripts/lean-build.sh build DarkFi Transcribed` — the `coversBarbs` proof is checked by the Lean4 kernel
 
 To add a new ZK opcode proof:
 1. Model the constraint equations in `Gadgets.lean` or `Comparison.lean`

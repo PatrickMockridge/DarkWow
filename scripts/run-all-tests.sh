@@ -99,6 +99,21 @@ run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain
 # OBL-C78/OBL-C79, so it is named here and not duplicated. A "the full gate is green" claim is
 # therefore two obligations away, not one: 15 unclassified instances and 29 metadata findings.
 run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instance-derivation.sh"
+# The same sources, transcribed into Lean as data. `Transcribed.lean` is a *generated*
+# artefact, so it is checked the way this tree checks generated artefacts — by re-running the
+# generator: `--check` regenerates in memory and compares byte for byte, so an edited `.zk` source, an
+# edited lexer, or a hand-edit to the module all fail here rather than leaving a module that describes
+# circuits no longer in the tree. Seconds, no build, so it sits with the other circuit audits.
+#
+# WHAT A PASS MEANS, and it is narrower than "the circuits are safe": that the committed module is
+# what the generator produces today. The verdicts inside it are the *model's*
+# (`Circuits/InstanceDerivation`'s rule, one theorem per circuit closed by `decide`), and its header
+# decomposes where those verdicts differ from this gate's checker — 170 circuits fail the model's
+# strict rule, of which 155 are the checker's `redundant` class, 11 `declared-free`, 3 the checker's
+# own `OBL-Z16` failures, and 1 the model's declared-constant boundary. It is the *data* side of
+# `OBL-T7`'s `(r, s) ↦ circuit` bridge and not the bridge, which the module says it does not supply.
+run_gate "circuit transcription freshness (OBL-T7)" \
+                                          python3 "$REPO_ROOT/scripts/gen_circuit_transcription.py" --check
 # OBL-C72/C73: the exec/apply phase rule — apply writes blindly, exec does not write. This gate
 # existed and was invoked by NOTHING until now, which is why the class it guards drifted: seven
 # live `db_set` calls in an exec phase, every one of them a call the host refuses at runtime
@@ -218,7 +233,34 @@ run_gate "Rust tests (make test)"          make test
 # compiling a single module. The gate below said `lake build` and therefore passed for as long
 # as it existed while 24 of 50 modules did not compile. `lake build DarkFi` is what actually
 # type-checks the proofs. See proofs/lean/README.md.
-run_gate "Lean proofs (lake build DarkFi)" bash -c 'cd proofs/lean && lake build DarkFi'
+#
+# GUARDED BY `scripts/lean-build.sh`, which is the 2026-09-24 correction to the paragraph that stood
+# here. `LEAN_NUM_THREADS=4` was this file's whole guardrail and it is not sufficient: the cap bounds
+# how many `lean` processes run, not how much memory any one of them uses. On 2026-09-24 **this exact
+# gate** — `LEAN_NUM_THREADS=4 lake build DarkFi` — exhausted this host's memory and froze the
+# machine, taking every open window with it; the failed scope `run-rdfa5ca85…` still in
+# `systemctl --user list-units` is that command. The wrapper keeps the thread cap and adds a cgroup
+# `MemoryMax` ceiling, so a runaway elaboration is killed with the exit explained and the desktop
+# intact rather than taking the box down. See proofs/lean/README.md.
+#
+# The paragraph that stood here said the cap covered "both invocations" — the build, and the
+# collector inside `script/check_lean_axioms.py`. It covered one: the collector runs its own
+# `lake env lean --run` as a separate process, and `env LEAN_NUM_THREADS=4` on the line below was
+# scoped to this gate alone. It is guarded now too, through the wrapper's `--stream` mode.
+#
+# TWO TARGETS, and the second is load-bearing. The transcription is a library of its own so that
+# `lake build DarkFi` does not elaborate it — a generated module of 181 `decide` proofs over 2747
+# statements that most work in this tree does not depend on. That separation was made on 2026-09-24
+# while the artefact could not build at all: it exceeded 24 GiB in one `lean` process and took this
+# host down. The cause turned out to be an inline `if` in the model's `boundWalk` whose branches the
+# kernel's reduction duplicated, compounding per statement; with it extracted (`bindAssign` in
+# `DarkFi/Circuits/InstanceDerivation.lean`, which carries the measurement) the whole artefact builds
+# in 78 s and 743 MB. The separation is kept for the reason it is still owed: `CheckAxioms.lean`
+# imports this module by name, so its `.olean` must exist before the collector can run — and with
+# `--require-collector` that is a hard failure rather than a silent gap, which is why both targets are
+# named here rather than left for the axiom gate to discover.
+run_gate "Lean proofs (lake build DarkFi + Transcribed)" \
+                                          "$SCRIPT_DIR/lean-build.sh" build DarkFi Transcribed
 
 # The assumption boundary. Runs after the build it depends on: the budget check walks the
 # compiled environment, so it needs `lake build DarkFi` to have succeeded. `--require-collector`
@@ -229,6 +271,37 @@ run_gate "Lean assumption boundary (axioms/budgets)" \
 
 run_gate "Python: pipeline model"          python3 contrib/model/pipeline_model.py
 run_gate "Python: supply chain model"      python3 contrib/model/supply_chain_model.py
+
+# The rest of `contrib/model/`. Twenty-two models existed and three were gated; of the ungated ones,
+# `chain_validation_model.py` caught its own `AssertionError`s per test, counted them, and fell off
+# the end of its `__main__` with exit 0 whether they passed or failed — so wiring it as it stood would
+# have added a gate that *cannot* fail, which is worse than leaving it ungated: an ungated model is
+# invisible, a vacuous gate is a false assurance counted in the tally. Each model below was given a
+# failure-sensitive exit and falsified before it was wired, by injecting a failure through the model's
+# own error path rather than by flipping an assertion — flipping one is a misleading control, because a
+# model that swallows test failures still exits non-zero when its first `assert` sits outside the
+# `try`. Measured aggregate ≈4.5 minutes, dominated by `chain_validation_model` (98 s) and
+# `wallet_simulation` (97 s); the other sixteen are 0–29 s. Two of the twenty-two are excluded, with
+# their reasons: `capability_discovery.py` is a report with no assertions and no exit, and
+# `generate_wallet_fixture.py` is a generator that needs an `--out`.
+run_gate "Python: chain model"              python3 contrib/model/chain_model.py
+run_gate "Python: chain validation model"   python3 contrib/model/chain_validation_model.py
+run_gate "Python: dex lock model"           python3 contrib/model/dex_lock_model.py
+run_gate "Python: dockernet model"          python3 contrib/model/dockernet_model.py
+run_gate "Python: fee model"                python3 contrib/model/fee_model.py
+run_gate "Python: fee window model"         python3 contrib/model/fee_window_model.py
+run_gate "Python: halo2 math"               python3 contrib/model/halo2_math.py
+run_gate "Python: key management"           python3 contrib/model/key_management.py
+run_gate "Python: merge mining spec"        python3 contrib/model/merge_mining_model.py
+run_gate "Python: nullifier lifecycle"      python3 contrib/model/nullifier_lifecycle.py
+run_gate "Python: proof of token balance"   python3 contrib/model/proof_of_token_balance.py
+run_gate "Python: sync model"               python3 contrib/model/sync_model.py
+run_gate "Python: test oracle"              python3 contrib/model/test_oracle.py
+run_gate "Python: transaction lifecycle"    python3 contrib/model/transaction_lifecycle.py
+run_gate "Python: uncle fork model"         python3 contrib/model/uncle_fork_model.py
+run_gate "Python: vm state model"           python3 contrib/model/vm_state_model.py
+run_gate "Python: wallet model"             python3 contrib/model/wallet_model.py
+run_gate "Python: wallet simulation"        python3 contrib/model/wallet_simulation.py
 # The three-chain merge-mining model, whose "CARIBINA rejects the attacker fork" table
 # `doc/src/arch/caribina.md` quotes. It ran nowhere until 2026-09-22, so the table's numbers sat in
 # the docs unchecked while the model's Caribina settlement was measured on the very chain under
