@@ -418,6 +418,11 @@ async fn cmd_simulate_deposit(
             bridge_nonce,
             external_block_hash,
             chain,
+            // This argument was missing, so the crate did not compile at HEAD — and nothing in
+            // `scripts/run-all-tests.sh` builds it, which is why that went unnoticed. The value is
+            // the dummy three-element proof `bridge_spec.rs` deposits with, for the same reason: a
+            // test helper needs the *shape*, not a real Merkle path into a bridge tree.
+            vec![[4u8; 32], [5u8; 32], [6u8; 32]],
             0, // fee
         )
         .map_err(|e| anyhow!("Failed to generate deposit proof: {e}"))?;
@@ -459,7 +464,6 @@ async fn cmd_simulate_withdraw(
             secret,
             amount,
             recipient_hash,
-            0, // token_minimum
             0, // fee
         )
         .map_err(|e| anyhow!("Failed to generate withdraw proof: {e}"))?;

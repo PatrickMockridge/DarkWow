@@ -124,8 +124,8 @@ fn test_deposit_params_prefixes_are_not_bytes() {
     assert_eq!(decoded.amount, 777);
 }
 
-/// The withdraw proof is kilobyte-scale. `token_minimum` is the last field, so a truncated length
-/// moves it.
+/// The withdraw proof is kilobyte-scale. `max_fee_bp` is the optional field after it, so a proof
+/// length read as a byte realigns everything that follows — this pins the round trip.
 #[test]
 fn test_withdraw_params_proof_length_is_not_a_byte() {
     let params = WithdrawParams {
@@ -137,7 +137,6 @@ fn test_withdraw_params_proof_length_is_not_a_byte() {
         timeout_height: 999,
         feed_mode: 1,
         max_fee_bp: Some(250),
-        token_minimum: 12345,
     };
 
     let encoded = params.encode().unwrap();
@@ -146,7 +145,6 @@ fn test_withdraw_params_proof_length_is_not_a_byte() {
     assert_eq!(decoded.proof.len(), 300);
     assert_eq!(decoded.amount, 1000);
     assert_eq!(decoded.max_fee_bp, Some(250));
-    assert_eq!(decoded.token_minimum, 12345);
     assert_eq!(decoded.timeout_height, 999);
 }
 
@@ -187,7 +185,6 @@ fn test_withdraw_params_encoding() {
         timeout_height: 1000,
         feed_mode: 1,
         max_fee_bp: Some(500),
-        token_minimum: 100,
     };
 
     let encoded = serialize(&params);
@@ -215,7 +212,6 @@ fn test_withdraw_params_optional_fields() {
         timeout_height: 0,
         feed_mode: 0,
         max_fee_bp: None,
-        token_minimum: 0,
     };
 
     let encoded = serialize(&params);

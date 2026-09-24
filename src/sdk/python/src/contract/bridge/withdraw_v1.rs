@@ -44,7 +44,6 @@ impl FunctionParams for bridge_model::WithdrawParams {
         dict.set_item("timeout_height", format!("{:?}", self.timeout_height))?;
         dict.set_item("feed_mode", format!("{:?}", self.feed_mode))?;
         dict.set_item("max_fee_bp", format!("{:?}", self.max_fee_bp))?;
-        dict.set_item("token_minimum", self.token_minimum)?;
         Ok(dict.unbind())
     }
 
@@ -58,7 +57,6 @@ impl FunctionParams for bridge_model::WithdrawParams {
         writeln!(out, "{prefix}timeout_height: {:?}", self.timeout_height).unwrap();
         writeln!(out, "{prefix}feed_mode: {:?}", self.feed_mode).unwrap();
         writeln!(out, "{prefix}max_fee_bp: {:?}", self.max_fee_bp).unwrap();
-        writeln!(out, "{prefix}token_minimum: {}", self.token_minimum).unwrap();
         Ok(())
     }
 }

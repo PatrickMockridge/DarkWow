@@ -1689,7 +1689,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         let withdraw = bridge_harness.withdraw(
             secret, 5000,
             pallas::Base::from(400u64),
-            10, 1,
+            1,
         ).map_err(|e| format!("withdraw proof failed: {}", e))?;
         assert!(!withdraw.call_data.is_empty(), "withdraw call_data must not be empty");
         println!("  Withdraw call_data={}B", withdraw.call_data.len());
@@ -1714,7 +1714,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         let double_withdraw = bridge_harness.withdraw(
             secret, 3000,
             pallas::Base::from(999u64),
-            10, 1,
+            1,
         ).map_err(|e| format!("double-withdraw proof failed: {}", e))?;
 
         let height3 = chain.height().succ();

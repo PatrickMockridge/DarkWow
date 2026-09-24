@@ -198,10 +198,49 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h.withdraw(secret, 5000, pallas::Base::from(400u64), 1, 10).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.withdraw(secret, 5000, pallas::Base::from(400u64), 10).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let child = pn_redeem_child(bridge_cid, &n[1], 5000)?;
+                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                    }
+                }),
+            },
+            EndpointSpec {
+                // The anti-dust floor (`OBL-Z16`). A withdrawal *below*
+                // `BRIDGE_CONTRACT_MIN_WITHDRAWAL` (100) must be refused by the host now that the
+                // circuit's prover-chosen `token_minimum` is gone. The amount is 1 rather than 0
+                // because 0 was already unprovable — the old `less_than_strict(token_minimum, amount)`
+                // with a prover-chosen `token_minimum >= 0` implied `amount >= 1`, and the old
+                // circuit's `range_check(64, …)` admitted 0 as a *witness* but the comparison refused
+                // it — so a zero-amount control would be rejected in both the old and the new code
+                // and the assertion would hold either way. 1 is the smallest amount the old path
+                // accepted and the floor refuses.
+                //
+                // MASKED END-TO-END, and said rather than implied: `OBL-C21` records that the
+                // withdrawal path fails at height 4 inside the child
+                // `promissory_note::redeem_v1` (`Custom(13)`, "Merkle root not found"), and a broken
+                // child aborts the transaction independently of the parent's own check — so today
+                // this rejection cannot be *attributed* to the floor. What is verified until that
+                // fixture is repaired is the check itself, both sides, plus the metadata gate's
+                // agreement at 4/4/4. The endpoint is here so the control exists the day the child
+                // works, and so its absence is visible rather than assumed.
+                name: "WithdrawV1BelowMinimum",
+                is_zk: true,
+                expectation: EndpointExpectation::Rejection,
+                generate_with_coinbase: None,
+                verify_state: Some(Box::new(move |chain| {
+                    let r = chain.query_contract_state(cid, "withdrawals", &[])?;
+                    let _ = r;
+                    Ok(())
+                })),
+                generate: Box::new({
+                    let notes = notes.clone();
+                    move || {
+                        let r = h.withdraw(secret, 1, pallas::Base::from(401u64), 10).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let n = notes.lock().unwrap();
+                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
+                        let child = pn_redeem_child(bridge_cid, &n[1], 1)?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),

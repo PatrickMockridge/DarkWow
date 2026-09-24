@@ -91,6 +91,20 @@ pub const BRIDGE_CONTRACT_DEPOSITS_TREE: &str = "deposits";
 pub const BRIDGE_CONTRACT_WITHDRAWALS_TREE: &str = "withdrawals";
 pub const BRIDGE_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 
+/// Minimum withdrawal amount — the anti-dust floor (`OBL-Z16`).
+///
+/// A contract constant rather than a per-chain table or a registered value, for a reason the params
+/// make plain: `WithdrawParams` carries no chain or asset field, so a per-token floor has nothing to
+/// be indexed by, and adding a `config` call to a deferred, non-genesis contract would be a new
+/// authorised governance surface for a value nothing can set yet.
+///
+/// It replaces the withdrawal circuit's `token_minimum`, which the *prover* chose (see `withdraw.zk`'s
+/// comment for why bounding it repaired nothing). So it must be at least 1 — the removed
+/// `less_than_strict(token_minimum, amount)` with `token_minimum >= 0` implied `amount >= 1` — and no
+/// larger than the amounts the specs withdraw (5000 in `bridge_spec.rs`), or a working test would
+/// start refusing for a reason unrelated to what it tests.
+pub const BRIDGE_CONTRACT_MIN_WITHDRAWAL: u64 = 100;
+
 // These are keys inside the info tree
 pub const BRIDGE_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 /// Promissory Note contract ID for cross-contract routing validation

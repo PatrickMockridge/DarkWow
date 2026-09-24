@@ -279,9 +279,6 @@ pub struct WithdrawParams {
 
     /// Optional user-specified max fee in basis points (0 = use contract default)
     pub max_fee_bp: Option<u64>,
-
-    /// Token-aware minimum withdrawal amount (anti-dust)
-    pub token_minimum: u64,
 }
 
 impl dwow_serial::Encodable for WithdrawParams {
@@ -301,7 +298,7 @@ impl dwow_serial::Decodable for WithdrawParams {
 
 impl WithdrawParams {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
-        let mut b = Vec::with_capacity(102 + self.proof.len());
+        let mut b = Vec::with_capacity(94 + self.proof.len());
         b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.recipient_hash);
         b.extend_from_slice(&self.amount.to_le_bytes());
@@ -312,26 +309,23 @@ impl WithdrawParams {
         b.push(self.feed_mode);
         b.push(self.max_fee_bp.is_some() as u8);
         if let Some(v) = self.max_fee_bp { b.extend_from_slice(&v.to_le_bytes()); }
-        b.extend_from_slice(&self.token_minimum.to_le_bytes());
         Ok(b)
     }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 102 { return Err(ContractError::IoError("WithdrawParams: too short".into())); }
+        if data.len() < 94 { return Err(ContractError::IoError("WithdrawParams: too short".into())); }
         let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("WithdrawParams: invalid nullifier".into()))?;
         let recipient_hash: [u8;32] = data[32..64].try_into().unwrap();
         let amount = u64::from_le_bytes(data[64..72].try_into().unwrap());
         let proof_len = SerializedLen::from_le_bytes(data[72..76].try_into().unwrap()).to_usize(); let p = proof_len.saturating_add(76);
-        if data.len() < p+8+8+1+1+8 { return Err(ContractError::IoError("WithdrawParams: proof truncated".into())); }
+        if data.len() < p+8+8+1+1 { return Err(ContractError::IoError("WithdrawParams: proof truncated".into())); }
         let proof = data[76..p].to_vec();
         let fee = u64::from_le_bytes(data[p..p+8].try_into().unwrap());
         let timeout_height = u64::from_le_bytes(data[p+8..p+16].try_into().unwrap());
         let feed_mode = data[p+16];
         let has_mfb = data[p+17] != 0;
-        let max_fee_bp = if has_mfb { if data.len() < p+26+8 { return Err(ContractError::IoError(format!("WithdrawParams: expected {} bytes, got {}", p+26+8, data.len()))); } Some(u64::from_le_bytes(data[p+18..p+26].try_into().unwrap())) } else { None };
-        let token_pos = if has_mfb { p+26 } else { p+18 };
-        let token_minimum = u64::from_le_bytes(data[token_pos..token_pos+8].try_into().unwrap());
-        Ok(WithdrawParams { nullifier, recipient_hash, amount, proof, fee, timeout_height, feed_mode, max_fee_bp, token_minimum })
+        let max_fee_bp = if has_mfb { if data.len() < p+26 { return Err(ContractError::IoError(format!("WithdrawParams: expected {} bytes, got {}", p+26, data.len()))); } Some(u64::from_le_bytes(data[p+18..p+26].try_into().unwrap())) } else { None };
+        Ok(WithdrawParams { nullifier, recipient_hash, amount, proof, fee, timeout_height, feed_mode, max_fee_bp })
     }
 }
 

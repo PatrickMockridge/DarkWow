@@ -67,10 +67,6 @@ pub struct LotteryHarness {
     expire_lottery_zkbin: ZkBinary,
     /// ExpireLotteryV2 ProvingKey
     expire_lottery_pk: ProvingKey,
-    /// InitializeV2 ZkBinary
-    initialize_zkbin: ZkBinary,
-    /// InitializeV2 ProvingKey
-    initialize_pk: ProvingKey,
 }
 
 impl LotteryHarness {
@@ -81,14 +77,12 @@ impl LotteryHarness {
         let claim_prize_bin = include_bytes!("../../../lottery/proof/claim_prize.zk.bin");
         let draw_winners_bin = include_bytes!("../../../lottery/proof/draw_winners.zk.bin");
         let expire_lottery_bin = include_bytes!("../../../lottery/proof/expire_lottery.zk.bin");
-        let initialize_bin = include_bytes!("../../../lottery/proof/initialize.zk.bin");
 
         let commit_ticket_zkbin = ZkBinary::decode(commit_ticket_bin, false).unwrap();
         let reveal_ticket_zkbin = ZkBinary::decode(reveal_ticket_bin, false).unwrap();
         let claim_prize_zkbin = ZkBinary::decode(claim_prize_bin, false).unwrap();
         let draw_winners_zkbin = ZkBinary::decode(draw_winners_bin, false).unwrap();
         let expire_lottery_zkbin = ZkBinary::decode(expire_lottery_bin, false).unwrap();
-        let initialize_zkbin = ZkBinary::decode(initialize_bin, false).unwrap();
 
         let commit_ticket_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&commit_ticket_zkbin).unwrap(),
@@ -110,17 +104,12 @@ impl LotteryHarness {
             dwow_core::zk::empty_witnesses(&expire_lottery_zkbin).unwrap(),
             &expire_lottery_zkbin,
         );
-        let initialize_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&initialize_zkbin).unwrap(),
-            &initialize_zkbin,
-        );
 
         let commit_ticket_pk = ProvingKey::build(commit_ticket_zkbin.k, &commit_ticket_circuit).expect("ProvingKey::build failed");
         let reveal_ticket_pk = ProvingKey::build(reveal_ticket_zkbin.k, &reveal_ticket_circuit).expect("ProvingKey::build failed");
         let claim_prize_pk = ProvingKey::build(claim_prize_zkbin.k, &claim_prize_circuit).expect("ProvingKey::build failed");
         let draw_winners_pk = ProvingKey::build(draw_winners_zkbin.k, &draw_winners_circuit).expect("ProvingKey::build failed");
         let expire_lottery_pk = ProvingKey::build(expire_lottery_zkbin.k, &expire_lottery_circuit).expect("ProvingKey::build failed");
-        let initialize_pk = ProvingKey::build(initialize_zkbin.k, &initialize_circuit).expect("ProvingKey::build failed");
 
         Self {
             commit_ticket_zkbin,
@@ -133,8 +122,6 @@ impl LotteryHarness {
             draw_winners_pk,
             expire_lottery_zkbin,
             expire_lottery_pk,
-            initialize_zkbin,
-            initialize_pk,
         }
     }
 
@@ -344,7 +331,7 @@ impl super::ContractHarness for LotteryHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CommitTicketV2", "RevealTicketV2", "ClaimPrizeV2", "DrawWinnersV2", "ExpireLotteryV2", "InitializeV2"]
+        vec!["CommitTicketV2", "RevealTicketV2", "ClaimPrizeV2", "DrawWinnersV2", "ExpireLotteryV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
@@ -354,7 +341,6 @@ impl super::ContractHarness for LotteryHarness {
             "ClaimPrizeV2" => Some(&self.claim_prize_zkbin),
             "DrawWinnersV2" => Some(&self.draw_winners_zkbin),
             "ExpireLotteryV2" => Some(&self.expire_lottery_zkbin),
-            "InitializeV2" => Some(&self.initialize_zkbin),
             _ => None,
         }
     }
@@ -366,7 +352,6 @@ impl super::ContractHarness for LotteryHarness {
             "ClaimPrizeV2" => Some(&self.claim_prize_pk),
             "DrawWinnersV2" => Some(&self.draw_winners_pk),
             "ExpireLotteryV2" => Some(&self.expire_lottery_pk),
-            "InitializeV2" => Some(&self.initialize_pk),
             _ => None,
         }
     }

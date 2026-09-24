@@ -55,6 +55,7 @@ use crate::{
         XmrDepositProof, ZcashDepositProof, AztecDepositProof, LitecoinDepositProof,
     },
     BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE, BRIDGE_CONTRACT_INFO_TREE,
+    BRIDGE_CONTRACT_MIN_WITHDRAWAL,
     BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V2, BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2,
     BRIDGE_CONTRACT_NULLIFIERS_TREE, BRIDGE_CONTRACT_WITHDRAWALS_TREE,
     BRIDGE_CONTRACT_STATE,
@@ -211,12 +212,12 @@ fn withdraw_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     };
     let derived_recipient = poseidon_hash([pallas::Base::from(7u64), recipient_base]);
 
-    // Token-aware minimum withdrawal amount (anti-dust)
-    let token_minimum = pallas::Base::from(params.token_minimum);
-
+    // The anti-dust floor is not a public input any more. The circuit's `token_minimum` was removed
+    // (the prover chose it, so exposing it proved nothing), and the host enforces
+    // `BRIDGE_CONTRACT_MIN_WITHDRAWAL` against `params.amount` in `process_withdraw_instruction`.
     zk_public_inputs.push((
         BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2.to_string(),
-        vec![nullifier, derived_recipient, token_minimum, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+        vec![nullifier, derived_recipient, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -605,6 +606,20 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
 
     let self_ = &calls[call_idx].data;
     let params= WithdrawParams::decode(&self_.data[1..])?;
+
+    // The anti-dust floor (`OBL-Z16`). This is where the policy lives now: the circuit used to carry
+    // a `token_minimum`, but the prover chose it, so it bounded nothing. The check is against a
+    // constant no caller can set, and against the *plaintext* `params.amount` — the same value
+    // `WithdrawUpdateV1` stores — because the circuit binds no amount (it has no merkle membership
+    // check; see `withdraw.zk:8`).
+    //
+    // The position is a diagnostic, not a rule: this function performs no writes, so acceptance is
+    // invariant under any permutation of its checks, and placing this one first names a below-floor
+    // withdrawal as such rather than letting it surface later as a child-call error.
+    if params.amount < BRIDGE_CONTRACT_MIN_WITHDRAWAL {
+        msg!("[bridge::WithdrawV1] Error: amount {} is below the minimum withdrawal {}", params.amount, BRIDGE_CONTRACT_MIN_WITHDRAWAL);
+        return Err(BridgeError::InvalidWithdrawal("amount below minimum".into()).into())
+    }
 
     // Validate the redeemed commitment is a wrapped PN (spend_hook == bridge) and the
     // receipt routes back to the bridge (non-transferable, issuer-visible).

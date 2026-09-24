@@ -138,14 +138,12 @@ impl BridgeHarness {
         secret: pallas::Base,
         amount: u64,
         recipient_hash: pallas::Base,
-        token_minimum: u64,
         fee: u64,
     ) -> Result<WithdrawResult, Box<dyn std::error::Error>> {
         let input = WithdrawCallData::new(
             secret,
             amount,
             recipient_hash,
-            token_minimum,
         );
 
         let (proof, public_inputs) = create_withdraw_proof(
@@ -166,7 +164,6 @@ impl BridgeHarness {
             timeout_height: 0,
             feed_mode: 0,
             max_fee_bp: None,
-            token_minimum,
         };
 
         let mut call_data = vec![0x02];

@@ -17,7 +17,6 @@ witness "WithdrawV2" {
     Base nullifier,
     Base recipient_hash,
     Base amount,
-    Base token_minimum,
     Base secret,
     Base tx_commitment,
     Base tx_nonce,
@@ -38,26 +37,22 @@ circuit "WithdrawV2" {
     derived_recipient = poseidon_hash(DOMAIN_SIGNATURE_SECRET, recipient_hash);
     constrain_instance(derived_recipient);
 
-    # Range proof for amount + token minimum (anti-dust)
+    # Range proof for `amount`. The anti-dust floor is the *host's* rule now, not this circuit's.
     #
-    # `amount` was bounded here and `token_minimum` was not, which made the comparison one of field
-    # residues: the chip range-checks the *difference* of its operands, never the operands, so a
-    # `token_minimum` chosen near p satisfies `token_minimum < amount` for a dust withdrawal.
-    # Bounding it (below) repairs that much.
+    # `token_minimum` stood here — a witness, bounded by `range_check(64, …)` and compared by
+    # `less_than_strict(token_minimum, amount)`. Neither made the anti-dust policy hold: the chip
+    # range-checks the *difference* of its operands rather than the operands, and `token_minimum` was
+    # a field of the withdrawal params, so the *prover* chose the minimum it had to clear and could
+    # set it to zero. Bounding it repaired the field-residue comparison and nothing else.
     #
-    # It does NOT make the anti-dust policy hold, and the bound should not be read as if it did:
-    # `token_minimum` is a field of the withdrawal params, so the *prover* chooses the minimum it
-    # has to clear and can set it to zero. The entrypoint takes `params.token_minimum` and never
-    # compares it against the token's registered configuration
-    # (`src/contract/bridge/src/entrypoint.rs:215`). An anti-dust rule needs a floor the caller
-    # cannot choose; this contract has none, and OBL-Z16 in `doc/src/arch/verification-hazop.md`
-    # records it as open. Contrast escrow's and otc_swap's timelocks, where the host *does* read the
-    # binding value from chain state — there the circuit's copy was removed rather than bounded,
-    # because a redundant copy is a second, weaker claim about a property already enforced.
+    # The floor is now `BRIDGE_CONTRACT_MIN_WITHDRAWAL`, a contract constant that no caller can
+    # choose, enforced by `process_withdraw_instruction` (`entrypoint.rs`) against
+    # `params.amount` — the same value `WithdrawUpdateV1` stores. The circuit's copy was **removed**
+    # rather than bounded-and-kept, which is what escrow's and otc_swap's timelock repairs did for
+    # this shape (`less_than_strict(timeout, current_block)` deleted, the host left as the sole
+    # enforcer): a redundant copy is a second, weaker claim about a property already enforced. What
+    # remains here is the bound on `amount`, which is about the arithmetic below and not the policy.
     range_check(64, amount);
-    range_check(64, token_minimum);
-    constrain_instance(token_minimum);
-    less_than_strict(token_minimum, amount);
 
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);

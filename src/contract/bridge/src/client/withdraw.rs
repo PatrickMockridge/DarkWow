@@ -44,8 +44,6 @@ pub struct WithdrawPublicInputs {
     pub nullifier: pallas::Base,
     /// Derived recipient hash (constrained instance 1)
     pub derived_recipient: pallas::Base,
-    /// Token minimum (constrained instance 2)
-    pub token_minimum: pallas::Base,
     /// Recipient address hash on external chain (for contract params)
     pub recipient_hash: pallas::Base,
     /// Amount being withdrawn
@@ -56,7 +54,7 @@ pub struct WithdrawPublicInputs {
 
 impl WithdrawPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.nullifier, self.derived_recipient, self.token_minimum, self.tx_binding, self.tx_nonce]
+        vec![self.nullifier, self.derived_recipient, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -69,8 +67,6 @@ pub struct WithdrawCallData {
     pub amount: u64,
     /// Recipient address hash on external chain
     pub recipient_hash: pallas::Base,
-    /// Token-aware minimum withdrawal (prevents dust griefing)
-    pub token_minimum: u64,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -81,9 +77,8 @@ impl WithdrawCallData {
         secret: pallas::Base,
         amount: u64,
         recipient_hash: pallas::Base,
-        token_minimum: u64,
     ) -> Self {
-        Self { secret, amount, recipient_hash, token_minimum, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
+        Self { secret, amount, recipient_hash, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 
     /// Compute nullifier: poseidon_hash(DOMAIN_NULLIFIER, secret, recipient_hash)
@@ -96,7 +91,6 @@ impl WithdrawCallData {
         WithdrawPublicInputs {
             nullifier: self.compute_nullifier(),
             derived_recipient: poseidon_hash([pallas::Base::from(7u64), self.recipient_hash]),
-            token_minimum: pallas::Base::from(self.token_minimum),
             recipient_hash: self.recipient_hash,
             amount: pallas::Base::from(self.amount),
             tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
@@ -105,9 +99,9 @@ impl WithdrawCallData {
     }
 
     /// Generate prover witnesses for the circuit.
-    /// Order matches the withdraw.zk witness block:
-    ///   nullifier, recipient_hash, amount, token_minimum, secret,
-    ///   tx_commitment, tx_nonce, tx_binding
+    /// Order matches the withdraw.zk witness block, which lost `token_minimum` on 2026-09-24 (the
+    /// prover chose it, so it bounded nothing; the floor is `BRIDGE_CONTRACT_MIN_WITHDRAWAL` in the
+    /// host now): nullifier, recipient_hash, amount, secret, tx_commitment, tx_nonce, tx_binding
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let public_inputs = self.compute_public_inputs();
 
@@ -115,7 +109,6 @@ impl WithdrawCallData {
             Witness::Base(Value::known(public_inputs.nullifier)),
             Witness::Base(Value::known(public_inputs.recipient_hash)),
             Witness::Base(Value::known(public_inputs.amount)),
-            Witness::Base(Value::known(public_inputs.token_minimum)),
             Witness::Base(Value::known(self.secret)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
