@@ -192,6 +192,17 @@ a component" was supposed to mean, and it was right.
    preliminary to it. `OBL-C115` and `OBL-C116` are the two rows minted for the pair, because neither
    proposition had a row.
 
+   Then the **fee-collect rule** — **landed 2026-09-24** as `Consensus/FeeCollect.lean` (5 theorems,
+   `OBL-C117` minted for it), and it is the fourth unit running to correct this row's framing. The code's
+   four-arm `match` over a three-component tuple is a **presentation** of a two-clause rule: the table and
+   the clauses are equivalent (`codeVerdict_is_the_rule`), the arms' order matters only for which message
+   a refusal carries, and the component that reads as ignored is inert *because* the guard above has
+   already excluded every value but 0 and 1 — a fact with a refutation behind it
+   (`call_count_guard_is_load_bearing`). So this row's "what remains" list has now been wrong in the same
+   way three times: it names leftovers, and each one turns out to be a mechanism with a structure worth
+   stating. The list is down to header continuity and `validate_block_structure`'s remaining structural
+   conditions.
+
    This map's guess that validity was "the largest surface with the least existing structure" is the part
    of this row that still stands, and the qualifier is the part that does not.
 4. **The coinbase split** — **landed 2026-09-24** as `Consensus/CoinbaseSplit.lean` (16 theorems, 14 at
