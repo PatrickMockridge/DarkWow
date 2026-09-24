@@ -11,7 +11,7 @@ capability modules all `import Mathlib`, and several proofs cite mathlib lemmas 
 **To verify everything:**
 
 ```bash
-scripts/lean-build.sh build DarkFi Transcribed
+scripts/lean-build.sh build DarkFi Transcribed CircuitIndex
 ```
 
 Note the target. A bare `lake build` builds "the default facet of the root package", which for
@@ -19,6 +19,13 @@ this package is **nothing at all** — it exits 0 without compiling a single mod
 said `lake build` for a long time, and the CI gate in `scripts/run-all-tests.sh` called it, so
 the verification that was supposed to be happening was not. `lake build DarkFi` type-checks the
 proofs.
+
+**There are three libraries, not two, and the third arrived on 2026-09-24.** `Transcribed` is the
+circuit transcription and `CircuitIndex` is the `(r, s) -> circuit` index built on top of it
+(`scripts/gen_circuit_index.py`), each a `lean_lib` of its own so that neither rides on the default
+path of a `DarkFi` build. The command above named only the first two for a few hours after
+`CircuitIndex` landed, which is the failure this README has recorded twice already in other forms:
+**a documented verification command that does not reach the module is a verification nobody ran.**
 
 **And run it through `scripts/lean-build.sh`, never `lake` directly.** The wrapper adds the cgroup
 memory ceiling whose absence froze this host on 2026-09-24 — the `LEAN_NUM_THREADS=4` this README
@@ -632,9 +639,13 @@ taking every open window with it. The previous boot's journal ends mid-chatter w
 sequence and no OOM-killer line**: swap thrash, not a clean OOM. The failed scope is still visible as
 `systemctl --user list-units --type=scope | grep lean`.
 
-The module responsible is `src/Transcribed.lean` — a generated module of 181 `decide` proofs over 2747
-transcribed statements, and the single most expensive elaboration in the tree. Until that day it was
-imported by `src/DarkFi.lean`, so it sat on the default path of *every* library build; it is now
+The module responsible is `src/Transcribed.lean` — a generated module of `decide` verdicts over the
+transcribed circuits, and the single most expensive elaboration in the tree. It was 181 `decide` proofs
+over 2747 statements when this paragraph was written; **measured 2026-09-24 by its own freshness gate,
+`python3 scripts/gen_circuit_transcription.py --check`, it is 178 circuits / 2677 statements / 11 strictly
+holding, 167 failing** — the figures here have moved twice with the sources, so quote them from the gate.
+Until that day it was imported by `src/DarkFi.lean`, so it sat on the default path of *every* library
+build; it is now
 `lean_lib Transcribed`, built only when a gate asks for it.
 
 **But the explosion was fixed, not worked around.** The transcription exceeded 24 GiB in one `lean`
@@ -737,9 +748,15 @@ proofs/lean/
     ├── Examples.lean           # `lean --run` examples — not in the library
     ├── CheckAxioms.lean        # `lean --run` collector: the fact base for `@[axiom_budget]`
     ├── Transcribed.lean        # GENERATED (scripts/gen_circuit_transcription.py, freshness-gated):
-    │                           #   the account, and all 181 circuits' `List Stmt` + one `decide`
-    │                           #   verdict each, as one module. A library of its own (`lean_lib
-    │                           #   Transcribed`), NOT on `lake build DarkFi`'s path
+    │                           #   the account, and every circuit's `List Stmt` + one `decide`
+    │                           #   verdict each (178 circuits as of 2026-09-24), as one module. A
+    │                           #   library of its own (`lean_lib Transcribed`), NOT on
+    │                           #   `lake build DarkFi`'s path
+    ├── CircuitIndex.lean       # GENERATED (scripts/gen_circuit_index.py, freshness-gated): the
+    │                           #   (r, s) -> circuit index, one `DisclosureRule` theorem per pair
+    │                           #   (12) plus the 2 that resolve to no circuit, as data. A library
+    │                           #   of its own (`lean_lib CircuitIndex`) because it imports
+    │                           #   `Transcribed`
     └── DarkFi/
         ├── Axioms.lean         # THE ASSUMPTION BOUNDARY — the one file allowed `axiom` and
         │                       #   value-less `opaque` (6 live; see "The assumption classes")
