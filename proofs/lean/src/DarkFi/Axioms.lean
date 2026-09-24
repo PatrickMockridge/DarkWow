@@ -405,10 +405,36 @@ axiom coinbase_blind (height : Nat) : Nat
       between 500 and 2000, against the 3·10⁵ exponents a plain scan covers. The instrument was
       strictly weaker than the measurement it would have replaced, so it was not landed: a definition
       nothing consumes is what this tree deletes.
+    * **no `mono_acc`-style induction reaches it, and this is why the route had to change rather than
+      be retried** — measured 2026-09-24 by reducing three formulations and finding they arrive at the
+      *same shape*. `G (e+1) FP_ONE b ≤ G e FP_ONE b` (the accumulator-identity form, now
+      `Emission.OddCaseStepBound`), the same claim at a fixed base with accumulator `b`, and the odd
+      half of `G (2k+2) FP_ONE b ≤ G (2k+1) FP_ONE b` each unfold **once** into "one more exponent
+      with a smaller accumulator" — which is precisely where `fpMul`'s non-associativity bites
+      (the nested bound two bullets up). So the obstruction is not that a badly chosen statement was
+      taken: every structural formulation lands there, and a structural argument cannot separate
+      `G (k+1) r b` from `G k r' b` when `r' ≤ r`. That is *why* the factor bound had to be replaced by
+      the adjacent-error comparison below, and it is worth not rediscovering.
+    * **the "deficit never decreases" reformulation is not a shortcut** — writing the goal as
+      `closed e - G e FP_ONE b` non-decreasing looks like it reduces the problem to `closed`'s
+      monotonicity, and it does not: that statement is **stronger** than the goal (subtracting gives
+      `G e - G (e+1) ≥ closed e - closed (e+1)`, whose right side is the gap ≈ 2830, not 0), and it is
+      of comparable tightness because the gap and the per-step drop are both ≈ 2830. It is the same
+      adjacent-exponent comparison rearranged, so it is recorded as a route that *looks* like a
+      shortcut rather than one that is.
+    * and the numbers this entry's route rests on, re-measured: the gap between adjacent values is
+      **constant at ≈ 2830** while the truncation deficit grows ≈ `e/20`, so any *absolutely*-bounded
+      sandwich fails at `e ≈ 2830 · 20 ≈ 5.7·10⁴` — the same crossover this entry records as
+      ≈ 5.5·10⁴, reproduced from a transcription that also reproduces the `fixedPowDecay 34`
+      divergence above. The gap does not grow, so the induction that would work is one carrying the
+      error *difference*, which is what "adjacent" in the field below means.
 
     The pieces are in `Emission.lean`: `fpMul_le_left`, `fixedPowDecayGo_mono_acc`,
-    `fixedPowDecay_le_one`, `decayedReward_le_initial`, `reward_nonincreasing_first_step`, and the two
-    refutations above.
+    `fixedPowDecayGo_step_bound_even` and `fixedPowDecay_nonincreasing_even` (the even half of the
+    step bound, and the decay factor's non-increase at every *even* step — proved 2026-09-24, so the
+    even steps are no longer part of the residue), `OddCaseStepBound` (the odd half, stated as a
+    `def : Prop` with no proof), `fixedPowDecay_le_one`, `decayedReward_le_initial`,
+    `reward_nonincreasing_first_step`, and the refutations above.
     DISCHARGED BY: a quantitative error-propagation argument — comparing the truncation errors of
     *adjacent* exponents, rather than bounding the factor the extra step multiplies by. That
     distinction is the correction of 2026-09-24: this field named the factor bound as the route, and
