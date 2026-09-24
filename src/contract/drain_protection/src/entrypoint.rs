@@ -384,8 +384,37 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
             let _ = wasm::util::set_return_data(&update);
         }
         DrainProtectionFunction::ExecuteV1 => {
+            // OBL-C101: the approval is the child. `execute` used to validate no child at all, so
+            // "the group requires this" was a sentence about a call nobody made: any proposer could
+            // execute any proposal, and execution affected nothing. What the fund's group has agreed
+            // to is exactly a `multisig::FinalizeV1` over the proposal — and that call does not
+            // complete below the group's threshold, because the multisig contract counts the
+            // approvals itself (`multisig/src/entrypoint/mod.rs:377-383`) and a child that fails
+            // fails its parent's transaction.
+            if self_.children_indexes.len() != 1 {
+                msg!("[drain_protection::ExecuteV1] Error: Expected 1 child call (multisig::FinalizeV1), got {}", self_.children_indexes.len());
+                return Err(DrainProtectionError::InvalidChildrenIndexes.into())
+            }
+            let child_idx = self_.children_indexes[0];
+            let child_call = &calls[child_idx].data;
+            if child_call.data[0] != 0x03 {
+                msg!("[drain_protection::ExecuteV1] Error: Expected multisig::FinalizeV1 (0x03), got 0x{:02x}", child_call.data[0]);
+                return Err(DrainProtectionError::InvalidChildCall.into())
+            }
+
+            // Validate child call targets the multisig contract (prevent cross-contract routing)
+            let info_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_INFO_TREE)?;
+            let multisig_bytes = wasm::db::db_get(info_db, DRAIN_PROTECTION_CONTRACT_MULTISIG_CONTRACT_ID)?
+                .ok_or(DrainProtectionError::InvalidChildCall)?;
+            let multisig_cid: ContractId = deserialize(&multisig_bytes)?;
+            // HAZOP H-11: fail-closed — reject if multisig not configured
+            if multisig_cid == ContractId::ZERO {
+                return Err(ContractError::IoError("multisig contract ID not configured".into()));
+            }
+            validate_child_contract_id(&child_call.contract_id, &multisig_cid)?;
+
             let params = crate::model::ExecuteParamsV1::decode(&self_.data.data[1..])?;
-            let update = execute_process_instruction_v1(cid, params)?;
+            let update = execute_process_instruction_v1(cid, params, &child_call.data)?;
             let _ = wasm::util::set_return_data(&update);
         }
         DrainProtectionFunction::ExitV1 => {
@@ -623,23 +652,35 @@ fn vote_process_instruction_v1(
 }
 
 /// `process_instruction` for ExecuteV1
+///
+/// `OBL-C101`: **the approval the group requires, and the record that it was given.**
+///
+/// Three things are checked against the fund the call names, and each is a fact this contract can
+/// see: the fund's registered authority (the act is the operator's, `OBL-C97`); that the fund *has*
+/// a governance group at all; and that the approval in the child is that group's approval of *this*
+/// proposal. The threshold is not re-counted here, and deliberately: the multisig contract's
+/// `FinalizeV1` arm refuses below the group's threshold (`multisig/src/entrypoint/mod.rs:377-383`),
+/// and a child that fails fails this transaction — so "the group requires it" is enforced where the
+/// group's record lives, and copying the count here would be a second source of truth that could
+/// disagree with the first.
+///
+/// The **message** the group signs is the proposal id, not the proposal's message hash. That choice
+/// is what binds an approval to one fund: `proposal_id = poseidon_hash([fund.id, message_hash])`
+/// (`:582`), so an approval to spend fund A's proposal id cannot be replayed as fund B's approval of
+/// the same action.
 fn execute_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
     params: crate::model::ExecuteParamsV1,
+    child_call_data: &[u8],
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[ExecuteV1] Executing proposal");
 
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
+    let proposals_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE)?;
 
-    // MultiSig composition: execute validates fund's multisig_group_id is configured.
-    // The MultiSig::FinalizeV1 child call produces an approval_commit verified in
-    // the process_instruction layer (has access to calls/self_).
-    //
     // OBL-C98: this looked the funds tree up by `params.proposal_id` — a proposal id used as a fund
     // key, which nothing writes — so `ExecuteV1` could not succeed for any call. The call names the
-    // fund, and the fund is what is looked up. (The proposals tree was also looked up here into an
-    // unused binding and is still written by nothing, which `OBL-C101` records: a proposal exists
-    // only as the id `propose` derives.)
+    // fund, and the fund is what is looked up.
     let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::NotInitialized)?;
     let fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
@@ -647,10 +688,35 @@ fn execute_process_instruction_v1(
     require_fund_authority(&fund, params.authority_pub_x, params.authority_pub_y)?;
 
     if fund.multisig_group_id == pallas::Base::zero() {
+        msg!("[ExecuteV1] Error: the fund has no governance group, so there is nobody to approve");
         return Err(DrainProtectionError::Unauthorized.into());
     }
 
-    let update = crate::model::ExecuteUpdateV1 { proposal_id: params.proposal_id, action: params.proposal_id };
+    // -- The approval, read from the child the dispatch validated. --
+    let child = dwow_multisig_contract::model::FinalizeParamsV1::decode(
+        child_call_data.get(1..).unwrap_or_default(),
+    )
+    .map_err(|_| DrainProtectionError::InvalidChildCall)?;
+    if child.group_id.inner() != fund.multisig_group_id {
+        msg!("[ExecuteV1] Error: the approval is a different group's, not the fund's");
+        return Err(DrainProtectionError::Unauthorized.into());
+    }
+    if child.message_hash != params.proposal_id {
+        msg!("[ExecuteV1] Error: the approval names a different proposal");
+        return Err(DrainProtectionError::Unauthorized.into());
+    }
+
+    // -- An executed proposal is not executed twice. --
+    // `execute` is the only writer of the proposals tree, and this is the read that gives the write
+    // its meaning: a group may legitimately approve the same proposal again with fresh signatures
+    // (the first approval's nullifiers are spent, so the finalize would need new ones), and doing so
+    // must not execute it a second time.
+    if wasm::db::db_contains_key(proposals_db, &params.proposal_id.to_repr())? {
+        msg!("[ExecuteV1] Error: proposal already executed");
+        return Err(DrainProtectionError::ConfigurationError("Already executed".to_string()).into());
+    }
+
+    let update = crate::model::ExecuteUpdateV1 { proposal_id: params.proposal_id };
     encode_execute_update_v1(&update)
 }
 
@@ -714,6 +780,7 @@ fn transfer_process_instruction_v1(
 
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
     let transfers_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE)?;
+    let proposals_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE)?;
 
     let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::MemberNotFound)?;
@@ -739,7 +806,16 @@ fn transfer_process_instruction_v1(
 
     if params.exceeds_rate_limit {
         // MultiSig: rate-limited transfers require approved proposal
-        if params.vote_proposal_id.is_none() {
+        //
+        // `OBL-C101`: **"approved" is a state, not a field.** This checked only that *some* proposal
+        // id was supplied — any id, including one nobody ever proposed, and including one the fund's
+        // group approved and never executed. `execute` records the proposals it executes; this is
+        // that record's reader, and it is what makes the governance load-bearing rather than a
+        // ceremony: a rate-limited transfer needs the proposal to have gone through the fund's
+        // governance, not merely to be named after one.
+        let proposal_id = params.vote_proposal_id.ok_or(DrainProtectionError::Unauthorized)?;
+        if !wasm::db::db_contains_key(proposals_db, &proposal_id.to_repr())? {
+            msg!("[TransferV1] Error: the transfer names a proposal that was never executed");
             return Err(DrainProtectionError::Unauthorized.into());
         }
     }
@@ -1040,8 +1116,11 @@ fn apply_initialize_update(
     Ok(())
 }
 
-/// `ProposeV1` writes nothing: a proposal is recorded by the votes cast on it. Kept as an explicit arm
-/// so the dispatch is total and the reason is visible rather than looking like a missing case.
+/// `ProposeV1` writes nothing: a proposal is an id derived from the fund and the message
+/// (`poseidon_hash([fund.id, message_hash])`, `:582`), and the ids that matter are the ones the
+/// approvals name. The proposals tree is written by **`execute`**, when the proposal is executed
+/// (`OBL-C101`). Kept as an explicit arm so the dispatch is total and the reason is visible rather
+/// than looking like a missing case.
 fn apply_propose_update(
     _cid: dwow_sdk::crypto::ContractId,
     _update: crate::model::ProposeUpdateV1,
@@ -1049,11 +1128,20 @@ fn apply_propose_update(
     Ok(())
 }
 
-/// `ExecuteV1` writes nothing — execution is the proposal's effect, carried by its own child calls.
+/// Record that the proposal was executed — the write `OBL-C101` found missing.
+///
+/// The doc comment this replaces said *"execution is the proposal's effect, carried by its own child
+/// calls"*, and the dispatch validated no child at all, so there was no effect for a child to carry
+/// and nothing for this function to write. The child is now the group's approval; what *this*
+/// contract records is that the approval was acted on, keyed by the proposal id and read by the exec
+/// phase to refuse a second execution.
 fn apply_execute_update(
-    _cid: dwow_sdk::crypto::ContractId,
-    _update: crate::model::ExecuteUpdateV1,
+    cid: dwow_sdk::crypto::ContractId,
+    update: crate::model::ExecuteUpdateV1,
 ) -> ContractResult {
+    let proposals_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE)?;
+    wasm::db::db_set(proposals_db, &update.proposal_id.to_repr(), &[1])?;
+    msg!("[ExecuteV1::apply] Proposal recorded as executed");
     Ok(())
 }
 

@@ -19,6 +19,9 @@ rand = "0.8"
 # The following dependencies are used for the client API
 dwow_core = { path = "../../../", features = ["zk"], optional = true }
 dwow_promissory_note_contract = { version = "0.1.0", path = "../promissory_note", features = ["no-entrypoint"] }
+# `OBL-C101`: `execute` decodes the `multisig::FinalizeV1` child it requires, which means the
+# multisig contract's params type — the same dependency shape as promissory_note's above.
+dwow_multisig_contract = { version = "0.1.0", path = "../multisig", features = ["no-entrypoint"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.8", features = ["custom"] }

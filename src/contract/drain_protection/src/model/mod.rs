@@ -419,9 +419,15 @@ impl dwow_serial::Decodable for ExecuteParamsV1 { fn decode<D: std::io::Read>(d:
 impl ExecuteParamsV1 { pub const ENCODED_SIZE: usize = 256; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(256); b.extend_from_slice(&self.proposal_id.to_repr()); b.extend_from_slice(&self.signature.to_repr()); b.extend_from_slice(&self.authority_pub_x.to_repr()); b.extend_from_slice(&self.authority_pub_y.to_repr()); b.extend_from_slice(&self.authority_nullifier.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b.extend_from_slice(&self.fund_id.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 256 { return Err(ContractError::IoError(format!("ExecuteParamsV1: expected 256 bytes, got {}", data.len()))); } Ok(ExecuteParamsV1 { proposal_id: read_base(&data[0..32])?, signature: read_base(&data[32..64])?, authority_pub_x: read_base(&data[64..96])?, authority_pub_y: read_base(&data[96..128])?, authority_nullifier: read_base(&data[128..160])?, tx_binding: read_base(&data[160..192])?, tx_nonce: read_base(&data[192..224])?, fund_id: read_base(&data[224..256])? }) } }
 
 #[derive(Debug, Clone)]
+/// The update `ExecuteV1`'s exec phase hands to its apply phase (`OBL-C101`).
+///
+/// **It carries the proposal it executes, and that is now the whole of it.** The `action` field it
+/// used to carry beside it was assigned `params.proposal_id` at the only construction site and read
+/// nowhere — a second copy of the id, under a name that promised a description of what the execution
+/// does. What execution does is the approval child it requires; what this update stands for is the
+/// record that the proposal was executed, which is what apply writes.
 pub struct ExecuteUpdateV1 {
     pub proposal_id: pallas::Base,
-    pub action: pallas::Base,
 }
 
 #[derive(Debug, Clone,)]
@@ -914,11 +920,10 @@ impl dwow_serial::Encodable for ExecuteUpdateV1 { fn encode<W: std::io::Write>(&
 impl dwow_serial::Decodable for ExecuteUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl ExecuteUpdateV1 {
-    pub const ENCODED_SIZE: usize = 64;
+    pub const ENCODED_SIZE: usize = 32;
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.proposal_id.to_repr());
-        buf.extend_from_slice(&self.action.to_repr());
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -928,8 +933,6 @@ impl ExecuteUpdateV1 {
         Ok(ExecuteUpdateV1 {
             proposal_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
                 .ok_or_else(|| ContractError::IoError("ExecuteUpdateV1: invalid proposal_id".into()))?,
-            action: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
-                .ok_or_else(|| ContractError::IoError("ExecuteUpdateV1: invalid action".into()))?,
         })
     }
 }

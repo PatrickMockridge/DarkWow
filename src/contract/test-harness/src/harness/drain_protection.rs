@@ -199,9 +199,39 @@ impl DrainProtectionHarness {
     /// A secret that is not the fund's authority, for the negative control.
     const STRANGER_SECRET: pallas::Base = pallas::Base::from_raw([4321, 0, 0, 0]);
 
-    /// The multisig group `update_config` gives the fund, because `execute` requires one and
-    /// `initialize` stores zero. A placeholder group id, since nothing joins it yet (`OBL-C101`).
-    const MULTISIG_GROUP_ID: pallas::Base = pallas::Base::from_raw([9, 0, 0, 0]);
+    /// The governing group's **threshold**, and the secrets of the members who join it — three
+    /// members, two of whom must approve (`OBL-C101`).
+    ///
+    /// These are the fixture's, and they are the only place the group is defined: `governance_group`
+    /// below derives its id with the multisig contract's own `derive_group_id`, so the id the fund
+    /// stores and the id the group signs under are one value computed once.
+    pub const GOVERNANCE_THRESHOLD: u8 = 2;
+    pub const GOVERNANCE_MEMBERS: [pallas::Base; 3] = [
+        pallas::Base::from_raw([11, 0, 0, 0]),
+        pallas::Base::from_raw([12, 0, 0, 0]),
+        pallas::Base::from_raw([13, 0, 0, 0]),
+    ];
+
+    /// The member commitments of the governance group, in the order `create_group` is given them.
+    pub fn governance_member_commitments() -> Vec<pallas::Base> {
+        Self::GOVERNANCE_MEMBERS
+            .iter()
+            .map(|s| crate::harness::multisig::MultiSigHarness::member_commitment(*s))
+            .collect()
+    }
+
+    /// The id of the governance group: the multisig contract's derivation, called rather than
+    /// re-implemented, over the members above.
+    ///
+    /// The fund stores this id (`update_config`), and the approval `execute` requires must name it —
+    /// so the id has one definition. It replaces a placeholder (`from_raw([9, …])`) that no group
+    /// ever existed under, which is why `execute` had nothing to check against (`OBL-C101`).
+    pub fn governance_group() -> pallas::Base {
+        crate::harness::multisig::MultiSigHarness::group_id(
+            Self::GOVERNANCE_THRESHOLD,
+            &Self::governance_member_commitments(),
+        )
+    }
 
     /// The authority call data for an endpoint: the secret above, the one fund, and the zero
     /// transaction pair the fixtures bind.
@@ -210,11 +240,19 @@ impl DrainProtectionHarness {
     }
 
     /// The id `propose_process_instruction_v1` derives — `poseidon_hash([fund.id, message_hash])`
-    /// (`entrypoint.rs:531`) — and therefore the id `vote` and `execute` have to name. The three
-    /// endpoints are a flow, not three independent calls, which is what the first two runs of this
-    /// test said by failing at `vote` and then `execute`.
-    fn proposal_id(&self) -> pallas::Base {
-        dwow_sdk::crypto::poseidon_hash([Self::FUND_ID, Self::MESSAGE_HASH])
+    /// (`entrypoint.rs:582`) — and therefore the id `vote` and `execute` have to name, and the
+    /// message the fund's group must approve for an execution to be allowed. The three endpoints are
+    /// a flow, not three independent calls, which is what the first two runs of this test said by
+    /// failing at `vote` and then `execute`.
+    pub fn proposal_id(&self) -> pallas::Base {
+        self.proposal_id_of(Self::MESSAGE_HASH)
+    }
+
+    /// The proposal id the fund derives from any message — `proposal_id` with the message chosen, so
+    /// a caller can name a proposal that is *not* the one the fixture executes (`OBL-C101`'s record
+    /// check, whose control needs exactly that).
+    pub fn proposal_id_of(&self, message_hash: pallas::Base) -> pallas::Base {
+        dwow_sdk::crypto::poseidon_hash([Self::FUND_ID, message_hash])
     }
 
     /// The message hash `propose` proposes.
@@ -329,6 +367,15 @@ impl DrainProtectionHarness {
     }
 
     pub fn transfer(&self) -> dwow_core::Result<DrainTransferResult> {
+        self.transfer_naming(self.proposal_id())
+    }
+
+    /// `transfer` naming a proposal the caller chooses.
+    ///
+    /// The rate-limited path requires the proposal to have been **executed** (`OBL-C101`), not merely
+    /// named, so this is the shape the fixture's control needs: the same call, the same proof, the
+    /// same amount, naming a proposal the fund's group approved and never executed.
+    pub fn transfer_naming(&self, proposal_id: pallas::Base) -> dwow_core::Result<DrainTransferResult> {
         let authority = self.authority();
         let (proof, pi) = create_authority_proof(&self.transfer_zkbin, &self.transfer_pk, &authority)
             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -340,9 +387,10 @@ impl DrainProtectionHarness {
             // The pool's `total_funds` is zero and nothing raises it, so `check_rate_limit`'s
             // threshold is zero and *every* transfer is rate-limited — which is why this endpoint
             // takes the multisig path, naming the proposal `propose` created. `exceeds_rate_limit`
-            // without a `vote_proposal_id` is `Unauthorized` (`entrypoint.rs:674`).
+            // without a `vote_proposal_id` is `Unauthorized` (`entrypoint.rs:674`), and with one it
+            // must be a proposal `execute` recorded.
             exceeds_rate_limit: true,
-            vote_proposal_id: Some(self.proposal_id()),
+            vote_proposal_id: Some(proposal_id),
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
@@ -410,11 +458,13 @@ impl DrainProtectionHarness {
         let params = UpdateConfigParamsV1 {
             fund_id: Self::FUND_ID,
             rate_limit: None,
-            // `execute_process_instruction_v1` requires the fund to have a multisig group
-            // (`entrypoint.rs:632`), and `initialize` stores zero — this endpoint is the only path
-            // that sets one (`:836`), so the fixture uses it, which is why the flow needs this call
-            // before `execute` rather than merely tolerating it.
-            multisig_group_id: Some(Self::MULTISIG_GROUP_ID),
+            // `execute_process_instruction_v1` requires the fund to have a governance group
+            // (`entrypoint.rs`), and `initialize` stores zero — this endpoint is the only path that
+            // sets one, which is why the flow needs this call before `execute` rather than merely
+            // tolerating it. The id is **`governance_group()`**: the group the fixture creates on
+            // chain and gathers approvals from, so the fund's record and the approval agree
+            // (`OBL-C101`).
+            multisig_group_id: Some(Self::governance_group()),
             new_spend_authority: None,
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
