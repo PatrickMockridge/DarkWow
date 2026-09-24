@@ -49,6 +49,7 @@ import DarkFi.Combinatorial.Limits
 import DarkFi.Combinatorial.CeilingDerivation
 import DarkFi.Combinatorial.GeneralTheorem
 import DarkFi.Combinatorial.Combinations
+import DarkFi.Consensus.MassBalance
 import DarkFi.Genesis.Ceremony
 import DarkFi.Semantics.Proc
 import DarkFi.Semantics.Congruence

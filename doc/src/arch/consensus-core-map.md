@@ -68,15 +68,36 @@ mechanism 2 gets below.
 
 ## The order, and why
 
-1. **Mass balance** (`OBL-C1`). It is the only mechanism with all four ingredients already: a Rust
-   function, a Python spec, a Lean fragment (`CrossCutting`), and a register row. And it composes with
-   `Semantics/Ledger.lean` rather than duplicating it — `exec_perm` is the order-independence half, and
-   what is missing is what a block's *contents* must satisfy. Proposed shape: a block as a list of
-   per-call Pedersen sums, the balance predicate as an equality over the field, and two laws — that the
-   predicate survives reordering a block's calls when their write sets are disjoint, and that no call the
-   predicate admits changes the total. Non-vacuity: a two-call block that balances, and a one-unit
-   inflation that does not — the shapes the Rust's own negative controls use
-   (`test_one_unit_inflation_rejected`).
+1. **Mass balance** (`OBL-C1`) — **landed 2026-09-24** as `Consensus/MassBalance.lean`. It was the only
+   mechanism with all four ingredients already (a Rust function, a Python spec, a Lean fragment, a
+   register row), and it landed. **Three departures from this map's first draft, recorded because this
+   document is meant to be the specification and the departures are the finding:**
+
+   * the block is a **record of the specification's own categories** — `feeInputs`, `feeOutputs`,
+     `burnInputs`, the transfer/spend lists, `mintOutputs`, `feeAmounts` — rather than "a list of
+     per-call sums", because those are the parameters `verify_proof_of_token_balance` takes, and a model
+     of a specification should have the specification's shape;
+   * the predicate is a **pair of component equalities**, values *and* blinds, rather than "an equality
+     over the field" — because the spec models commitments as `(value, blind)` integer pairs added
+     componentwise, and says why (`pedersen_commit()` "breaks the simple additive property for test
+     construction"). That choice is what makes **every theorem in the module budget 0**;
+   * the second law is the **vacuity of the burn term**, not "no call the predicate admits changes the
+     total": the spec's burn list sits on *both* sides of its equation, so `burn_cancels` is the fact
+     that it constrains nothing. That was found by reading the spec, not by proving, which is why this
+     map did not predict it.
+
+   What landed as predicted: both sides of the predicate are inhabited, with the spec's own shapes — a
+   legal transfer for the positive, and `test_illegal_hidden_mint`'s 100-in-against-1,000,000-out for the
+   negative.
+
+   **And this map's own sentence about `Ledger.lean` was wrong**, which is worth recording because the
+   kind of claim it was is the kind a reader would act on. It said the mechanism "composes with
+   `Semantics/Ledger.lean` rather than duplicating it — `exec_perm` is the order-independence half". It
+   does not compose that way. The block level's order-independence is **unconditional** — sums commute,
+   and `values_append` with `List.Perm.sum_eq` is all it takes — while `exec_perm`'s is **conditional on
+   disjointness**, because it is about *stores*. Two different reasons for the same-sounding sentence, so
+   the honest relation is a contrast and not a composition: a balance surviving a reordering is no
+   evidence that the state transitions do. The model's module note says so.
 2. **The nullifier lifecycle** (`OBL-C8`, `OBL-T4`). The most tractable, because only the connection is
    missing: the store, the single-use rule, the maturity gate and the consensus replay gate are one
    mechanism across four files today. Proposed shape: a single model in which they are the same
