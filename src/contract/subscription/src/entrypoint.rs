@@ -171,11 +171,15 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     let _ = wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
-            // VerifyAccessV2 circuit: [tx_binding, tx_nonce] — same shape and same reason as
-            // `SubscribeV1` above (OBL-C78).
+            // VerifyAccessV2 circuit: [tx_binding, tx_nonce, capability] — the first two have the
+            // same shape and the same reason as `SubscribeV1` above (OBL-C78); the third is
+            // `OBL-C84`'s, and it is the value the verifier compares against the stored record. The
+            // arm publishes the call's own `capability`, which is what the circuit instances as
+            // `derived_capability` — so a proof whose capability differs from this call's cannot
+            // verify, and `verify_access_v1` then compares it against the record the call names.
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V2.to_string(),
-                vec![params.tx_binding, params.tx_nonce],
+                vec![params.tx_binding, params.tx_nonce, params.capability],
             ));
         }
         SubscriptionFunction::UpdateUsageV1 => {
@@ -275,8 +279,13 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             renew_v1(cid, call_idx, calls, params)?
         }
         SubscriptionFunction::VerifyAccessV1 => {
-            // No state update needed - just verification
-            msg!("[subscription::process_instruction] VerifyAccessV1 has no state update");
+            // `OBL-C84`: there *is* something to verify, and it is not the proof alone. The circuit
+            // now publishes the capability it derived; this is the half that compares it against the
+            // subscription the call names, and refuses if the caller does not hold it — or holds one
+            // that has been cancelled, or has run out of time. There is still no state update: an
+            // access check is a question, and the answer is whether this call succeeds.
+            let params = VerifyAccessParamsV1::decode(&self_.data[1..])?;
+            verify_access_v1(cid, params)?;
             vec![]
         }
         SubscriptionFunction::UpdateUsageV1 => {
@@ -649,8 +658,50 @@ fn renew_apply_v1(cid: ContractId, update: RenewUpdateV1) -> ContractResult {
 }
 
 /// UpdateUsageV1 instruction - record usage of a subscription
-fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> Result<Vec<u8>, ContractError> {
-    msg!("[subscription::update_usage_v1] Updating usage for: {:?}", params.subscription_id);
+/// `OBL-C84`: the access check `VerifyAccessV1` performs, and the reason that call exists.
+///
+/// Two halves, and the row's proposition is about the first: the capability the circuit published
+/// must be the one this subscription's **own record** derives (`Subscription::access_capability`)
+/// from the nonce the call carries. Before this the arm verified nothing — the proof related
+/// witnesses to witnesses, so it said "there exists a subscription this caller can open", which is
+/// true for every caller and every subscription. The second half is what access means once ownership
+/// is settled: the subscription must be active and inside its lock.
+fn verify_access_v1(cid: ContractId, params: VerifyAccessParamsV1) -> Result<(), ContractError> {
+    msg!("[subscription::verify_access_v1] Verifying access for: {:?}", params.subscription_id);
+
+    let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
+    let subscription: Subscription = match wasm::db::db_get(subs_db, &params.subscription_id.to_bytes())? {
+        Some(data) => Subscription::decode(&data)?,
+        None => {
+            msg!("[subscription::verify_access_v1] ERROR: Subscription not found");
+            return Err(ContractError::Custom(1).into())
+        }
+    };
+
+    // The capability, recomputed from the record. The nonce is the caller's — it is what makes each
+    // proof distinct — but every other input is the stored subscription's, so a capability that
+    // matches can only have been derived by someone who knew the subscriber's secret for *this*
+    // subscription's key, plan, id and expiry (`OBL-C84`).
+    let expected = subscription.access_capability(params.nonce);
+    if expected != params.capability {
+        msg!("[subscription::verify_access_v1] ERROR: the capability is not this subscription's");
+        return Err(ContractError::Custom(4).into())
+    }
+
+    let current_block = wasm::util::get_verifying_block_height()?.get();
+    if !subscription.access_is_live(current_block) {
+        msg!(
+            "[subscription::verify_access_v1] ERROR: subscription is {:?} at block {} (lock_until_block {})",
+            subscription.state, current_block, subscription.lock_until_block
+        );
+        return Err(ContractError::Custom(6).into())
+    }
+
+    msg!("[subscription::verify_access_v1] Access granted");
+    Ok(())
+}
+
+fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> Result<Vec<u8>, ContractError> {    msg!("[subscription::update_usage_v1] Updating usage for: {:?}", params.subscription_id);
 
     // Look up the subscription
     let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;

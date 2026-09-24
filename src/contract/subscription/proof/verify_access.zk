@@ -45,4 +45,20 @@ circuit "VerifyAccessV2" {
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
     constrain_equal_base(derived_capability, expected_capability);
+
+    # OBL-C84: the capability must be one the *verifier* receives.
+    #
+    # Every other value here is a witness the prover picks — the secret, the plan, the subscription
+    # id, the expiry, the nonce — and the equalities above relate only witnesses to witnesses. So the
+    # proof said "there exists some subscription this caller can open", which every caller can say
+    # about every subscription, and the host had nothing to compare it against: it published the tx
+    # pair and did nothing with the call in either phase.
+    #
+    # Instancing the capability is what makes those equalities do work. The host recomputes this hash
+    # from the **stored record** (`Subscription::access_capability`) and the nonce the call carries,
+    # and refuses unless it equals the published capability. Because the circuit's instance *is* the
+    # hash of its witnesses, a match forces those witnesses to be the record's own subscriber key,
+    # plan, id and expiry — so the caller must hold the secret behind the key the subscription was
+    # opened with.
+    constrain_instance(derived_capability);
 }

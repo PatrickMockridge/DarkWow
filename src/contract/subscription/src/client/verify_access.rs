@@ -57,8 +57,13 @@ pub struct VerifyAccessPublicInputs {
 
 impl VerifyAccessPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        // Circuit has no constrain_instance calls — zero public inputs.
-        vec![self.tx_binding, self.tx_nonce]
+        // `VerifyAccessV2`'s `constrain_instance` order, in the `verify_access.zk` order the
+        // metadata arm publishes: `[tx_binding, tx_nonce, derived_capability]`. The comment here
+        // used to say the circuit had no instances at all and this returned two values regardless —
+        // it returned the pair even after the circuit gained them, which is what an unread comment
+        // costs (`OBL-C78`). The capability is `OBL-C84`'s instance, and the host compares the value
+        // published from the call against the record's own derivation.
+        vec![self.tx_binding, self.tx_nonce, self.expected_capability]
     }
 }
 

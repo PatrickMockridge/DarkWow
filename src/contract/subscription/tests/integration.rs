@@ -624,3 +624,38 @@ fn test_rate_limit_scenario_exhausted() {
     let access_granted = uses_remaining > 0;
     assert!(!access_granted);
 }
+
+/// `OBL-C84`: access is the record's — a capability derived for another record's fields is not this
+/// one's, and a subscription that is cancelled or past its lock authorizes nothing.
+///
+/// The expiry half needs this test rather than the heavyweight fixture: that run happens around
+/// block 3 against a record whose lock is 200 blocks out, so `access_is_live` is never asked for a
+/// live *and* expired record there (`verify_access_wrong_plan` covers the capability half).
+#[test]
+fn access_capability_binds_the_record_and_liveness_is_a_boundary() {
+    let sub = create_dummy_subscription(SubscriptionId(pallas::Base::from(7u64)));
+    let nonce = pallas::Base::from(42u64);
+
+    // The capability is a function of the record's fields and the caller's nonce.
+    let cap = sub.access_capability(nonce);
+    assert_eq!(cap, sub.access_capability(nonce), "deterministic");
+    assert_ne!(cap, sub.access_capability(pallas::Base::from(43u64)), "the nonce is part of it");
+
+    // A different id, plan or expiry is a different capability — which is what stops a capability
+    // for one subscription being presented for another.
+    let other_id = create_dummy_subscription(SubscriptionId(pallas::Base::from(8u64)));
+    assert_ne!(cap, other_id.access_capability(nonce), "the id is part of it");
+    let mut other_plan = create_dummy_subscription(SubscriptionId(pallas::Base::from(7u64)));
+    other_plan.plan_id = sub.plan_id + 1;
+    assert_ne!(cap, other_plan.access_capability(nonce), "the plan is part of it");
+    let mut other_lock = create_dummy_subscription(SubscriptionId(pallas::Base::from(7u64)));
+    other_lock.lock_until_block = sub.lock_until_block + 1;
+    assert_ne!(cap, other_lock.access_capability(nonce), "the expiry is part of it");
+
+    // Liveness: the lock is exclusive at the boundary, and a cancelled subscription is never live.
+    assert!(sub.access_is_live(sub.lock_until_block - 1));
+    assert!(!sub.access_is_live(sub.lock_until_block));
+    let mut cancelled = create_dummy_subscription(SubscriptionId(pallas::Base::from(9u64)));
+    cancelled.state = SubscriptionState::Cancelled;
+    assert!(!cancelled.access_is_live(0));
+}

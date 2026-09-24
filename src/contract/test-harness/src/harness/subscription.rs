@@ -48,7 +48,7 @@ use dwow_subscription_contract::client::{
     tx_binding_of,
 };
 use dwow_subscription_contract::model::{
-    CancelParamsV1, RenewParamsV1, SubscribeParamsV1, SubscriptionId,
+    access_capability, CancelParamsV1, RenewParamsV1, SubscribeParamsV1, SubscriptionId,
     UpdateUsageParamsV1, VerifyAccessParamsV1,
 };
 
@@ -77,6 +77,32 @@ pub struct SubscriptionHarness {
 }
 
 impl SubscriptionHarness {
+    /// The access capability a `verify_access` call must present for a subscription with these
+    /// fields (`OBL-C84`) — the **model's** derivation, called rather than re-implemented, so a
+    /// fixture cannot invent a value and then read its own rejection as a contract defect.
+    ///
+    /// The host recomputes this from the *stored record*, which is why a fixture's call only
+    /// verifies if the capability it passes was derived from the record the `subscribe` before it
+    /// wrote — the same plan, id, expiry and subscriber key.
+    #[expect(clippy::too_many_arguments, reason = "the derivation's inputs, one per argument")]
+    pub fn access_capability(
+        subscriber_pub_x: pallas::Base,
+        subscriber_pub_y: pallas::Base,
+        plan_id: u32,
+        subscription_id: pallas::Base,
+        lock_until_block: u64,
+        nonce: pallas::Base,
+    ) -> pallas::Base {
+        access_capability(
+            subscriber_pub_x,
+            subscriber_pub_y,
+            plan_id,
+            SubscriptionId(subscription_id),
+            lock_until_block,
+            nonce,
+        )
+    }
+
     /// Spawn a new Subscription harness with pre-loaded circuits
     pub fn spawn() -> Self {
         let subscribe_bin = include_bytes!("../../../subscription/proof/subscribe.zk.bin");

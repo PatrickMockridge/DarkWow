@@ -415,6 +415,57 @@ impl Subscription {
     pub fn compute_nullifier(&self, secret: pallas::Base) -> pallas::Base {
         poseidon_hash([self.id.inner(), secret])
     }
+
+    /// The access capability `verify_access.zk` derives, computed from **this record's own fields**
+    /// (`OBL-C84`).
+    ///
+    /// The circuit's derivation is `poseidon_hash([4, subscriber_pub_x, subscriber_pub_y, plan_id,
+    /// subscription_id, lock_until_block, nonce])` (`verify_access.zk`), and it instances the result
+    /// — so a proof carries the capability the *circuit* computed. This function is what the host
+    /// compares that against, and deriving it from the stored record rather than from the call is
+    /// the whole of the check: because the circuit's instance is the hash of its own witnesses, a
+    /// capability that matches forces those witnesses to be this subscription's key, plan, id and
+    /// expiry, and the nonce the caller bound.
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+    pub fn access_capability(&self, nonce: pallas::Base) -> pallas::Base {
+        let (bx, by) = self.subscriber_pubkey.xy().expect("pk not identity");
+        access_capability(bx, by, self.plan_id, self.id, self.lock_until_block, nonce)
+    }
+
+    /// Whether this record authorizes access at `current_block` — the state and expiry half of the
+    /// check whose ownership half is `access_capability` (`OBL-C84`).
+    ///
+    /// Both halves are needed and neither is implied by the other: a capability proves the caller
+    /// holds the subscriber's secret, and says nothing about whether the subscription is still
+    /// active or still in time.
+    pub fn access_is_live(&self, current_block: u64) -> bool {
+        self.state == SubscriptionState::Active && current_block < self.lock_until_block
+    }
+}
+
+/// The access capability, from the fields rather than from a record (`OBL-C84`).
+///
+/// The free function is the one definition of the derivation: `Subscription::access_capability`
+/// delegates here, and so does the test harness when a fixture needs the capability for a record it
+/// is about to create. Two derivations would be one too many — the host's recomputation is only a
+/// check if it is the derivation the client and the circuit used.
+pub fn access_capability(
+    subscriber_pub_x: pallas::Base,
+    subscriber_pub_y: pallas::Base,
+    plan_id: u32,
+    subscription_id: SubscriptionId,
+    lock_until_block: u64,
+    nonce: pallas::Base,
+) -> pallas::Base {
+    poseidon_hash([
+        pallas::Base::from(4u64), // DOMAIN_COMMITMENT, as in the circuit
+        subscriber_pub_x,
+        subscriber_pub_y,
+        pallas::Base::from(plan_id as u64),
+        subscription_id.inner(),
+        pallas::Base::from(lock_until_block),
+        nonce,
+    ])
 }
 
 /// Subscription plan definition
