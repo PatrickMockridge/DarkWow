@@ -34,7 +34,7 @@ Verification below, which also gives the axiom-boundary command.
 
 ## What the build currently says
 
-Run `scripts/lean-build.sh build DarkFi Transcribed` before trusting anything below. As of 2026-09-20 it completes with **no
+Run `scripts/lean-build.sh build DarkFi Transcribed CircuitIndex` before trusting anything below. As of 2026-09-20 it completes with **no
 errors and no warnings**. It previously carried 22 `unused variable` warnings — a hypothesis or
 binder no proof step consumed — and those turned out to be the same defect as the tautologies at a
 smaller scale: `l1_combinatorial_asymmetry` was `l1_exceeds_l2` under a name whose `(c : Halo2L1Contract)

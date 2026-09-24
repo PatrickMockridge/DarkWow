@@ -113,6 +113,16 @@ open DarkFi.Capability.Composition
    type names one charges every projection the same way, and `DarkFi.HAZOP.High` HIGH-16 is the row
    that records it.
 
+   **And the budgets above are history rather than the current reading**, which the two sentences
+   either side of this one still describe in the present tense. Measured by the collector on
+   2026-09-24 after the field became a computation: the theorem below carries **`@[axiom_budget 0]`**
+   and the collector charges it only `Quot.sound, propext` — the two it discounts — so the
+   projection rule at `:101-103` no longer costs this theorem anything, and the ZK premise that the
+   paragraph calls load-bearing is now *supplied as data* rather than assumed. The strength change
+   that carries is recorded where the axiom's entry was, in `Axioms.lean`, and it is the thing to
+   read before citing this bridge: the rule proved at the twelve pairs is the checker's, weaker than
+   the axiom's name.
+
    The bridge is **one-directional**, and the converse is false in general:
    `Nonempty (CapabilityType r s)` does not imply `CircuitDerivable r s`, because
    privacy-preserving authorization does not need a proof system at all (see the file header).

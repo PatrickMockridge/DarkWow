@@ -31,6 +31,14 @@ architecture described in §§0-9 below. This section documents what works today
   merkle_trees, key_lifecycle, contract_metadata, zkas_binaries — all implemented.
 - **Trust tiers:** Genesis / SelfDeployed / Attested / Unverified — implemented
   in `capability.rs` with CLI display.
+- **Provisional state (§6.5):** The capability spend-state lifecycle
+  (Unspent/Pending/Processing/Spent) via the `CapStatus` enum
+  (`bin/dww/src/capability.rs`). The wallet tracks Pending (broadcast, in mempool),
+  Processing (mined, immature) and Spent (confirmed, ≥100 blocks), with
+  `CONFIRMATION_DEPTH=100` and `MEMPOOL_WINDOW=100` as the confirmation window.
+  *(Recorded under "What Is Spec-Only [VISION]" until 2026-09-24 while its own
+  sentence said "fully implemented" — the contradiction is why it moved; the
+  status it describes was never in doubt.)*
 - **CLI:** initialize, balance, address, scan, sync, contract show, contract deploy,
   contract lock, capabilities, tree, position, diagnostic, broadcast.
 - **Full node:** P2P sync via GetTip/GetBlocks (same protocol as mining nodes),
@@ -48,17 +56,30 @@ architecture described in §§0-9 below. This section documents what works today
 
 ### What Is Spec-Only [VISION]
 
-- **Provisional state (§6.5):** Capability spend-state lifecycle
-  (Unspent/Pending/Processing/Spent) fully implemented via `CapStatus` enum
-  (`bin/dww/src/capability.rs`). The wallet tracks Pending (broadcast, in mempool),
-  Processing (mined, immature), and Spent (confirmed, ≥100 blocks) with
-  `CONFIRMATION_DEPTH=100` and `MEMPOOL_WINDOW=100` as the confirmation window.
 - **Write-path barb-cover selection (§6.2):** `wallet_construct` is not yet
-  used for capability selection on the write path.
-- **Seed discipline (§6.1):** `OsRng` is used directly in dispatch; explicit
-  `Seed` plumbing through the pure construction function is not complete.
-- **Write-path Lean4 obligations (§7.8):** `construct_sound`, `construct_deterministic`,
-  `nullifier_completeness` are stated but not yet proved.
+  used for capability selection on the write path. *(Re-measured 2026-09-24 and
+  still true, with one precision: it **is** used during **scan** — `scan.rs:415`
+  for Path 1's coinbase construction and the Path 2 pipeline beside it, which is
+  what the `[IMPLEMENTED]` bullet above means by "Used during scan". What is
+  missing is the write path's *selection*: `dispatch.rs`/`lib.rs` filter by
+  `asset_id` and call no barb predicate — no `Barb::`, no `required_barbs`, no
+  `covers(` anywhere in either file.)*
+- **Seed discipline (§6.1), and the first half of this bullet was wrong.**
+  Re-measured 2026-09-24: `dispatch.rs:512-515` does draw from `OsRng`, and that
+  is **§0.1.5's own rule rather than a violation of it** — "The `Seed` SHALL be
+  drawn by the shell … and passed down", and `dispatch` is the shell. The draw is
+  conformant and the seed is passed to `build_native_transfer(amount, recipient,
+  seed)` (`lib.rs:1152-1157`). What is genuinely incomplete is the **generic**
+  path: `invoke_contract` (`lib.rs:1597-1604`) takes no `Seed` at all, so Path 2's
+  construction is not seed-plumbed.
+- **Write-path Lean4 obligations (§7.8):** **all four are DISCHARGED** as of
+  2026-09-24, and §7.8 states each one's file: `nullifier_completeness` twice
+  (`Exercise.lean` for the public state, `WritePath.lean` for the transaction),
+  `construct_sound` and `construct_deterministic` (`WritePath.lean`), and
+  `scoped_derivation` (`KeyScope.lean`). This bullet read "*`construct_sound`,
+  `construct_deterministic`, `nullifier_completeness` are stated but not yet
+  proved*" until then — three quarters of it false, one quarter incomplete, and
+  the fourth obligation not named at all.
 
 ### What the Shipping Wallet Can Do
 
@@ -977,9 +998,12 @@ authority; authority still flows only through name possession (§4) realized on-
 The write path's construction is subject to the soundness obligations of §7.8:
 `construct_sound` (the built proofs inhabit L_{r,s}), `construct_deterministic` (identical
 inputs, including `Seed`, yield a byte-identical transaction), and `nullifier_completeness`
-(every consumed capability's nullifier is published). Transaction *authentication* — that
-no unverified transaction is ever admitted to the mempool or accepted into a block — is a
-consensus invariant specified in [mempool.md](mempool.md) and enforced at both mempool
+(every consumed capability's nullifier is published). **§7.8 states a fourth, and this list named
+three until 2026-09-24**: `scoped_derivation` — a key derived for one contract instance is not
+usable in another (`KeyScope.lean`, and `type-system.md` §7.3's third compiler-enforced invariant).
+It belongs on this list because the write path is what *derives* the per-instance key. Transaction
+*authentication* — that no unverified transaction is ever admitted to the mempool or accepted into a
+block — is a consensus invariant specified in [mempool.md](mempool.md) and enforced at both mempool
 admission and block acceptance.
 
 ## 7. Soundness
@@ -1025,8 +1049,16 @@ closed by rewriting with the first hypothesis and injecting.
 This section used to call it "the type-level expression of the wallet's pure function property
 (§1)". It is not that, and the difference is the §1 property's whole content: `walletConstruct`
 takes neither a `Seed` nor wallet state, so this theorem says nothing about an exercise being
-byte-deterministic. §7.8 is where the two claims that *would* say it are recorded, and they are
-un-discharged.
+byte-deterministic. §7.8 is where the two claims that *would* say it are recorded — and **they are
+discharged**, as §7.8 states per obligation: `construct_deterministic` and `construct_sound` are in
+`proofs/lean/src/DarkFi/Capability/WritePath.lean`. This sentence read "*and they are
+un-discharged*" until 2026-09-24, when the write-path unit landed them; the correction is kept here
+because this is the paragraph a reader arrives at to learn why §7.4's theorem is not the §1
+property, and it was the last place still saying the §1 duals did not exist. What is **still** unmet
+about §1 is a different thing, and it is not these two theorems: the model has no encoder for the
+wallet state, so "byte-identical" has no bytes to be identical — `proofs/lean/README.md`'s
+honest-scope entry records it, and until an encoder exists §1's purity claim is a claim about `Nat`s
+rather than about bytes.
 
 `walletConstruct_idempotent`: **DELETED.** Its statement was
 `walletConstruct p r s = walletConstruct p r s` — `x = x`, proved by `rfl`. The sentence this
@@ -1084,14 +1116,18 @@ instruction was not a verification instruction.
 **To type-check it**, from the repository root:
 
 ```bash
-scripts/lean-build.sh build DarkFi Transcribed
+scripts/lean-build.sh build DarkFi Transcribed CircuitIndex
 python3 script/check_lean_axioms.py
 ```
 
 The first is not a convenience wrapper: it is the cgroup memory ceiling whose absence froze this host on
-2026-09-24, and every Lean invocation in this tree goes through it. The second prints the assumption
-boundary — each theorem's `@[axiom_budget]` against what `Lean.collectAxioms` reports — and fails on a
-disagreement. See `proofs/lean/README.md`.
+2026-09-24, and every Lean invocation in this tree goes through it. **It names three libraries, not
+two**: `CircuitIndex` (the `(r, s) ↦ circuit` index `CircuitDerivable` now carries) is a `lean_lib` of
+its own because it imports `Transcribed`, so a command naming only the first two would check a
+theorem about a module it never built — which is what this block did for a few hours after
+`CircuitIndex` landed. The second command prints the assumption boundary — each theorem's
+`@[axiom_budget]` against what `Lean.collectAxioms` reports — and fails on a disagreement. See
+`proofs/lean/README.md`.
 
 ### 7.8 Write-Path Obligations (Exercise)
 
@@ -1151,10 +1187,20 @@ Two facts a reader of §7.5 needs, both measured:
   `ChainDepositProof`), `bridgeWithdrawType` (`BridgeAddress`, `BridgeCapNullifier`,
   `DLEqProof`) and `oracleOperatorType` (`DLEqProof`). `contrib/primitive_barbs_diff.sh` reports
   the seven model-only primitives and passes, because a model-only type is not a violation there;
-  the consequence for *constructibility* is this section's, and nothing mechanized it before.
-- **The Rust test module claimed more than it has.** `src/sdk/src/capability.rs:498-499` says
+  the consequence for *constructibility* is this section's, and until 2026-09-24 **nothing
+  mechanized it** — it was read off two files by hand. It is now a gate:
+  `contrib/capability_type_diff.sh` extracts the `CapabilityType` defs, the Rust test module's
+  positive `wallet_construct` calls and the Python model's capability tables, joins them on
+  `(resource, action)` and reports exactly this section's three verdicts per pair
+  (`agree` / `Rust-unconstructible` / `untested`), with the absent five declared and the
+  declaration staleness-checked. Wired into `scripts/run-all-tests.sh`. The five it reports are
+  these four plus `purseDepositType`, which is constructible in Rust and untested; register row
+  `OBL-T17`.
+- **The Rust test module claimed more than it has.** `src/sdk/src/capability.rs:509-510` says
   "Every construction that is proved in Lean4 must also succeed here" and tests nine of the
-  fourteen; `purseDepositType` is constructible in Rust and untested.
+  fourteen; `purseDepositType` is constructible in Rust and untested. *(The citation here read
+  `:498-499` until 2026-09-24, when the line moved; the gate above now checks this claim rather
+  than leaving it to a reader.)*
 
 ## 8. References
 
