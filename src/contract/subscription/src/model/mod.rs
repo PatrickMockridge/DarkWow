@@ -455,6 +455,32 @@ impl Subscription {
     }
 }
 
+/// The `derived_id` `update_usage.zk` instances, from the values the call carries.
+///
+/// **One derivation, three callers**: the circuit computes it, the metadata arm publishes it, and the
+/// client's `to_vec()` must publish the same value. Until 2026-09-24 the client's copy omitted the
+/// `DOMAIN_COMMITMENT` the other two carry — five inputs where the circuit hashes six — so the
+/// instance it published was a value no proof could match, and the block failed at the L2 verify
+/// with `invalid proof: call[0] namespace 'UpdateUsageV2'` (`OBL-C104`). It is the third instance of
+/// this mistake in the tree (`OBL-C78`'s literal class, `OBL-C75`'s missing domain), which is why it
+/// has a name now: a derivation written twice is a derivation that disagrees.
+pub fn usage_derivation(
+    subscription_id: pallas::Base,
+    subscriber_pub_x: pallas::Base,
+    subscriber_pub_y: pallas::Base,
+    current_block: pallas::Base,
+    nonce: pallas::Base,
+) -> pallas::Base {
+    poseidon_hash([
+        pallas::Base::from(4u64), // DOMAIN_COMMITMENT, as in the circuit
+        subscription_id,
+        subscriber_pub_x,
+        subscriber_pub_y,
+        current_block,
+        nonce,
+    ])
+}
+
 /// The access capability, from the fields rather than from a record (`OBL-C84`).
 ///
 /// The free function is the one definition of the derivation: `Subscription::access_capability`

@@ -189,14 +189,16 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         SubscriptionFunction::UpdateUsageV1 => {
             let params= UpdateUsageParamsV1::decode(&self_.data[1..])?;
             // derived_id = poseidon_hash(DOMAIN_COIN_COMMIT, subscription_id, pub_x, pub_y, block, nonce)
-            let derived_id = poseidon_hash([
-                pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
+            // The same function the client calls (`OBL-C104`): the circuit's derivation, in one
+            // place. The inline copy that stood here had the domain and the client's had not, which
+            // is exactly the disagreement a second copy buys.
+            let derived_id = crate::model::usage_derivation(
                 params.subscription_id.inner(),
                 params.subscriber_pub_x,
                 params.subscriber_pub_y,
                 pallas::Base::from(params.current_block),
                 params.nonce,
-            ]);
+            );
             // Circuit constrain_instance order: [tx_binding, tx_nonce, derived_id]. `derived_id` was
             // already derived here; the first two were literals, which no satisfiable proof can
             // match (OBL-C78).

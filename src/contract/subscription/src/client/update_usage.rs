@@ -29,7 +29,6 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::poseidon_hash,
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -81,13 +80,16 @@ impl UpdateUsageCallData {
     }
 
     pub fn compute_public_inputs(&self) -> UpdateUsagePublicInputs {
-        let derived_id = poseidon_hash([
+        // The derivation the circuit makes and the metadata arm publishes — one function, called
+        // here rather than re-written. The copy that stood here omitted the domain constant
+        // (`OBL-C104`).
+        let derived_id = crate::model::usage_derivation(
             self.subscription_id,
             self.subscriber_pub_x,
             self.subscriber_pub_y,
             self.usage_timestamp,
             self.nonce,
-        ]);
+        );
         UpdateUsagePublicInputs { derived_id, tx_binding: super::tx_binding_of(&self.tx_commitment, &self.tx_nonce), tx_nonce: self.tx_nonce }
     }
 
