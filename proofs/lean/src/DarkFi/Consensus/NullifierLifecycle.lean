@@ -30,16 +30,22 @@ untagged map cannot hold, and the Lean model mirrors the in-memory shape rather 
 * **Connected**: `Capability/maturityGate` is *used*, not restated — `matureAt` feeds it the
   `CoinbaseClaim` that the store's height implies, which is the gap the map recorded ("its `createdAt`
   is supplied rather than derived from the commitment set"). The gate is now supplied.
-* **Not connected**: `Capability/Exercise.lean`'s `validExercise`/`consume_is_single_use` is the *same
-  rule* over a different data shape — `PublicState.spentNullifiers`, a `List`, on the contract side —
-  and this module is the consensus side over the store. Bridging a `List` and a predicate is a separate
-  unit and nothing consumes it yet, so the relation is stated here rather than mechanized.
+* **Connected, and this paragraph used to say otherwise**: `Capability/Exercise.lean`'s
+  `validExercise`/`consume_is_single_use` is the *same rule* over a different data shape —
+  `PublicState.spentNullifiers`, a `List`, on the contract side — and this module is the consensus side
+  over the store. It read "*Bridging a `List` and a predicate is a separate unit and nothing consumes it
+  yet, so the relation is stated here rather than mechanized*" until 2026-09-24, when the bridging
+  section at the foot of this file landed it: `spentSet` is the view between the two vocabularies, and
+  the theorems there say the stronger thing — that the two transitions build the same set *and* that the
+  agreement between the two states is preserved by them, so it is a relation between the models rather
+  than a resemblance between two predicates.
 * **Not here**: the coinbase's *value* (that the claim is worth what the emission schedule says). That
   is `SupplyChain.lean` and `OBL-C5`'s territory, and its non-increase clause is checked over a range
   rather than proved — see that row.
 -/
 
 import DarkFi.Capability.NativeToken
+import DarkFi.Capability.Exercise
 import DarkFi.Combinatorial.NullifierStorage
 import DarkFi.AxiomBudget
 
@@ -161,5 +167,79 @@ theorem lifecycle_witness :
   · intro hc
     obtain ⟨_, hspent⟩ := hc
     exact hspent (Or.inl rfl)
+
+/- ==========================================================================
+   The bridge to the capability side: one rule, two shapes
+   ==========================================================================
+   `Capability/Exercise.lean` keeps its spent set as a `List NullifierValue` and this module keeps it as
+   a `Prop`. The module note above called the relation between them *stated rather than mechanized*.
+   These are the two facts that were missing, and the second is the one worth having: not that the two
+   predicates look alike, but that the **agreement between the two states is preserved by both
+   transitions** — an exercise appends and a spend extends, and they stay the same set as the state
+   moves. A change to either rule therefore shows up as a failure here rather than as two documents
+   drifting apart.
+   ========================================================================== -/
+
+/-- The capability side's spent set as this module's predicate: `PublicState.spentNullifiers` is a
+    `List`, `State.spends` is a `Prop`, and this is the function between the two vocabularies. -/
+def spentSet (l : List NullifierValue) : SpendStore := fun n => n ∈ l
+
+/-- **The predicate a fold of `spend` builds, read at one nullifier.** Stated for an arbitrary starting
+    predicate rather than for `spentSet l`, because the induction that uses it has to generalise the
+    accumulator — and that is the whole reason the append theorem below is provable. -/
+@[axiom_budget 0]
+theorem foldl_spend_iff (p : SpendStore) (ns : List NullifierValue) (m : NullifierValue) :
+    (ns.foldl (fun p n => fun m => m = n ∨ p m) p) m ↔ m ∈ ns ∨ p m := by
+  induction ns generalizing p with
+  | nil => simp
+  | cons n t ih =>
+    -- `rw` first so the induction hypothesis applies to the accumulator it was stated for, then
+    -- normalise the `∨` on the propositional goal that is left — the two in one `simp` set would
+    -- reorient the fold's own function and stop `ih` matching (which is how this failed first time).
+    rw [List.foldl_cons, ih]
+    simp only [List.mem_cons, or_comm, or_assoc, or_left_comm]
+
+/-- **The two constructions of a spend are one function.** `Exercise.applyExercise` *appends* the
+    inputs' nullifiers to the list; this module's `spend` *extends* the predicate by one name. Folding
+    `spend` over the same nullifiers reproduces the append exactly — which is what "the same rule over a
+    different data shape" means once it is mechanized rather than asserted. -/
+@[axiom_budget 0]
+theorem spentSet_append_foldl (l ns : List NullifierValue) :
+    spentSet (l ++ ns) = ns.foldl (fun p n => fun m => m = n ∨ p m) (spentSet l) := by
+  funext m
+  exact propext (by
+    rw [foldl_spend_iff]
+    simp only [spentSet, List.mem_append, or_comm])
+
+/-- **The agreement is preserved by both transitions.** If the consensus state's `spends` is the
+    capability state's list read through `spentSet`, then folding `spend` over an exercise's inputs
+    lands on `applyExercise`'s result — read through `spentSet` again. This is the relation the module
+    note said was stated rather than mechanized, and it is stronger than the resemblance it replaces:
+    the two models do not merely use similar predicates, they denote the same set *as each transition
+    is taken*, so neither can be changed without the other failing here. -/
+@[axiom_budget 0]
+theorem spend_fold_agrees_with_applyExercise
+    (σ : State) (state : PublicState) (h : σ.spends = spentSet state.spentNullifiers)
+    (e : Capability.Exercise) :
+    (e.inputs.map (fun c => c.nullifier)).foldl (fun p n => fun m => m = n ∨ p m) σ.spends
+      = spentSet (Capability.applyExercise state e).spentNullifiers := by
+  -- expose the append, fold the list side, then transport the hypothesis in the direction it is
+  -- stated (`h` rewrites `σ.spends` into the list's denotation, which is the side to keep)
+  simp only [Capability.applyExercise]
+  rw [spentSet_append_foldl, h]
+
+/-- **And the two refusals are one fact, in the direction the capability side states it.** After the
+    exercise, the consensus side records the input's nullifier as spent — `spend_records` read through
+    the bridge — which is the positive form of `Exercise.consume_is_single_use`'s refusal. The
+    capability side's theorem is the negative of this, so a reader can now see the two as one rule
+    rather than take the resemblance on trust. -/
+@[axiom_budget 0]
+theorem the_consensus_side_records_the_exercised_nullifier
+    (σ : State) (state : PublicState) (h : σ.spends = spentSet state.spentNullifiers)
+    (e : Capability.Exercise) (c : Capability.Cap) (h_in : c ∈ e.inputs) :
+    spentSet (Capability.applyExercise state e).spentNullifiers c.nullifier := by
+  rw [← spend_fold_agrees_with_applyExercise σ state h e]
+  exact (foldl_spend_iff _ _ _).mpr
+    (Or.inl (List.mem_map_of_mem (f := fun c => c.nullifier) h_in))
 
 end Consensus.NullifierLifecycle
