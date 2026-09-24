@@ -27,4 +27,14 @@ Circuits/Transcribed.lean : OBL-T7 : cited as the *rejected* name — the row's 
 src/sdk/src/crypto/sinsemilla.rs : OBL-Z6 : cited as the record of the defect — "that file does not exist" is the finding, and the constants live under constants/
 
 # OBL-C108 — a row closed by deleting the module it cites.
+# OBL-Z16 — two circuits the register names *because they were deleted on 2026-09-24*, at
+# `3ba1c0b435`: `set_v1.zk` (a 2023 zkrunner example) and `lead.zk` (a Nov-2022 consensus prototype
+# whose host had already been removed). Six of the row's unclassified sites were theirs, and no repair
+# existed — binding would have changed what they prove, and this file's sibling rules bar declaring
+# them free with no host mechanism to name. The rows that still name them are the record of that
+# decision, which is why the citations are evidence rather than claims; the stale-entry check will
+# report these two if the register stops citing them.
+proofs/core/lead.zk : OBL-Z16 : deleted 2026-09-24 — cited as the record of a circuit removed because no repair existed
+proofs/core/set_v1.zk : OBL-Z16 : deleted 2026-09-24 — same disposition, and the same six sites were split between the two files
+
 src/contract/subscription/src/client/rate_limit.rs : OBL-C108 : cited as the state found; the closure removed the file and its `pub mod` declaration, which is what the row says
