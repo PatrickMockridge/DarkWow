@@ -284,6 +284,16 @@ run_gate "Lean proofs (lake build DarkFi + Transcribed)" \
 run_gate "Lean assumption boundary (axioms/budgets)" \
                                           python3 script/check_lean_axioms.py --require-collector
 
+# The boundary gate's own detector, exercised. `check_lean_axioms.py` now fails when the collector's
+# rows do not account for exactly the names it was fed — the check that catches a row renamed in
+# flight, which a row *count* cannot. Measured 2026-09-24: a 4096-byte stdout flush boundary put the
+# collector's stderr summary inside a row, `supply_chain_invariant` came back as `nvariant`, its budget
+# was never checked, and the count was right (see `--stream` in `scripts/lean-build.sh`). A detector
+# that has never been shown to fail is a claim rather than a check, so its negative control is its own
+# gate — hermetic, no Lean, no files, seconds.
+run_gate "Axiom gate's record channel (negative control)" \
+                                          python3 script/check_lean_axioms.py --self-test
+
 run_gate "Python: pipeline model"          python3 contrib/model/pipeline_model.py
 run_gate "Python: supply chain model"      python3 contrib/model/supply_chain_model.py
 

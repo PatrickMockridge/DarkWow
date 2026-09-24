@@ -523,8 +523,19 @@ scripts/lean-build.sh build DarkFi Transcribed
 # It invokes the collector through the guard itself; no `lake` is called here.
 python3 script/check_lean_axioms.py
 
-# The axiom table, straight from the compiled environment.
+# The axiom table, straight from the compiled environment. `--stream` carries **stdout only** — the
+# collector's stderr (its summary line, and any name it cannot resolve) goes to $LEAN_BUILD_LOG — and
+# `check_lean_axioms.py` keeps the raw rows in /tmp/check_lean_axioms.collector.out. The split is not
+# cosmetic: `--stream` used to merge the two, and because Lean's stdout flushes at 4096 bytes while its
+# stderr does not, the summary landed inside a row and renamed it. `supply_chain_invariant` came back as
+# `nvariant`, its budget was never checked, and the row count stayed right (measured 2026-09-24; the
+# account is in `scripts/lean-build.sh`).
 scripts/lean-build.sh --stream env lean --run src/CheckAxioms.lean
+
+# The axiom gate's own detector, exercised: the corruption above, rebuilt from synthetic bytes. Hermetic
+# (no Lean, no files) and wired into `scripts/run-all-tests.sh`, because a check that has never been
+# shown to fail is a claim rather than a check.
+python3 script/check_lean_axioms.py --self-test
 
 # The Orchard-class rule over the 180 .zk circuit sources — a separate boundary.
 bash scripts/check-circuit-instance-derivation.sh

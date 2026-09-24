@@ -32,6 +32,7 @@ Usage:
     python3 script/check_lean_axioms.py --json             # machine-readable
     python3 script/check_lean_axioms.py --require-collector
     python3 script/check_lean_axioms.py --emit-annotations # write budgets into the sources
+    python3 script/check_lean_axioms.py --self-test        # negative control, no Lean needed
 """
 
 import json
@@ -44,6 +45,20 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEAN_DIR = os.path.join(REPO_ROOT, "proofs", "lean")
 SRC_DIR = os.path.join(LEAN_DIR, "src")
 AXIOMS_FILE = os.path.join(SRC_DIR, "DarkFi", "Axioms.lean")
+
+# Where `scripts/lean-build.sh` writes what a guarded command prints to *stderr*. Under `--stream` the
+# guard puts stdout on the caller's channel and stderr here, so the collector's own summary and its
+# per-name "unknown declaration" lines are read from this file rather than from the process. This
+# default must match the guard's `LOG="${LEAN_BUILD_LOG:-/tmp/lean-build.log}"`, and the guard's
+# `flock` is what makes it safe to read: only one guarded Lean lane runs at a time.
+LEAN_BUILD_LOG = os.environ.get("LEAN_BUILD_LOG", "/tmp/lean-build.log")
+
+# The collector's raw stdout, kept verbatim. Its rows *are* the gate's evidence, and the failure mode
+# that produced this file is invisible in the parsed table: a row renamed in flight looks like a
+# missing annotation on a declaration that does not exist. Keeping the bytes is what lets
+# `missing @[axiom_budget N] on <name>` be re-derived instead of believed — and it is the tree's own
+# rule that a test's full output goes to a file in /tmp, untruncated.
+COLLECTOR_RAW = os.environ.get("COLLECTOR_RAW", "/tmp/check_lean_axioms.collector.out")
 
 # The four fields every assumption must carry. Order is conventional, presence is not.
 FIELDS = ("ASSUMES:", "NOT PROVED BECAUSE:", "DISCHARGED BY:", "IF FALSE:")
@@ -420,6 +435,142 @@ def check_inventory():
     return True
 
 
+def parse_rows(raw):
+    """Parse the collector's TSV stdout into `{name: record}`, plus any names seen twice.
+
+    A line that is not exactly seven tab-separated fields is not a row and is skipped — which is the
+    reason a *partial* line is invisible here: the pieces of a split row each have the wrong field
+    count, so they vanish silently while the count of good rows stays one short. That is what
+    `reconcile` exists to catch, and the two are deliberately separate so the check can be exercised
+    without Lean (see `self_test`, run as `--self-test`).
+    """
+    rows = {}
+    dupes = []
+    for line in raw.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 7:
+            continue
+        name, _, axs, stmt_consts, trivial, projection, binders = parts
+        unref, _, total = binders.partition("/")
+        if name in rows:
+            dupes.append(name)
+        rows[name] = {
+            "axioms": [a for a in axs.split(",") if a],
+            "stmt_consts": [c for c in stmt_consts.split(",") if c],
+            "trivial": trivial == "true",
+            "projection": projection == "true",
+            "unref_binders": int(unref) if unref.isdigit() else 0,
+            "total_binders": int(total) if total.isdigit() else 0,
+        }
+    return rows, dupes
+
+
+def unresolved_names(log_text):
+    """The names the collector could not resolve, read from the guard's log.
+
+    Its stderr goes there, not to the caller: `--stream` carries stdout only. See
+    `scripts/lean-build.sh` for the measurement that forced the split.
+    """
+    return set(re.findall(
+        r"^check_axioms: (?:not a theorem|unknown declaration): (\S+)$", log_text, re.MULTILINE))
+
+
+def reconcile(names, rows, dupes, unresolved):
+    """Return why the collector's rows do not account for exactly the names it was fed, or None.
+
+    Identity, not count — the arm that holds whatever the mechanism turns out to be.
+
+    `check_budgets` iterates the keys it *received*, so a row whose name was renamed in flight leaves
+    the declaration the sources declare with no row and no message: its budget is never checked, while
+    the row count still matches the number of names fed. Counting cannot see that (704 checked = 704
+    fed, and one of those 704 was `nvariant`); comparing *sets* can. A renamed row is an `extra` key
+    and the name it displaced is `missing`, so the failure line names both.
+
+    `unresolved` is subtracted from `missing` because a name the collector reported it could not find
+    is accounted for — it is diagnosed above, more precisely, by `run_collector`.
+    """
+    fed = set(names)
+    returned = set(rows)
+    extra = sorted(returned - fed)
+    missing = sorted(fed - returned - unresolved)
+    if not (dupes or extra or missing):
+        return None
+    detail = []
+    if dupes:
+        detail.append(f"{len(dupes)} row(s) seen twice, e.g. {dupes[0]}")
+    if extra:
+        detail.append(f"{len(extra)} row(s) for names never fed, e.g. {extra[0]}")
+    if missing:
+        detail.append(f"{len(missing)} name(s) with neither a row nor an 'unresolved' line, "
+                      f"e.g. {missing[0]}")
+    return ("the collector's rows do not reconcile with the names it was fed ("
+            + "; ".join(detail) + f") — raw stdout in {COLLECTOR_RAW}, diagnostics in "
+            f"{LEAN_BUILD_LOG}; a row was renamed, duplicated or dropped in flight, so at least one "
+            "budget is silently unchecked")
+
+
+def self_test():
+    """The negative control for `reconcile` — the corruption that motivated it, reproduced.
+
+    This file exists to make a false green impossible, so its own detector gets the same treatment: an
+    arm that has never been shown to fail is a claim, not a check. Both directions are exercised — a
+    clean stream must reconcile (else the gate would be red always, which teaches people to read past
+    it) and a corrupted one must not.
+
+    The corrupted stream is the 2026-09-24 failure exactly. `supply_chain_invariant`'s row was split 14
+    characters into its name by the collector's one-line stderr summary landing mid-row at a 4096-byte
+    stdout flush boundary; the tail of the split row is still seven fields, so it parses as a valid row
+    named `nvariant`, the row *count* stays right, and a real budget goes unchecked. Deterministic: no
+    Lean, no clock, no files.
+    """
+    def row(name):
+        return (f"{name}\t5\tClassical.choice,coinbase_blind,pallasPrime\tAnd,Eq,Nat,Pedersen.Point"
+                f"\tfalse\tfalse\t0/3")
+
+    fed = ["a_sound_theorem", "supply_chain_invariant", "z_last_theorem"]
+    clean = "".join(row(n) + "\n" for n in fed)
+    problems = []
+    rows, dupes = parse_rows(clean)
+    if len(rows) != len(fed):
+        problems.append(f"a clean stream parsed {len(rows)} rows for {len(fed)} names fed")
+    if reconcile(fed, rows, dupes, set()) is not None:
+        problems.append("a clean stream did not reconcile — the detector would red every run")
+
+    # `row("supply_chain_invariant")[:14]` is `supply_chain_i`; the summary is exactly what landed
+    # there. The halves become two lines: a 1-field prefix (skipped) and a 7-field row named `nvariant`.
+    r = row("supply_chain_invariant")
+    summary = "check_axioms: 3 theorems reported, 0 unresolved"
+    corrupted = (row("a_sound_theorem") + "\n" + r[:14] + summary + "\n" + r[14:] + "\n"
+                 + row("z_last_theorem") + "\n")
+    rows, dupes = parse_rows(corrupted)
+    why = reconcile(fed, rows, dupes, set())
+    if why is None:
+        problems.append("a row renamed in flight reconciled — the detector cannot fail")
+    else:
+        for token in ("nvariant", "supply_chain_invariant"):
+            if token not in why:
+                problems.append(f"the failure line does not name {token!r}: {why}")
+
+    # A name the collector reported it could not resolve is accounted for, not missing: the distinct
+    # case, and one that must not become a second false red on top of the first.
+    rows, dupes = parse_rows("".join(row(n) + "\n" for n in fed[:2]))
+    if reconcile(fed, rows, dupes, {"z_last_theorem"}) is not None:
+        problems.append("an unresolved name was reported as missing")
+
+    # Two rows under one name is rows colliding, not two theorems.
+    rows, dupes = parse_rows(clean + row("a_sound_theorem") + "\n")
+    if reconcile(fed, rows, dupes, set()) is None:
+        problems.append("a duplicated row reconciled")
+
+    if problems:
+        for p in problems:
+            fail(f"self-test: {p}")
+        return 1
+    ok("self-test: a clean stream reconciles, a renamed row is named, an unresolved name and a "
+       "duplicate row are told apart")
+    return 0
+
+
 def run_collector():
     """Run src/CheckAxioms.lean over the names the sources declare.
 
@@ -446,40 +597,47 @@ def run_collector():
     except subprocess.TimeoutExpired:
         return None, "collector timed out"
     if proc.returncode != 0:
+        # The collector's own diagnostics are on stderr, which the guard sends to the log and echoes
+        # back to *its* stderr on failure — so the log's last line is the child's error and the
+        # caller's stderr begins with the guard's own chatter. Prefer the former.
+        try:
+            with open(LEAN_BUILD_LOG, encoding="utf-8", errors="replace") as fh:
+                tail = [l for l in fh.read().splitlines() if l.strip()]
+        except OSError:
+            tail = []
+        if tail:
+            return None, tail[-1]
         first = (proc.stderr or proc.stdout or "").strip().splitlines()
         return None, (first[0] if first else f"exit {proc.returncode}")
-    rows = {}
-    for line in proc.stdout.splitlines():
-        parts = line.split("\t")
-        if len(parts) != 7:
-            continue
-        name, _, axs, stmt_consts, trivial, projection, binders = parts
-        unref, _, total = binders.partition("/")
-        rows[name] = {
-            "axioms": [a for a in axs.split(",") if a],
-            "stmt_consts": [c for c in stmt_consts.split(",") if c],
-            "trivial": trivial == "true",
-            "projection": projection == "true",
-            "unref_binders": int(unref) if unref.isdigit() else 0,
-            "total_binders": int(total) if total.isdigit() else 0,
-        }
+    raw = proc.stdout or ""
+    with open(COLLECTOR_RAW, "w", encoding="utf-8") as fh:
+        fh.write(raw)
+    rows, dupes = parse_rows(raw)
+    # The collector's stderr — its closing summary and one line per name it could not resolve — goes to
+    # the guard's log, not to this process (see `--stream` in `scripts/lean-build.sh`). Read it there.
+    try:
+        with open(LEAN_BUILD_LOG, encoding="utf-8", errors="replace") as fh:
+            log_text = fh.read()
+    except OSError:
+        log_text = ""
     if not rows:
-        err = (proc.stderr or "").strip().splitlines()
-        return None, f"collector reported no theorems ({err[-1] if err else 'no diagnostics'})"
-    # The collector ends with `check_axioms: N theorems reported, M unresolved`. Its stream is merged
-    # into the guard's `--stream` output, so both pipes are searched rather than assuming one.
-    #
-    # `M` matters because `check_budgets` iterates over what the collector *found*: a declaration the
-    # sources declare but the environment does not hold would otherwise have no row, no message, and
-    # no budget check — the shape of "181 theorems nobody has measured" that this whole file exists to
-    # prevent. Measured before making this fatal: `694 theorems reported, 0 unresolved`, so it cannot
-    # fire for a pre-existing reason. The disposition follows the register's rule — a gate that is red
-    # for a reason nobody is working on is one people learn to read past — and the number is zero.
-    combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
-    m = re.search(r"(\d+) theorems reported, (\d+) unresolved", combined)
-    if m and int(m.group(2)) > 0:
-        return None, (f"{m.group(2)} of {m.group(1)} declared declarations did not resolve, so their "
-                      "budgets are unverified rather than checked")
+        tail = [l for l in log_text.splitlines() if l.strip()]
+        return None, f"collector reported no theorems ({tail[-1] if tail else 'no diagnostics'})"
+    # Why unresolved names are fatal: `check_budgets` iterates over what the collector *found*, so a
+    # declaration the sources declare but the environment does not hold, or one whose row never
+    # arrived, would otherwise have no row, no message, and no budget check — the shape of "181
+    # theorems nobody has measured" that this whole file exists to prevent. Measured before making it
+    # fatal: `694 theorems reported, 0 unresolved`, so it cannot fire for a pre-existing reason. The
+    # disposition follows the register's rule — a gate that is red for a reason nobody is working on
+    # is one people learn to read past — and the number is zero.
+    unresolved = unresolved_names(log_text)
+    if unresolved:
+        return None, (f"{len(unresolved)} of {len(names)} declared declarations did not resolve "
+                      f"(e.g. {sorted(unresolved)[0]}), so their budgets are unverified rather than "
+                      "checked")
+    why = reconcile(names, rows, dupes, unresolved)
+    if why:
+        return None, why
     return rows, None
 
 
@@ -779,6 +937,9 @@ def main():
     argv = sys.argv[1:]
     as_json = "--json" in argv
     require_collector = "--require-collector" in argv
+
+    if "--self-test" in argv:
+        return self_test()
 
     if "--emit-annotations" in argv:
         rows, err = run_collector()

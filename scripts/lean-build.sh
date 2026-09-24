@@ -36,6 +36,19 @@
 # reported no theorems" — the guard would have broken the gate it was added to protect. Builds do not
 # need it and should not use it; their output belongs in the log.
 #
+# `--stream` carries **stdout only**, and the child's stderr goes to the log instead. The first
+# version of it did `> >(tee "$LOG") 2>&1`, which merged the two, and that is not a cosmetic
+# difference: a record channel that also carries diagnostics is a channel that can corrupt a record.
+# Measured 2026-09-24 on a real capture — Lean's stdout is block-buffered (flushes at 4096 bytes) and
+# its stderr is not, so the collector's one-line summary landed *inside* a TSV row, exactly at a 4096
+# boundary, splitting the row that straddled it. The tail of the split row was still seven fields, so
+# it parsed as a valid row under a truncated name: the axiom gate then reported `missing
+# @[axiom_budget 3] on nvariant` while `supply_chain_invariant` — the real theorem, correctly
+# annotated — was never checked, and the row *count* stayed right. A rename is invisible to counting.
+# Hence: one writer class per channel, and the reader reconciles the names it fed against the names it
+# got back (`run_collector`), because that is the arm that holds whatever the mechanism turns out to
+# be.
+#
 # There is deliberately NO way to bypass the ceiling. A build in an environment that cannot provide
 # one (a container without a user systemd) should be a decision made by a person, with the outer
 # sandbox's own limit recorded, not a flag passed in the moment.
@@ -115,8 +128,19 @@ SCOPE=(systemd-run --user --scope -q --unit="$UNIT"
        -p MemoryMax="$LEAN_MEMORY_MAX" -p MemorySwapMax=0
        -- bash -c 'exec 9>&-; exec env "LEAN_NUM_THREADS=$1" lake "${@:2}"'
        lean-build "$LEAN_THREADS" "${LAKE_ARGS[@]}")
+# Under `--stream`, stdout is the caller's record and stderr is the log's. Nothing is merged onto the
+# streamed channel, and nothing is teed: a process substitution here is not waited for, so the failure
+# path below could `tail` the log before the tee had flushed it (that race is real, and this tree has
+# already had to kill an orphaned tee for it — `contrib/docker/darkwow-testnet/lib/traps.sh`). The log
+# is truncated first so it holds this run's diagnostics and cannot be misread as containing them.
+#
+# The consequence to know: under `--stream` the log holds the *diagnostics* and the caller holds the
+# *record*, so a failure here is explained by the log and a post-mortem of the records needs the
+# caller to have kept them (`script/check_lean_axioms.py` writes its raw stdout to
+# `/tmp/check_lean_axioms.collector.out` for exactly that reason).
 if [ "$STREAM" = 1 ]; then
-  "${SCOPE[@]}" > >(tee "$LOG") 2>&1
+  : >"$LOG"
+  "${SCOPE[@]}" 2>>"$LOG"
 else
   "${SCOPE[@]}" >"$LOG" 2>&1
 fi
