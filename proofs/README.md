@@ -4,12 +4,12 @@ This directory contains all proof assets for the project:
 
 | Directory | Content |
 |-----------|---------|
-| `core/` | 12 core system ZK circuits (.zk source + .zk.bin compiled binaries) |
+| `core/` | 10 core system ZK circuits (.zk source + .zk.bin compiled binaries) |
 | `lean/` | Lean 4 formal verification project — 39 opcodes + 120 contract circuits + HAZOP |
 
 ## Core ZK Circuits (`core/`)
 
-The 12 core system circuits used by the zkVM for block validation, transaction execution,
+The 10 core system circuits used by the zkVM for block validation, transaction execution,
 and chain-level operations:
 
 | Circuit | k | Purpose |
@@ -18,14 +18,24 @@ and chain-level operations:
 | `burn` | 13 | Coin burning with nullifier reveal |
 | `encrypt` | 13 | AEAD encryption constraints |
 | `inclusion_proof` | 13 | Merkle inclusion proof verification |
-| `lead` | 13 | Leader election / PoW verification |
 | `mint` | 13 | Coin minting with Pedersen commitments |
 | `nested` | 11 | Nested circuit composition |
 | `opcodes` | 13 | zkVM opcode dispatch and execution |
-| `set_v1` | 11 | Set membership constraints |
 | `smt` | 14 | Sparse Merkle Tree operations |
 | `tx` | 13 | Transaction verification |
 | `voting` | 13 | Voting/consensus constraints |
+
+Two circuits were one row lower in this table until 2026-09-24, and they are gone rather than
+merely uncounted: `lead` (a Nov-2022 consensus prototype whose host, `consensus/leadcoin.rs`,
+no longer exists in this repository — `script/circuit_comparison_exceptions.txt` even said so,
+"the consumer is the consensus `lead_coin` rule, which lives outside this repository") and
+`set_v1` (a 2023 `zkrunner` example). Neither was compiled by any build step
+(`scripts/build-contract-zk.sh` loops `src/contract/*/proof/`; the `Makefile` compiles only
+`bin/darkirc/proof/*.zk`), and neither was loaded by any crate, manifest or test, so removing
+them changes nothing but the count. What it closes is the six obligation-register sites where
+the mechanised audit found their exposures neither derived nor bindable and where no repair
+existed: `lock`/`root`/`key`/`value` and `sigma1`/`sigma2`. See `OBL-Z16` in
+`doc/src/arch/verification-hazop.md`.
 
 All circuits use `field = "pallas"`. These are distinct from the contract-level circuits
 in `src/contract/*/proof/`.

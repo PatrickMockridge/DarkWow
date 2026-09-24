@@ -78,16 +78,20 @@ run_gate "circuit metadata alignment"     bash "$SCRIPT_DIR/check-circuit-metada
 run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain-separation.sh"
 # OBL-Z1: the Orchard-class rule. The other two circuit gates are structural (counts, prefix
 # presence); this is the only one that asks whether an exposed public input is *determined*.
-# It is currently RED, and it is BLOCKING: re-measured 2026-09-22, it exits 1 on **15** unclassified
-# instances over 181 circuits / 897 `constrain_instance` sites — oracle/aggregate's min_result and
-# max_result, insurance_market's two `required_capability_id`, bridge/withdraw's token_minimum,
-# labor_market's attestation_id and milestone_payment_amount, oracle/attest_value's threshold,
-# roulette/settle_bet's payout, proofs/core/lead.zk's sigma1/sigma2 and set_v1.zk's lock/root/key/value.
-# The number here read "33" until 2026-09-22; the gate is the authority and the register's OBL-Z16
-# agrees with the gate, so 33 was stale prose, not a second measurement. Because `run_gate` has no
-# allowlist, a red gate means no full-gate run can be green until its sites are adjudicated — each
-# either derived, bound, or declared free with a reason in script/circuit_free_instances.txt. See
-# doc/src/arch/verification-hazop.md, OBL-Z1 and OBL-Z16.
+# It is currently RED, and it is BLOCKING: re-measured 2026-09-24, it exits 1 on **5** unclassified
+# instances over **179** circuits / **886** `constrain_instance` sites — insurance_market's two
+# `required_capability_id`, bridge/withdraw's `token_minimum`, labor_market's `attestation_id`, and
+# oracle/attest_value's `threshold`.
+# This paragraph read "15 over 181 circuits / 897 sites" until 2026-09-24, and named sites that had
+# since been adjudicated (oracle/aggregate's min_result and max_result, labor_market's
+# milestone_payment_amount, roulette/settle_bet's payout) or **deleted** — `proofs/core/lead.zk` and
+# `set_v1.zk` were removed that day rather than repaired: they were the two with no host anywhere in
+# this repository, so no binding existed and no free-instance entry was permitted, and cutting them
+# took the count from 11 to 5. Before that the number read "33". The gate is the authority and the
+# register's OBL-Z16 agrees with it; a count here is stale prose the moment a circuit moves. Because
+# `run_gate` has no allowlist, a red gate means no full-gate run can be green until its sites are
+# adjudicated — each either derived, bound, or declared free with a reason in
+# script/circuit_free_instances.txt. See doc/src/arch/verification-hazop.md, OBL-Z1 and OBL-Z16.
 #
 # TWO gates are red, not one — measured 2026-09-22 rather than inferred from this comment. The other
 # is `circuit metadata alignment` (gate 2 above): re-measured 2026-09-23 it exits 1 with **19 count
@@ -97,8 +101,8 @@ run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain
 # FAIL that day (OBL-C20), because a position where the circuit instances a value and the metadata
 # pushes a literal constant is not a name-mapping question. That class is the other session's
 # OBL-C78/OBL-C79, so it is named here and not duplicated. A "the full gate is green" claim is
-# therefore two obligations away, not one: **11 unclassified instances and 5 metadata findings,
-# re-measured 2026-09-24**. This sentence said 15 and 29, both stale — the numbers belong to the gates,
+# therefore two obligations away, not one: **5 unclassified instances and 5 metadata findings,
+# re-measured 2026-09-24**. This sentence said 15 and 29, then 11 and 5, both stale — the numbers belong to the gates,
 # and both gates print their own on every run.
 run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instance-derivation.sh"
 # The same sources, transcribed into Lean as data. `Transcribed.lean` is a *generated*

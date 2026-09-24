@@ -25,7 +25,7 @@ asks whether every exposed value is *determined* by what precedes it, while the 
 accepts an exposed value that the circuit pins elsewhere (`redundant`) or that a host-side
 justification declares free (`script/circuit_free_instances.txt`).
 
-Measured: **170** of 181 circuits expose at least one value the model does not
+Measured: **168** of 179 circuits expose at least one value the model does not
 find determined in-circuit, and **11** hold. Each refuted circuit names the first such
 exposure **and the checker's class for that exposure**.
 
@@ -34,13 +34,13 @@ refuted circuit the generator asks the *checker* — `classify`, the gate's own 
 made of the exposure the model refused, and the answer is that the two rules disagree by design
 almost everywhere:
 
-* **155** of the 170 — The checker resolves it as `redundant` — pinned by another exposed
+* **154** of the 168 — The checker resolves it as `redundant` — pinned by another exposed
   determination, which the model's sequential rule does not follow.
-* **11** of the 170 — The checker resolves it as `declared-free`, from a host-side justification
+* **11** of the 168 — The checker resolves it as `declared-free`, from a host-side justification
   in `script/circuit_free_instances.txt`.
-* **3** of the 170 — **The checker fails it too** — one of the instances `OBL-Z16` names, where
+* **2** of the 168 — **The checker fails it too** — one of the instances `OBL-Z16` names, where
   the model and the checker agree.
-* **1** of the 170 — The checker resolves it as `bound`, through a `constrain_equal_base` whose
+* **1** of the 168 — The checker resolves it as `bound`, through a `constrain_equal_base` whose
   determining side is a declared constant.
 
 So the model does not contradict the checker; it **refines** it, and every one of the 170 is the
@@ -68,7 +68,7 @@ model's property, where the checker accepts a constant by declaration. No circui
 one — measured, every undetermined exposure across the 170 refutations is a witness and none is a
 constant — so that direction is untested rather than settled, while the direction above is met.
 
-Not transcribed, and counted rather than dropped silently: 25 bare opcode-call statements
+Not transcribed, and counted rather than dropped silently: 22 bare opcode-call statements
 (`less_than_strict`, `bool_check`, `less_than_loose`) which constrain but expose nothing, so the
 instance property is unaffected — the checker skips them for the same reason. Everything else in the
 sources is here; an unrecognised statement form fails the generator rather than being omitted.
@@ -96,7 +96,7 @@ open Circuits.InstanceDerivation
 
 /-! ===== The circuits, in source order =====
 
-181 circuits, 2747 statements transcribed; **11** satisfy the model's property and **170** do not, the latter named by the
+179 circuits, 2692 statements transcribed; **11** satisfy the model's property and **168** do not, the latter named by the
 first undetermined exposure in each, with the checker's class for that exposure named beneath it.
 -/
 
@@ -284,75 +284,6 @@ theorem inclusion_proof_no_free_instance :
   decide
 
 
-/-- `proofs/core/lead.zk` — 14 exposure(s). -/
-
-def lead_held : List Name := ["NULLIFIER_K", "VALUE_COMMIT_RANDOM", "VALUE_COMMIT_VALUE", "c1_cm_path", "c1_cm_pos", "c1_opening", "c1_rho", "c1_sk", "c1_sk_path", "c1_sk_pos", "c1_sk_root", "c1_slot", "c2_opening", "headstart", "mu_rho", "mu_y", "sigma1", "sigma2", "value"]
-
-
-def lead_stmts : List Stmt :=
-[
-  .assign "ZERO" (.op "witness_base" [.lit 0]),
-  .assign "ONE" (.op "witness_base" [.lit 1]),
-  .assign "REWARD" (.op "witness_base" [.lit 1]),
-  .assign "PREFIX_EVL" (.op "witness_base" [.lit 2]),
-  .assign "PREFIX_SEED" (.op "witness_base" [.lit 3]),
-  .assign "PREFIX_CM" (.op "witness_base" [.lit 4]),
-  .assign "PREFIX_PK" (.op "witness_base" [.lit 5]),
-  .assign "PREFIX_SN" (.op "witness_base" [.lit 6]),
-  .assign "pk" (.op "poseidon_hash" [.var "PREFIX_PK", .var "c1_sk_root", .var "c1_slot", .var "ZERO"]),
-  .constrainInstance (.var "pk"),
-  .assign "c1_cm_msg" (.op "poseidon_hash" [.var "PREFIX_CM", .var "pk", .var "value", .var "c1_rho"]),
-  .assign "c1_cm_v" (.op "ec_mul_base" [.var "c1_cm_msg", .var "NULLIFIER_K"]),
-  .assign "c1_cm_r" (.op "ec_mul" [.var "c1_opening", .var "VALUE_COMMIT_RANDOM"]),
-  .assign "c1_cm" (.op "ec_add" [.var "c1_cm_v", .var "c1_cm_r"]),
-  .assign "c1_cm_x" (.op "ec_get_x" [.var "c1_cm"]),
-  .assign "c1_cm_y" (.op "ec_get_y" [.var "c1_cm"]),
-  .assign "c1_cm_hash" (.op "poseidon_hash" [.var "c1_cm_x", .var "c1_cm_y"]),
-  .constrainInstance (.var "c1_cm_x"),
-  .constrainInstance (.var "c1_cm_y"),
-  .assign "c2_rho" (.op "poseidon_hash" [.var "PREFIX_EVL", .var "c1_sk_root", .var "c1_rho", .var "ZERO"]),
-  .assign "c2_value" (.op "base_add" [.var "value", .var "REWARD"]),
-  .assign "c2_cm_msg" (.op "poseidon_hash" [.var "PREFIX_CM", .var "pk", .var "c2_value", .var "c2_rho"]),
-  .assign "c2_cm_v" (.op "ec_mul_base" [.var "c2_cm_msg", .var "NULLIFIER_K"]),
-  .assign "c2_cm_r" (.op "ec_mul" [.var "c2_opening", .var "VALUE_COMMIT_RANDOM"]),
-  .assign "c2_cm" (.op "ec_add" [.var "c2_cm_v", .var "c2_cm_r"]),
-  .assign "c2_cm_x" (.op "ec_get_x" [.var "c2_cm"]),
-  .assign "c2_cm_y" (.op "ec_get_y" [.var "c2_cm"]),
-  .constrainInstance (.var "c2_cm_x"),
-  .constrainInstance (.var "c2_cm_y"),
-  .assign "root" (.op "merkle_root" [.var "c1_cm_pos", .var "c1_cm_path", .var "c1_cm_hash"]),
-  .constrainInstance (.var "root"),
-  .assign "root_sk" (.op "merkle_root" [.var "c1_sk_pos", .var "c1_sk_path", .var "c1_sk"]),
-  .constrainInstance (.var "root_sk"),
-  .assign "sn" (.op "poseidon_hash" [.var "PREFIX_SN", .var "c1_sk_root", .var "c1_rho", .var "ZERO"]),
-  .constrainInstance (.var "sn"),
-  .assign "seed" (.op "poseidon_hash" [.var "PREFIX_SEED", .var "c1_sk_root", .var "c1_rho", .var "ZERO"]),
-  .assign "y" (.op "poseidon_hash" [.var "seed", .var "mu_y"]),
-  .constrainInstance (.var "mu_y"),
-  .constrainInstance (.var "y"),
-  .assign "rho" (.op "poseidon_hash" [.var "seed", .var "mu_rho"]),
-  .constrainInstance (.var "mu_rho"),
-  .constrainInstance (.var "rho"),
-  .assign "term1" (.op "base_mul" [.var "sigma1", .var "value"]),
-  .assign "term2_1" (.op "base_mul" [.var "sigma2", .var "value"]),
-  .assign "term2" (.op "base_mul" [.var "term2_1", .var "value"]),
-  .assign "target" (.op "base_add" [.var "term1", .var "term2"]),
-  .assign "shifted_target" (.op "base_add" [.var "target", .var "headstart"]),
-  .constrainInstance (.var "sigma1"),
-  .constrainInstance (.var "sigma2")
-]
-
-
-/-- **The property fails** for `proofs/core/lead.zk`: its first undetermined exposure is
-    `.var "mu_y"`, which the circuit does not bind before exposing.
-    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
-@[axiom_budget 0]
-theorem lead_has_a_free_instance :
-    ¬ NoFreeInstance lead_held lead_stmts := by
-  unfold NoFreeInstance
-  decide
-
-
 /-- `proofs/core/mint.zk` — 5 exposure(s). -/
 
 def mint_held : List Name := ["NULLIFIER_K", "VALUE_COMMIT_RANDOM", "VALUE_COMMIT_VALUE", "pub_x", "pub_y", "serial", "token", "token_blind", "value", "value_blind"]
@@ -455,32 +386,6 @@ def opcodes_stmts : List Stmt :=
 @[axiom_budget 0]
 theorem opcodes_no_free_instance :
     NoFreeInstance opcodes_held opcodes_stmts := by
-  unfold NoFreeInstance
-  decide
-
-
-/-- `proofs/core/set_v1.zk` — 5 exposure(s). -/
-
-def set_v1_held : List Name := ["key", "lock", "root", "secret", "value"]
-
-
-def set_v1_stmts : List Stmt :=
-[
-  .assign "account" (.op "poseidon_hash" [.var "secret"]),
-  .constrainInstance (.var "account"),
-  .constrainInstance (.var "lock"),
-  .constrainInstance (.var "root"),
-  .constrainInstance (.var "key"),
-  .constrainInstance (.var "value")
-]
-
-
-/-- **The property fails** for `proofs/core/set_v1.zk`: its first undetermined exposure is
-    `.var "lock"`, which the circuit does not bind before exposing.
-    **The checker fails it too** — one of the instances `OBL-Z16` names, where the model and the checker agree. -/
-@[axiom_budget 0]
-theorem set_v1_has_a_free_instance :
-    ¬ NoFreeInstance set_v1_held set_v1_stmts := by
   unfold NoFreeInstance
   decide
 

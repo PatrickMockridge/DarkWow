@@ -21,12 +21,16 @@
 # block height, an amount or a basis-point figure (bounded, so the rule applies) or a curve
 # coordinate or hash output (full-width, so it cannot).
 
-# --- the lead-coin win check: full-width by design ------------------------------------------
-# `y` is derived from a hash chain (`y = a_0 + x * a_1`, the RLN/lead shape) and `shifted_target`
-# from the epoch's target, both of them ~254-bit field elements. The comparison is therefore over
-# the top half of the field, and its soundness — that a miner wins with probability proportional
-# to its stake — rests on the *distribution* of `y` being uniform and unpredictable, not on any
-# bound the circuit could impose. Bounding the operands to 64 bits would not repair the check, it
-# would delete over half the valid win space. The consumer is the consensus `lead_coin` rule, which
-# lives outside this repository; a change here must be paired with that host's.
-proofs/core/lead.zk : less_than_loose(y, shifted_target) : operands are full-width by design (hash-chain output and an epoch target); soundness rests on the distribution of y, and the consuming host is outside this repository — OBL-Z16
+# --- the lead-coin win check: RETIRED 2026-09-24, because the circuit is gone ---------------
+# The entry that stood here read:
+#
+#   proofs/core/lead.zk : less_than_loose(y, shifted_target) : operands are full-width by design
+#   (hash-chain output and an epoch target); soundness rests on the distribution of y, and the
+#   consuming host is outside this repository — OBL-Z16
+#
+# Its own reason is why it could be retired rather than kept: the consumer it named — the consensus
+# `lead_coin` rule — "lives outside this repository", and `proofs/core/lead.zk` was a Nov-2022
+# prototype whose in-tree host (`consensus/leadcoin.rs`) was deleted. Nothing compiled the circuit,
+# nothing loaded it, and nothing consumed its exception, so `lead.zk` was removed rather than
+# carried — which also closes the two `constrain_instance` sites the audit could not classify
+# (`sigma1`/`sigma2`). See `OBL-Z16` and `proofs/README.md`.

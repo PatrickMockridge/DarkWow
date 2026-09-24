@@ -129,17 +129,22 @@ create, submit_bid, reveal_bid, select_winner
 -/
 
 /-
-## Core Proof Circuits (12)
+## Core Proof Circuits (10)
 
-proof/ directory: arithmetic, burn, encrypt, inclusion_proof, lead,
-mint, nested, opcodes, set_v1, smt, tx, voting.
+proofs/core/ directory: arithmetic, burn, encrypt, inclusion_proof,
+mint, nested, opcodes, smt, tx, voting.
 
 These are the core system circuits. All instances derived.
-CORRECTED 2026-09-24: six of these are not. The mechanised audit reports `lead.zk`'s `sigma1` and
+CORRECTED 2026-09-24, TWICE: six of the twelve did not have all their instances derived, and the two
+that did not belong here at all are now gone. The mechanised audit reported `lead.zk`'s `sigma1` and
 `sigma2`, and `set_v1.zk`'s `lock`, `root`, `key` and `value`, as neither derived, bound, redundant
-nor declared free — and unlike the contract circuits, these two have no host verifier anywhere in
-this repository (`grep -rn "Set_V1\|Lead"` over `src/` and `bin/` finds no reference to either
-namespace), which is `OBL-Z16`'s disposition for them. See the block below.
+nor declared free — and unlike the contract circuits, those two had no host verifier anywhere in this
+repository (`grep -rn "Set_V1\|Lead"` over `src/` and `bin/` finds no reference to either namespace).
+`lead.zk` was a Nov-2022 consensus prototype whose host (`consensus/leadcoin.rs`) was deleted from
+this tree; `set_v1.zk` was a 2023 `zkrunner` example. Nothing compiled either and nothing loaded
+either, so they were **deleted** rather than carried — no binding was available (their exposures are
+their payload) and the free-instance list bars an entry with no host mechanism to name. The count
+above is 10 because the two rows that made it 12 were removed. See the block below.
 -/
 
 /-
@@ -156,13 +161,18 @@ What stood here was:
     This is the formal verification result: no Orchard-class vulnerability
     exists in any DarkFi contract circuit.
 
-None of that is a Lean result, and item 2 is refuted for eleven instances by the repository's own
-mechanised audit — a gate, not a script beside one: `scripts/check-circuit-instance-derivation.sh`,
-wired at `scripts/run-all-tests.sh:101`. Run it and it exits 1:
+None of that is a Lean result, and item 2 is refuted by the repository's own mechanised audit — a
+gate, not a script beside one: `scripts/check-circuit-instance-derivation.sh`, wired at
+`scripts/run-all-tests.sh:101`. Run it and it exits 1:
 
-    181 circuits, 905 constrain_instance, 40 declared-free, 11 unclassified
+    179 circuits, 886 constrain_instance, 40 declared-free, 5 unclassified
 
-The eleven, each named by the gate itself (`doc/src/arch/verification-hazop.md` `OBL-Z16` is the row
+Those figures read `181 / 905 / 11` until 2026-09-24, when the two `proofs/core` circuits in the list
+below were **deleted** rather than repaired — they were the two with no host anywhere in this
+repository, so no binding existed and no free-instance entry was permitted. The count is a
+measurement, and this is where it moved.
+
+The five, each named by the gate itself (`doc/src/arch/verification-hazop.md` `OBL-Z16` is the row
 that tracks them, and it lists the same set):
 
     bridge/proof/withdraw.zk                              token_minimum
@@ -170,14 +180,12 @@ that tracks them, and it lists the same set):
     insurance_market/proof/underwrite_with_capability.zk  required_capability_id
     labor_market/proof/create_job.zk                      attestation_id
     oracle/proof/attest_value.zk                          threshold
-    proofs/core/lead.zk                                   sigma1, sigma2
-    proofs/core/set_v1.zk                                 lock, root, key, value
 
-Four of those files are in the categories this file enumerates below (`Oracle`, `Labor`, `Insurance`,
-`Core`), so the claim was not merely unproved — it was contradicted in its own list. What *is* true
-of the rest is that the gate classifies 894 of the 905 instances as derived, bound, redundant or
-declared free, and the 40 declared-free ones carry host-side justifications in
-`script/circuit_free_instances.txt` (`OBL-Z5`). "Safe" for the other eleven is not established by
+Five of those files are in the categories this file enumerates below (`Oracle`, `Labor`, `Insurance`),
+so the claim was not merely unproved — it was contradicted in its own list. What *is* true of the rest
+is that the gate classifies 881 of the 886 instances as derived, bound, redundant or declared free,
+and the 40 declared-free ones carry host-side justifications in
+`script/circuit_free_instances.txt` (`OBL-Z5`). "Safe" for the other five is not established by
 anything here, and two of them — `insurance_market`'s `required_capability_id` pair — are live
 defects recorded as such, where the host never checks that the caller holds the capability the
 circuit exposes.
