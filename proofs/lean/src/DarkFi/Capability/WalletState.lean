@@ -33,11 +33,14 @@ and the repair is proved to establish it — the theorem's content is that the r
 **What is not modelled.** The Merkle root and historical roots in the confirmed state: recomputing a
 root from discovered commitments is the contract tree's business (`PerContractTree.lean`, which this
 module extends with the subset-tree divergence §6.4.0's obligation turns on), and `applyBlock` leaves
-both fields untouched rather than pretending otherwise. The transaction status lifecycle of §6.5
-(Built → Broadcast → Pending → Mined → Confirmed, Dropped) is not modelled here: what this module
-models is what a *capability's* status does, and the transaction-level machine is the one whose edges
-the Rust drives from two observers (mempool and scan). Naming it as absent is the honest reading of
-"one of the two machines is modelled".
+both fields untouched rather than pretending otherwise. **The transaction status lifecycle of §6.5 was
+named absent here and is now modelled** — `TxStatus`, `TxStep` and the observer tag, in the section at
+the foot of this file, because this paragraph's reason for leaving it out ("the transaction-level
+machine is the one whose edges the Rust drives from two observers") is a reason to model the *observers*
+rather than a reason to omit the machine. What that section records, and what this paragraph used to
+imply was fine, is that the **deployment has no transaction status at all** while §6.5 says every
+transaction SHALL carry one — so the machine is modelled on the spec's terms, beside the provisional
+layer rather than fused into it, and the divergence is registered.
 
 **A correction this file owes, added 2026-09-24.** It landed claiming a clean build — "0 errors, 0
 warnings" — and that claim was wrong: `scanFrom_append`'s cons case wrote `| cons b bs ih` and
@@ -419,5 +422,90 @@ theorem an_omitted_predecessor_shifts_the_position (d : Nat) (mid : List Nat) (l
   simp only [findPos]
   rw [if_neg h]
   omega
+
+/- ==========================================================================
+   §6.5's transaction status lifecycle — the second machine
+   ==========================================================================
+   The lifecycle above is over a *capability*. §6.5 specifies a second, over the *transaction*:
+   `Built ─▶ Broadcast ─▶ Pending ─▶ Mined ─▶ Confirmed(≥N)`, with `Pending` also able to end in
+   `Dropped` or `Replaced`. What the model carries is not the diagram but its **drivers**: the mempool
+   advances `Broadcast → Pending` and is the only detector of `Dropped`/`Replaced`, while the block scan
+   advances `Pending → Mined → Confirmed`. Each edge therefore names its observer, and the theorems are
+   about which observer can do what.
+
+   **Why this machine stands beside the provisional layer rather than being fused into it.** Fusing them
+   would put a status on each pending transaction, and the deployment has no transaction status at all:
+   measured 2026-09-24, `bin/dww/src/` contains exactly one status enum (`CapStatus`,
+   `capability.rs:29`) and no `TxStatus`, no `Built`/`Mined`/`Dropped` variant and no pending-transaction
+   record — while §6.5 says every transaction the wallet builds **SHALL** carry a status. A model that
+   fused the two would be modelling a state the wallet cannot reach, so the machine is modelled on its
+   own terms and the divergence is registered rather than assumed away.
+   ========================================================================== -/
+
+/-- The observer that can take an edge. Load-bearing rather than decorative: §6.5's design is that
+    confirmation is *not* the mempool's to give, and that is a statement about this tag. -/
+inductive Observer where
+  /-- Node-side observation of the mempool: [mempool.md](mempool.md). -/
+  | mempool
+  /-- The block scan, §2. -/
+  | scan
+  deriving DecidableEq, Repr
+
+/-- §6.5's transaction status, in the spec's own names. -/
+inductive TxStatus where
+  | built
+  | broadcast
+  | pending
+  | mined
+  | confirmed
+  | dropped
+  | replaced
+  deriving DecidableEq, Repr
+
+/-- The transaction machine, every edge tagged by the observer that drives it. -/
+inductive TxStep : Observer → TxStatus → TxStatus → Prop where
+  /-- Broadcast: `Built → Broadcast`. -/
+  | broadcast : TxStep .mempool .built .broadcast
+  /-- Mempool observation advances `Broadcast → Pending`. -/
+  | seen_by_mempool : TxStep .mempool .broadcast .pending
+  /-- Mempool eviction or a competing block: `Pending → Dropped`. -/
+  | dropped : TxStep .mempool .pending .dropped
+  /-- A replacement paying the same nullifier: `Pending → Replaced`. -/
+  | replaced : TxStep .mempool .pending .replaced
+  /-- The scan finds the nullifier on-chain: `Pending → Mined`. -/
+  | mined : TxStep .scan .pending .mined
+  /-- `CONFIRMATION_DEPTH` reached: `Mined → Confirmed`. -/
+  | confirmed : TxStep .scan .mined .confirmed
+
+/-- **Nothing reaches `Confirmed` except through `Mined`, and only the scan takes that edge.** Stated
+    over the *final* transition, which is the general fact: `Confirmed` has exactly one incoming edge,
+    so every path into it — of any length — ends at a block. This is the property §6.5's two-observer
+    split exists for, and it is what the capability machine's `spent_is_entered_only_from_processing`
+    is one level down. -/
+@[axiom_budget 0]
+theorem confirmation_is_the_scans_to_give (o : Observer) (s : TxStatus)
+    (h : TxStep o s .confirmed) : o = .scan ∧ s = .mined := by
+  cases h
+  exact ⟨rfl, rfl⟩
+
+/-- The same fact for a reader who wants it about the mempool: that observer cannot confirm anything. -/
+@[axiom_budget 0]
+theorem the_mempool_cannot_confirm (s : TxStatus) (h : TxStep .mempool s .confirmed) : False := by
+  cases h
+
+/-- And `Pending` is the mempool's to enter, not the scan's — the mirror of the confirmation rule, and
+    the reason `Broadcast` cannot be skipped. -/
+@[axiom_budget 0]
+theorem pending_is_the_mempools_to_enter (s : TxStatus) (h : TxStep .scan s .pending) : False := by
+  cases h
+
+/-- **A terminal `Dropped` is terminal** — §6.5's own word, as a theorem: no edge leaves it, so a
+    dropped transaction cannot be revived by any observer. The spec names only `Dropped` as terminal;
+    the model gives `Replaced` the same shape without claiming it, which is why this theorem is about
+    `Dropped` alone. -/
+@[axiom_budget 0]
+theorem a_dropped_transaction_is_terminal (o : Observer) (t : TxStatus)
+    (h : TxStep o .dropped t) : False := by
+  cases h
 
 end DarkFi.Capability
