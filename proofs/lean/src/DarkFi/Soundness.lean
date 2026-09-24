@@ -19,8 +19,13 @@ what remains is `cross_mul_implies_ratio_bound`, which is now a theorem rather t
 
 ```bash
 cd proofs/lean
-lean --run src/Main.lean
+lake build DarkFi                        # type-checks the proofs — this is the gate
+python3 ../../script/check_lean_axioms.py --require-collector
 ```
+
+This block used to say `lean --run src/Main.lean`. It should not: `src/Main.lean` does not
+compile (21 errors, measured 2026-09-24, on its version at HEAD as well — see its header) and no
+gate invokes it, so running it verifies nothing.
 -/
 
 import DarkFi.Gadgets

@@ -164,11 +164,20 @@ All of them are in **`src/DarkFi/Axioms.lean`** and nowhere else. Each carries f
 
 | Class | Count | Members |
 |-------|-------|---------|
-| Cryptographic | 2 | `poseidon_hash_output` (value-less `opaque`), `poseidon_collision_resistance` |
+| Cryptographic | 4 | `poseidon_hash_output` (value-less `opaque`), `poseidon_collision_resistance`, `aead_open` (value-less `opaque`), `aead_key_committing` |
 | Arithmetic | 1 | `pallasPrime` |
 | Emission policy (free parameters) | 2 | `coinbase_blind`, `reward_monotone` |
 | ZK-to-type bridge | 1 | `NoFreeInstances` |
-| **Total** | **6** | |
+| **Total** | **8** | |
+
+The AEAD pair was added 2026-09-24, and it was added *by removal*: `Net/Receive.lean`'s
+`decrypt` had been `if k = n.recipient then some … else none`, so its `decrypt_sound` was a fact
+about that branch — budget 0, because the definition assumed everything — while `wallet.md` §2.1
+cited it as the receive path's soundness. The key comparison is now an opening of an opaque
+ciphertext and the property is assumed, so the count rose by two and the receive path's soundness
+appears in a budget for the first time. `Axioms.aead_key_committing` is the unconditional
+strengthening of a ~2⁻¹²⁸ computational guarantee, the same species as
+`poseidon_collision_resistance`, and the honest-scope section below records it beside that one.
 
 This table is the one that produced the wrong number, so its history is worth keeping. Until 2026-09-24 it
 listed **23** members across six classes — a Cryptographic six that still named `commitment_binding`,
@@ -390,6 +399,20 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   is a consequence of its being a function and needs no proof. (This section used to say it was
   defined as `inputs.head?.getOrElse 0 + 1`; that was true of a much older version and has been
   false since.)
+- **AEAD opening is opaque too, and the receive path's soundness is assumed rather than built
+  in.** `aead_open` has no value, so no cipher, KDF or nonce derivation is modelled, and
+  `Axioms.aead_key_committing` asserts that a ciphertext authenticates under at most one key.
+  It is the same species of over-statement as the Poseidon entry above: the deployment is
+  Sapling DH → `kdf_sapling` → `ChaCha20Poly1305` with the nonce derived from `ephem_public`
+  (`src/sdk/src/crypto/note.rs:113-135`), whose guarantee is ~2⁻¹²⁸ *per attempt*, while the axiom
+  asserts no such pair exists — false of the real construction by counting, and satisfiable only
+  because `aead_open` is opaque and `Int` is countable. The shape is falsifiable
+  (`Net.key_committing_is_false_for_leaky_open` exhibits an opening that ignores the key, for
+  which the statement is false), so the assumption is load-bearing rather than decorative — but
+  the *satisfiable* half is not built: no model in this tree exhibits a tag-based `aead_open`.
+  **What changed on 2026-09-24 is where the assumption sits, not how strong it is.** `decrypt`
+  used to *be* the property (`if k = n.recipient then some … else none`), so `decrypt_sound` read
+  budget 0 and was a fact about a branch; it is now budget 1 and the dependency is visible.
 - **Pedersen point addition is also opaque** — `PedersenPoint.add` has no value, so it is not
   `Nat` addition and not curve addition. The group laws
   (`pedersen_add_comm`/`_assoc`/`_identity`) are assumptions about an unmodelled operation, and
@@ -498,7 +521,7 @@ There also used to be an "expected output" block here, quoted from `lean --run s
 reporting `Proved theorems: ~40`, `Axioms: ~43` and `HAZOP findings: 15`. Those numbers were
 hardcoded in `Main.lean` and were wrong in every case (the counts, measured 2026-09-24, are 362
 `theorem`/`lemma` declarations — 357 of them gate-visible, since the gate's scanner does not match
-`private` — of which 261 are at budget 0, and 6 assumptions). They are gone from
+`private` — of which 261 are at budget 0, and 8 assumptions). They are gone from
 `Main.lean`: a summary that is typed by hand is a claim, not a measurement, and this file was
 quoting it as evidence.
 

@@ -239,7 +239,7 @@ proofs/lean/
 ├── lakefile.lean               # Build configuration
 ├── README.md                   # Verification results and run instructions
 └── src/
-    ├── Main.lean               # Executable verification suite (lean --run)
+    ├── Main.lean               # Does NOT compile (21 errors, 2026-09-24); no gate runs it
     └── DarkFi/
         ├── Field.lean          # Pallas field arithmetic, div_mul_cancel theorem
         ├── Gadgets.lean        # Comparison gadget soundness/purity theorems
@@ -291,7 +291,11 @@ When `a > b` and prover claims `out = 1`:
 - `a_offset = 1 * (b - a) = b - a < 0`
 - Same wraparound occurs → **caught**
 
-**Lean 4 Verification** (`proofs/lean/src/Main.lean`):
+**The theorem is `Comparison.less_than_or_equal_sound`** (`proofs/lean/src/DarkFi/Comparison.lean`).
+The block below used to be headed "Lean 4 Verification (`proofs/lean/src/Main.lean`)" — an
+exhaustive search, not a proof, and not runnable: `src/Main.lean` does not compile (21 errors,
+measured 2026-09-24, on its version at HEAD as well — see its header), and no gate invokes it.
+The sketch is kept as the shape of the search that motivated the theorem.
 ```lean
 -- Exhaustive search for counterexamples:
 -- Tests all combinations of (a, b, out) for a,b in [0, 999]
@@ -382,7 +386,12 @@ def is_equal_fixed_pure_when_equal (a delta_invert : Int) :
 | `a == b` | 0 | **1** (forced) | `(1-0)*(1-1) = 0` ✓ |
 | `a != b` | 1 | `1/(a-b)` | `(1-1)*(x-1) = 0` ✓ |
 
-**Lean 4 Verification** (`proofs/lean/src/Main.lean`):
+**The theorem is `Comparison.is_not_equal_fully_pure`** (`proofs/lean/src/DarkFi/Comparison.lean`),
+with `is_not_equal_pure_when_equal` and `is_not_equal_delta_invert_unique_when_unequal` beside it.
+The output block below was headed "Lean 4 Verification (`proofs/lean/src/Main.lean`)" and is
+quoted output that the file as it stands cannot produce — it does not compile (21 errors, measured
+2026-09-24, on its version at HEAD as well; see its header) and no gate runs it. It is kept as the
+record of what the search printed when it last worked, and it is not evidence now.
 
 ```
 PURITY CHECK: When a==b, is delta_inv FORCED to 1?
@@ -563,7 +572,7 @@ commitment = ec_add(tmp1, tmp2);
 curl -L https://github.com/leanprover/elan/releases/download/v4.2.1/elan-x86_64-unknown-linux-gnu.tar.gz | tar xz
 ./elan-init -y --default-toolchain 4.12.0
 source ~/.elan/env
-cd proofs/lean && lean --run src/Main.lean
+cd proofs/lean && lake build DarkFi
 ```
 
 ### Lean 4 Project Structure
@@ -572,8 +581,8 @@ proofs/lean/
 ├── lean-toolchain          # Lean 4.12.0
 ├── lakefile.lean           # Build configuration
 └── src/
-    ├── Main.lean          # Executable verification tests
-    │                        Run with: lean --run src/Main.lean
+    ├── Main.lean          # Does NOT compile (21 errors, 2026-09-24) — IO simulation only,
+    │                        not in the library, and invoked by no gate
     └── DarkFi/
         ├── Field.lean     # Field arithmetic formalization
         │                    - PALLAS_PRIME definition

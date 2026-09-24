@@ -364,7 +364,11 @@ Constraint: out ∈ {0,1}
 a_offset = out*(b-a-1) + (1-out)*(a-b)
 range_check(253, a_offset)
 
-VERIFIED SOUND in Main.lean (exhaustive 1000×1000).
+VERIFIED SOUND by `less_than_strict_sound` below (`:331`) — a proof, not a search. This line
+used to read "VERIFIED SOUND in Main.lean (exhaustive 1000×1000)", and that citation cannot be
+good for anything now: `src/Main.lean` does not compile (21 errors, measured 2026-09-24, on its
+version at HEAD as well — see its header), so no exhaustive search in it has run recently, and
+none of its output is checked by any gate.
 -/
 
 /-

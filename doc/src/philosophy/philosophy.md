@@ -41,7 +41,7 @@ affordances is their own affair.
    `proofs/lean/src/DarkFi/BaseDiv.lean` as of 2026-09-20 — it rested on `pallasPrime`)
    formally verified — not inherited from upstream. 36 capability-type pairs
    proven pairwise non-bisimilar with zero `sorry` (which is not the same as assuming
-   nothing — 6 assumptions are declared in `proofs/lean/src/DarkFi/Axioms.lean`).
+   nothing — 8 assumptions are declared in `proofs/lean/src/DarkFi/Axioms.lean`).
 
 6. **Per-block Pedersen mass balance**. Σ outputs + Σ burns + Σ fees == Σ inputs
    via additive homomorphism. Cumulative supply commitment chain verifiable

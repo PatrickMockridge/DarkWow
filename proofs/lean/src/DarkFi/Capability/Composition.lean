@@ -396,8 +396,10 @@ def bridgeWithdrawType : CapabilityType bridgeWithdrawResource bridgeWithdrawAct
    interpolating a `Finset Barb` needs `ToString (Finset Barb)`, which `Barb`
    does not provide, so it was 15 of this file's 45 compile errors.
 
-   `Main.lean` still prints the same summary. That is tracked separately: a
-   hand-printed summary is a claim, and these are now proofs.
+   `Main.lean` was said here to "still print the same summary". It does not print anything: it
+   does not compile (21 errors, measured 2026-09-24, on its version at HEAD as well — see its
+   header). The sentence's point stands even so — a hand-printed summary is a claim, and these
+   are now proofs — and the file that made the claim is the one that broke.
    ========================================================================== -/
 
 /- ==========================================================================

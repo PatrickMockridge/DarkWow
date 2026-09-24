@@ -986,7 +986,7 @@ admission and block acceptance.
 
 The wallet's type construction is formalized and verified in the Lean4
 calculus of constructions at `proofs/lean/src/DarkFi/Capability/Wallet.lean`.
-All theorems are proved with zero `sorry`. That is not the same as being proved from nothing: 6 assumptions are declared in `proofs/lean/src/DarkFi/Axioms.lean`, and each theorem's `@[axiom_budget]` records how many of them its proof depends on.
+All theorems are proved with zero `sorry`. That is not the same as being proved from nothing: 8 assumptions are declared in `proofs/lean/src/DarkFi/Axioms.lean`, and each theorem's `@[axiom_budget]` records how many of them its proof depends on. (It was 6 until 2026-09-24, when the receive path's decrypt soundness stopped being assumed by its own definition — see §2.1.)
 
 ### 7.1 Soundness Theorem
 
@@ -994,6 +994,14 @@ All theorems are proved with zero `sorry`. That is not the same as being proved 
 returns `some ct`, then `ct` is a valid `CapabilityType` — the composed
 barbs of the primitives cover the resource's required barbs. The proof
 extracts the `coversBarbs` field from the constructed type.
+
+**Read that for what it is, because the name overstates it.** `walletConstruct` *is*
+`if h : r.requiredBarbs ⊆ compose primitives then some { ‥, coversBarbs := h } else none`, so this
+theorem unfolds the `if` and returns its own hypothesis: its content is the definition, and its
+budget of 0 is the honest reading — nothing outside the branch is used. It is the name §6.2's
+write path cites the read path's coverage guarantee by. It is not evidence that construction is
+sound beyond barb coverage, because barb coverage is all a `CapabilityType` carries. The
+statement with a condition in it is `walletConstruct_rejects_emptyPrimitives` (§7.6).
 
 ### 7.2 Completeness Theorem
 
@@ -1010,9 +1018,15 @@ No primitives are lost, modified, or added during construction.
 
 ### 7.4 Determinism and Idempotence
 
-`walletConstruct_deterministic`: Given identical inputs, the wallet
-always produces the same capability type. This is the type-level
-expression of the wallet's pure function property (§1).
+`walletConstruct_deterministic`: `walletConstruct` returns the same capability type on equal
+arguments — `f x = some ct1 → f x = some ct2 → ct1 = ct2`, which holds of every function and is
+closed by rewriting with the first hypothesis and injecting.
+
+This section used to call it "the type-level expression of the wallet's pure function property
+(§1)". It is not that, and the difference is the §1 property's whole content: `walletConstruct`
+takes neither a `Seed` nor wallet state, so this theorem says nothing about an exercise being
+byte-deterministic. §7.8 is where the two claims that *would* say it are recorded, and they are
+un-discharged.
 
 `walletConstruct_idempotent`: **DELETED.** Its statement was
 `walletConstruct p r s = walletConstruct p r s` — `x = x`, proved by `rfl`. The sentence this
@@ -1023,12 +1037,19 @@ about it, and a `def` needs no proof of equal-on-equal-arguments.
 
 ### 7.5 Concrete Constructibility
 
-Three concrete proofs verify that the wallet can construct real
-capability types:
+**Four** concrete proofs verify that the wallet can construct real capability types:
 
 - `nativeTokenTransfer_constructible`: from `[SecretKey, Commitment, Nullifier, ContractId, FuncId, AssetId, MerkleNode]`
 - `daoVote_constructible`: same primitives, different resource
-- `tenderBid_constructible`: same primitives, different resource
+- `tenderBid_constructible`: `[SecretKey, Commitment, Nullifier, ContractId, FuncId, AssetId, MerkleNode, DLEqProof]` — **eight** primitives, not the same seven. `tenderResource.requiredBarbs` includes `↓prove`, which only `DLEqProof` carries, so the seven-element list returns `none`.
+- `coinbaseClaim_constructible`: `[SecretKey, Commitment, Nullifier, ContractId, FuncId, AssetId, MiningRecipient]` — the `↓mine` barb comes from `MiningRecipient`.
+
+The list said three until 2026-09-24 and described the tender row as "same primitives", which was
+the defect `tenderBid_constructible`'s own docstring records having fixed in the Lean: the
+seven-element call was `none` and the claim `… ≠ none` was **false**. The Rust
+`wallet_construct` cannot construct the tender type at all — `Primitive` has no `DLEqProof`
+variant (`src/sdk/src/capability.rs:276-287`) — so this theorem's counterpart there does not
+exist; see §7.9.
 
 ### 7.6 Failure Case
 
@@ -1044,23 +1065,50 @@ Run `lake build` in `proofs/lean/` to type-check.
 ### 7.8 Write-Path Obligations (Exercise)
 
 The write path (§6) is subject to the following obligations — the exercise-time duals of
-§7.1, §7.4, and the nullifier discipline. They are to be discharged in
-`proofs/lean/src/DarkFi/Capability/Wallet.lean` (proved, or stated as explicit
-future-work in the manner of [type-system.md §11.6](type-system.md)):
+§7.1, §7.4, and the nullifier discipline. **Status as of 2026-09-24, stated per obligation rather
+than as a block**, because this section used to say all three "are to be discharged in
+`proofs/lean/src/DarkFi/Capability/Wallet.lean`" and that was wrong in both directions: one was
+already discharged, in a different file, and the other two are so far absent that the file named
+is not where they belong.
 
-- **`construct_sound`** — if `f(SelectedCapabilities, Action, Params, Secrets, Seed)`
-  returns a transaction, the proofs it carries inhabit the predicate language L_{r,s} of
-  the action's capability type; equivalently, the composed barbs of the selected
-  capabilities cover the action's `requiredBarbs` (§6.2). Dual of `walletConstruct_sound`
-  (§7.1).
-- **`construct_deterministic`** — given identical `(SelectedCapabilities, Action, Params,
-  Secrets, Seed)`, `f` returns a byte-identical transaction (§6.1). The write-path
-  expression of the wallet's pure-function property; dual of
-  `walletConstruct_deterministic` (§7.4).
-- **`nullifier_completeness`** — for every capability in `SelectedCapabilities` consumed
-  by the transaction, its nullifier appears in `Transaction.nullifiers` (§6.3 step 4).
-  This is the property the mempool relies on for double-spend detection
-  ([mempool.md](mempool.md)).
+- **`nullifier_completeness`** — **DISCHARGED**, and not in `Wallet.lean`:
+  `proofs/lean/src/DarkFi/Capability/Exercise.lean:92`. For every input of an `Exercise`, its
+  nullifier is in the post-apply spent set — the property the mempool relies on for double-spend
+  detection ([mempool.md](mempool.md)). Its statement is about the *public state*, not about a
+  `Transaction`, and part 2 of §6.3 step 4 needs the latter.
+- **`construct_sound`** — **NOT DECLARED.** No theorem of this name exists anywhere in
+  `proofs/lean/`. If `f(SelectedCapabilities, Action, Params, Secrets, Seed)` returns a
+  transaction, the proofs it carries inhabit the predicate language L_{r,s} of the action's
+  capability type; equivalently, the composed barbs of the selected capabilities cover the
+  action's `requiredBarbs` (§6.2). Dual of `walletConstruct_sound` (§7.1).
+- **`construct_deterministic`** — **NOT DECLARED.** Given identical `(SelectedCapabilities,
+  Action, Params, Secrets, Seed)`, `f` returns a byte-identical transaction (§6.1); §0.1.5's seed
+  rule is the same obligation in the form the *code* can be checked against. The write-path
+  expression of the wallet's pure-function property; dual of `walletConstruct_deterministic`
+  (§7.4), which as §7.4 now records is not that property.
+- **`scoped_derivation`** — **NOT DECLARED**, and not on this list before 2026-09-24:
+  `type-system.md` §7.3's scope restriction ("a `SecretKey` derived for contract instance `A`
+  SHALL NOT be usable in contract instance `B`") has no Lean model at all. The only occurrence of
+  `derive_instance` in the whole proof tree is a comment.
+
+Drafting these belongs in modules that model the write path — a selection module for §6.2, a
+construction module for §6.1/§6.3 — not in `Wallet.lean`, which models type construction alone.
+
+### 7.9 Constructibility Is Not Universal, and the Rust Is Narrower
+
+Two facts a reader of §7.5 needs, both measured:
+
+- **Lean proves constructibility for more types than the wallet can construct.** Of the fourteen
+  `CapabilityType`s in `Composition.lean`, Rust's `wallet_construct` returns `None` for four,
+  because `Primitive` (`src/sdk/src/capability.rs:276-287`) has no variant carrying the barb they
+  need: `tenderBidType` (`DLEqProof`), `bridgeDepositType` (`BridgeAddress`,
+  `ChainDepositProof`), `bridgeWithdrawType` (`BridgeAddress`, `BridgeCapNullifier`,
+  `DLEqProof`) and `oracleOperatorType` (`DLEqProof`). `contrib/primitive_barbs_diff.sh` reports
+  the seven model-only primitives and passes, because a model-only type is not a violation there;
+  the consequence for *constructibility* is this section's, and nothing mechanized it before.
+- **The Rust test module claimed more than it has.** `src/sdk/src/capability.rs:498-499` says
+  "Every construction that is proved in Lean4 must also succeed here" and tests nine of the
+  fourteen; `purseDepositType` is constructible in Rust and untested.
 
 ## 8. References
 

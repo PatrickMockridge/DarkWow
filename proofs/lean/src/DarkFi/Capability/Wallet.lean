@@ -50,6 +50,14 @@ def walletConstruct (primitives : List PrimitiveType) (r : Resource) (s : Action
    Proof: walletConstruct only returns some when the subset check passes.
 -/
 
+/-- **What this proves, and what it does not.** `walletConstruct` is
+    `if h : r.requiredBarbs ⊆ compose primitives then some { primitives, coversBarbs := h }
+    else none`, so this theorem unfolds that `if` and hands back the branch's own hypothesis. Its
+    content is the *definition*: it says the constructor stores the coverage proof it checked.
+    That is worth having a name for — `wallet.md` §6.2's write path cites the read path's coverage
+    guarantee by it — but it is not evidence that the wallet's construction is sound beyond barb
+    coverage, because barb coverage is all a `CapabilityType` carries. The genuinely conditional
+    statement is the negative one, `walletConstruct_rejects_emptyPrimitives` below. -/
 @[axiom_budget 0]
 theorem walletConstruct_sound (primitives : List PrimitiveType) (r : Resource) (s : Action)
     (ct : CapabilityType r s) (h_ret : walletConstruct primitives r s = some ct) :
@@ -112,6 +120,14 @@ theorem walletConstruct_preservesPrimitives (primitives : List PrimitiveType)
    always returns the same result (pure function property, per wallet.md §1).
 -/
 
+/-- **Not the wallet's purity property, whatever §7.4 calls it.** The statement is
+    `f x = some ct1 → f x = some ct2 → ct1 = ct2` for a three-argument `def`: true of every
+    function, and closed by rewriting with `h1` and injecting. `wallet.md` §7.4 presents it as "the
+    type-level expression of the wallet's pure function property (§1)", and §1's property is not
+    this one — `walletConstruct` takes neither a `Seed` nor any wallet state, so nothing here says
+    an exercise is byte-deterministic. §1's `WalletState = f(AccountManager, ChainBlocks)`, §6.1's
+    `Transaction = f(SelectedCapabilities, Action, Params, Secrets, Seed)` and §0.1.5's seed rule
+    are the purity claims, and §7.8 records the latter two as un-discharged. -/
 @[axiom_budget 0]
 theorem walletConstruct_deterministic (primitives : List PrimitiveType)
     (r : Resource) (s : Action) (ct1 ct2 : CapabilityType r s)

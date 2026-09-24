@@ -2,6 +2,26 @@
 -- These are computational cross-checks, NOT formal proofs.
 -- For formal proofs, see the Prop-based theorems in the DarkFi/ modules.
 -- Run with: lean --run src/Main.lean
+--
+-- **It does not compile, and has not for some time.** Measured 2026-09-24:
+-- `lake env lean src/Main.lean` reports **21 errors** on this file *and on its version at HEAD*
+-- (the same 21), so nothing here has run recently and no input to it has been checked by anything.
+-- Two causes, both mechanical:
+--
+--   1. `open DarkFi.Capability.{Pareto,Distinction,Inversion,Wallet}` (`:23-26`) — those four
+--      modules do not declare a namespace of that name, so the `open` is an error rather than a
+--      no-op. `Pareto.lean` and `Distinction.lean` declare `namespace DarkFi.Capability`, and
+--      `Inversion.lean`/`Wallet.lean` declare none; only `Types.lean` and `Composition.lean` have
+--      the names this file opens.
+--   2. `s!"… {t.barbs} …"` at eleven sites — `Barb` has no `ToString (Finset Barb)` and cannot
+--      derive one (`Finset.instRepr` is `unsafe`, see `Capability/Inversion.lean:211-214`), so
+--      every line that interpolates a barb set fails to elaborate.
+--
+-- This file is invoked by **no gate** (`grep` over `scripts/`, `Makefile`, `hooks/`: no
+-- reference), which is why 21 errors survived — and why `README.md` quoted an "expected output"
+-- block from it while it was broken. Repairing it means choosing between fixing those two
+-- classes and gating the result, or deleting a file that asserts nothing a proof does not; that
+-- choice is left open here rather than taken, because the file is not this change's to remove.
 
 import DarkFi.Capability.Types
 import DarkFi.Capability.Composition
@@ -284,20 +304,33 @@ def main : IO Unit := do
   IO.println s!"    Required: {tenderResource.requiredBarbs}"
   IO.println s!"    Covers: {tenderResource.requiredBarbs ⊆ compose ct3.primitives}"
 
-  -- 4e. Verify wallet construction
-  IO.println ""
-  IO.println "Wallet construction:"
-  let wc := walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
-    nativeTokenResource transferAction
-  IO.println s!"  Native token: {wc.isSome}"
-  let wc2 := walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
-    daoResource voteAction
-  IO.println s!"  DAO vote: {wc2.isSome}"
-  let wc3 := walletConstruct [secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]
-    tenderResource bidAction
-  IO.println s!"  Tender bid: {wc3.isSome}"
-  let wc_empty := walletConstruct [] nativeTokenResource transferAction
-  IO.println s!"  Empty primitives (should be none): {wc_empty.isNone}"
+  -- 4e. Wallet construction — REMOVED, and why it is not repaired
+  --
+  -- This block printed four lines of the form
+  --
+  --     Native token: true
+  --     DAO vote: true
+  --     Tender bid: false
+  --     Empty primitives (should be none): true
+  --
+  -- and the third was **wrong**, in the way its own subject matter had already been fixed for:
+  -- the tender call passed the seven-element list
+  -- `[secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode]`, while
+  -- `tenderResource.requiredBarbs` includes `↓prove`, which only `dleqProof` carries. So
+  -- `walletConstruct` returns `none` and the line *would have* read `false` — eight lines below
+  -- a theorem (`Capability/Wallet.lean`'s `tenderBid_constructible`) that proves the opposite,
+  -- and whose docstring records this exact defect being fixed there. It never actually printed
+  -- anything: see the header, this file does not compile.
+  --
+  -- The repair is not an eighth primitive in the list. All four lines were restatements of
+  -- theorems: `nativeTokenTransfer_constructible`, `daoVote_constructible`,
+  -- `tenderBid_constructible` and `walletConstruct_rejects_emptyPrimitives` are kernel-checked
+  -- proofs of the same four claims, and a printed `Bool` is the weaker statement — the same
+  -- reason `Capability/Composition.lean`'s `#eval` well-formedness block was removed (`:378-401`).
+  -- Two of the four were true and one was false; a hand-printed summary cannot be told from a
+  -- proof, and this one was not checked by anything (`grep` over `scripts/`, `Makefile` and
+  -- `hooks/`: no reference to `Main.lean`). Deleting it removes the false claim rather than
+  -- making a fifth copy of the true ones.
 
   IO.println ""
   IO.println "=== Capability Type System Verification Complete ==="
