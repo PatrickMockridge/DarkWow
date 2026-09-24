@@ -54,6 +54,7 @@ import DarkFi.Semantics.Proc
 import DarkFi.Semantics.Congruence
 import DarkFi.Semantics.Substitution
 import DarkFi.Semantics.LTS
+import DarkFi.Semantics.Ledger
 
 /-!
 # DarkFi — ZK Circuit & Capability Type System Formal Verification
