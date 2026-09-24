@@ -121,7 +121,12 @@ impl RevealBidV1CallData {
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            // OBL-C78: the circuit *assigns* `tx_binding` —
+            // `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` — and an
+            // assignment to a declared witness constrains it rather than shadowing it, so the zero
+            // that stood here was a constraint no proof could satisfy. `select_winner.rs` carries the
+            // same note with the full reasoning; this is the value `compute_public_inputs` publishes.
+            Witness::Base(Value::known(super::tx_binding_of(&self.tx_commitment, &self.tx_nonce))), // tx_binding
         ]
     }
 }

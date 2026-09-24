@@ -49,12 +49,17 @@ fn test_attestation_function_enum_valid() {
     assert!(AttestationFunction::try_from(0x04).is_ok()); // VerifyClaimV1
     assert!(AttestationFunction::try_from(0x05).is_ok()); // ConsumeClaimV1
     assert!(AttestationFunction::try_from(0x06).is_ok()); // ValidateClaimV1
+    assert!(AttestationFunction::try_from(0x0d).is_ok()); // CheckAttestationV1
 }
 
 #[test]
 fn test_attestation_function_enum_invalid() {
     assert!(AttestationFunction::try_from(0xFF).is_err());
-    assert!(AttestationFunction::try_from(0x0d).is_err());
+    // The boundary moved from 0x0d to 0x0e on 2026-09-24, when `CheckAttestationV1` took 0x0d
+    // (`OBL-Z16`, for `labor_market`'s `attestation_id`). This control pins the *first code past the
+    // enum*, so it follows the enum rather than a particular number — and it is what a typecheck
+    // cannot see: `cargo check` and every gate passed over this test while it was wrong.
+    assert!(AttestationFunction::try_from(0x0e).is_err());
     assert!(AttestationFunction::try_from(0x10).is_err());
 }
 

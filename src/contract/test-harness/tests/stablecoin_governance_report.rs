@@ -62,8 +62,17 @@ fn proving_key(zkbin: &ZkBinary) -> ProvingKey {
 
 /// Witness order is `GovernanceReportV2`'s: total_collateral, total_debt, outstanding, ratio,
 /// interest_accrued, reporter_pub_x, reporter_pub_y, reporter_secret, rate_per_second,
-/// time_elapsed, tx_commitment, tx_nonce, tx_binding. The public inputs are the first five of
-/// those plus tx_binding and tx_nonce, in that order.
+/// time_elapsed, tx_commitment, tx_nonce, tx_binding.
+///
+/// **The public inputs are the first five of those plus `tx_binding` and `tx_nonce` — and they are
+/// *preceded* by `reporter_pub_x` and `reporter_pub_y`**, in the order the circuit's
+/// `constrain_instance` calls make: `reporter_pub_x`, `reporter_pub_y`, `total_collateral`,
+/// `total_debt`, `outstanding`, `collateral_ratio_bps`, `interest_accrued`, `tx_binding`, `tx_nonce`.
+/// The sentence that stood here listed seven and omitted the reporter pair, which is what this file
+/// fed the prover until 2026-09-24 — every later value landed one slot early, the last two were left
+/// zero, and the honest case failed verification with `InvalidProof`. `e65147af92` (2026-09-21)
+/// prepended the pair to the circuit, the production client and the host together; the test was
+/// written the day before and was never updated with them.
 struct Report {
     total_collateral: u64,
     total_debt: u64,
@@ -110,7 +119,16 @@ impl Report {
             Witness::Base(Value::known(tx_nonce)),
             Witness::Base(Value::known(tx_binding)),
         ];
+        // The circuit's nine instances, in the order its `constrain_instance` calls make them —
+        // `reporter_pub_x`, `reporter_pub_y` first, which this vector omitted until 2026-09-24 while
+        // still computing `rx`/`ry` two lines above for the witnesses. Seven values against a
+        // nine-instance circuit: the prover committed them anyway, every value landed one slot early,
+        // and verification returned `InvalidProof` for the honest case exactly as it did for the two
+        // negative cases — the blindness that made this look like a circuit defect rather than a
+        // vector one.
         let inputs = [
+            rx,
+            ry,
             pallas::Base::from(self.total_collateral),
             pallas::Base::from(self.total_debt),
             pallas::Base::from(self.outstanding),
