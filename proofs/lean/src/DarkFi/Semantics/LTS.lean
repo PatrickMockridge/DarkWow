@@ -77,9 +77,9 @@ answered twice over. The first answer holds. The second does not, and the reason
    says the old `stronglyBisimilar` — `Finset` equality over a record of tags — was not a bisimulation,
    rather than only that it was inelegant.
 
-2. **No barb survives a fresh restriction** — this module has had four answers to this one. The third
-   said it was open and named the wrong residual; the fourth is the measurement that corrects it. The
-   record is the point, so all four are kept.
+2. **No barb survives a restriction on its own name** — this module has had five answers to this one,
+   and the fifth is the theorem (`not_barb_nu_self`). Each of the first four was wrong in a way the next
+   one had to measure, so all five are kept: the record is the point.
 
    **First answer — refuted.** Under `Proc.lean`'s *syntactic* freshness the sentence is **false**, in
    two independent ways, and the witnesses are recorded rather than stated because neither proof nor
@@ -131,25 +131,41 @@ answered twice over. The first answer holds. The second does not, and the reason
      `scong_nu_shape_false` is the witness: `nu_nu` permutes two binders, so the head binder of a
      congruent `ν`-headed term need not be congruent to the original, and `nu_nil` removes one outright.
 
-   What is left is a fact about the *chain* of restrictions rather than about its head — the set of
-   binders along it, modulo permutation (`nu_nu`), congruence (`cong_nu`) and collapse (`nu_nil`) — and
-   no predicate in this tree expresses that. The obligation's state is therefore sharp in both
-   directions: `barb_nu_of_not_scong` is its **sufficiency** half, that a restriction blocks nothing it
-   should not, and its **necessity** half is `¬ Barb (νx.P) x`, open.
+   What that left was a fact about the *chain* of restrictions rather than about its head — the set of
+   binders along it, modulo permutation (`nu_nu`), congruence (`cong_nu`) and collapse (`nu_nil`). That
+   is what this record named as the missing step, and it was one answer away from being unnecessary.
 
-   `no_barb_nu_of_fresh` is deleted rather than left standing, because a statement whose hypothesis is
-   unsatisfiable is true of nothing and this corpus does not keep those for their names.
+   **Fifth answer — discharged.** `not_barb_nu_self` is the obligation, unconditionally, and
+   `barb_nu_iff` is its general form:
 
-   `barb_nu_subject_occurs` survives and is unaffected: a barb on `x` out of `νx.P` still produces a
-   term congruent to `P` that mentions `x`, and that is the lemma naming what a barb through a
-   restriction would have to be.
+       Barb (νx.P) a ↔ ¬ SCong x a ∧ Barb P a
+
+   A restriction blocks exactly its own name. What closed it is `CanBarb` (Part 4b), a structural
+   reading of the barb predicate that **keeps the restriction's binder** — the one thing `CanStep` had
+   to drop, and the reason four answers went past it. Its `nu` clause is a conjunction,
+   `¬ SCong x a ∧ CanBarb a P`, and it is invariant for exactly the two mechanisms that would have
+   sunk a spine predicate: `nu_nil` makes the clause `False` when the body is `nil`, so the collapse
+   costs nothing, and `nu_nu` only permutes the conjuncts. From there the proof is two lines —
+   `canBarb_of_barb` reads the barb off the derivation, and `CanBarb x (νx.P)` unfolds to
+   `¬ SCong x x ∧ …`.
+
+   All five answers are kept rather than compressed, because the *pattern* is the reusable part: three
+   tried to make the rule's proviso invariant and one tried to describe the congruence class, and what
+   worked was moving the question from the term to the observation.
+
+   `no_barb_nu_of_fresh` and `barb_nu_subject_occurs` are both deleted rather than left standing: the
+   first's hypothesis was unsatisfiable and the second's now is (`not_barb_nu_self` refutes it), so both
+   were statements true of nothing. The second is the more instructive deletion — it read as "obligation
+   2's engine" through three answers and was a step in the wrong direction throughout, because its
+   conclusion was about `Occurs`, which counts binders, and the obligation was about *channels*.
 
    `Proc.lean`'s syntactic `Fresh` no longer appears in any rule. It remains the honest description of
    a term as written, and `FreshUpToScong` is defined from it — and is false, which
    `not_freshUpToScong` says beside the definition.
 
-Neither obligation is needed by the barb-preservation and bisimulation-equivalence results below,
-which are complete.
+   Both obligations are now discharged. Neither was needed by the barb-preservation and
+   bisimulation-equivalence results below, which were complete before either of them landed: those never
+   depended on what a restriction hides.
 -/
 
 import DarkFi.Semantics.Congruence
@@ -369,6 +385,15 @@ theorem step_out_label {a b : Proc} {μ : Label} {P' : Proc} (h : Step (Proc.out
     (hμ : IsAction μ) : ∃ c d : Proc, μ = Label.out c d ∧ SCong a c ∧ SCong b d :=
   canStep_of_step h hμ
 
+/-- **The labels out of a bare `inp`.** The mirror of `step_out_label`: `Step (inp a b P) μ P'` pins
+    `μ` to `x?(y)` with `SCong a x` and `SCong b y`. The body is not inspected, which is the part a
+    reader should check — the input rule's *label* records the channel and the bound name, and a barb
+    is a label, so nothing about the body can move a barb. -/
+@[axiom_budget 0]
+theorem step_inp_label {a b P : Proc} {μ : Label} {P' : Proc} (h : Step (Proc.inp a b P) μ P')
+    (hμ : IsAction μ) : ∃ c d : Proc, μ = Label.inp c d ∧ SCong a c ∧ SCong b d :=
+  canStep_of_step h hμ
+
 /-! ==========================================================================
    Part 3c — Terms with no action atoms, and why they cannot step
 
@@ -493,10 +518,13 @@ theorem canStep_occurs_up_to_scong {P : Proc} {μ : Label} (h : CanStep P μ) :
     the unit costs. An α-rule would relate `νx.(out x b)` to `νy.(out y b)`, and `CanStep` is a predicate
     over *labels*: the first has the label `x!(b)` and the second `y!(b)`, and neither is among the
     other's, since the membership test compares channels with `SCong`. So adding α to `SCong` would make
-    `CanStep` — and with it `canStep_occurs_up_to_scong`, `barb_nu_subject_occurs`, and the restriction
-    obligation that rests on them — *not invariant*, unless "the same channel" is relaxed to an
-    α-aware notion everywhere it appears. Measured and then written down, in the order this corpus asks
-    for.
+    `CanStep` — and with it `canStep_occurs_up_to_scong` (Part 3) and the barb predicates that rest on
+    the same channel test, `CanBarb` and `scong_channel` (Part 4b) among them — *not invariant*, unless
+    "the same channel" is relaxed to an α-aware notion everywhere it appears. Measured and then written
+    down, in the order this corpus asks for.
+
+    Obligation 2's discharge does not change this: `CanBarb`'s `nu` clause tests `SCong x a`, so it is
+    exactly as sensitive to α as `CanStep` is, and it would need the same relaxation.
 
     The hypothesis is the one `Substitution.lean`'s note predicts every statement about `subst` needs:
     nothing here decides whether `out x b` *is* `x`. -/
@@ -546,6 +574,29 @@ theorem barb_out_iff {x y w : Proc} : Barb (Proc.out x y) w ↔ SCong x w := by
   · intro h
     exact Or.inl ⟨y, Proc.nil,
       Step.scong (SCong.cong_out h (SCong.refl y)) (Step.out w y) (SCong.refl _)⟩
+
+/-- **The barbs of a bare `inp` are exactly the processes congruent to its channel.** The mirror of
+    `barb_out_iff`, and the asymmetry is worth noticing: the *binder* and the *body* do not appear in
+    the barb at all — `inp c b P` exhibits `↓w` iff `w ≡ c` — so a barb is a fact about the channel
+    of the action and nothing else, exactly as §1.1's prose says and no more.
+
+    Both directions are the same shape as `barb_out_iff`'s: the forward one inverts the step with
+    `step_inp_label`, the backward one moves the *term* along `cong_inp` so that the input rule fires
+    with the rearranged channel. -/
+@[axiom_budget 0]
+theorem barb_inp_iff {c b P w : Proc} : Barb (Proc.inp c b P) w ↔ SCong c w := by
+  constructor
+  · rintro (⟨y, P', hs⟩ | ⟨y, P', hs⟩)
+    · obtain ⟨c', d', he, _, _⟩ := step_inp_label hs ⟨w, y, Or.inl rfl⟩
+      cases he
+    · obtain ⟨c', d', he, hcc', _⟩ := step_inp_label hs ⟨w, y, Or.inr rfl⟩
+      injection he with hwc _
+      rw [← hwc] at hcc'
+      exact hcc'
+  · intro h
+    exact Or.inr ⟨b, P,
+      Step.scong (SCong.cong_inp h (SCong.refl b) (SCong.refl P)) (Step.inp w b P)
+        (SCong.refl _)⟩
 
 /-! ==========================================================================
    Part 5 — Derived rules
@@ -597,6 +648,134 @@ theorem barb_par_nil {P x : Proc} : Barb (Proc.par P Proc.nil) x ↔ Barb P x :=
 theorem barb_rep_unfold {P x : Proc} :
     Barb (Proc.rep P) x ↔ Barb (Proc.par P (Proc.rep P)) x :=
   barb_of_scong (SCong.rep_unfold P) x
+
+/-! ==========================================================================
+   Part 4b — The barb predicate, read off the term
+
+   `CanStep` is Part 3's structural reading of *which labels a term has*. This is the same reading for
+   *barbs*, and the difference between the two predicates is one clause: this one keeps the
+   restriction's binder. That is exactly what `CanStep` cannot do — its `nu` clause drops the binder
+   because `nu_nil` makes a binder-inspecting predicate non-invariant — and it is why obligation 2 had
+   no proof until this predicate existed, while `CanBarb` closes it in a page.
+
+   **The `nu` clause is a conjunction**, `¬ SCong x a ∧ CanBarb a P`, and that is the whole trick. The
+   two mechanisms that break binder predicates are `nu_nil` (`νx.0 ≡ 0`) and `nu_nu`
+   (`νx.νy.P ≡ νy.νx.P`): the first makes the clause `False` outright when the body is `nil`, so both
+   sides of the invariance are `False` and the collapse costs nothing, and the second only permutes the
+   conjuncts. A predicate that *collected* binders would need a collapse test for the first and a
+   multiset equality for the second; a predicate that *tests one channel against the binders it is
+   under* needs neither. The spine this file's record was waiting for was one predicate shape away
+   from being unnecessary.
+
+   The two directions of the reading are separate theorems and both are used: `canBarb_of_barb` reads a
+   barb off the derivation, and that is the direction the obligation consumes;
+   `barb_of_canBarb` (Part 8) reads it back, and that is what makes the predicate mean something.
+   ========================================================================== -/
+
+/-- `CanBarb a P`: `P`, read off its syntax, can engage in an action on channel `a`.
+
+    The structural counterpart of `Barb`, sound and complete for it. `out` and `inp` contribute their
+    channel closed up to `SCong`; `par` is the union; `rep` is the body's; a `ν` blocks its own binder
+    and passes the rest through; the atoms with no rule (`nil`, `bang`) contribute nothing.
+
+    The `nu` clause is the one that has to be right, and both of its halves are load-bearing: without
+    `¬ SCong x a` the predicate would not see the restriction, and without the *conjunction* it could
+    not survive `nu_nil`. See the Part 4b note. -/
+def CanBarb (a : Proc) : Proc → Prop
+  | .nil => False
+  | .bang _ => False
+  | .out c _ => SCong c a
+  | .inp c _ _ => SCong c a
+  | .nu x P => ¬ SCong x a ∧ CanBarb a P
+  | .rep P => CanBarb a P
+  | .par P Q => CanBarb a P ∨ CanBarb a Q
+
+/-- A congruent channel is the same channel: the `SCong`-closedness of "engages on `x`" that the four
+    `cong_*` cases of the invariance below need. Given its own name after three uses, and it is the
+    statement the whole barb layer rests on — a barb is a fact about a channel *up to congruence*, which
+    is why `Barb` is already invariant (`barb_of_scong`) and why the old `Finset` version could not see
+    a payload. -/
+@[axiom_budget 0]
+theorem scong_channel {x y : Proc} (h : SCong x y) (a : Proc) : SCong x a ↔ SCong y a :=
+  ⟨fun hz => SCong.trans (SCong.symm h) hz, fun hz => SCong.trans h hz⟩
+
+/-- **`SCong` cannot change what a term can barb on.** Fifteen cases, and every one is a rearrangement,
+    an immediate contradiction, or an induction hypothesis — the same shape as `canStep_of_scong` and
+    `actionFree_of_scong`, which is the point: the three predicates are one technique.
+
+    Three cases carry the content. `nu_nil` holds because the `nu` clause is a conjunction whose second
+    component is `False` for a `nil` body — *that* is what makes a binder-inspecting predicate possible.
+    `nu_nu` is a permutation of two conjuncts. `cong_nu` moves the binder, so it needs `¬ SCong x a ↔
+    ¬ SCong y a` from `SCong x y`, which is transitivity of the congruence under a negation. -/
+@[axiom_budget 0]
+theorem canBarb_of_scong {P Q : Proc} (h : SCong P Q) (a : Proc) :
+    CanBarb a P ↔ CanBarb a Q := by
+  induction h with
+  | refl _ => exact Iff.rfl
+  | symm _ ih => exact ih.symm
+  | trans _ _ ih1 ih2 => exact ih1.trans ih2
+  | par_comm P Q =>
+    show (CanBarb a P ∨ CanBarb a Q) ↔ (CanBarb a Q ∨ CanBarb a P)
+    exact or_comm
+  | par_assoc P Q R =>
+    show ((CanBarb a P ∨ CanBarb a Q) ∨ CanBarb a R) ↔
+      (CanBarb a P ∨ (CanBarb a Q ∨ CanBarb a R))
+    exact or_assoc
+  | par_nil P =>
+    show (CanBarb a P ∨ CanBarb a Proc.nil) ↔ CanBarb a P
+    exact ⟨fun h => h.elim id False.elim, Or.inl⟩
+  | nu_nil x =>
+    show (¬ SCong x a ∧ CanBarb a Proc.nil) ↔ CanBarb a Proc.nil
+    exact ⟨fun h => h.2, fun h => ⟨fun _ => h, h⟩⟩
+  | nu_nu x y P =>
+    show (¬ SCong x a ∧ (¬ SCong y a ∧ CanBarb a P)) ↔
+      (¬ SCong y a ∧ (¬ SCong x a ∧ CanBarb a P))
+    exact ⟨fun h => ⟨h.2.1, h.1, h.2.2⟩, fun h => ⟨h.2.1, h.1, h.2.2⟩⟩
+  | rep_unfold P =>
+    show CanBarb a P ↔ (CanBarb a P ∨ CanBarb a P)
+    exact ⟨Or.inl, fun h => h.elim id id⟩
+  | cong_bang _ _ => exact ⟨fun h => h, fun h => h⟩
+  | cong_out h1 _ _ _ => exact scong_channel h1 a
+  | cong_inp h1 _ _ _ _ _ => exact scong_channel h1 a
+  | cong_nu h1 _ _ ih2 =>
+    refine Iff.intro (fun h => ⟨?_, ih2.mp h.2⟩) (fun h => ⟨?_, ih2.mpr h.2⟩)
+    · exact fun hy => h.1 ((scong_channel h1 a).mpr hy)
+    · exact fun hx => h.1 ((scong_channel h1 a).mp hx)
+  | cong_rep _ ih => exact ih
+  | cong_par _ _ ih1 ih2 =>
+    exact ⟨fun h => h.elim (fun hp => Or.inl (ih1.mp hp)) (fun hq => Or.inr (ih2.mp hq)),
+      fun h => h.elim (fun hp => Or.inl (ih1.mpr hp)) (fun hq => Or.inr (ih2.mpr hq))⟩
+
+/-- **Every step exhibits a `CanBarb`.** The mirror of `canStep_of_step`, with the same six cases and
+    the same two that carry the content: `nu` satisfies the new conjunction outright — its *first*
+    component is the rule's own proviso and its second is the induction hypothesis — and `scong` is
+    `canBarb_of_scong`, which is why the closure rule needs no special argument here.
+
+    This is the direction the obligation uses. Obligation 2 asks what a restriction hides; the answer
+    is whatever this predicate says it hides, and the `nu` case is where it says it. -/
+@[axiom_budget 0]
+theorem canBarb_of_step {P : Proc} {μ : Label} {P' : Proc} (h : Step P μ P')
+    (hμ : IsAction μ) : CanBarb (Label.subject μ) P := by
+  revert hμ
+  induction h with
+  | out x y => intro _; exact SCong.refl x
+  | inp x y _ => intro _; exact SCong.refl x
+  | tau _ => intro hμ; exact absurd hμ (by rintro ⟨x, y, h | h⟩ <;> cases h)
+  | par _ ih => intro hμ; exact Or.inl (ih hμ)
+  | nu hprov _ ih => intro hμ; exact ⟨hprov, ih hμ⟩
+  | scong h1 _ _ ih => intro hμ; exact (canBarb_of_scong h1 _).2 (ih hμ)
+
+/-- **A barb produces a `CanBarb`** — the reading direction, and the bridge from the transition system
+    to the syntax-level predicate. The barb's label *is* the channel, so each disjunct instantiates
+    `canBarb_of_step` at `μ := out a y` (or `inp a y _`), whose `Label.subject` is `a` definitionally.
+
+    That `IsAction` is discharged by `Or.inl rfl` rather than proved is the same trade Part 3 makes for
+    `step_out_label`: the labels a barb can be are given by the barb's own definition. -/
+@[axiom_budget 0]
+theorem canBarb_of_barb {P a : Proc} (h : Barb P a) : CanBarb a P := by
+  rcases h with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+  · exact canBarb_of_step hs ⟨a, y, Or.inl rfl⟩
+  · exact canBarb_of_step hs ⟨a, y, Or.inr rfl⟩
 
 /-! ==========================================================================
    Part 6 — Strong bisimulation
@@ -801,101 +980,134 @@ theorem parallel_nil (P : Proc) : StrongBisim (Proc.par P Proc.nil) P :=
 /-! ==========================================================================
    Part 8 — Obligation 2: what a restriction can and cannot hide
 
-   The obligation is `¬ Barb (νx.P) x`: a restriction never lets its own name out. It is **open**, and
-   what it is waiting on is not what this module's earlier record said it was. This part holds the three
-   things that are settled, in the order they were measured.
+   The obligation is `¬ Barb (νx.P) x` — a restriction never lets its own name out — and it is **a
+   theorem** below (`not_barb_nu_self`), with no freshness hypothesis. What closed it is one predicate
+   from Part 4b: `CanBarb a P` reads a barb off the term and **keeps the restriction's binder**, which is
+   the one thing `CanStep` had to drop. `Barb (νx.P) x → CanBarb x (νx.P)` is `canBarb_of_barb`, and
+   `CanBarb x (νx.P)` unfolds to `¬ SCong x x ∧ …`, so the obligation is `SCong.refl x`.
 
-   **The condition is sufficient, and that half is a theorem.** `barb_nu_of_not_scong`: a restriction is
-   *transparent* to a channel it does not bind. That is the positive content of the rule's proviso
-   `¬ SCong x (subject μ)` — everything the rule should let through, it lets through.
+   **The general form is a theorem too, and it is the informative one** — `barb_nu_iff`:
 
-   **Its necessity is the obligation**, and it is the second half of the same sentence: nothing gets
-   through on a channel the restriction does bind. Stated without a freshness hypothesis, because the
-   hypothesis that used to carry it was unsatisfiable (`not_freshUpToScong`) — so the obligation is the
-   unconditional `¬ Barb (νx.P) x`, and the rule's proviso is exactly as strong as the obligation says.
+       Barb (νx.P) a ↔ ¬ SCong x a ∧ Barb P a
 
-   **What would close it is not a shape lemma.** The record this part replaces named the missing step as
-   "a congruence-class shape lemma: that a `ν`-headed term's congruence class is `ν`-headed, with a
-   binder `SCong`-equal to the original". Both readings of that are settled, and neither is a step:
+   A restriction blocks exactly its own name and nothing else. Three answers to this obligation came
+   before it, and this is the fourth: the third said the residual was a fact about a `ν`-headed term's
+   congruence class, and it is not. The rule's condition is a fact about *one channel*, and a predicate
+   that tests one channel against the binders it is under survives the congruence where a predicate that
+   collects binders does not. Part 4b's note has the mechanism.
 
-   * As a `SCong` conclusion it is **free**. Given `SCong (νx.P) Q` and `SCong P (νx.R)`, symmetry and
-     transitivity already give `Q ≡ νx.R`, so the statement holds with `y := x`, `Q' := R`. It is a
-     restatement of the hypothesis and says nothing about the class.
-   * As an *equality* on `Q`'s head — which is what the `scong` case needs, because the step rules have
-     to be applied to a term whose head is syntactically visible — it is **false**, and
-     `scong_nu_shape_false` below is the witness: `nu_nu` permutes two binders, so the head binder of a
-     congruent `ν`-headed term need not be congruent to the original, and `nu_nil` removes a binder
-     outright.
+   **Why the three earlier answers did not get there**, in one line each, because the pattern is the
+   reusable part. The first read the proviso syntactically and was refuted. The second made the proviso
+   invariant by quantifying over `SCong0` and was *unsatisfiable* (`not_freshUpToScong`) — the condition
+   was empty, not expensive. The third moved the condition onto the label (which is where it belongs on
+   the rule) and then recorded the residual as a fact about a `ν`-headed term's congruence class, which
+   `scong_nu_shape_false` below refutes: the class does not determine its head binder (`nu_nu` permutes
+   binders, `nu_nil` removes one). The fourth — this one — stopped trying to describe the class and
+   described the *barb* instead.
 
-   What the `scong` case needs is therefore a fact about the *chain* of restrictions rather than about
-   its head: the set of binders along it, modulo permutation (`nu_nu`), congruence (`cong_nu`) and the
-   collapse (`nu_nil`). No predicate in this tree expresses that, and it is not an oversight that
-   `CanStep` cannot: its `nu` clause drops the binder *by construction*, because Part 3c's note records
-   that `nu_nil` makes any binder-inspecting predicate non-invariant. This is the fourth wall of that
-   shape in this file, and the one predicate that would get past it has not been written.
-
-   `barb_nu_subject_occurs` is kept, and its hypothesis is the open question — which is worth knowing
-   when reading it: what it says about the obligation is nothing, because the mention of `x` it produces
-   may be a *bound* one.
+   `scong_nu_shape_false` is kept rather than deleted with the plan it came from: it is the refutation of
+   the statement this module's own record carried as its next step, and a reader who arrives with that
+   statement in hand should meet the refutation rather than a silence.
 
    Read with §0's notation: `0` is `Proc.nil`, `⌈P⌉` is `Proc.bang P`, `νx.P` is `Proc.nu x P`,
    `x!(y)` is `Proc.out x y`.
    ========================================================================== -/
 
-/-- **Obligation 2's engine.** A barb on `x` exhibited by `νx.P` means some process congruent to `P`
-    mentions `x`.
+/-- **A restriction is transparent to a channel it does not bind** — one half of `barb_nu_iff`, and the
+    half the *rule* gives directly.
 
-    The barb's label is `x!(y)` or `x?(y)`, so `x` is a channel `νx.P` engages in; `canStep_of_step`
-    puts that label in `CanStep (νx.P)`, whose `nu` clause is the body's, and
-    `canStep_occurs_up_to_scong` then produces a congruent process mentioning `x`. Nothing about the
-    restriction itself is used, and that is the finding: the *congruence*, not the restriction, is what
-    can put a mention of `x` behind `νx`. It is also why the rule's proviso had to change — this lemma
-    says exactly what "fresh" has to exclude, and the syntactic notion excluded too little.
-
-    Read against Part 8's account of the obligation: its hypothesis *is* the open question, so it is not
-    a step towards the answer, and its conclusion is the wrong kind of mention — `Occurs` counts the
-    binder, and the binder is precisely what `νx.P` may legitimately contain. -/
-@[axiom_budget 0]
-theorem barb_nu_subject_occurs {x P : Proc} (h : Barb (Proc.nu x P) x) :
-    ∃ Q : Proc, SCong P Q ∧ Occurs x Q := by
-  rcases h with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
-  · have hc : CanStep P (Label.out x y) := by
-      simpa only [CanStep] using canStep_of_step hs ⟨x, y, Or.inl rfl⟩
-    exact canStep_occurs_up_to_scong hc
-  · have hc : CanStep P (Label.inp x y) := by
-      simpa only [CanStep] using canStep_of_step hs ⟨x, y, Or.inr rfl⟩
-    exact canStep_occurs_up_to_scong hc
-
-/- **Obligation 2 was stated here and is now deleted.** `no_barb_nu_of_fresh` carried
-   `FreshUpToScong x P` and concluded `¬ Barb (νx.P) x`. `Congruence.lean`'s `not_freshUpToScong`
-   proves that hypothesis is false for every `x` and every `P`, so the theorem was true of nothing —
-   and it is removed rather than restated because **no `Occurs`-based freshness can replace it**:
-   `nu_nil` with `cong_par` and `par_nil` makes `SCong P (P | νx.0)` hold for every `P`, so any
-   invariant *occurrence* condition is unsatisfiable, over `SCong0` or over `SCong` alike. A
-   replacement needs a notion which does not count binders, and `barb_nu_subject_occurs` — which
-   survives, and is above — yields `Occurs`, not a free occurrence.
-
-   What the obligation is waiting on has since been measured twice more, and the third answer was wrong.
-   The third said `Step.scong` needs "a congruence-class shape lemma — that a `ν`-headed term relates
-   only to `ν`-headed terms, with a `SCong`-equal binder"; Part 8's note and `scong_nu_shape_false`
-   below record why that is not it. What is left is the chain of restrictions rather than its head. -/
-
-/-- **A restriction is transparent to a channel it does not bind** — the proved half of obligation 2,
-    and the content of the rule's proviso from the direction that can be established.
-
-    `barb_nu_of_not_scong` is `Step.nu` read as a statement about *observations*: `νx.P` barbs on `a`
-    whenever `P` does and `a` is not congruent to `x`. Read beside the obligation it is the
-    *sufficiency* half — the rule blocks nothing it should not — and the obligation is its necessity.
-
-    The hypothesis is not decoration: at `a ≡ x` the conclusion fails, and *that* is the obligation.
-    Stated as an implication rather than as the `↔` it wants to be, because only one direction is
-    available. -/
+    `Step.nu` read as a statement about observations: `νx.P` barbs on `a` whenever `P` does and `a` is
+    not congruent to `x`. The rule's proviso is the hypothesis verbatim, so this is the direction in
+    which the proviso is *used* — `barb_of_canBarb`'s `nu` case is where that happens. -/
 @[axiom_budget 0]
 theorem barb_nu_of_not_scong {x P a : Proc} (h : ¬ SCong x a) (hb : Barb P a) :
     Barb (Proc.nu x P) a := by
   rcases hb with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
   · exact Or.inl ⟨y, Proc.nu x P', Step.nu (by simpa only [Label.subject] using h) hs⟩
   · exact Or.inr ⟨y, Proc.nu x P', Step.nu (by simpa only [Label.subject] using h) hs⟩
+
+/-- **A `CanBarb` is a barb** — the reading-back direction, and the one that makes the predicate mean
+    something instead of merely being invariant. By induction on the term: `nil` and `bang` are `False`
+    outright, `out` and `inp` are `barb_out_iff` and `barb_inp_iff`, `rep` and `par` push the inductive
+    hypothesis under the rule that mentions them, and `nu` is `barb_nu_of_not_scong` — the restriction's
+    clause *is* the conclusion of that theorem, which is why the obligation closes.
+
+    With `canBarb_of_barb` this is the `↔`. That matters beyond tidiness: without it `CanBarb` would be
+    an invariant whose only use is the first conjunct of its `nu` clause, and a reader would be right to
+    suspect it of having been shaped to fit. With it, the predicate *is* the barb, read off the syntax,
+    and the obligation is a statement about the calculus rather than about a device. -/
+@[axiom_budget 0]
+theorem barb_of_canBarb (P : Proc) : ∀ a : Proc, CanBarb a P → Barb P a := by
+  induction P with
+  | nil => intro a h; simp only [CanBarb] at h
+  | bang _ _ => intro a h; simp only [CanBarb] at h
+  | out c d => intro a h; exact (barb_out_iff (x := c) (y := d) (w := a)).2 h
+  | inp c b P => intro a h; exact (barb_inp_iff (c := c) (b := b) (P := P) (w := a)).2 h
+  | nu x P _ ih => intro a h; exact barb_nu_of_not_scong h.1 (ih a h.2)
+  | rep P ih =>
+    intro a h
+    rcases ih a h with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+    · exact (barb_rep_unfold (P := P) (x := a)).2 (Or.inl ⟨y, _, Step.par hs⟩)
+    · exact (barb_rep_unfold (P := P) (x := a)).2 (Or.inr ⟨y, _, Step.par hs⟩)
+  | par P Q ihP ihQ =>
+    intro a h
+    rcases h with hP | hQ
+    · rcases ihP a hP with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+      · exact Or.inl ⟨y, _, Step.par hs⟩
+      · exact Or.inr ⟨y, _, Step.par hs⟩
+    · rcases ihQ a hQ with ⟨y, P', hs⟩ | ⟨y, P', hs⟩
+      · exact Or.inl ⟨y, _, step_par_right (Q := P) hs⟩
+      · exact Or.inr ⟨y, _, step_par_right (Q := P) hs⟩
+
+/-- **What a restriction hides: its own name, and nothing else.**
+
+        Barb (νx.P) a ↔ ¬ SCong x a ∧ Barb P a
+
+    The `←` direction is the rule (`barb_nu_of_not_scong`); the `→` direction is `canBarb_of_barb`
+    composed with `barb_of_canBarb`, and it is the direction that took this campaign four answers — it
+    says a barb out of `νx.P` cannot be on a channel `x` is congruent to, which is the obligation in its
+    general form.
+
+    Read as a description of the calculus: a restriction is **not** an opacity operator. It blocks one
+    channel and passes everything else through, including barbs its body exhibits on other channels —
+    which is why the `Step.nu` proviso is a condition on the *label* and why the two earlier answers,
+    which tried to make it a condition on the body, were empty. -/
+@[axiom_budget 0]
+theorem barb_nu_iff {x P a : Proc} : Barb (Proc.nu x P) a ↔ ¬ SCong x a ∧ Barb P a :=
+  ⟨fun h => ⟨(canBarb_of_barb h).1, barb_of_canBarb P a (canBarb_of_barb h).2⟩,
+    fun h => barb_nu_of_not_scong h.1 h.2⟩
+
+/-- **Obligation 2, discharged: no barb survives a restriction on its own name.**
+
+    `νx.P` exhibits no barb on the channel `x` binds — with no freshness hypothesis, because the second
+    answer to this obligation established that no satisfiable one exists, and because none is needed:
+    `canBarb_of_barb` reads `Barb (νx.P) x` as `CanBarb x (νx.P)`, whose first conjunct is
+    `¬ SCong x x`, and `SCong.refl x` refutes it.
+
+    This is the theorem four answers have been recorded about; the scope note keeps all four, because
+    what each one got wrong is the reusable part. Stated at arbitrary `x` and `P` rather than as a `∀`,
+    so that a caller can instantiate it — the form `not_freshUpToScong` uses, for the same reason. -/
+@[axiom_budget 0]
+theorem not_barb_nu_self (x P : Proc) : ¬ Barb (Proc.nu x P) x :=
+  fun h => (canBarb_of_barb h).1 (SCong.refl x)
+
+/- **Two theorems stood in this part and are both gone, for the same reason.**
+
+   `no_barb_nu_of_fresh` carried `FreshUpToScong x P` and concluded `¬ Barb (νx.P) x`, and
+   `Congruence.lean`'s `not_freshUpToScong` proves that hypothesis false for every `x` and `P` — so the
+   theorem was true of nothing.
+
+   **`barb_nu_subject_occurs` is deleted here**, and it is the more instructive deletion of the two,
+   because it survived three answers as "obligation 2's engine" and was a step in the wrong direction
+   the whole time. Its statement was `Barb (νx.P) x → ∃ Q, SCong P Q ∧ Occurs x Q`; that hypothesis is
+   now *refutable* (`not_barb_nu_self`), so it too was a statement true of nothing — but the reason it
+   never helped is separate and worth keeping: `Occurs` counts binders, and a binder is exactly what
+   `νx.P` may legitimately contain, so the mention it produced was the one kind that can never be a
+   counterexample. What the obligation needed was a fact about *channels*, and the lemma was about
+   *occurrences*; the two are the same word only in prose.
+
+   `canStep_occurs_up_to_scong` (Part 3) stays: it was this theorem's only consumer, and what it states
+   is about `CanStep`, which carries no such hypothesis and is not refutable. -/
 
 /-- **The shape lemma this module's record named as the obligation's missing step is false in the form
     the obligation needs.**

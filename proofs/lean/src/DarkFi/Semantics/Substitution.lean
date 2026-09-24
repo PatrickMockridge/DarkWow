@@ -50,9 +50,10 @@ rule that would remove `CaptureFree` from `LTS.lean`'s `Step.tau` relates `νx.P
 over labels, and its membership test compares channels with `SCong`, so α-related terms have *different*
 label sets. `LTS.lean`'s `subst_moves_the_label` is that fact, carrying the hypothesis `¬ SCong x y` that
 makes it non-vacuous. Adding α to the congruence would therefore make `CanStep` — and with it
-`canStep_occurs_up_to_scong`, `barb_nu_subject_occurs`, and the restriction obligation that rests on
-them — fail to be invariant, unless "the same channel" is relaxed to an α-aware notion everywhere it
-appears. So the unit is a redesign of the label-level predicates *and* a constructor on the congruence,
+`canStep_occurs_up_to_scong` and the barb predicates that rest on the same channel test, `CanBarb` and
+`scong_channel` among them — fail to be invariant, unless "the same channel" is relaxed to an α-aware
+notion everywhere it appears. So the unit is a redesign of the label-level predicates *and* a
+constructor on the congruence,
 and its first question is what a label's channel *means* when names are defined only up to renaming. Said
 here, next to the gap it would close, rather than discovered halfway into it.
 -/
