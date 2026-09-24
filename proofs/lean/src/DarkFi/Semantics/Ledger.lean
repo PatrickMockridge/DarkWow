@@ -291,4 +291,106 @@ theorem calljob_act_comm (c₁ c₂ : CallJob) (h : Disjoint c₁.dom c₂.dom) 
     c₁.act (c₂.act s) = c₂.act (c₁.act s) := by
   exact diff_apply_comm c₁.diff c₂.diff (disjoint_diff_of_disjoint_dom c₁ c₂ h) s
 
+/-! ==========================================================================
+   Part 4 — Every execution order gives the same store
+   ========================================================================== -/
+
+/-- `PairwiseDisjoint l`: any two calls in `l` have disjoint declared write sets. §9.2's
+    `pairwise_disjoint_keys`.
+
+    Stated with a `d₁ = d₂ ∨ …` disjunct rather than a `d₁ ≠ d₂` guard, and that is a design
+    constraint rather than a convenience. `CallJob` has function fields, so there is no
+    `Decidable (c₁ = c₂)` to split on: a guarded form would force `Classical.choice` into `exec_perm`
+    below and cost it budget 0. The disjunct supplies the reflexive case instead — which is also what
+    makes the hypothesis *inhabited*, proved in Part 6 rather than asserted, so the capstone is not a
+    theorem true of nothing. -/
+def PairwiseDisjoint (l : List CallJob) : Prop :=
+  ∀ d₁ ∈ l, ∀ d₂ ∈ l, d₁ = d₂ ∨ Disjoint d₁.dom d₂.dom
+
+/-- `DuplicateKey l`: two different calls in `l` both touch the same key. The situation the Rust
+    detects when `written_keys.insert(k)` returns `false`, and the reason §9.2 says the block is
+    rejected. -/
+def DuplicateKey (l : List CallJob) : Prop :=
+  ∃ k : Key, ∃ d₁ ∈ l, ∃ d₂ ∈ l, d₁ ≠ d₂ ∧ d₁.dom k ∧ d₂.dom k
+
+/-- `exec l s`: run the calls in `l` in order against `s`. The "sequential execution" side of §9.2.
+
+    There is deliberately no second function for parallel execution. Under `PairwiseDisjoint` the
+    order does not matter — that is `exec_perm` — and a `parallel_exec` would suggest the Rust has
+    one. It does not: see the module note. -/
+def exec : List CallJob → Store → Store
+  | [], s => s
+  | c :: cs, s => exec cs (c.act s)
+
+/-- **`PairwiseDisjoint` is a property of the multiset, not of the order.** No induction: it is a
+    membership statement, so a permutation only moves the membership witnesses. -/
+@[axiom_budget 0]
+theorem pairwise_disjoint_perm {l₁ l₂ : List CallJob} (h : l₁.Perm l₂)
+    (hd : PairwiseDisjoint l₁) : PairwiseDisjoint l₂ := by
+  intro d₁ h₁ d₂ h₂
+  exact hd d₁ ((List.Perm.mem_iff h).mpr h₁) d₂ ((List.Perm.mem_iff h).mpr h₂)
+
+/-- **Adjacent transposition.** Swapping two neighbouring calls leaves the store alone, when their
+    declared write sets are disjoint — which is `calljob_act_comm` read through `exec`'s two
+    unfolding steps.
+
+    Stated separately from `exec_perm` because it is the only step of the permutation induction that
+    does any work, and because it is the statement a reader can check against §9.2 directly: one
+    transposition, no order changed but this one. -/
+@[axiom_budget 0]
+theorem exec_swap (c₁ c₂ : CallJob) (l : List CallJob) (h : Disjoint c₁.dom c₂.dom) (s : Store) :
+    exec (c₁ :: c₂ :: l) s = exec (c₂ :: c₁ :: l) s := by
+  show exec l (c₂.act (c₁.act s)) = exec l (c₁.act (c₂.act s))
+  rw [calljob_act_comm c₁ c₂ h s]
+
+/-- **Every execution order of a list of pairwise-disjoint calls gives the same store.**
+
+    This is what §9.2's `parallel_execute(calls) ≈ sequential_execute(calls)` is reaching for, minus
+    the `≈`: a schedule may run a wave in any order it likes, and this says the store it produces is
+    the same one sequential execution produces. The proof is the four constructors of `List.Perm`,
+    and `hd` is reverted before the induction because the motive mentions it — without that the
+    induction is not well typed.
+
+    The `swap` case is where the `∨ d₁ = d₂` in `PairwiseDisjoint` earns its place: `hd` supplies the
+    reflexive case as a *disjunct*, so `swap` needs no decision procedure for equality of calls. -/
+@[axiom_budget 0]
+theorem exec_perm {l₁ l₂ : List CallJob} (h : l₁.Perm l₂) (hd : PairwiseDisjoint l₁) :
+    ∀ s : Store, exec l₁ s = exec l₂ s := by
+  revert hd
+  induction h with
+  | nil => intro _ s; rfl
+  | cons c _ ih =>
+      intro hd s
+      exact ih (fun d₁ h₁ d₂ h₂ => hd d₁ (by simp [h₁]) d₂ (by simp [h₂])) (c.act s)
+  | swap c₁ c₂ l =>
+      intro hd s
+      rcases hd c₂ (by simp) c₁ (by simp) with heq | hdisj
+      · subst heq; rfl
+      · exact exec_swap c₂ c₁ l hdisj s
+  | trans h₁ _ ih₁ ih₂ =>
+      intro hd s
+      exact (ih₁ hd s).trans (ih₂ (pairwise_disjoint_perm h₁ hd) s)
+
+/-! ==========================================================================
+   Part 5 — The duplicate-key check cannot fire
+   ========================================================================== -/
+
+/-- **No pair of calls in a pairwise-disjoint list collides on a key.**
+
+    The obligation §9.2's two Rust sites share: `execution.rs:677` for uncle against uncle and
+    `:741` for Deployooor against already-written state both return `DuplicateKeyConflict` when an
+    `insert` returns `false`, and this says that under the schedule's disjointness hypothesis the
+    branch is unreachable.
+
+    Only the negative direction is claimed. *Completeness* — that every real conflict is detected —
+    is a property of the Rust's insertion loop, not of this model, and is not stated here. -/
+@[axiom_budget 0]
+theorem no_duplicate_of_pairwise_disjoint (l : List CallJob) (hd : PairwiseDisjoint l) :
+    ¬ DuplicateKey l := by
+  intro hdup
+  rcases hdup with ⟨k, d₁, h₁, d₂, h₂, hne, hk₁, hk₂⟩
+  rcases hd d₁ h₁ d₂ h₂ with heq | hdisj
+  · exact hne heq
+  · exact hdisj k hk₁ hk₂
+
 end DarkFi.Semantics
