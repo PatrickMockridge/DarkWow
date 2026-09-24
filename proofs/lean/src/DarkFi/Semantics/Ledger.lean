@@ -475,13 +475,70 @@ def Present (s : Store) (k : Key) : Prop := ∃ b : Bytes, s k = some b
     `Store` cannot tell those apart. The two notions agree on the witness
     `presence_diff_is_not_sufficient` uses — the key there is present throughout, so it is touched
     throughout too — which is why that refutation lands on the Rust's set as actually computed rather
-    than on a substitute for it. Where they differ in general is prose and is left as prose: a key
-    removed after being written is a change of presence and not a change of touch.
+    than on a substitute for it. Where the two differ in general is **no longer prose**: a key removed
+    after being written is a change of *touch* and not of presence, and `rustPerCallKeys_is_strict`
+    below is that case as a theorem, with `rustPerCallKeys_subset_touched` giving the direction.
 
     Written as an explicit disjunction rather than as `Present s k ≠ Present (d.apply s) k`, so that
     the proof below stays inside `Prop` without appealing to `propext` for the negation. -/
 def presenceDiff (d : Diff) (s : Store) : Key → Prop :=
   fun k => (Present s k ∧ ¬ Present (d.apply s) k) ∨ (¬ Present s k ∧ Present (d.apply s) k)
+
+/-! #### The Rust's write set, in the vocabulary that can state it
+
+`presenceDiff` above is the Rust's delta *shape* over a `Store`, and the note says why that is not the
+Rust's notion: `Store` cannot tell "a key the call removed" from "a key nobody mentioned". The overlay
+delta can — `Diff.val` has the third case, `some none` — and `Diff.dom` is already the predicate that
+names it. So the Rust's `per_call_keys` needs no new modelling, only the right vocabulary, which is
+the whole reason this was prose: the gap was a **vocabulary** gap rather than a modelling one.
+
+`execution.rs` computes the set as `(cache.keys() ∪ removed) \ before`, which is "keys the overlay has
+an opinion about *after* that it had no opinion about *before*". That is `rustPerCallKeys` below.
+What the schedule's safety argument needs is "keys whose overlay entry *changed*", which is
+`Diff.dom` of the call's delta. The two are compared by the pair of theorems here, and the relation
+is one-directional — which is the register's `OBL-C100` in one sentence. -/
+
+/-- `rustPerCallKeys before after`: the keys the Rust's `per_call_keys` records for a call — the
+    overlay's opinion after the call, minus its opinion before. `before` and `after` are the overlay
+    state at the two snapshot points (`execution.rs:381-386` and `:547-551`), and "has an opinion" is
+    membership of `cache.keys() ∪ removed`, which is what `Diff.val _ ≠ none` is.
+
+    Stated with `= none` on the left rather than `¬ … ≠ none` so the subset proof below stays inside
+    `Prop` — `¬¬(a = b) → a = b` is where the classical choice would otherwise be spent. -/
+def rustPerCallKeys (before after : Diff) : Key → Prop :=
+  fun k => before.val k = none ∧ after.val k ≠ none
+
+/-- **What the Rust records, the model also counts.** Every key the per-call delta names is a key whose
+    overlay entry changed, so `per_call_keys` is a *subset* of the notion `Diff.dom` names and
+    `exec_perm` is stated over.
+
+    The direction is the point, and it is the unsafe one: a partition built on the Rust's set is
+    *permissive*, because the set can miss a key the call changed. A superset relation in the other
+    direction would have been a safety argument; this is the statement that there is none. -/
+@[axiom_budget 0]
+theorem rustPerCallKeys_subset_touched (before after : Diff) :
+    ∀ k, rustPerCallKeys before after k → before.val k ≠ after.val k := by
+  intro k h
+  rw [h.1]
+  exact fun hc => h.2 hc.symm
+
+/-- **And the subset is strict.** There is a pair of overlay states and a key where the entry changed
+    and the Rust's delta is empty — a key the overlay already had an opinion about, whose opinion
+    *changed*: written and then removed.
+
+    This is the case the `presenceDiff` note called prose. It is the same shape as the register's
+    witness for the value-safe case, one level down: there a key was present throughout, here it is
+    *touched* throughout, and in both the delta is empty while the effect is not. The Rust's set
+    cannot be a safety condition for either reason. -/
+@[axiom_budget 0]
+theorem rustPerCallKeys_is_strict :
+    ∃ before after : Diff, ∃ k : Key,
+      before.val k ≠ after.val k ∧ ¬ rustPerCallKeys before after k := by
+  refine ⟨Diff.single [] [9], ⟨fun k => if k = ([] : Key) then some none else none⟩, [], ?_, ?_⟩
+  · intro hc
+    simp [Diff.single] at hc
+  · intro h
+    simp [rustPerCallKeys, Diff.single] at h
 
 /-- **A one-key diff's touched set contains its key.** The contrast the refutation below turns on: the
     value-sensitive notion sees the write, and the presence-delta does not. -/
