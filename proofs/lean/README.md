@@ -549,15 +549,18 @@ imported by `src/DarkFi.lean`, so it sat on the default path of *every* library 
 
 **But the explosion was fixed, not worked around.** The transcription exceeded 24 GiB in one `lean`
 process, and no `.olean` had ever been produced for it — its 181 verdicts were unverified in the only
-sense that counts, the kernel having closed none of them. The cause was not its size: an inline `if` in
-the model's `boundWalk` made the kernel's reduction duplicate *both* branches into the enclosing term,
-compounding per statement. Only the eleven circuits whose property **holds** were affected, because a
-refuted circuit short-circuits in `List.all` and never forces those branches — which is why the
-failures looked like a size problem for as long as they did, and why sharding the artefact did not help.
-With that arm extracted (`bindAssign` in `DarkFi/Circuits/InstanceDerivation.lean`, which carries the
-measurement) the **whole artefact builds in 78 s and 743 MB** as one module. The sharding tried while
-the cause was unknown has been withdrawn. The ceiling below still protects the machine; it is no longer
-what makes this artefact fit under it.
+sense that counts, the kernel having closed none of them. Extracting one arm of the model's `boundWalk`
+into `bindAssign` (`Circuits/InstanceDerivation.lean`) removed it: the **whole artefact builds in ~71 s
+and 743 MB** as one module, and the sharding tried while the cause was unknown has been withdrawn.
+
+**Which circuits were expensive, and why, is deliberately not asserted here.** An adversarial audit
+falsified the first explanation this file carried — "only the eleven circuits whose property *holds*
+were affected, because a refuted circuit short-circuits in `List.all`". A refuted circuit still forces
+the walk for every statement *before* its first undetermined exposure, and `purse/withdraw` (refuted,
+failing at statement 46 of 49) forces a deeper chain than the circuit that was actually measured. The
+measured fact is that the extraction removed the blow-up in a controlled comparison; the mechanism is
+open, and `bindAssign`'s docstring records what was measured, what was retracted, and what would settle
+it. The ceiling below still protects the machine; it is no longer what makes this artefact fit under it.
 
 `scripts/lean-build.sh` therefore bounds **both** axes: the thread cap, and a cgroup `MemoryMax`
 (default 16 GiB, with `MemorySwapMax=0`) under which the *build* is killed with an explanation while

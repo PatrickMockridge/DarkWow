@@ -28,15 +28,12 @@ what it made of the same exposure, and records that class beside the verdict. Th
 therefore compared inside one generated artefact rather than in prose — which is what makes the
 headline count decomposable instead of merely asserted.
 
-**It writes one module, and there was a period on 2026-09-24 when one module would not build.** The 181
-verdicts once exceeded 24 GiB in a single `lean` process — no `.olean` was ever produced and the kernel
-had closed none of them — because of an inline `if` in the model's `boundWalk` whose two branches the
-kernel's reduction duplicated into the enclosing term, compounding per statement. While the cause was
-unknown the transcription was cut into shards; with the cause fixed the shards are gone and the
-artefact builds whole in **78 s and 743 MB**. See `bindAssign` in
-`DarkFi/Circuits/InstanceDerivation.lean` for the measurement, and note that only the eleven circuits
-whose property *holds* were ever affected — a refuted circuit short-circuits in `List.all` and never
-forces those branches.
+**It writes one module.** The 181 verdicts once could not be elaborated at all — more than 24 GiB in one
+`lean` process, no `.olean` ever produced — and while the cause was unknown the transcription was cut
+into shards. Extracting one arm of the model's `boundWalk` into `bindAssign`
+(`DarkFi/Circuits/InstanceDerivation.lean`) removed the blow-up, and the artefact now builds whole in
+**~71 s and 743 MB**; the shards went with the symptom. The *explanation* is deliberately not asserted
+here: `bindAssign`'s docstring records what was measured, what was retracted, and what would settle it.
 
 Usage:
     python3 scripts/gen_circuit_transcription.py            # write the module
@@ -338,7 +335,7 @@ reason the generator is allowed to predict at all.
 One boundary in the *other* direction stays untested, stated because it would show up as a false
 positive the day a circuit meets it: a bare `constant` exposed by `constrain_instance` would fail the
 model's property, where the checker accepts a constant by declaration. No circuit in this tree exposes
-one — measured, all 277 undetermined exposures across the 170 refutations are witnesses and none is a
+one — measured, every undetermined exposure across the 170 refutations is a witness and none is a
 constant — so that direction is untested rather than settled, while the direction above is met.
 
 Not transcribed, and counted rather than dropped silently: {ignored} bare opcode-call statements
@@ -350,16 +347,15 @@ sources is here; an unrecognised statement form fails the generator rather than 
 from a resource/action pair to a circuit is not in the tree, so this supplies the data the bridge
 needs without supplying the bridge. See `OBL-T7` in `doc/src/arch/verification-hazop.md`.
 
-**The verdicts were once unbuildable here, and the fix was one extracted function in the model.** Until
+**The verdicts were once unbuildable here, and one extracted function in the model fixed it.** Until
 2026-09-24 this module exceeded 24 GiB in a single `lean` process and was OOM-killed at both a 16 GiB
 and a 24 GiB ceiling, so no `.olean` had ever been produced and the kernel had closed none of the
-verdicts below; the diagnosis turned out to be the `assign` arm of `boundWalk`, whose inline `if` made
-the kernel's reduction duplicate both branches into the enclosing term, compounding per statement. Only
-the eleven circuits whose property *holds* were affected, because a refuted circuit short-circuits in
-`List.all` and never forces those branches. With that arm extracted into `bindAssign` the whole
-transcription — all 181 verdicts — builds in **78 s and 743 MB**. Sharding the artefact was tried while
-the cause was unknown and has been withdrawn: it was a workaround for a defect, not a property of the
-data. See `InstanceDerivation.lean`'s `bindAssign` for the measurement.
+verdicts below. Extracting `boundWalk`'s `assign` arm into `bindAssign` removed it: the whole
+transcription — all 181 verdicts — builds in **~71 s and 743 MB** as one module. **Which circuits were
+expensive, and why, is not established** — see `bindAssign`'s docstring, which carries the controlled
+comparison that justifies the change and the rival explanations it does not settle, and retracts the
+short-circuit story this header first told. Sharding the artefact was tried while the cause was unknown
+and has been withdrawn: it was a workaround for a defect, not a property of the data.
 -/
 '''
 

@@ -176,16 +176,29 @@ expression exposed together with whether it was determined at that point. It is 
 or an equality must precede the exposure it matters for — which is what the checker's "order matters for
 classifications 1 and 2" records. -/
 
-/-- **The bound set an `assign` produces** — the `assign` arm's decision as a named function, and that
-    is the whole point of it rather than a stylistic extraction (`bindEq` above exists for the same
-    reason). Written inline as `if derivedB held bound e then n :: bound else bound`, the kernel's
-    reduction of `boundWalk` **duplicates the two branches** into the enclosing term, and the cost
-    compounds per statement: measured 2026-09-24, `burn`'s 27-statement positive verdict did not
-    complete at *any* allowance — it hit the 200,000-heartbeat limit after 20 s and 3.7 GiB, and with
-    the allowance raised 40× it exceeded **23.9 GiB** and was OOM-killed. As a named call the same
-    module builds in **463 MB and 25 s**. `proofs/core/burn.zk` is one of the eleven circuits whose
-    verdicts *hold*: a negative verdict short-circuits in `List.all` and never forces these, which is
-    why only this half of the transcription was affected. -/
+/-- **The bound set an `assign` produces** — the `assign` arm's decision as a named function rather
+    than an inline `if`, which is the whole point of it and not a stylistic extraction (`bindEq` above
+    exists for the same reason).
+
+    **What is measured.** `burn`'s 27-statement verdict did not complete with the decision written
+    inline: it hit the 200,000-heartbeat limit at 20 s and 3.7 GiB, and with the allowance raised 40×
+    it exceeded **23.9 GiB** of anonymous memory and was OOM-killed. Extracted, the same module builds
+    in 463 MB and 25 s, and the whole 181-verdict artefact in ~71 s and 743 MB. So the extraction
+    **removed the blow-up**, and that comparison is the controlled experiment the change rests on — the
+    two modules differed in that arm alone. (The scratch modules are not committed, so those numbers
+    are not re-runnable from the tree; the artefact's own build is.)
+
+    **What is not established, and was claimed here wrongly.** The obvious mechanism — that the kernel
+    duplicates an inline `if`'s two branches into the enclosing term — is not proved, and it cannot be
+    the whole story in the form this docstring first carried: a *refuted* circuit also forces
+    `boundWalk` for every statement **before** its first undetermined exposure, and
+    `purse/withdraw` (refuted, failing at statement 46 of 49) forces a deeper chain — 37 bindings
+    against `burn`'s 19. So "only the eleven positive circuits were ever expensive, because a refuted
+    circuit short-circuits in `List.all`" was false, or the mechanism was. `burn` is not the artefact's
+    largest positive either (that is `proofs/core/tx.zk`); it is the circuit that was measured. A rival
+    explanation fitting the same evidence: unfolding `boundWalk`'s equation duplicates the recursive
+    *continuation* rather than the `if`'s branches, which would also explain why a named wrapper helps.
+    Settling it needs a probe pair over a deep-prefix refuted circuit, which nobody has built. -/
 def bindAssign (held bound : List Name) (n : Name) (e : Expr) : List Name :=
   if derivedB held bound e then n :: bound else bound
 
