@@ -48,7 +48,7 @@ these values) and the constants
 
 The docstring says `R(h) = max(R₀ × 2^(-(h-1)/H), R_tail)`. Transcribing it means the theorems
 downstream are about *this* schedule rather than about an arbitrary function, and it makes
-`reward_monotone` — which is still an assumption — a claim about a **computable, falsifiable**
+`reward_monotone` — an assumption then, and a theorem as of 2026-09-24 — a claim about a **computable, falsifiable**
 function instead of a claim about nothing in particular. That phrasing turned out to be load
 bearing: the assumption was **falsified** when it became checkable, at `(h₁, h₂) = (0, 1)`, because
 `reward 0 = 0` is a sentinel and not a schedule value. See `reward_monotone_unbounded_is_false`
@@ -166,7 +166,8 @@ lemma fixedPowDecayGo_le_start (exp : Nat) :
     * `n = 2k+1` — the sides are `G (k+1) r b'` and `G k (fpMul r b) b'`. That inequality is
       **true** (checked numerically over the real constants) but this lemma does not reach it: the
       hypothesis it needs is `fpMul r b ≤ r`, which points the wrong way. See
-      `Axioms.reward_monotone` for what that case still needs.
+      `Axioms.reward_monotone` for what that case still needed — **and it was closed on 2026-09-24 by
+      `fixedPowDecayGo_step_bound_b` below, an invariant neither this lemma nor that case is.**
 
     So this is the even case, and the obstruction is entirely in the odd one — which is a smaller
     target than "the parity analysis" and is where a further attempt should start. **Two candidate
@@ -536,20 +537,24 @@ theorem reward_monotone_unbounded_is_false :
 /-- **Non-increase holds from genesis on**, which is the range the schedule is defined over:
     `reward` is non-increasing on `h ≥ 1`.
 
-    This is what `Axioms.reward_monotone` assumes, and it is **stated here with no theorem
-    attached** — the honest state rather than a stopgap, and everything known about it is measured:
+    **This was a `Prop` with no theorem attached from the day it was written until 2026-09-24, and
+    `rewardNonIncreasing` below now inhabits it.** The three points it carried while open are kept
+    because they are the *search record* — each narrowed where to look — and because two of them are
+    still true of the statement even though it is proved:
 
     * **It is true.** `fixedPowDecay` is non-increasing exhaustively over `e ∈ [0, 3·10⁵]` and over
       200 000 sampled exponents in `[1, 3.4·10⁷]`, with no violation and no equal-step plateau;
-      `reward` is non-increasing for `1 ≤ h ≤ 200 000`. Two facts worth having for an attempt:
+      `reward` is non-increasing for `1 ≤ h ≤ 200 000`, and the measurement behind this file's
+      transcription covers `[0, 2·10⁶)`. Two facts worth having for an attempt:
       `fixedPowDecay e = 0` for all `e ≥ 2²⁵+1`, and `decayedReward` falls below `TAIL_REWARD` at
       `e ≈ 4.32·10⁶`, after which `reward` is constant.
-    * **It is not a missing routine.** The truncation at every squaring means the cumulative error in
-      the decay passes the *local* gap between successive ideal values once the exponent exceeds about
-      5.5·10⁴ — so no absolutely-bounded sandwich survives the middle range, and a proof has to compare
-      the errors of *adjacent* exponents, which nearly cancel because they differ by one carry.
-      Estimated 30–60 lemmas. One instrument is unavailable: `native_decide`, because `OBL-T10` is a
-      closed row whose whole content is that no proof rests on `Lean.ofReduceBool`.
+    * **It was not a missing routine**, and the estimate that stood here — "estimated 30–60 lemmas" —
+      was wrong in *shape* rather than in size. The cumulative error in the decay passes the *local*
+      gap between successive ideal values once the exponent exceeds about 5.5·10⁴, so no
+      absolutely-bounded sandwich survives the middle range. What closed it was not an error
+      analysis at all: it was a self-similar invariant (`fixedPowDecayGo_step_bound_b`) found by
+      testing candidate statements. One instrument remains unavailable: `native_decide`, because
+      `OBL-T10` is a closed row whose whole content is that no proof rests on `Lean.ofReduceBool`.
     * **The kernel cannot check it over a useful range**, which is why the bullet above says
       "measured" and not "verified". A fuel-indexed restatement of the loop — structural recursion, so
       the kernel *can* reduce it, unlike the well-founded definition — was written on 2026-09-24 and
@@ -559,8 +564,18 @@ theorem reward_monotone_unbounded_is_false :
       — a definition nothing consumes is what this tree deletes.
 
     Five routes are ruled out rather than rediscovered: three in `Axioms.reward_monotone`'s
-    `DISCHARGED BY:` field and its `NOT PROVED BECAUSE:` list, and two machine-checked above. -/
+    `DISCHARGED BY:` field and its `NOT PROVED BECAUSE:` list, and two machine-checked above. **None of
+    the five is the route that worked**, which is the reason the route list was worth keeping: it is
+    what kept the wrong shapes from being retried. -/
 def RewardNonIncreasing : Prop := ∀ h₁ h₂ : Nat, 1 ≤ h₁ → h₁ ≤ h₂ → reward h₂ ≤ reward h₁
+
+/-- **`RewardNonIncreasing` is inhabited** — the `Prop` this file stated with no theorem attached,
+    closed by the same theorem that discharges `Axioms.reward_monotone`. Stated separately because the
+    two are different claims about the same fact: one is the assumption's content, the other is the
+    *definition* this file wrote to be honest about not having a proof. -/
+@[axiom_budget 1]
+theorem rewardNonIncreasing : RewardNonIncreasing :=
+  reward_nonincreasing
 
 /-- The corrected statement is not vacuous at the point the old one failed, and the old one's
     failure is exactly the sentinel: `reward 1 ≤ reward 0` is false, while `reward 2 ≤ reward 1`
