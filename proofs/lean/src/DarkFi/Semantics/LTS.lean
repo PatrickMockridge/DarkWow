@@ -61,10 +61,10 @@ Two boundaries remain, and they are separate:
 `Q | P -[μ]-> Q | P'` is deliberately **not** a constructor: it is derived from `par_comm` and
 `scong`, and deriving it is the evidence that the congruence is doing its job.
 
-## The two obligations, both settled — and the second cost the calculus a proviso
+## The two obligations — one settled, one open again
 
-An earlier revision of this module named two theorems it did not have. Both are now proved, and the
-second needed the restriction rule to change rather than a better proof.
+An earlier revision of this module named two theorems it did not have, and both have since been
+answered twice over. The first answer holds. The second does not, and the reason is below.
 
 1. **Barb-equality does not imply bisimilarity** — proved, as `barb_eq_not_strongbisim`. The witness
    is `out x 0` against `out x (out 0 0)`: by `barb_out_iff` both exhibit exactly the barbs `SCong x
@@ -77,36 +77,54 @@ second needed the restriction rule to change rather than a better proof.
    says the old `stronglyBisimilar` — `Finset` equality over a record of tags — was not a bisimulation,
    rather than only that it was inelegant.
 
-2. **No barb survives a fresh restriction** — proved, as `no_barb_nu_of_fresh`, and it is now a
-   theorem about a rule this module had to fix first.
+2. **No barb survives a fresh restriction** — this module has had three answers to this one, and the
+   third is that it is open. The record is the point, so all three are kept.
 
-   Under `Proc.lean`'s *syntactic* freshness the sentence is **false**, in two independent ways, and
-   the witnesses are recorded here rather than as theorems — which is the honest form, for a precise
-   reason. Their proofs were derivations of the old rule, so with the rule restated they no longer
-   derive; and their *statements* are not settled either way by the restatement, because the
-   obligation's hypothesis is strictly stronger than the syntactic freshness they assumed. A statement
-   that is neither proved nor refuted is exactly what this corpus does not put a name on, so what
-   survives is the record, and the record is the reason the proviso is what it is:
+   **First answer — refuted.** Under `Proc.lean`'s *syntactic* freshness the sentence is **false**, in
+   two independent ways, and the witnesses are recorded rather than stated because neither proof nor
+   refutation was available for them:
 
    * at `x = 0` and `P = out (ν0.0) ⌈0⌉`, `Fresh 0 P` held and `Barb (ν0.P) 0` held with it, because
      `Occurs 0 0` is `False` — the proviso `Fresh x (subject μ)` was discharged *vacuously* when the
-     action's channel was the restricted name, and `Label.subject .tau = 0` is what makes `0` a name
-     as well as the τ-subject, so that instance bites there;
+     action's channel was the restricted name, and `Label.subject .tau = 0` is what makes `0` a name as
+     well as the τ-subject, so that instance bites there;
    * at `x = ⌈0⌉`, where `Fresh x x` fails and the first cause cannot apply, the barb escaped through
      `nu_par` and `cong_bang` instead: the channel `⌈ν0.0⌉` can be *read* as `⌈0⌉`, a name that does
      not occur in the term as written.
 
-   The second is the general one, and note that it is **not** about binding: `⌈ν0.0⌉` is a channel, a
-   free-name position already, and it is `cong_bang` that identifies it with `⌈0⌉`. So the freshness
-   the rule needs must quantify over the congruence rather than over the syntax — that is
-   `Congruence.lean`'s `FreshUpToScong` — and the restriction rule and `SCong.nu_par` now carry it,
-   with `fresh_of_freshUpToScong` recording that it is strictly stronger than the syntactic notion it
-   replaces. `barb_nu_subject_occurs` is then the lemma that discharges the obligation in one step: a
-   barb on `x` out of `νx.P` produces a term congruent to `P` that mentions `x`, which is exactly what
-   the proviso forbids.
+   The second is the general one, and it is **not** about binding: `⌈ν0.0⌉` is a channel, a free-name
+   position already, and it is `cong_bang` that identifies it with `⌈0⌉`.
+
+   **Second answer — vacuous.** The repair was to move the proviso onto a notion invariant under the
+   congruence: `Congruence.lean`'s `FreshUpToScong`, defined over `SCong0`, the *unconditional*
+   reachability relation. `not_freshUpToScong` proves that notion is **false for every argument**, so
+   `no_barb_nu_of_fresh` — the theorem that stated this obligation — was true of nothing, and the
+   restriction rule could not fire at all. Its hypothesis was not expensive to discharge; it was
+   unsatisfiable, and the reason is `cong_par` composed with `nu_nil` and `par_nil`:
+   `SCong0 P (P | νx.0)` for every `P` and every `x`, and `Occurs` counts a binder as an occurrence.
+
+   **Third answer — the rule fixed, and the obligation measured back to open.** The restriction rule
+   now carries `¬ SCong x (Label.subject μ)`: the condition is on the *label*, which is where the
+   standard rule puts it, rather than on the body. It is satisfiable, and both witnesses above fall to
+   it in one step, each being an action whose channel is `SCong`-equal to the restricted name.
+
+   What that does **not** do is close the obligation, and the measurement says exactly where it stops.
+   Case-analysing a derivation of `Step (νx.P) μ P'` now closes the `nu` constructor immediately
+   (`hprov (SCong.refl x)`), and every other constructor but one is a head-shape contradiction — a
+   `ν`-headed term is not an `out`, an `inp`, a `tau`-source or a `par`. The exception is `scong`: a
+   restriction reached through a *congruent* term. That route is `nu_par`, which is the one rule that
+   lets the congruence move a `ν`, and it is what the next unit removes. Until it is removed the
+   obligation stays open, and `no_barb_nu_of_fresh` is deleted rather than left standing, because a
+   statement whose hypothesis is unsatisfiable is true of nothing and this corpus does not keep those
+   for their names.
+
+   `barb_nu_subject_occurs` survives and is unaffected: a barb on `x` out of `νx.P` still produces a
+   term congruent to `P` that mentions `x`, and that is the lemma naming what a barb through a
+   restriction would have to be.
 
    `Proc.lean`'s syntactic `Fresh` no longer appears in any rule. It remains the honest description of
-   a term as written, and `FreshUpToScong` is defined from it.
+   a term as written, and `FreshUpToScong` is defined from it — and is false, which
+   `not_freshUpToScong` says beside the definition.
 
 Neither obligation is needed by the barb-preservation and bisimulation-equivalence results below,
 which are complete.
@@ -187,14 +205,23 @@ inductive Step : Proc → Label → Proc → Prop where
       rather than renamed — the right-handed form is `step_par_right` below, derived. -/
   | par {P P' Q : Proc} {μ : Label} : Step P μ P' → Step (Proc.par P Q) μ (Proc.par P' Q)
   /-- Restriction: an action not on the restricted name passes under `ν`. The proviso is
-      `FreshUpToScong x (subject μ)` — a hypothesis on the rule, so no use can forget it.
+      `¬ SCong x (subject μ)` — a hypothesis on the rule, so no use can forget it.
 
-      The invariant notion rather than `Proc.lean`'s syntactic `Fresh`, because the label's channel is
-      a term the congruence can rewrite: `out ⌈νx.0⌉ b` steps with the label `⌈0⌉!(b)`, so a syntactic
-      proviso on `⌈0⌉` is discharged vacuously and the rule would let an action on the bound name
-      through. The record in this file's scope note is the derivation that made that visible. -/
+      *About the label rather than the body*, which is the shape the standard rule has: `x ∉ n(μ)`
+      for the action labels, and nothing to check for `τ`, whose `subject` is `0` and which no barb
+      can be on. The condition has to be congruence-invariant because the channel is a term the
+      congruence rewrites: `out ⌈νx.0⌉ b` steps with the label `⌈0⌉!(b)`, and `SCong ⌈0⌉ ⌈νx.0⌉`
+      holds, so a *syntactic* proviso on `⌈0⌉` is discharged vacuously and the rule lets an action on
+      a name it should not through. Both of the refuted witnesses this file's scope note records are
+      that, in two forms, and both are blocked here.
+
+      This replaces `FreshUpToScong x (subject μ)`, which `Congruence.lean`'s `not_freshUpToScong`
+      proves is false for every argument. The rule described by the docstring above could therefore
+      never fire, and no restricted process could step at all. That the repair is one line is the
+      point: the condition belongs on the *label*, and it is the body-side reading — what extrusion
+      needs — that is still waiting on the binding convention. -/
   | nu {x P P' : Proc} {μ : Label} :
-      FreshUpToScong x (Label.subject μ) → Step P μ P' → Step (Proc.nu x P) μ (Proc.nu x P')
+      ¬ SCong x (Label.subject μ) → Step P μ P' → Step (Proc.nu x P) μ (Proc.nu x P')
   /-- Closure under structural congruence: `P ≡ Q`, `Q` steps to `Q'`, `Q' ≡ P'`, therefore `P`
       steps to `P'`. One constructor rather than two, because two would let a proof normalise
       halfway and stop, and there is never a reason to. -/
@@ -779,22 +806,18 @@ theorem barb_nu_subject_occurs {x P : Proc} (h : Barb (Proc.nu x P) x) :
       simpa only [CanStep] using canStep_of_step hs ⟨x, y, Or.inr rfl⟩
     exact canStep_occurs_up_to_scong hc
 
-/-- **Obligation 2: no barb survives a restriction on the name it would need.**
+/- **Obligation 2 was stated here and is now deleted.** `no_barb_nu_of_fresh` carried
+   `FreshUpToScong x P` and concluded `¬ Barb (νx.P) x`. `Congruence.lean`'s `not_freshUpToScong`
+   proves that hypothesis is false for every `x` and every `P`, so the theorem was true of nothing —
+   and it is removed rather than restated because **no `Occurs`-based freshness can replace it**:
+   `nu_nil` with `cong_par` and `par_nil` makes `SCong P (P | νx.0)` hold for every `P`, so any
+   invariant *occurrence* condition is unsatisfiable, over `SCong0` or over `SCong` alike. A
+   replacement needs a notion which does not count binders, and `barb_nu_subject_occurs` — which
+   survives, and is above — yields `Occurs`, not a free occurrence.
 
-    `FreshUpToScong x P` is the restriction rule's own proviso (`Congruence.lean`), so this is the
-    obligation in the form the rule can state. The proof is `barb_nu_subject_occurs` plus
-    `scong0_of_scong`: the barb hands back a term congruent to `P` that mentions `x`, and the proviso
-    says no term *reachable* from `P` does.
-
-    The hypothesis is strictly stronger than `Proc.lean`'s syntactic `Fresh`
-    (`fresh_of_freshUpToScong`), and that is why the rule changed rather than this theorem being stated
-    with the syntactic condition. This module's scope note carries the two derivations that made the
-    difference visible. -/
-@[axiom_budget 0]
-theorem no_barb_nu_of_fresh {x P : Proc} (h : FreshUpToScong x P) : ¬ Barb (Proc.nu x P) x := by
-  intro hb
-  obtain ⟨Q, hQ, hocc⟩ := barb_nu_subject_occurs hb
-  exact h Q (scong0_of_scong hQ) hocc
+   What the obligation is waiting on, measured rather than guessed: `Step.scong` below can still reach
+   a restriction through a *congruent* term, and the only rule that lets the congruence move a `ν` is
+   `SCong.nu_par`. The full account is in this module's scope note. -/
 
 /-! ==========================================================================
    Part 9 — §1.2's weak equation: what it says, what is true, and what is not
