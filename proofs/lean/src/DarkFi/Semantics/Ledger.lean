@@ -393,4 +393,60 @@ theorem no_duplicate_of_pairwise_disjoint (l : List CallJob) (hd : PairwiseDisjo
   · exact hne heq
   · exact hdisj k hk₁ hk₂
 
+/-! ==========================================================================
+   Part 6 — The smallest instance, and why the hypothesis is not vacuous
+   ========================================================================== -/
+
+/-- **Two disjoint calls satisfy `PairwiseDisjoint`.** The witness that §9.2's hypothesis is
+    inhabited, which is the thing a `∀ … → …` capstone cannot establish about itself: `exec_perm`
+    would be worth nothing if no list ever satisfied `PairwiseDisjoint`, and this says one does, for
+    the case the Rust actually produces — a block of calls that touch different keys.
+
+    Deliberately two calls rather than one. `PairwiseDisjoint []` and `PairwiseDisjoint [c]` are both
+    true and both trivial — the first because every quantifier is vacuous, the second because the
+    disjunct `d₁ = d₂` carries it — and a witness of that shape would satisfy the letter of
+    non-vacuity while showing nothing. Two calls force the `Disjoint` disjunct to be used in one of
+    the four cases, which is the case `exec_swap` needs. -/
+@[axiom_budget 0]
+theorem pairwise_disjoint_pair {c₁ c₂ : CallJob} (h : Disjoint c₁.dom c₂.dom) :
+    PairwiseDisjoint [c₁, c₂] := by
+  intro d₁ h₁ d₂ h₂
+  simp at h₁ h₂
+  rcases h₁ with rfl | rfl
+  · rcases h₂ with rfl | rfl
+    · exact Or.inl rfl
+    · exact Or.inr h
+  · rcases h₂ with rfl | rfl
+    · exact Or.inr (disjoint_comm h)
+    · exact Or.inl rfl
+
+/-- Two-call instance of `exec_perm`: the adjacent transposition, with the hypothesis discharged by
+    `pairwise_disjoint_pair` rather than assumed. -/
+@[axiom_budget 0]
+theorem exec_pair_swap {c₁ c₂ : CallJob} (h : Disjoint c₁.dom c₂.dom) (s : Store) :
+    exec [c₁, c₂] s = exec [c₂, c₁] s := by
+  exact exec_swap c₁ c₂ [] h s
+
+/-- **Two single-key writes to different keys are disjoint** — the case where the whole chain is
+    concrete: `db_set` at one key and `db_set` at another, which is what the Rust's
+    `written_keys.insert` sees as two different `SledKey`s. -/
+@[axiom_budget 0]
+theorem singles_disjoint {k₁ k₂ : Key} {v₁ v₂ : Bytes} (h : k₁ ≠ k₂) :
+    Disjoint (CallJob.single k₁ v₁).dom (CallJob.single k₂ v₂).dom := by
+  intro k h₁ h₂
+  dsimp [CallJob.dom, CallJob.single] at h₁ h₂
+  exact h (h₁.symm.trans h₂)
+
+/-- **The concrete capstone**: two `db_set`s on different keys commute.
+
+    Every abstraction the module introduces is instantiated here — a `Key`, a one-key `Diff`, a
+    `CallJob` whose declared set is the singleton, `PairwiseDisjoint`, `exec` — so the chain is
+    anchored to something a reader can check without believing any of the definitions were chosen to
+    make it work. -/
+@[axiom_budget 0]
+theorem exec_two_singles_swap {k₁ k₂ : Key} {v₁ v₂ : Bytes} (h : k₁ ≠ k₂) (s : Store) :
+    exec [CallJob.single k₁ v₁, CallJob.single k₂ v₂] s
+      = exec [CallJob.single k₂ v₂, CallJob.single k₁ v₁] s := by
+  exact exec_pair_swap (singles_disjoint h) s
+
 end DarkFi.Semantics
