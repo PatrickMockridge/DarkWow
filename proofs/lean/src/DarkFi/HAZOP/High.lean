@@ -387,7 +387,32 @@ def highAxiomFindings : List (String × Nat × String) := [
    "`Recorded as LOUD in DarkFi.HAZOP.High` and no such entry existed. `check_lean_axioms.py` check 3 " ++
    "validates that an `IF FALSE:` field names a declaration that exists; nothing validates that a " ++
    "`Recorded in HAZOP X` claim names an entry that exists. Same failure class as the other stale " ++
-   "citations this pass corrected — found by grepping for the thing being cited")
+   "citations this pass corrected — found by grepping for the thing being cited"),
+  ("HIGH-17: type-system.md §7.3 had no model at all", 35,
+   "AN UNMODELLED INVARIANT CARRYING THE PRIVACY MECHANISM, not a false claim. `type-system.md` §7 " ++
+   "lists seven invariants it calls compiler-enforced, and the third — *no restricted name shall " ++
+   "cross its declared scope boundary; a `SecretKey` derived for contract instance `A` SHALL NOT be " ++
+   "usable in contract instance `B`* — had **no model anywhere in this tree**: the only occurrence of " ++
+   "`derive_instance` in `proofs/lean/` was a comment in `Composition.lean:417`. What it protects is " ++
+   "the core privacy mechanism rather than a convenience: `privacy-model.md:59-60` forbids a " ++
+   "stable/master identity appearing in any block or transaction, and address cycling is how that is " ++
+   "achieved, so the rule that cycling is the mechanism and not an optimisation rested on prose " ++
+   "alone. `Capability/KeyScope.lean` now models the derivation as " ++
+   "`poseidon_hash_output [8, secret, contractId, instance]`, matching " ++
+   "`SecretKey::derive_instance` (`src/sdk/src/crypto/keypair.rs:220`, domain " ++
+   "`DRK_POSEIDON_DOMAIN_KEY_DERIVE = from_raw([8,0,0,0])` at `constants.rs:62`), and derives the " ++
+   "invariant from `poseidon_collision_resistance` at budget 1: equal derived keys force equal " ++
+   "`(contractId, instance)` pairs, so the scope boundary cannot be crossed without a collision. The " ++
+   "statement is falsifiable and the file carries its refutation — " ++
+   "`scopeRestriction_is_false_for_unscopedDerive` exhibits a derivation that ignores its scope, " ++
+   "which is what using the master identity directly *is*, and shows the invariant is false of it — " ++
+   "so what was proved is a property of this derivation and not a shape true of every function. " ++
+   "HONEST SCOPE, which is this entry's weight: the instance-element encoding is not modelled (the " ++
+   "zero-pad-or-truncate to 32 bytes and the non-canonical rejection at `keypair.rs:209-218`), so " ++
+   "which byte strings are admissible instances is not a claim of the model; and `poseidon_hash_output` " ++
+   "is opaque, so this rests on the injectivity assumption and inherits HIGH-13's scope exactly as " ++
+   "`Purse.lean:68` does — it is not a statement about the deployed sponge, and the property that " ++
+   "would make the boundary cryptographic rather than assumed is not built")
 ]
 
 end HAZOP.High
