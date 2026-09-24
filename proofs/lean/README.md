@@ -250,7 +250,13 @@ on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   What the layer does **not** have is an α-rule on `SCong`, so `Step.tau` carries `CaptureFree` as a
   proviso and `subst` relabels the channels that labels are made of (`subst_moves_the_label`) — adding
   the rule is a redesign of the label predicates rather than a constructor, which is what that theorem
-  measures, and a corpus-wide search found no consumer for it. One repair failed and is kept as such:
+  measures, and a corpus-wide search found no consumer for it. **How deep the gap goes is measured too**:
+  the α-variant pair `νx.(out b x)` and `νy.(out b y)` are separated not only by the congruence but by
+  the strong relation (`alpha_variants_not_strongbisim`) and by the barbed one
+  (`alpha_variants_not_barbedEq`), because a label's channel and payload are *free* names and renaming a
+  bound one is relabelling. So the fix is a *bound-output* label — the form `Label`'s docstring records
+  as absent — not a rule, and the deferral is by measurement rather than by absence of demand. One repair
+  failed and is kept as such:
   quantifying the restriction rule's freshness over the congruence produced `FreshUpToScong`, a
   condition that is **unsatisfiable** (`not_freshUpToScong`), so the extrusion rule could not fire for
   four commits while reading as available; that rule is deleted, and extrusion survives only in
