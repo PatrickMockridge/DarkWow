@@ -444,10 +444,18 @@ secret for the scanned height. A per-block-secret derivation failure SHALL **war
 master secrets** — it SHALL NOT hard-error and silently drop master-decryptable transfer notes.
 
 **Decrypt soundness (`↓discover`).** A note decrypts to a capability only when the trial key is the
-note's recipient key (`decrypt_sound`, `proofs/lean/src/DarkFi/Net/Receive.lean`). The receive path is
-exercised end-to-end by `test_transfer_accepts_through_accept_block`, which receives through the
-sync→scan path (`insert_synced_block` then `scan_blocks`) — so a zero-discovery result in the Docker
-devnet is a key/address or sync-ordering defect, never a decrypt-logic defect.
+note's recipient key (`decrypt_sound`, `proofs/lean/src/DarkFi/Net/Receive.lean`) — *given*
+`Axioms.aead_key_committing`, the AEAD key-committing property the theorem's budget of 1 records.
+That assumption is what the statement actually rests on: `aead_open` is opaque, so no byte-level
+cipher, KDF or nonce derivation is modelled, and the property asserted (a ciphertext authenticates
+under at most one key) is the unconditional strengthening of the deployment's ~2⁻¹²⁸ probabilistic
+guarantee — the same species of over-statement `poseidon_collision_resistance` carries, recorded in
+`proofs/lean/README.md`'s honest-scope section. Before 2026-09-24 this citation pointed at a
+`decrypt` defined as `if k = n.recipient then … else none`, whose `decrypt_sound` was true of that
+branch rather than of any ciphertext. The receive path is exercised end-to-end by
+`test_transfer_accepts_through_accept_block`, which receives through the sync→scan path
+(`insert_synced_block` then `scan_blocks`) — so a zero-discovery result in the Docker devnet is a
+key/address or sync-ordering defect, never a decrypt-logic defect.
 
 ### 2.2 Path 2: Manifest-Driven Capability Construction (All Other Contracts)
 

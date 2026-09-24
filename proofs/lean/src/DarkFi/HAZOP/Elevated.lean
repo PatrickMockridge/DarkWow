@@ -369,13 +369,22 @@ def elevatedAxiomFindings : List (String × Nat × String) := [
    "returns the named proposition `varBaseObligation g` (`¬ g.base_is_constant`), which can be " ++
    "false, so the branch states something instead of nothing. That is a repair of a vacuous " ++
    "branch, NOT a mechanization: the rule over real circuits is " ++
-   "`script/circuit_instance_derivation.py`, and `Axioms.NoFreeInstances` remains uninterpreted")
+   "`script/circuit_instance_derivation.py`, and `Axioms.NoFreeInstances` remains uninterpreted"),
+  ("ELEV-31: aead_open", 34,
+   "SILENT. The note-opening primitive is a value-less `opaque`, so nothing about the deployment's " ++
+   "ChaCha20Poly1305/`kdf_sapling`/nonce derivation is modelled. Its falsity is undetectable here " ++
+   "for the same reason `poseidon_hash_output`'s is (ELEV-8): a missing function is a type error. " ++
+   "Unlike ELEV-8 this one did not replace a placeholder that computed something — `Net/Receive.lean` " ++
+   "had no ciphertext in it at all, so the `opaque` is the first thing in the tree that can be " ++
+   "opened, and `Axioms.aead_key_committing` (HIGH-15) is what is assumed about it")
 ]
 
 /-- The funding case, in one place: every assumption whose falsity nothing in this tree can
     detect. Discharging these is what would make the boundary smaller rather than just
     better-labelled. -/
 def silentAxiomFailures : List String := [
+  "aead_key_committing",
+  "aead_open",
   "base_div_mul_cancel",
   "poseidon_hash_output",
   "compute_merkle_root",

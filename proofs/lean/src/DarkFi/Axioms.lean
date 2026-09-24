@@ -554,3 +554,63 @@ purse write path any more. -/
     capabilities would need, and no such theorem exists. Recorded as SILENT in
     `DarkFi.HAZOP.Elevated` ELEV-26. -/
 axiom NoFreeInstances (r : Resource) (s : Action) : Prop
+
+/-! ===== AEAD: the note-opening primitive and its key-committing property =====
+
+    The receive path's `↓discover` barb rests on one fact about AEAD: a ciphertext
+    authenticates under the key it was sealed to and under no other. That fact was
+    **assumed by a definition** before this pair existed — `Net/Receive.lean`'s `decrypt`
+    was `if k = n.recipient then some … else none`, so its `decrypt_sound` was true of the
+    `if` rather than of any ciphertext, and `doc/src/arch/wallet.md` §2.1 cited it as
+    evidence about the deployed receive path. The primitive is now opaque and the property
+    is an assumption, so the dependency is visible in a budget rather than built into a
+    branch. -/
+
+/-- The AEAD opening primitive: `aead_open ciphertext key` is the note plaintext if the
+    ciphertext authenticates under `key`, and `none` otherwise. Opaque for the same reason
+    `HashOps.poseidon_hash_output` is: the deployed construction is bytes (ChaCha20Poly1305
+    over a Sapling-DH-derived key, `src/sdk/src/crypto/note.rs:113-135`) and this tree has no
+    byte-level model of it.
+
+    ASSUMES: that an opening is a total function of a ciphertext and a key. Carries no
+    content of its own — it is the signature the assumption below is stated in.
+    NOT PROVED BECAUSE: there is no byte-level AEAD in this tree; the nonce derivation
+    (`Self::derive_nonce`, the M7 fix), the Sapling KDF and `ChaCha20Poly1305` are unmodelled.
+    DISCHARGED BY: a byte-level model of `AeadEncryptedNote` — at which point this becomes a
+    `def` and the property below becomes a theorem about it.
+    IF FALSE: NOTHING — a missing function is a type error, not a false claim. See
+    `DarkFi.HAZOP.Elevated` ELEV-31. -/
+opaque aead_open (ciphertext : Int) (key : Int) : Option Int
+
+/-- ASSUMES: a ciphertext authenticates under **at most one** key — `aead_open c k₁ = some p₁`
+    and `aead_open c k₂ = some p₂` force `k₁ = k₂`. This is the standard **key-committing**
+    property of an AEAD, and it is exactly what makes a wrong-key wallet discover nothing:
+    `Net.decrypt_sound` and `Net.decrypt_wrong_key_none` are proved *from* it.
+
+    **The statement is the unconditional strengthening of a computational property, and the
+    difference is the one `poseidon_collision_resistance` already carries.** The deployment is
+    Sapling DH → `kdf_sapling` → `ChaCha20Poly1305` with the nonce derived from `ephem_public`
+    (`src/sdk/src/crypto/note.rs:113-135`), whose real guarantee is that a ciphertext made to
+    authenticate under a second key is *found with probability about 2⁻¹²⁸ per attempt* — a
+    statement about adversaries. This axiom asserts that no such pair **exists**, which is
+    false of the real construction by counting: Poly1305 tags are 128 bits and the domain is
+    larger, so unbounded searching finds a collision. It is satisfiable only because `aead_open`
+    is opaque and `Int` is countable, so the model has none of the real function's structure.
+    What the model describes is a function injective under opening, which no tag-based AEAD can
+    be. Honest scope: `proofs/lean/README.md`'s honest-scope section states this beside the
+    Poseidon entry rather than leaving it to the reader.
+
+    NOT PROVED BECAUSE: neither the cipher nor the MAC is modelled, and the property in the
+    form a standard-model proof gives it — "no efficient adversary finds a ciphertext that
+    authenticates under two keys" — is a statement about adversaries, for which this tree has
+    no computational model.
+    DISCHARGED BY: a byte-level `ChaCha20Poly1305` model with its authentication game, which
+    turns the equality into `Pr[collision] ≤ 2⁻¹²⁸`; or, short of that, a restatement of the two
+    consumers against a property the deployment does have unconditionally.
+    IF FALSE: `Net.decrypt_sound` and `Net.decrypt_wrong_key_none` lose their proofs — both are
+    proved from this assumption, so their proof terms cite it and the build fails loudly. The
+    direction that would be silent is the opposite one: an assumption *stronger* than the
+    deployment is consistent, so nothing fails — it only over-states what the receive path
+    proves. Recorded as LOUD in `DarkFi.HAZOP.High` HIGH-15. -/
+axiom aead_key_committing (c k₁ k₂ p₁ p₂ : Int) :
+  aead_open c k₁ = some p₁ → aead_open c k₂ = some p₂ → k₁ = k₂

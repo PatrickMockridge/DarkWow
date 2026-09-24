@@ -353,6 +353,23 @@ def highAxiomFindings : List (String × Nat × String) := [
    "the four `poseidon_hash_output` corollaries are the *instantiation*, and their budgets are " ++
    "exactly the assumption. The Merkle induction in particular is now unconditional — only the " ++
    "claim that `sinsemillaCrh` is injective is not"),
+  ("HIGH-15: aead_key_committing", 45,
+   "PRESENT, CONSISTENT, AND THE UNCONDITIONAL FORM OF A COMPUTATIONAL PROPERTY. The axiom " ++
+   "states that a ciphertext authenticates under at most one key, which is what makes a " ++
+   "wrong-key wallet discover nothing. The deployment is Sapling DH -> kdf_sapling -> " ++
+   "ChaCha20Poly1305 with the nonce derived from `ephem_public` " ++
+   "(`src/sdk/src/crypto/note.rs:113-135`), whose guarantee is that a second authenticating key " ++
+   "is found with probability about 2^-128 per attempt — a statement about adversaries. The axiom " ++
+   "asserts no such pair exists, false of the real construction by counting, and satisfiable only " ++
+   "because `aead_open` is opaque and `Int` is countable. Same species as HIGH-13, and recorded " ++
+   "here rather than left to the reader because of what it replaced: `Net/Receive.lean`'s " ++
+   "`decrypt` *was* `if k = n.recipient then some … else none`, so its `decrypt_sound` was true " ++
+   "of the branch and said nothing about a ciphertext, while `wallet.md` §2.1 cited it as the " ++
+   "receive path's soundness. The assumption is now visible in a budget (1) where before it was " ++
+   "invisible in a definition (0). The shape is falsifiable — " ++
+   "`Net.key_committing_is_false_for_leaky_open` exhibits an opening function for which it is " ++
+   "false — and the *satisfiable* half is not built: no model in this tree exhibits a tag-based " ++
+   "`aead_open`, so the authentication is the residual, not the plaintext recovery"),
   ("HIGH-14: the HAZOP citation itself", 30,
    "The `HIGH-13` citation above was stale: `poseidon_collision_resistance`'s docstring said " ++
    "`Recorded as LOUD in DarkFi.HAZOP.High` and no such entry existed. `check_lean_axioms.py` check 3 " ++
