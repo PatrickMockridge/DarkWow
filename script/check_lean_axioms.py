@@ -527,11 +527,46 @@ def classify(axioms):
     return proj, trust, classical, foundation
 
 
+def annotation_for(name, short, where, budgets):
+    """The `@[axiom_budget]` that belongs to *this* declaration, or `(None, None)`.
+
+    Keyed by **declaring file**, not by short name, and the difference is a hole this function
+    exists to close. `declared_budgets` reads annotations out of the sources and can only key them
+    by the name as written (`theorem foo` gives `foo`), while the collector reports fully-qualified
+    names (`DarkFi.Capability.Value.foo`) — so the two sides can never meet on the qualified form,
+    and the check fell back to `name.split(".")[-1]`. Any theorem sharing a short name with an
+    annotated theorem *anywhere in the tree* then inherited that annotation:
+
+      * `Capability/Value.lean`'s `value_conservation_no_wraparound` carries no annotation of its
+        own, and passed check 4 on the strength of `CrossCutting.lean`'s theorem of the same name.
+        Two different theorems, two different axiom sets, one annotation between them.
+
+    Requiring the annotation to come from the file that declares the theorem closes it, because the
+    file is the one thing both sides can agree on: `qualified_theorems` maps each fully-qualified
+    name to its source path. A declaration the scanner cannot place (a name it cannot match, or one
+    that only exists after elaboration) still falls back to a short-name match, but only when that
+    match is unambiguous — an ambiguous one is reported as unannotated rather than guessed at.
+    """
+    if name in budgets:
+        return budgets[name][0]
+    cands = budgets.get(short)
+    if not cands:
+        return (None, None)
+    decl_file = where.get(name, (None, None))[0]
+    if decl_file is None:
+        return cands[0] if len(cands) == 1 else (None, None)
+    same = [c for c in cands if c[0] == decl_file]
+    if len(same) == 1:
+        return same[0]
+    return (None, None)
+
+
 def check_budgets(rows, require_collector):
     """(4) Every theorem/lemma is annotated, and its annotation matches reality."""
     if rows is None:
         return None
     budgets = declared_budgets()
+    where = qualified_theorems()
     bad = []
     unannotated = []
     for name, rec in sorted(rows.items()):
@@ -539,10 +574,10 @@ def check_budgets(rows, require_collector):
         short = name.split(".")[-1]
         proj, trust, classical, _ = classify(axioms)
         actual = len(proj) + len(trust) + len(classical)
-        if name not in budgets and short not in budgets:
+        site, declared = annotation_for(name, short, where, budgets)
+        if site is None:
             unannotated.append((name, actual, axioms))
             continue
-        site, declared = (budgets.get(name) or budgets.get(short))[0]
         if declared != actual:
             bad.append(
                 f"{site}: {name} declares @[axiom_budget {declared}] but depends on "

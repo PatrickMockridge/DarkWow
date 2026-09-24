@@ -50,7 +50,14 @@ theorem value_conservation
 /-- No modular wraparound: with values range-checked to 64 bits and at most
     16 coins per transaction, the value sum stays below 2^68 < p — integer
     equality and field equality coincide (the entrypoint check is both
-    necessary and sufficient). -/
+    necessary and sufficient).
+
+    Budget 1, and it is worth saying why a *delegation* is not budget 0: the proof term is
+    `CrossCutting.value_conservation_no_wraparound`, whose own budget is 1, and a proof's axiom set is
+    that of the term, not of the statement. This declaration carried no annotation until
+    2026-09-24, and passed check 4 anyway — by short-name collision with the `CrossCutting` theorem
+    it delegates to, which is the hole `annotation_for` in `script/check_lean_axioms.py` now closes. -/
+@[axiom_budget 1]
 theorem value_conservation_no_wraparound
     (values : List Int)
     (h_range : ∀ v ∈ values, 0 ≤ v ∧ v < 2^64)
