@@ -1,0 +1,30 @@
+# Artefacts the register cites deliberately as absent — declared, with a reason, rather than silently
+# admitted. Read by scripts/check-register-artifacts.sh.
+#
+# Format:  <cited path> : <OBL row> : <reason>
+#
+# The key is the cited *string*, not a line number, so an edit above a site moves nothing — the same
+# decision script/circuit_pubkey_binding_exceptions.txt records for its own keys. A misspelled key
+# therefore leaves its finding unexcepted rather than covering it, and an entry whose path now resolves
+# — or that the register no longer cites — is reported as stale (in HEAD mode) instead of being kept
+# quietly. That check is what empties the OBL-T7 block below when that unit commits.
+#
+# WHY ANY EXEMPTION EXISTS: a row that records a *stale citation*, or one whose closure was deleting a
+# module, has to name the path it is about. Those citations are evidence rather than claims, and the
+# gate cannot tell the two apart — so each is declared here with the reason that makes it evidence.
+
+# OBL-T7 — the transcription unit, in flight. The register records it before its artefacts are
+# committed, which is precisely the state this gate exists to catch; it is exempted rather than
+# ignored so that the exemption is visible and expires.
+scripts/gen_circuit_transcription.py : OBL-T7 : generator untracked in the working tree; the unit is in flight and the entry goes when it commits
+scripts/lean-build.sh : OBL-T7 : the one sanctioned Lean build guard (a cgroup around LEAN_NUM_THREADS=4); untracked, same unit
+src/Transcribed.lean : OBL-T7 : Lean shorthand for proofs/lean/src/Transcribed.lean, untracked; same unit
+Circuits/Transcribed.lean : OBL-T7 : cited as the *rejected* name — the row's own words are that the file is "not Circuits/Transcribed.lean"
+
+# OBL-Z6 — a row whose subject IS a stale citation, so it names the stale path as its evidence. The
+# live site in that row's "Enforced at" cell was corrected to src/sdk/src/crypto/constants/sinsemilla.rs
+# on 2026-09-24; the two remaining mentions are the defect's record and must keep the old path.
+src/sdk/src/crypto/sinsemilla.rs : OBL-Z6 : cited as the record of the defect — "that file does not exist" is the finding, and the constants live under constants/
+
+# OBL-C108 — a row closed by deleting the module it cites.
+src/contract/subscription/src/client/rate_limit.rs : OBL-C108 : cited as the state found; the closure removed the file and its `pub mod` declaration, which is what the row says
