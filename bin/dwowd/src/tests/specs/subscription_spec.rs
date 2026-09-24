@@ -1,8 +1,7 @@
 //! ContractTestSpec for subscription. Tier: HARVESTABLE — 5 harness methods.
-//! 6 endpoints: four prove, two are **declared placeholders** (`CancelV1`, `RenewV1` — the
-//! harness builds their proofs from `empty_witnesses` and no client exists for either circuit,
-//! `OBL-C106`). `SubscribeV1`'s own proof fails L2 verification with the fixture's inputs
-//! consistent — `OBL-C107`, which is the next thing to localise, not a fixture question.
+//! 6/6 endpoints prove: every proof comes from the contract's own client and every param carries the
+//! public inputs it was made with. Two of those clients — `cancel` and `renew` — did not exist until
+//! 2026-09-24 (`OBL-C106`), and the harness proved those two with `empty_witnesses` in the meantime.
 //!
 //! **The endpoints are a flow and the fixture registers what they act on** (`OBL-C104`). Before this
 //! the spec had no setup at all and every arm that needed state or a child refused: the run died at
@@ -257,29 +256,19 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
                     let id = subscription_id(&sub_pub, asset_id);
                     #[expect(clippy::unwrap_used, reason = "PublicKey rejects identity, so x()/y() is always Some")]
                     let (px, py) = (sub_pub.x().unwrap(), sub_pub.y().unwrap());
-                    let nullifier = poseidon_hash([id.inner(), sub_secret]);
                     let block = f.height.ok_or_else(|| dwow_core::Error::Custom("subscribe height unknown".into()))?;
-                    let r = h.update_usage(id.inner(), px, py, pallas::Base::from(block), pallas::Base::from(7u64), sub_secret, block, nullifier, vec![pallas::Base::from(0u64)]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.update_usage(id.inner(), px, py, pallas::Base::from(block), pallas::Base::from(7u64), sub_secret, block, vec![pallas::Base::from(0u64)]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
-            // `CancelV1` and `RenewV1` build their proofs from `empty_witnesses` — the harness has no
-            // client for either circuit — so they are **declared placeholders** (`OBL-C88`'s
-            // standard) and are not evidence about this contract until those clients exist
-            // (`OBL-C106`). The fixture supplies what their arms need: the record, the nullifier, and
-            // for `renew` a payment child.
-            mk_ep("CancelV1", true, Box::new({
-                let fixture = fixture.clone();
-                move || {
-                    let f = fixture.lock().unwrap();
-                    let asset_id = f.asset_id.ok_or_else(|| dwow_core::Error::Custom("asset not known".into()))?;
-                    let id = subscription_id(&sub_pub, asset_id);
-                    let nullifier = poseidon_hash([id.inner(), sub_secret]);
-                    let block = f.height.ok_or_else(|| dwow_core::Error::Custom("subscribe height unknown".into()))?;
-                    let r = h.cancel(id.inner(), sub_secret, nullifier, block, sub_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-                }
-            })),
+            // `RenewV1` before `CancelV1`, and the second is a **declared rejection**, because one
+            // subscription has **one** nullifier: `cancel.zk` and `renew.zk` both constrain
+            // `poseidon_hash(1, subscription_id, subscriber_secret)` and both marks it spent, so
+            // whichever runs first buys the right and the other is refused. The run measured it —
+            // `CancelV1` accepted, then `RenewV1` refused with `Custom(3)` ("Subscription not
+            // active") before the nullifier check could even be reached — and the fixture now
+            // states which of the two it exercises rather than letting the order decide silently.
+            // The limitation itself is a finding, filed as `OBL-C109`.
             mk_ep("RenewV1", true, Box::new({
                 let fixture = fixture.clone();
                 move || {
@@ -287,15 +276,35 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
                     let asset_id = f.asset_id.ok_or_else(|| dwow_core::Error::Custom("asset not known".into()))?;
                     let id = subscription_id(&sub_pub, asset_id);
                     let lock = f.height.ok_or_else(|| dwow_core::Error::Custom("subscribe height unknown".into()))? + PLAN_DURATION;
-                    let nullifier = poseidon_hash([id.inner(), sub_secret]);
                     let note2 = f.note2.as_ref().ok_or_else(|| dwow_core::Error::Custom("second note not issued".into()))?;
                     let blind_seed = poseidon_hash([pallas::Base::from(PLAN_PRICE), id.inner()]);
                     let child = pn_transfer_child(note2, PLAN_PRICE, blind_seed, pallas::Base::from(9u64), pallas::Base::zero())?;
-                    let r = h.renew(id.inner(), sub_secret, lock, nullifier, pallas::Point::identity(), vec![pallas::Base::from(0u64)]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.renew(id.inner(), sub_secret, lock, pallas::Point::identity()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
 
+            // NEGATIVE — and it is the *contract's* refusal, not the fixture's: the subscription is
+            // still `Active` after the renew, and what refuses this is the nullifier the renew above
+            // spent. The proof is real (the client's), so a green here would mean the contract had
+            // stopped tracking the nullifier at all.
+            EndpointSpec {
+                name: "cancel_after_renew", is_zk: true,
+                expectation: EndpointExpectation::Rejection,
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new({
+                let fixture = fixture.clone();
+                move || {
+                    let f = fixture.lock().unwrap();
+                    let asset_id = f.asset_id.ok_or_else(|| dwow_core::Error::Custom("asset not known".into()))?;
+                    let id = subscription_id(&sub_pub, asset_id);
+                    let block = f.height.ok_or_else(|| dwow_core::Error::Custom("subscribe height unknown".into()))?;
+                    let r = h.cancel(id.inner(), sub_secret, block, sub_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                }
+                }),
+            },
         ],
     }
 }

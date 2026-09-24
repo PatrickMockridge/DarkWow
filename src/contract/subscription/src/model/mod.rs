@@ -423,9 +423,12 @@ impl Subscription {
         ]))
     }
 
-    /// Compute the nullifier that prevents double-cancel or double-renew
+    /// The nullifier that prevents double-cancel or double-renew, or a double usage update.
+    ///
+    /// Delegates to `nullifier_of`, which is the derivation `cancel.zk` and `renew.zk` constrain and
+    /// the one the host compares against (`cancel_v1`, `renew_v1`).
     pub fn compute_nullifier(&self, secret: pallas::Base) -> pallas::Base {
-        poseidon_hash([self.id.inner(), secret])
+        nullifier_of(self.id, secret)
     }
 
     /// The access capability `verify_access.zk` derives, computed from **this record's own fields**
@@ -453,6 +456,24 @@ impl Subscription {
     pub fn access_is_live(&self, current_block: u64) -> bool {
         self.state == SubscriptionState::Active && current_block < self.lock_until_block
     }
+}
+
+/// The nullifier a cancel, a renew or a usage update spends: `poseidon_hash([1, id, secret])`.
+///
+/// **`DOMAIN_NULLIFIER = 1` is part of it**, and the copy this replaces had two inputs where both
+/// circuits hash three. `cancel.zk` and `renew.zk` constrain
+/// `computed_nullifier = poseidon_hash(DOMAIN_NULLIFIER, subscription_id, subscriber_secret)` against
+/// the witness the client supplies, while the host compares that same param against *this* function —
+/// so with the domain missing the two could never agree, and the endpoints were unsatisfiable by any
+/// client rather than merely unbuilt (`OBL-C106`). It is the fourth instance of one class in this
+/// contract: `OBL-C75`'s key derivation, `OBL-C104`'s `derived_id`, `OBL-C107`'s literal zero, and
+/// this. One derivation, one home.
+pub fn nullifier_of(subscription_id: SubscriptionId, secret: pallas::Base) -> pallas::Base {
+    poseidon_hash([
+        pallas::Base::from(1u64), // DOMAIN_NULLIFIER, as in both circuits
+        subscription_id.inner(),
+        secret,
+    ])
 }
 
 /// The `derived_id` `update_usage.zk` instances, from the values the call carries.

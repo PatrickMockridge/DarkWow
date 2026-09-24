@@ -36,6 +36,8 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_subscription_contract::client::{
+    cancel::{create_cancel_proof, CancelCallData},
+    renew::{create_renew_proof, RenewCallData},
     subscribe::{
         SubscribeCallData, SubscribePublicInputs, create_subscribe_proof,
     },
@@ -334,7 +336,6 @@ impl SubscriptionHarness {
         nonce: pallas::Base,
         subscriber_secret: pallas::Base,
         current_block: u64,
-        spent_nullifier: pallas::Base,
         merkle_proof: Vec<pallas::Base>,
     ) -> Result<UpdateUsageResult, Box<dyn std::error::Error>> {
         let input = UpdateUsageCallData::new(
@@ -358,7 +359,13 @@ impl SubscriptionHarness {
             subscriber_secret,
             current_block,
             nonce,
-            spent_nullifier,
+            // The derivation the host compares against — `model::nullifier_of`, called rather than
+            // asserted by the caller. The fixture used to pass its own value and the two disagreed
+            // silently until `OBL-C106` gave the derivation one home.
+            spent_nullifier: dwow_subscription_contract::model::nullifier_of(
+                SubscriptionId(subscription_id),
+                subscriber_secret,
+            ),
             merkle_proof,
             tx_binding: public_inputs.tx_binding,
             tx_nonce: public_inputs.tx_nonce,
@@ -371,31 +378,34 @@ impl SubscriptionHarness {
     }
 
     /// Cancel a subscription (function code 0x02)
+    /// Cancel a subscription (function code 0x02).
+    ///
+    /// **The proof is real** as of 2026-09-24 (`OBL-C106`): it is built by the contract's own client
+    /// (`create_cancel_proof`, which did not exist before) and the params carry the public inputs it
+    /// was made with. The nullifier is no longer a parameter — the client derives it
+    /// (`model::nullifier_of`), the circuit constrains it, and the host compares the published value
+    /// against the same derivation, which is what makes the three agree. Before this the endpoint
+    /// proved with `empty_witnesses`: a fabricated proof carrying no instances, refused by the L2
+    /// verify for a reason the endpoint did not name.
     pub fn cancel(
         &self,
         subscription_id: pallas::Base,
         subscriber_secret: pallas::Base,
-        spent_nullifier: pallas::Base,
         current_block: u64,
         recipient_pubkey: PublicKey,
     ) -> Result<CancelResult, Box<dyn std::error::Error>> {
-        let witnesses = dwow_core::zk::empty_witnesses(&self.cancel_zkbin)?;
-        let circuit = ZkCircuit::new(witnesses, &self.cancel_zkbin);
-        let proof = Proof::create(&self.cancel_pk, &[circuit], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let input = CancelCallData::new(subscription_id, subscriber_secret, current_block, recipient_pubkey);
+        let (proof, public_inputs) =
+            create_cancel_proof(&self.cancel_zkbin, &self.cancel_pk, &input)?;
 
         let params = CancelParamsV1 {
             subscription_id: SubscriptionId(subscription_id),
             subscriber_secret,
-            spent_nullifier,
+            spent_nullifier: public_inputs.spent_nullifier,
             current_block,
             recipient_pubkey,
-            // No client builds this instruction yet, so the pair is the one the zero default derives
-            // (`OBL-C78`). The fabricated proof above carries no instances at all, so this endpoint
-            // still fails at verification — the missing client is the reason, and it is recorded in
-            // the register rather than papered over here.
-            tx_binding: tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
-            tx_nonce: pallas::Base::zero(),
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x02];
@@ -405,30 +415,30 @@ impl SubscriptionHarness {
     }
 
     /// Renew a subscription (function code 0x03)
+    /// Renew a subscription (function code 0x03) — the same repair as `cancel` above (`OBL-C106`):
+    /// a real proof from `create_renew_proof`, params carrying the instances it was made with, and a
+    /// nullifier the client derives rather than the caller asserting.
     pub fn renew(
         &self,
         subscription_id: pallas::Base,
         subscriber_secret: pallas::Base,
         new_lock_until_block: u64,
-        spent_nullifier: pallas::Base,
         value_commit: pallas::Point,
-        merkle_proof: Vec<pallas::Base>,
     ) -> Result<RenewResult, Box<dyn std::error::Error>> {
-        let witnesses = dwow_core::zk::empty_witnesses(&self.renew_zkbin)?;
-        let circuit = ZkCircuit::new(witnesses, &self.renew_zkbin);
-        let proof = Proof::create(&self.renew_pk, &[circuit], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let mut input = RenewCallData::new(subscription_id, subscriber_secret, new_lock_until_block, value_commit);
+        input.merkle_proof = vec![];
+        let (proof, public_inputs) =
+            create_renew_proof(&self.renew_zkbin, &self.renew_pk, &input)?;
 
         let params = RenewParamsV1 {
             subscription_id: SubscriptionId(subscription_id),
             subscriber_secret,
             new_lock_until_block,
-            spent_nullifier,
+            spent_nullifier: public_inputs.spent_nullifier,
             value_commit,
-            merkle_proof,
-            // As with `cancel` above: no client exists for `renew`, so the pair is the zero default's.
-            tx_binding: tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
-            tx_nonce: pallas::Base::zero(),
+            merkle_proof: input.merkle_proof.clone(),
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x03];
