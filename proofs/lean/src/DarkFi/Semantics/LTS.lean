@@ -1904,4 +1904,25 @@ theorem bound_label_separates {x y b : Proc} (hxy : ¬ SCong x y) (hxb : ¬ SCon
     rw [← hd] at hdf
     exact hxy (SCong.symm hdf)
 
+/-- **The closure's clause holds at the α-pair, and this is what isolates the residual to the general
+    relation.** The two variants' bound-label steps are matched and their successors are **congruent**:
+    `νx.(out b x)` steps with `b!(⌈x⌉)` to `νx.0`, `νy.(out b y)` with `b!(⌈y⌉)` to `νy.0`, and
+    `νx.0 ≡ 0 ≡ νy.0` by `nu_nil` — so **no renaming of the bound name is needed here**, and the
+    label-level obstruction `bound_label_separates` measures is removable at this pair.
+
+    **What that leaves, sized rather than asserted.** `IsStrongBisim` matches labels by exact equality,
+    and matching bound names up to renaming is a change to it and to `IsWeakBisim` whose laws number
+    **21** in this file: reflexivity, symmetry, transitivity, the three parallel laws and `scong`
+    compatibility, for each of the two relations — and the parallel laws with bound output are where
+    π-calculus metatheory is hard rather than routine. So the α-unit's closure is a **metatheory unit of
+    that blast radius**, not a lemma to add; this theorem is the evidence that the *pair* needs none of
+    it beyond the label, and `OBL-T13` carries the count. -/
+@[axiom_budget 0]
+theorem alpha_variants_bound_steps_match {x y b : Proc} (hxb : ¬ SCong b x) (hyb : ¬ SCong b y) :
+    ∃ P' Q' : Proc,
+      Step (Proc.nu x (Proc.out b x)) (Label.bout b x) P' ∧
+        Step (Proc.nu y (Proc.out b y)) (Label.bout b y) Q' ∧ SCong P' Q' :=
+  ⟨Proc.nu x Proc.nil, Proc.nu y Proc.nil, extrude_step hxb, extrude_step hyb,
+    SCong.trans (SCong.nu_nil x) (SCong.symm (SCong.nu_nil y))⟩
+
 end DarkFi.Semantics
