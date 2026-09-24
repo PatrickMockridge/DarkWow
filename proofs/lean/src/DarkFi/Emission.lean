@@ -236,6 +236,73 @@ theorem fpMul_nested_bound_is_false :
   have hw := h 346803675 4229726225
   norm_num [fpMul, FP_ONE] at hw
 
+/-- **The nested bound also fails at the schedule's *own* constant**, which the witness above does not
+    show: `r = 95872739`, `b = DECAY_FP` gives `95872612` against `95872611`. So the obstruction is not
+    an artefact of a contrived `b` — it bites at the constant the schedule itself multiplies by, and a
+    reader who took the earlier witness for a corner case would size the odd case wrong. Recorded
+    because the difference between "false in general" and "false at the values we use" decides whether
+    a repair has to change the loop or only its analysis. -/
+@[axiom_budget 1]
+theorem fpMul_nested_bound_fails_at_the_decay_constant :
+    ¬ (fpMul 95872739 (fpMul DECAY_FP DECAY_FP) ≤ fpMul (fpMul 95872739 DECAY_FP) DECAY_FP) := by
+  norm_num [fpMul, FP_ONE, DECAY_FP]
+
+/-! ===== The odd case, stated =====
+
+`Axioms.reward_monotone` records the odd case as needing "a statement bounding the factor the extra
+step multiplies by, not a strengthening of the accumulator induction". `fixedPowDecayGo_mono_acc` above
+reaches the even case; the two shapes the odd case was first reached for are refuted above. What had
+never been written down is the statement itself — and this is it:
+
+    fixedPowDecayGo (e + 1) FP_ONE b ≤ fixedPowDecayGo e FP_ONE b     whenever  b ≤ DECAY_FP
+
+**Both hypotheses are load-bearing, and dropping the first makes it false.** The accumulator is pinned
+to `FP_ONE`, where `fpMul FP_ONE x = x` — so the *result* side suffers no truncation and the only loss
+is in the base squarings; and `b ≤ DECAY_FP` makes each squaring a contraction (`fpMul_le_left`).
+Measured 2026-09-24: with the accumulator freed the statement **fails** at `r = 827599667`, `k = 3`.
+
+**Why this statement and not another.** `fixedPowDecay e = fixedPowDecayGo e FP_ONE DECAY_FP`, so the
+lemma at `b = DECAY_FP` *is* `fixedPowDecay (e+1) ≤ fixedPowDecay e` — the non-increase of the decay
+factor, from which `decayedReward` follows by monotonicity of `fpMul` and `reward` by monotonicity of
+`max`. And it is exactly the odd case: unfolding the definition once, the `e` **even** case reduces to
+`fixedPowDecayGo_mono_acc` at base `fpMul b b`, and the `e` **odd** case reduces to *this* statement at
+base `fpMul b b`. So the two parities are one statement evaluated at the squared base, which is why a
+single lemma would close both — and why the earlier phrase "the parity analysis" described two halves
+of one target.
+
+**Its status is empirical and it is recorded as such, which is why it is a `def : Prop` and not a
+theorem**: no proof exists, and a statement without one does not belong in this tree wearing a
+theorem's kind — the same reason `RewardNonIncreasing` below is a `def`. The evidence, wider than the
+scans `RewardNonIncreasing` records: no violation over the schedule's own orbit (12 squarings of
+`DECAY_FP`) with `e ∈ [0,60)`, nor over 24,420 sampled `(e, b)` points with `b ≤ DECAY_FP` and
+`e ∈ [0,60)`; and separately `fixedPowDecay` non-increasing on `[0, 2·10⁶)` and `reward` non-increasing
+on `[1, 2·10⁶)` — the latter two covering 6.7× the range the tree had scanned. The computation was
+transcribed from this file and reproduces its own recorded values (`fixedPowDecay 34 = 4294871042`
+against the closed form's `4294871043`), so it is a check on the same function rather than on a
+look-alike. **What would discharge it**: a mutual induction, since each parity reduces to the other at
+the squared base — the even half needs only `fixedPowDecayGo_mono_acc`, and the odd half needs this
+statement. -/
+def OddCaseStepBound : Prop :=
+  ∀ e b : Nat, b ≤ DECAY_FP → fixedPowDecayGo (e + 1) FP_ONE b ≤ fixedPowDecayGo e FP_ONE b
+
+/-- The first five steps of the decay factor's non-increase, **kernel-checked** — the closed companion
+    to the empirical scan above, in the shape `reward_nonincreasing_first_step` already uses one level
+    out. It checks the decay *factor*, which is the level the odd case lives at, rather than the
+    reward, which is what the existing theorem checks. `norm_num` with the full unfolding set rather
+    than `decide`: `fixedPowDecayGo` recurses on `(exp + 1) / 2`, so Lean elaborates it as
+    well-founded recursion and the equation lemmas have to be supplied.
+
+    **Budget 1 and not 0, which the collector is what settled**: this was annotated 0 when written, on
+    the reasoning that a closed numeral inequality is arithmetic, and the gate refuted it —
+    `norm_num` reaches `Classical.choice`, so the measured budget is 1. Recorded because the
+    annotation is the kind of claim this file has spent the day correcting elsewhere. -/
+@[axiom_budget 1]
+theorem fixedPowDecay_nonincreasing_first_steps :
+    (fixedPowDecay 5 ≤ fixedPowDecay 4) ∧ (fixedPowDecay 4 ≤ fixedPowDecay 3) ∧
+      (fixedPowDecay 3 ≤ fixedPowDecay 2) ∧ (fixedPowDecay 2 ≤ fixedPowDecay 1) ∧
+      (fixedPowDecay 1 ≤ fixedPowDecay 0) := by
+  norm_num [fixedPowDecay, fixedPowDecayGo, fpMul, FP_ONE, DECAY_FP]
+
 /-- The decay factor is at most `1.0`. -/
 @[axiom_budget 1]
 lemma fixedPowDecay_le_one (exp : Nat) : fixedPowDecay exp ≤ FP_ONE :=
