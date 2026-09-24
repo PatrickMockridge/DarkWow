@@ -38,6 +38,21 @@ both fields untouched rather than pretending otherwise. The transaction status l
 models is what a *capability's* status does, and the transaction-level machine is the one whose edges
 the Rust drives from two observers (mempool and scan). Naming it as absent is the honest reading of
 "one of the two machines is modelled".
+
+**A correction this file owes, added 2026-09-24.** It landed claiming a clean build — "0 errors, 0
+warnings" — and that claim was wrong: `scanFrom_append`'s cons case wrote `| cons b bs ih` and
+`linter.unusedVariables` flagged `bs`, which the proof never mentions because the induction hypothesis
+alone discharges the goal. The build that reported it was the next full `DarkFi` build, so between the
+two the tree carried a warning in a file whose landing said it had none. The binder is `_` now and the
+build is clean (measured, `scripts/lean-build.sh build DarkFi`, 0 errors / 0 warnings, and the log
+shows `✔ [5222/5223] Built DarkFi`, so the module really was elaborated rather than left cached).
+
+**Why the earlier claim was wrong is not known and is not guessed here.** Two candidates are obvious —
+a warning line read past in a log that did contain it, or a claim about a module a given run had left
+cached — and this note does not pick one, because neither was measured. What *is* general, and is the
+reason this paragraph exists rather than being a silent fix: **"0 warnings" is a claim about a build
+that ran, so it has to be read off that build's log, not asserted about the code.** The tree's bar is
+zero warnings, which makes the difference between reading and asserting it a real one.
 -/
 
 import Mathlib
@@ -177,7 +192,11 @@ theorem scanFrom_append (s : ConfirmedState) (bs₁ bs₂ : List ChainBlock) :
     scanFrom s (bs₁ ++ bs₂) = scanFrom (scanFrom s bs₁) bs₂ := by
   induction bs₁ generalizing s with
   | nil => rfl
-  | cons b bs ih => exact ih (applyBlock s b)
+  -- `_` and not `bs`: the goal is discharged by the induction hypothesis alone, so the tail binder is
+  -- never mentioned and `linter.unusedVariables` is right to flag it. It was `bs` when this module
+  -- landed, and the build reported it a warning on 2026-09-24 — **after** this file's landing claimed
+  -- a clean build, which is the correction recorded in the module note below.
+  | cons b _ ih => exact ih (applyBlock s b)
 
 /-- **The fold law §1 needs, and the reason the scan is stable under a re-scan**: a block that has
     already been applied adds nothing when it is seen again. This is `applyBlock_idempotent` lifted
