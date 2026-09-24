@@ -1,6 +1,6 @@
 # DarkWow Opcodes and Formal Verification
 
-> **Scope**: All **31 zkVM opcodes**, all **10 gadgets**, and all **120 contract ZK circuits**
+> **Scope**: All **31 zkVM opcodes**, all **10 gadgets**, and the circuit set the Orchard-class gate walks — **178 circuits as of 2026-09-24**, not the 120 this line carried. The count moves; re-run `scripts/check-circuit-instance-derivation.sh` rather than quoting it.
 > (across 26 contracts + core proofs) have been **manually audited** for the Orchard-class
 > instance-derivation pattern. The audit is documented at
 > `proofs/lean/src/DarkFi/Circuits/`, which is **comment-only**: it contains no Lean
@@ -133,7 +133,7 @@ the circuit failed to constrain the base point choice, enabling unlimited mintin
 ZEC for ~4 years. The vulnerability class is: **any `constrain_instance` without an in-circuit
 derivation constraint is a potential exploit.**
 
-Every one of the 120 contract circuits was audited for this vulnerability class:
+Every circuit of the set below was audited for this vulnerability class — and the audit is now a gate, which walks **178** as of 2026-09-24 against the 120 this line carried:
 
 | Contract Group | Circuits | Free Instances | Status |
 |---------------|----------|----------------|--------|
@@ -147,7 +147,7 @@ Every one of the 120 contract circuits was audited for this vulnerability class:
 | DarkBet | 4 | 0 | ✓ |
 | Attestation | 10 | 0 | ✓ |
 | Identity | 8 | 0 | ✓ |
-| LaborMarket | 9 | 0 | ✓ |
+| LaborMarket | 9 | **1** | ✗ `create_job`'s `attestation_id`, unclassified by the gate as of 2026-09-24. This row said 0 |
 | Escrow | 4 | 0 | ✓ |
 | DAO Escrow | 6 | 0 | ✓ |
 | Auction | 6 | 0 | ✓ |
@@ -156,16 +156,32 @@ Every one of the 120 contract circuits was audited for this vulnerability class:
 | Lottery | 2 | 0 | ✓ |
 | BettingStake | 5 | 0 | ✓ |
 | PoolStake | 4 | 0 | ✓ |
-| InsuranceMarket | 2 | 0 | ✓ |
+| InsuranceMarket | 2 | **2** | ✗ **the two live ones** — `required_capability_id` in both `with_capability` circuits, unclassified by the gate as of 2026-09-24 and named in `OBL-Z16`. This row said 0 |
 | DrainProtection | 1 | 0 | ✓ |
 | Subscription | 3 | 0 | ✓ |
 | RelayerEndowment | 3 | 0 | ✓ |
-| Oracle | 5 | 0 | ✓ |
+| Oracle | 5 | **1** | ✗ `attest_value`'s `threshold`, unclassified by the gate as of 2026-09-24 — and it is the one `OBL-Z16` records as *blocked* rather than merely open. This row said 0 |
 | Tender | 5 | 0 | ✓ |
 | Core (proof/) | 12 | 0 | ✓ |
 
 **Result**: 1 Orchard-class vulnerability found (C1 — PN MintV1 `mint_public` unconstrained, FIXED).
-All 120 circuits now pass the detection rule: every `constrain_instance` is derived in-circuit.
+
+**Corrected 2026-09-24, and the sentence that stood here was the same claim `Circuits/All.lean`
+carried until it was corrected the same day.** It read "All 120 circuits now pass the detection rule:
+every `constrain_instance` is derived in-circuit", and the audit's own instrument disagrees — it is a
+gate, `scripts/check-circuit-instance-derivation.sh`, and it **exits 1**. Measured on 2026-09-24:
+**178 circuits, 880 `constrain_instance`, 4 unclassified** — `insurance_market/proof/`'s
+`purchase_coverage_with_capability` and `underwrite_with_capability` (both `required_capability_id`,
+and these are `OBL-Z16`'s *two live* ones), `labor_market/proof/create_job`'s `attestation_id`, and
+`oracle/proof/attest_value`'s `threshold`. Three of the table's rows say "0" for exactly those
+groups — see their notes below — so this is not a case of a stale count alone.
+
+Two things about the numbers, because both matter to a reader who wants to use them. They **move
+daily**: two hours before this measurement the same gate said 181 circuits and 11 unclassified, and a
+later pass took it to 5 and then to 4, so quote the command rather than this paragraph. And the
+"120 circuits" here is the count the audit was written against; the gate walks 178 today, which
+includes `bin/darkirc`'s two and the other trees its walk covers — the table's own "Core (proof/)"
+row shows the audit was never only about contract circuits.
 
 ### Layer 2 Proof Files
 
@@ -232,8 +248,14 @@ DarkWow uses **Lean 4** (v4.12.0) for formal verification across three layers:
 ### Layer 1: Primitive Soundness
 
 Each zkVM opcode is modeled as a Lean structure with constraint predicates and soundness
-theorems. Exhaustive search verifies correctness for bounded input ranges; constraint
-analysis detects unconstrained witnesses.
+theorems. **Corrected 2026-09-24**: this said "Exhaustive search verifies correctness for bounded
+input ranges; constraint analysis detects unconstrained witnesses", and the first half is the
+evidence the sibling documents carried and were corrected for on the same day — the exhaustive loops
+live in `proofs/lean/src/Main.lean`, a file in **no `lean_lib`** that no gate reads and that does not
+compile. What verifies correctness here is the theorems the tables above name; the searches are
+historical, and the snippet below illustrates the older method rather than the current one.
+Constraint analysis detecting unconstrained witnesses is still how the Orchard-class rule works, and
+it is a gate rather than a proof (`script/circuit_instance_derivation.py`).
 
 ```lean4
 -- Example: LessThanOrEqual constraint system
@@ -250,7 +272,7 @@ def lte_satisfied (a b out : Int) : Bool :=
 
 ### Layer 2: Orchard-Class Instance-Derivation Audit
 
-Each of the 120 contract circuits is modeled to verify the **Orchard-class detection rule**:
+Each of those circuits is **checked by a gate** for the **Orchard-class detection rule** — checked, not modelled, and that distinction is the one `Circuits/*.lean` above records: those files contain no declarations, so the rule is a Python classifier over the `.zk` sources (`script/circuit_instance_derivation.py`) rather than a theorem:
 every `constrain_instance(X)` must have a corresponding in-circuit derivation `X = f(witnesses)`.
 A `constrain_instance` without a derivation constraint is an Orchard-class vulnerability —
 this is exactly what the Zcash Orchard bug exploited for ~4 years.
