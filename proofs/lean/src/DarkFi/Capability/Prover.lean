@@ -243,13 +243,25 @@ theorem namedBlind_distinct (n1 n2 : String) (h : n1 ≠ n2) :
 /-! ===== T6 — transaction binding (invariant #4) ===== -/
 
 /-- T6 (spec): the transaction binding is `poseidon(3, tx_commitment, tx_nonce)`.
-    Invariant #4 (`wallet.md:815`) SHALL hold: the prover binds the REAL
+    Invariant #4 (`wallet.md:835`, §6.4) SHALL hold: the prover binds the REAL
     seed-derived `tx_commitment`/`tx_nonce` (never a hardcoded zero). Stated as a
-    predicate over the bound inputs — the HAZOP V6 remediation.
+    predicate over the bound inputs.
 
-    **Unconsumed, and that is measured rather than assumed**: a grep across
-    `.lean`/`.rs`/`.md`/`.py` finds no reference to this name outside its own
-    line. It is the predicate the SDK's accessors make unreachable —
+    **Consumed as of 2026-09-24, which is a change of state and not a claim**: a
+    grep across `.lean`/`.rs`/`.md`/`.py` used to find no reference to this name
+    outside its own line — the species the register records for `capTypesDistinct`
+    (`OBL-T2`). `Capability/WritePath.lean` now gives it both directions:
+    `binding_is_real` (the binding the write path derives from a `Seed` satisfies
+    it) and `zero_binding_is_not_real` (the pair `(0, 0)` violates it), which is
+    what makes it a predicate rather than a tautology.
+
+    This docstring also said `wallet.md:815` and "the HAZOP V6 remediation" until
+    2026-09-24. The line number had rotted (the invariant list is at `:835`), and
+    the second citation resolved to nothing: there is no HAZOP item `V6` in this
+    tree, and `verification-hazop.md:9` records why the name was never resolvable
+    — `V1`–`V7` are *per-document* finding IDs which "mean four different things in
+    four documents". The obligation is invariant #4 above; the mechanism is this:
+    it is the predicate the SDK's accessors make unreachable —
     `CapabilityProvider::tx_commitment`/`tx_nonce` default to
     `pallas::Base::zero()` (`src/sdk/src/prover.rs:353-360`, "zero if unbound")
     and `bind_slot` binds whatever they return with no failure path
