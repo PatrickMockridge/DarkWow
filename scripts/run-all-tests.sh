@@ -78,11 +78,17 @@ run_gate "circuit metadata alignment"     bash "$SCRIPT_DIR/check-circuit-metada
 run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain-separation.sh"
 # OBL-Z1: the Orchard-class rule. The other two circuit gates are structural (counts, prefix
 # presence); this is the only one that asks whether an exposed public input is *determined*.
-# It is currently RED, and it is BLOCKING: re-measured 2026-09-24, it exits 1 on **5** unclassified
-# instances over **178** circuits / **880** `constrain_instance` sites — insurance_market's two
-# `required_capability_id`, bridge/withdraw's `token_minimum`, labor_market's `attestation_id`, and
-# oracle/attest_value's `threshold`.
-# This paragraph read "15 over 181 circuits / 897 sites" until 2026-09-24, and named sites that had
+# **It is GREEN, re-measured 2026-09-24, and it is the gate the circuits' Lean discharge rests on**:
+# exit 0 with **0** unclassified over **178** circuits / **880** `constrain_instance` sites — bound
+# 200, declared-free 44, derived 359, derived-inline 54, redundant 223. The five sites this paragraph
+# named — insurance_market's two `required_capability_id`, bridge/withdraw's `token_minimum`,
+# labor_market's `attestation_id`, oracle/attest_value's `threshold` — are each resolved, and the
+# resolution is readable where it was made: four are entries in `script/circuit_free_instances.txt`,
+# and bridge/withdraw's `token_minimum` was *removed* rather than declared free, which that file's own
+# oracle entry cites as the alternative it did not take.
+# This paragraph read "It is currently RED, and it is BLOCKING: it exits 1 on **5** unclassified
+# instances" until the repairs landed later the same day, and "15 over 181 circuits / 897 sites"
+# before that, and named sites that had
 # since been adjudicated (oracle/aggregate's min_result and max_result, labor_market's
 # milestone_payment_amount, roulette/settle_bet's payout) or **deleted** — `proofs/core/lead.zk` and
 # `set_v1.zk` were removed that day rather than repaired: they were the two with no host anywhere in
@@ -93,17 +99,17 @@ run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain
 # adjudicated — each either derived, bound, or declared free with a reason in
 # script/circuit_free_instances.txt. See doc/src/arch/verification-hazop.md, OBL-Z1 and OBL-Z16.
 #
-# TWO gates are red, not one — measured 2026-09-22 rather than inferred from this comment. The other
-# is `circuit metadata alignment` (gate 2 above): re-measured 2026-09-23 it exits 1 with **19 count
-# mismatches over 19 circuits and 10 literal-vs-value positions over 6 more**, and the register's
-# OBL-Z2 still records that gate as passing on 68 circuit/site pairs, which is stale. The second
-# class is new: a literal-vs-value rule was promoted from the advisory order comparison to a hard
-# FAIL that day (OBL-C20), because a position where the circuit instances a value and the metadata
-# pushes a literal constant is not a name-mapping question. That class is the other session's
-# OBL-C78/OBL-C79, so it is named here and not duplicated. A "the full gate is green" claim is
-# therefore two obligations away, not one: **5 unclassified instances and 5 metadata findings,
-# re-measured 2026-09-24**. This sentence said 15 and 29, then 11 and 5, both stale — the numbers belong to the gates,
-# and both gates print their own on every run.
+# The two gates that were red on 2026-09-22 are both green, re-measured 2026-09-24. The other is
+# `circuit metadata alignment` (gate 2 above): it exits 0 with `Passed: 183 Failed: 0` over 31 of 34
+# contracts, where the paragraph here said "**19 count mismatches over 19 circuits and 10
+# literal-vs-value positions over 6 more**" and the register's OBL-Z2 still recorded the gate as
+# passing on 68 circuit/site pairs. The literal-vs-value rule is still a hard FAIL (OBL-C20) — what
+# moved is the circuits' metadata, not the rule: a position where the circuit instances a value and
+# the metadata pushes a literal constant is still not a name-mapping question. That class is the
+# other session's OBL-C78/OBL-C79, so it is named here and not duplicated. A "the full gate is green"
+# claim is therefore **one obligation nearer than this paragraph said**: 0 unclassified instances and
+# 0 metadata findings, re-measured 2026-09-24. This sentence said 15 and 29, then 11 and 5, then 5 and
+# 5, all stale — the numbers belong to the gates, and both gates print their own on every run.
 run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instance-derivation.sh"
 # The same sources, transcribed into Lean as data. `Transcribed.lean` is a *generated*
 # artefact, so it is checked the way this tree checks generated artefacts — by re-running the
@@ -114,10 +120,15 @@ run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instan
 # WHAT A PASS MEANS, and it is narrower than "the circuits are safe": that the committed module is
 # what the generator produces today. The verdicts inside it are the *model's*
 # (`Circuits/InstanceDerivation`'s rule, one theorem per circuit closed by `decide`), and its header
-# decomposes where those verdicts differ from this gate's checker — 167 circuits fail the model's
-# strict rule, of which 155 are the checker's `redundant` class, 11 `declared-free`, 3 the checker's
-# own `OBL-Z16` failures, and 1 the model's declared-constant boundary. It is the *data* side of
-# `OBL-T7`'s `(r, s) ↦ circuit` bridge and not the bridge, which the module says it does not supply.
+# decomposes where those verdicts differ from this gate's checker — of the 167 circuits that fail the
+# model's strict rule, **154** are `redundant` to the checker (pinned by another exposed
+# determination, which the model's sequential rule does not follow), **12** are `declared-free` from
+# an entry in script/circuit_free_instances.txt, and **1** is the model's declared-constant boundary.
+# Zero are unclassified by the checker, which is what the gate's own green run above means — so the
+# model does not contradict this gate, it refines it. The counts here read 155 / 11 / 3 / 1 until
+# 2026-09-24, when the checker's last three unclassified sites were adjudicated and that class
+# vanished with them. It is the *data* side of `OBL-T7`'s `(r, s) ↦ circuit` bridge and not the
+# bridge, which the module says it does not supply.
 run_gate "circuit transcription freshness (OBL-T7)" \
                                           python3 "$REPO_ROOT/scripts/gen_circuit_transcription.py" --check
 # OBL-C72/C73: the exec/apply phase rule — apply writes blindly, exec does not write. This gate
