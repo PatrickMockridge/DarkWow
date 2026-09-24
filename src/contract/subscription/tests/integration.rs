@@ -25,7 +25,7 @@
 
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::{
-    crypto::{pasta_prelude::Group, PublicKey, SecretKey},
+    crypto::{pasta_prelude::Group, poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
 use dwow_subscription_contract::{
@@ -658,4 +658,45 @@ fn access_capability_binds_the_record_and_liveness_is_a_boundary() {
     let mut cancelled = create_dummy_subscription(SubscriptionId(pallas::Base::from(9u64)));
     cancelled.state = SubscriptionState::Cancelled;
     assert!(!cancelled.access_is_live(0));
+}
+
+/// `OBL-C75`: the id is domain-separated and every input moves it.
+///
+/// The first assertion is the one that would have failed before this row was worked: the circuit
+/// computes the id as `poseidon_hash(DOMAIN_COMMITMENT, pub_x, pub_y, plan_id, deposit, asset_id,
+/// lock_until_block, secret, nonce)` (`subscribe.zk:42-51`), and `Subscription::derive_id` computed
+/// the same hash **without** the domain — two derivations of one value, and the circuit's equality
+/// relates two witnesses, so a client using the model's would have produced a proof the circuit
+/// could not satisfy. The rest pins the sensitivity the collision argument rests on: an id that does
+/// not move with the plan, the deposit, the expiry, the secret or the nonce would let one
+/// subscription be keyed under another's id.
+#[test]
+fn subscription_id_is_domain_separated_and_field_sensitive() {
+    let pk = make_pubkey(42);
+    let derive = |plan_id: u32, deposit: u64, lock: u64, secret: u64, nonce: u64| {
+        Subscription::derive_id(
+            &pk, plan_id, deposit, pallas::Base::zero(), lock,
+            pallas::Base::from(secret), pallas::Base::from(nonce),
+        )
+    };
+    let base = derive(1, 1000, 100000, 42, 1);
+
+    #[expect(clippy::unwrap_used, reason = "PublicKey rejects identity, so x()/y() is always Some")]
+    let undomained = SubscriptionId(poseidon_hash([
+        pk.x().unwrap(),
+        pk.y().unwrap(),
+        pallas::Base::from(1u64),
+        pallas::Base::from(1000u64),
+        pallas::Base::zero(),
+        pallas::Base::from(100000u64),
+        pallas::Base::from(42u64),
+        pallas::Base::from(1u64),
+    ]));
+    assert_ne!(base, undomained, "the domain constant is part of the derivation");
+
+    assert_ne!(base, derive(2, 1000, 100000, 42, 1), "the plan is part of it");
+    assert_ne!(base, derive(1, 1001, 100000, 42, 1), "the deposit is part of it");
+    assert_ne!(base, derive(1, 1000, 100001, 42, 1), "the expiry is part of it");
+    assert_ne!(base, derive(1, 1000, 100000, 43, 1), "the secret is part of it");
+    assert_ne!(base, derive(1, 1000, 100000, 42, 2), "the nonce is part of it");
 }

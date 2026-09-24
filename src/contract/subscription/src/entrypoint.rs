@@ -154,13 +154,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     let _ = wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
-            // SubscribeV2 circuit: [tx_binding, tx_nonce] — both from the call, because the circuit
-            // derives `tx_binding` from its witnesses and the host can only publish what it is given
-            // (OBL-C78). This arm published two literal zeros before, which no satisfiable proof can
-            // match, so `SubscribeV1` could not verify at all.
+            // SubscribeV2 circuit: [tx_binding, tx_nonce, derived_id] — all three from the call,
+            // because the circuit derives each from its witnesses and the host can only publish what
+            // it is given (OBL-C78). The first two were literal zeros before that row was worked, and
+            // no satisfiable proof can match those, so `SubscribeV1` could not verify at all. The
+            // third is `OBL-C75`'s: the circuit now *instances* the id it derives, so the value
+            // published here — the call's own commitment, which the host also keys the record by —
+            // verifies only if it is that derivation. The two halves are one fact: the id the host
+            // keys on is the id the circuit derives.
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V2.to_string(),
-                vec![params.tx_binding, params.tx_nonce],
+                vec![params.tx_binding, params.tx_nonce, params.commitment.inner()],
             ));
         }
         SubscriptionFunction::VerifyAccessV1 => {
@@ -407,6 +411,20 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
         params.commitment.inner(),
     ]);
     validate_child_value_commit(&child_call.data, plan.price, value_blind)?;
+
+    // `OBL-C75`: a subscription is created **once** under its id.
+    //
+    // The id was already `params.commitment`, but two things were missing around it: the circuit
+    // never instanced the id it derives, so the commitment was a value the caller picked freely; and
+    // nothing here checked whether the key was in use, while `subscribe_apply_v1` writes it with a
+    // blind `db_set` — so a second subscribe carrying a commitment already present silently
+    // overwrote that record. The circuit half now forces the commitment to be the derivation; this
+    // is the half that refuses to write over anything.
+    let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
+    if wasm::db::db_contains_key(subs_db, &params.commitment.to_bytes())? {
+        msg!("[subscription::subscribe_v1] ERROR: a subscription with this id already exists");
+        return Err(ContractError::Custom(32).into())
+    }
 
     let current_block = wasm::util::get_verifying_block_height()?.get();
 

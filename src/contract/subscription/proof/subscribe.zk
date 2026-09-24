@@ -61,4 +61,14 @@ circuit "SubscribeV2" {
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
     constrain_equal_base(computed_y, value_commit_y);
+
+    # OBL-C75: the id the record is keyed by is the id this circuit derives.
+    #
+    # The equality above relates two witnesses — `derived_id` from the prover's own inputs and
+    # `subscription_id` from the prover's own wish — so it held for any pair the caller chose, and
+    # the host keyed state on `params.commitment`, a third value nothing compared. Instancing the
+    # derivation makes the published id *proven*: the metadata publishes the call's commitment, and
+    # the verifier accepts it only if it is this hash of these witnesses, so a client cannot key a
+    # subscription under an id the circuit would not derive.
+    constrain_instance(derived_id);
 }

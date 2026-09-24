@@ -388,6 +388,17 @@ pub struct Subscription {
 impl Subscription {
     /// Derive the subscription ID from subscriber, plan, deposit, token, and lock
     #[allow(dead_code)]
+    /// The id a subscription is keyed by, derived as `subscribe.zk` derives it (`OBL-C75`).
+    ///
+    /// **The circuit's first input is the domain constant**, and this function's was missing it —
+    /// `derive_id` produced `poseidon_hash([pub_x, pub_y, plan_id, deposit, asset_id, lock,
+    /// secret, nonce])` while `SubscribeV2` computes the same hash prefixed with
+    /// `DOMAIN_COMMITMENT = witness_base(4) = 4` (`subscribe.zk:42-51`). Two derivations of one value
+    /// is `safety.md` RC5's defect, and this one failed quietly: the circuit's equality
+    /// `derived_id == subscription_id` relates two witnesses, so a client using *this* function would
+    /// have set a `subscription_id` the circuit could never derive — an unsatisfiable proof, reported
+    /// as a proof failure rather than as a disagreement about a hash. The domain is part of the
+    /// derivation now.
     pub fn derive_id(
         subscriber_pubkey: &PublicKey,
         plan_id: u32,
@@ -400,6 +411,7 @@ impl Subscription {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (bx, by) = subscriber_pubkey.xy().expect("pk not identity");
         SubscriptionId(poseidon_hash([
+            pallas::Base::from(4u64), // DOMAIN_COMMITMENT, as in the circuit
             bx,
             by,
             pallas::Base::from(plan_id as u64),
