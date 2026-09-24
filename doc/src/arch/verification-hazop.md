@@ -1702,6 +1702,85 @@ breaking ties:
    validator that checks structural validity rather than whether the committed `.zk.bin` matches the
    current `.zk` source. All three are shell and Python, with no build impact.
 
+**Re-measured 2026-09-24, item by item — the list was two days and roughly thirty units behind its
+own rows, and a reader following it was sent at work already done.** Every figure below was re-run in
+this pass rather than recalled, and each item's own date is kept. The process narrative *below* this
+list is deliberately **not** re-measured here and cannot be: its claims are about heavyweight
+`cargo test` sweeps and artifact staleness, which need a `--workspace` run this pass does not make, so
+they stand as the dated records they are.
+
+* **Item 1 — the live-residue list has moved twice under it, and one severity is overstated.**
+  `OBL-C44` is `CLOSED` and `OBL-C19` is `ACCEPTED-WITH-REASON`, where this item names both as live
+  residue; what survives is `OBL-C80`, and the severity sentence survives in substance while its
+  wording does not. Measuring the severity cell of **all 154 rows** gives exactly one unresolved
+  severity-`C` row — `OBL-C80`, status `PARTLY` — so "this register's **only open critical**" should
+  read *only live critical*, `OPEN` being a status this row does not hold. And **`OBL-C82` measures
+  `M` today, not the `H` this item calls it a new one of**, so that clause overstates in the direction
+  a reader acts on.
+* **Item 2 — the live vulnerability is closed, and this item cites the lines that record its
+  closure.** `OBL-C21` is `ACCEPTED-WITH-REASON`, and `src/contract/bridge/src/entrypoint.rs:318-334`
+  — the range named as the hole — now carries the fix's own account: *"With `bridge-verify` off,
+  `verify_chain_proof` is fail-closed at every arm … The arm that stood here did not call this
+  dispatch: it accepted `ExternalChain::Ethereum` whenever `merkle_proof` was merely non-empty — a
+  shape check, not verification … all five chains refused in one place and one chain accepted in
+  another, and the reachable one was the permissive one."* The item's first clause survives and was
+  measured again: `bridge-verify` is declared at `src/contract/bridge/Cargo.toml:51`, and no
+  `Cargo.toml`, `Makefile` or `scripts/*.sh` enables it.
+* **Item 3 — `OBL-Z17` is `RESTATED` and its severity is `M`, not the weight its position implies.**
+  Its own restatement narrows the residual rather than deferring it: possession *is* held by the proof
+  — a caller must know the credential preimage, and the holder's key is derived from the credential
+  secret — so what remains is not "require a call that exists" but the credential-as-box lifecycle
+  across `identity`, `box` and the wallet, which is a design change, and that is why the row moved
+  `C` → `M`.
+* **Item 4 — both counts are stale, and the row's own cells lag its own last append.** Re-running the
+  gate this item names (`bash scripts/check-circuit-instance-derivation.sh`) gives **181 circuits, 905
+  `constrain_instance`, 40 declared-free, 11 unclassified**, with the eleven named by the gate. The
+  item says 897 instances and 15 unclassified: the classification has moved 15 → 11, and the *total*
+  has moved **897 → 905**, so eight `constrain_instance` sites entered the tree since — the
+  classification is not the only thing that drifted. `OBL-Z16`'s summary cells still read "**15**
+  instances" and "181 circuits, 894 instances, 15 unclassified", both dated 2026-09-21, while that
+  row's own final append carries today's 905/11 — so the row is internally dated-lagged as well, and
+  the fresh measurement belongs in the append rather than as a rewrite of the dated cells.
+* **Item 5 — "72 guards" is low, and a grep count is not the guard count.** `grep -rn
+  'ContractId::ZERO' --include=*.rs src/contract/` finds **78** occurrences across the same **20**
+  contracts; classified by the surrounding line, **75** are comparisons against a stored id (68
+  `promissory_note_cid`, 4 `identity_cid`, 2 `dao_cid`, 1 `multisig_cid`) and **3** are not
+  comparisons at all — a comment and a deploy-path default in `labor_market`, and a
+  `promissory_note_contract_id` struct-literal field in `stablecoin`. `OBL-C16`'s fail-open reading of
+  these sites is that row's own and is not re-adjudicated here; what this pass corrects is the number
+  and the method, because writing the grep's 78 down as the guards' count would be the same error in
+  the other direction.
+* **Item 6 — one of the two is `SATISFIED`.** `OBL-C3` is `SATISFIED` and `OBL-C5` is `PARTLY`, where
+  this item says "both are only partly proved". The `reward_monotone` clause survives: it is one of
+  the layer's **eight** assumptions today, and `Emission.lean` now also carries the two refutations of
+  the natural lemmas for the odd case, so "the current lemma does not reach it" is true of a set of
+  lemmas that is now smaller and named.
+* **Item 7 — the citation has drifted off the thing it cites, and both residues have narrowed.**
+  `HashOps.lean:189` is now `orchEmptyLeaf`; the substitution this item is about is `sinsemillaCrh` at
+  **`HashOps.lean:195`**. `OBL-Z12`'s remaining half is no longer the chip's reading — that is proved,
+  `BaseDivGadget.less_than_or_equal_integer_reading` — but the one declared exception,
+  `proofs/core/lead.zk`, registered per entry in `script/circuit_comparison_exceptions.txt`; and
+  `OBL-Z6`'s residue is **two** gaps rather than one, the second being that the model's hash has no
+  codomain bound, so the faithful message cannot be wired into the fold without a *new* assumption.
+* **Item 8 — the route is dead, and the re-roll is not owed.** "Interpreting it needs a Lean model of
+  Halo2 constraint-system semantics, the PCS and Fiat–Shamir" is no longer what `OBL-T7` asks for: the
+  property is defined at the circuit level (`Circuits/InstanceDerivation.lean`) with a transcribed
+  instance per circuit, and the residual is the `(r, s) ↦ the circuit source` mapping. And `OBL-T9` is
+  `ACCEPTED-WITH-REASON` with the alphabet **held by decision** and its two diff scripts now
+  `run_gate`d, so the clause that it "touches all five representations including
+  `src/sdk/src/capability.rs` and so carries a re-roll" is stale in both halves: the representations
+  are checked by a runner, and the sdk test this item's neighbour names was deliberately *not* raised
+  so that no re-roll is owed.
+* **Item 9 — the three descriptions are right and only their dispositions are missing.** Each was read
+  against its own row and each matches that row's summary cell to the word — `OBL-Z3`'s
+  domain-*presence* check that never asks whether the constant is the right one, `OBL-Z4`'s
+  line-anchored staged-files hook that cannot see an inline `constrain_instance(ec_get_x(pk))`, and
+  `OBL-Z8`'s structural validation rather than a `.zk.bin`-versus-`.zk` comparison. This is the one
+  item of the nine that is *accurate as written*; what is missing is that all three dispositions have
+  since been decided — `OBL-Z3` is `FAILS`, `OBL-Z4` is `RESTATED`, `OBL-Z8` is
+  `ACCEPTED-WITH-REASON` — so a reader arrives at the right gates and does not know what was concluded
+  about them.
+
 **And three things that are not obligations but process**, all learned on 2026-09-20:
 
 * **the heavyweight pipeline was red on sixteen tests as of 2026-09-20**, and now visible:
