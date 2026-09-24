@@ -1072,10 +1072,15 @@ already discharged, in a different file, and the other two are so far absent tha
 is not where they belong.
 
 - **`nullifier_completeness`** — **DISCHARGED**, and not in `Wallet.lean`:
-  `proofs/lean/src/DarkFi/Capability/Exercise.lean:92`. For every input of an `Exercise`, its
+  `proofs/lean/src/DarkFi/Capability/Exercise.lean`. For every input of an `Exercise`, its
   nullifier is in the post-apply spent set — the property the mempool relies on for double-spend
   detection ([mempool.md](mempool.md)). Its statement is about the *public state*, not about a
-  `Transaction`, and part 2 of §6.3 step 4 needs the latter.
+  `Transaction`, and part 2 of §6.3 step 4 needs the latter. **Its dual is discharged in the same
+  file as of 2026-09-24**: `create_completeness` — every output commitment of an exercise is in
+  the post-apply recognized set — beside `recognized_monotone` and
+  `consume_and_create_are_independent`. Before that the create side was not modelled at all:
+  `Exercise.outputs` was a dead field and `applyExercise` read neither it nor anything derived
+  from it, so a module named for Exercise+Consume modelled Consume alone.
 - **`construct_sound`** — **NOT DECLARED.** No theorem of this name exists anywhere in
   `proofs/lean/`. If `f(SelectedCapabilities, Action, Params, Secrets, Seed)` returns a
   transaction, the proofs it carries inhabit the predicate language L_{r,s} of the action's

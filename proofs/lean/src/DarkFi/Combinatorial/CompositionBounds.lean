@@ -81,8 +81,8 @@ structure DisjointPair where
     sets are disjoint, and every clause holds vacuously. A structure carrying proofs is a place a
     vacuity can hide, so it gets a witness. -/
 def DisjointPair.empty (depth : Nat) : DisjointPair where
-  boxState := ⟨depth, [], ⟨0, [], []⟩⟩
-  purseState := ⟨depth, [], ⟨0, [], []⟩⟩
+  boxState := ⟨depth, [], ⟨0, [], [], []⟩⟩
+  purseState := ⟨depth, [], ⟨0, [], [], []⟩⟩
   noSharedObjects := by simp
   noSharedNullifiers := by simp
   noSharedRoots := by simp

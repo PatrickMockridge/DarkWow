@@ -65,6 +65,15 @@ structure PublicState where
   merkleRoot      : MerkleRoot
   spentNullifiers : List NullifierValue
   historicalRoots : List MerkleRoot
+  /-- The recognized commitments — the Create face of an exercise, where `spentNullifiers` is the
+      Consume face. `Capability/Exercise.lean`'s `applyExercise` appends its `outputs` here.
+
+      This is the *recognized set*, not the tree: `merkleRoot` is the root that commits to it, and
+      recomputing the root from this list is the per-contract tree's business
+      (`Capability/PerContractTree.lean`, `HashOps`), not modelled here. The field exists because
+      `Exercise.outputs` was otherwise dead — `applyExercise` ignored it, so the module named for
+      Exercise+Consume modelled Consume only. -/
+  recognizedCommitments : List LeafCommitment
   deriving BEq, Repr
 
 /-! ==========================================================================
@@ -140,6 +149,7 @@ def mkL1State (depth : Nat) (objectCount : Nat) : L1AnonymitySet :=
   , public := { merkleRoot := 0
               , spentNullifiers := []
               , historicalRoots := [0]
+              , recognizedCommitments := objects.map (fun o => o.contentsCommit)
               : PublicState }
   }
 
