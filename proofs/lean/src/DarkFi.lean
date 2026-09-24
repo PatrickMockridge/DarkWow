@@ -50,6 +50,7 @@ import DarkFi.Combinatorial.CeilingDerivation
 import DarkFi.Combinatorial.GeneralTheorem
 import DarkFi.Combinatorial.Combinations
 import DarkFi.Consensus.MassBalance
+import DarkFi.Consensus.NullifierLifecycle
 import DarkFi.Genesis.Ceremony
 import DarkFi.Semantics.Proc
 import DarkFi.Semantics.Congruence

@@ -1,9 +1,10 @@
 # The Consensus State Core — a map, agreed before it is filled
 
-**Status: a plan, not a specification.** Nothing here is a claim about how the code behaves; it is the
-agreed *shape* of the Lean models that the register's remaining consensus rows need, written down once
-so each one can be built against something reviewable rather than invented per unit. Where this document
-and a model disagree, the model is the artefact and this document is the stale one.
+**Status: a plan, with its first two units filled.** Nothing here is a claim about how the code behaves;
+it is the agreed *shape* of the Lean models that the register's remaining consensus rows need, written
+down once so each one can be built against something reviewable rather than invented per unit. Where
+this document and a model disagree, the model is the artefact and this document is the stale one — so a
+unit that departs from the shape below amends it in the same commit, and mechanisms 1 and 2 both did.
 
 Measured 2026-09-24: every file below was opened, and Rust is cited by **function** rather than by line
 — line numbers drift, as the register has already had to record more than once.
@@ -64,7 +65,10 @@ It **is** the model, and it stands alone. It names the same constant the Rust do
 directions — `immature_coinbase_rejected` and `mature_coinbase_accepted`, both at budget 0. But its
 `CoinbaseClaim.createdAt` is *supplied* rather than derived from the commitment set, and nothing connects
 it to the nullifier lifecycle. So what is missing is a **connection**, not a component — the same verdict
-mechanism 2 gets below.
+mechanism 2 gets below. **And that verdict was acted on the same day**: `NullifierLifecycle.matureAt`
+constructs the `CoinbaseClaim` the gate takes, from the height the claim store records, so `createdAt`
+is now derived rather than supplied. The gate itself was not touched — which is what "a connection, not
+a component" was supposed to mean, and it was right.
 
 ## The order, and why
 
@@ -98,11 +102,29 @@ mechanism 2 gets below.
    disjointness**, because it is about *stores*. Two different reasons for the same-sounding sentence, so
    the honest relation is a contrast and not a composition: a balance surviving a reordering is no
    evidence that the state transitions do. The model's module note says so.
-2. **The nullifier lifecycle** (`OBL-C8`, `OBL-T4`). The most tractable, because only the connection is
-   missing: the store, the single-use rule, the maturity gate and the consensus replay gate are one
-   mechanism across four files today. Proposed shape: a single model in which they are the same
-   mechanism, with the replay gate's *refusal* of a double spend proved rather than assumed.
-   Non-vacuity: a coinbase claimed, matured, spent, and re-spent — the fourth step must fail.
+2. **The nullifier lifecycle** (`OBL-C8`, `OBL-T4`) — **landed 2026-09-24** as
+   `Consensus/NullifierLifecycle.lean`, seven theorems, all at budget 0. The connection this map
+   predicted is the one that landed: a claim is recorded with its creation height, the existing
+   `Capability.maturityGate` is **fed** by that height (closing the gap this map recorded — the gate's
+   `createdAt` had been *supplied*), a spend is allowed only when the claim is mature and unspent, and a
+   second spend is refused. The lifecycle witness is the four steps the map asked for: claimed at height
+   0, refused at 50, allowed at 100, spent, refused again.
+
+   **One correction, and it is about the word "store" in the row above.** This map said those pieces
+   "are one mechanism" and implied one state. The *rules* are one lifecycle, but the *state* is **two
+   maps** — a claim store (`nullifier → height`) and a spend set — and that is forced rather than
+   chosen: `spend_preserves_claims` proves a spend leaves the height intact, which a single
+   `nullifier → value` store could not, because the spend marker would overwrite the age the maturity
+   rule reads. The Rust is the same shape for the same reason: two collections in memory
+   (`nullifier_set` as a `BTreeMap<_, BlockHeight>`, `spent_nullifiers` as a `BTreeSet<_>`) unified on
+   disk by **tagging the kind** — `src/linear/src/store.rs` records the value as
+   `[kind] ++ height.to_le_bytes()`, kind `0` for a claim and `1` for a spend. So the tag is what buys
+   back the distinction, and a model of this mechanism has to choose which of the Rust's two shapes it
+   mirrors. This one mirrors the in-memory one.
+
+   **Still not connected, deliberately**: `Capability/Exercise.lean`'s `validExercise` /
+   `consume_is_single_use` is the *same rule* over a `List` on the contract side, and bridging a `List`
+   to a predicate is a unit nothing consumes yet.
 3. **The commitment set**, then **validity**. After the first two, because the coupling with maturity is
    what makes the set interesting, and validity's pure functions are the largest surface with the least
    existing structure to build on.
