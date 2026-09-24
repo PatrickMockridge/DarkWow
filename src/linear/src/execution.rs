@@ -164,6 +164,44 @@ fn extract_wasm_call_tree(witness: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+/// The overlay's *opinion* about every key it mentions: `Some(value)` for a key the overlay holds,
+/// `None` for a key it marks removed. A key absent from the map is one the overlay has no opinion
+/// about at all.
+///
+/// The two-field key-set read this replaces (`cache.keys() ∪ removed`) cannot tell "a key the
+/// overlay removed" from "a key nobody mentioned", which is `OBL-C100`: the per-call write set the
+/// §9.4 schedule is built from is a *delta of that key set*, so a call that overwrites a key the
+/// overlay already holds records as touching nothing. The notion the schedule's safety condition
+/// needs — and the one `proofs/lean/src/DarkFi/Semantics/Ledger.lean` states as `Diff.dom`, with
+/// `diff_dom_of_apply_ne` the bridge that makes writing a different value a write — is the change
+/// of this opinion, and `SledTreeOverlayState::cache` carries the values that make it computable.
+fn overlay_opinions(state: &SledTreeOverlayState) -> HashMap<Vec<u8>, Option<Vec<u8>>> {
+    state
+        .cache
+        .iter()
+        .map(|(k, v)| (k.to_vec(), Some(v.to_vec())))
+        .chain(state.removed.iter().map(|k| (k.to_vec(), None)))
+        .collect()
+}
+
+/// The keys whose overlay opinion changed between two snapshot points — the per-call write set
+/// [`ExecutionSchedule::build`] partitions waves by.
+///
+/// Iterating `after` is sufficient rather than merely convenient: a call can add an opinion
+/// (`db_set` on an unknown key), change one (a different value for a held key, or a `db_remove` of
+/// one), but it cannot withdraw the overlay's opinion of a key it never touched, so `before`'s keys
+/// are a subset of `after`'s.
+fn changed_opinions(
+    before: &HashMap<Vec<u8>, Option<Vec<u8>>>,
+    after: &HashMap<Vec<u8>, Option<Vec<u8>>>,
+) -> HashSet<Vec<u8>> {
+    after
+        .iter()
+        .filter(|(k, v)| before.get(*k) != Some(*v))
+        .map(|(k, _)| k.clone())
+        .collect()
+}
+
 /// Execute all contract calls in a block and its uncles against the
 /// blockchain's stored contracts.
 ///
@@ -377,10 +415,14 @@ pub fn execute_block(
         // failure reverts to it, leaving zero writes from this call.
         backend.overlay.lock().unwrap_or_else(|e| e.into_inner()).checkpoint();
 
-        // Diagnostic snapshot — canonical write-set = after-keys minus before-keys.
-        let before_keys: Option<HashSet<Vec<u8>>> = if is_canonical {
+        // Diagnostic snapshot — the overlay's opinion about every key it mentions, before the call.
+        // The per-call write set is the *change* of that opinion rather than the appearance of a
+        // key (OBL-C100): a call that overwrites a key the overlay already holds changes state and
+        // must be recorded as touching it, or a wave partition built on these sets admits two calls
+        // on one key. `changed_opinions` below is the subtraction.
+        let before_opinions: Option<HashMap<Vec<u8>, Option<Vec<u8>>>> = if is_canonical {
             let guard = backend.overlay.lock().unwrap_or_else(|e| e.into_inner());
-            Some(guard.state.cache.keys().chain(guard.state.removed.iter()).map(|k| k.to_vec()).collect())
+            Some(overlay_opinions(&guard.state))
         } else {
             None
         };
@@ -541,16 +583,14 @@ pub fn execute_block(
             if cumulative_gas >= BLOCK_GAS_LIMIT {
                 return Err(Error::Custom("BlockGasLimitExceeded".to_string()));
             }
-            // Diagnostic: this call's write-set (after minus before).
-            if let Some(before) = before_keys {
+            // Diagnostic: this call's write-set — the keys whose overlay opinion it *changed*, which
+            // is `changed_opinions`' subtraction rather than the appearance of a key (OBL-C100). A
+            // call that overwrites a live key records here; the presence delta this replaced did not.
+            if let Some(before) = before_opinions {
                 let guard = backend.overlay.lock().unwrap_or_else(|e| e.into_inner());
-                let call_keys: HashSet<Vec<u8>> = guard.state.cache.keys()
-                    .chain(guard.state.removed.iter())
-                    .map(|k| k.to_vec())
-                    .filter(|k| !before.contains(k))
-                    .collect();
+                let after = overlay_opinions(&guard.state);
                 drop(guard);
-                per_call_keys.push(call_keys);
+                per_call_keys.push(changed_opinions(&before, &after));
             }
         } else {
             let diff = match SledTreeOverlayStateDiff::new(
