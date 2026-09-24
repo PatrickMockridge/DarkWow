@@ -1,0 +1,46 @@
+# The (r, s) -> circuit index's reviewed map, for the step that emits the index.
+#
+# FORMAT:  <lean name> : <target> : <reason, citing what was read>
+#
+# WHY A MAP IS NEEDED AT ALL. `Axioms.NoFreeInstances` is indexed by `Resource` and `Action`, which
+# are `String`s in `Capability/Composition.lean` — 14 of each. The manifests carry the circuit
+# relation (`[[functions]].proof_circuit` -> `[[circuits]].(name, namespace)`) and the SDK joins it at
+# runtime (`src/sdk/src/prover.rs:33-40`). **Nothing joins the Lean names to the manifest contracts.**
+# Measured 2026-09-24 (`OBL-T7`): only 3 of the 14 resource names equal a contract directory, 10 are
+# prefixes of one, and `dao_governance` matches none — and the action names are ambiguous across
+# contracts (`withdraw` matches four, `deposit` three, `transfer` three), so the resource cannot be
+# left out. This file is that missing half, and every line is a reviewed decision rather than a
+# derivation.
+#
+# WHAT THIS FILE DOES NOT DO. It does not name circuits. It maps names to *contracts* and, where the
+# Lean name and the manifest's differ, to the *function*. Which circuit a function proves is read from
+# the manifest, so a manifest change moves the index rather than this file — which is the same
+# separation `scripts/gen_circuit_transcription.py` keeps when it reads the `.zk` identities instead
+# of trusting file names.
+
+# --- resources: lean resource name -> contract directory -----------------------------------------
+native_token : native_token : exact — the Lean name IS the directory name
+dao_governance : dao_escrow : NO SUBSTRING MATCHES, so no rule can find this and only a decision can: the DAO's governance logic lives in `dao_escrow`, whose name shares no substring with `dao_governance`. Its action is `vote`, and `dao_escrow/proof/vote_claim.zk` is the circuit that proves it
+tender : tender : exact
+native_token_coinbase : native_token : prefix — the coinbase path is `native_token`'s (`pow_reward`, `uncle_mint`); see the action section, where this pair resolves to no circuit and that is the decision
+purse_balance : purse : prefix
+purse_withdrawal : purse : prefix
+purse_deposit : purse : prefix
+identity_credential : identity : prefix
+box_capability : box : prefix
+multisig_approval : multisig : prefix
+attestation : attestation : exact
+bridge_deposit : bridge : prefix
+bridge_withdrawal : bridge : prefix
+oracle_operator : oracle : prefix
+
+# --- actions: lean action name -> manifest [[functions]].name, where the two differ ---------------
+#
+# Only those that differ are listed. **Every other Lean action name equals a function name in the
+# contract its resource names**, and that was measured rather than assumed: the join fails on an
+# unlisted name it cannot resolve, so this section cannot silently under-declare.
+verify_credential : verify_capability : the manifest has no `verify_credential`. `identity`'s credential-verification circuit is `VerifyCapabilityV2`, proved by `verify_capability`, and a credential is what `identityCredentialResource` names. The other candidates in that manifest are `issue_credential` (issuance, not verification) and the three `register_*`/`revoke_*` functions, none of which a `verify` action names
+vote : vote_claim : `dao_escrow` has no `vote` function — the governance vote is `vote_claim` (code 5), whose circuit is `VoteClaim`, and `daoVoteType`'s resource barbs include `proveInclusion`, which is a Merkle membership proof over the voter's endowment. `pay_premium`, `propose_claim` and `resolve_dispute` are the manifest's other proof-bearing functions and none of them is a vote
+verify_attestation : verify_claim : the manifest has no `verify_attestation`. `attestation`'s claim-verification circuit is `VerifyClaimV2`, proved by `verify_claim`; `check_attestation` and `check_not_revoked` are the other candidates and neither is a `verify`
+oracle_push_value : push_value : the manifest has no `oracle_push_value`; the name carries `push_value`, whose circuit is `PushValueV2`. `register_oracle` is the other candidate and it is registration, not a push
+claim_coinbase : pow_reward : the manifest has no `claim_coinbase`. The coinbase claim IS `pow_reward`, **and its `proof_circuit` is empty — so this pair resolves to NO CIRCUIT, which is a decision and not a failure.** `native_token`'s coinbase path is host-side: `bin/dwowd` verifies the proof of work and the host checks `effective_value.checked_add(total_pin) == Some(input.value)` at `entrypoint/mod.rs:1000-1006`. `OBL-T7`'s append records the same shape for that manifest's `transfer` and `spend`
