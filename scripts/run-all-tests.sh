@@ -379,6 +379,20 @@ run_gate "Axiom gate's record channel (negative control)" \
 # marker renamed — each exits 1, the first two printing the suite's own assertion.
 run_gate "Lean IO simulation suite"        bash "$SCRIPT_DIR/check-lean-suite.sh"
 
+# The capability kernel's two rules, over `bin/dww/src/**`. §6.4 ("the write path SHALL have exactly one
+# bespoke citizen: **NativeToken**") and §9 ("a second bespoke path SHALL be rejected") were prose with no
+# instrument — the `wallet-capability-kernel` rule in the specification's own words — so a second bespoke
+# path would have been a code review's problem rather than a red gate. The gate is a ratchet on bespoke
+# scan paths *and* a **declared absence that expires**: §6.4.1's invariant 2 says the selected capability
+# is filtered by `ContractId` **and barbs**, and measured 2026-09-24 the write path filters by asset id
+# and contract only (`dispatch.rs`/`lib.rs` contain no `Barb::`, no `required_barbs`, no `covers(`), which
+# is `OBL-C130`. The declaration fails if a barb predicate appears — an allowlist that never expires is
+# the "instrument that cannot report its own failure" defect with a longer half-life, and this one expires.
+# Falsified three ways before wiring (a second bespoke path, the absence expiring, a declared path
+# renamed), each on a copy under `/tmp`; no build, no network, report to `/tmp/wallet-kernel.txt`.
+run_gate "capability kernel (bespoke paths, OBL-C130)" \
+                                          bash "$SCRIPT_DIR/check-wallet-kernel.sh"
+
 run_gate "Python: pipeline model"          python3 contrib/model/pipeline_model.py
 run_gate "Python: supply chain model"      python3 contrib/model/supply_chain_model.py
 
