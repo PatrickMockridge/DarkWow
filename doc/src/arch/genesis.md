@@ -188,10 +188,21 @@ compiled into the artifact, and the levers are what stop it moving. A `src/sdk/*
 contract depends on — the Python bindings, say — never changed the built bytes at all: an edit there
 still moves **every** contract's `.source_hash`, because the manifest globs all of `src/sdk/**`, so the
 rebuild obligation is real, while the artifact — and therefore the hash this document is about — is
-unchanged. Measured by another session on 2026-09-24: rebuilding `purse` after an edit to
-`src/sdk/python/src/contract/bridge/withdraw_v1.rs` left the artifact at `28819142faa7a9bc…`, identical,
-with only `.source_hash` moving. So an sdk edit is a *staleness* event for all 32 artifacts and a *pin*
-event only when the crate it touches is one the contracts link.
+unchanged.
+
+The tree already had one leg of that recorded. `OBL-C61`'s note carries the measured pair from
+2026-09-23: rebuilding `purse`'s artifact "from a pristine sdk and from one carrying it gives
+`28819142…` and `370aa49b…`" — where the second value is an sdk *lib* edit and the first is no edit at
+all. The other leg was measured on 2026-09-24 by another session: rebuilding `purse` after an edit to
+`src/sdk/python/src/contract/bridge/withdraw_v1.rs`, a leaf crate no contract links, landed on
+`28819142…` — the pristine value — with only `.source_hash` moving. So an sdk edit is a *staleness*
+event for all 32 artifacts and a *pin* event only when the crate it touches is one the contracts
+compile in.
+
+Neither leg is a diff against a committed artifact — `*.wasm` is gitignored, so there is no HEAD copy to
+compare — which makes the evidence agreeing measurements of a value rather than a repository diff. Said
+here rather than left implicit, because "the artifact is identical" and "two readings of a gitignored
+file agree, one of them recorded in `OBL-C61`" are different claims and only the second is true.
 
 
 This is also what makes the account align with the process calculus the rest of this specification is
