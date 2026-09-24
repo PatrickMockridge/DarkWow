@@ -80,9 +80,17 @@ state it as a falsehood).
 `KeyDisjoint`'s `writeSetDisjoint : Bool` had no invariant and no consumer: nothing read it, nothing
 constrained it, so the field recorded a claim rather than making one. The real write-set notion
 turned out to live in the Rust (`SledKey`, `ExecutionSchedule::build`, and the overlay diff), and its
-replacement is `writeSet : Key → Prop` with the disjointness lemma *proved* rather than assumed — the
-subject of `Semantics/Ledger.lean`, which **is not written yet**. Until it is, this deletion has no
-replacement in the tree, and that absence is written here rather than papered over.
+replacement is `writeSet : Key → Prop` with the disjointness lemma *proved* rather than assumed — in
+`Semantics/Ledger.lean`, where `diff_apply_other` generalises `Combinatorial/NullifierStorage.lean`'s
+`mark_other` from one key to a whole delta, `writeSet_contains` is the invariant that gives the
+declared set its consumer, and `exec_perm` concludes that every execution order of a list of
+pairwise-disjoint calls produces the same store, with `no_duplicate_of_pairwise_disjoint` the
+obligation the Rust's two conflict sites share.
+
+That module also records what it does *not* prove, so this deletion is not read as more than it is:
+`type-system.md` §9.2's `parallel_execute ≈ sequential_execute` is not mechanized, because
+`parallel_execute` has no Rust counterpart — the schedule is a diagnostic and calls execute
+sequentially today.
 
 Replaced by, and this file's Part 5 note below is retained as the record:
 
@@ -93,7 +101,7 @@ Replaced by, and this file's Part 5 note below is retained as the record:
 | `parallel_commutative` | `DarkFi.Semantics.parallel_commutative`, with `SCong` as its witness |
 | `parallel_associative` | `DarkFi.Semantics.parallel_associative`, likewise |
 | `authorization_preserved` | subsumed: `StrongBisim` is a congruence, so it is preserved by `par` |
-| `KeyDisjoint` | `Disjoint δ.dom ε.dom` over the real key type, in `Semantics/Ledger.lean` — **owed; the module is not written yet** |
+| `KeyDisjoint` | `Disjoint δ.dom ε.dom` over the real key type, in `Semantics/Ledger.lean` |
 
 **Deleted and not renamed, deliberately.** A bridge lemma between the two notions would have left the
 tree with two incompatible meanings of "bisimilar" — the situation this replacement exists to end. The

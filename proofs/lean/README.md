@@ -242,9 +242,11 @@ on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   expressible without one, and *stronger* than the standard rule's, rejecting extrusions the literature
   permits; an α-rule on `SCong`, so `Step.tau` carries `CaptureFree` as a proviso and `subst` relabels
   the channels that labels are made of (`subst_moves_the_label`) — adding the rule is a redesign of the
-  label predicates rather than a constructor, which is what that theorem measures; and a mechanization
-  of `type-system.md` §9.2's `parallelMerge_correctness`, whose `≈` conclusion the weak relation is what
-  would state it in.
+  label predicates rather than a constructor, which is what that theorem measures; and `type-system.md`
+  §9.2's `parallelMerge_correctness`, whose `≈` conclusion is not mechanized. `Semantics/Ledger.lean`
+  proves the safety property it rests on instead — `exec_perm`, that every execution order of a list of
+  pairwise-disjoint calls produces the same store — because §9.2's `parallel_execute` has no Rust
+  counterpart: the schedule is a diagnostic and calls execute sequentially today.
 - **Halo2 constraint system semantics are not modeled.** We prove properties of the
   mathematical functions the opcodes implement, not that the Halo2 gate/region/
   copy-constraint system correctly implements those functions.
@@ -366,7 +368,8 @@ proofs/lean/
         │   ├── Proc.lean         # Processes with names folded in; quote/eval
         │   ├── Congruence.lean   # Structural congruence, and the freshness it needs
         │   ├── Substitution.lean # The binding convention, and the substitution it defines
-        │   └── LTS.lean          # Transitions, barbs, and strong and weak bisimulation
+        │   ├── LTS.lean          # Transitions, barbs, and strong and weak bisimulation
+        │   └── Ledger.lean       # The write set, the overlay diff, and disjoint calls commuting
         ├── Combinatorial/      # L1/L2 combinatorial state space
         │   ├── StateSpace.lean      # L1 state space types
         │   ├── Transitions.lean     # State transition combinatorics

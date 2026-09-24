@@ -1196,10 +1196,20 @@ Every ρ-calculus process maps to a `smol::Task<T>` spawned on `ExecutorPtr`:
 ### 9.2 Parallel Execution Safety
 
 Transaction calls within a block SHALL execute in parallel (`P_1 | P_2 | ... | P_n`)
-when their key sets are pairwise disjoint. The duplicate-key check at
-`src/linear/src/execution.rs:398-405` (`written_keys.insert(key)`) is the
-bisimulation witness: if a key collision is detected, the parallel composition
-is NOT bisimilar to sequential execution, and the block SHALL be rejected.
+when their key sets are pairwise disjoint. The duplicate-key checks are
+`src/linear/src/execution.rs:677` (`uncle_written_keys.insert(key.to_vec())`, uncle
+against uncle) and `:741` (`written_keys.insert(key_vec)`, Deployooor against
+already-written state, seeded from the canonical overlay diff at `:651-654`). Each
+is the bisimulation witness: if a key collision is detected, the parallel
+composition is NOT bisimilar to sequential execution, and the block SHALL be
+rejected.
+
+**This paragraph describes intended behaviour, not current behaviour.** Parallel
+execution is not implemented. `ExecutionSchedule::build` is computed for a log line
+and consumed by nothing else — the comment at `src/linear/src/execution.rs:690-708`
+reads "This does not change execution order — it logs what COULD be parallel when
+wasmer supports concurrent Runtime instances (Tier 6)". Calls in a block execute
+sequentially today.
 
 ```
 theorem parallelMerge_correctness (calls : List CallJob)
@@ -1210,6 +1220,17 @@ theorem parallelMerge_correctness (calls : List CallJob)
 Parallel execution is weak-bisimilar (`≈`) to sequential execution because
 internal task scheduling (τ-transitions) may differ, but observable state
 diff outputs are identical when keys are disjoint.
+
+What is mechanized today is the safety property that statement rests on, not the
+statement. `exec_perm` in `proofs/lean/src/DarkFi/Semantics/Ledger.lean` proves that
+every execution order of a list of pairwise-disjoint calls produces the same store,
+and `no_duplicate_of_pairwise_disjoint` is the obligation the two checks above share.
+The `≈` reading is not mechanized, because there is no `parallel_execute` to relate it
+to. One caveat belongs here rather than only in the Lean: the write set the schedule
+is built from is *presence*-sensitive — `execution.rs` snapshots
+`cache.keys() ∪ removed` before a call and subtracts it after — so a call that
+overwrites an already-present key with a different value records as touching nothing,
+and two such calls read as disjoint without commuting.
 
 ### 9.3 Block Production Concurrency
 
