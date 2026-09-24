@@ -695,6 +695,16 @@ hardcoded in `Main.lean` and were wrong in every case (the counts, measured 2026
 `Main.lean`: a summary that is typed by hand is a claim, not a measurement, and this file was
 quoting it as evidence.
 
+**And the file they were removed from had never run either, which the paragraph above did not
+know.** `src/Main.lean` was in no `lean_lib` and no `lean_exe`, so `lake build` never compiled it,
+no gate invoked it, and it did not compile at all — so this README quoted an "expected output"
+block from a file that had never produced output. Repaired and gated 2026-09-24 (`OBL-T18`): it is
+`lean_exe Main` now, `scripts/check-lean-suite.sh` runs it and is wired into
+`scripts/run-all-tests.sh`, and every check inside it that used to print its result and exit 0 —
+four counterexample scans reporting `Bugs found: N`, eight combinatorial expectations reporting
+✓/✗ — throws instead. The HAZOP counts in it are read off `riskMatrix` rather than typed, and the
+EC classification reads `ECMulKind.baseIsConstant` rather than carrying its own booleans.
+
 **Re-measured 2026-09-24, later the same day, because the figures above had moved**: 741
 `theorem`/`lemma` declarations, **736 gate-visible** (five are `private`), **738
 `@[axiom_budget]` annotations** — 736 on the visible theorems and 2 on private ones — of which
@@ -722,7 +732,8 @@ proofs/lean/
 └── src/
     ├── DarkFi.lean             # Library root — 57 imports. `lake build DarkFi` is the gate; a bare
     │                           #   `lake build` compiles the default facet and builds nothing.
-    ├── Main.lean               # `lean --run` suite (IO simulation, NOT proofs) — not in the library
+    ├── Main.lean               # `lean_exe Main`: IO simulation suite, NOT proofs — its checks fail
+    │                           #   the run (`scripts/check-lean-suite.sh`, OBL-T18)
     ├── Examples.lean           # `lean --run` examples — not in the library
     ├── CheckAxioms.lean        # `lean --run` collector: the fact base for `@[axiom_budget]`
     ├── Transcribed.lean        # GENERATED (scripts/gen_circuit_transcription.py, freshness-gated):
