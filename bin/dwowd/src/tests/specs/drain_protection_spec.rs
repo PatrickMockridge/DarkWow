@@ -31,6 +31,32 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                 let r = h.initialize().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
+            // The two `update_config` endpoints sit here, immediately after the fund they act on and
+            // before the proposal flow, because they are `OBL-C97`'s control pair and a control has
+            // to be read as a pair: the same call from the fund's authority and from a stranger.
+            mk_ep("update_config", true, Box::new(move || {
+                let r = h.update_config().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+            })),
+            // NEGATIVE — the endpoint above is what makes this one a control. The stranger holds a
+            // **real** proof of the real circuit, built by the contract's own client; the only
+            // difference from `update_config` is which secret the published point derives from.
+            // Every other precondition is identical — the fund exists, it is unlocked, and the call
+            // changes nothing else — so if the host stops comparing the point against the fund's
+            // registered `spend_authority`, this endpoint starts succeeding and the control is gone.
+            // Read the rejection's cause in the `DWOW_TEST_LOGS=1` output: it must be
+            // `InvalidSpendAuthority` ("authority is not the fund's registered spend authority"),
+            // not a proof-verification failure and not a state precondition.
+            EndpointSpec {
+                name: "update_config_by_stranger", is_zk: true,
+                expectation: EndpointExpectation::Rejection,
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new(move || {
+                    let r = h.update_config_as_stranger().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                }),
+            },
             mk_ep("propose", true, Box::new(move || {
                 let r = h.propose().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
@@ -57,10 +83,6 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
             })),
             mk_ep("unlock", true, Box::new(move || {
                 let r = h.unlock().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            })),
-            mk_ep("update_config", true, Box::new(move || {
-                let r = h.update_config().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
         ],

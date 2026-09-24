@@ -478,6 +478,21 @@ fn init_fund_process_instruction_v1(
         return Err(DrainProtectionError::MemberAlreadyExists.into())
     }
 
+    // OBL-C97: the creator must control the authority it registers. Here the fund does not exist
+    // yet, so the comparison is between the two halves of the call: the point the proof derives
+    // (`authority_pub_x/y`, bound to `authority_secret` by the circuit) and the point being
+    // registered (`spend_authority`). Without it, a fund can be created naming an authority the
+    // creator cannot use — and, one step worse, naming one it cannot use while believing otherwise.
+    {
+        let (reg_x, reg_y) = params.spend_authority.xy().ok_or_else(|| {
+            ContractError::IoError("initialize: spend_authority is the identity point".to_string())
+        })?;
+        if params.authority_pub_x != reg_x || params.authority_pub_y != reg_y {
+            msg!("[drain_protection::InitializeV1] Error: the proof's authority is not the fund's declared spend authority");
+            return Err(DrainProtectionError::InvalidSpendAuthority.into());
+        }
+    }
+
     // Create the protected fund
     let fund = ProtectedFund {
         version: 1,
@@ -508,6 +523,36 @@ fn init_fund_process_instruction_v1(
 }
 
 /// `process_instruction` for ProposeV1
+/// `OBL-C97`: the authority the proof names must be the fund's registered one.
+///
+/// The eight authority circuits prove knowledge of *a* secret whose point and nullifier are exposed:
+/// `authority_pub = ec_mul_base(authority_secret, NULLIFIER_K)` and
+/// `authority_nullifier = poseidon_hash([1, fund_id, authority_secret])`. That is the half a proof
+/// can carry. Whether the point is the one the **fund** registered is not, because the registration
+/// lives in chain state — so the host compares the two, and until it does the proof authenticates
+/// the caller against nothing.
+///
+/// The comparison is on the point, not the nullifier: the point is what `initialize` stores
+/// (`spend_authority`) and what `update_config` rewrites, while the nullifier binds a *fund* to a
+/// secret and is published for the circuit's own derivation check.
+fn require_fund_authority(
+    fund: &ProtectedFund,
+    params_x: pallas::Base,
+    params_y: pallas::Base,
+) -> ContractResult {
+    let (stored_x, stored_y) = fund.spend_authority.xy().ok_or_else(|| {
+        ContractError::IoError("fund spend_authority is the identity point".to_string())
+    })?;
+    if params_x != stored_x || params_y != stored_y {
+        msg!(
+            "[drain_protection] Error: authority is not the fund's registered spend authority"
+        );
+        return Err(DrainProtectionError::InvalidSpendAuthority.into());
+    }
+    Ok(())
+}
+
+/// `process_instruction` for `ProposeV1`
 fn propose_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
     params: ProposeParamsV1,
@@ -652,6 +697,8 @@ fn transfer_process_instruction_v1(
     let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::MemberNotFound)?;
     let fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
+    // OBL-C97: the proof names an authority; this is the check that it is the fund's.
+    require_fund_authority(&fund, params.authority_pub_x, params.authority_pub_y)?;
 
     // Check if locked
     if fund.lock_state == crate::model::LockState::Locked {
@@ -710,6 +757,8 @@ fn lock_process_instruction_v1(
     let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::MemberNotFound)?;
     let mut fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
+    // OBL-C97: the proof names an authority; this is the check that it is the fund's.
+    require_fund_authority(&fund, params.authority_pub_x, params.authority_pub_y)?;
 
     let current_block: u64 = wasm::util::get_verifying_block_height()?.get();
 
@@ -739,6 +788,8 @@ fn unlock_process_instruction_v1(
     let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::MemberNotFound)?;
     let mut fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
+    // OBL-C97: the proof names an authority; this is the check that it is the fund's.
+    require_fund_authority(&fund, params.authority_pub_x, params.authority_pub_y)?;
 
     // Check timelock (24hr after lock expires)
     let current_block: u64 = wasm::util::get_verifying_block_height()?.get();
@@ -771,6 +822,8 @@ fn update_config_process_instruction_v1(
     let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::MemberNotFound)?;
     let mut fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
+    // OBL-C97: the proof names an authority; this is the check that it is the fund's.
+    require_fund_authority(&fund, params.authority_pub_x, params.authority_pub_y)?;
 
     let current_block: u64 = wasm::util::get_verifying_block_height()?.get();
 

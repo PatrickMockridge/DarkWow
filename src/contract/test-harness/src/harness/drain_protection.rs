@@ -196,6 +196,9 @@ impl DrainProtectionHarness {
     /// fund's `spend_authority`, so the two agree by construction (`OBL-C97`).
     const AUTHORITY_SECRET: pallas::Base = pallas::Base::from_raw([1234, 0, 0, 0]);
 
+    /// A secret that is not the fund's authority, for the negative control.
+    const STRANGER_SECRET: pallas::Base = pallas::Base::from_raw([4321, 0, 0, 0]);
+
     /// The authority call data for an endpoint: the secret above, the one fund, and the zero
     /// transaction pair the fixtures bind.
     fn authority(&self) -> AuthorityCallData {
@@ -378,7 +381,19 @@ impl DrainProtectionHarness {
     }
 
     pub fn update_config(&self) -> dwow_core::Result<DrainUpdateConfigResult> {
-        let authority = self.authority();
+        self.update_config_with(self.authority())
+    }
+
+    /// `update_config`, but proving with a **stranger's** secret — the negative control for
+    /// `OBL-C97`. The proof is a real proof of the real circuit, made by the contract's own client;
+    /// the only thing that differs from `update_config` is which secret the point derives from. So a
+    /// rejection can only come from the host comparing that point against the fund's registered one,
+    /// and if the check is ever removed this endpoint starts succeeding.
+    pub fn update_config_as_stranger(&self) -> dwow_core::Result<DrainUpdateConfigResult> {
+        self.update_config_with(AuthorityCallData::new(Self::STRANGER_SECRET, Self::FUND_ID))
+    }
+
+    fn update_config_with(&self, authority: AuthorityCallData) -> dwow_core::Result<DrainUpdateConfigResult> {
         let (proof, pi) = create_authority_proof(&self.update_config_zkbin, &self.update_config_pk, &authority)
             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
         let params = UpdateConfigParamsV1 {
