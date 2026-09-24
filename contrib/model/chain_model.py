@@ -369,8 +369,30 @@ class ChainState:
     commitment_set: dict = field(default_factory=dict)  # commitment → creation_height
 
     def is_commitment_mature(self, commitment: bytes, current_height: int) -> bool:
-        """Check if a coinbase commitment has matured (commitment_set entry >= COINBASE_MATURITY blocks old).
-        Mirrors src/linear/src/chain_state.rs:is_commitment_mature().
+        """Whether this chain's commitment set records a commitment `COINBASE_MATURITY` blocks old.
+
+        **This is not a mirror of the code's maturity rule, and the sentence that stood here said
+        it was** — "Mirrors src/linear/src/chain_state.rs:is_commitment_mature()" named a function
+        that does not exist (register `OBL-C109`). The code's rule is
+        `CChainState::check_coinbase_maturity` (`chain_state.rs:688`), and it differs in three ways
+        that no rename here can close:
+
+          * it is keyed by **nullifier**, through `nullifier_height` over the per-nullifier
+            `nullifier_set`, not by commitment;
+          * the code **rejected** a commitment-keyed rule deliberately, and its own docstring gives
+            the reason — such a lookup "would be a second source of truth for maturity (hazid `RC5`
+            class; `P2-9` Item 4 considered and rejected it)" — while `commitment_set` is pruned at
+            the maturity window (`retain(|_, h| *h >= prune_h)`), so it cannot answer "how old is
+            this?" for anything old enough to matter;
+          * it is a **block-level** rule over `tx.nullifiers`, in which a nullifier with no recorded
+            height is not the rule's business, whereas this predicate answers `False` for an unknown
+            commitment — for a caller that refuses on `False`, a stricter rule than the code's.
+
+        The last two are not reachable from here as written: this model has no `nullifiers` on
+        `Transaction` and no spend path at all, so the code's rule has no domain in it. What *is*
+        modelled is the rule's arithmetic, `current_height - created_at >= COINBASE_MATURITY`, and
+        that part is the code's. The deviation and the route to closing it are recorded in the
+        register rather than narrowed to what happens to be expressible here.
         """
         created_at = self.commitment_set.get(commitment)
         if created_at is None:
