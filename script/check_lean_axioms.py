@@ -361,6 +361,17 @@ def qualified_theorems():
             if re.match(r"section\b", s):
                 stack.append(("sec", ""))
                 continue
+            # `mutual … end` opens a block whose `end` closes it — but it does **not** open a
+            # namespace, so without this frame the `end` pops a *namespace* and every theorem declared
+            # after it is keyed under a mangled name. The failure is silent in the direction that
+            # matters: the parser simply produces fewer names, so those theorems are never queried and
+            # their budgets are never checked. Found 2026-09-24 by the first module in this tree to use
+            # `mutual` — one of whose nine theorems was visible to the parser and eight were not.
+            # (`section` above has the opposite shape: it does not affect the name, and its frame
+            # exists so its `end` does not pop a namespace either.)
+            if re.match(r"mutual\b", s):
+                stack.append(("mutual", ""))
+                continue
             if re.match(r"end\b", s):
                 if stack:
                     stack.pop()
