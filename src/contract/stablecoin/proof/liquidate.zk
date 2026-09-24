@@ -21,6 +21,7 @@ witness "LiquidateV2" {
 
     # Private inputs
     Base owner_secret,
+    Base collateral_type,
     Base collateral_blind,
     Base debt_blind,
     Base liquidator_reward,
@@ -43,11 +44,20 @@ circuit "LiquidateV2" {
     constrain_instance(nullifier_check);
     constrain_equal_base(nullifier_check, position_nullifier);
 
-    # Verify old commitment matches computed
+    # Verify old commitment matches computed.
+    #
+    # OBL-C83: `collateral_type` is the fifth argument, as in the four circuits that are not this
+    # one and `mint_stable.zk`. With four arguments this circuit derived a different value from the
+    # rest of the contract for the same position, so the commitment `OpenPositionV1` registers
+    # could not be the one a liquidation acts on.
     old_collateral_commit = poseidon_hash(DOMAIN_COMMITMENT, collateral_amount, collateral_blind);
     old_debt_commit = poseidon_hash(DOMAIN_COMMITMENT, debt_amount, debt_blind);
-    old_position = poseidon_hash(DOMAIN_COMMITMENT, old_collateral_commit, old_debt_commit, owner_pub);
+    old_position = poseidon_hash(DOMAIN_COMMITMENT, old_collateral_commit, old_debt_commit, owner_pub, collateral_type);
     constrain_equal_base(old_position, old_commitment);
+    # OBL-C83: the position this call seizes is exposed, so the host can require it to be a
+    # registered position and can mark the nullifier the prover derives from it spent. The expose
+    # is on the derived expression, not on the witness the caller declared.
+    constrain_instance(old_position);
 
     # Calculate new_collateral after liquidation (collateral seized)
     new_collateral = base_sub(collateral_amount, liquidator_reward);
@@ -56,8 +66,11 @@ circuit "LiquidateV2" {
     # Verify new commitment after liquidation
     new_collateral_commit = poseidon_hash(DOMAIN_COMMITMENT, new_collateral, collateral_blind);
     new_debt_commit = poseidon_hash(DOMAIN_COMMITMENT, debt_amount, debt_blind);
-    new_position = poseidon_hash(DOMAIN_COMMITMENT, new_collateral_commit, new_debt_commit, owner_pub);
+    new_position = poseidon_hash(DOMAIN_COMMITMENT, new_collateral_commit, new_debt_commit, owner_pub, collateral_type);
     constrain_equal_base(new_position, new_commitment);
+    # OBL-C83: and the position that survives the seizure is exposed, so the host records the
+    # commitment the proof established rather than one the caller supplied beside it.
+    constrain_instance(new_position);
 
     # Calculate if position is undercollateralized
     debt_value = base_mul(debt_amount, current_price);

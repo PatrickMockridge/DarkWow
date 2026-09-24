@@ -22,6 +22,7 @@ witness "MintStableV2" {
     Base old_debt,
     Base new_collateral,
     Base new_debt,
+    Base collateral_type,
     Base collateral_blind,
     Base debt_blind,
     Base tx_commitment,
@@ -50,17 +51,30 @@ circuit "MintStableV2" {
     # Verify collateral unchanged (for simple minting)
     constrain_equal_base(old_collateral, new_collateral);
 
-    # Compute old commitment components
+    # Compute old commitment components.
+    #
+    # OBL-C83: `collateral_type` is the fifth argument here for the same reason it is the fifth in
+    # `open_position.zk`, `add_collateral.zk`, `remove_collateral.zk` and `repay_stable.zk`. With
+    # four arguments this circuit derived a different value from the other four for the same
+    # position, so the commitment `OpenPositionV1` registers could never be the one a mint acts on.
     old_collateral_commit = poseidon_hash(DOMAIN_COMMITMENT, old_collateral, collateral_blind);
     old_debt_commit = poseidon_hash(DOMAIN_COMMITMENT, old_debt, debt_blind);
-    old_position = poseidon_hash(DOMAIN_COMMITMENT, old_collateral_commit, old_debt_commit, owner_pub);
+    old_position = poseidon_hash(DOMAIN_COMMITMENT, old_collateral_commit, old_debt_commit, owner_pub, collateral_type);
     constrain_equal_base(old_position, old_commitment);
+    # OBL-C83: the position this call consumes is a value the verifier receives. The expose is on
+    # the derived expression, not on the witness the caller declared — the shape `open_position.zk`
+    # uses for `position_check` — so the public input is derived in-circuit rather than merely
+    # bound, and the equality above is what makes the caller's declaration the same value.
+    constrain_instance(old_position);
 
     # Compute new commitment components
     new_collateral_commit = poseidon_hash(DOMAIN_COMMITMENT, new_collateral, collateral_blind);
     new_debt_commit = poseidon_hash(DOMAIN_COMMITMENT, new_debt, debt_blind);
-    new_position = poseidon_hash(DOMAIN_COMMITMENT, new_collateral_commit, new_debt_commit, owner_pub);
+    new_position = poseidon_hash(DOMAIN_COMMITMENT, new_collateral_commit, new_debt_commit, owner_pub, collateral_type);
     constrain_equal_base(new_position, new_commitment);
+    # OBL-C83: and the position this call creates is exposed for the same reason — this is the
+    # value `apply_mint_stable_update` writes into the positions tree.
+    constrain_instance(new_position);
 
     # Range check for mint_amount
     range_check(64, mint_amount);

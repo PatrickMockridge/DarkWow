@@ -259,19 +259,30 @@ impl StablecoinHarness {
     }
 
     /// Create an open position proof (deposit collateral)
+    ///
+    /// `OBL-C83`: the blinds are caller-supplied rather than drawn here, because a later call that
+    /// acts on this position (`mint_stable`, `liquidate`) has to reproduce the same commitment, and
+    /// the commitment is a function of them. A random draw here made the position a fixture could
+    /// not name.
     pub fn open_position(
         &self,
         owner_secret: pallas::Base,
         collateral_amount: u64,
         debt_amount: u64,
         collateral_type: pallas::Base,
+        collateral_blind: BaseBlind,
+        debt_blind: BaseBlind,
     ) -> Result<OpenPositionResult, Box<dyn std::error::Error>> {
-        let input = OpenPositionCallData::new(
+        let input = OpenPositionCallData {
             owner_secret,
             collateral_amount,
             debt_amount,
             collateral_type,
-        );
+            collateral_blind,
+            debt_blind,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
 
         let (proof, public_inputs) = create_open_position_proof(
             &self.open_position_zkbin,
@@ -304,12 +315,18 @@ impl StablecoinHarness {
     }
 
     /// Mint stablecoin against a position
+    ///
+    /// `old_commitment` is the position being consumed, and `collateral_type` is the fifth argument
+    /// of the commitment derivation — the two must agree with the `open_position` that registered
+    /// it, or the circuit's `constrain_equal_base(old_position, old_commitment)` is unsatisfiable.
+    #[expect(clippy::too_many_arguments, reason = "a proof's witness list is not a design surface")]
     pub fn mint_stable(
         &self,
         owner_secret: pallas::Base,
         old_collateral: u64,
         old_debt: u64,
         mint_amount: u64,
+        collateral_type: pallas::Base,
         collateral_blind: BaseBlind,
         debt_blind: BaseBlind,
         old_commitment: pallas::Base,
@@ -319,6 +336,7 @@ impl StablecoinHarness {
             old_collateral,
             old_debt,
             mint_amount,
+            collateral_type,
             collateral_blind,
             debt_blind,
             old_commitment,
@@ -352,6 +370,7 @@ impl StablecoinHarness {
     }
 
     /// Liquidate an underwater position
+    #[expect(clippy::too_many_arguments, reason = "a proof's witness list is not a design surface")]
     pub fn liquidate(
         &self,
         owner_secret: pallas::Base,
@@ -360,6 +379,7 @@ impl StablecoinHarness {
         liquidation_penalty: u64,
         current_price: u64,
         liquidator_reward: u64,
+        collateral_type: pallas::Base,
         collateral_blind: BaseBlind,
         debt_blind: BaseBlind,
         old_commitment: pallas::Base,
@@ -371,6 +391,7 @@ impl StablecoinHarness {
             liquidation_penalty,
             current_price,
             liquidator_reward,
+            collateral_type,
             collateral_blind,
             debt_blind,
             old_commitment,

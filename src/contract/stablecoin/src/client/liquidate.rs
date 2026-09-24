@@ -38,9 +38,9 @@ use rand::SeedableRng;
 /// Liquidate circuit public inputs (in order of constrain_instance)
 #[derive(Debug, Clone)]
 pub struct LiquidatePublicInputs {
-    /// Old commitment (position commitment before liquidation) - not a constrain_instance output
+    /// Old commitment (the position this call seizes)
     pub old_commitment: pallas::Base,
-    /// New commitment (after liquidation) - not a constrain_instance output
+    /// New commitment (the position that survives the seizure)
     pub new_commitment: pallas::Base,
     /// Position nullifier
     pub position_nullifier: pallas::Base,
@@ -51,10 +51,14 @@ pub struct LiquidatePublicInputs {
 impl LiquidatePublicInputs {
     /// Convert to vector for ZK proof creation
     /// Order matches constrain_instance calls in liquidate.zk:
-    /// constrain_instance(nullifier_check), constrain_instance(tx_binding), constrain_instance(tx_nonce)
+    /// constrain_instance(nullifier_check), constrain_instance(old_commitment),
+    /// constrain_instance(new_commitment), constrain_instance(tx_binding),
+    /// constrain_instance(tx_nonce)
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.position_nullifier,
+            self.old_commitment,
+            self.new_commitment,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -76,11 +80,14 @@ pub struct LiquidateCallData {
     pub current_price: u64,
     /// Reward to liquidator (seized collateral)
     pub liquidator_reward: u64,
+    /// Collateral type (the fifth argument of the position commitment, as in `open_position`)
+    pub collateral_type: pallas::Base,
     /// Collateral blinding factor (BaseBlind, not ScalarBlind)
     pub collateral_blind: BaseBlind,
     /// Debt blinding factor (BaseBlind, not ScalarBlind)
     pub debt_blind: BaseBlind,
-    /// Old commitment (position commitment before liquidation)
+    /// The position this call seizes (`OBL-C83`: the circuit constrains its witnesses to
+    /// reproduce this value, so it is the caller's declaration of what is being liquidated)
     pub old_commitment: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -88,6 +95,7 @@ pub struct LiquidateCallData {
 
 impl LiquidateCallData {
     /// Create new call data
+    #[expect(clippy::too_many_arguments, reason = "a proof's witness list is not a design surface")]
     pub fn new(
         owner_secret: pallas::Base,
         collateral_amount: u64,
@@ -95,6 +103,7 @@ impl LiquidateCallData {
         liquidation_penalty: u64,
         current_price: u64,
         liquidator_reward: u64,
+        collateral_type: pallas::Base,
         collateral_blind: BaseBlind,
         debt_blind: BaseBlind,
         old_commitment: pallas::Base,
@@ -106,6 +115,7 @@ impl LiquidateCallData {
             liquidation_penalty,
             current_price,
             liquidator_reward,
+            collateral_type,
             collateral_blind,
             debt_blind,
             old_commitment,
@@ -130,11 +140,18 @@ impl LiquidateCallData {
     }
 
     /// Compute the old position commitment
+    ///
+    /// The fifth argument is `collateral_type`, matching `open_position.rs`'s
+    /// `position_commitment()`. The four-argument form this replaced derived a different value for
+    /// the same position, so a liquidation could never act on a position an open had created
+    /// (`OBL-C83`).
     pub fn old_position_commitment(&self) -> pallas::Base {
         let collateral_commit = self.collateral_commitment(self.collateral_amount);
         let debt_commit = self.debt_commitment(self.debt_amount);
         let owner_pub = self.owner_public_key();
-        poseidon_hash([pallas::Base::from(4u64), collateral_commit, debt_commit, owner_pub])
+        poseidon_hash([
+            pallas::Base::from(4u64), collateral_commit, debt_commit, owner_pub, self.collateral_type,
+        ])
     }
 
     /// Compute the new position commitment after liquidation
@@ -144,13 +161,18 @@ impl LiquidateCallData {
         let collateral_commit = self.collateral_commitment(new_collateral);
         let debt_commit = self.debt_commitment(self.debt_amount);
         let owner_pub = self.owner_public_key();
-        poseidon_hash([pallas::Base::from(4u64), collateral_commit, debt_commit, owner_pub])
+        poseidon_hash([
+            pallas::Base::from(4u64), collateral_commit, debt_commit, owner_pub, self.collateral_type,
+        ])
     }
 
     /// Compute public inputs for this call
+    ///
+    /// `old_commitment` is the *declared* position, not the derived one: the circuit's
+    /// `constrain_equal_base(old_position, old_commitment)` is what makes the derivation the
+    /// caller's claim rather than a restatement of it (`OBL-C83`).
     pub fn compute_public_inputs(&self) -> LiquidatePublicInputs {
-        // Compute the position commitment (circuit constrains old_commitment == old_position)
-        let old_commitment = self.old_position_commitment();
+        let old_commitment = self.old_commitment;
         // Compute nullifier with domain separation
         let position_nullifier = poseidon_hash([pallas::Base::from(1u64), self.owner_secret, old_commitment]);
 
@@ -165,15 +187,14 @@ impl LiquidateCallData {
 
     /// Generate prover witnesses for the circuit
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let _owner_pub = self.owner_public_key();
+        let public_inputs = self.compute_public_inputs();
         let new_position = self.new_position_commitment();
-        let _new_collateral = self.collateral_amount.saturating_sub(self.liquidator_reward);
 
         vec![
             // Public inputs
-            Witness::Base(Value::known(self.old_position_commitment())), // old_commitment
+            Witness::Base(Value::known(public_inputs.old_commitment)), // old_commitment
             Witness::Base(Value::known(new_position)), // new_commitment
-            Witness::Base(Value::known(self.compute_public_inputs().position_nullifier)), // position_nullifier
+            Witness::Base(Value::known(public_inputs.position_nullifier)), // position_nullifier
             Witness::Base(Value::known(pallas::Base::from(self.collateral_amount))), // collateral_amount
             Witness::Base(Value::known(pallas::Base::from(self.debt_amount))), // debt_amount
             Witness::Base(Value::known(pallas::Base::from(self.liquidation_penalty))), // liquidation_penalty
@@ -181,6 +202,7 @@ impl LiquidateCallData {
             Witness::Base(Value::known(pallas::Base::zero())), // position_root (placeholder)
             // Private inputs
             Witness::Base(Value::known(self.owner_secret)),
+            Witness::Base(Value::known(self.collateral_type)),
             Witness::Base(Value::known(self.collateral_blind.inner())), // BaseBlind as Base
             Witness::Base(Value::known(self.debt_blind.inner())), // BaseBlind as Base
             Witness::Base(Value::known(pallas::Base::from(self.liquidator_reward))), // liquidator_reward

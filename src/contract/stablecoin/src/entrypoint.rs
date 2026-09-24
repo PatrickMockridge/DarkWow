@@ -40,7 +40,7 @@
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine, PrimeField},
-        ContractId, IntentNullifier, Nullifier, poseidon_hash, PublicKey, PURSE_CONTRACT_ID, SecretKey,
+        ContractId, IntentCommitment, IntentNullifier, Nullifier, poseidon_hash, PublicKey, PURSE_CONTRACT_ID, SecretKey,
     },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -1088,6 +1088,41 @@ fn process_mint_stable_instruction(
     let self_ = &calls[call_idx].data;
     let params = MintStableParams::decode(&self_.data[1..])?;
 
+    // OBL-C83 clause 1: the commitment the host records is the one the proof established.
+    //
+    // The proof was verified against `params.zk_public_inputs` — that vector *is* what the node
+    // handed the verifier — while every value this arm acts on was read from other fields of the
+    // same struct. Nothing joined them, so a caller could prove a statement about one position and
+    // record another. `mint_stable_zk_public_inputs` reads the vector in the circuit's
+    // `constrain_instance` order and returns the three values, refusing a call whose fields are not
+    // the ones the proof pinned.
+    let (position_nullifier, old_commitment, new_commitment) = mint_stable_binding(&params)?;
+
+    // OBL-C83 clause 2: an operation that consumes a position consumes it once.
+    //
+    // The position the call acts on must be one this contract has registered, and the nullifier the
+    // circuit derives from it — `H(DOMAIN_NULLIFIER, owner_secret, old_commitment)`, the same
+    // derivation `open_position.zk` instances — must not already be spent. `nullifier_check` is
+    // bound to `old_commitment` by the circuit, and `old_commitment` includes `owner_pub`, so two
+    // different secrets cannot name the same position; one nullifier therefore marks one position
+    // consumed for good.
+    let positions_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITIONS_TREE)?;
+    if !wasm::db::db_contains_key(positions_db, &old_commitment.to_bytes())? {
+        msg!(
+            "[stablecoin::MintStable] Error: Position {:?} is not registered",
+            old_commitment
+        );
+        return Err(StablecoinError::PositionCommitmentNotFound.into())
+    }
+    let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &position_nullifier.to_bytes())? {
+        msg!(
+            "[stablecoin::MintStable] Error: Position {:?} has already been consumed",
+            old_commitment
+        );
+        return Err(StablecoinError::DuplicateNullifier.into())
+    }
+
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
         pallas::Base::from(params.mint_amount),
@@ -1124,9 +1159,13 @@ fn process_mint_stable_instruction(
 
     let new_total_debt = total_debt.saturating_add(params.mint_amount);
 
-    // Create update data
+    // Create update data. `position_commitment` is the proven `new_commitment` rather than
+    // `params.mint_commitment`, so the value written to the tree is the one the join above checked
+    // against the vector the proof was verified against — there is no second reading of a field.
     let update = MintStableUpdateV1 {
-        position_commitment: params.mint_commitment,
+        old_commitment,
+        position_commitment: new_commitment,
+        position_nullifier,
         mint_amount: params.mint_amount,
         new_total_debt,
     };
@@ -1134,12 +1173,57 @@ fn process_mint_stable_instruction(
     Ok(update.encode())
 }
 
+/// The three `mint_stable.zk` public inputs this arm acts on, joined to the call's own fields.
+///
+/// The circuit's `constrain_instance` order is
+/// `[position_nullifier, old_commitment, new_commitment, tx_binding, tx_nonce]`.
+///
+/// The length is required to be exactly the circuit's instance count. The node already refuses a
+/// proof whose instances do not match the circuit, so a wrong-length vector cannot reach here on a
+/// verified call — the check is what makes the indexing below total rather than trusting that.
+fn mint_stable_binding(
+    params: &MintStableParams,
+) -> Result<(IntentNullifier, IntentCommitment, IntentCommitment), ContractError> {
+    const INSTANCES: usize = 5;
+    if params.zk_public_inputs.len() != INSTANCES {
+        msg!(
+            "[stablecoin::MintStable] Error: circuit exposes {} public inputs, call carries {}",
+            INSTANCES,
+            params.zk_public_inputs.len()
+        );
+        return Err(ContractError::IoError(format!(
+            "MintStableV1: expected {INSTANCES} public inputs, got {}",
+            params.zk_public_inputs.len()
+        )))
+    }
+
+    let position_nullifier = IntentNullifier::from_base(params.zk_public_inputs[0]);
+    let old_commitment = IntentCommitment::from_base(params.zk_public_inputs[1]);
+    let new_commitment = IntentCommitment::from_base(params.zk_public_inputs[2]);
+
+    if new_commitment != params.mint_commitment {
+        msg!(
+            "[stablecoin::MintStable] Error: recorded commitment {:?} is not the proven one {:?}",
+            params.mint_commitment.inner(),
+            new_commitment.inner()
+        );
+        return Err(StablecoinError::CommitmentMismatch.into())
+    }
+
+    Ok((position_nullifier, old_commitment, new_commitment))
+}
+
 /// Apply mint stablecoin update
 fn apply_mint_stable_update(cid: ContractId, update: MintStableUpdateV1) -> ContractResult {
     let stablecoin_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_STABLECOIN_TREE)?;
     let positions_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITIONS_TREE)?;
+    let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
 
-    // Insert mint commitment
+    // OBL-C83: the position this mint consumed is marked spent exactly once, in the tree
+    // `remove_collateral` and `repay_stable` already use for the same purpose.
+    wasm::db::db_mark_spent(nullifiers_db, &update.position_nullifier.to_bytes())?;
+
+    // Insert the position this mint created
     wasm::db::db_set(stablecoin_db, &update.position_commitment.to_bytes(), &[1])?;
     wasm::db::db_set(positions_db, &update.position_commitment.to_bytes(), &[1])?;
 
@@ -1148,7 +1232,8 @@ fn apply_mint_stable_update(cid: ContractId, update: MintStableUpdateV1) -> Cont
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &update.new_total_debt.to_le_bytes())?;
 
     msg!(
-        "[stablecoin::process_update] Stablecoin minted: amount={}, new_total_debt={}",
+        "[stablecoin::process_update] Stablecoin minted: consumed={:?}, amount={}, new_total_debt={}",
+        update.old_commitment.inner(),
         update.mint_amount,
         update.new_total_debt
     );
@@ -1284,11 +1369,36 @@ fn process_liquidate_instruction(
     let self_ = &calls[call_idx].data;
     let params = LiquidateParams::decode(&self_.data[1..])?;
 
+    // OBL-C83: the same join the mint arm makes, for the same reason. The position this call
+    // seizes and the nullifier that marks it consumed are read from the vector the proof was
+    // verified against, not from fields supplied beside it.
+    let (position_nullifier, old_commitment) = liquidate_binding(&params)?;
+
     msg!(
         "[stablecoin::process_instruction] Liquidate: debt_to_cover={}, collateral={}",
         params.debt_to_cover,
         params.total_collateral
     );
+
+    // OBL-C83: the seized position must be one this contract registered, and must not have been
+    // consumed already. The circuit exposes it (that is the whole point of `liquidate.zk`'s
+    // `constrain_instance(old_commitment)`), so the host has something to check it against.
+    let positions_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITIONS_TREE)?;
+    if !wasm::db::db_contains_key(positions_db, &old_commitment.to_bytes())? {
+        msg!(
+            "[stablecoin::Liquidate] Error: Position {:?} is not registered",
+            old_commitment
+        );
+        return Err(StablecoinError::PositionCommitmentNotFound.into())
+    }
+    let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &position_nullifier.to_bytes())? {
+        msg!(
+            "[stablecoin::Liquidate] Error: Position {:?} has already been consumed",
+            old_commitment
+        );
+        return Err(StablecoinError::DuplicateNullifier.into())
+    }
 
     // Get current totals
     let config_db = wasm::db::db_lookup(cid, "config")?;
@@ -1353,6 +1463,7 @@ fn process_liquidate_instruction(
 
     // Create update data
     let update = LiquidateUpdateV1 {
+        position_nullifier,
         debt_covered: params.debt_to_cover,
         collateral_seized,
         penalty,
@@ -1363,13 +1474,62 @@ fn process_liquidate_instruction(
     Ok(update.encode())
 }
 
+/// The two `liquidate.zk` public inputs this arm acts on, joined to the call's own fields.
+///
+/// The circuit's `constrain_instance` order is
+/// `[position_nullifier, old_commitment, new_commitment, tx_binding, tx_nonce]`.
+///
+/// The `new_commitment` entry is the position that survives the seizure. This arm does not record
+/// a position at all — `LiquidateUpdateV1` carries none, which is why the liquidation record had
+/// nothing to key on — so it is checked for consistency with the call but not stored.
+fn liquidate_binding(
+    params: &LiquidateParams,
+) -> Result<(IntentNullifier, IntentCommitment), ContractError> {
+    const INSTANCES: usize = 5;
+    if params.zk_public_inputs.len() != INSTANCES {
+        msg!(
+            "[stablecoin::Liquidate] Error: circuit exposes {} public inputs, call carries {}",
+            INSTANCES,
+            params.zk_public_inputs.len()
+        );
+        return Err(ContractError::IoError(format!(
+            "LiquidateV1: expected {INSTANCES} public inputs, got {}",
+            params.zk_public_inputs.len()
+        )))
+    }
+
+    let position_nullifier = IntentNullifier::from_base(params.zk_public_inputs[0]);
+    let old_commitment = IntentCommitment::from_base(params.zk_public_inputs[1]);
+    let new_commitment = IntentCommitment::from_base(params.zk_public_inputs[2]);
+
+    // `apply_liquidate_update` records no commitment, so `params.liquidation_commitment` is the
+    // only place the caller states which position survives. Requiring it to be the proven value is
+    // what keeps the field from being a free-floating claim.
+    if new_commitment != params.liquidation_commitment {
+        msg!(
+            "[stablecoin::Liquidate] Error: recorded commitment {:?} is not the proven one {:?}",
+            params.liquidation_commitment.inner(),
+            new_commitment.inner()
+        );
+        return Err(StablecoinError::CommitmentMismatch.into())
+    }
+
+    Ok((position_nullifier, old_commitment))
+}
+
 /// Apply liquidate update
 fn apply_liquidate_update(cid: ContractId, update: LiquidateUpdateV1) -> ContractResult {
     let liquidations_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE)?;
+    let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
     let config_db = wasm::db::db_lookup(cid, "config")?;
 
-    // Record liquidation
-    wasm::db::db_set(liquidations_db, &update.debt_covered.to_le_bytes(), &[1])?;
+    // OBL-C83: the position is marked spent. It used to be keyed on `debt_covered.to_le_bytes()`
+    // — a value two liquidations of the same size share — so the record collided and the nullifier
+    // `liquidate.zk` exposes was consumed by nothing.
+    wasm::db::db_mark_spent(nullifiers_db, &update.position_nullifier.to_bytes())?;
+
+    // Record the liquidation, keyed on the position it consumed
+    wasm::db::db_set(liquidations_db, &update.position_nullifier.to_bytes(), &[1])?;
 
     // Persist new totals (exec computes, apply writes)
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &update.new_total_debt.to_le_bytes())?;

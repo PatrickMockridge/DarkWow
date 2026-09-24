@@ -34,7 +34,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::process;
 
-use dwow_sdk::crypto::{ContractId, PublicKey};
+use dwow_sdk::crypto::{poseidon_hash, ContractId, PublicKey};
 use dwow_stablecoin_contract::model::{
     CollateralParams, CollateralType, DeadManAction, DeadManSwitchConfig, InitializeParams,
     StablecoinModel,
@@ -125,6 +125,16 @@ fn main() {
         // template, not a live deployment.
         governance_pub_x: dwow_sdk::pasta::pallas::Base::zero(),
         governance_pub_y: dwow_sdk::pasta::pallas::Base::zero(),
+        // OBL-C78: `InitializeParams` gained the transaction-binding pair and this tool was not
+        // carried with it, so the crate's bin target stopped compiling there. This template has no
+        // transaction to bind, so both halves are zero and the binding is the zero pair's — the
+        // same value `client/initialize.rs`'s builder derives for the same case.
+        tx_binding: poseidon_hash([
+            dwow_sdk::pasta::pallas::Base::from(3u64),
+            dwow_sdk::pasta::pallas::Base::zero(),
+            dwow_sdk::pasta::pallas::Base::zero(),
+        ]),
+        tx_nonce: dwow_sdk::pasta::pallas::Base::zero(),
     };
 
     let buf = params.encode();

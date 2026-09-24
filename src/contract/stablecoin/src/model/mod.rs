@@ -525,8 +525,13 @@ pub struct MintStableParams {
     /// Fee paid for this operation
     pub fee: u64,
 
-    /// ZK public inputs for proof verification: [old_commitment, new_commitment, position_nullifier]
-    /// The prover computes these from their secret values
+    /// ZK public inputs for proof verification, in `mint_stable.zk`'s `constrain_instance` order:
+    /// `[position_nullifier, old_commitment, new_commitment, tx_binding, tx_nonce]`.
+    ///
+    /// `OBL-C83`: `old_commitment` and `new_commitment` are the two the host acts on — the
+    /// position consumed and the position recorded — and `process_mint_stable_instruction`
+    /// requires the call's own fields to equal them, so what `apply` writes is what the proof
+    /// established rather than a value supplied beside it.
     pub zk_public_inputs: Vec<pallas::Base>,
 }
 
@@ -690,8 +695,11 @@ pub struct LiquidateParams {
     /// Fee paid for this operation
     pub fee: u64,
 
-    /// ZK public inputs for proof verification: [old_commitment, new_commitment, position_nullifier]
-    /// The prover computes these from their secret values
+    /// ZK public inputs for proof verification, in `liquidate.zk`'s `constrain_instance` order:
+    /// `[position_nullifier, old_commitment, new_commitment, tx_binding, tx_nonce]`.
+    ///
+    /// `OBL-C83`: `old_commitment` is the position seized and `position_nullifier` is what marks it
+    /// consumed; `process_liquidate_instruction` requires the call's own fields to equal them.
     pub zk_public_inputs: Vec<pallas::Base>,
 }
 
@@ -912,8 +920,15 @@ pub struct RemoveCollateralUpdateV1 {
 /// Update data for minting stablecoin
 #[derive(Debug, Clone)]
 pub struct MintStableUpdateV1 {
-    /// Position commitment
+    /// The position this mint consumed
+    ///
+    /// `OBL-C83`: the position a mint acts on was not carried anywhere before this field, so
+    /// `apply` had no way to mark it spent and the same position could fund any number of mints.
+    pub old_commitment: IntentCommitment,
+    /// Position commitment (the position this mint created)
     pub position_commitment: IntentCommitment,
+    /// Position nullifier — the single-consumption marker for `old_commitment`
+    pub position_nullifier: IntentNullifier,
     /// Amount minted
     pub mint_amount: u64,
     /// New total debt after minting
@@ -936,7 +951,13 @@ pub struct RepayStableUpdateV1 {
 /// Update data for liquidating the pool
 #[derive(Debug, Clone)]
 pub struct LiquidateUpdateV1 {
-    /// Liquidation record
+    /// Position nullifier — the record the liquidation is keyed on, and its single-use marker
+    ///
+    /// `OBL-C83`: this was absent, so `apply` keyed the liquidation record on `debt_covered` and
+    /// two liquidations of the same size collided on one key while neither marked the position
+    /// `liquidate.zk` exposes as consumed.
+    pub position_nullifier: IntentNullifier,
+    /// Liquidation record: amount of debt covered
     pub debt_covered: u64,
     /// Collateral seized
     pub collateral_seized: u64,
@@ -1759,14 +1780,17 @@ impl RemoveCollateralUpdateV1 {
     }
 }
 
-// ---- MintStableUpdateV1 (48 bytes) ----
-// Layout: position_commitment(32) + mint_amount(8) + new_total_debt(8)
+// ---- MintStableUpdateV1 (112 bytes) ----
+// Layout: old_commitment(32) + position_commitment(32) + position_nullifier(32) + mint_amount(8)
+//       + new_total_debt(8)
 
 impl MintStableUpdateV1 {
-    pub const ENCODED_SIZE: usize = 48;
+    pub const ENCODED_SIZE: usize = 112;
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.old_commitment.to_bytes());
         b.extend_from_slice(&self.position_commitment.to_bytes());
+        b.extend_from_slice(&self.position_nullifier.to_bytes());
         b.extend_from_slice(&self.mint_amount.to_le_bytes());
         b.extend_from_slice(&self.new_total_debt.to_le_bytes());
         b
@@ -1775,9 +1799,11 @@ impl MintStableUpdateV1 {
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("MintStableUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(MintStableUpdateV1 {
-            position_commitment: IntentCommitment::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("MintStableUpdateV1: invalid position_commitment".into()))?,
-            mint_amount: u64::from_le_bytes(data[32..40].try_into().unwrap()),
-            new_total_debt: u64::from_le_bytes(data[40..48].try_into().unwrap()),
+            old_commitment: IntentCommitment::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("MintStableUpdateV1: invalid old_commitment".into()))?,
+            position_commitment: IntentCommitment::from_bytes(data[32..64].try_into().unwrap()).map_err(|_| ContractError::IoError("MintStableUpdateV1: invalid position_commitment".into()))?,
+            position_nullifier: IntentNullifier::from_bytes(data[64..96].try_into().unwrap()).map_err(|_| ContractError::IoError("MintStableUpdateV1: invalid position_nullifier".into()))?,
+            mint_amount: u64::from_le_bytes(data[96..104].try_into().unwrap()),
+            new_total_debt: u64::from_le_bytes(data[104..112].try_into().unwrap()),
         })
     }
 }
@@ -1807,13 +1833,15 @@ impl RepayStableUpdateV1 {
     }
 }
 
-// ---- LiquidateUpdateV1 (40 bytes) ----
-// Layout: debt_covered(8) + collateral_seized(8) + penalty(8) + new_total_debt(8) + new_total_collateral(8)
+// ---- LiquidateUpdateV1 (72 bytes) ----
+// Layout: position_nullifier(32) + debt_covered(8) + collateral_seized(8) + penalty(8)
+//       + new_total_debt(8) + new_total_collateral(8)
 
 impl LiquidateUpdateV1 {
-    pub const ENCODED_SIZE: usize = 40;
+    pub const ENCODED_SIZE: usize = 72;
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.position_nullifier.to_bytes());
         b.extend_from_slice(&self.debt_covered.to_le_bytes());
         b.extend_from_slice(&self.collateral_seized.to_le_bytes());
         b.extend_from_slice(&self.penalty.to_le_bytes());
@@ -1825,11 +1853,12 @@ impl LiquidateUpdateV1 {
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("LiquidateUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
         Ok(LiquidateUpdateV1 {
-            debt_covered: u64::from_le_bytes(data[0..8].try_into().unwrap()),
-            collateral_seized: u64::from_le_bytes(data[8..16].try_into().unwrap()),
-            penalty: u64::from_le_bytes(data[16..24].try_into().unwrap()),
-            new_total_debt: u64::from_le_bytes(data[24..32].try_into().unwrap()),
-            new_total_collateral: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            position_nullifier: IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("LiquidateUpdateV1: invalid position_nullifier".into()))?,
+            debt_covered: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            collateral_seized: u64::from_le_bytes(data[40..48].try_into().unwrap()),
+            penalty: u64::from_le_bytes(data[48..56].try_into().unwrap()),
+            new_total_debt: u64::from_le_bytes(data[56..64].try_into().unwrap()),
+            new_total_collateral: u64::from_le_bytes(data[64..72].try_into().unwrap()),
         })
     }
 }

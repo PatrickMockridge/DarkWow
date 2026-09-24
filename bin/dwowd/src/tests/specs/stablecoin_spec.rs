@@ -186,7 +186,13 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                     let notes = notes.clone();
                     let position_commitment = position_commitment.clone();
                     move || {
-                        let r = h.open_position(sk, 10000, 5000, pallas::Base::from(1u64))
+                        // OBL-C83: the blinds are named here rather than drawn inside the
+                        // harness, because `MintStableV1` below has to reproduce this exact
+                        // position commitment to consume it.
+                        let r = h.open_position(
+                            sk, 10000, 5000, pallas::Base::from(1u64),
+                            BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
+                        )
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *position_commitment.lock().unwrap() = Some(r.position_commitment);
                         let n = notes.lock().unwrap();
@@ -213,16 +219,96 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 })),
                 expectation: EndpointExpectation::Success,
             },
+            // NEGATIVE — OBL-C83 clause 1, and its cause is single by construction.
+            //
+            // This is the positive mint in every respect except one: the commitment recorded in
+            // `MintStableParams` is not the `new_commitment` the proof established. The proof
+            // itself is a real one, over the same public-input vector the positive uses, so it
+            // verifies; the position is registered (the open above ran) and its nullifier is still
+            // unspent (this runs first); and the child transfer's blind seed is derived from the
+            // *mismatched* commitment, so the child check would accept it too. Every later check in
+            // `process_mint_stable_instruction` would pass. Only the join between the recorded
+            // field and the proven vector refuses it, and it refuses before any of them.
+            //
+            // If this endpoint is ever accepted, the recorded commitment is again a value the
+            // caller chose beside its proof rather than the one the proof established. Read the
+            // cause in the DWOW_TEST_LOGS=1 output: it must be "recorded commitment ... is not the
+            // proven one", which is a `CommitmentMismatch`. The positive mint succeeding in the
+            // same run is what rules out a blanket refusal — and since both would consume the same
+            // position and the same note, exactly one of the two can be accepted.
+            EndpointSpec {
+                name: "MintStableV1MismatchedCommitment", is_zk: true,
+                expectation: EndpointExpectation::Rejection,
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new({
+                    // The positive's child note. This endpoint runs first, so the note is unspent
+                    // here and the position is unconsumed; the positive below is what proves both
+                    // were still available to it.
+                    let notes = notes.clone();
+                    let position_commitment = position_commitment.clone();
+                    move || {
+                        use dwow_stablecoin_contract::model::MintStableParams;
+                        use dwow_sdk::crypto::intent::IntentCommitment;
+
+                        let position = position_commitment.lock().unwrap()
+                            .ok_or_else(|| dwow_core::Error::Custom(
+                                "position commitment not captured".into()))?;
+                        let r = h.mint_stable(sk, 10000, 5000, 1000,
+                            pallas::Base::from(1u64),
+                            BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
+                            position)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+
+                        // One field changed: the commitment the host would record. The vector the
+                        // proof commits to is left exactly as the honest call built it.
+                        let recorded = r.public_inputs.new_commitment + pallas::Base::one();
+                        let call_data = {
+                            let params = MintStableParams {
+                                mint_commitment: IntentCommitment::from_base(recorded),
+                                mint_amount: 1000,
+                                total_debt: 0,
+                                total_collateral: 0,
+                                proof: vec![],
+                                fee: 0,
+                                zk_public_inputs: r.public_inputs.to_vec(),
+                            };
+                            let mut cd = vec![0x04];
+                            cd.extend_from_slice(&params.encode());
+                            cd
+                        };
+
+                        // The child is built for the *mismatched* commitment, so it is self-
+                        // consistent with the params rather than with the proof — the point being
+                        // that no check downstream of the join can be the one that refuses.
+                        let n = notes.lock().unwrap();
+                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
+                        let blind_seed = poseidon_hash([pallas::Base::from(1000u64), recorded]);
+                        let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
+                        let child = pn_transfer_child(&n[3], 1000, blind_seed, cid.inner())?;
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![r.proof] })
+                    }
+                }),
+            },
             EndpointSpec {
                 name: "MintStableV1",
                 is_zk: true,
                 generate: Box::new({
                     let notes = notes.clone();
                     let mint_commitment = mint_commitment.clone();
+                    let position_commitment = position_commitment.clone();
                     move || {
+                        // OBL-C83: the mint consumes the position `OpenPositionV1` registered, and
+                        // it has to name it. Before the repair it passed `1` — a value no proof
+                        // could relate to the position the open had created, which is exactly the
+                        // divergence the four-argument commitment derivation hid.
+                        let position = position_commitment.lock().unwrap()
+                            .ok_or_else(|| dwow_core::Error::Custom(
+                                "position commitment not captured".into()))?;
                         let r = h.mint_stable(sk, 10000, 5000, 1000,
+                            pallas::Base::from(1u64),
                             BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
-                            pallas::Base::from(1u64))
+                            position)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *mint_commitment.lock().unwrap() = Some(r.public_inputs.new_commitment);
                         let n = notes.lock().unwrap();
@@ -236,6 +322,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({
                     let mint_commitment = mint_commitment.clone();
+                    let position_commitment = position_commitment.clone();
                     move |chain| {
                         let key = mint_commitment.lock().unwrap()
                             .ok_or_else(|| dwow_core::Error::Custom("mint commitment not captured".into()))?
@@ -244,6 +331,20 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                         let r = chain.query_contract_state(cid, "stablecoin", &key)?;
                         if r.is_none() {
                             return Err(dwow_core::Error::Custom("stablecoin state not found".into()));
+                        }
+
+                        // OBL-C83 clause 2, asserted on chain state rather than inferred: the
+                        // position this mint consumed is marked spent, under the nullifier the
+                        // circuit derives from it. `apply_mint_stable_update` wrote no such marker
+                        // before the repair — the tree existed and every sibling arm used it, and
+                        // the mint was the one arm that did not.
+                        let position = position_commitment.lock().unwrap()
+                            .ok_or_else(|| dwow_core::Error::Custom("position commitment not captured".into()))?;
+                        let nullifier = poseidon_hash([pallas::Base::from(1u64), sk, position]);
+                        let spent = chain.query_contract_state(cid, "position_nullifiers", &nullifier.to_repr())?;
+                        if spent.is_none() {
+                            return Err(dwow_core::Error::Custom(
+                                "consumed position is not marked spent in position_nullifiers".into()));
                         }
                         Ok(())
                     }

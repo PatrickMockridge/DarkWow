@@ -303,8 +303,15 @@ impl Default for RemoveCollateralBuilder {
 
 /// Builder for minting stablecoin against collateral
 pub struct MintStableBuilder {
-    /// Position nullifier
-    position_nullifier: Option<pallas::Base>,
+    /// The position this mint consumes
+    ///
+    /// `OBL-C83`: this was absent and the placeholder `pallas::Base::zero()` stood in for it, so a
+    /// proof built from this builder could never satisfy the circuit's
+    /// `constrain_equal_base(old_position, old_commitment)`. A mint has to name the position it
+    /// acts on.
+    old_commitment: Option<pallas::Base>,
+    /// Collateral type (the fifth argument of the position commitment)
+    collateral_type: Option<pallas::Base>,
     /// Amount of stablecoin to mint
     mint_amount: Option<u64>,
     /// Owner's secret key
@@ -318,7 +325,8 @@ pub struct MintStableBuilder {
 impl MintStableBuilder {
     pub fn new() -> Self {
         Self {
-            position_nullifier: None,
+            old_commitment: None,
+            collateral_type: None,
             mint_amount: None,
             owner_secret: None,
             current_collateral: None,
@@ -326,8 +334,13 @@ impl MintStableBuilder {
         }
     }
 
-    pub fn position_nullifier(&mut self, nullifier: pallas::Base) -> &mut Self {
-        self.position_nullifier = Some(nullifier);
+    pub fn old_commitment(&mut self, commitment: pallas::Base) -> &mut Self {
+        self.old_commitment = Some(commitment);
+        self
+    }
+
+    pub fn collateral_type(&mut self, collateral_type: pallas::Base) -> &mut Self {
+        self.collateral_type = Some(collateral_type);
         self
     }
 
@@ -353,6 +366,8 @@ impl MintStableBuilder {
 
     pub fn build(&self) -> Result<MintStableCallData, StablecoinClientError> {
         let owner_secret = self.owner_secret.ok_or_else(|| StablecoinClientError::MissingField("owner_secret"))?;
+        let old_commitment = self.old_commitment.ok_or_else(|| StablecoinClientError::MissingField("old_commitment"))?;
+        let collateral_type = self.collateral_type.ok_or_else(|| StablecoinClientError::MissingField("collateral_type"))?;
         let mint_amount = self.mint_amount.ok_or_else(|| StablecoinClientError::MissingField("mint_amount"))?;
         let current_collateral = self.current_collateral.ok_or_else(|| StablecoinClientError::MissingField("current_collateral"))?;
         let current_debt = self.current_debt.ok_or_else(|| StablecoinClientError::MissingField("current_debt"))?;
@@ -368,9 +383,10 @@ impl MintStableBuilder {
             current_collateral,
             current_debt,
             mint_amount,
+            collateral_type,
             collateral_blind,
             debt_blind,
-            pallas::Base::zero(), // old_commitment placeholder
+            old_commitment,
         ))
     }
 }
@@ -381,81 +397,18 @@ impl Default for MintStableBuilder {
     }
 }
 
-/// Builder for repaying stablecoin debt
-pub struct RepayStableBuilder {
-    /// Position nullifier
-    position_nullifier: Option<pallas::Base>,
-    /// Amount of stablecoin to repay
-    repay_amount: Option<u64>,
-    /// Owner's secret key
-    owner_secret: Option<pallas::Base>,
-    /// Current debt amount
-    current_debt: Option<u64>,
-}
-
-impl RepayStableBuilder {
-    pub fn new() -> Self {
-        Self {
-            position_nullifier: None,
-            repay_amount: None,
-            owner_secret: None,
-            current_debt: None,
-        }
-    }
-
-    pub fn position_nullifier(&mut self, nullifier: pallas::Base) -> &mut Self {
-        self.position_nullifier = Some(nullifier);
-        self
-    }
-
-    pub fn repay_amount(&mut self, amount: u64) -> &mut Self {
-        self.repay_amount = Some(amount);
-        self
-    }
-
-    pub fn owner_secret(&mut self, secret: pallas::Base) -> &mut Self {
-        self.owner_secret = Some(secret);
-        self
-    }
-
-    pub fn current_debt(&mut self, amount: u64) -> &mut Self {
-        self.current_debt = Some(amount);
-        self
-    }
-
-    pub fn build(&self) -> Result<MintStableCallData, StablecoinClientError> {
-        let owner_secret = self.owner_secret.ok_or_else(|| StablecoinClientError::MissingField("owner_secret"))?;
-        let repay_amount = self.repay_amount.ok_or_else(|| StablecoinClientError::MissingField("repay_amount"))?;
-        let current_debt = self.current_debt.ok_or_else(|| StablecoinClientError::MissingField("current_debt"))?;
-
-        let (collateral_blind, debt_blind) = if crate::deterministic_zk_enabled() {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-            (BaseBlind::random(&mut rng), BaseBlind::random(&mut rng))
-        } else {
-            (BaseBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng))
-        };
-        Ok(MintStableCallData::new(
-            owner_secret,
-            0, // collateral unchanged for repay
-            current_debt.saturating_sub(repay_amount),
-            0, // mint_amount = 0 for repay
-            collateral_blind,
-            debt_blind,
-            pallas::Base::zero(),
-        ))
-    }
-}
-
-impl Default for RepayStableBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Builder for liquidating a position
 pub struct LiquidateBuilder {
     /// Owner's secret key
     owner_secret: Option<pallas::Base>,
+    /// The position this liquidation seizes
+    ///
+    /// `OBL-C83`: as on `MintStableBuilder`, this was absent and a zero placeholder stood in for
+    /// it, so a proof built here could not satisfy `constrain_equal_base(old_position,
+    /// old_commitment)` and the position the host checked would never be a real one.
+    old_commitment: Option<pallas::Base>,
+    /// Collateral type (the fifth argument of the position commitment)
+    collateral_type: Option<pallas::Base>,
     /// Current collateral amount
     collateral_amount: Option<u64>,
     /// Current debt amount
@@ -472,6 +425,8 @@ impl LiquidateBuilder {
     pub fn new() -> Self {
         Self {
             owner_secret: None,
+            old_commitment: None,
+            collateral_type: None,
             collateral_amount: None,
             debt_amount: None,
             liquidation_penalty: None,
@@ -482,6 +437,16 @@ impl LiquidateBuilder {
 
     pub fn owner_secret(&mut self, secret: pallas::Base) -> &mut Self {
         self.owner_secret = Some(secret);
+        self
+    }
+
+    pub fn old_commitment(&mut self, commitment: pallas::Base) -> &mut Self {
+        self.old_commitment = Some(commitment);
+        self
+    }
+
+    pub fn collateral_type(&mut self, collateral_type: pallas::Base) -> &mut Self {
+        self.collateral_type = Some(collateral_type);
         self
     }
 
@@ -512,6 +477,8 @@ impl LiquidateBuilder {
 
     pub fn build(&self) -> Result<LiquidateCallData, StablecoinClientError> {
         let owner_secret = self.owner_secret.ok_or_else(|| StablecoinClientError::MissingField("owner_secret"))?;
+        let old_commitment = self.old_commitment.ok_or_else(|| StablecoinClientError::MissingField("old_commitment"))?;
+        let collateral_type = self.collateral_type.ok_or_else(|| StablecoinClientError::MissingField("collateral_type"))?;
         let collateral_amount = self.collateral_amount.ok_or_else(|| StablecoinClientError::MissingField("collateral_amount"))?;
         let debt_amount = self.debt_amount.ok_or_else(|| StablecoinClientError::MissingField("debt_amount"))?;
         let liquidation_penalty = self.liquidation_penalty.unwrap_or(1000); // default 10%
@@ -531,9 +498,10 @@ impl LiquidateBuilder {
             liquidation_penalty,
             current_price,
             liquidator_reward,
+            collateral_type,
             collateral_blind,
             debt_blind,
-            pallas::Base::zero(), // old_commitment placeholder
+            old_commitment,
         ))
     }
 }
