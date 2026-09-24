@@ -44,11 +44,153 @@ the true one satisfies both comparisons. The witness is kernel-checked.
 `qr_unique` is a theorem about the *inequalities*, not about the chip. It assumes the two products
 are the integers they look like; establishing that on chain is `range_check`'s job plus the
 arithmetic of the specific circuit (every operand `< 2^64` makes every product `< 2^129 < 2^253`).
-A proof that the chip's 253-bit range check implies the integer reading of a comparison is not here
-and is not claimed. That gap is recorded in the register as OBL-Z12.
+
+**The chip half of that is now proved** — Part 0, `less_than_or_equal_integer_reading`: from the
+chip's constraints *over the field* together with its range checks, the comparison is the integer
+comparison. This note said that proof was "not here and is not claimed"; it is here, and the residual
+is one step further out and belongs to the *circuit* rather than to the chip — that the operands fed
+to each comparison are in the range the bridge needs. The `2^64` bound makes every product `< 2^129`,
+so a difference of two products lies in `(-2^129, 2^129)`, well inside the `2^253` the chip's range
+check supplies; but that composition is the quotient-remainder circuits' own argument and is not made
+here. So the residue of `OBL-Z12` is that composition, not the chip's reading.
 -/
 
 namespace BaseDivGadget
+
+/- ==========================================================================
+   Part 0: the bridge the header says was missing — the chip's integer reading
+
+   The header above ends: "A proof that the chip's 253-bit range check implies the integer reading of
+   a comparison is not here and is not claimed." It is here now, and this is what it rests on.
+
+   The chip's constraints are imposed over `ZMod PALLAS_MODULUS`, where `2^254 - 1 < 0` is "true" and
+   so is `a - b - 1 ≥ 0` for the wrong ordering. The range check is what removes that freedom, and the
+   fact is one arithmetic lemma: a field element that is *also* the image of a bounded integer, with
+   the bound below the modulus and room to spare, cannot be the image of a second bounded integer.
+   `zmod_eq_int_of_bounded` is that lemma, and it is where the number 253 does its work — the bound is
+   `2^253 + 2^64 < 2^254 ≤ p`, so an out-of-range difference wraps and is caught.
+
+   `less_than_or_equal_integer_reading` is the chip-level statement, in the shape
+   `Gadgets.output_correct` uses: the two cases `out = 1` and `out = 0`, concluding the *integer*
+   order rather than the field's.
+
+   Two things about the hypotheses, both deliberate and both the register's `OBL-Z12`:
+
+   * the operand bounds (`a < 2^64`, `b < 2^64`) are **hypotheses**, because they are not properties
+     of the chip — they are what the surrounding circuit's `range_check(64)` calls supply, and
+     `qr_needs_bound` is the kernel-checked counterexample showing that without them both comparisons
+     are satisfied by a quotient ~10^76 away from the true one.
+   * the range check is stated as *being the image of a 253-bit integer* rather than as an inequality
+     over the field, which is what a range check **is** on chain: it exhibits a bit decomposition. An
+     inequality over `ZMod p` would be a weaker hypothesis and a false statement, since `p - 1` is
+     "less than 2^253" in no useful sense.
+   ========================================================================== -/
+
+/-- **A field element that is the image of a bounded integer is the image of only one.** If `x` lies in
+    `[-2^64, 2^64]` and `k` in `[0, 2^253]`, and `x` and `k` are equal in `ZMod PALLAS_MODULUS`, then
+    `x = k` in `ℤ`.
+
+    This is the whole content of the 253-bit range check's integer reading. The hypothesis is
+    `-2^64 ≤ x` rather than `-2^64 < x` because the lower end is attained: the `out = 0` case of the
+    chip hands over `a - b - 1`, which is exactly `-2^64` at `a = 0`, `b = 2^64 - 1`.
+
+    The proof is the bound: `k - x` is a multiple of `p`, and it lies in `(-2^64, 2^253 + 2^64)`, which
+    is inside `(-p, p)` because `2^253 + 2^64 < 2^254 ≤ p`. The only multiple of `p` in that interval is
+    zero. The modulus is written out as a numeral for that step, so the comparison is arithmetic rather
+    than a property of the modulus — no primality is used, and `pallasPrime` is not reached. -/
+@[axiom_budget 1]
+theorem zmod_eq_int_of_bounded (x k : ℤ) (hx : -(2:ℤ)^64 ≤ x) (hx' : x < (2:ℤ)^64)
+    (hk : 0 ≤ k) (hk' : k < (2:ℤ)^253)
+    (h : (x : ZMod PALLAS_MODULUS) = (k : ZMod PALLAS_MODULUS)) : x = k := by
+  have hp : (PALLAS_MODULUS : ℤ) =
+      28948022309329048855892746252171976963363056481941560715954676764349967630337 := by
+    rw [PALLAS_MODULUS]; norm_num
+  have hdvd : (PALLAS_MODULUS : ℤ) ∣ k - x :=
+    Int.modEq_iff_dvd.mp ((ZMod.intCast_eq_intCast_iff x k PALLAS_MODULUS).mp h)
+  obtain ⟨c, hc⟩ := hdvd
+  rw [hp] at hc
+  omega
+
+/-- The chip's constraints as a prover supplies them: over `ZMod PALLAS_MODULUS`, with each range check
+    recorded as the integer it decomposes to.
+
+    `Gadgets.LessThanOrEqualGadget.gadget_satisfied` states the equivalent inequalities over `ℤ`, which
+    is the chip's *intent*; this structure is the same circuit seen from the field, and the theorem
+    below is the bridge between them. The gate and the offset relation are the same two constraints —
+    `out ∈ {0,1}` and `out·(b − a) + (1 − out)·(a − b − 1) = offset` — written over the field, which is
+    where the prover puts them. -/
+structure FieldLessThanOrEqual where
+  /-- The chip's output: `1` for `a ≤ b`, `0` for `a > b`. -/
+  out : ZMod PALLAS_MODULUS
+  /-- The two operands, as the circuit sees them. -/
+  a : ZMod PALLAS_MODULUS
+  b : ZMod PALLAS_MODULUS
+  /-- The range-checked offset. -/
+  offset : ZMod PALLAS_MODULUS
+  /-- The boolean gate. -/
+  out_zero_or_one : out = 0 ∨ out = 1
+  /-- The offset relation, over the field. -/
+  offset_relation : out * (b - a) + (1 - out) * (a - b - 1) = offset
+  /-- `range_check(253, offset)`: the integer the offset decomposes to. -/
+  offset_bits : Nat
+  offset_bits_lt : offset_bits < 2 ^ 253
+  offset_eq : offset = (offset_bits : ZMod PALLAS_MODULUS)
+  /-- `range_check(64, a)`: the integer `a` decomposes to. -/
+  a_bits : Nat
+  a_bits_lt : a_bits < 2 ^ 64
+  a_eq : a = (a_bits : ZMod PALLAS_MODULUS)
+  /-- `range_check(64, b)`. -/
+  b_bits : Nat
+  b_bits_lt : b_bits < 2 ^ 64
+  b_eq : b = (b_bits : ZMod PALLAS_MODULUS)
+
+/-- **The chip's constraints, read as integers.** This is the statement the header said was missing:
+    from the circuit's field-level constraints *plus the range checks*, `out = 1` implies `a ≤ b` in
+    `ℕ` and `out = 0` implies `b < a` — the integer reading, not the field's.
+
+    Same shape as `Gadgets.less_than_or_equal_sound` (`output_correct`'s two clauses), one level down:
+    that theorem takes the range check as an inequality over `ℤ`, this one as a bit decomposition over
+    `ZMod p`, which is what the circuit actually has. -/
+@[axiom_budget 1]
+theorem less_than_or_equal_integer_reading (g : FieldLessThanOrEqual) :
+    (g.out = 1 → g.a_bits ≤ g.b_bits) ∧ (g.out = 0 → g.b_bits < g.a_bits) := by
+  have ha := g.a_bits_lt
+  have hb := g.b_bits_lt
+  have ho := g.offset_bits_lt
+  constructor
+  · intro hout
+    -- `out = 1` collapses the offset relation to `b - a = offset`.
+    have hrel : g.b - g.a = g.offset := by
+      have := g.offset_relation
+      rw [hout] at this
+      simpa using this
+    have hcast : (g.b_bits : ZMod PALLAS_MODULUS) - (g.a_bits : ZMod PALLAS_MODULUS)
+        = (g.offset_bits : ZMod PALLAS_MODULUS) := by
+      rw [← g.b_eq, ← g.a_eq, ← g.offset_eq, hrel]
+    have hcast' : (((g.b_bits : ℤ) - g.a_bits : ℤ) : ZMod PALLAS_MODULUS)
+        = (g.offset_bits : ZMod PALLAS_MODULUS) := by
+      push_cast
+      exact hcast
+    have hint : (g.b_bits : ℤ) - g.a_bits = g.offset_bits :=
+      zmod_eq_int_of_bounded _ _ (by omega) (by omega) (by omega) (by omega) hcast'
+    omega
+  · intro hout
+    -- `out = 0` collapses it to `a - b - 1 = offset`, where the `- 1` is what makes the strict case
+    -- land strictly: `offset ≥ 0` gives `a ≥ b + 1`.
+    have hrel : g.a - g.b - 1 = g.offset := by
+      have := g.offset_relation
+      rw [hout] at this
+      simpa using this
+    have hcast : (g.a_bits : ZMod PALLAS_MODULUS) - (g.b_bits : ZMod PALLAS_MODULUS) - 1
+        = (g.offset_bits : ZMod PALLAS_MODULUS) := by
+      rw [← g.a_eq, ← g.b_eq, ← g.offset_eq, hrel]
+    have hcast' : (((g.a_bits : ℤ) - g.b_bits - 1 : ℤ) : ZMod PALLAS_MODULUS)
+        = (g.offset_bits : ZMod PALLAS_MODULUS) := by
+      push_cast
+      exact hcast
+    have hint : (g.a_bits : ℤ) - g.b_bits - 1 = g.offset_bits :=
+      zmod_eq_int_of_bounded _ _ (by omega) (by omega) (by omega) (by omega) hcast'
+    omega
 
 /- ==========================================================================
    Part 1: what `base_div` computes
