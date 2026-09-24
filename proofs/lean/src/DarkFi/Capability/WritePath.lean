@@ -30,10 +30,20 @@ the transaction's *proofs* inhabit L_{r,s}, and what is modelled here is the hal
 carries — barb coverage — by way of `walletConstruct_sound`, so the write path's soundness is *derived
 from* the read path's constructor rather than restated beside it. (Both live at the root namespace, in
 `Capability/Wallet.lean` — that file declares no namespace, which is why the names are unqualified.) The
-proofs themselves, the `calls` structure of §6.3 step 7, the Merkle inclusion proofs §6.1 lists for each
-selected capability, and the fee capability of §6.3 step 6 are all absent: none of §7.8's three
-obligations reads them, and a field nothing reads is the defect `Exercise.outputs` was — a header
-claiming a create side while `applyExercise` ignored the field.
+proofs themselves, the `calls` structure of §6.3 step 7, and the Merkle inclusion proofs §6.1 lists for
+each selected capability are all absent: none of §7.8's three obligations reads them, and a field nothing
+reads is the defect `Exercise.outputs` was — a header claiming a create side while `applyExercise`
+ignored the field.
+
+**The fee of §6.3 step 6 was in that list and is now modelled**, in the §6.4.2 section below — as a
+*member of the selection* rather than a sixth argument of `f`, because §6.1's tuple has no fee component
+and §6.3 step 2 selects the fee capability with the others. Two obligations attach to it and both are
+about it being a separate *thing* without being a separate input: its nullifier must reach the same
+published list (§6.4.2:877), which follows from the selection's publication and is worth stating because
+a wallet that built the fee call outside the selection would have an unpublished input nullifier; and
+its blind must be **independent** (§6.4.2:865), which is a claim about the derivation's label. The second
+is the §6.1 purity rule's own subject, because "independent" is only checkable where the blind is
+derived.
 
 **The hash.** `computeNullifier` is the SDK's `compute_nullifier(secret, commitment)`
 (`src/sdk/src/primitives.rs:299`, `poseidon_hash([secret, commitment])`), modelled as a total `Nat`
@@ -49,6 +59,7 @@ import DarkFi.Capability.Composition
 import DarkFi.Capability.Selection
 import DarkFi.Capability.Wallet
 import DarkFi.Capability.Prover
+import DarkFi.HashOps
 
 namespace DarkFi.Capability.WritePath
 
@@ -78,6 +89,22 @@ structure SelectedCapability where
   held : Held
   commitment : Nat
   spendSecret : Nat
+
+/-- §6.3 step 6's fee: **a member of the selection**, plus the label its blind is derived under.
+
+    `fee` is deliberately **not** a sixth argument of `f`. §6.1's tuple is
+    `(SelectedCapabilities, Action, Params, Secrets, Seed)` and has no fee component, because §6.3 step 2
+    selects the fee capability *with* the others — §6.4.2:872's "the builder SHALL receive the selected
+    DRKW capability" describes one of the already-selected ones. A separate argument would model a call
+    shape the specification does not have, and `fee ∈ selected` is the fact the obligation below needs. -/
+structure Fee where
+  /-- The selected DRKW capability the builder receives (§6.4.2:872). -/
+  capability : SelectedCapability
+  /-- The plaintext fee amount, which §6.4.2:862 requires the call data to carry. -/
+  amount : Nat
+  /-- The label the fee's blind is derived under — the thing "SHALL be independent" is about.
+      `Int` because that is `poseidon_hash_output`'s domain, as `KeyScope.deriveInstance` also models. -/
+  blindLabel : Int
 
 /- ==========================================================================
    §6.3 steps 4, 6 and 7 — the transaction
@@ -127,6 +154,98 @@ def assemble (selected : List SelectedCapability) (seed : Seed) : Transaction :=
   { nullifiers := publishedNullifiers selected
   , txCommitment := bindingCommitment seed
   , txNonce := bindingNonce seed }
+
+/- ==========================================================================
+   §6.4.2 — the fee, and the two things only true of it
+   ==========================================================================
+   §6.3 step 6 gives the write path a second input the selection does not contain: the DRKW capability
+   the fee builder receives (§6.4.2:872). Two obligations attach to it and both are *about it being a
+   separate argument*, which is why they are stated rather than folded into the selection's:
+
+   * **`fee_nullifier_is_published`** — §6.4.2:877: "the fee input's nullifier SHALL be published in
+     `Transaction.nullifiers`". `nullifier_completeness` covers the *selected* capabilities; a fee path
+     that built its call and forgot the publish would produce a transaction the mempool refuses, and
+     nothing in the selection's theorem would notice. This is that obligation, in the same published
+     list.
+   * **`blinds_with_distinct_labels_differ`** — §6.4.2:864-865: "All blinds … SHALL be derived
+     deterministically from `Seed` (§6.1). **The fee blind SHALL be independent**…". Independence is a
+     claim about the *derivation*, so the derivation is labelled and the theorem is injectivity in the
+     label — budget 1, the hash assumption `KeyScope.lean` consumes for the same reason. The falsifier
+     beside it is what keeps that from being vacuous: a label-free derivation gives the fee and the
+     change the same blind, which is the coupling the sentence forbids.
+
+   **The code side, measured 2026-09-24 rather than assumed**: `fee_builder.rs:108-109` builds its RNG
+   as `StdRng::from_seed(seed)` under a comment citing §6.1 ("Seed-derived randomness — no OsRng"), and
+   the fee *input*'s blind is `fee_cap.cap_blind` (the capability's own, from the note) rather than a
+   draw from that stream (`:206`, `:230`) — so both halves hold: the randomness is seed-derived and the
+   fee's blind is not coupled to the outputs'. Nothing to fix, which is why this unit's Rust half is a
+   measurement rather than an edit.
+   ========================================================================== -/
+
+/-- §6.4.2's blind derivation: `Seed` and a **label**, so that two blinds under one `Seed` are different
+    values. The label is the whole content of the independence clause — without it, two derivations from
+    the same seed are the same derivation. -/
+def blindOf (seed : Seed) (label : Int) : Int :=
+  HashOps.poseidon_hash_output [label, (seed.value : Int)]
+
+/-- **§6.4.2:877 — the fee input's nullifier is published.** The obligation is that the fee's nullifier
+    reaches `Transaction.nullifiers`, and the fact it follows from is §6.3 step 2: the fee capability is
+    one of the selection's, and step 4 publishes every selected capability's nullifier. So this is the
+    *composition* of two steps of the pipeline rather than a sixth way into the transaction — which is
+    why it is worth stating: a wallet that chose the fee capability outside the selection (a plausible
+    reading of "the builder SHALL receive the selected DRKW capability") would build a call whose input
+    nullifier is unpublished, and `nullifier_completeness` would not notice because the fee was never
+    selected. -/
+@[axiom_budget 0]
+theorem fee_nullifier_is_published (selected : List SelectedCapability) (seed : Seed) (fee : Fee)
+    (h : fee.capability ∈ selected) :
+    nullifierOf fee.capability ∈ (assemble selected seed).nullifiers := by
+  simp only [assemble, publishedNullifiers]
+  exact List.mem_map_of_mem (f := nullifierOf) h
+
+/-- **And it reaches the transaction only through the selection** — the direction that makes the theorem
+    above a fact about §6.3 step 2 rather than about a set that happens to contain everything.
+
+    It takes `Function.Injective nullifierOf` as a **hypothesis** rather than assuming it, and the reason
+    is worth the sentence: injectivity is what makes a nullifier *identify* a capability, which is the
+    property the mempool's double-spend detection reads it for (`mempool.md`) — and this module's own
+    `nullifierOf` is deliberately uninterpreted, so a theorem that needed the property had to say so.
+    With it, a fee capability outside the selection contributes no nullifier to the transaction, which is
+    the failure a wallet building the fee call separately from the selection would have. -/
+@[axiom_budget 0]
+theorem the_fee_is_published_only_through_the_selection
+    (selected : List SelectedCapability) (seed : Seed) (fee : Fee)
+    (hinj : Function.Injective nullifierOf) (h : fee.capability ∉ selected) :
+    nullifierOf fee.capability ∉ (assemble selected seed).nullifiers := by
+  simp only [assemble, publishedNullifiers, List.mem_map]
+  rintro ⟨c, hc, heq⟩
+  exact h (hinj heq ▸ hc)
+
+/-- **Independence, as a theorem**: distinct labels give distinct blinds under one `Seed`. Budget 1 is
+    `HashOps.poseidon_collision_resistance`, consumed exactly as `KeyScope.scopeRestriction` consumes it
+    — injectivity recovers the labelled input list, and its first position is the label. -/
+@[axiom_budget 1]
+theorem blinds_with_distinct_labels_differ (seed : Seed) {l₁ l₂ : Int} (h : l₁ ≠ l₂) :
+    blindOf seed l₁ ≠ blindOf seed l₂ := by
+  intro heq
+  unfold blindOf at heq
+  have hlist : ([l₁, (seed.value : Int)] : List Int) = [l₂, (seed.value : Int)] := by
+    by_contra hne
+    exact absurd heq (HashOps.poseidon_collision_resistance _ _ hne)
+  exact h (by simpa using hlist)
+
+/-- The label-free derivation, for the falsifier below: it ignores the label and returns the seed. -/
+def blindOfUnlabelled (seed : Seed) (_label : Int) : Int := (seed.value : Int)
+
+/-- **The falsifier**: with a label-free derivation the independence clause is **false** — every label
+    gives the same blind, so the fee's blind *is* the change's. That is what the label buys, and it is
+    why the theorem above is about the derivation rather than about two call sites happening to pass
+    different arguments. -/
+@[axiom_budget 0]
+theorem label_free_blinds_are_not_independent :
+    ¬ (∀ (seed : Seed) (l₁ l₂ : Int), blindOfUnlabelled seed l₁ ≠ blindOfUnlabelled seed l₂) := by
+  intro h
+  exact absurd (h ⟨0⟩ 0 0) (by simp [blindOfUnlabelled])
 
 /-- §6.1's `f`. The manifest (step 1) and the selection (step 2) are the caller's, as the spec has them
     — selection is §6.2's predicate — and the gate here is the read path's own constructor:
