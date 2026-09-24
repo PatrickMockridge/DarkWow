@@ -37,6 +37,7 @@ import DarkFi.Circuits.Token
 import DarkFi.Circuits.Bridge
 import DarkFi.Circuits.Exchange
 import DarkFi.Circuits.All
+import DarkFi.Circuits.InstanceDerivation
 import DarkFi.HAZOP.Critical
 import DarkFi.HAZOP.High
 import DarkFi.HAZOP.Elevated

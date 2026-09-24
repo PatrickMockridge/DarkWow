@@ -291,9 +291,21 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
 - **Halo2 constraint system semantics are not modeled.** We prove properties of the
   mathematical functions the opcodes implement, not that the Halo2 gate/region/
   copy-constraint system correctly implements those functions.
-- **Circuit-to-Lean correspondence is not mechanized.** The `Circuits/` directory documents a
-  manual audit of the `.zk` files, not machine-verified extraction. The obligation that would
-  make it mechanized is `Axioms.NoFreeInstances`, which is uninterpreted and unconsumed.
+- **Circuit-to-Lean correspondence is not mechanized, and one half of it now is.** The `Circuits/`
+  directory documents a manual audit of the `.zk` files, not machine-verified extraction —
+  `Circuits/InstanceDerivation.lean` is that directory's first module with actual content, and it models
+  the *property* rather than the extraction. `NoFreeInstance` is now **defined** over a circuit's
+  statement list, with `soundness` (two satisfying valuations agreeing on the held inputs give the same
+  public vector) and its converse (a bare-witness instance is free, so the predicate is falsifiable rather
+  than true by construction), plus a worked circuit closed by `decide` and its negative control. Two
+  things it taught that a reader should know: the checking script distinguishes a value that is
+  *derivable* from one that is *determined* (a bare witness is the former and not the latter, because
+  `constrain_equal_base(w, X)` re-exposes a variable the prover held), and a soundness proof needs the
+  valuations to **satisfy** the circuit — a fact about the valuation that a source analysis has no reason
+  to state. `Axioms.NoFreeInstances (r : Resource) (s : Action)` is still uninterpreted and still
+  unconsumed: turning it into a definition needs the function `(r, s) ↦ the circuit source`, and a Lean
+  term cannot read a `.zk` file. So the property has a definition for that bridge to be *about*, and the
+  bridge remains the gap.
 - **The consensus state core is only partly modelled here, and what is missing is named rather than
   implied.** Four mechanisms have models now, all at **budget 0**: the block-level Pedersen mass-balance
   rule (`Consensus/MassBalance.lean`, ten theorems, transcribed from
