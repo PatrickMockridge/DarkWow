@@ -422,10 +422,17 @@ def bridgeWithdrawType : CapabilityType bridgeWithdrawResource bridgeWithdrawAct
    interpolating a `Finset Barb` needs `ToString (Finset Barb)`, which `Barb`
    does not provide, so it was 15 of this file's 45 compile errors.
 
-   `Main.lean` was said here to "still print the same summary". It does not print anything: it
-   does not compile (21 errors, measured 2026-09-24, on its version at HEAD as well — see its
-   header). The sentence's point stands even so — a hand-printed summary is a claim, and these
-   are now proofs — and the file that made the claim is the one that broke.
+   `Main.lean` was said here to "still print the same summary". It printed nothing: it did not
+   compile, on its version at HEAD as well as the working tree — so the sentence's point stands
+   even so, because a hand-printed summary is a claim and these are now proofs, and the file that
+   made the claim is the one that broke.
+
+   **Repaired and gated later the same day (`OBL-T18`), with a correction to the numbers that stood
+   here.** It said 21 errors; the measurement that opened the repair gives **23 error lines in five
+   classes**, and the two its own header named were not the only ones — a `maximum recursion depth`
+   from a single ~350-statement `do` block, and an `unknown identifier` that was a cascade of that,
+   had both been invisible. The file is a `lean_exe` now (`lakefile.lean`), `check-lean-suite.sh`
+   runs it, and every check in it that used to print its result and exit 0 throws instead.
    ========================================================================== -/
 
 /- ==========================================================================

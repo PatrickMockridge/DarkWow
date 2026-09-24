@@ -634,11 +634,18 @@ no better than what it replaced:
   `src/zk/gadget/less_than.rs:126-137`, opcode 0x51. This opcode's gate is `s_lt_out`
   (`less_than.rs:163-180`), whose offset is `out·(b − a − 1) + (1 − out)·(a − b)`, and the shape
   printed above is that gate's ✓. A theorem about 0x51's constraint says nothing about 0x57's.
-* `src/Main.lean`'s search is not evidence either: that file is in **no `lean_lib`** — `lakefile.lean`
-  declares `DarkFi` and `Transcribed` and nothing else — so `lake build DarkFi` never compiles it and
-  no gate reads its output. It also does not compile at all (21 errors, measured 2026-09-24; see its
-  header). The search it contains is the `lt_strict_offset`/`lt_strict_satisfied` loop at `:91-110`,
-  which is exactly the "exhaustive 1000×1000" the documentation cites.
+* `src/Main.lean`'s search is not evidence either, and there are two separate reasons — the second is
+  why the first went unnoticed. **The search is weaker than a proof whatever it is run by**: a
+  1000×1000 counterexample scan tests the file's own transcription of the gate, not the gate, and it
+  cannot be "exhaustive" when the theorem above quantifies over every `Int`. And **the file was also
+  broken**: in no `lean_lib` at all — `lakefile.lean` declared `DarkFi` and `Transcribed` and nothing
+  else — so `lake build DarkFi` never compiled it, no gate read its output, and it did not compile in
+  any case (21 errors by its own header; measured before the repair, **23 error lines in five
+  classes**). **Repaired and gated 2026-09-24 (`OBL-T18`), which changes what the search is worth
+  without changing what kind of thing it is**: it runs now, its counterexamples fail the run, and
+  `scripts/check-lean-suite.sh` invokes it — while `less_than_strict_sound` above is what makes 0x57
+  sound. The search is the `lt_strict_offset`/`lt_strict_satisfied` loop at `:91-110`, which is exactly
+  the "exhaustive 1000×1000" the documentation cites.
 
 **So the opcode had no soundness theorem, and the documentation said it was SOUND.** The proof
 below is that theorem, stated over the gate's own shape. `Gadgets.lean` has no 0x57 row either, and
@@ -708,8 +715,9 @@ which is the species this file has already deleted once: a statement-shaped thin
 A `def : Bool` claims nothing; the check it encodes is a *computation*, and its running is not
 evidence unless the running is checked — which is what the deleted
 `boolean_output_must_be_constrained` note below is about, one opcode over. The same pattern cost
-`base_lt_strict` (0x57, above) its proof, where the "verification" was an IO loop in a file that is
-in no `lean_lib`.
+`base_lt_strict` (0x57, above) its proof, where the "verification" was an IO loop. (That file is still
+in no `lean_lib` — it is a `lean_exe` now, with a gate, `OBL-T18` — and that does not change the point:
+a loop is not a proof, and a loop that had never been compiled is not even a loop.)
 
 So this is the second opcode of the comparison family whose documented verdict was ahead of its
 proof, and the two together are the reason the family is now read as a set rather than one opcode at
