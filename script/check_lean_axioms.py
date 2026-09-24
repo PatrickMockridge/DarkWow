@@ -49,8 +49,8 @@ AXIOMS_FILE = os.path.join(SRC_DIR, "DarkFi", "Axioms.lean")
 # Where `scripts/lean-build.sh` writes what a guarded command prints to *stderr*. Under `--stream` the
 # guard puts stdout on the caller's channel and stderr here, so the collector's own summary and its
 # per-name "unknown declaration" lines are read from this file rather than from the process. This
-# default must match the guard's `LOG="${LEAN_BUILD_LOG:-/tmp/lean-build.log}"`, and the guard's
-# `flock` is what makes it safe to read: only one guarded Lean lane runs at a time.
+# default must match the guard's `LOG="${LEAN_BUILD_LOG:-/tmp/lean-build.log}"`, and `run_collector`
+# appends its own pid to it: one shared name has already cost this tree evidence once.
 LEAN_BUILD_LOG = os.environ.get("LEAN_BUILD_LOG", "/tmp/lean-build.log")
 
 # The collector's raw stdout, kept verbatim. Its rows *are* the gate's evidence, and the failure mode
@@ -475,7 +475,7 @@ def unresolved_names(log_text):
         r"^check_axioms: (?:not a theorem|unknown declaration): (\S+)$", log_text, re.MULTILINE))
 
 
-def reconcile(names, rows, dupes, unresolved):
+def reconcile(names, rows, dupes, unresolved, log_path=None):
     """Return why the collector's rows do not account for exactly the names it was fed, or None.
 
     Identity, not count — the arm that holds whatever the mechanism turns out to be.
@@ -505,8 +505,8 @@ def reconcile(names, rows, dupes, unresolved):
                       f"e.g. {missing[0]}")
     return ("the collector's rows do not reconcile with the names it was fed ("
             + "; ".join(detail) + f") — raw stdout in {COLLECTOR_RAW}, diagnostics in "
-            f"{LEAN_BUILD_LOG}; a row was renamed, duplicated or dropped in flight, so at least one "
-            "budget is silently unchecked")
+            f"{log_path or LEAN_BUILD_LOG}; a row was renamed, duplicated or dropped in flight, so at "
+            "least one budget is silently unchecked")
 
 
 def self_test():
@@ -588,10 +588,16 @@ def run_collector():
     guard = os.path.join(REPO_ROOT, "scripts", "lean-build.sh")
     if not os.path.exists(guard):
         return None, f"{rel(guard)} does not exist — refusing to run the collector unguarded"
+    # A per-run log, because one shared name is a hazard this tree has already paid for: an unrelated
+    # build overwrote `/tmp/lean-build.log` once and destroyed evidence a register row cited. The guard
+    # truncates whatever it is given, so this holds this run's diagnostics and nothing else — and it is
+    # what `run_collector` reads the summary and the unresolved names out of.
+    run_log = f"{LEAN_BUILD_LOG}.{os.getpid()}"
     cmd = [guard, "--stream", "env", "lean", "--run", "src/CheckAxioms.lean"]
     try:
         proc = subprocess.run(cmd, cwd=LEAN_DIR, input="\n".join(names) + "\n",
-                              capture_output=True, text=True, timeout=3600)
+                              capture_output=True, text=True, timeout=3600,
+                              env=dict(os.environ, LEAN_BUILD_LOG=run_log))
     except FileNotFoundError:
         return None, "`lake` not found on PATH"
     except subprocess.TimeoutExpired:
@@ -601,7 +607,7 @@ def run_collector():
         # back to *its* stderr on failure — so the log's last line is the child's error and the
         # caller's stderr begins with the guard's own chatter. Prefer the former.
         try:
-            with open(LEAN_BUILD_LOG, encoding="utf-8", errors="replace") as fh:
+            with open(run_log, encoding="utf-8", errors="replace") as fh:
                 tail = [l for l in fh.read().splitlines() if l.strip()]
         except OSError:
             tail = []
@@ -614,9 +620,9 @@ def run_collector():
         fh.write(raw)
     rows, dupes = parse_rows(raw)
     # The collector's stderr — its closing summary and one line per name it could not resolve — goes to
-    # the guard's log, not to this process (see `--stream` in `scripts/lean-build.sh`). Read it there.
+    # the guard's log, not to this process (see `--stream` in `scripts/lean-build.sh`). Read this run's.
     try:
-        with open(LEAN_BUILD_LOG, encoding="utf-8", errors="replace") as fh:
+        with open(run_log, encoding="utf-8", errors="replace") as fh:
             log_text = fh.read()
     except OSError:
         log_text = ""
@@ -635,7 +641,7 @@ def run_collector():
         return None, (f"{len(unresolved)} of {len(names)} declared declarations did not resolve "
                       f"(e.g. {sorted(unresolved)[0]}), so their budgets are unverified rather than "
                       "checked")
-    why = reconcile(names, rows, dupes, unresolved)
+    why = reconcile(names, rows, dupes, unresolved, run_log)
     if why:
         return None, why
     return rows, None
