@@ -15,15 +15,40 @@
 # convention flagged correct code in circuits that number their own domains differently — so the
 # entries below are the reviewed residue of a rule that has already been narrowed once.
 #
-# THE FIVE, and what each is. Two are COLLISIONS, where one circuit gives one value to two
-# differently-named domains, which is the defect RC-D exists to prevent and is local by nature —
-# a domain constant never meets another circuit's, so only an in-circuit collision can matter.
-# Three are ROLE mismatches, where a derivation whose name declares one purpose is hashed in the
-# domain of another. None of the five has a nameable path to stolen or minted value: every one
-# would need a Poseidon collision to be exploited, except `push_value_commitment` (see below).
+# THE FOUR, and what each is. **Corrected 2026-09-24: this paragraph said "THE FIVE"** and the fifth —
+# `oracle/proof/push_value_commitment.zk`'s *constructible* collision — was **repaired**, so its entry
+# was the last thing left of it (retired below, with the two lines that replaced it). Two are
+# COLLISIONS, where one circuit gives one value to two differently-named domains, which is the defect
+# RC-D exists to prevent and is local by nature — a domain constant never meets another circuit's, so
+# only an in-circuit collision can matter. Two are ROLE mismatches, where a derivation whose name
+# declares one purpose is hashed in the domain of another. None of the four has a nameable path to
+# stolen or minted value: every one would need a Poseidon collision to be exploited.
+#
+# **How the dead entry was found, because it is the instrument gap this file leaves open**: not by
+# this gate. It reports "4 adjudicated" against a file holding five entries, and nothing compares the
+# two numbers — unlike the phase, metadata and hidden-test gates, which each carry a stale-entry check.
+# The entry was found by sweeping every exception list by hand and re-reading each reason. The
+# mismatch is recorded here rather than left for the next sweep to rediscover.
 
 src/contract/betting_stake/proof/claim.zk :: collision :: 3 : OBL-Z19 — `DOMAIN_NULLIFIER` and `DOMAIN_TX_BINDING` are both `witness_base(3)`, and both derivations are exposed (:66-68, :70-71), so this circuit's nullifier and its tx binding are hashed in one domain. The header comment claims "every poseidon_hash prepends a unique domain constant", which is the property it breaks. Repair is one value
-src/contract/oracle/proof/push_value_commitment.zk :: collision :: 4 : OBL-Z19 — the strongest of the five, because it is the one whose collision is *constructible* rather than merely unseparated: `ORACLE_COMMITMENT` (4) and `COMMITMENT` are both 4, and both are 3-argument hashes over prover-chosen field elements, so choosing `(value, nonce) = (staker_secret, oracle_id)` makes `computed_commitment == oracle_commitment` exactly. Both are exposed (:94, :95). The value 4 here is not an oversight — OBL-Z9 records the operator commitment as `H(witness_base(4), oracle_secret, oracle_id)` deliberately — which is why the repair is a decision about that row's remedy rather than a one-word edit
+# --- ONE ENTRY RETIRED 2026-09-24: the collision it exempted was repaired ------------------------
+#
+# The entry that stood here read, in full:
+#
+#   src/contract/oracle/proof/push_value_commitment.zk :: collision :: 4 : OBL-Z19 — the strongest of
+#   the five, because it is the one whose collision is *constructible* rather than merely
+#   unseparated: `ORACLE_COMMITMENT` (4) and `COMMITMENT` are both 4, and both are 3-argument hashes
+#   over prover-chosen field elements, so choosing `(value, nonce) = (staker_secret, oracle_id)`
+#   makes `computed_commitment == oracle_commitment` exactly. Both are exposed (:94, :95). The value 4
+#   here is not an oversight — OBL-Z9 records the operator commitment as
+#   `H(witness_base(4), oracle_secret, oracle_id)` deliberately — which is why the repair is a
+#   decision about that row's remedy rather than a one-word edit
+#
+# The repair it asked for happened: the circuit now reads `DOMAIN_COMMITMENT = witness_base(4)` (:60)
+# and `DOMAIN_OPERATOR_COMMITMENT = witness_base(8)` (:70), so the operator commitment has a domain of
+# its own and the two hashes no longer meet. A retired entry is kept rather than deleted because the
+# reasoning above is the record of why the *decision* was non-obvious, and because an entry that
+# disappears silently is indistinguishable from one that was never written.
 src/contract/roulette/proof/place_bet.zk :: role :: derived_nullifier : OBL-Z19 — the nullifier is derived in `DOMAIN_COMMITMENT`, and it is inert as well: `OBL-Z18` established that the host takes neither the id nor the nullifier from this circuit (`Bet::new` derives both itself, `entrypoint.rs:364-373`), so the circuit's copies are unused. Scheduled with that in mind — the repair changes nothing observable until the circuit's outputs are consumed
 src/contract/insurance_market/proof/purchase_coverage_with_capability.zk :: role :: computed_nullifier : OBL-Z19 — the nullifier is derived in `DOMAIN_COMMITMENT`. Not inert: this circuit is one of `OBL-Z16`'s two live sites, so its nullifier is read where its capability check is not
 src/contract/insurance_market/proof/purchase_coverage_with_dag.zk :: role :: computed_nullifier : OBL-Z19 — the same shape as the sibling above, in the DAG variant

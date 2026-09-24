@@ -55,7 +55,7 @@ src/contract/oracle/proof/aggregate.zk : max_result : host: oracle entrypoint.rs
 # --- values the host compares against the stored object ------------------------------------
 src/contract/tender/proof/reveal_bid.zk : bid_id : host: tender entrypoint.rs reveal_bid_v1 loads the bid from `bids_db` by bid_id and rejects an unknown id before any other check
 src/contract/tender/proof/reveal_bid.zk : revealed_amount : host: tender entrypoint.rs:683 `if params.revealed_amount != bid.amount { ... "Revealed amount does not match sealed bid" }`
-src/contract/labor_market/proof/refund.zk : refund_amount : host: labor_market entrypoint.rs:1081 for non-milestone jobs `if params.refund_amount != job.payment_amount` -> reject (defence-in-depth over the HAZOP HIGH-3 finding)
+src/contract/labor_market/proof/refund.zk : refund_amount : host: labor_market entrypoint.rs:1115 for non-milestone jobs `if params.refund_amount != job.payment_amount` -> reject (defence-in-depth over the HAZOP HIGH-3 finding)
 
 # --- dispatch targets the host computes from the real call graph ---------------------------
 # The FuncRef ids are derived by the entrypoint from the child calls it is actually routing to,
@@ -71,7 +71,7 @@ src/contract/dex/proof/execute_swap.zk : bob_otc_func_id : host: dex entrypoint/
 # `promissory_note::transfer_v1` amount against `fill_amount - fee`. So this is a proven value
 # with no consumer until that binding lands (OBL-Z13), and `fill_amount` and `fee_bps` above it are
 # themselves prover-chosen.
-src/contract/dex/proof/execute_swap_fee.zk : fee : host: none — dex entrypoint/execute_swap_fee.rs reads neither `params.fee` nor `params.fee_bps`; the intended binding is the two child transfer value commitments, which dex validates for contract id only
+src/contract/dex/proof/execute_swap_fee.zk : fee : host: the entry here read "none — dex entrypoint/execute_swap_fee.rs reads neither `params.fee` nor `params.fee_bps`; the intended binding is the two child transfer value commitments, which dex validates for contract id only". **Corrected 2026-09-24: the first clause is no longer true** — the host now publishes `pallas::Base::from(params.fee)` as this circuit's public input (`entrypoint/execute_swap_fee.rs:75`) and rejects `params.fee_bps > 10_000` (`:114`), so both params are read. Whether that *binds* the exposed value, or only discloses it, is the question `OBL-Z13` asks and this entry cannot settle; the entry is kept because removing it would leave the site unclassified and turn the gate red, which is the one thing this file must not do silently
 
 # --- the payout of a slot spin: the host recomputes it from the spin -----------------------
 # slot/proof/settle_bet.zk exposes `payout` with no in-circuit constraint, under the comment
@@ -182,7 +182,7 @@ src/contract/tender/proof/reveal_bid.zk : tender_id : host: tender entrypoint.rs
 src/contract/tender/proof/select_winner.zk : tender_id : host: tender entrypoint.rs:748 `db_get(tenders_db, &params.tender_id.to_repr())?` -> "Tender not found"
 src/contract/tender/proof/select_winner.zk : winner_bid_id : host: tender entrypoint.rs:776 `db_get(bids_db, &params.winner_bid_id.to_repr())?` -> "Winner bid not found", then :786 rejects `winner_bid.tender_id != params.tender_id`
 src/contract/tender/proof/submit_bid_with_capability.zk : required_capability_id : host: tender entrypoint.rs:1010 rejects `params.required_capability_id != required_cap` (the stored `tender.required_capability`), under the `if let Some(required_cap)` guard at :1009
-src/contract/labor_market/proof/accept_job_with_capability.zk : capability_id : host: labor_market entrypoint.rs:1631 and :1638 in `accept_job_with_capability_v1` (:1626) require exactly one child call, of function 0x06 (`Identity::VerifyCapabilityV1`), whose `contract_id` matches the configured Identity contract — a real on-chain capability check, the only one in the repository
+src/contract/labor_market/proof/accept_job_with_capability.zk : capability_id : host: labor_market entrypoint.rs:1665 and :1672 in `accept_job_with_capability_v1` (:1660) require exactly one child call, of function 0x06 (`Identity::VerifyCapabilityV1`), whose `contract_id` matches the configured Identity contract — a real on-chain capability check, the only one in the repository
 # --- multisig sign/finalize: RETIRED 2026-09-22 — the entries had become dead text -----------
 # Four lines stood here, declaring `group_id` and `message_hash` free in `sign.zk` and
 # `finalize.zk`. The OBL-Z11 remedy made all four dead, and one of them *wrong*:
@@ -242,7 +242,7 @@ bin/darkirc/proof/rlnv2-diff-signal.zk : epoch : host: darkirc irc/client.rs:631
 # the transfer against. The residual — that the amount is *not* compared against the job's own
 # `milestones[i].payment_amount` — is a different proposition and is filed as OBL-C96.
 src/contract/roulette/proof/settle_bet.zk : payout : host: roulette entrypoint.rs:583-611 settle_bets_v1 recomputes total_payout from `bet.payout` in `bets_db` and binds it to the child transfer with `validate_child_value_commit`; `params.payout` reaches only the metadata arm (:138)
-src/contract/labor_market/proof/milestone_payment.zk : milestone_payment_amount : host: labor_market entrypoint.rs:389 the metadata arm publishes `params.payment_release` as this instance (the runtime checks the proof against that vector, `src/linear/src/zk_verifier.rs:234`), and `:1467` binds the same params value to the child transfer's value commit
+src/contract/labor_market/proof/milestone_payment.zk : milestone_payment_amount : host: labor_market entrypoint.rs:389 the metadata arm publishes `params.payment_release` as this instance (the runtime checks the proof against that vector, `src/linear/src/zk_verifier.rs:234`), and `:1501-1502` binds the same params value to the child transfer's value commit
 
 # --- the job's attestation: two children now, and one of them is the check ----------------------
 # `create_job.zk` exposes `attestation_id` as a witness the circuit never derives — it is the id the
@@ -251,7 +251,7 @@ src/contract/labor_market/proof/milestone_payment.zk : milestone_payment_amount 
 # and `Attestation::CheckAttestationV1 (0x0d)`, each identified by its function byte and each routed
 # against its own configured contract id (`entrypoint.rs:561-601`); the parent then decodes the
 # child's `CheckAttestationParamsV1` and refuses unless its id is this job's (`:606`). The callee is
-# what enforces the rest — `attestation/src/entrypoint.rs:965` looks the id up in the attestations
+# what enforces the rest — `attestation/src/entrypoint.rs:971` looks the id up in the attestations
 # tree and reverts when it names nothing or names an attestation that is not `Active` — and a child
 # that reverts reverts the transaction, which is why no consumer needs to read return data
 # (`OBL-C86`).
@@ -262,4 +262,4 @@ src/contract/labor_market/proof/milestone_payment.zk : milestone_payment_amount 
 # endpoint has existed. This entry records the mechanism the contract enforces; the fixture that
 # would drive it end-to-end needs an attestation created first through the attestation contract,
 # which this spec has no setup for. Recorded as a test gap, not claimed as a control.
-src/contract/labor_market/proof/create_job.zk : attestation_id : host: labor_market entrypoint.rs:561-606 create_job_v1 requires the `Attestation::CheckAttestationV1 (0x0d)` child, routed to the configured attestation cid, decodes its params and refuses a mismatch; the callee (`attestation/src/entrypoint.rs:965`) reverts on an unknown or inactive id
+src/contract/labor_market/proof/create_job.zk : attestation_id : host: labor_market entrypoint.rs:561-606 create_job_v1 requires the `Attestation::CheckAttestationV1 (0x0d)` child, routed to the configured attestation cid, decodes its params and refuses a mismatch; the callee (`attestation/src/entrypoint.rs:971`) reverts on an unknown or inactive id
