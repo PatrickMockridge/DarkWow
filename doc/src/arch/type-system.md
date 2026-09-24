@@ -838,7 +838,7 @@ the theorem.
 
 ## 7. Compiler-Enforced Invariants
 
-Every program that compiles SHALL satisfy these five invariants:
+Every program that compiles SHALL satisfy these seven invariants:
 
 1. **Name possession.** No name shall be used without being received or
    created. Authority is explicit in the type signature.
