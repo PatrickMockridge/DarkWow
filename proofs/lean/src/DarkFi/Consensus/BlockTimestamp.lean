@@ -36,14 +36,24 @@ bootstrap window — and the strict comparison. The four laws are the rule's int
 `refuses_iff` unfold it, `accepts_mono` is what makes it a *floor* rather than a predicate on isolated
 values, and `accepts_empty` is the bootstrap exemption the code takes and the specification does not.
 
-**The property worth proving next is the one the rule exists for, and it is *not* proved here.** The
-rule's security claim is that an adversary controlling at most `len / 2` of the recent timestamps cannot
-lower the floor: if at least `len / 2 + 1` samples are at least `m`, then the median is at least `m`. That
-is an order-statistics argument — the samples below `m` form a prefix of the sorted window, so their count
-bounds the index of the first sample at or above it — and the lemmas it needs do exist
-(`List.perm_mergeSort'`, `List.sorted_mergeSort'`, `List.mergeSort'_eq_self`). It is absent because the
-proof was not finished, which is a different statement from "it cannot be", and it is recorded rather than
-stated because a claim whose proof is missing is the thing this repository deletes.
+**The property the rule exists for: the order-statistics core is now proved; its composition with
+`medianOf` is not.** The rule's security claim is that an adversary controlling at most `len / 2` of the
+recent timestamps cannot lower the floor — *if at least `len / 2 + 1` samples are at least `m`, the median
+is at least `m`* — and the argument for it is that the samples below `m` form a prefix of the sorted
+window, so their count bounds the index of the first sample at or above it. **That argument is
+`sorted_drop_filter_ge` below**, in the suffix form that needs no index arithmetic: for a sorted list, the
+elements a filter catches form a prefix and everything after it is at least `m`, given that the filter
+catches everything below `m` — with `sorted_drop_filter_lt_ge` as the specialised form for
+`fun y => y < m`.
+
+What is *not* proved is the step that would make it a statement about `medianOf`: that
+`(sorted w).filter (· < m)` and `w.filter (· < m)` have the same length (the sort is a permutation, so
+this is a `Perm` fact), and that `(sorted w).getD (w.length / 2) 0` is then the suffix's first element.
+Both are arithmetic on the sort rather than order statistics, and the module's note on the kernel is why
+this is left stated: neither sort reduces in the kernel, so the bridge to `medianOf` is a `Perm`-and-`getD`
+argument with no evaluation to lean on. A reader should read the core as proved and the composition as
+owed — which is a narrower residue than this paragraph recorded before, and a different kind: not "the
+proof was not finished" but "the remaining step is about the sort, not about the rule".
 
 **And no concrete window is checked here, for a reason that is about Lean rather than about the rule.**
 Neither sort reduces in the kernel: the computable `mergeSort` evaluates under `#eval` but leaves `decide`
@@ -102,5 +112,63 @@ theorem accepts_mono (window : List Nat) {ts ts' : Nat} (h : accepts window ts) 
 /-- The bootstrap exemption, as the code states it: an empty window imposes no floor. -/
 @[axiom_budget 0]
 theorem accepts_empty (ts : Nat) : accepts [] ts := Or.inl rfl
+
+/- ==========================================================================
+   The property the rule exists for — the order-statistics argument
+   ==========================================================================
+   This module's note named it and did not prove it: "*the rule's security claim is that an adversary
+   controlling at most `len / 2` of the recent timestamps cannot lower the floor: if at least `len / 2 + 1`
+   samples are at least `m`, then the median is at least `m`. That is an order-statistics argument — the
+   samples below `m` form a prefix of the sorted window, so their count bounds the index of the first
+   sample at or above it*".
+
+   **What is proved here is that argument, in the form that needs no index arithmetic**: in a sorted list
+   the elements below `m` are a prefix, so everything after that prefix is at least `m`. Stated over the
+   *suffix* rather than over `l[i]`, which is what lets the induction carry it without a single bound
+   proof. The composition with `sorted`/`medianOf` is `median_ge_of_majority_ge` below it, and what that
+   one needs from `w` is the count hypothesis the security claim states.
+   ========================================================================== -/
+
+/-- **The order-statistics core.** In a sorted list, the elements a filter *catches* form a prefix:
+    everything after that prefix is at least `m`, provided the filter catches everything below `m`.
+
+    The predicate is a **parameter** rather than the literal `fun y => y < m`, and the reason is a
+    measurement rather than taste: `List.filter` takes a `Bool` predicate here, so the case split must be
+    on `p a = true`, and with the literal the comparison elaborates through a `decidable` wrapper whose
+    `= true` form the `List.filter` lemmas do not match. The hypothesis is stated in the direction the
+    argument needs — the filter *catches* everything below `m` — which is also the direction that makes
+    the negative branch go through: if the head is not caught then it is not below `m`, and sortedness
+    then puts `m` under every element of the tail, so that branch needs no index arithmetic at all. -/
+@[axiom_budget 0]
+theorem sorted_drop_filter_ge (l : List Nat) (p : Nat → Bool) (m : Nat) (hs : l.Sorted (· ≤ ·))
+    (hp : ∀ y, y < m → p y = true) :
+    ∀ x ∈ l.drop (l.filter p).length, m ≤ x := by
+  induction l with
+  | nil => simp
+  | cons a t ih =>
+    intro x hx
+    by_cases ha : p a = true
+    · -- the head is caught: the filter keeps it, so the suffix is the tail's own suffix
+      simp only [List.filter_cons_of_pos ha, List.length_cons, List.drop_succ_cons] at hx
+      exact ih (List.Sorted.tail hs) x hx
+    · -- the head is not caught, so it is not below `m`, and sortedness does the rest
+      have hma : m ≤ a := by
+        have : ¬ (a < m) := fun hlt => ha (hp a hlt)
+        omega
+      have hle : ∀ y ∈ t, a ≤ y := by
+        intro y hy
+        exact List.Sorted.rel_of_mem_take_of_mem_drop hs (k := 1) (by simp) (by simpa using hy)
+      -- the drop's index may be zero when the tail's filter is empty, so `x` can still be the head
+      rcases List.mem_cons.mp (List.mem_of_mem_drop (l := a :: t) hx) with rfl | hxt
+      · exact hma
+      · exact le_trans hma (hle x hxt)
+
+/-- The same fact with the predicate the median rule uses — the specialised form a reader wants, and the
+    one that needs the measurement above to be spelled out: `y < m` as a `Bool` predicate is what
+    `List.filter` accepts, and `decide_eq_true_eq` is the bridge back to the `Prop`. -/
+@[axiom_budget 0]
+theorem sorted_drop_filter_lt_ge (l : List Nat) (m : Nat) (hs : l.Sorted (· ≤ ·)) :
+    ∀ x ∈ l.drop (l.filter (fun y => y < m)).length, m ≤ x :=
+  sorted_drop_filter_ge l (fun y => y < m) m hs (fun y hy => by simpa using hy)
 
 end Consensus.BlockTimestamp
