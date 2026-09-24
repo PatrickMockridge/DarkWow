@@ -43,6 +43,10 @@ use super::helpers::mk_ep;
 const PLAN_ID: u32 = 1;
 const PLAN_PRICE: u64 = 1000;
 const PLAN_DURATION: u64 = 200;
+/// The allowance the plan sells, and the window it resets in (`OBL-C105`). The fixture runs one
+/// block per endpoint, so the window never elapses and the second use must be refused.
+const PLAN_USES: u64 = 1;
+const PLAN_RATE_PERIOD: u64 = 100_000;
 
 /// The nonce both verify_access endpoints bind (`OBL-C84`), so the capability is one value per call.
 const ACCESS_NONCE: pallas::Base = pallas::Base::from_raw([1, 0, 0, 0]);
@@ -158,6 +162,11 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
                     price: PLAN_PRICE,
                     asset_id,
                     duration_blocks: PLAN_DURATION,
+                    // One use per period, and the period is longer than the fixture's block span:
+                    // the allowance is what `update_usage` must enforce (`OBL-C105`), and this is
+                    // the value the control below spends.
+                    uses_allowed: PLAN_USES,
+                    rate_period: PLAN_RATE_PERIOD,
                     treasury_share: 0,
                     endowment_share: 0,
                     active: true,
@@ -261,6 +270,33 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
+            // NEGATIVE — `OBL-C105`'s control, and the one the contract could not express before the
+            // plan carried an allowance: the **same** usage call a second time. The plan sells
+            // `PLAN_USES` uses per `PLAN_RATE_PERIOD` blocks and the fixture advances one block per
+            // endpoint, so the window cannot elapse and the first call spends the whole allowance.
+            // Read the cause in the `DWOW_TEST_LOGS=1` output: `No uses remaining` (`Custom(5)`),
+            // which is `update_usage_v1` refusing on the record's allowance rather than on anything
+            // else. If the allowance stops being copied at subscribe, this endpoint starts
+            // succeeding — which is exactly what it did before this row was worked.
+            EndpointSpec {
+                name: "update_usage_past_allowance", is_zk: true,
+                expectation: EndpointExpectation::Rejection,
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new({
+                    let fixture = fixture.clone();
+                    move || {
+                        let f = fixture.lock().unwrap();
+                        let asset_id = f.asset_id.ok_or_else(|| dwow_core::Error::Custom("asset not known".into()))?;
+                        let id = subscription_id(&sub_pub, asset_id);
+                        #[expect(clippy::unwrap_used, reason = "PublicKey rejects identity, so x()/y() is always Some")]
+                        let (px, py) = (sub_pub.x().unwrap(), sub_pub.y().unwrap());
+                        let block = f.height.ok_or_else(|| dwow_core::Error::Custom("subscribe height unknown".into()))?;
+                        let r = h.update_usage(id.inner(), px, py, pallas::Base::from(block + 1), pallas::Base::from(8u64), sub_secret, block + 1, vec![pallas::Base::from(0u64)]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                    }
+                }),
+            },
             // `RenewV1` before `CancelV1`, and the second is a **declared rejection**, because one
             // subscription has **one** nullifier: `cancel.zk` and `renew.zk` both constrain
             // `poseidon_hash(1, subscription_id, subscriber_secret)` and both marks it spent, so

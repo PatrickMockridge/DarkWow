@@ -123,6 +123,11 @@ impl dwow_serial::Encodable for Plan {
             w.write_all(&v.to_repr())?;
             len += 32;
         }
+        // `OBL-C105`: the allowance, appended past the optional bulla.
+        w.write_all(&self.uses_allowed.to_le_bytes())?;
+        len += 8;
+        w.write_all(&self.rate_period.to_le_bytes())?;
+        len += 8;
         Ok(len)
     }
 }
@@ -175,6 +180,12 @@ impl dwow_serial::Decodable for Plan {
         } else {
             None
         };
+        // `OBL-C105`: the allowance, appended past the optional bulla.
+        let mut buf8 = [0u8; 8];
+        d.read_exact(&mut buf8)?;
+        let uses_allowed = u64::from_le_bytes(buf8);
+        d.read_exact(&mut buf8)?;
+        let rate_period = u64::from_le_bytes(buf8);
 
         Ok(Plan {
             version,
@@ -188,6 +199,8 @@ impl dwow_serial::Decodable for Plan {
             active,
             dao_escrow_discount,
             required_dao_escrow,
+            uses_allowed,
+            rate_period,
         })
     }
 }
@@ -224,6 +237,11 @@ impl dwow_serial::AsyncEncodable for Plan {
             w.write_slice_async(&v.to_repr()).await?;
             len += 32;
         }
+        // `OBL-C105`: the allowance, appended past the optional bulla.
+        w.write_slice_async(&self.uses_allowed.to_le_bytes()).await?;
+        len += 8;
+        w.write_slice_async(&self.rate_period.to_le_bytes()).await?;
+        len += 8;
         Ok(len)
     }
 }
@@ -279,6 +297,12 @@ impl dwow_serial::AsyncDecodable for Plan {
         } else {
             None
         };
+        // `OBL-C105`: the allowance, appended past the optional bulla.
+        let mut buf8 = [0u8; 8];
+        d.read_slice_async(&mut buf8).await?;
+        let uses_allowed = u64::from_le_bytes(buf8);
+        d.read_slice_async(&mut buf8).await?;
+        let rate_period = u64::from_le_bytes(buf8);
 
         Ok(Plan {
             version,
@@ -292,6 +316,8 @@ impl dwow_serial::AsyncDecodable for Plan {
             active,
             dao_escrow_discount,
             required_dao_escrow,
+            uses_allowed,
+            rate_period,
         })
     }
 }
@@ -551,6 +577,16 @@ pub struct Plan {
     pub dao_escrow_discount: u32,
     /// Required DAO-Escrow bulla for discount (optional)
     pub required_dao_escrow: Option<pallas::Base>,
+    /// Uses allowed per rate period — the allowance the record is opened with (`OBL-C105`).
+    ///
+    /// The `Subscription` record has carried `uses_allowed`/`rate_period`/`uses_remaining` since it
+    /// was written, documented as its rate-limiting fields, and **nothing ever set them**: `Plan` had
+    /// no such fields, so `subscribe` could copy nothing and stored zeros — and a zero `rate_period`
+    /// makes `update_usage`'s window check true on every call, which is why the limit read as absent
+    /// rather than mis-set. The plan is where the allowance belongs: it is what the price buys.
+    pub uses_allowed: u64,
+    /// Rate period in blocks: uses reset this many blocks after the last access.
+    pub rate_period: u64,
 }
 
 /// Capability derived from subscription for access control
@@ -1278,6 +1314,13 @@ impl Plan {
             None
         };
 
+        // `OBL-C105`: the allowance, appended past the optional bulla.
+        let uses_allowed =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+        let rate_period =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+
         Ok(Plan {
             version,
             id,
@@ -1290,13 +1333,15 @@ impl Plan {
             active,
             dao_escrow_discount,
             required_dao_escrow,
+            uses_allowed,
+            rate_period,
         })
     }
 
     /// Encode to canonical bytes (ρ-calculus: quote).
-    /// Fixed 99 + 32 optional = 131 max.
+    /// Fixed 115 + 32 optional = 147 max.
     pub fn encode(&self) -> Vec<u8> {
-        let cap = if self.required_dao_escrow.is_some() { 131 } else { 99 };
+        let cap = if self.required_dao_escrow.is_some() { 147 } else { 115 };
         let mut b = Vec::with_capacity(cap);
         b.push(self.version);
         b.extend_from_slice(&self.id.to_le_bytes());
@@ -1312,6 +1357,12 @@ impl Plan {
         if let Some(ref v) = self.required_dao_escrow {
             b.extend_from_slice(&v.to_repr());
         }
+        // `OBL-C105`: the allowance, appended past the optional bulla. Without these two lines the
+        // decode's `MIN_ENCODED_SIZE` guard reads past the end of what this wrote, which is a wasm
+        // panic rather than a decode error — and it is what the row's four-codec note is about: the
+        // three other codecs had the fields and this one did not.
+        b.extend_from_slice(&self.uses_allowed.to_le_bytes());
+        b.extend_from_slice(&self.rate_period.to_le_bytes());
         b
     }
 }

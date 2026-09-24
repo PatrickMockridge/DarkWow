@@ -229,6 +229,8 @@ fn test_plan_encoding() {
         active: true,
         dao_escrow_discount: 2000,
         required_dao_escrow: Some(pallas::Base::from(2)),
+        uses_allowed: 3,
+        rate_period: 1000,
     };
 
     let encoded = serialize(&plan);

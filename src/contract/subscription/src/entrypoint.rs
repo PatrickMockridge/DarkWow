@@ -445,11 +445,15 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
         created_at: current_block,
         dao_escrow_bulla: params.dao_escrow_bulla,
         dao_membership_note: params.dao_membership_note,
-        uses_allowed: 0,
-        rate_period: 0,
+        // `OBL-C105`: the allowance the plan defines, copied — not zeros. With `rate_period` zero
+        // `update_usage`'s `is_new_period` was true on every call, so the limit was not mis-set but
+        // *absent*: a plan sold by the period bought unlimited use, and nothing in the tree defined
+        // the allowance at all until `Plan` gained these fields.
+        uses_allowed: plan.uses_allowed,
+        rate_period: plan.rate_period,
         period_uses: 0,
         last_access_block: current_block,
-        uses_remaining: 0,
+        uses_remaining: plan.uses_allowed,
         instance_seed: params.instance_seed,
     };
 
