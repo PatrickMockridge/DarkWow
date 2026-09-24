@@ -153,6 +153,35 @@ unwrap" as a lint campaign, "determinism" as two hashes compared at runtime, "re
 that happened to match on one machine. Stated as purity, they are one property with one failure mode,
 and a violation is a specific unaccounted effect rather than a test that went red somewhere.
 
+**How the reproducibility clause is met, measured 2026-09-24.** It is not free, and it is not a
+convention. A panic location is `Location { file, line, col }` — a data-section string and two
+integers, none of them debuginfo — so a *comment-only* edit shifts the line numbers of every panic site
+after it and moves the artifact. Two build settings remove that dependence, and together they take all
+nine genesis contracts to clean under `contrib/wasm_artifact_check.sh --genesis`:
+
+* **`[profile.release] strip = "symbols"`** in the workspace root, which drops the wasm *name* section
+  — where the panic-marker strings live (`panic_bounds_check`, `rust_begin_unwind`, `core::panicking`).
+  It removes those strings and nothing about the code: the Code section is byte-identical afterwards.
+  A profile setting rather than a Makefile flag, deliberately — the container builds contracts with
+  bare cargo, not through the Makefiles, so a flag would have to be mirrored or the container's genesis
+  hash would diverge from the host's.
+* **`-Zlocation-detail=none`** on the contract build, which empties the file and line of every
+  `Location` built by a first-party crate. This is the real removal of the embedded `src/…` paths:
+  measured on `native_token`, its three (`sdk/src/crypto/pedersen.rs`, `sdk/src/crypto/merkle_node.rs`,
+  `contract/native_token/src/model/mod.rs`) go to zero, and with `strip` applied alongside it the
+  artifact drops 417,500 → 373,496 bytes.
+
+Neither is sufficient alone — `strip` leaves the paths, and the location flag leaves the marker
+strings — and the combination's measured effect is the one this section requires: inserting a comment
+into `sdk/src/crypto/merkle_node.rs` changes the artifact *without* the levers (`1c89c9d4…` against
+`27ad85fc…`) and does **not** change it with them (`e539f88c…` either way). That retires the stated
+cost of every comment-only deferred item whose price was "a comment still moves the pin".
+
+What it does **not** buy is totality: `alloc`'s `handle_alloc_error` and `core::fmt` panic by design and
+are linked into all nine, which is why four of them carry no first-party panic site and still carry
+panic machinery. The artifact-level invariant is the one `contrib/wasm_artifact_check.sh` checks — no
+marker strings, no embedded first-party path — and its header states what that is narrower than.
+
 This is also what makes the account align with the process calculus the rest of this specification is
 built on — [type-system.md](type-system.md) §0 derives the type system from the ρ-calculus, and §1
 defines a type as a behavioural position whose barbs are its observable actions. The observable
