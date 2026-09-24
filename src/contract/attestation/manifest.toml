@@ -50,6 +50,13 @@ code = 7
 requires_proof = true
 proof_circuit = "CheckNotRevokedV2"
 
+# No `requires_proof`: this is a host lookup, and its job is to *fail* the call when the id names
+# nothing or names an inert attestation — which is what lets `labor_market`'s `create_job_v1` require
+# it as a child call without reading the child's return data (`OBL-C86`, `OBL-Z16`).
+[[functions]]
+name = "check_attestation"
+code = 13
+
 [[functions]]
 name = "delegate_attestation"
 code = 8

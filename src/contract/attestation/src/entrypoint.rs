@@ -57,7 +57,8 @@ use crate::{
         ExpireAttestationParamsV1, ExpireAttestationUpdateV1, RevokeAttestationParamsV1,
         RevokeAttestationUpdateV1, ValidateClaimParamsV1, ValidateClaimUpdateV1,
         VerifyClaimParamsV1, VerifyClaimUpdateV1, CheckNotRevokedParamsV1,
-        CheckNotRevokedUpdateV1, DelegateAttestationParamsV1, DelegateAttestationUpdateV1,
+        CheckNotRevokedUpdateV1, CheckAttestationParamsV1, CheckAttestationUpdateV1,
+        DelegateAttestationParamsV1, DelegateAttestationUpdateV1,
         VerifyChainParamsV1, VerifyChainUpdateV1, UpdateDelegationParamsV1,
         UpdateDelegationUpdateV1,
     },
@@ -253,6 +254,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 vec![txb, Base::zero()],
             ));
         }
+        AttestationFunction::CheckAttestationV1 => {
+            // Non-ZK (a host lookup, like lottery's `InitializeV1`): there is no circuit, so there are
+            // no public inputs to publish. The arm exists because the match is exhaustive — it pushes
+            // nothing on purpose, and a caller proves nothing on purpose.
+            let _ = payload;
+        }
         AttestationFunction::DelegateAttestationV1 => {
             let params = match DelegateAttestationParamsV1::decode(payload) {
                 Ok(p) => p,
@@ -398,6 +405,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         AttestationFunction::CheckNotRevokedV1 => {
             let params= CheckNotRevokedParamsV1::decode(payload)?;
             check_not_revoked_v1(cid, params)?
+        }
+        AttestationFunction::CheckAttestationV1 => {
+            let params = CheckAttestationParamsV1::decode(payload)?;
+            check_attestation_v1(cid, params)?
         }
         AttestationFunction::DelegateAttestationV1 => {
             let params = DelegateAttestationParamsV1::decode(payload)?;
@@ -947,6 +958,32 @@ fn check_not_revoked_v1(cid: ContractId, params: CheckNotRevokedParamsV1) -> Res
     Ok(CheckNotRevokedUpdateV1 { is_not_revoked: true, proof_hash }.encode())
 }
 
+/// Resolve a **bare** `attestation_id` and refuse if it names nothing, or names an attestation that is
+/// not active. This is the callee `labor_market`'s `create_job_v1` requires as a child call, and the
+/// mechanism is worth stating: the check *reverts*, so a parent's requirement is enforced by the
+/// child's failure rather than by return data — no consumer contract in this tree reads a child
+/// call's return data (`OBL-C86`), which is why the requirement has to be a call that can fail.
+fn check_attestation_v1(cid: ContractId, params: CheckAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
+    msg!("[attestation::check_attestation_v1] Resolving attestation {:?}", params.attestation_id);
+
+    let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
+    let attestation: Attestation =
+        match wasm::db::db_get(attestations_db, &params.attestation_id.to_bytes())? {
+            Some(data) => Attestation::decode(&data)?,
+            None => {
+                msg!("[attestation::check_attestation_v1] ERROR: Attestation not found");
+                return Err(ContractError::InvalidFunction.into())
+            }
+        };
+
+    if attestation.state != AttestationState::Active {
+        msg!("[attestation::check_attestation_v1] ERROR: Attestation is not active");
+        return Err(ContractError::InvalidFunction.into())
+    }
+
+    CheckAttestationUpdateV1 { exists: true }.encode()
+}
+
 fn delegate_attestation_v1(cid: ContractId, params: DelegateAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::delegate_attestation_v1] Delegating attestation: {:?}", params.delegation_id);
 
@@ -1256,6 +1293,18 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             msg!(
                 "[attestation::process_update] CheckNotRevoked: is_not_revoked={:?}",
                 update.is_not_revoked
+            );
+            Ok(())
+        }
+        AttestationFunction::CheckAttestationV1 => {
+            let update = CheckAttestationUpdateV1::decode(update_payload)?;
+            // A check, not a state change: nothing is written, and the arm exists because the
+            // dispatch is exhaustive over the function set. It touches no database on purpose —
+            // `apply` may not call a read-triad function (`OBL-C72`), and this arm is the one place
+            // where the cheapest way to obey that is to do nothing at all.
+            msg!(
+                "[attestation::process_update] CheckAttestation: exists={:?} (no state written)",
+                update.exists
             );
             Ok(())
         }

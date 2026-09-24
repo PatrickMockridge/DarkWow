@@ -23,6 +23,10 @@ rand = { version = "0.8.5", optional = true }
 
 lazy_static = "1.5.0"
 dwow_promissory_note_contract = { version = "0.1.0", path = "../promissory_note", features = ["no-entrypoint"] }
+# Typed access to `CheckAttestationParamsV1`, which `create_job_v1` requires as a child call so that
+# the job's `attestation_id` names a real, active attestation (`OBL-Z16`). Same shape as the
+# promissory_note dependency above: no entrypoint, model and call types only.
+dwow_attestation_contract = { version = "0.1.0", path = "../attestation", features = ["no-entrypoint"] }
 
 [dev-dependencies]
 smol = "2.0.2"

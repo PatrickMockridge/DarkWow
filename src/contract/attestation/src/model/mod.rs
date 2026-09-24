@@ -787,6 +787,37 @@ pub struct CheckNotRevokedUpdateV1 {
     pub proof_hash: pallas::Base,
 }
 
+/// Parameters for CheckAttestationV1 — the *bare id* lookup that `VerifyClaimV1` and
+/// `ValidateClaimV1` cannot do, because both take a `claim_id` and no claim exists yet when a job is
+/// created (`labor_market`'s `create_job_v1`, whose `attestation_id` was a prover-chosen expose with
+/// nothing behind it — `OBL-Z16`).
+///
+/// No proof: this is a host lookup whose point is to **fail** when the id names nothing or names an
+/// attestation that is not active. A child call that reverts reverts the whole transaction, which is
+/// what lets a parent require this callee without reading its return data — no consumer contract in
+/// this tree reads a child's return data (`OBL-C86`).
+#[derive(Debug, Clone)]
+pub struct CheckAttestationParamsV1 {
+    /// The attestation id to resolve
+    pub attestation_id: AttestationId,
+}
+
+impl dwow_serial::Encodable for CheckAttestationParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CheckAttestationParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl CheckAttestationParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut b = Vec::with_capacity(32); b.extend_from_slice(self.attestation_id.0.to_repr().as_ref()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("CheckAttestationParamsV1: expected 32 bytes, got {}", data.len()))); } let attestation_id = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 0)?)).ok_or_else(|| ContractError::IoError("CheckAttestationParamsV1: invalid attestation_id".into()))?; Ok(CheckAttestationParamsV1 { attestation_id: AttestationId(attestation_id) }) } }
+
+/// Result of CheckAttestationV1
+#[derive(Debug, Clone)]
+pub struct CheckAttestationUpdateV1 {
+    /// Always true: the call reverts rather than reporting false when the id does not resolve, so a
+    /// `false` value would be a state this function cannot produce.
+    pub exists: bool,
+}
+
+impl dwow_serial::Encodable for CheckAttestationUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CheckAttestationUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl CheckAttestationUpdateV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { Ok(vec![self.exists as u8]) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 1 { return Err(ContractError::IoError(format!("CheckAttestationUpdateV1: expected 1 byte, got {}", data.len()))); } Ok(CheckAttestationUpdateV1 { exists: data[0] != 0 }) } }
+
 /// Parameters for verifying a delegation chain
 #[derive(Debug, Clone,)]
 pub struct VerifyChainParamsV1 {

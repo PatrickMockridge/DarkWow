@@ -89,6 +89,7 @@ define_contract_function!(AttestationFunction {
     UpdateDelegationV1 = 0x0a,
     AttestSlashV1 = 0x0b,
     CommitFeeScheduleV1 = 0x0c,
+    CheckAttestationV1 = 0x0d,
 });
 
 /// Capability descriptor

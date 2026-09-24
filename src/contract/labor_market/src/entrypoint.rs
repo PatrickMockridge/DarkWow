@@ -548,22 +548,22 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 fn create_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobParamsV1) -> ContractResult {
     msg!("[labor_market::create_job_v1] Creating job: {:?}", params.job_id);
 
-    // Validate child call is promissory_note::transfer_v1 (0x04) for escrow deposit
+    // Validate the TWO child calls this function requires: the promissory_note::transfer_v1 (0x04)
+    // escrow deposit, and Attestation::CheckAttestationV1 (0x0d), which resolves the job's
+    // `attestation_id` and *reverts* if it names nothing or names an attestation that is not active.
+    //
+    // Two, not one, since 2026-09-24 (`OBL-Z16`): `attestation_id` was an expose the prover chose
+    // with nothing behind it, and the attestation child is the callee that puts something behind it.
+    // The *order* of the two is the caller's, so each is identified by its function byte; each is
+    // then routed-checked against its own configured contract id, which is what stops an 0x0d
+    // handler in another contract from satisfying the requirement.
     let this_call = &calls[call_idx];
-    if this_call.children_indexes.len() != 1 {
-        msg!("[create_job_v1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
+    if this_call.children_indexes.len() != 2 {
+        msg!("[create_job_v1] Error: Expected 2 child calls (promissory_note::transfer_v1 0x04 and attestation::CheckAttestationV1 0x0d), got {}",
              this_call.children_indexes.len());
         return Err(LaborMarketError::InvalidChildrenIndexes.into())
     }
-    let child_idx = this_call.children_indexes[0];
-    let child_call = &calls[child_idx].data;
-    if child_call.data[0] != 0x04 {
-        msg!("[create_job_v1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
-             child_call.data[0]);
-        return Err(LaborMarketError::InvalidChildCall.into())
-    }
 
-    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
     let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(LaborMarketError::InvalidChildCall)?;
@@ -572,7 +572,41 @@ fn create_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     if promissory_note_cid == ContractId::ZERO {
         return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    let attestation_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID)?
+        .ok_or(LaborMarketError::InvalidChildCall)?;
+    let attestation_cid: ContractId = deserialize(&attestation_bytes)?;
+    // Same fail-closed rule as the promissory_note id above, and for the same reason (`OBL-C16`): an
+    // unconfigured contract id must refuse, never skip the check it stands for.
+    if attestation_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("attestation contract ID not configured".into()));
+    }
+
+    let transfer_idx = this_call.children_indexes.iter().copied()
+        .find(|i| calls.get(*i).map(|c| c.data.data.first() == Some(&0x04)).unwrap_or(false));
+    let attest_idx = this_call.children_indexes.iter().copied()
+        .find(|i| calls.get(*i).map(|c| c.data.data.first() == Some(&0x0d)).unwrap_or(false));
+    let (Some(child_idx), Some(attest_child_idx)) = (transfer_idx, attest_idx) else {
+        msg!("[create_job_v1] Error: the two children must be promissory_note::transfer_v1 (0x04) and attestation::CheckAttestationV1 (0x0d)");
+        return Err(LaborMarketError::InvalidChildCall.into())
+    };
+    let child_call = &calls[child_idx].data;
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+
+    // The attestation child: routed to the configured attestation contract, and about *this* job's
+    // attestation_id. The binding matters as much as the call — the callee reverts on an unknown or
+    // inactive id, but only for the id it was given, so a caller could otherwise satisfy the
+    // requirement with a check about somebody else's attestation.
+    let attest_child = &calls[attest_child_idx].data;
+    validate_child_contract_id(&attest_child.contract_id, &attestation_cid)?;
+    let attest_params = dwow_attestation_contract::model::CheckAttestationParamsV1::decode(&attest_child.data[1..])
+        .map_err(|e| {
+            msg!("[create_job_v1] Error: malformed CheckAttestationV1 params: {:?}", e);
+            LaborMarketError::InvalidChildCall
+        })?;
+    if attest_params.attestation_id.0 != params.attestation_id {
+        msg!("[create_job_v1] Error: the attestation child is about a different attestation_id");
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([

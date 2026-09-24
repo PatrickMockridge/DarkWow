@@ -243,3 +243,23 @@ bin/darkirc/proof/rlnv2-diff-signal.zk : epoch : host: darkirc irc/client.rs:631
 # `milestones[i].payment_amount` — is a different proposition and is filed as OBL-C96.
 src/contract/roulette/proof/settle_bet.zk : payout : host: roulette entrypoint.rs:583-611 settle_bets_v1 recomputes total_payout from `bet.payout` in `bets_db` and binds it to the child transfer with `validate_child_value_commit`; `params.payout` reaches only the metadata arm (:138)
 src/contract/labor_market/proof/milestone_payment.zk : milestone_payment_amount : host: labor_market entrypoint.rs:389 the metadata arm publishes `params.payment_release` as this instance (the runtime checks the proof against that vector, `src/linear/src/zk_verifier.rs:234`), and `:1467` binds the same params value to the child transfer's value commit
+
+# --- the job's attestation: two children now, and one of them is the check ----------------------
+# `create_job.zk` exposes `attestation_id` as a witness the circuit never derives — it is the id the
+# job is *about*, so there is nothing in-circuit to bind it to. What makes it real is a child call:
+# `create_job_v1` requires **two** children since 2026-09-24 (`OBL-Z16`), the promissory_note deposit
+# and `Attestation::CheckAttestationV1 (0x0d)`, each identified by its function byte and each routed
+# against its own configured contract id (`entrypoint.rs:561-601`); the parent then decodes the
+# child's `CheckAttestationParamsV1` and refuses unless its id is this job's (`:606`). The callee is
+# what enforces the rest — `attestation/src/entrypoint.rs:965` looks the id up in the attestations
+# tree and reverts when it names nothing or names an attestation that is not `Active` — and a child
+# that reverts reverts the transaction, which is why no consumer needs to read return data
+# (`OBL-C86`).
+#
+# STATED RATHER THAN IMPLIED: the spec's `CreateJobV1` endpoint still supplies `children: vec![]`
+# (`bin/dwowd/src/tests/specs/labor_market_spec.rs:34`), so it cannot succeed — and could not before
+# this change either, because the function has required the deposit child for longer than that
+# endpoint has existed. This entry records the mechanism the contract enforces; the fixture that
+# would drive it end-to-end needs an attestation created first through the attestation contract,
+# which this spec has no setup for. Recorded as a test gap, not claimed as a control.
+src/contract/labor_market/proof/create_job.zk : attestation_id : host: labor_market entrypoint.rs:561-606 create_job_v1 requires the `Attestation::CheckAttestationV1 (0x0d)` child, routed to the configured attestation cid, decodes its params and refuses a mismatch; the callee (`attestation/src/entrypoint.rs:965`) reverts on an unknown or inactive id

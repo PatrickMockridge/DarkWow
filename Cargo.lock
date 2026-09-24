@@ -2841,6 +2841,7 @@ dependencies = [
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_attestation_contract",
  "dwow_core",
  "dwow_promissory_note_contract",
  "getrandom 0.2.17",

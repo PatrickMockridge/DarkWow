@@ -235,9 +235,17 @@ impl CapabilityDescriptor {
 ///
 /// This is the subset of type-system.md §1.1's alphabet that types a *capability* — the 14 rows
 /// 1-14 — not the whole alphabet. The comment here used to read "Mirrors the Lean4 `inductive
-/// Barb` in Types.lean", which was false in both directions: the Lean model carries 22 barbs and
-/// `dwow_core::barb::BarbId` carries all 32. `contrib/barb_alphabet_diff.sh` extracts all four
-/// sets and diffs them.
+/// Barb` in Types.lean", which was false in both directions: the Lean model carried 22 barbs and
+/// `dwow_core::barb::BarbId` carried 32. Both numbers were wrong when they were written and are
+/// corrected here to the gate's own measurement — `bash contrib/barb_alphabet_diff.sh` reports
+/// `counts: doc 33, lean 33, core 33, sdk 14, py 14`, with `core BarbId == §1.1` and
+/// `Lean Barb == §1.1` both holding, so the alphabet is 33 and the Lean model has all of it. What
+/// is *small* is this list: 14, which the sentence below already says. The gate extracts five sets
+/// and diffs them, not four.
+///
+/// Those two numbers waited a day for this file's own manifest cost rather than for a measurement:
+/// `src/sdk/**` is in every contract's `SOURCE_MANIFEST`, so a comment here makes all 32 artifacts
+/// hash-stale, which is why it rode the second re-roll batch rather than a drive-by (`OBL-C121`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Barb {
     /// ↓spend — can authorize value transfer
