@@ -57,7 +57,7 @@ Build with `cd proofs/lean && lake build DarkFi` (a bare `lake build` compiles n
 | `bool_check` | 0x53 | No | ✅ SOUND | Polynomial product: (v-0)(v-1)=0 → v∈{0,1} |
 | `is_equal_base` | 0x54 | Yes | ✅ FIXED | delta_invert constrained — purity constraint applied (0f69cd89) |
 | `less_than_or_equal` | 0x55 | Yes | ✅ SOUND | Exhaustive 1000×1000: 0 counterexamples |
-| `not_base` | 0x56 | Yes | ✅ SOUND | Deterministic: out = 1 - a for a∈{0,1} |
+| `not_base` | 0x56 | Yes | ✅ SOUND | Proved: `Comparison.not_base_correct` (added 2026-09-24) — `out = 1 - a` for `a ∈ {0,1}`, with the booleanness from `boolcheck_sound` |
 | `base_lt_strict` | 0x57 | Yes | ✅ SOUND | Exhaustive 1000×1000: 0 counterexamples |
 | `cond_select` | 0x60 | Yes | ✅ SOUND | cond∈{0,1} → output = if cond then a else b |
 | `zero_cond` | 0x61 | Yes | ✅ SOUND | Used in BurnV1 for dummy zero-value inputs |

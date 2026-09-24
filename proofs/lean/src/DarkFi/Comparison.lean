@@ -693,6 +693,66 @@ theorem base_lt_strict_sound (a b offset out : Int)
       omega
 
 /-
+## NotBase (0x56): `out = 1 - a` for boolean `a`
+
+Constraint: `out = sub(one, a)`, with `bool_check(a)` forcing `a ∈ {0,1}`.
+
+**This section is new, and why it is worth recording**: the opcode is documented as verified in four
+places — `opcodes.md`'s table and its `### NotBase (0x56) ✅ VERIFIED` section, `opcodes-status.md`,
+`zkvm_primitives.md` and `opcode_universe.md` — and **none of them named a theorem, because there was
+none.** `opcodes.md`'s section gives its "Lean 4 Verification" as
+
+    def not_base_satisfied (a out : Int) : Bool := (a = 0 ∨ a = 1) && out = (1 - a)
+
+which is the species this file has already deleted once: a statement-shaped thing that nothing proves.
+A `def : Bool` claims nothing; the check it encodes is a *computation*, and its running is not
+evidence unless the running is checked — which is what the deleted
+`boolean_output_must_be_constrained` note below is about, one opcode over. The same pattern cost
+`base_lt_strict` (0x57, above) its proof, where the "verification" was an IO loop in a file that is
+in no `lean_lib`.
+
+So this is the second opcode of the comparison family whose documented verdict was ahead of its
+proof, and the two together are the reason the family is now read as a set rather than one opcode at
+a time. Registered as `OBL-Z21`.
+-/
+
+/-- `NotBase` (0x56): its two cells. The operand and the cell the subtraction writes. -/
+structure NotBaseGadget where
+  /-- The operand, which `bool_check` restricts to `{0,1}`. -/
+  value : Int
+  /-- The output cell: `arith_chip.sub(one, value)` (`src/zk/vm.rs:1521-1525`, with the
+      `bool_check` it depends on at `:1515-1518`). -/
+  out : Int
+
+/-- **`NotBase` (0x56): the returned cell is the boolean negation of a boolean operand.**
+
+    The soundness is *not* self-contained, and that is the point of stating it this way: the
+    operand's being `{0,1}` is `boolcheck_sound` (above) applied to the polynomial `bool_check`
+    constrains — the opcode's own claim "deterministic" is true only because that check runs first,
+    and `1 - a` over a field or over `Int` is a *subtraction* otherwise. So this theorem depends on
+    the BoolCheck one rather than restating it, and the third clause states the consequence the
+    encodings rely on: the result is boolean too, so `not_base` output can be fed to the next gate. -/
+@[axiom_budget 1]
+theorem not_base_correct (g : NotBaseGadget)
+    (h_bool : g.value * (g.value - 1) = 0) (h_out : g.out = 1 - g.value) :
+    (g.value = 0 → g.out = 1) ∧ (g.value = 1 → g.out = 0) ∧ g.out * (g.out - 1) = 0 := by
+  have hb : g.value = 0 ∨ g.value = 1 := boolcheck_sound ⟨g.value⟩ h_bool
+  refine ⟨?_, ?_, ?_⟩
+  · intro h
+    rw [h] at h_out
+    omega
+  · intro h
+    rw [h] at h_out
+    omega
+  · rcases hb with h | h
+    · have h1 : g.out = 1 := by rw [h] at h_out; omega
+      rw [h1]
+      norm_num
+    · have h0 : g.out = 0 := by rw [h] at h_out; omega
+      rw [h0]
+      norm_num
+
+/-
 ## `boolean_output_must_be_constrained` — deleted
 
     theorem boolean_output_must_be_constrained (out : Int)

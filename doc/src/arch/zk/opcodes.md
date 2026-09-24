@@ -69,7 +69,7 @@ The formal verification is organized in three layers:
 | `bool_check` | 0x53 | No | SOUND ✓ (polynomial product) |
 | `is_equal_base` | 0x54 | Yes | ✅ SOUND (purity constraint fixed in 0f69cd89) |
 | `less_than_or_equal` | 0x55 | Yes | ✅ SOUND — proved (`Gadgets.less_than_or_equal_sound`); audit: 0 unchecked operands, 1 declared exception |
-| `not_base` | 0x56 | Yes | ✅ SOUND (deterministic) |
+| `not_base` | 0x56 | Yes | ✅ SOUND — proved (`Comparison.not_base_correct`), added 2026-09-24; rests on `boolcheck_sound` |
 | `base_lt_strict` | 0x57 | Yes | ✅ SOUND — proved (`Comparison.base_lt_strict_sound`), added 2026-09-24 |
 | `cond_select` | 0x60 | Yes | ✅ SOUND (boolean guard + selection) |
 | `zero_cond` | 0x61 | Yes | ✅ SOUND (used in BurnV1 for dummy inputs) |
@@ -468,12 +468,21 @@ range_check(1, a)  // a must be 0 or 1
    - If `a = 1`, `out = 0`
 3. **No prover manipulation**: Output is fully determined by input
 
-**Lean 4 Verification**:
+**Lean 4 Verification**: `Comparison.not_base_correct` — **added 2026-09-24.** This block used to
+give a `def` as the verification, and it is kept here to say why that was not one:
+
 ```lean
 def not_base_satisfied (a out : Int) : Bool :=
   (a = 0 ∨ a = 1) &&  -- Input must be Boolean
   out = (1 - a)       -- Output is deterministic
 ```
+
+A `def : Bool` claims nothing; it encodes a *computation*, and running it is not evidence unless the
+running is checked — which is the lesson of the deleted `boolean_output_must_be_constrained` note in
+`Comparison.lean`, one opcode over. The theorem that replaced it states the same three facts as
+conclusions from their hypotheses, and takes the operand's booleanness from `boolcheck_sound` rather
+than restating it, so the opcode's "deterministic" verdict is visible as resting on the other
+opcode's theorem.
 
 ---
 

@@ -260,7 +260,7 @@ needed to deliver functionality already discussed publicly.
 | `LessThanOrEqual` (0x55) | ✅ Verified Sound | A proof, not a search: `Gadgets.less_than_or_equal_sound`, with the chip-level integer reading in `BaseDivGadget.less_than_or_equal_integer_reading` |
 | `IsEqualBase` (0x54) | ❌ Bug | delta_invert unconstrained when `a == b` |
 | `IsNotEqual` (0x62) | ✅ **Fully Pure** | All witnesses constrained in all cases; purity theorem |
-| `NotBase` (0x56) | ✅ Verified Sound | Input range-checked to `{0,1}` |
+| `NotBase` (0x56) | ✅ Verified Sound | `Comparison.not_base_correct` — **added 2026-09-24**; it rests on `boolcheck_sound`, which is what makes "input range-checked to `{0,1}`" a proof obligation rather than a remark |
 | `BaseLtStrict` (0x57) | ✅ Verified Sound | `Comparison.base_lt_strict_sound` — **added 2026-09-24; this row said "Lean 4 exhaustive testing" and there was no theorem** |
 | `BaseDiv` (0x58) | ✅ **Implemented** | Binary exponentiation (331 field muls — 254 squarings + 76 conditional + 1 final) |
 

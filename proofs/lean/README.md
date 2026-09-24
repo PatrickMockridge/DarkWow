@@ -107,6 +107,8 @@ constraint equations are satisfied, the output equals the mathematical function.
 | `base_mul_correctness_bounded` | 0x31 | No wraparound for 64-bit inputs |
 | `base_sub_ge_case` | 0x32 | No wraparound when a≥b≥0 |
 | `base_div_by_zero` | 0x58 | Division by zero returns 0 |
+| `base_lt_strict_sound` | 0x57 | The returned bit is 1 exactly when `a < b` — the opcode's soundness theorem, which did not exist until 2026-09-24 (`OBL-Z20`) |
+| `not_base_correct` | 0x56 | Boolean negation of a boolean operand, resting on `boolcheck_sound` rather than restating it (`OBL-Z21`) |
 | `chunkSum_lt_pow_of_short_last` | 0x50 | A value the deployed **windowed** range check accepts is `< 2^NUM_BITS` as an integer — the short check on the last chunk is what makes the bound exact |
 | `range_check_64_gives_bounded_bits` | 0x50 | The deployed `<10, 64>` instance hands the division bridge its `(bits, bits < 2^64, a = ↑bits)` triple, so `FieldLessThanOrEqual`'s bounds are obtainable rather than assumed |
 | `operand_products_fit_the_offset_window` | 0x55 | 64-bit-backed operands have `a·b − c·d` inside the `2^253` window the offset's check supplies |
