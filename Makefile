@@ -192,9 +192,15 @@ rustdoc: contracts $(PROOFS_BIN)
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) doc --target=$(RUST_TARGET) \
 		--release --all-features --workspace --document-private-items --no-deps
 
+# `--no-fail-fast` because without it a single failing test binary hides every one after it, and a
+# gate that reports one failure out of an unknown number is not evidence about the tree. Measured
+# 2026-09-24: a run of this target carried **22** `test result:` lines and stopped at the peer's
+# failing binary, so "everything else passes" was unrun rather than established — while the same
+# suite run with the flag reports every binary's result. The exit status is unchanged: non-zero if
+# any binary fails.
 test: contracts $(PROOFS_BIN)
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) test --target=$(RUST_TARGET) \
-		--release --all-features --workspace
+		--release --all-features --workspace --no-fail-fast
 
 bench-zk-from-json: contracts $(PROOFS_BIN)
 	rm -f src/contract/test-harness/*.bin
