@@ -51,22 +51,29 @@ inside the window, and their pins exceed the base reward. Whether that is permit
 question — it is `Consensus/CoinbaseSplit.lean`'s, where `Σ pin` is bounded by the note-level split. So
 the two modules model two checks of the same reward, and this is the half that does *not* bound the sum.
 
-## The alignment guard, and an asymmetry recorded rather than repaired
+## The alignment guard, and an asymmetry that was closed
 
-`check_uncles` indexes two slices by the same index: `uncle_targets[i]` and `proofs[i]`. It guards the
+`check_uncles` indexes two slices by the same index: `uncle_targets[i]` and `proofs[i]`. It guarded the
 **first** — `uncle_targets.len() != uncles.len()` is an error, with the reason stated ("a mismatch would
-silently skew every PoW verdict, so fail closed on it") — and does **not** guard the second.
-`guard_buys_every_index` and `unaligned_has_an_uncovered_index` are the guard's purpose as a theorem:
+silently skew every PoW verdict, so fail closed on it") — and did **not** guard the second, which the
+loop reads for every uncle.
+`guard_buys_every_index` and `unaligned_has_an_uncovered_index` are any guard's purpose as a theorem:
 alignment is exactly what makes every in-range index of one slice in range of the other, and without it
 there is an index covered by one list and not the other.
 
 **The asymmetry's reachability was measured, 2026-09-24, and it is not reachable from untrusted input.**
 `UncleProof` appears nowhere outside `src/linear/src/` — it is not serialized, not decoded from the wire,
 and its only constructor is `build_uncle_merkle`, which emits exactly `uncles.len()` proofs; the single
-production caller (`bin/dwowd/src/block_acceptor.rs`) passes that same vector. So it is an API contract
-on a `pub` function rather than a live defect, it is recorded as its own register row, and it is **not**
-modelled here — a model would be modelling a hazard rather than a rule. That distinction is the point of
-this paragraph.
+production caller (`bin/dwowd/src/block_acceptor.rs`) passes that same vector. So it was an API contract
+on a `pub` function rather than a live defect, which is why it was recorded as its own register row
+rather than presented as either.
+
+**Closed 2026-09-24 (`OBL-C114`): the second guard is now beside the first**, and the measurement above
+is what the severity rested on rather than a reason to leave it. The theorem pair needed no
+restatement for it — both are stated over `{α β : Type}`, any two lists, so the same two lemmas cover
+the slice that was already guarded and the one that was not. The paragraph this replaces said the
+asymmetry was "**not** modelled here — a model would be modelling a hazard rather than a rule"; that
+was the right call while the hazard stood, and the lemmas were the rule's statement either way.
 
 ## What this does not model
 
@@ -171,9 +178,10 @@ theorem admitted_pin_le_half (base current h : Nat) (hok : depthAdmits current h
 
 /-! ===== Part 2 — the alignment guard, and what it buys =====
 
-`check_uncles` indexes `uncle_targets[i]` and `proofs[i]` by one index. It guards the first slice's
-length and not the second's; these two theorems are what the guard on the first is *for*, stated so the
-asymmetry is visible as a property rather than as prose. -/
+`check_uncles` indexes `uncle_targets[i]` and `proofs[i]` by one index, and now guards both slices'
+lengths. These two theorems are what a length guard is *for*, stated as a property rather than as
+prose — and because they are stated over `{α β : Type}` rather than over these two slices, they were
+already the statement of the guard `OBL-C114` added, and needed no restatement when it landed. -/
 
 /-- Alignment, as the guard checks it. -/
 def aligned {α β : Type} (xs : List α) (ys : List β) : Prop := xs.length = ys.length

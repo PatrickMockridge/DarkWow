@@ -282,6 +282,26 @@ pub fn check_uncles(
         )));
     }
 
+    // OBL-C114: `proofs[i]` is indexed in the loop below for every uncle (the
+    // slice is handed to `verify_uncle_proof` alongside `uncle_targets[i]`), so
+    // a short slice is an out-of-bounds read rather than a wrong verdict. The
+    // argument the guard above makes applies verbatim — both slices are built
+    // from the same uncle set by the caller — and the asymmetry was the row:
+    // the first was guarded, the second was not.
+    //
+    // `Consensus/UncleRules.lean`'s `guard_buys_every_index` is the theorem
+    // this clause is: alignment is exactly what makes every in-range index of
+    // one slice in range of the other, and `unaligned_has_an_uncovered_index`
+    // is the case it exists to make impossible. Both are stated over `{α β}`
+    // — any two lists — so the same two lemmas cover this slice and the one
+    // above without restatement.
+    if proofs.len() != uncles.len() {
+        return Err(LinearError::BlockIsInvalid(format!(
+            "check_uncles: {} uncles but {} proofs",
+            uncles.len(), proofs.len()
+        )));
+    }
+
     // The base reward in force at the referencing height. The pin split is
     // carved out of THIS amount, so it is the only correct basis for deriving
     // `pin_confirmed` — not any producer-supplied figure.
@@ -1228,6 +1248,36 @@ mod tests {
                 assert!(msg.contains("targets"), "unexpected message: {msg}");
             }
             e => panic!("expected BlockIsInvalid for a misaligned target slice, got {e:?}"),
+        }
+    }
+
+    /// C114: and the *other* slice the loop indexes by the same index must fail
+    /// closed too — `proofs[i]` is read for every uncle, so a short slice is an
+    /// out-of-bounds read, not a verdict.
+    ///
+    /// The targets are aligned here, which is what makes this the proof slice's
+    /// test rather than a repeat of the one above: the case that reaches the
+    /// second guard is the one the first guard passes.
+    #[test]
+    fn check_uncles_rejects_misaligned_proof_slice() {
+        let a = dummy_uncle(8, 42);
+        let b = dummy_uncle(9, 43);
+        let (root, proofs) = build_uncle_merkle(&[a.clone(), b.clone()]);
+        assert_eq!(proofs.len(), 2, "the builder emits one proof per uncle");
+
+        // Two uncles, one proof, a full target slice: before the guard this
+        // indexed `proofs[1]` and panicked.
+        let err = check_uncles(
+            &[a, b], &proofs[..1], &root,
+            BlockHeight::new(10), &[BlockTarget::MAX, BlockTarget::MAX],
+            &std::collections::HashSet::new(),
+        ).unwrap_err();
+        match err {
+            LinearError::BlockIsInvalid(msg) => {
+                assert!(msg.contains("proofs"), "unexpected message: {msg}");
+                assert!(msg.contains("2 uncles but 1 proofs"), "unexpected message: {msg}");
+            }
+            e => panic!("expected BlockIsInvalid for a misaligned proof slice, got {e:?}"),
         }
     }
 }
