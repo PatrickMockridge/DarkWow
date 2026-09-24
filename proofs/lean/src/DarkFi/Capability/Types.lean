@@ -98,7 +98,17 @@ structure PrimitiveType where
   name : String
   barbs : Finset Barb
   description : String
-  deriving BEq
+  -- `DecidableEq` was missing until 2026-09-24 and its absence had a cost two modules away:
+  -- `Capability/Selection.lean` records that §6.2's `IsSelection` was **not decidable** because a
+  -- `Held` could not be compared, which is why that module's witnesses are hand-proved rather than
+  -- closed by `decide`. Every field already has the instance (`String`, and `Finset Barb` through
+  -- `Barb`'s own `DecidableEq` at `:88`), so this is additive.
+  --
+  -- `Repr` is deliberately still absent, and for a different reason than the one the comment here
+  -- used to give: it is not that the fields lack one, it is that `Finset.instRepr` is `unsafe`, so a
+  -- `Repr` derived through `barbs` could not be called from safe code (`Main.lean`'s `allBarbs`
+  -- exists for the same reason).
+  deriving BEq, DecidableEq
 
 /- ==========================================================================
    Part 2a: Concurrency Process Types (type-system.md §9)

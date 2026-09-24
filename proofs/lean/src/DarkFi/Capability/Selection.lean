@@ -46,12 +46,22 @@ for a variant §6.5's diagram does not contain. That drift is a documentation de
 something to encode here — encoding either spec vocabulary would put a name in the proofs that the code
 does not use — so the code's names are the names.
 
-**And one modelling fact worth stating rather than discovering: `IsSelection` is not decidable.**
-`PrimitiveType` carries `BEq` and not `DecidableEq`, so a `Held` cannot be compared and `∀ h ∈ sel, …`
-has no `Decidable` instance. The *coverage* half is decidable — `Finset Barb` with `Barb`'s
-`DecidableEq` — and the *exclusion* half is not, which is why the witnesses below are proved by hand
-instead of closed by `decide`. Their content is unaffected: §6.2's rule is about what a choice must
-satisfy, and both halves of it are stated.
+**And one modelling fact, re-measured on 2026-09-24 because the first version of its *explanation* was
+wrong — and wrong instructively.** §6.2's predicate has no `Decidable` instance as a `Prop`, and this
+paragraph used to say why: "`PrimitiveType` carries `BEq` and not `DecidableEq`, so a `Held` cannot be
+compared". That is not the obstacle, and the measurement is what shows it: `DecidableEq` for
+`PrimitiveType` and `Held` was added, and `decide` on `IsSelection` **still failed to synthesize**. The
+obstacle is the *shape* of the second conjunct — `∀ h ∈ sel, …`, a bounded quantifier over an infinite
+type — which no instance search reaches however comparable the elements are. Comparability was necessary
+and not sufficient.
+
+So the predicate has a **computable companion**, `isSelection`, with `isSelection_iff` as the bridge, and
+its budgets are measured rather than assumed: the companion and its bridge cost **1** (`Classical.choice`,
+the cost `Pareto.lean` records for `decide`-checked `Finset` tables), while the two hand-proved witnesses
+below cost **0** — which is why the hand proofs are kept and the computable route appears beside them as
+the two `_by_computation` theorems. That is the honest shape of the trade: the companion buys the ability
+to *check* a concrete selection (and is what a gate or a test would call), not a cheaper proof. §6.2's
+rule is about what a choice must satisfy, and both halves of it are stated either way.
 -/
 
 import Mathlib
@@ -76,12 +86,15 @@ inductive CapStatus where
     state. Deliberately *not* the asset value: §6.2 excludes it from the eligibility rule, and a field
     the rule never reads would invite a reader to think it reads it.
 
-    No `deriving`: `PrimitiveType` has `BEq` and not `Repr` or `DecidableEq`, so neither can be
-    derived here — and that second absence is what makes `IsSelection` undecidable (see the module note).
--/
+    No `Repr` is derived and none can be: `Finset.instRepr` is `unsafe`, so a `Repr` derived through
+    `PrimitiveType.barbs` could not be called from safe code. `DecidableEq` *is* derived, and what it
+    buys is exactly one thing — the computable companion `isSelection` can compare two held
+    capabilities. It does **not** make `IsSelection` decidable, and the module note records the
+    measurement that showed that. -/
 structure Held where
   primitives : List PrimitiveType
   status : Option CapStatus
+  deriving DecidableEq
 
 /-- §6.2's eligibility: not spoken for. -/
 def available (h : Held) : Prop := h.status = none
@@ -100,6 +113,43 @@ def covered : List Held → Finset Barb
     `spent_capability_is_in_no_selection` below makes consequential. -/
 def IsSelection (required : Finset Barb) (sel : List Held) : Prop :=
   required ⊆ covered sel ∧ ∀ h ∈ sel, available h
+
+/- ==========================================================================
+   §6.2's rule as a computation, and the measured reason it needs one
+   ==========================================================================
+   `IsSelection` is a `Prop` whose second conjunct is `∀ h ∈ sel, …` — a *bounded* quantifier over an
+   infinite type. No `Decidable` instance is found for that shape by instance search, and that is the
+   real blocker, not the one this module named until 2026-09-24: it said "`PrimitiveType` carries `BEq`
+   and not `DecidableEq`, so a `Held` cannot be compared". Measured the same day, that explanation is
+   wrong in a way worth keeping — **`DecidableEq` for `PrimitiveType` and `Held` was added and the
+   `decide` route still failed**, because comparability was never the obstacle. A `DecidableEq` is
+   necessary for the decision procedure below and not sufficient for the instance.
+
+   What the decision procedure is written as is what the tree already uses for the same reason:
+   `Finset.all` does not exist in this mathlib (`Capability/Concurrency.lean` hit that absence from
+   another direction and records it), so "every required barb is covered" is asked as the cardinality
+   of the *filtered* set being zero — `Finset.filter` and `Finset.card` only.
+   ========================================================================== -/
+
+/-- §6.2's rule as a computation. The `Prop` above is unchanged and stays what the theorems state;
+    this is its decision procedure, and `isSelection_iff` is the bridge. -/
+def isSelection (required : Finset Barb) (sel : List Held) : Bool :=
+  (required.filter (fun b => ¬ b ∈ covered sel)).card == 0 &&
+  sel.all (fun h => decide (h.status = none))
+
+/-- **The bridge**, and the reason the companion is worth having: it turns a `Prop` whose natural
+    statement has no `Decidable` instance into one that a concrete selection can be *checked*
+    against. Both directions are the same two facts read in opposite orders. -/
+@[axiom_budget 1]
+theorem isSelection_iff (required : Finset Barb) (sel : List Held) :
+    isSelection required sel = true ↔ IsSelection required sel := by
+  unfold isSelection IsSelection available
+  rw [Bool.and_eq_true, beq_iff_eq, Finset.card_eq_zero, Finset.filter_eq_empty_iff, List.all_eq_true]
+  constructor
+  · intro ⟨hsub, hall⟩
+    refine ⟨fun b hb => of_not_not (hsub hb), fun h hh => by simpa using hall h hh⟩
+  · intro ⟨hsub, hall⟩
+    exact ⟨fun b hb => not_not_intro (hsub hb), fun h hh => by simpa using hall h hh⟩
 
 /- ==========================================================================
    Coverage composes the way the selected list does
@@ -227,6 +277,22 @@ theorem asset_value_alone_does_not_cover :
   have hp : Barb.prove ∈ covered [assetValueOnly] := h.1 (by simp)
   rw [covered_assetValueOnly] at hp
   exact absurd hp (by simp)
+
+/- **And the same two verdicts by computation**, which is what `isSelection` is for: these rest on
+   `isSelection_iff` and a `decide` over the `Bool`, so they check the companion as well as the rule —
+   one closes `true` and the other `false`, which a procedure that returned a constant could not do.
+   The hand proofs above are kept because they are the *cheaper* instrument here: `decide` on a
+   `Prop` whose statement is stated over `Finset` reaches `Classical.choice` in this mathlib (the cost
+   `Pareto.lean` records for its `decide`-checked tables), and these two are budget 0 by hand. -/
+@[axiom_budget 1]
+theorem a_selection_exists_by_computation : IsSelection {Barb.denominate} [assetValueOnly] :=
+  (isSelection_iff _ _).mp (by decide)
+
+@[axiom_budget 1]
+theorem asset_value_alone_does_not_cover_by_computation :
+    ¬ IsSelection {Barb.prove} [assetValueOnly] := by
+  rw [← isSelection_iff]
+  decide
 
 /-- **And the predicate is satisfiable**, so the theorems above quantify over a non-empty domain: the
     same capability *is* a selection when the action requires only what its barbs cover. -/
