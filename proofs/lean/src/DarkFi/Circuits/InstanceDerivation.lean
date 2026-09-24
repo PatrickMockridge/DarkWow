@@ -176,6 +176,19 @@ expression exposed together with whether it was determined at that point. It is 
 or an equality must precede the exposure it matters for — which is what the checker's "order matters for
 classifications 1 and 2" records. -/
 
+/-- **The bound set an `assign` produces** — the `assign` arm's decision as a named function, and that
+    is the whole point of it rather than a stylistic extraction (`bindEq` above exists for the same
+    reason). Written inline as `if derivedB held bound e then n :: bound else bound`, the kernel's
+    reduction of `boundWalk` **duplicates the two branches** into the enclosing term, and the cost
+    compounds per statement: measured 2026-09-24, `burn`'s 27-statement positive verdict did not
+    complete at *any* allowance — it hit the 200,000-heartbeat limit after 20 s and 3.7 GiB, and with
+    the allowance raised 40× it exceeded **23.9 GiB** and was OOM-killed. As a named call the same
+    module builds in **463 MB and 25 s**. `proofs/core/burn.zk` is one of the eleven circuits whose
+    verdicts *hold*: a negative verdict short-circuits in `List.all` and never forces these, which is
+    why only this half of the transcription was affected. -/
+def bindAssign (held bound : List Name) (n : Name) (e : Expr) : List Name :=
+  if derivedB held bound e then n :: bound else bound
+
 /-- The walk over a statement list. `bound` is the set of names bound so far; the returned pair is the
     final bound set and the exposures in order, each with its verdict.
 
@@ -186,7 +199,7 @@ def boundWalk (held bound : List Name) : List Stmt → List Name × List (Expr �
   | s :: rest =>
     match s with
     | .assign n e =>
-      boundWalk held (if derivedB held bound e then n :: bound else bound) rest
+      boundWalk held (bindAssign held bound n e) rest
     | .constrainEq a b => boundWalk held (bindEq held bound a b) rest
     | .constrainInstance e =>
       let (bound', exps) := boundWalk held bound rest
@@ -329,8 +342,8 @@ theorem boundWalk_spec (opVal : Name → List Nat → Nat) (held : List Name) {v
             rw [hsat₁.1 n e hin, hsat₂.1 n e hin]
             exact derivedExpr_agrees opVal hheld hb e h
           · exact hb m hm
-        simpa [boundWalk, h] using ih hs₁ hs₂ (n :: bound) hbn
-      · simpa [boundWalk, h] using ih hs₁ hs₂ bound hb
+        simpa [boundWalk, bindAssign, h] using ih hs₁ hs₂ (n :: bound) hbn
+      · simpa [boundWalk, bindAssign, h] using ih hs₁ hs₂ bound hb
     | constrainEq a b =>
       have hin : Stmt.constrainEq a b ∈ Stmt.constrainEq a b :: rest := List.mem_cons_self _ _
       have hsa := hsat₁.2 a b hin
