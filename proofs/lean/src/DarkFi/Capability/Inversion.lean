@@ -44,6 +44,11 @@ import DarkFi.Capability.Types
 import DarkFi.Capability.Composition
 import DarkFi.Axioms
 import DarkFi.AxiomBudget
+-- The ZK premise stopped being an uninterpreted predicate on 2026-09-24 and became a computation over
+-- a circuit's transcribed statement list, so this file reads that model. `InstanceDerivation` is in
+-- `DarkFi` and is cheap; the *transcription* it is about is the expensive one, and it is a library of
+-- its own — which is why the data arrives from `CircuitIndex` rather than from here.
+import DarkFi.Circuits.InstanceDerivation
 
 open DarkFi.Capability.Types
 open DarkFi.Capability.Composition
@@ -61,22 +66,26 @@ open DarkFi.Capability.Composition
    and every action. That erased exactly the distinction it claimed to bridge: a resource with
    an unsatisfiable barb set would have had a capability type just the same.
 
-   What replaces it is the premise written down as a premise:
+   What replaced it was the premise written down as a premise. As of 2026-09-24 it is **supplied**
+   rather than assumed:
 
-     * `Axioms.NoFreeInstances r s` is an uninterpreted predicate. It names the ZK layer's
-       obligation — that every public input of the circuit for `(r, s)` is
-       `constrain_instance`-derived from a witness — without asserting it. Its entry in
-       `Axioms.lean` records what would discharge it.
-     * `CircuitDerivable r s` is a *structure*, so a caller supplies a proof term rather than
-       receiving one for free, and `capabilityType_of_circuitDerivable` is a genuine
-       implication whose hypothesis must be inhabited by whoever invokes it.
+     * `CircuitDerivable r s` is a *structure* carrying the circuit's transcribed data — its `held`
+       names and its `stmts` — and a field `noFreeInstances : DisclosureRule held stmts`: a
+       computation over that data, where the axiom it replaces was an uninterpreted `Prop`. A caller
+       supplies it rather than receiving it for free, and `capabilityType_of_circuitDerivable` is a
+       genuine implication whose hypothesis must be inhabited by whoever invokes it.
+     * `proofs/lean/src/CircuitIndex.lean` inhabits it — one definition per `(r, s)` pair, for the
+       twelve pairs this tree instantiates circuits for — and records the 2 pairs that resolve to no
+       circuit as decisions rather than omissions. `Axioms.NoFreeInstances` is **gone**: its entry is
+       a DISCHARGED record, and the **strength change** that record carries — the rule proved is the
+       checker's, weaker than the axiom's name — is the thing to read before citing any of this.
 
-   `#print axioms capabilityType_of_circuitDerivable` is **not** empty, and this file said it was
-   until 2026-09-24. Measured:
+   `#print axioms capabilityType_of_circuitDerivable` **was not** empty, and this file said it was
+   until 2026-09-24. Measured then:
 
        'capabilityType_of_circuitDerivable' depends on axioms: [NoFreeInstances, propext, Quot.sound]
 
-   so the `@[axiom_budget 1]` below is right and the sentence was wrong. Type existence is still
+   so the `@[axiom_budget 1]` it carried was right and the sentence was wrong. Type existence is still
    purely combinatorial — the proof term is
    `CapabilityType.mk (CircuitDerivable.primitives h) (CircuitDerivable.coversBarbs h)` and never
    mentions `noFreeInstances` — but the *axiom set of that term* contains it anyway, and the
@@ -91,36 +100,56 @@ open DarkFi.Capability.Composition
 
    (`structure T where a : Nat; def g (t : T) : Nat := t.a` is clean.) So `CircuitDerivable.primitives`
    and `CircuitDerivable.coversBarbs` each read budget 1 on their own, and any theorem that
-   projects them inherits it. The ZK premise is therefore charged to this theorem's budget while
-   not being used by its proof — the over-statement is by exactly one, and it is a fact about
-   `structure` rather than about the premise being load-bearing. Saying so is the point: the ZK
+   projects them inherits it. The ZK premise was therefore charged to this theorem's budget while
+   not being used by its proof — the over-statement was by exactly one, and it was a fact about
+   `structure` rather than about the premise being load-bearing. Saying so was the point: the ZK
    premise *is* what a soundness theorem about capabilities would need, and no such theorem exists
-   yet. Dropping the field would have hidden that — and would have made the budget read 0, which
-   is the other half of why it is kept.
+   yet, so dropping the field would have hidden that.
+
+   **2026-09-24: the axiom is gone and the field is a computation, so the hazard above is retired
+   rather than avoided.** The rule is now `DisclosureRule held stmts`, computed from the data the
+   structure carries; nothing in this file names an axiom. The minimal demonstration is kept because
+   the hazard is about `structure` and not about that particular axiom — the next `Prop` field whose
+   type names one charges every projection the same way, and `DarkFi.HAZOP.High` HIGH-16 is the row
+   that records it.
 
    The bridge is **one-directional**, and the converse is false in general:
    `Nonempty (CapabilityType r s)` does not imply `CircuitDerivable r s`, because
    privacy-preserving authorization does not need a proof system at all (see the file header).
    ========================================================================== -/
 
-/-- The premise the ZK layer owes the type layer. Inhabiting it is the caller's job: the
-    `noFreeInstances` field has no proof in this tree, because Halo2 constraint-system
-    semantics are not modelled. -/
+/-- The premise the ZK layer owes the type layer, **and it now carries the data it is about.**
+    Inhabiting it is still the caller's job, but the job is supply rather than belief: the statement
+    list and the names the circuit holds are transcribed from the sources by a generated,
+    freshness-gated module, and the field that used to be an uninterpreted `Prop` is now a
+    *computation* over them. `proofs/lean/src/CircuitIndex.lean` supplies both, one inhabitant per
+    `(r, s)` pair, for the twelve pairs this tree instantiates circuits for. -/
 structure CircuitDerivable (r : Resource) (s : Action) where
   /-- The primitives the circuit realises. -/
   primitives : List PrimitiveType
   /-- The circuit's constraint set covers the resource's required barbs. -/
   coversBarbs : r.requiredBarbs ⊆ compose primitives
-  /-- Every public input is `constrain_instance`-derived from a witness. Supplied by the
-      circuit audit over `src/contract/*/proof/*.zk`; not provable in Lean today. -/
-  noFreeInstances : NoFreeInstances r s
+  /-- The names the circuit holds: its `constant` and `witness` declarations. -/
+  held : List Circuits.InstanceDerivation.Name
+  /-- The circuit's statement list, as the transcription carries it. -/
+  stmts : List Circuits.InstanceDerivation.Stmt
+  /-- **Every public input is determined by what the circuit binds before it, or is a witness
+      disclosed inside another exposed determination.** The rule the tree enforces, computed over the
+      two fields above — where the axiom this replaces was an uninterpreted `Prop`. **It is weaker
+      than that axiom's name**, which is the strength change `Axioms.lean`'s entry records: an
+      exposure the circuit pins elsewhere or one a reviewed host-side justification declares free is
+      admitted here and was not by the name. -/
+  noFreeInstances : Circuits.InstanceDerivation.DisclosureRule held stmts
 
 /-- **Conditional, and one-directional.** Given that a circuit is derivable for `(r, s)`, the
-    capability type exists. The proof uses only `coversBarbs`: barb coverage is a
-    combinatorial fact about `compose`, and the ZK premise is not needed for *existence* —
-    though it is charged to the budget, because the projections carry it (see the file header).
-    The converse does not hold; see the file header. -/
-@[axiom_budget 1]
+    capability type exists. The proof uses only `coversBarbs`: barb coverage is a combinatorial fact
+    about `compose`, and the ZK premise is not needed for *existence*. Until 2026-09-24 it was charged
+    to the budget anyway — 1 where the proof needed 0 — because a `structure` with a `Prop` field
+    naming an **axiom** carries that axiom in every projection, including its data fields. The axiom
+    is gone and the field is now a computation over supplied data, so that contamination is gone with
+    it; the annotation below is **re-measured rather than predicted**, which is this tree's rule. The
+    converse does not hold; see the file header. -/
+@[axiom_budget 0]
 theorem capabilityType_of_circuitDerivable (r : Resource) (s : Action)
     (h : CircuitDerivable r s) : Nonempty (CapabilityType r s) :=
   ⟨{ primitives := h.primitives, coversBarbs := h.coversBarbs }⟩

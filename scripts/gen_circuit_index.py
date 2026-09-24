@@ -179,6 +179,9 @@ def join(gen):
         resolved.append({
             "typ": typ, "resource": rname, "action": aname, "contract": contract,
             "function": function, "circuit": circuit, "defname": defname, "rel": rel,
+            # The Lean declaration names, for the inhabitant's type: `CapabilityType`'s own def names
+            # are `<suffix>Resource` / `<suffix>Action` by the regex `lean_pairs` reads them with.
+            "rdef": f"{rdef}Resource", "adef": f"{adef}Action",
             # block[4] is the strict verdict, block[6] the checker's class for the first exposure it
             # refused. Read from the transcription rather than recomputed: one implementation.
             "strict_holds": block[4], "first_class": block[6], "declared_free": free,
@@ -220,34 +223,63 @@ exposure adds no freedom — not that the witness is safe. The witness stays pro
 that matters is a property of the contract's entrypoint and not of the statement list. That obligation
 is `OBL-Z1`'s, and nothing in this module or the one it imports discharges it.
 
+## The axiom is gone, and this module is what replaced it
+
+`Axioms.NoFreeInstances` is **deleted** as of 2026-09-24. `Capability.Inversion.CircuitDerivable` now
+carries the data that premise was about — the circuit's `held` names, its `stmts` — and a
+`noFreeInstances` field that is a **computation** over them rather than an uninterpreted `Prop`. The
+inhabitants below are that premise supplied rather than assumed at every pair this tree has a circuit
+for, and the projection beside each one shows the bare rule is the same fact.
+
 ## What this is not
 
-`Axioms.NoFreeInstances` is **not** replaced here: this supplies the pairs and their verdicts, and
-turning the axiom into a definition over them is a separate change. Nor is any of this a claim about
-the deployed circuits. The transcription is source-faithful *as data*, and
-`script/circuit_instance_derivation.py`'s own caveats are inherited unchanged — it reads `.zk` source
-rather than the `.zk.bin` that is deployed, and it does not know what the opcodes mean. See `OBL-T7`.
+Nor is any of this a claim about the deployed circuits. The transcription is source-faithful *as data*,
+and `script/circuit_instance_derivation.py`'s own caveats are inherited unchanged — it reads `.zk`
+source rather than the `.zk.bin` that is deployed, and it does not know what the opcodes mean. See
+`OBL-T7`.
 -/
 
 import DarkFi.Circuits.InstanceDerivation
+import DarkFi.Capability.Inversion
 import Transcribed
 
 namespace CircuitIndex
 
 open Circuits.InstanceDerivation
+open DarkFi.Capability.Composition
 '''
 
 PAIR_TEXT = '''/-- `{typ}` — (`{resource}`, `{action}`) maps to `{contract}`'s `{function}`, circuit `{circuit}`,
     transcribed as `Circuits.Transcribed.{defname}`.
 
+    **The inhabitant — what replaced `Axioms.NoFreeInstances`.** The structure carries the circuit's
+    `held` names and its statement list outright, and its last field is the rule computed over that
+    data, closed by the kernel rather than asserted. So the ZK premise is now *supplied* at this pair
+    instead of assumed, and `capabilityType_of_circuitDerivable` applies to it.
+
     Strict verdict: **{strict}**; the checker's class for its first undetermined exposure is
-    `{klass}`. Declared-free instances in this circuit: {nf}. -/
+    `{klass}`. Declared-free instances in this circuit: {nf}.
+
+    A `def` rather than a `theorem`, and that is forced rather than stylistic: `theorem` takes a
+    proposition and this is a structure, which is a `Type` — Lean rejects it ("type of theorem ... is
+    not a proposition"). So the `decide` inside it carries no `@[axiom_budget]` of its own, which is
+    why the projection below exists: it is a `theorem`, it is annotated, and the gate measures the
+    axioms the inhabitant's proof reaches through it. -/
+def {typ}_circuitDerivable : CircuitDerivable {rdef} {adef} :=
+  {{ primitives := {typ}.primitives
+   , coversBarbs := {typ}.coversBarbs
+   , held := Circuits.Transcribed.{defname}_held
+   , stmts := Circuits.Transcribed.{defname}_stmts
+   , noFreeInstances := by unfold DisclosureRule; decide
+   }}
+
+/-- The rule at this pair, **projected from the inhabitant above rather than proved a second time** —
+    so the two are one fact and not two computations that could disagree. -/
 @[axiom_budget 0]
 theorem {typ}_disclosureRule :
     DisclosureRule Circuits.Transcribed.{defname}_held
-      Circuits.Transcribed.{defname}_stmts := by
-  unfold DisclosureRule
-  decide
+      Circuits.Transcribed.{defname}_stmts :=
+  {typ}_circuitDerivable.noFreeInstances
 '''
 
 
@@ -255,11 +287,13 @@ def render(resolved, circuitless, n_free):
     """The whole module: the account, the preamble, and one theorem per pair."""
     # `{nf}` first: it contains `{n}`, so the other order would rewrite it into `12f`.
     out = [HEADER.replace("{nf}", str(n_free)).replace("{n}", str(len(resolved)))]
-    out.append(f"\n/-! ===== One theorem per `(r, s)` pair, {len(resolved)} of them ===== -/\n")
+    out.append(f"\n/-! ===== One inhabitant and its projection, per `(r, s)` pair — {len(resolved)} "
+               "pairs ===== -/\n")
     for r in resolved:
         out.append("\n" + PAIR_TEXT.format(
             typ=r["typ"], resource=r["resource"], action=r["action"], contract=r["contract"],
             function=r["function"], circuit=r["circuit"], defname=r["defname"],
+            rdef=r["rdef"], adef=r["adef"],
             strict="holds" if r["strict_holds"] else "refuted", klass=r["first_class"],
             nf=len(r["declared_free"]),
         ))

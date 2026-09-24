@@ -197,9 +197,17 @@ All of them are in **`src/DarkFi/Axioms.lean`** and nowhere else. Each carries f
 |-------|-------|---------|
 | Cryptographic | 4 | `poseidon_hash_output` (value-less `opaque`), `poseidon_collision_resistance`, `aead_open` (value-less `opaque`), `aead_key_committing` |
 | Arithmetic | 1 | `pallasPrime` |
-| Emission policy (free parameters) | 2 | `coinbase_blind`, `reward_monotone` |
-| ZK-to-type bridge | 1 | `NoFreeInstances` |
-| **Total** | **8** | |
+| Emission policy (free parameters) | 1 | `coinbase_blind` |
+| **Total** | **6** | |
+
+**Two rows left this table on 2026-09-24, and they left for different reasons — which is the
+distinction to keep.** `reward_monotone` was **discharged by proof**: it is
+`Emission.reward_nonincreasing` now, and this file's row was stale from the moment that landed.
+`NoFreeInstances` was **deleted**, its premise relocated into `Capability.Inversion.CircuitDerivable`
+as a computation over a circuit's transcribed data; **the rule now proved there is weaker than the
+axiom's name**, and `Axioms.lean`'s DISCHARGED entry and `OBL-T7` both say by how much (the checker
+admits a `redundant` exposure and a `declared-free` one, and the axiom's name admitted neither). So
+six is the count and it is *not* six of the same kind of thing as the four above it.
 
 The AEAD pair was added 2026-09-24, and it was added *by removal*: `Net/Receive.lean`'s
 `decrypt` had been `if k = n.recipient then some … else none`, so its `decrypt_sound` was a fact
