@@ -1905,6 +1905,18 @@ inside `ν(block_tree)`. Name extrusion through nested restrictions is the
 formal basis for the verification chain: nullifier → contract proof →
 contract root → block proof → block header. See §C.3.7.
 
+**What carries this, and what does not.** The `ν` scopes here are the L1/L2
+*storage* boundaries, and the mechanism the paragraph names — the nullifier
+travelling out to the block-level tree — is carried by the Rust's per-contract
+sled trees and the verification chain. It is not carried by the calculus's own
+extrusion rule: `νx.(P | Q) ≡ P | νx.Q` is **not** in the mechanized structural
+congruence. It was deleted there after `not_freshUpToScong` showed the freshness
+proviso it carried is unsatisfiable, so the rule could never be applied; extrusion
+now exists in the Lean layer only as `SCong0`'s unconditional equation, a
+reachability relation the calculus deliberately does not reason with. So this
+paragraph is a statement about the storage architecture, and it should not be read
+as a derivation available in `proofs/lean/src/DarkFi/Semantics/`.
+
 ### C.0.3 The L1 Contract Invariant
 
 > **A contract SHALL accept a ContractCall iff the call's data satisfies

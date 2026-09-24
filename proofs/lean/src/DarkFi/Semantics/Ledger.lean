@@ -70,7 +70,9 @@ witness written out so a reader can evaluate it: at a store where every key hold
 writes `[1]` and the other `[2]` to the same key, both recorded write sets are empty, and the two
 orders disagree at that key. It is the reason §9.2's safety argument should not lean on the schedule
 as built. This model's `Diff.dom` is the value-sensitive notion instead, and `diff_dom_of_apply_ne`
-is the bridge that makes writing a different value a write.
+is the bridge that makes writing a different value a write. The obligation is registered as
+`OBL-C100` in `doc/src/arch/verification-hazop.md`, which is where this project keeps the ones it has
+not discharged.
 
 **§9.2's cited witness is stale.** It names `src/linear/src/execution.rs:398-405`
 (`written_keys.insert(key)`) as the bisimulation witness. Those lines are `Runtime::new`'s failure

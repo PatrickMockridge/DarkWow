@@ -236,15 +236,21 @@ on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   build is what makes every statement below true, so run it before quoting any of them.
 - **The ρ-calculus is mechanized; its binding convention is not.** `Semantics/` defines the syntax,
   structural congruence, a labelled transition system and a substitution layer, and proves §1.2's
-  parallel laws, both barb facts, and the weak relation's algebra as theorems about processes. What it
+  parallel laws, the barb facts, and the weak relation's algebra as theorems about processes. What it
   does **not** have: a binding convention for `bang`, so `Occurs` counts bound occurrences as well as
-  free ones — which is why the restriction rule's freshness is `FreshUpToScong`, the strongest condition
-  expressible without one, and *stronger* than the standard rule's, rejecting extrusions the literature
-  permits; an α-rule on `SCong`, so `Step.tau` carries `CaptureFree` as a proviso and `subst` relabels
-  the channels that labels are made of (`subst_moves_the_label`) — adding the rule is a redesign of the
-  label predicates rather than a constructor, which is what that theorem measures; and `type-system.md`
-  §9.2's `parallelMerge_correctness`, whose `≈` conclusion is not mechanized. `Semantics/Ledger.lean`
-  proves the safety property it rests on instead — `exec_perm`, that every execution order of a list of
+  free ones — and that costs more than a weaker proviso somewhere. Repairing it by quantifying over the
+  congruence produced `FreshUpToScong`, a condition that is **unsatisfiable** (`not_freshUpToScong`),
+  so the extrusion rule could not fire for four commits while reading as available; that rule is now
+  deleted, and extrusion survives only in `SCong0`, the reachability relation. The restriction rule
+  does not wait on the convention, because its condition belongs on the **label**
+  (`¬ SCong x (subject μ)`) — but its obligation is **open**: closing it needs a shape lemma about what
+  a `ν`-headed term can be congruent to, and `Semantics/LTS.lean`'s scope note says exactly where the
+  measurement stops. Also absent: an α-rule on `SCong`, so `Step.tau` carries `CaptureFree` as a
+  proviso and `subst` relabels the channels that labels are made of (`subst_moves_the_label`) — adding
+  the rule is a redesign of the label predicates rather than a constructor, which is what that theorem
+  measures, and a corpus-wide search found no consumer for it; and `type-system.md` §9.2's
+  `parallelMerge_correctness`, whose `≈` conclusion is not mechanized. `Semantics/Ledger.lean` proves
+  the safety property it rests on instead — `exec_perm`, that every execution order of a list of
   pairwise-disjoint calls produces the same store — because §9.2's `parallel_execute` has no Rust
   counterpart: the schedule is a diagnostic and calls execute sequentially today.
 - **Halo2 constraint system semantics are not modeled.** We prove properties of the
