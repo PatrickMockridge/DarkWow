@@ -73,17 +73,38 @@ abbrev Point := pallasCurve.Point
     Stated as the coefficients rather than as an `↔` with `y ^ 2 = x ^ 3 + 5` because
     `Equation` unfolds through `Polynomial.evalEval`, and rewriting that into the explicit
     polynomial is a `polynomial`/`evalEval` unfolding rather than arithmetic. -/
-@[axiom_budget 2]
+@[axiom_budget 0]
 theorem pallas_coefficients :
     pallasCurve.a₁ = 0 ∧ pallasCurve.a₂ = 0 ∧ pallasCurve.a₃ = 0 ∧
       pallasCurve.a₄ = 0 ∧ pallasCurve.a₆ = 5 :=
   ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-- The generator `(-1, 2)` lies on the curve: `2² = (-1)³ + 5`. -/
-@[axiom_budget 2]
+@[axiom_budget 0]
 theorem generator_on_curve :
     ((-1 : ZMod PALLAS_MODULUS) ^ 3 + 5) = (2 : ZMod PALLAS_MODULUS) ^ 2 := by
   norm_num
+
+/-! ===== The field structure, local to the declarations that need it =====
+
+`ZMod PALLAS_MODULUS` is a `Field` only because `pallasPrime` says the modulus is prime, and
+`WeierstrassCurve.Affine.Point.instAddCommGroup` requires `[Field F]`. So everything below that adds,
+negates or scalar-multiplies points needs that fact. Until 2026-09-24 it got it from a **global**
+`instance : Fact (Nat.Prime PALLAS_MODULUS)` in `Axioms.lean`, which every importing file reached —
+and the consequence was that measured budgets depended on scope rather than on content. The two
+theorems *above* this section do not need a field; they need a commutative ring, which `ZMod` has
+unconditionally, and `pallas_coefficients` is five `rfl`s and `generator_on_curve` is one `norm_num`.
+Both were charged `pallasPrime` anyway, because resolution preferred the field path.
+
+The instance is `local` to this section now, so it is in scope exactly where it is used, and the
+measured outcome is the one the diagnosis predicts: `pallas_coefficients` and `generator_on_curve`
+above measure **budget 0** — five `rfl`s and one `norm_num`, which never needed a field — while the
+five group laws inside the section stay at 2, because `Point` really is an additive group only under
+`[Field]`. Nothing about the mathematics moved; the annotations are what changed. -/
+
+section
+
+local instance : Fact (Nat.Prime PALLAS_MODULUS) := ⟨pallasPrime⟩
 
 /-- The group operation, named as the model named it. -/
 noncomputable def add (a b : Point) : Point := a + b
@@ -124,6 +145,8 @@ theorem pedersen_additive_homomorphism (Gv Gr : Point) (v₁ v₂ b₁ b₂ : Na
     commit Gv Gr (v₁ + v₂) (b₁ + b₂) = commit Gv Gr v₁ b₁ + commit Gv Gr v₂ b₂ := by
   simp only [commit, add_nsmul]
   abel
+
+end
 
 /-! ===== The modulus, tied to the constant the vendored crate documents =====
 

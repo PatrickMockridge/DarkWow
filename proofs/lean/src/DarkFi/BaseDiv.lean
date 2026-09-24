@@ -62,7 +62,11 @@ theorem base_div_mul_cancel (a b : Int) (hb : b % PALLAS_PRIME ≠ 0) :
   -- Two `% p` forms are equal iff their casts to `ZMod p` are, so move the whole goal into the field.
   rw [← ZMod.intCast_eq_intCast_iff']
   push_cast
-  haveI : Fact (Nat.Prime PALLAS_MODULUS) := inferInstance
+  -- The instance is named rather than inferred: it used to be a global instance in `Axioms.lean`,
+  -- and `inferInstance` found it there. `Axioms.lean` declares none now, so the fact is supplied
+  -- locally — which is also what keeps the *statement* above clear of it, since only the proof
+  -- needs the field.
+  haveI : Fact (Nat.Prime PALLAS_MODULUS) := ⟨pallasPrime⟩
   -- `b % p ≠ 0` means `b` is not divisible by `p`, so its image in the field is nonzero —
   -- which is what Fermat's little theorem needs.
   have hb0 : (b : ZMod PALLAS_MODULUS) ≠ 0 := by

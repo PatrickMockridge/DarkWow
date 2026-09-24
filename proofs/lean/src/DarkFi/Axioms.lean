@@ -414,7 +414,12 @@ What survives is the one fact mathlib cannot supply: that the modulus is prime �
     Because the old value was composite, `pallasPrime` below asserted something **false**, and the
     `Fact` instance derived from it made `ZMod PALLAS_MODULUS` a `Field` on the strength of a
     falsehood — so every theorem proved through that structure was vacuous. The modulus is now
-    the real one, and `Axioms.pallasPrime` is a true statement that remains assumed. -/
+    the real one, and `Axioms.pallasPrime` is a true statement that remains assumed.
+
+    That `Fact` instance was **global** until 2026-09-24 and is declared nowhere now: each
+    declaration that genuinely needs the field takes it locally, which is what stopped a primality
+    fact from being charged to statements that need only a ring. The note under the axiom has the
+    measurement. -/
 def PALLAS_MODULUS : Nat := 2 ^ 254 + 45560315531419706090280762371685220353
 
 /-- ASSUMES: `PALLAS_MODULUS` is prime.
@@ -443,15 +448,31 @@ def PALLAS_MODULUS : Nat := 2 ^ 254 + 45560315531419706090280762371685220353
     So the obstruction is a **factorisation**, not a proof: everything else the certificate needs is
     already in Mathlib. This is *the* arithmetic assumption: the seven Pedersen postulates and
     `Arithmetic.base_div_mul_cancel` (now a theorem in `DarkFi/BaseDiv.lean`) all reduce to it.
-    DISCHARGED BY: the factorisation of `q`. With `p − 1` fully factored and any Lucas witness `a`,
-    `lucas_primality` closes it and every consumer becomes unconditional. A second route would be a
-    restatement of the test that does not need the full factorisation — this one cannot avoid it,
-    because `hd`'s quantifier ranges over all prime divisors.
+
+    **The factorisation was found on 2026-09-24, and it was necessary but not sufficient.** The `q`
+    above is two primes rather than a composite, and `p − 1` factors completely:
+
+        p − 1 = 2³² · 3 · 463 · 539204044132271846773 · 8999194758858563409123804352480028797519453
+        q1 − 1 = 2² · 3⁵ · 89 · 14923 · 417677162933
+        q2 − 1 = 2² · 3⁴ · 11 · 2531 · 115603 · 1197907 · 22160661629 · 325086459374267
+
+    obtained with `/usr/bin/gp` — `default(parisizemax, 2^32)` and then `factor(p-1)` — in under five
+    minutes. `isprime(p)` returns **1**, so the statement is **true**, and a Lucas witness exists at
+    `a = 5`. But the factorisation was the *stated* obstruction and not the only one: each large factor
+    needs its own recursive certificate (68 and 143 bits), and `hd` needs `a ^ ((p-1)/q) ≠ 1` in
+    `ZMod PALLAS_MODULUS` for each of the five divisors — exponents of about 2²⁵⁰ bits, which kernel
+    `decide` cannot reduce (Mathlib's `Monoid.npow` is unary) and `native_decide` is unavailable for,
+    `OBL-T10` being a closed row whose whole content is that no proof rests on
+    `Lean.ofReduceBool`/`trustCompiler`.
+
+    DISCHARGED BY: a recursive Pratt certificate over the factorisation above, plus those five
+    exponentiation facts. Estimated 500–1500 lines. The factorisation, its tooling and the witness are
+    recorded here so the next attempt re-runs rather than re-derives them.
     IF FALSE: `ZMod PALLAS_MODULUS` is not a field, so `Pedersen.pallasCurve.Point` is not an
     additive group and `Pedersen.pedersen_add_comm`, `pedersen_add_assoc`, `pedersen_add_identity`
     and `pedersen_additive_homomorphism` all lose their proofs — as does
-    `Arithmetic.base_div_mul_cancel`'s statement. **Loud**: those five are proved *from* this
-    assumption. Recorded as LOUD in `DarkFi.HAZOP.High`.
+    `Arithmetic.base_div_mul_cancel`'s statement. **Loud**: the collector counts **14** declarations
+    reaching this assumption, and they are proved *from* it. Recorded as LOUD in `DarkFi.HAZOP.High`.
 
     **This assumption was false until 2026-09-20**, because `PALLAS_MODULUS` was the composite
     `2^254 - 2^32 - 2^7 - 2^4 - 2 - 1` = `3 × 9649340769776349618630915417390658987772498722136713669954798667324662480847`.
@@ -461,7 +482,18 @@ def PALLAS_MODULUS : Nat := 2 ^ 254 + 45560315531419706090280762371685220353
     make visible, and it happened here. -/
 axiom pallasPrime : Nat.Prime PALLAS_MODULUS
 
-instance : Fact (Nat.Prime PALLAS_MODULUS) := ⟨pallasPrime⟩
+/- **There is deliberately no `instance : Fact (Nat.Prime PALLAS_MODULUS)` here**, and its absence is a
+   repair rather than an omission. It used to be a global instance, and a global instance is reached by
+   *every* file that imports this one — so `NatPow`/`MonoidWithZero` resolution on `ZMod PALLAS_MODULUS`
+   preferred the `Field` path over `ZMod.commRing` (which is unconditional) at every site, whether or not
+   the site needed a field. The effect was that a declaration's *measured* budget depended on what
+   happened to be in scope rather than on what its proof used: `theorem (5 : ZMod PALLAS_MODULUS) = 5 :=
+   rfl` read budget 2, because the `Field` structure is built *from* `pallasPrime`.
+
+   The split is made by measurement rather than by reading: removing the instance and letting the build
+   name the sites that break is the same experiment, and each site that needs one carries a
+   `local instance` in the section wrapping it. What that did to the budget distribution is in this
+   module's commit and in the theorem annotations themselves, which the gate checks. -/
 
 
 /-! ===== Capability: Purse — DISCHARGED =====

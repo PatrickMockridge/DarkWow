@@ -122,6 +122,23 @@ noncomputable def genesis_state : SupplyChainState :=
   , total_supply := 0
   }
 
+/-! ===== The field structure, local to the declarations that need it =====
+
+`Pedersen.Point` is an additive group only when `ZMod PALLAS_MODULUS` is a `Field`, which is what
+`pallasPrime` says. Every declaration below adds, sums or commits points, so every one of them needs
+that fact — and until 2026-09-24 it came from a **global** instance in `Axioms.lean` that any importing
+file reached. Making it `local` to this section moves nothing here: this file's seven theorems are
+exactly the ones that genuinely need it and they keep their budget. What changes is that files which
+merely mention the field are no longer charged for it.
+
+The instance becomes an auto-bound implicit argument of `apply_block` and its neighbours as a result,
+which is why the section has to cover the theorems as well: their *statements* mention
+`apply_chain Gv Gr H`, and that term carries the argument. -/
+
+section
+
+local instance : Fact (Nat.Prime PALLAS_MODULUS) := ⟨pallasPrime⟩
+
 /--
 ## Block Transition
 
@@ -303,3 +320,5 @@ S_H = sum_{i=1..H} C_i = sum_{i=1..H} Pedersen.commit Gv Gr(reward(i), blind(i))
 theorem cumulative_auditable (Gv Gr : Pedersen.Point) (height : Nat) :
   (apply_chain Gv Gr height).cumulative_commit = cumulative_commit_sum Gv Gr height :=
   cumulative_commit_theorem Gv Gr height
+
+end

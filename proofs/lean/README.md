@@ -219,7 +219,7 @@ today:
 
 | assumption | consumers |
 |---|---|
-| `pallasPrime` | 19 (`Pedersen.*`, and everything downstream of the curve being a field) |
+| `pallasPrime` | 14 (`Pedersen.*`, and everything downstream of the curve being a field) |
 | `coinbase_blind` | 7 (`cumulative_auditable`, `cumulative_commit_theorem`, `no_hidden_inflation`, …) |
 | `HashOps.poseidon_collision_resistance` | 6 (`commitment_binding`, `nullifier_binding`, `smtCrh_injective`, …) |
 | `NoFreeInstances` | 1 — `capabilityType_of_circuitDerivable` |
@@ -228,8 +228,14 @@ today:
 
 Three rows left this table on 2026-09-24 by ceasing to be assumptions: `Arithmetic.base_div_mul_cancel`
 (a theorem in `BaseDiv.lean`), and `ECOps.fixed_base_mul_uses_constant` and
-`variable_base_mul_is_prover_chosen` (theorems in `ECOps.lean`). `pallasPrime`'s count reads 19 rather
-than the 14 the old table carried, which is the same measurement over a tree with more theorems in it.
+`variable_base_mul_is_prover_chosen` (theorems in `ECOps.lean`). And one count moved for a reason worth
+recording: `pallasPrime` read **19** before that date and reads **14** after it, and the difference is
+not the tree growing — it is that `Axioms.lean` no longer declares a **global**
+`instance : Fact (Nat.Prime PALLAS_MODULUS)`. Five declarations were reaching the assumption by
+instance *resolution* rather than through their proofs, because `NatPow` preferred the `Field` path over
+the unconditional `ZMod.commRing`; they take the fact locally now, where they need it, and the budget-2
+count fell 14 → 9. (The `14` an earlier version of this table carried was not this measurement — it
+predates it, and its provenance is not recorded.)
 
 `NoFreeInstances` used to be the register's example of an assumption "consumed by nothing". It now
 has a consumer, which is what §3 of the rewrite was for: `capabilityType_of_circuitDerivable` takes
@@ -382,7 +388,7 @@ There also used to be an "expected output" block here, quoted from `lean --run s
 reporting `Proved theorems: ~40`, `Axioms: ~43` and `HAZOP findings: 15`. Those numbers were
 hardcoded in `Main.lean` and were wrong in every case (the counts, measured 2026-09-24, are 362
 `theorem`/`lemma` declarations — 357 of them gate-visible, since the gate's scanner does not match
-`private` — of which 259 are at budget 0, and 6 assumptions). They are gone from
+`private` — of which 261 are at budget 0, and 6 assumptions). They are gone from
 `Main.lean`: a summary that is typed by hand is a claim, not a measurement, and this file was
 quoting it as evidence.
 

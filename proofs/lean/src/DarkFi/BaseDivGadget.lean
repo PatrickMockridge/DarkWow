@@ -89,14 +89,25 @@ private theorem sq_mul_sq_pow (sq : ZMod PALLAS_MODULUS) (k : Nat) :
     the gadget that cannot be wrong in the way the surrounding code was wrong — the RC4 bug in
     `base_div` was a wrong exponent constant (`p − 2` written as something else), not a wrong loop.
 
-    **The measured budget is 2, not 0**, and the gap is worth recording rather than explaining
-    away: `Classical.choice` from the automation, and `pallasPrime`. The second is not reached by
-    the *proof* — it is reached by the *type*: every statement here is about
-    `ZMod PALLAS_MODULUS`, and elaborating that type picks up the global
-    `instance : Fact (Nat.Prime PALLAS_MODULUS)`. So "no assumption beyond Lean's logic" is not
-    available for any theorem stated over this field, however elementary the arithmetic. The
-    `Nat`-level statements at the foot of this file read 0 for exactly that reason. -/
-@[axiom_budget 2]
+    **And the budget is 1 now, which this docstring said was impossible.** It read: "The measured
+    budget is 2, not 0 … `pallasPrime` … is not reached by the *proof* — it is reached by the
+    *type*: every statement here is about `ZMod PALLAS_MODULUS`, and elaborating that type picks up
+    the global `instance : Fact (Nat.Prime PALLAS_MODULUS)`. So 'no assumption beyond Lean's logic'
+    is not available for any theorem stated over this field, however elementary the arithmetic."
+
+    The diagnosis was exactly right and the conclusion drawn from it was wrong. The instance is not
+    inherent to the type — it was **global**, so it was in scope in every importing file, and
+    resolution preferred the `Field` path over the unconditional `ZMod.commRing`. That is why a
+    statement needing only a ring was charged a primality proof. `Axioms.lean` declares no such
+    instance now, and the one declaration in this file that genuinely needs a field takes it locally.
+    Nothing about the arithmetic moved.
+
+    **The measured budget is 1, not the 0 this docstring first claimed after the repair.** Writing "0"
+    was a prediction, and the gate refuted it in the same run: `pallasPrime` is gone from the axiom
+    set, but the automation (`simp`/`omega` over `Prop` equality) still reaches `Classical.choice`,
+    which is charged. So the repair removed the *primality* dependency and left the classical one —
+    which is the honest split, and it is measurable rather than arguable. -/
+@[axiom_budget 1]
 theorem sqMulGo_eq (exp : Nat) :
     ∀ (acc sq : ZMod PALLAS_MODULUS), sqMulGo exp acc sq = acc * sq ^ exp := by
   -- Strong induction, not structural: the recursive call is on `(exp+1)/2`, which is below
@@ -130,8 +141,10 @@ theorem sqMulGo_eq (exp : Nat) :
             rw [sq_mul_sq_pow, hk]
 
 /-- **`base_div`'s output is `a · b^(p−2)`.** The loop's power, instantiated at the opcode's
-    exponent. Budget 2 for the reason given on `sqMulGo_eq`. -/
-@[axiom_budget 2]
+    exponent. Budget 1 by the same scope change as `sqMulGo_eq`: the statement needs a ring, and
+    `ZMod` is one unconditionally, so `pallasPrime` is gone; `Classical.choice` from the automation
+    is what remains. -/
+@[axiom_budget 1]
 theorem sqMul_eq (a b : ZMod PALLAS_MODULUS) :
     sqMul a b = a * b ^ (PALLAS_MODULUS - 2) := by
   simp [sqMul, powMod, sqMulGo_eq]
@@ -146,6 +159,11 @@ theorem sqMul_eq (a b : ZMod PALLAS_MODULUS) :
 @[axiom_budget 2]
 theorem sqMul_is_inverse (a b : ZMod PALLAS_MODULUS) (hb : b ≠ 0) : sqMul a b * b = a := by
   rw [sqMul_eq]
+  -- **The one declaration in this file that needs the field.** `ZMod.pow_card_sub_one_eq_one` takes
+  -- `[Fact PALLAS_MODULUS.Prime]` as an *instance* argument, so the proof needs one in its local
+  -- context — supplied here rather than by a global instance, which is what used to charge every
+  -- other declaration in this file for it.
+  haveI : Fact (Nat.Prime PALLAS_MODULUS) := ⟨pallasPrime⟩
   have hfermat : b ^ (PALLAS_MODULUS - 1) = 1 := ZMod.pow_card_sub_one_eq_one hb
   have hPge : 2 ≤ PALLAS_MODULUS := by rw [PALLAS_MODULUS]; norm_num
   have hlt : PALLAS_MODULUS - 1 = (PALLAS_MODULUS - 2) + 1 := by omega
@@ -159,8 +177,9 @@ theorem sqMul_is_inverse (a b : ZMod PALLAS_MODULUS) (hb : b ≠ 0) : sqMul a b 
     explicit early branch (`vm.rs:1555-1643`), and it is worth recording *why that branch is not a
     convention*: `b^(p−2)` with `b = 0` is `0`, because `p − 2 ≠ 0`. So the branch restates what the
     formula already gives, and no prover freedom hides in it — the "what does division by zero
-    mean in a field" question does not arise. Budget 2, `sqMulGo_eq`'s reason. -/
-@[axiom_budget 2]
+    mean in a field" question does not arise. Budget 1, `sqMulGo_eq`'s reason as it now reads:
+    `pallasPrime` gone with the global instance, `Classical.choice` left from the automation. -/
+@[axiom_budget 1]
 theorem sqMul_zero (a : ZMod PALLAS_MODULUS) : sqMul a 0 = 0 := by
   rw [sqMul_eq]
   have hne : PALLAS_MODULUS - 2 ≠ 0 := by rw [PALLAS_MODULUS]; norm_num
