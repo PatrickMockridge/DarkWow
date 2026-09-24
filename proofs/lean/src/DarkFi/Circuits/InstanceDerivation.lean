@@ -578,15 +578,22 @@ ever exposes, before or after, because "classification 3 is a property of the ex
 `isDisclosed` below is written the same way, and the pending exposure itself cannot discharge itself
 because it is the conjunct `p.2` that fails for it.
 
-**The resolution is transitive, and that is why there is a support function at all.** An exposure of
-`tx_binding` records the *name*; the witness it pins is inside the expression that name was assigned. So
-support follows `lhs -> rhs` like the checker's `support`, and it is computed by iterating a single
+**The resolution is transitive, and it has two halves — the second of which was measured, not foreseen.**
+An exposure of `tx_binding` records the *name*; the witness it pins is inside the expression that name was
+assigned. So support follows `lhs -> rhs` like the checker's `support`, computed by iterating a single
 expansion step over a frontier rather than by recursion through the assignment graph — the same rule, with
 the iteration bound (`assigns.length + 1`, the longest chain a circuit with no repeated left-hand side can
 have) standing in for the checker's fixed `resolve` depth of 16. Running out of iterations yields a
-*smaller* support, so a `redundant` admission can be missed but none is granted falsely. This is also why
-the walk is untouched: `boundWalk` does not record *by what* a name was determined, and extending it would
-change the module the transcription's 178 `decide` verdicts are computed from.
+*smaller* support, so a `redundant` admission can be missed but none is granted falsely.
+
+The other half is `determinerOf`, and the first version of this rule did not have it: resolving only
+through the assignment map **failed 6 of the twelve `(r, s)` pairs, and the build said which six** — a name
+bound by `constrain_equal_base(determined, X)` is determined without being assigned, so the witnesses it
+pins are in the *binding* expression and in no assignment to `X`. That is a measured correction rather
+than a reading, and it is why the rule is stated over `supportOfStmt` and not over `supportExpr` alone.
+
+This is also why the walk is untouched: `boundWalk` does not record *by what* a name was determined, and
+extending it would change the module the transcription's 178 `decide` verdicts are computed from.
 
 **The three classes this does not model, each counted rather than assumed.**
 
@@ -651,11 +658,53 @@ def supportOf (assigns : List (Name × Expr)) (n : Name) : List Name :=
 def supportExpr (assigns : List (Name × Expr)) (e : Expr) : List Name :=
   ((namesOf e).bind (supportOf assigns)).dedup
 
+/-- **The expression that determined a name** — the other half of the resolution, and the half whose
+    absence was measured rather than guessed: the first version of this rule resolved a bare-name
+    exposure only through the *assignment* map, and **6 of the twelve pairs failed on it**. A name bound
+    by `constrain_equal_base(determined, X)` is determined without being assigned, and the checker's
+    `determined_exposures` uses the *binding* expression for exactly that case
+    (`script/circuit_instance_derivation.py`'s `bound` map), so the witnesses are in `determined`, not in
+    any assignment to `X`.
+
+    **The assignment is preferred to the equality**, which is the checker's own precedence — it tests
+    `arg in derived` before `arg in bound` — so a name that is both assigned and bound resolves through
+    the assignment. Otherwise the other side of the equality is the determiner, and **both sides may be
+    names**: the first version of this function handled only the case where one side was an op
+    expression, and `purse/balance` binds `tx_binding` with `constrainEq(.var "tb_circuit", .var
+    "tx_binding")` — two names — so the resolution returned `none` and the rule refused a circuit the
+    checker calls `redundant`. Found by probing the failing circuit with `#eval` rather than by reading.
+
+    Both directions of the equality are read, matching the checker's symmetric `bound.setdefault`; the
+    module note lists the model's own `bindEq` asymmetry there as unmodelled, and this is where it is
+    corrected. -/
+def determinerOf (cs : List Stmt) (m : Name) : Option Expr :=
+  match (cs.filterMap fun s =>
+           match s with
+           | .assign n e => if n == m then some e else none
+           | _ => none).head? with
+  | some e => some e
+  | none =>
+    (cs.filterMap fun s =>
+       match s with
+       | .constrainEq a b =>
+         if varOf b == some m then some a
+         else if varOf a == some m then some b
+         else none
+       | _ => none).head?
+
+/-- **The support of an exposure, resolved through what determined it.** A bare name is replaced by its
+    determiner — its assignment's right-hand side, or the equality that bound it — before the chain is
+    followed; anything else is its own expression. -/
+def supportOfStmt (cs : List Stmt) (assigns : List (Name × Expr)) (e : Expr) : List Name :=
+  (supportExpr assigns ((match varOf e with
+                         | some n => (determinerOf cs n).getD e
+                         | none => e))).dedup
+
 /-- **The checker's `redundant` class, as a computation**: `n` occurs in the resolved support of an
     exposure the walk recorded as *determined*. Order-free, like the checker's classification 3. -/
 def isDisclosed (held : List Name) (cs : List Stmt) (n : Name) : Bool :=
   let assigns := assignsOf cs
-  (exposures held cs).any (fun p => p.2 && (supportExpr assigns p.1).contains n)
+  (exposures held cs).any (fun p => p.2 && (supportOfStmt cs assigns p.1).contains n)
 
 /-- **The rule the tree enforces**: every exposure is determined, or is a bare name disclosed inside some
     other exposure that is. The strict property plus the checker's third classification. -/
