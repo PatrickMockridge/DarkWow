@@ -38,12 +38,10 @@ almost everywhere:
 
 * **154** of the 167 — The checker resolves it as `redundant` — pinned by another exposed
   determination, which the model's sequential rule does not follow.
-* **11** of the 167 — The checker resolves it as `declared-free`, from a host-side justification
+* **12** of the 167 — The checker resolves it as `declared-free`, from a host-side justification
   in `script/circuit_free_instances.txt`.
 * **1** of the 167 — The checker resolves it as `bound`, through a `constrain_equal_base` whose
   determining side is a declared constant.
-* **1** of the 167 — **The checker fails it too** — one of the instances `OBL-Z16` names, where
-  the model and the checker agree.
 
 So the model does not contradict the checker; it **refines** it, and every one of the 167 is the
 checker's weaker rule or the single boundary the model note names. Two consequences a reader should
@@ -3761,7 +3759,7 @@ def labor_market_create_job_stmts : List Stmt :=
 
 /-- **The property fails** for `src/contract/labor_market/proof/create_job.zk`: its first undetermined exposure is
     `.var "attestation_id"`, which the circuit does not bind before exposing.
-    **The checker fails it too** — one of the instances `OBL-Z16` names, where the model and the checker agree. -/
+    The checker resolves it as `declared-free`, from a host-side justification in `script/circuit_free_instances.txt`. -/
 @[axiom_budget 0]
 theorem labor_market_create_job_has_a_free_instance :
     ¬ NoFreeInstance labor_market_create_job_held labor_market_create_job_stmts := by
