@@ -270,13 +270,18 @@ today:
 | `pallasPrime` | 14 (`Pedersen.*`, and everything downstream of the curve being a field) |
 | `coinbase_blind` | 7 (`cumulative_auditable`, `cumulative_commit_theorem`, `no_hidden_inflation`, …) |
 | `HashOps.poseidon_collision_resistance` | 6 (`commitment_binding`, `nullifier_binding`, `smtCrh_injective`, …) |
-| `NoFreeInstances` | 1 — `capabilityType_of_circuitDerivable` |
 | `HashOps.poseidon_hash_output` | **none** |
-| `reward_monotone` | **none** |
+| `reward_monotone` | **none** *(not an assumption any more — a theorem since 2026-09-24)* |
 
 Three rows left this table on 2026-09-24 by ceasing to be assumptions: `Arithmetic.base_div_mul_cancel`
 (a theorem in `BaseDiv.lean`), and `ECOps.fixed_base_mul_uses_constant` and
-`variable_base_mul_is_prover_chosen` (theorems in `ECOps.lean`). And one count moved for a reason worth
+`variable_base_mul_is_prover_chosen` (theorems in `ECOps.lean`). **Two more left it the same day, and for
+different reasons — the distinction is the point of keeping this paragraph.** `reward_monotone` was
+discharged *by proof*. `NoFreeInstances` was **deleted**, its premise relocated into
+`Capability.Inversion.CircuitDerivable` as a computation over transcribed data; its former consumer
+`capabilityType_of_circuitDerivable` now reads budget **0**, where it read 1 — and that 1 was never the
+proof using it, it was a `structure`-projection charge (HIGH-16). **The rule now supplied is weaker than
+the axiom's name**, which the honest-scope bullet below and `OBL-T7` both state. And one count moved for a reason worth
 recording: `pallasPrime` read **19** before that date and reads **14** after it, and the difference is
 not the tree growing — it is that `Axioms.lean` no longer declares a **global**
 `instance : Fact (Nat.Prime PALLAS_MODULUS)`. Five declarations were reaching the assumption by
@@ -290,6 +295,12 @@ has a consumer, which is what §3 of the rewrite was for: `capabilityType_of_cir
 `CircuitDerivable r s` as a *hypothesis* rather than resting on a vacuous axiom, and that hypothesis
 is `NoFreeInstances` in the type system's vocabulary. A theorem that names its own gap is one a
 reader can act on; a `: Prop` axiom with a vacuous antecedent is not.
+
+**And it has since left the assumptions altogether.** Deleted 2026-09-24, with its premise relocated
+into `CircuitDerivable` as a computation over transcribed data — so what has a consumer is that
+*field*, and the declaration the register used to point at no longer exists. So the contrast this
+paragraph draws survives the deletion and gets sharper: a gap that is *named* can be closed by
+supplying data, and a `: Prop` axiom that nothing reads can sit there for months looking answered.
 The two with **no** consumer cannot fail — their falsity would be undetectable here, because nothing
 depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
 `silentAxiomFailures`: that list is the case for discharging them.
@@ -450,10 +461,13 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   *derivable* from one that is *determined* (a bare witness is the former and not the latter, because
   `constrain_equal_base(w, X)` re-exposes a variable the prover held), and a soundness proof needs the
   valuations to **satisfy** the circuit — a fact about the valuation that a source analysis has no reason
-  to state. `Axioms.NoFreeInstances (r : Resource) (s : Action)` is still uninterpreted and still
-  unconsumed: turning it into a definition needs the function `(r, s) ↦ the circuit source`, and a Lean
-  term cannot read a `.zk` file. So the property has a definition for that bridge to be *about*, and the
-  bridge remains the gap.
+  to state. `Axioms.NoFreeInstances (r : Resource) (s : Action)` **was** uninterpreted and unconsumed
+  until 2026-09-24, and is now **deleted**: the function `(r, s) ↦ the circuit source` is a generated,
+  freshness-gated module (`CircuitIndex.lean`), `Capability.Inversion.CircuitDerivable` carries the data
+  instead of a predicate, and a Lean term still cannot read a `.zk` file — which is why the source is
+  *generated* rather than read. **What closed it is a strength change and not a proof**, and that
+  sentence is the one to carry away: the rule supplied at the twelve pairs is the checker's, which is
+  weaker than the axiom's name.
   **The transcription that bridge needs now exists, and its verdicts are the tree's most surprising
   number.** `Transcribed.lean` is generated from the `.zk` sources by
   `scripts/gen_circuit_transcription.py` and freshness-gated (`--check`, wired in `run-all-tests.sh`), so
@@ -464,8 +478,14 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   model's rule is sequential and does not follow it), 11 its `declared-free`, 3 its own failures
   (`OBL-Z16`), and 1 the model's declared-constant boundary. So the model **refines** the checker rather
   than contradicting it, and `NoFreeInstances`' *name* is a strict reading of this tree rather than a
-  description of it — the property the tree enforces is the checker's four-verdict rule. Still not the
-  bridge: `(r, s) ↦ a circuit` is not in the tree, so this supplies the data the bridge needs.
+  description of it — the property the tree enforces is the checker's four-verdict rule. **The bridge is
+  now in the tree**: `(r, s) ↦ a circuit` is `CircuitIndex.lean`, generated and gated, carrying one
+  inhabitant of `Capability.Inversion.CircuitDerivable` per pair for the twelve pairs this layer
+  instantiates. **The figures in this paragraph are the transcription's older readings** — it is
+  **178 circuits over 2677 statements** now (not 181/2747), **167** refute the strict property (not
+  170), decomposed **154 `redundant` / 12 `declared-free` / 1** the model's constant boundary; the
+  three that were the checker's own `OBL-Z16` failures are gone with the sites that caused them, and
+  the checker itself now exits 0.
 - **The consensus state core is only partly modelled here, and what is missing is named rather than
   implied.** Five mechanisms have models now, all at **budget 0**: the block-level Pedersen mass-balance
   rule (`Consensus/MassBalance.lean`, ten theorems, transcribed from

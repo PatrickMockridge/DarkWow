@@ -187,7 +187,8 @@ The real content it was standing in for is `zero_cond_correct` and `zero_cond_no
 take `zero_cond_constraint g` — the gadget's actual polynomial — and derive `output = 0` when
 `is_zero = 1`. Those are non-vacuous and stay. What is *not* proved anywhere is the step from that
 gadget lemma to the burn circuit's Merkle leaf, which needs the circuit model; that gap is
-`Axioms.NoFreeInstances` and OBL-Z1, not this name.
+the one `Axioms.NoFreeInstances` named — a declaration **deleted 2026-09-24**, its premise now a
+computation over transcribed data — together with `OBL-Z1`, and not this name.
 -/
 
 /-

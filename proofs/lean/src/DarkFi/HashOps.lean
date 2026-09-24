@@ -511,7 +511,8 @@ for Merkle inclusion; the theorem was `id`.
 
 Both are deleted. The argument is real, but its first premise is "the host verifies the ZK
 proof", and nothing in this tree turns a Halo2 proof into a Lean proposition — that is the
-modelling gap `Axioms.NoFreeInstances` names. Recorded in `DarkFi.HAZOP.High`.
+modelling gap `Axioms.NoFreeInstances` named — a declaration deleted 2026-09-24, its premise now a
+computation over transcribed data. Recorded in `DarkFi.HAZOP.High`.
 
 The name `merkle_root_change_detection` is now `HashOps.merkle_root_change_detection` in
 `DarkFi/Axioms.lean`. The old justification attached to it — "the structural-induction proof
@@ -546,8 +547,9 @@ The argument in that heading is real, and worth restating honestly: (1) `expecte
 `constrain_instance`'d by the opcode; (2) the root is recomputed in-circuit; (3) the output is
 `bool_check`'d; (4) the host verifies the ZK proof. Step 4 is where it stops being Lean: no
 theorem in this tree turns a verified Halo2 proof into the proposition "the recomputed root
-equals `expected_root`". That is the gap `Axioms.NoFreeInstances` names, and no theorem
-consumes it yet. The privacy claim has the same shape — it needs the zero-knowledge property
+equals `expected_root`". That is the gap `Axioms.NoFreeInstances` named — a declaration deleted
+2026-09-24 in favour of a computation over transcribed data — and nothing supplies it for this
+argument. The privacy claim has the same shape — it needs the zero-knowledge property
 of the proof system, which is likewise un-modelled.
 -/
 

@@ -118,7 +118,9 @@ from the kind there is nothing left to assume: both follow by case analysis on t
 What is still not proved is the thing these were standing in for all along, and it is not
 expressible here: that the *model's* kind-to-constancy mapping is the one the zkas VM implements.
 That is the model-to-implementation correspondence, it is a claim about Rust and `.zk` sources
-rather than about these types, and it belongs to `Axioms.NoFreeInstances`' class rather than to a
+rather than about these types, and it belongs to the class `Axioms.NoFreeInstances` named — a
+declaration **deleted 2026-09-24**, whose premise is now a computation over transcribed data — rather
+than to a
 declaration over `ECMulGadget`.
 -/
 

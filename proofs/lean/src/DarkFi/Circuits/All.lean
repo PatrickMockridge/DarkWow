@@ -9,7 +9,10 @@ circuits) among eleven "Circuit Audit Axioms" spread across
 `Circuits/{Token,Bridge,Exchange,All}.lean`. This file declares nothing at all: it is
 comment-only, and the name appears only inside prose. The same is true of the other two
 `-- NOT DECLARED IN LEAN` lines below. The audit they describe is manual; recording it as a
-Lean result requires the obligation `Axioms.NoFreeInstances` names to become checkable.
+Lean result requires the obligation `Axioms.NoFreeInstances` named to become checkable. **(That
+declaration was deleted on 2026-09-24** — its premise is a field of `Capability.Inversion.CircuitDerivable`
+now, supplied per `(r, s)` pair by the generated `CircuitIndex.lean` — so read the corrections below
+rather than this sentence.)
 CORRECTED 2026-09-24: that obligation **is** checkable, by a gate rather than by hand
 (`scripts/check-circuit-instance-derivation.sh`, wired at `scripts/run-all-tests.sh:101`), and the
 check refutes this file's claims for eleven instances across seven circuits — named below. What is

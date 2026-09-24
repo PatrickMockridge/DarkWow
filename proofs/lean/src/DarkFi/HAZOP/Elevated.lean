@@ -357,7 +357,11 @@ def elevatedAxiomFindings : List (String × Nat × String) := [
   ("ELEV-25: purseNullifier", 30,
    "SILENT. Signature only; content is in purseNullifier_nonce_injective (see CRIT-5)"),
   ("ELEV-26: NoFreeInstances", 34,
-   "SILENT. The ZK premise; capabilityType_of_circuitDerivable is proved from coversBarbs alone"),
+   "SILENT, AND ANSWERED 2026-09-24. The ZK premise; capabilityType_of_circuitDerivable is proved " ++
+   "from coversBarbs alone. The axiom is now DELETED: its premise is a computation over transcribed " ++
+   "data in `Capability.Inversion.CircuitDerivable`, supplied per (r, s) pair by the generated " ++
+   "`CircuitIndex.lean`, and that theorem reads budget 0. **The strength change is the part to read** " ++
+   "— the rule supplied is the checker's, which is weaker than the axiom's name"),
   ("ELEV-27: smt_membership_sound / smt_membership_privacy", 34,
    "REMOVED, not silent. Two :Prop stubs; opcodes.md reported SMT membership as SOUND on their existence"),
   ("ELEV-28: nullifier_determinism / signature_binding_h2_fix / merkle_inclusion_foundation", 34,
@@ -369,7 +373,8 @@ def elevatedAxiomFindings : List (String × Nat × String) := [
    "returns the named proposition `varBaseObligation g` (`¬ g.base_is_constant`), which can be " ++
    "false, so the branch states something instead of nothing. That is a repair of a vacuous " ++
    "branch, NOT a mechanization: the rule over real circuits is " ++
-   "`script/circuit_instance_derivation.py`, and `Axioms.NoFreeInstances` remains uninterpreted"),
+   "`script/circuit_instance_derivation.py`, and `Axioms.NoFreeInstances` — DELETED 2026-09-24, its " ++
+   "premise now a computation over transcribed data — was the declaration that stood for it"),
   ("ELEV-31: aead_open", 34,
    "SILENT. The note-opening primitive is a value-less `opaque`, so nothing about the deployment's " ++
    "ChaCha20Poly1305/`kdf_sapling`/nonce derivation is modelled. Its falsity is undetectable here " ++

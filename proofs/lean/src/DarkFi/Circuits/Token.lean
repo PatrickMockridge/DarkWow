@@ -84,8 +84,10 @@ There is no Lean version of this claim to put in its place. Turning the table ab
 theorems would require `pi.nullifier = poseidon_hash_output [...]` as a *hypothesis* for each
 row — the same vacuity one level up, since the equality is what the host checks when it
 verifies the proof, not something Lean can derive from a `BurnV1PublicInputs` record. What
-would make it checkable is the obligation `Axioms.NoFreeInstances` names; no theorem consumes
-that yet.
+would make it checkable is the obligation `Axioms.NoFreeInstances` named — **deleted 2026-09-24**,
+its premise now a field of `Capability.Inversion.CircuitDerivable` and its rule supplied per `(r, s)`
+pair by the generated `CircuitIndex.lean`. That module covers the twelve pairs the capability layer
+instantiates; this claim is not one of them, so nothing supplies it here.
 
 The audit itself — that each row's derivation is present in `burn_v2.zk` — is manual. It is
 recorded in `DarkFi.HAZOP` and in the table above, which is the honest form for it.

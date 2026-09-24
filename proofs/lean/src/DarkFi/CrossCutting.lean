@@ -180,7 +180,10 @@ host's `constrain_instance` binding, audited manually. They are recorded as SILE
 `merkle_inclusion_foundation`'s chain of trust deserves a note, because steps 1-4 are a real
 argument: the modelling gap is the word "ZK proof" in step 1. Nothing in this tree turns a
 Halo2 proof into a Lean proposition, so step 1 cannot be a Lean hypothesis either — it would
-have to be `Axioms.NoFreeInstances` or something like it, and no theorem consumes that yet.
+have to be `Axioms.NoFreeInstances` or something like it — **that declaration was deleted on
+2026-09-24**, its premise becoming a computation over transcribed data
+(`Capability.Inversion.CircuitDerivable`, supplied by the generated `CircuitIndex.lean`) — and nothing
+supplies it for the argument above.
 -/
 
 /-
@@ -222,8 +225,9 @@ in the whole `Circuits/` directory is `Circuits.Token.burn_v1_no_free_instances`
 discussed in that file.
 
 The audit itself lives in the `.zk` sources and in `DarkFi.HAZOP`. Recording it as a Lean
-theorem requires the obligation `Axioms.NoFreeInstances` to become checkable, which it is not
-today.
+theorem requires the obligation `Axioms.NoFreeInstances` named to become checkable. It was **deleted
+2026-09-24** — the premise is a computation over transcribed data now — but nothing supplies it for
+the circuits this paragraph is about, so the requirement stands unmet here.
 -/
 
 /-

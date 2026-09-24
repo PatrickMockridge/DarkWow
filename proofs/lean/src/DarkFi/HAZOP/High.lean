@@ -290,7 +290,8 @@ def zeroCondSmugglingClaimStatus : String :=
 /-- HIGH-8: `HashOps.merkle_inclusion_soundness` and `merkle_root_deterministic`. REMOVED.
     The first was its hypothesis restated, with a second hypothesis `root = root`; the second
     was `x = x`. The soundness argument for Merkle inclusion is real, but its first premise is
-    "the host verifies the ZK proof", which is the gap `Axioms.NoFreeInstances` names. -/
+    "the host verifies the ZK proof", which is the gap `Axioms.NoFreeInstances` named — a declaration
+    **deleted 2026-09-24** in favour of a computation over transcribed data. -/
 def merkleInclusionClaimStatus : String :=
   "HIGH-8: REMOVED. `h → h` with a `root = root` hypothesis, and `x = x`"
 
@@ -358,9 +359,12 @@ def highAxiomFindings : List (String × Nat × String) := [
    "for an axiom-named `Prop` `Foo` makes `#print axioms S.a` report `[Foo]` — every projection, " ++
    "including the data ones, depends on the axiom, whether or not any proof touches it. Measured " ++
    "minimally, and it is 10 lines a reader can re-run. The live instance is " ++
-   "`Capability.Inversion.CircuitDerivable`, whose third field is `NoFreeInstances r s`: " ++
-   "`capabilityType_of_circuitDerivable` reads budget 1 while its proof term never mentions " ++
-   "`noFreeInstances`, and the file said for months that its `#print axioms` was empty. Both " ++
+   "`Capability.Inversion.CircuitDerivable`, whose field was `NoFreeInstances r s`: " ++
+   "`capabilityType_of_circuitDerivable` read budget 1 while its proof term never mentions " ++
+   "`noFreeInstances`, and the file said for months that its `#print axioms` was empty. **RETIRED " ++
+   "2026-09-24** — the axiom is deleted, the field is a computation over supplied data, and the " ++
+   "theorem reads 0 — while the hazard itself stands, being what the next Prop field naming an " ++
+   "axiom would re-create. Both " ++
    "readings were defensible from the source and only one is true of the budget. This is the same " ++
    "class as HIGH-13's disclosure that the budget cannot record *what kind* of dependency a " ++
    "citation is — here it cannot record that the dependency is a projection's rather than the " ++
