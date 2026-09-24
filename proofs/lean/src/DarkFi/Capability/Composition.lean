@@ -283,11 +283,58 @@ def attestationType : CapabilityType attestationResource verifyAction :=
    ==========================================================================
    Two capability types are equivalent iff their composed barb sets are
    equal. This is the type-level bisimulation condition.
+
+   **`capTypesDistinct` is a `def` and not a theorem, and that is a finding rather than an omission.**
+   `Pareto.lean` proves the *primitive*-level analogue — the 17 primitives are pairwise barb-distinct
+   (`primitiveTypesAreParetoEfficient`) — and the temptation is to read a resource-level counterpart
+   off it. It does **not** hold, and `resourceDistinctness_is_false` below is the witness: a capability
+   type is `compose ct.primitives`, so the *resource* is never consulted, and two resources with the
+   same covering primitives compose identically however different they are meant to be. The bare `def`
+   with no theorem attached is what the register (`OBL-T2`) recorded as the symptom; this is the cause.
+
+   The purse is the sharpest instance available: `purseWithdrawType` and `purseDepositType` both compose
+   `[secretKey, commitment, nullifier, contractId, assetId]`, so the two *opposite* operations on one
+   purse are one type under this definition — and their resources' `requiredBarbs` are equal too.
+   `OBL-T9` measured that by script (`script/capability_barb_analysis.py`); the theorem below is the
+   same fact with a kernel behind it.
+
+   Nothing is repaired here, and that is the register's decision rather than this file's: `OBL-T9`
+   records the alphabet as **held**, because barbs name *permissions* and are deliberately coarse
+   (`ocap.md` §5.1, "defined privilege containment, not least privilege"), and giving each resource a
+   distinguishing barb would make a barb set an identifier, which is a different design. So the failure
+   is stated beside the definition instead of the definition being quietly removed.
 -/
 
 def capTypesDistinct (r1 r2 : Resource) (s1 s2 : Action)
     (ct1 : CapabilityType r1 s1) (ct2 : CapabilityType r2 s2) : Prop :=
   compose ct1.primitives ≠ compose ct2.primitives
+
+/-- **Distinct resources do not give distinct capability types.** The resource-level reading of
+    `Pareto.primitiveTypesAreParetoEfficient` is **false**, and `purse_withdrawal` against
+    `purse_deposit` is the witness: two resources with different names and opposite operations, one
+    composed type. Stated as a refutation of the universal so that what fails is the tempting
+    statement — the same shape as the invariance refutations in `Congruence.lean`.
+
+    What is *not* claimed: that the purse pair is mis-designed. The register holds the alphabet by
+    decision (see the section note) — a barb set names the permissions an action carries, and a deposit
+    and a withdrawal carry the same ones. What distinguishes them is one level down, in the `gate`
+    barb's function id.
+
+    **Budget 0**: the witness is a definitional equality between two identical `compose` applications,
+    so nothing is assumed and not even `Classical.choice` is reached — which is worth noting, because
+    the *positive* Pareto theorem it contradicts (`Pareto.primitiveTypesAreParetoEfficient`) costs 1. -/
+@[axiom_budget 0]
+theorem resourceDistinctness_is_false :
+    ¬ (∀ (r1 r2 : Resource) (s1 s2 : Action)
+        (ct1 : CapabilityType r1 s1) (ct2 : CapabilityType r2 s2),
+        r1 ≠ r2 → capTypesDistinct r1 r2 s1 s2 ct1 ct2) := by
+  intro h
+  have hne : purseWithdrawResource ≠ purseDepositResource := by
+    intro heq
+    have hname := congrArg Resource.name heq
+    simp [purseWithdrawResource, purseDepositResource] at hname
+  exact (h purseWithdrawResource purseDepositResource withdrawAction depositAction
+    purseWithdrawType purseDepositType hne) rfl
 
 /- ==========================================================================
    Part 9: Well-Formedness Check (Computational)

@@ -149,6 +149,23 @@ run_gate "hidden tests declared (OBL-C76)" bash "$SCRIPT_DIR/check-hidden-tests.
 # clean-up removed 25 documents and repointed ~30 referrers by hand; this is what
 # keeps that from silently un-happening.
 run_gate "documentation index"            bash "$SCRIPT_DIR/check-doc-index.sh"
+# The barb alphabet, in five representations: the Lean `inductive Barb`, the core `BarbId`, the sdk
+# `Barb`, the Python model, and `type-system.md` §1.1. `contrib/barb_alphabet_diff.sh` extracts and
+# diffs the four sets mechanically; `contrib/primitive_barbs_diff.sh` does the same for the *type→barb
+# mapping*, which is the table the type-system properties are stated over and which exists twice.
+# Both were written for exactly this purpose and **invoked by no runner** until 2026-09-24 — which the
+# register records as OBL-T9's coverage gap, and it is the `OBL-C76` class: agreement checked by a
+# script nobody runs is agreement nothing checks. They take no arguments, need no build, write their
+# reports under `/tmp` rather than into the tree, and exit non-zero on disagreement.
+#
+# This is what closes that gap, and it closes it more strongly than the Rust test that was going to:
+# `src/sdk/src/capability.rs`'s `test_all_primitives_have_distinct_barb_sets` covered **10 of 17**
+# primitives, and raising it to 17 would have edited `src/sdk/**` — which is in *every* contract's
+# `SOURCE_MANIFEST`, so it would have invalidated all 32 recorded artifacts and failed the freshness
+# gate above until they were rebuilt. The diff script checks all 17, names the seven the model has and
+# the Rust does not, and needs no rebuild.
+run_gate "barb alphabet agreement (OBL-T3/T9)" bash "$REPO_ROOT/contrib/barb_alphabet_diff.sh"
+run_gate "primitive barb mapping (OBL-T3)"     bash "$REPO_ROOT/contrib/primitive_barbs_diff.sh"
 # OBL-C77: an empty get_metadata arm is the host's *rejection* signal, not "no public inputs".
 # `execution.rs` decodes the first encoded vector out of the metadata and fails the call at
 # `metadata-decode-zkp` on an empty buffer, before exec runs — so an arm whose success path returns
