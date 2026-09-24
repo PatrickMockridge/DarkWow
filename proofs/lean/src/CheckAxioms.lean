@@ -123,6 +123,79 @@ def proofIsProjection (v : Expr) : Bool :=
     | _ => false
   go v
 
+/-- **Weak-head-normalise a statement's body**, so a statement that *reduces* to a trivial one is seen
+    as one.
+
+    This is the decisive half of the tautology arm, and it was found by measurement rather than by
+    reading: `theorem txCommitment_source_bindable (nf pf : List String) : bindable txCommitment nf pf`
+    is literally `∀ nf pf, True`, because `bindable`'s `_` catch-all sends that constructor to `True` —
+    but the syntactic test saw `bindable txCommitment nf pf`, which is not `True`, so the theorem
+    survived the arm written to catch exactly its class. Three such theorems were live in
+    `Capability/Prover.lean`. One reduction step turns the statement into `True` and the syntactic test
+    then does its job.
+
+    **`forallTelescope` and not a manual strip**, and the first version of this was wrong in a way worth
+    keeping: stripping the binders with a plain recursion leaves the body's `bvar`s *unbound*, and
+    `Meta.whnf` **panics** on a loose bvar (`PANIC at Lean.Meta.whnfEasyCases …: loose bvar in
+    expression`). A smoke test over five hand-picked theorems passed, because the panic needs a body
+    whose reduction actually walks the free variable. `forallTelescope` introduces a *free* variable per
+    binder in the local context, so the body reduces with nothing loose — the same shape of mistake as
+    the gate's arity bug recorded above, where a wrong-looking pattern silently matched nothing.
+
+    Weak-head only, deliberately: it reduces the *head* of the statement (a `def`/`match` application)
+    and stops. Full normalisation would unfold every definition in the statement, which is both
+    expensive and the wrong test — a statement is vacuous when it *is* `True`, not when some over-eager
+    normal form is. -/
+def whnfType (env : Environment) (e : Expr) : IO Expr := do
+  let ctx : Core.Context := { fileName := "", fileMap := default }
+  let st : Core.State := { env := env }
+  let (e', _) ← (Meta.MetaM.run' (Meta.forallTelescope e fun _ body => Meta.whnf body)).toIO ctx st
+  return e'
+
+/-- **How many of a theorem's explicit binders its proof term never mentions**, paired with how many
+    there are.
+
+    A theorem `∀ (a : A) (h : P), Q` elaborates to `fun a h => body`, so inside `body` the outermost
+    binder carries the *largest* de Bruijn index: the binder stripped at position `i` of `n` is
+    `bvar (n - 1 - i)` from inside. This strips the leading binders, then walks the body counting the
+    binders it crosses, so every `bvar` can be mapped back to the outer binder it names.
+
+    `proofIsProjection` is the extreme case of this — a body that is *exactly* one binder, i.e. every
+    other binder unreferenced. This is the general one, and it is the class the two existing arms leave
+    between them: a statement that is neither an identity nor a restatement of a hypothesis, but whose
+    proof ignores an argument the statement asked for.
+
+    Only **explicit** binders are counted. A typeclass or instance binder is routinely unreferenced in a
+    proof while being load-bearing through another binder's *type* (`(h : a ≤ a)` carries `LE.le`'s
+    instance), so counting those would flag most of the tree and the signal would be worth nothing.
+
+    And the signal is not a verdict, for a reason a reader of it should know: a proof can legitimate-
+    ly ignore an explicit binder because *another binder's type already carries it* (`(a : α) (h : a ≤ a) :
+    a ≤ a := h` ignores `a` and is not a defect). What the count is genuinely sharp about is the case
+    where **every** explicit binder is ignored — then the proof mentions no argument at all, and the
+    statement is either constant in all of them or vacuous in all of them. -/
+def unreferencedExplicitBinders (v : Expr) : Nat × Nat :=
+  let rec strip (e : Expr) (n : Nat) (pos : List Nat) : Nat × List Nat × Expr :=
+    match e with
+    | .lam _ _ b bi => strip b (n + 1) (if bi == BinderInfo.default then n :: pos else pos)
+    | .forallE _ _ b bi => strip b (n + 1) (if bi == BinderInfo.default then n :: pos else pos)
+    | .mdata _ b => strip b n pos
+    | _ => (n, pos, e)
+  let (n, pos, body) := strip v 0 []
+  let rec used (e : Expr) (d : Nat) (acc : List Nat) : List Nat :=
+    match e with
+    | .bvar j => if j ≥ d then (j - d) :: acc else acc
+    | .app f a => used a d (used f d acc)
+    | .lam _ _ b _ => used b (d + 1) acc
+    | .forallE _ _ b _ => used b (d + 1) acc
+    | .letE _ _ val b _ => used b (d + 1) (used val d acc)
+    | .mdata _ b => used b d acc
+    | .proj _ _ b => used b d acc
+    | _ => acc
+  let u := used body 0 []
+  let outer := pos.map (fun i => n - 1 - i)
+  ((outer.filter (fun i => !u.contains i)).length, outer.length)
+
 /--
 Reads declaration names from **stdin**, one per line, and prints an axiom row for each.
 
@@ -147,7 +220,11 @@ def main : IO UInt32 := do
         let axNames := ",".intercalate (axs.toList.map (·.toString))
         let sc := (collectConsts ti.type {}).toList.map (·.toString)
         let stmtConsts := ",".intercalate ((sc.toArray.qsort (· < ·)).toList)
-        IO.println s!"{nm}\t{axs.size}\t{axNames}\t{stmtConsts}\t{isTrivialProp ti.type}\t{proofIsProjection ti.value}"
+        let (unref, total) := unreferencedExplicitBinders ti.value
+        -- The triviality test reads the *reduced* statement, so a statement that reduces to a trivial
+        -- one is caught; see `whnfType`.
+        let ty ← whnfType env ti.type
+        IO.println s!"{nm}\t{axs.size}\t{axNames}\t{stmtConsts}\t{isTrivialProp ty}\t{proofIsProjection ti.value}\t{unref}/{total}"
         found := found + 1
     | some _ =>
         IO.eprintln s!"check_axioms: not a theorem: {nm}"

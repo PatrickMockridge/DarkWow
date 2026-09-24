@@ -329,6 +329,18 @@ depends on them. `DarkFi.HAZOP.Elevated` records each one and collects them as
   map did not have). Separately: `Semantics/Ledger.lean`
   proves that disjoint calls commute without saying what a write set *is*, which is how `OBL-C100` was
   found; that gap is still open and is not part of the map.
+- **The tautology arm's reach, stated because completeness is now relied on.** `script/check_lean_axioms.py`
+  refuses a statement that is true of nothing, and as of 2026-09-24 it also refuses one that merely
+  **reduces** to a trivial statement and one whose proof ignores every explicit binder. The second
+  tightening was not cosmetic: three theorems in `Capability/Prover.lean` were `∀ …, True` in disguise —
+  `bindable`'s catch-all sends the intrinsic witness sources to `True`, so `bindable txCommitment nf pf`
+  *is* `True`, and the syntactic test saw an unreduced `def` application. All three were consumer-less and
+  were deleted, with their claim restated once in a form that has content. Measured across all 454
+  theorems, the tightened arm catches exactly those three and no others. **What it still does not
+  reach**: a statement whose head is an inductive — `(∀ …, True) ∧ (∀ …, True)` written literally is not
+  reduced further — and the two *soft* signals beside it (a statement mentioning no constant of this
+  project, and a theorem with some binder unused) are soft because they have real false positives, which
+  the arm's own docstring gives as the test for which signals may block.
 - **Poseidon is an opaque function, not the sponge.** `poseidon_hash_output` is a value-less
   `opaque`, so nothing about the P128Pow5T3 permutation is proved — not even determinism, which
   is a consequence of its being a function and needs no proof. (This section used to say it was

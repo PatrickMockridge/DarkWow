@@ -432,14 +432,17 @@ def run_collector():
     rows = {}
     for line in proc.stdout.splitlines():
         parts = line.split("\t")
-        if len(parts) != 6:
+        if len(parts) != 7:
             continue
-        name, _, axs, stmt_consts, trivial, projection = parts
+        name, _, axs, stmt_consts, trivial, projection, binders = parts
+        unref, _, total = binders.partition("/")
         rows[name] = {
             "axioms": [a for a in axs.split(",") if a],
             "stmt_consts": [c for c in stmt_consts.split(",") if c],
             "trivial": trivial == "true",
             "projection": projection == "true",
+            "unref_binders": int(unref) if unref.isdigit() else 0,
+            "total_binders": int(total) if total.isdigit() else 0,
         }
     if not rows:
         err = (proc.stderr or "").strip().splitlines()
@@ -475,31 +478,48 @@ def project_roots():
 def check_tautologies(rows):
     """(7) No theorem whose statement is true of nothing, and none that restates its hypothesis.
 
-    Two hard fails, both read off the *elaborated type and proof term* rather than the text:
+    Three hard fails, all read off the *elaborated type and proof term* rather than the text:
 
       * `trivial` — the statement is `True`, or `a = b` / `a ≤ b` / `a < b` / `a ↔ a` with
         syntactically equal sides, or a `∧` of such;
       * `projection` — the proof term is `fun … => <binder>`, i.e. the conclusion *is* one of the
-        hypotheses.
+        hypotheses;
+      * `binder-free` — the proof mentions **no** explicit binder, so it uses no argument the
+        statement asked for. This is the class the other two leave between them: a statement that is
+        neither an identity nor a restatement, whose proof simply ignores everything it was given.
+        It is sharp in that form (all binders unused), which is why it can block; the weaker
+        "some binder unused" cannot, and is the soft signal below.
 
-    One soft signal, reported but not failed: a statement mentioning no constant this project
-    declares. It is soft because it has real false positives — `cross_mul_lt` states a genuine
-    fact about `Int` and mentions nothing of ours — and a gate that fails on those would be turned
-    off within a week. Tautologies have no false positives, so they are the ones that block.
+    Two soft signals, reported but not failed. A statement mentioning no constant this project
+    declares, and a theorem with *some* unused explicit binder. Both have real false positives: a
+    genuine fact about `Int` mentions nothing of ours (`cross_mul_lt`), and a proof can legitimately
+    ignore a parameter because another binder's *type* already carries it
+    (`(a : α) (h : a ≤ a) : a ≤ a := h` ignores `a`). A gate that fails on either would be turned
+    off within a week; that is the test the hard arms above are held to, and the reason they block.
     """
     if rows is None:
         return None
     roots = project_roots()
-    fails, soft = [], []
+    fails, soft, soft_binders = [], [], []
     for name, r in sorted(rows.items()):
         if r["trivial"]:
             fails.append((name, "statement is true of nothing (True / x = x / x ≤ x / ∧ of such)"))
         if r["projection"]:
             fails.append((name, "conclusion restates a hypothesis (the proof is a projection)"))
+        if r["total_binders"] > 0 and r["unref_binders"] == r["total_binders"]:
+            fails.append((name, f"proof mentions none of its {r['total_binders']} explicit "
+                                f"binder(s) — no argument is used"))
         if not any(c.split(".")[0] in roots for c in r["stmt_consts"]):
             soft.append(name)
+        if 0 < r["unref_binders"] < r["total_binders"]:
+            soft_binders.append(f"{name} ({r['unref_binders']}/{r['total_binders']})")
     if fails:
-        fail(f"{len(fails)} tautolog{'y' if len(fails) == 1 else 'ies'} "
+        # Counted by *theorem*, not by finding: the arms are independent and a single theorem can trip
+        # more than one, which is corroboration rather than a second defect. The three theorems this
+        # arm found on 2026-09-24 each tripped two, and a summary reading "6 tautologies" for three
+        # theorems is the kind of number a reader stops trusting.
+        n = len({name for name, _ in fails})
+        fail(f"{n} tautolog{'y' if n == 1 else 'ies'} "
              f"(phase-4 bar: no tautologies)")
         for name, why in fails:
             print(f"      {name} — {why}")
@@ -513,6 +533,11 @@ def check_tautologies(rows):
              f"failure: real arithmetic about Int/Nat lands here too")
         for name in soft:
             print(f"      {name}")
+    if soft_binders:
+        warn(f"{len(soft_binders)} theorem(s) leave an explicit binder unused — a signal, not a "
+             f"failure: a binder whose type another binder already carries is legitimately unused")
+        for entry in soft_binders:
+            print(f"      {entry}")
     # Return a real Bool: the summary counts `is False`, so returning a count would print FAIL and
     # still exit 0 — which is exactly the "gate that cannot fail" shape this file exists to avoid.
     return not fails
