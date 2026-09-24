@@ -13,9 +13,18 @@
 #
 # THE ROOT CAUSE, in one line each. `src/linear/Cargo.toml` and `src/sdk/Cargo.toml` both declare
 # `default = []`, and the features that carry these tests are enabled explicitly by their consumers
-# (`bin/dwowd` enables `pow`, for instance). So a bare `cargo test -p dwow_chain --lib` lists 172
-# tests where `--all-features` lists 263, and the 91 that differ are the consensus surface — the
-# exact area this register's campaign works on.
+# (`bin/dwowd` enables `pow`, for instance). So a bare `cargo test -p dwow_chain --lib` lists fewer
+# tests than `--all-features` does, and those that differ are the consensus surface — the exact area
+# this register's campaign works on.
+#
+# THE NUMBERS, re-measured 2026-09-24 because the three that stood here were stale and nothing had
+# re-derived them: a bare `cargo test -p dwow_chain --lib -- --list` lists **184** tests where
+# `--all-features` lists **294**, so **110** differ — against the 172 / 263 / 91 this header, the
+# `OBL-C76` row and `scripts/run-all-tests.sh` all carried. The gap grew by 19 while every one of
+# those three kept saying 91, which is the failure mode this file exists to prevent one level up: the
+# gate enumerates the hidden *set* on every run, so nothing is hidden undeclared, but the *count* in
+# prose had no command behind it. Re-derive with the two `--list` invocations above rather than
+# quoting this paragraph — the numbers move whenever anyone adds a test on either side of the gate.
 #
 # THE ROOT-CAUSE FIX EXISTS AND IS NOT TAKEN, deliberately. `default = ["pow"]` (and `["json"]` for
 # the sdk) would make the bare ad-hoc command complete, which is the honest repair. It is not taken
@@ -64,5 +73,6 @@ src/net/known_hosts.rs :: tests : OBL-C76 — hidden by its PARENT: `#[cfg(any(f
 src/event_graph/mod.rs :: tests : OBL-C76 — hidden by its PARENT: `#[cfg(feature = "event-graph")] mod event_graph;` at src/lib.rs:49. Run with `cargo test --all-features -p dwow_core`
 src/util/pcg.rs :: tests : OBL-C76 — hidden by its PARENT: `#[cfg(feature = "rand")] mod pcg;` at src/util/mod.rs:50. Run with `cargo test --all-features -p dwow_core`
 src/sdk/src/test_support.rs :: tests : OBL-C76 — hidden by its PARENT: `#[cfg(feature = "test-support")] mod test_support;` at src/sdk/src/lib.rs:63. Worth its own line because the module the heavyweight tests rely on is itself uncovered by a default sdk run. Run with `cargo test --all-features -p dwow-sdk`
+src/linear/src/execution.rs :: tests : OBL-C76 — hidden by its PARENT: `#[cfg(feature = "pow")] mod execution;` at src/linear/src/lib.rs:39, so neither the module nor its five tests compile without that feature. They are `OBL-C100`'s mechanism: that a call overwriting a live key is recorded as touching it, that a removal and a reinstatement are, that an untouched key and an unchanged removal marker are not, and — the assertion that keeps the set about the defect rather than the fix — that the presence delta the schedule used to be built from records *nothing* for the overwrite case. Added 2026-09-24; the module had no test module before, which is why this line is new rather than long-standing. Run with `cargo test --all-features -p dwow_chain` (or `--features pow`)
 src/contract/native_token/src/entrypoint/mod.rs :: tests : OBL-C76 — hidden by a NEGATIVE parent gate: `#[cfg(not(feature = "no-entrypoint"))] mod entrypoint;` at src/contract/native_token/src/lib.rs:103, so the module and its tests are PRESENT by default here and ABSENT under the `no-entrypoint` build the python SDK uses (see src/sdk/python). Declared because that is a configuration someone can claim verification in: run with `cargo test -p dwow_native_token_contract` (default features), or drop this line if the no-entrypoint path is never claimed
 

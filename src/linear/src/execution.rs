@@ -1220,3 +1220,118 @@ impl RuntimeBackend for TxBackend {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An overlay in the shape `execute_block` snapshots: `cache` for the values it holds, `removed`
+    /// for the keys it marks gone.
+    fn state(entries: &[(&str, &str)], removed: &[&str]) -> SledTreeOverlayState {
+        let mut s = SledTreeOverlayState::new();
+        for (k, v) in entries {
+            s.cache.insert(
+                sled_overlay::sled::IVec::from(k.as_bytes()),
+                sled_overlay::sled::IVec::from(v.as_bytes()),
+            );
+        }
+        for k in removed {
+            s.removed
+                .insert(sled_overlay::sled::IVec::from(k.as_bytes()));
+        }
+        s
+    }
+
+    /// The per-call write set, computed exactly as `execute_block` computes it.
+    fn write_set(before: &SledTreeOverlayState, after: &SledTreeOverlayState) -> HashSet<Vec<u8>> {
+        changed_opinions(&overlay_opinions(before), &overlay_opinions(after))
+    }
+
+    /// The computation `OBL-C100` is about: the keys that *appear* in the two-field key set, which
+    /// is what the schedule was built from before the fix. Kept as a characterization of the defect
+    /// — the row's premise is that this misses the overwrite case, and a test that only asserted the
+    /// new behaviour would not say so.
+    fn presence_delta(
+        before: &SledTreeOverlayState,
+        after: &SledTreeOverlayState,
+    ) -> HashSet<Vec<u8>> {
+        let mentioned = |k: &Vec<u8>| {
+            before.cache.keys().any(|b| &b.to_vec() == k)
+                || before.removed.iter().any(|b| &b.to_vec() == k)
+        };
+        after
+            .cache
+            .keys()
+            .chain(after.removed.iter())
+            .map(|k| k.to_vec())
+            .filter(|k| !mentioned(k))
+            .collect()
+    }
+
+    /// **The case `OBL-C100` is about: a call that overwrites a key the overlay already holds.**
+    ///
+    /// It changes state, so the call must be recorded as touching that key. The presence delta the
+    /// schedule used to be built from records *nothing* here, which is the defect — two calls
+    /// overwriting one live key read as disjoint, and a wave partition built on that admits them
+    /// into the same wave. `Semantics/Ledger.lean`'s `rustPerCallKeys_is_strict` is this case in the
+    /// model, and the second assertion below is what keeps this test about the defect rather than
+    /// about the fix.
+    #[test]
+    fn test_overwritten_live_key_is_recorded_as_a_write() {
+        let before = state(&[("k", "v1")], &[]);
+        let after = state(&[("k", "v2")], &[]);
+        assert!(
+            write_set(&before, &after).contains(&b"k".to_vec()),
+            "an overwrite of a live key must be a write"
+        );
+        assert!(
+            presence_delta(&before, &after).is_empty(),
+            "the presence delta used to miss this case; if it no longer does, OBL-C100's premise moved"
+        );
+    }
+
+    /// A key the call marks removed: a change of state, and one the two computations agree on here
+    /// — but only because it is absent from `before` as well, which is not the case in a call that
+    /// removes a key it had just written.
+    #[test]
+    fn test_removed_key_is_recorded_as_a_write() {
+        let before = state(&[("k", "v1")], &[]);
+        let after = state(&[], &["k"]);
+        assert!(write_set(&before, &after).contains(&b"k".to_vec()));
+    }
+
+    /// Keys the call did not touch have the same opinion on both sides, so they are not writes — and
+    /// this is where the new computation must not become over-broad, since a write set that grows
+    /// without cause serializes waves it need not.
+    #[test]
+    fn test_untouched_key_is_not_a_write() {
+        let before = state(&[("k", "v1"), ("other", "x")], &[]);
+        let after = state(&[("k", "v1"), ("other", "x")], &[]);
+        assert!(write_set(&before, &after).is_empty());
+    }
+
+    /// A key newly written, and one that returns from `removed` to held: both change the overlay's
+    /// opinion, and both must be recorded.
+    #[test]
+    fn test_new_and_reinstated_keys_are_writes() {
+        let before = state(&[("held", "v")], &["gone"]);
+        let after = state(&[("held", "v"), ("fresh", "w"), ("gone", "back")], &[]);
+        let keys = write_set(&before, &after);
+        assert!(keys.contains(&b"fresh".to_vec()), "a new key is a write");
+        assert!(
+            keys.contains(&b"gone".to_vec()),
+            "a key that returns from removed to held changes the opinion `None` -> `Some`"
+        );
+        assert!(!keys.contains(&b"held".to_vec()));
+    }
+
+    /// A key already marked removed and still marked removed: `None` on both sides, so nothing
+    /// changed. This is the one shape the two computations agree on.
+    #[test]
+    fn test_unchanged_removal_marker_is_not_a_write() {
+        let before = state(&[], &["gone"]);
+        let after = state(&[], &["gone"]);
+        assert!(write_set(&before, &after).is_empty());
+        assert!(presence_delta(&before, &after).is_empty());
+    }
+}
