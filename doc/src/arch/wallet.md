@@ -1059,8 +1059,39 @@ and the resource requires non-empty barbs, construction correctly returns
 
 ### 7.7 Lean4 Source
 
-`proofs/lean/src/DarkFi/Capability/Wallet.lean` — all theorems above.
-Run `lake build` in `proofs/lean/` to type-check.
+The wallet's verified layer, by module — this section used to name `Wallet.lean` alone and tell the
+reader to run `lake build`, which was wrong twice over: that file is the type-construction module and
+not the write path (§7.8), and a bare `lake build` builds "the default facet of the root package", which
+for this package is **nothing at all** — it exits 0 without compiling a single module, so the
+instruction was not a verification instruction.
+
+- `Capability/Types.lean`, `Capability/Composition.lean` — the primitive and capability type system
+  §7.1–§7.6 are about, including the fourteen `CapabilityType`s of §7.5.
+- `Capability/Wallet.lean` — `walletConstruct` and the theorems of §7.1–§7.6.
+- `Capability/Selection.lean` — §6.2's coverage predicate, its exclusion, and the refutation §6.2 asks
+  for.
+- `Capability/WritePath.lean` — §6.1/§6.3's `f`, and §7.8's three obligations by name.
+- `Capability/WalletState.lean` — §1's confirmed state as a fold over chain blocks, §6.5's
+  `WalletState = ConfirmedState ⊕ ProvisionalState` with its governing invariant, the capability
+  spend-state lifecycle, and §6.4.0's commitment-tree obligation as a divergence.
+- `Capability/KeyScope.lean` — §7.3's scope restriction (`derive_instance`).
+- `Capability/Exercise.lean` — the consume+create transition, and `nullifier_completeness` on
+  `PublicState` (its transaction form is `WritePath.lean`'s).
+- `Capability/PerContractTree.lean` — the per-contract tree's position shift.
+- `Net/Receive.lean` — the receive path's decrypt step, whose soundness is an assumption in
+  `Axioms.lean` rather than a property of its own `if` (§2.1).
+
+**To type-check it**, from the repository root:
+
+```bash
+scripts/lean-build.sh build DarkFi Transcribed
+python3 script/check_lean_axioms.py
+```
+
+The first is not a convenience wrapper: it is the cgroup memory ceiling whose absence froze this host on
+2026-09-24, and every Lean invocation in this tree goes through it. The second prints the assumption
+boundary — each theorem's `@[axiom_budget]` against what `Lean.collectAxioms` reports — and fails on a
+disagreement. See `proofs/lean/README.md`.
 
 ### 7.8 Write-Path Obligations (Exercise)
 
