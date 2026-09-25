@@ -407,6 +407,60 @@ impl ContractTestingPipeline {
 // Test functions
 // ============================================================================
 
+/// The targeted witness for the payload-address fix: deploying a contract **larger
+/// than the window the host used to write into**.
+///
+/// `deployooor`'s artifact is 1,494,589 bytes, and the host wrote the payload at guest
+/// offset 0 — inside the guest's **shadow stack**, which is safe only below
+/// `__stack_pointer` (1,048,576, uniform across all 32 artifacts). So this deployment
+/// overwrote `.rodata`, the bss tail and dlmalloc's own state, and trapped as
+/// `out of bounds memory access` in `dlmalloc::malloc` → `finish_grow` →
+/// `dwow_serial::deserialize`, reached from `__metadata`. Deployooor is the **only**
+/// artifact over 1 MiB — the next is 423,412 bytes — which is why it was the only one
+/// of 32 that failed.
+///
+/// This is the same deployment `test_all_contracts_deploy` performs for this contract,
+/// isolated so it can be run in seconds rather than in ~38 minutes.
+///
+/// **Witnessed outcome, 2026-09-25.** The host now refuses rather than corrupting, and
+/// this test fails with that refusal — which is the finding, not a flake:
+///
+/// ```text
+/// canonical call failed at metadata … : WasmerRuntimeError("payload of 1494710 bytes
+/// does not fit the guest's stack window (1048576 bytes) …")
+/// ```
+///
+/// So the capability gap is explicit and measured: **Deployooor cannot deploy a contract
+/// whose wasm exceeds the guest's stack window**, its own 1,494,589-byte artifact
+/// included — and that is the one contract of 32 over the window. Closing the gap needs
+/// a guest-side ABI change (the payload must live where the allocator cannot reach it,
+/// and the guest already receives its address and length, so the allocator is what needs
+/// telling), which is its own unit. Until then this test documents the limit, and it
+/// passes the moment the ABI can carry the payload.
+#[test]
+fn test_deployooor_deploys_a_contract_larger_than_the_guest_stack() -> Result<()> {
+    // Guard the witness against itself: if the artifact ever falls inside the window,
+    // this test stops exercising the defect and a pass would then mean nothing.
+    // `__stack_pointer`'s value is the measured layout, not a chosen figure — every
+    // contract's `global[0]` is initialised to exactly this.
+    const GUEST_STACK_WINDOW: usize = 1_048_576;
+    let wasm = include_bytes!("../../../../src/contract/deployooor/dwow_deployooor_contract.wasm");
+    assert!(
+        wasm.len() > GUEST_STACK_WINDOW,
+        "this witness is only meaningful while deployooor's artifact exceeds the guest's \
+         stack window ({GUEST_STACK_WINDOW} bytes); it is now {} bytes",
+        wasm.len()
+    );
+
+    println!("=== Deployooor deploying {} bytes, past the {GUEST_STACK_WINDOW}-byte window ===", wasm.len());
+    smol::block_on(async {
+        let mut pipeline = ContractTestingPipeline::new("deployooor").await?;
+        let contract_id = pipeline.ensure_ready_and_deploy().await?;
+        println!("Deployed deployooor at {:?}", contract_id.to_bytes());
+        Ok(())
+    })
+}
+
 /// Deploy a specific contract (default: dex, override via CONTRACT_NAME env).
 #[test]
 fn test_pipeline() -> Result<()> {
