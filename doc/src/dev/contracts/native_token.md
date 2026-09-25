@@ -351,17 +351,20 @@ fees continue regardless.
 
 ### Functions
 
-| Function | Opcode | Purpose |
-|----------|--------|---------|
-| — | 0x00 | Returns `InvalidFunction` — no entrypoint; fee payment is FeeV3 (0x08) |
-| MintV1 | 0x01 | **Disabled** — opcode reserved |
-| BurnV1 | 0x02 | Destroy commitments |
-| TransferV1 | 0x03 | Private transfer (burn inputs, mint outputs) |
-| SpendV1 | 0x04 | Spend single commitment with change |
-| PoWRewardV1 | 0x05 | Block reward — mints new supply, extends cumulative chain |
-| FeeCollectV1 | 0x06 | Fee collection plate — mints the block's plaintext fee pot |
-| UncleMintV1 | 0x07 | Uncle note mint — spendable uncle reward, no supply bump |
-| FeeV3 | 0x08 | Pay fee — plaintext fee + tier (`FeeParamsV3`) |
+| ID | Function | Description |
+|----|----------|-------------|
+| 0x00 | — | Returns `InvalidFunction` — no entrypoint; fee payment is FeeV3 (0x08) |
+| 0x01 | `MintV1` | **Disabled** — reserved |
+| 0x02 | `BurnV1` | Destroy commitments |
+| 0x03 | `TransferV1` | Private transfer (burn inputs, mint outputs) |
+| 0x04 | `SpendV1` | Spend single commitment with change |
+| 0x05 | `PoWRewardV1` | Block reward — mints new supply, extends cumulative chain |
+| 0x06 | `FeeCollectV1` | Fee collection plate — mints the block's plaintext fee pot |
+| 0x07 | `UncleMintV1` | Uncle note mint — spendable uncle reward, no supply bump |
+| 0x08 | `FeeV3` | Pay fee — plaintext fee + tier (`FeeParamsV3`) |
+
+These are **contract function codes** — the selector byte that begins a call — not zkVM opcodes, which
+are the 32 instructions in `src/zkas/opcode.rs` that a circuit compiles to.
 
 ### Commitment
 
@@ -380,7 +383,16 @@ value_commit = pedersen_commit(value, value_blind)
 | burn_v2.zk | 11 | Merkle proof, per-burn signature `poseidon_hash(secret, nullifier)` |
 | fee_v3.zk | 15 | Value conservation `change + fee == input` (retained for host mass-balance verification — the fee itself is plaintext) |
 
-FeeCollectV1, PoWRewardV1, and UncleMintV1 are plaintext — no circuit.
+**Plaintext, no proof.** `PoWRewardV1` (0x05), `FeeCollectV1` (0x06) and `UncleMintV1` (0x07) are
+ordinary consensus calls that carry **no ZK proof and have no circuit**: no `.zk` source exists for any
+of them, and the WASM entrypoint verifies each in the clear with Pedersen/Poseidon arithmetic. The
+circuits that once proved them are deleted — `Mint_V2` was removed from the coinbase path,
+`FeeCollect_V2` was dropped.
+
+`Mint_V2` is therefore **no longer the coinbase circuit**: it is the transfer/spend output mint, and the
+cumulative chain `S_H = S_{H-1} + C_H` is extended today by the plaintext `pow_reward_v1` entrypoint. The
+circuit retains the cumulative-chain and `total_pin` constraints it carried for that former role, and
+`total_pin` is 0 on the transfer/spend paths that use it.
 
 ### Database Trees
 

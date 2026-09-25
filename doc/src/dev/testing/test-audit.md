@@ -93,8 +93,13 @@ consensus-critical and wallet-critical references against the current tree:
 `Nullifier::new() = poseidon_hash([DRK_POSEIDON_DOMAIN_NULLIFIER, secret, commitment])`
 (`src/sdk/src/crypto/nullifier.rs:100`), `DRK_POSEIDON_DOMAIN_NULLIFIER`
 (`constants.rs:55`), `scan_block_linear` (`bin/dww/src/scan.rs:1022`), and
-`PoWRewardCallBuilder` (`test-harness/src/native_token.rs`). **Finding:** all values and
-function signatures match 1:1; the line-number suffixes in a few model comments have
+`PoWRewardCallBuilder` (`src/contract/native_token/src/client/pow_reward.rs:52`, used by the
+production coinbase builder `build_linear_coinbase` in `bin/dwowd/src/registry/model.rs:233` — the
+path this line cited before, `test-harness/src/native_token.rs`, does not exist in the tree).
+**Finding:** all values and function signatures match 1:1 — with the coinbase noted as the one
+place where a signature match is all there is: since the coinbase became a plaintext call,
+`PoWRewardCallBuilder` emits `proofs: vec![]` and no `Mint_V2` proof, so what matches is its
+parameters, not a proof; the line-number suffixes in a few model comments have
 drifted with Rust refactoring (e.g. `blockchain.rs:75` → `:878`, `scan.rs:759` →
 `scan.rs:1022`) but the semantics are unchanged. No model↔Rust divergence found.
 

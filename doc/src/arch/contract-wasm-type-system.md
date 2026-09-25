@@ -1317,7 +1317,7 @@ for tx_binding, `poseidon_hash(DOMAIN_NULLIFIER, ...)` for nullifiers, etc.
 |----------|--------|-------|
 | Bridge | **Fully V2** | All 12 circuits have V2 counterparts; `get_metadata` routes to V2 namespaces |
 | Labor Market | **Fully V2** | 9 circuits expanded from stubs to full V2 with action-tagged nullifiers |
-| Native Token | Fully V2 | fee_v3, burn_v2, mint_v2 (FeeCollectV1 is plaintext — no ZK circuit) |
+| Native Token | Fully V2 | fee_v3, burn_v2, mint_v2 — and those are the only three circuits it has: `PoWRewardV1` (0x05), `FeeCollectV1` (0x06) and `UncleMintV1` (0x07) are plaintext calls with no circuit and no proof, so `mint_v2` is the transfer/spend output mint, never the coinbase |
 | Promissory Note | Fully V2 | burn_v2 (Revoke_V2) with domain-separated nullifier |
 | Stablecoin | Fully V2 | governance_report_v2, liquidate_v2 |
 | Oracle | Fully V2 | aggregate_v2 |

@@ -53,7 +53,7 @@ Wallet                    Mempool                  Miner                    Chai
   │                         │                       │                        │
   │                         │     transactions ────►│                        │
   │                         │     + plain fees      ├─ Build block ──────────►│
-  │                         │                       │  + PoWReward            │
+  │                         │                       │  + PoWRewardV1          │
   │                         │                       │  + FeeCollectV1         │
   │                         │                       │  + update BlockCharge   │
   │                         │                       │    (observed vs declared)│
@@ -68,7 +68,7 @@ Wallet                    Mempool                  Miner                    Chai
 2. **Mempool** compares the declared fee against the three tier prices and assigns
    a priority (high/medium/low) or rejects — no ZK proof.
 3. **Miner** collects pending transactions + their plaintext fees, builds a block
-   with PoWReward + FeeCollectV1, and — after execution — compares *observed* gas to
+   with PoWRewardV1 + FeeCollectV1, and — after execution — compares *observed* gas to
    each contract's self-declared `BlockCharge`, updating the charge via the risk
    multiplier (§12.12.3).
 4. **Chain** verifies Fee_V3 mass balance (no inflation) and FeeCollectV1
@@ -1621,9 +1621,10 @@ In DarkWow's gas-based model, risk is shared:
    thresholds via the fee window PID controller to balance fee revenue
    against computational cost. They don't offload risk onto users.
 
-4. **Fee privacy protects users** — the fee amount is hidden behind a
-   Pedersen commitment. Only the threshold is public. No traffic analysis
-   of user fee/gas preferences is possible.
+4. **Fee amounts are public, by design** — the fee is declared in the clear
+   (§1): no ZK proof hides it and no threshold proof is involved. Fee amounts
+   and their tiers are visible on-chain, so fee/gas preference is not private.
+   This is the accepted trade-off of a consensus-first, verifiable fee model.
 
 **Risk factor assignment** (see [manifest.md §Cost Profiles](../manifest.md)):
 

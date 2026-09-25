@@ -18,18 +18,29 @@ that can halt the chain. The only contract with a bespoke wallet path
 | Code | Function | Proof circuit | Description |
 |------|----------|---------------|-------------|
 | `0x00` | — | — | Unassigned — returns `InvalidFunction`; all fee payment uses FeeV3 `0x08` (fee-spec §10) |
-| `0x01` | `mint` | — | **DISABLED** — returns `InvalidFunction`; the only new-supply path is `pow_reward` (`uncle_mint` 0x07 mints notes carved out of the coinbase — no supply bump) |
-| `0x02` | `burn` | `Burn_V2` | Burn commitments — publishes nullifiers (used by fee payment) |
-| `0x03` | `transfer` | `Burn_V2` + `Mint_V2` | Atomic burn + blind output with value conservation |
-| `0x04` | `spend` | `Burn_V2` + `Mint_V2` | Single in/out spend with value conservation |
-| `0x05` | `pow_reward` | — (plaintext) | Block reward — plaintext; verifies cumulative supply + expected reward + Pedersen commit |
-| `0x06` | `fee_collect` | — (plaintext) | Close the fee epoch: plaintext `total_fees == fees_db[height]` check, mint fee note, zero the pot |
-| `0x07` | `uncle_mint` | — (plaintext) | Uncle note mint — one spendable note per accepted uncle, carved out of the coinbase; no supply write |
-| `0x08` | `fee` | `Fee_V3` | Pay fees (plaintext fee + tier, `FeeParamsV3`) — burns input, creates change output; adds fee to the plaintext `fees_db[height]` total |
+| `0x01` | `MintV1` | — | **DISABLED** — returns `InvalidFunction`; the only new-supply path is `pow_reward` (`uncle_mint` 0x07 mints notes carved out of the coinbase — no supply bump) |
+| `0x02` | `BurnV1` | `Burn_V2` | Burn commitments — publishes nullifiers (used by fee payment) |
+| `0x03` | `TransferV1` | `Burn_V2` + `Mint_V2` | Atomic burn + blind output with value conservation |
+| `0x04` | `SpendV1` | `Burn_V2` + `Mint_V2` | Single in/out spend with value conservation |
+| `0x05` | `PoWRewardV1` | — (plaintext) | Block reward — plaintext; verifies cumulative supply + expected reward + Pedersen commit |
+| `0x06` | `FeeCollectV1` | — (plaintext) | Close the fee epoch: plaintext `total_fees == fees_db[height]` check, mint fee note, zero the pot |
+| `0x07` | `UncleMintV1` | — (plaintext) | Uncle note mint — one spendable note per accepted uncle, carved out of the coinbase; no supply write |
+| `0x08` | `FeeV3` | `Fee_V3` | Pay fees (plaintext fee + tier, `FeeParamsV3`) — burns input, creates change output; adds fee to the plaintext `fees_db[height]` total |
+
+**Plaintext, no proof.** `PoWRewardV1` (0x05), `FeeCollectV1` (0x06) and
+`UncleMintV1` (0x07) are ordinary consensus calls that carry **no ZK proof and
+have no circuit**: no `.zk` source exists for any of them, and the WASM
+entrypoint verifies each in the clear with Pedersen/Poseidon arithmetic. The
+circuits that once proved them are deleted — `Mint_V2` was removed from the
+coinbase path, `FeeCollect_V2` was dropped.
 
 Only three circuits exist — `mint.zk` (Mint_V2), `burn.zk` (Burn_V2),
-`fee.zk` (Fee_V3). Every other call is plaintext: no threshold proofs, no
+`fee.zk` (Fee_V3) — and `Mint_V2` is now the transfer/spend output mint, not the
+coinbase. Every other call is plaintext: no threshold proofs, no
 encrypted-fee channel, no fee accumulator.
+
+These codes are **contract function codes** (the selector byte that begins a
+call), not zkVM opcodes (the 32 instructions in `src/zkas/opcode.rs`).
 
 ## Domain Constants
 

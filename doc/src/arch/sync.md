@@ -220,6 +220,13 @@ chain_state.connect_block(&block).await?;
 
 ## Usage Example
 
+> **The examples below predate the plaintext coinbase and do not run against the current tree.**
+> `PoWRewardCallBuilder` now produces a **plaintext** coinbase call — no proof, no public inputs, no
+> circuit — so there is nothing to extract for verification. The circuit namespace `Mint_V1` does not
+> exist (the surviving circuits are `Mint_V2`, `Burn_V2` and `Fee_V3`), and `block.zkbin_data` has no
+> counterpart in the code at all — `zkbin_data` occurs zero times under `src/` and `bin/`. They are
+> retained as a record of the removed proof-carrying sync design, not as a recipe.
+
 ### Test with Real ZK Verification
 
 ```rust

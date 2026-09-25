@@ -9,6 +9,15 @@ Each test:
 These tests operate on the SIMULATED contract models, not the real
 Rust contracts. They validate that the model correctly represents
 the vulnerability and the fix.
+
+**Status: pinned to circuits that no longer exist, and not gated.**
+The circuits these regressions name are gone — `Mint_V1` and `FeeV1` are not in the tree (`FeeV1`,
+0x00, is unassigned), and native_token's coinbase (`PoWRewardV1`, 0x05) and uncle note
+(`UncleMintV1`, 0x07) are plaintext calls with no circuit and no proof, so there is no coinbase
+circuit left for a constraint bug to live in. The tests still describe the *bugs* and the *fixes*
+faithfully and are kept as a record, but no script runs this file (`scripts/run-all-tests.sh` does
+not invoke `sim/`), so a reference to a deleted circuit here cannot fail a gate and will not be
+noticed on its own.
 """
 
 import sys
@@ -43,6 +52,8 @@ class EntrypointError(Exception):
 
 def test_c1_mint_public_unconstrained():
     """C1: PromissoryNote mint_public not derived from backing_secret.
+
+    Pinned to the deleted `Mint_V1` circuit — see the module docstring.
 
     The Mint_V1 circuit exposed mint_public as a public input but had
     no constraint proving mint_public = poseidon_hash(backing_secret).
@@ -134,6 +145,8 @@ def test_c1_mint_public_unconstrained():
 
 def test_c2_fee_no_value_conservation():
     """C2: FeeV1 circuit had zero constraint linking input_value to output_value.
+
+    Pinned to the deleted `FeeV1` circuit — see the module docstring.
 
     The fee subtraction was off-circuit in the Rust client. A prover
     could set output_value = input_value + 1,000,000 and generate

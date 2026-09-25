@@ -5,6 +5,14 @@
 **Method:** Full manual audit — circuit-level constraint tracing, metadata↔circuit instance reconciliation, client↔entrypoint↔circuit alignment
 **Prior audit:** [security_audit_2026-06-05.md](security_audit_2026-06-05.md) — 4 CRITICAL findings in native token
 
+> **SUPERSEDED.** This audit predates the plaintext coinbase and the FeeV3 fee model, and its central
+> subject — the metadata ↔ circuit instance alignment for `PoWRewardV1` (4 vs 6) and `FeeV1` (11 vs
+> 12) — no longer exists. `PoWRewardV1` (0x05) and `UncleMintV1` (0x07) are now plaintext calls with
+> no circuit and no proof; `FeeCollectV2` was dropped; `FeeV1` (0x00) is unassigned; and the `Mint_V1`
+> circuit it audits is not in the tree (the surviving mint circuit is `Mint_V2`, now the
+> transfer/spend output mint). Retained as a record of the findings and their fixes, not as a
+> description of the current contract.
+
 ---
 
 ## Executive Summary

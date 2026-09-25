@@ -33,7 +33,8 @@ full specification.
 
 ## Monetary policy
 
-- **Hard cap**: 21,000,000 DRKW
+- **Reference supply**: 21,000,000 DRKW — the supply at which the emission curve reaches the tail
+  floor (~16.5 years after launch). **Not a hard cap**: tail emission adds 1% per annum permanently
 - **Emission**: Continuous exponential decay, Satoshi-style
 - **Premine**: Zero. Every commitment in circulation was mined
 - **Supply audit**: Per-block Pedersen mass balance — Σ outputs + Σ burns +

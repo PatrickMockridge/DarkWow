@@ -29,6 +29,9 @@ path in `dwowd`.
 | 0x07 | `UncleMintV1` | Uncle note mint — spendable uncle reward, no supply bump |
 | 0x08 | `FeeV3` | Pay network fees (plaintext fee + tier, `FeeParamsV3`) |
 
+These IDs are **contract function codes** — the selector byte that begins a call — not zkVM opcodes,
+which are the 32 instructions in `src/zkas/opcode.rs` that a circuit compiles to.
+
 ## Privacy Model
 
 NativeToken uses a burn-mint privacy model:

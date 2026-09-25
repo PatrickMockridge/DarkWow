@@ -109,14 +109,15 @@ proof_circuit = "Fee_V3"
 
 The manifest `name` matches the circuit name inside the `.zk` file
 (`circuit "Fee_V3"` in `proof/fee.zk`), and the namespace constant matches it
-too (`NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2 = "Fee_V3"`,
-`src/contract/native_token/src/lib.rs:167`). The build compiles `proof/*.zk`
+too (`NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V3 = "Fee_V3"`,
+`src/contract/native_token/src/lib.rs:178`). The build compiles `proof/*.zk`
 → `proof/*.zk.bin` by filename (`native_token/Makefile`).
 
 ### Rust Namespace Constants
 
 Contract `lib.rs` files declare namespace constants matching the `.zk` circuit
-name exactly. Only V2 constants exist:
+name exactly. Only the current versions exist — there is no `_V1` namespace
+constant anywhere (the deleted V1 circuits have no constants left):
 
 ```rust
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2: &str = "Mint_V2";
@@ -147,10 +148,13 @@ declaration. The API version and circuit version are independent:
 
 | Layer | Version | Meaning |
 |-------|---------|---------|
-| Enum variant | `FeeV3` | Contract function interface (on-chain opcode) |
+| Enum variant | `FeeV3` | Contract function code (the selector byte) |
 | Model type | `FeeParamsV3` | Wire format for function parameters |
 | Manifest proof_circuit | `FeeV3` | Which `[[circuits]]` entry names the proving circuit |
 | .zk circuit name | `Fee_V3` | The compiled circuit artifact |
+
+A function that **drops** its proof requirement keeps its API version unchanged and gains no circuit
+version at all — see [When a Function Stops Requiring a Proof](#when-a-function-stops-requiring-a-proof).
 
 ### `include_bytes!` Paths Match the Makefile Output Exactly
 
@@ -199,6 +203,40 @@ When a circuit is hardened or replaced:
    or removed if no longer needed
 5. Enum variants and model types do NOT need version suffix changes — the
    manifest handles circuit versioning independently
+
+### When a Function Stops Requiring a Proof
+
+A function can also stop needing a circuit altogether — its values become public, so the host can verify
+it in the clear. The manifest expresses this by **omitting** `requires_proof` and `proof_circuit` from the
+function's entry:
+
+```toml
+# native_token/manifest.toml
+[[functions]]
+name = "pow_reward"
+code = 5
+description = "Block reward via PoWRewardV1 — … in plaintext (no ZK proof)."
+# no requires_proof, no proof_circuit
+```
+
+This case is written down separately from the replacement procedure above because three things differ,
+and each is a place a reader can go wrong:
+
+1. **Nothing is renamed.** The enum variant keeps its contract-API version (`PoWRewardV1` stays `0x05`),
+   because there is no new circuit name to match — so no namespace constant, manifest `proof_circuit` or
+   `include_bytes!` path changes. A function's API version carrying a `V1` suffix is not a claim that a
+   circuit version exists.
+2. **The `.zk` file is not necessarily deleted.** When the circuit was shared — `Mint_V2` proved the
+   coinbase *and* transfer/spend outputs — the file remains for the callers that still need it, and only
+   the one function's use of it ends. Check for other callers before removing anything.
+3. **The status must be stated where the function is tabulated**, because there is no circuit name left to
+   signal it. A reader who sees a function code and no `proof_circuit` must be told the call is plaintext
+   rather than left to infer it from an absence.
+
+Worked example: `native_token` — `pow_reward` (0x05), `fee_collect` (0x06) and `uncle_mint` (0x07) are
+plaintext calls with no circuit and no proof. `Mint_V2` was removed from the coinbase path and remains the
+transfer/spend output mint; `FeeCollect_V2` was dropped entirely. See
+[Consensus & Coinbase](consensus-coinbase.md).
 
 Do NOT add version suffixes to `.zk` filenames. The filename describes the
 function. The circuit inside describes which version it is.
