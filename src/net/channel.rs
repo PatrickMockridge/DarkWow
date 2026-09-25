@@ -595,17 +595,44 @@ impl Channel {
                         warn!(
                         target: "net::channel::main_receive_loop",
                         "MessageInvalid for command={command}, channel={self:?} \
-                         (payload exceeds MAX_BYTES or failed deserialization)"
+                         (malformed: undecodable or a bad VarInt length)"
                         );
                         self.send_seed_error(
                             message::SeedErrorCode::BadRequest,
-                            format!("invalid message: {} (payload exceeds limit or malformed)", command),
+                            format!("invalid message: {} (malformed)", command),
                         ).await;
                         if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {
                             self.ban().await;
                             return Err(Error::MessageInvalid)
                         }
                     }
+                }
+                Err(Error::PolicyRefused) => {
+                    // NOT an accusation, and deliberately no `ban()`. The peer sent a
+                    // well-formed frame this node declines to serve — larger than its
+                    // bound for the type, or a command it does not handle. It is told,
+                    // and the channel ends because an un-consumed frame leaves the
+                    // stream unaligned; its reputation is untouched. Bans are for
+                    // `MessageInvalid` — malformed input, which *is* misbehaviour.
+                    //
+                    // Until 2026-09-25 both cases were `MessageInvalid`, so a peer that
+                    // was merely large was blacklisted by the node it wanted to sync
+                    // from — the transport HAZOP's root cause, and the reason three
+                    // tests in `src/net/tests.rs` assert ban-on-oversize as correct.
+                    let Some(session) = self.session.upgrade() else {
+                        return Err(Error::ChannelStopped);
+                    };
+                    if session.type_id() != SESSION_REFINE {
+                        warn!(
+                        target: "net::channel::main_receive_loop",
+                        "Refused by local policy: command={command}, channel={self:?} — not banned"
+                        );
+                        self.send_seed_error(
+                            message::SeedErrorCode::BadRequest,
+                            format!("refused by local policy: {}", command),
+                        ).await;
+                    }
+                    return Err(Error::PolicyRefused)
                 }
                 Err(Error::MeteringLimitExceeded) => {
                     let Some(session) = self.session.upgrade() else {

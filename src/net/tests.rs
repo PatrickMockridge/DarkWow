@@ -645,12 +645,26 @@ async fn p2p_channel_invalid_command_length_gets_banned_real(ex: Arc<Executor<'s
     node2_p2p.stop().await;
 }
 
+/// An over-limit **but well-formed** message is REFUSED, and its sender is NOT
+/// banned.
+///
+/// This test previously asserted the opposite — that the sender is blacklisted —
+/// and that behaviour was the transport HAZOP's root cause: `Error::MessageInvalid`
+/// carried three meanings at once (malformed / too large / unknown) into a
+/// reputation path, so a peer that was merely *large* was banned by the node it
+/// wanted to sync from. Policy refusal now has its own error (`Error::PolicyRefused`)
+/// and does not reach `ban()`.
+///
+/// The refusal itself is not asserted here beyond the ban count, because the frame
+/// is not consumed and the channel therefore ends: `hosts().channels()` converges
+/// asynchronously and asserting on it would be a timing test, not a property test.
+/// What this pins is the property that changed: **size is not misbehaviour.**
 #[test]
-fn p2p_channel_invalid_message_length_gets_banned() {
-    test_body!(p2p_channel_invalid_message_length_gets_banned_real, 2);
+fn p2p_channel_oversize_message_is_refused_not_banned() {
+    test_body!(p2p_channel_oversize_message_is_refused_not_banned_real, 2);
 }
 
-async fn p2p_channel_invalid_message_length_gets_banned_real(ex: Arc<Executor<'static>>) {
+async fn p2p_channel_oversize_message_is_refused_not_banned_real(ex: Arc<Executor<'static>>) {
     // Test with two nodes directly connected to each other
     let manual_instances = spawn_manual_session(ex.clone(), 2, 1).await;
     for p2p in &manual_instances {
@@ -664,13 +678,19 @@ async fn p2p_channel_invalid_message_length_gets_banned_real(ex: Arc<Executor<'s
     let node2_p2p = manual_instances[1].clone();
     let channel = node1_p2p.hosts().channels().first().unwrap().clone();
 
-    // Let's create a GetAddrsMessage that will be over the GET_ADDRS_MAX_BYTES threshold
+    // A GetAddrsMessage over the GET_ADDRS_MAX_BYTES threshold — well-formed, and
+    // therefore a policy matter rather than misbehaviour.
     let message = GetAddrsMessage { max: 20, transports: vec!["tor".to_string(); 256] };
     channel.send(&message).await.unwrap();
     sleep(1).await;
 
-    // Node1 should be banned by Node2
-    assert_eq!(node2_p2p.hosts().container.fetch_all(HostColor::Black).len(), 1);
+    // Node1 must NOT be banned by Node2. It was refused, not accused.
+    assert_eq!(
+        node2_p2p.hosts().container.fetch_all(HostColor::Black).len(),
+        0,
+        "an over-limit but well-formed frame is a policy refusal, not misbehaviour — \
+         banning the sender is what made a merely-large peer unsyncable"
+    );
     node1_p2p.stop().await;
     node2_p2p.stop().await;
 }

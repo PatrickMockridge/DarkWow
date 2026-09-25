@@ -501,17 +501,19 @@ async fn handle_receive_block(
                     "Failed to apply block at height {} from P2P: {e} — NOT relaying",
                     msg.block.header.height
                 );
-                // Punish the peer that pushed an invalid block (§14 quarantine).
-                let peers = p2p.hosts().channels();
-                if let Some(peer) = peers.iter().find(|c| c.info.id == channel) {
-                    tracing::warn!(
-                        target: "dwowd::proto::linear_broadcast",
-                        "Banning peer {} for invalid block at height {}",
-                        peer.display_address(),
-                        msg.block.header.height
-                    );
-                    peer.ban().await;
-                }
+                // NOT banned — and that is an alignment, not an omission. The sync
+                // rail already states the policy for this same event:
+                // `task/consensus_linear.rs` declines to score an accept-block failure
+                // because it "may be a legitimate fork between two honest nodes". The
+                // two rails disagreed: this one blacklisted the sender
+                // **unconditionally**, and unlike every other ban site it did not even
+                // consult `BanPolicy`.
+                //
+                // The network is still protected — the block is neither applied nor
+                // relayed (above), and a peer pushing genuinely malformed frames is
+                // caught by the transport's own arms, which ban on malformation. What
+                // is removed here is a *reputation* action taken on evidence that does
+                // not establish misbehaviour.
             }
         }
 

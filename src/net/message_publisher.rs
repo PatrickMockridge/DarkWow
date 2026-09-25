@@ -274,14 +274,19 @@ impl<M: Message> MessageDispatcherInterface for MessageDispatcher<M> {
             }
         };
 
-        // Check the message length does not exceed set limit
+        // Check the message length does not exceed set limit.
+        //
+        // `PolicyRefused`, not `MessageInvalid`: the frame is well-formed and the peer
+        // is not misbehaving — it is larger than this node's bound for the type. The
+        // two were the same error until 2026-09-25, so this case carried a *consensus*
+        // accusation into the reputation path and banned the sender.
         if M::MAX_BYTES > 0 && length > M::MAX_BYTES {
             error!(
                 target: "net::message_publisher::trigger",
                 "Message length ({length}) exceeds configured limit ({}). Dropping...",
                 M::MAX_BYTES
             );
-            return Err(Error::MessageInvalid)
+            return Err(Error::PolicyRefused)
         }
 
         // Deserialize stream into type
@@ -436,12 +441,14 @@ impl MessageSubsystem {
                 Ok(int) => int.0,
                 Err(_) => return Err(Error::MessageInvalid),
             };
+            // `PolicyRefused`: an unknown command with an implausible length is a
+            // policy matter, not malformation — and it must not reach reputation.
             if length > MAX_INBOUND_PAYLOAD {
                 error!(
                     target: "net::message_publisher",
                     "Unknown command {command} payload length {length} exceeds MAX_INBOUND_PAYLOAD ({MAX_INBOUND_PAYLOAD}); refusing to drain"
                 );
-                return Err(Error::MessageInvalid)
+                return Err(Error::PolicyRefused)
             }
             let mut remaining = length;
             let mut buf = [0u8; 8192];

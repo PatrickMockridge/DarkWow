@@ -170,6 +170,18 @@ pub enum Error {
     #[error("P2P message is invalid")]
     MessageInvalid,
 
+    /// A **policy** refusal: the frame is well-formed, but this node will not serve
+    /// it — it exceeds a size bound, or it is a command this node does not handle.
+    ///
+    /// Distinct from `MessageInvalid` because **reputation is keyed on that error**.
+    /// `MessageInvalid` was carrying three meanings at once — malformed / too large /
+    /// unknown — so every policy refusal reached `channel.rs`'s `ban()` under
+    /// `BanPolicy::Strict`, and a peer that was merely *large* was blacklisted by the
+    /// node it wanted to sync from. A resource policy may drop, throttle or refuse to
+    /// serve; it must not declare the peer a misbehaver.
+    #[error("P2P message refused by local policy")]
+    PolicyRefused,
+
     #[error("P2P message subsystem over metering limit")]
     MeteringLimitExceeded,
 
