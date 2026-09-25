@@ -39,7 +39,7 @@ use tracing::debug;
 use super::{transfer::proof::compute_transfer_mint_revealed, NativeToken};
 use crate::model::{ClearInput, CommitmentAttributes, DRKW_ASSET_ID, Nullifier, Output, PoWRewardParamsV1};
 
-/// Debris produced by building a PoWReward call, containing the parameters
+/// Debris produced by building a PoWRewardV1 call, containing the parameters
 /// needed to assemble the plaintext call data (b6bf44f79 — no ZK proof).
 pub struct PoWRewardCallDebris {
     /// The contract call parameters
@@ -75,7 +75,7 @@ pub struct PoWRewardCallBuilder {
 }
 
 impl PoWRewardCallBuilder {
-    /// Build the PoWReward call debris
+    /// Build the PoWRewardV1 call debris
     fn _build(&self, value: u64, effective_value: u64) -> Result<PoWRewardCallDebris> {
         debug!(target: "contract::native_token::client::pow_reward", "Building NativeToken::PoWRewardV1 contract call");
 

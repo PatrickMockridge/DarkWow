@@ -23,8 +23,9 @@
 
 //! NativeToken Transfer API (wallet.md §6.4 — the one bespoke write-path citizen)
 //!
-//! Transfer V1 uses the same mint proof as PoWReward since both create new commitments.
-//! Burn proof is used for destroying commitments.
+//! Transfer V1 proves its outputs with the `Mint_V2` circuit and destroys its inputs with `Burn_V2`.
+//! The coinbase is **not** on this path: `PoWRewardV1` (0x05) is a plaintext call — no ZK proof and no
+//! circuit — and shares only the commitment layout with the transfer mint, not a proof.
 //!
 //! # Example (construction pattern — `no_run` because proving keys need ZK setup)
 //!
@@ -109,13 +110,13 @@ pub struct TransferCallBuilder {
     pub inputs: Vec<(InputWitness, SecretKey, pallas::Base)>,
     /// Outputs being created: CommitmentAttributes (carries recipient public_key)
     pub outputs: Vec<CommitmentAttributes>,
-    /// `Burn_V1` zkas circuit ZkBinary
+    /// `Burn_V2` zkas circuit ZkBinary
     pub burn_zkbin: ZkBinary,
-    /// Proving key for the `Burn_V1` zk circuit
+    /// Proving key for the `Burn_V2` zk circuit
     pub burn_pk: ProvingKey,
-    /// `Mint_V1` zkas circuit ZkBinary
+    /// `Mint_V2` zkas circuit ZkBinary
     pub mint_zkbin: ZkBinary,
-    /// Proving key for the `Mint_V1` zk circuit
+    /// Proving key for the `Mint_V2` zk circuit
     pub mint_pk: ProvingKey,
     /// Transaction commitment (binds proofs to the same call set)
     pub tx_commitment: pallas::Base,

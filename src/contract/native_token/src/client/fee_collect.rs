@@ -66,7 +66,7 @@ pub struct FeeCollectCallDebris {
 /// The recipient is ALWAYS PublicKey::from_secret(secret): the commitment is
 /// constructed directly for pk_H, so the fee commitment can only be spent by
 /// the miner holding sk_H (proven at spend time by SpendV1, not by a
-/// FeeCollect proof).
+/// proof in this call — FeeCollectV1 is plaintext).
 pub struct FeeCollectCallBuilder {
     /// Caller's secret key (sk_H — per-block derived, same as coinbase §3.2)
     pub secret: SecretKey,
