@@ -444,6 +444,25 @@ run_gate "Lean IO simulation suite"        bash "$SCRIPT_DIR/check-lean-suite.sh
 run_gate "capability kernel (bespoke paths, OBL-C130)" \
                                           bash "$SCRIPT_DIR/check-wallet-kernel.sh"
 
+# The L1 wire. `privacy.md` §2 promises an observer sees "only a nullifier and a Merkle root — not which
+# resource was operated on, not by whom, not how much", §2.4 says the balance is hidden "in Pedersen
+# commitment", and Part C §C.8.1–§C.8.2 makes the AEAD note the transport and requires `nullifier`,
+# `merkle_root` and `leaf_position` in it. Measured 2026-09-26, Box and Purse source the object identity,
+# the nonces, the contents commitments and the balances from `param:<field>` — and a `param:` value is
+# plaintext call data committed to by the transaction hash. The gate asks each `param:` witness slot to
+# earn its place: the circuit exposes the field, or the entrypoint reads it. **22 slots do neither**, and
+# they are declared in the gate with the reason each is still there and an expiry — removing a field from
+# the wire retires its entry, and a declared leak that stops appearing fails the gate as a stale
+# declaration. That is the debt this batch's remaining work pays down, made visible instead of listed in
+# prose. Falsified before wiring: `--self-test` plants a `param:` on a witness-only slot in a copy of the
+# three manifests and requires the finding to be reported (it is), so the gate's own detector is checked
+# on every run rather than argued.
+run_gate "L1 wire conformance (22 declared leaks)" \
+                                          bash "$SCRIPT_DIR/check-l1-wire-conformance.sh"
+
+run_gate "L1 wire conformance — planted defect (negative control)" \
+                                          bash "$SCRIPT_DIR/check-l1-wire-conformance.sh" --self-test
+
 run_gate "Python: pipeline model"          python3 contrib/model/pipeline_model.py
 run_gate "Python: supply chain model"      python3 contrib/model/supply_chain_model.py
 
