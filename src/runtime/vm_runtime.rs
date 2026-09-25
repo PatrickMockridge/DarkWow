@@ -883,6 +883,26 @@ impl Runtime {
                 eprintln!("[VM-DIAG] WASM section {} FAILED: {:?}", section.name(), e);
                 self.print_logs();
                 info!(target: "runtime::vm_runtime", "[WASM] {}", self.gas_info());
+                // A guest trap arrives as a bare `unreachable` on wasm32, and that names neither a
+                // cause nor a limit: the metering middleware's injected check is one `unreachable`,
+                // and so is a Rust panic. The meter is readable here, so say which it was.
+                //
+                // Measured 2026-09-25: without this, a contract deploy that exhausts its budget
+                // reported `canonical call failed at exec ... WasmerRuntimeError("RuntimeError:
+                // unreachable")`, which is indistinguishable from a corrupted artifact — and it was
+                // diagnosed as one, twice, before anyone read the meter. The meter also explains a
+                // class of surprise: `GAS_LIMIT` is per call *job*, and a job runs metadata, exec
+                // and update against ONE meter that is never reset between them, so a section can
+                // fail because an earlier section in the same job spent the budget.
+                if self.gas_used() > GAS_LIMIT {
+                    return Err(Error::WasmerRuntimeError(format!(
+                        "{e}: {} exhausted its gas budget — the guest spent all {GAS_LIMIT} of it, \
+                         and the trap is the metering middleware's injected check, not a fault in \
+                         the call. Sections of one call job share a single budget (metadata, exec \
+                         and update are not reset between); the call is not malformed.",
+                        section.name()
+                    )))
+                }
                 // WasmerRuntimeError panics are handled here. Return from run() immediately.
                 error!(target: "runtime::vm_runtime", "[WASM] Wasmer Runtime Error: {e:#?}");
                 return Err(e.into())
