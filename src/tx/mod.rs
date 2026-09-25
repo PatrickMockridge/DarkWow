@@ -150,13 +150,10 @@ crate::impl_p2p_message!(
     &[crate::barb::BarbId::Spend, crate::barb::BarbId::Verify]
 );
 
-#[cfg(any(feature = "net-wire", feature = "net-wallet", feature = "net"))]
-crate::impl_boundary_codec!(
-    Transaction,
-    TX_MAX_BYTES,
-    1,
-    &[crate::barb::BarbId::Spend, crate::barb::BarbId::Verify]
-);
+// `crate::impl_boundary_codec!(Transaction, TX_MAX_BYTES, 1, …)` stood here. The
+// `BoundaryCodec` trait had **no reader anywhere in the repository** — the enforced bound
+// is `Message::MAX_BYTES`, set by the `impl_p2p_message!` call above — so it was a second
+// place for a bound to be written and believed. Removed with the trait.
 
 /// Calls tree bounds definitions
 // TODO: increase min to 2 when fees are implement

@@ -31,61 +31,30 @@ use url::{Host, Url};
 use crate::{net::metering::MeteringConfiguration, util::time::NanoTimestamp};
 
 // ═══════════════════════════════════════════════════════════════════════
-// BoundaryCodec — DarkWow-native absorber boundary (type-system.md §10.5)
+// Wire message boundaries (type-system.md §10.5)
 // ═══════════════════════════════════════════════════════════════════════
 //
 // Replaces upstream AsyncEncodable/AsyncDecodable for message serialization.
 // Delegates to Encodable/Decodable for wire format (byte-identical). Adds
 // quote/eval semantics and per-type defense constants.
 //
-// Phase 1 (this commit): Trait definition + pilot on PingMessage.
-// Phase 2: All P2P message types. Phase 3: Message trait drops async bounds.
-
-/// A type that crosses the P2P wire boundary via the ρ-calculus
-/// quote/eval pattern (§10.5). Thin semantic layer over Encodable/Decodable
-/// — same wire format, with boundary semantics and defense constants attached.
-pub trait BoundaryCodec: dwow_serial::Encodable + dwow_serial::Decodable + Sized {
-    /// §10.5 quote: typed value → bytes. Erases barbs — output has no
-    /// behavioral constraints (§2.2). Default: encode to Vec<u8>.
-    fn quote(&self) -> std::io::Result<Vec<u8>> {
-        let mut buf = Vec::new();
-        self.encode(&mut buf)?;
-        Ok(buf)
-    }
-
-    /// §10.5 eval: bytes → typed value via validating constructor.
-    /// SHALL reject invalid bytes. Default: deserialize from slice.
-    fn eval(bytes: &[u8]) -> std::io::Result<Self> {
-        dwow_serial::deserialize(bytes)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-    }
-
-    /// Maximum wire size in bytes (§8.6.2). Zero only when METERING_SCORE > 0.
-    const MAX_BYTES: u64;
-
-    /// Metering contribution for rate limiting (§8.6.1).
-    const METERING_SCORE: u64;
-
-    /// Barb set carried across this boundary (§10.5). Empty by default
-    /// for types not yet audited.
-    const BARBS: &'static [crate::barb::BarbId] = &[];
-}
-
-/// Shorthand for implementing BoundaryCodec on P2P message types.
-/// Types must already derive SerialEncodable/SerialDecodable.
-#[macro_export]
-macro_rules! impl_boundary_codec {
-    ($ty:ty, $max_bytes:expr, $metering_score:expr) => {
-        $crate::impl_boundary_codec!($ty, $max_bytes, $metering_score, &[]);
-    };
-    ($ty:ty, $max_bytes:expr, $metering_score:expr, $barbs:expr) => {
-        impl $crate::net::message::BoundaryCodec for $ty {
-            const MAX_BYTES: u64 = $max_bytes;
-            const METERING_SCORE: u64 = $metering_score;
-            const BARBS: &'static [$crate::barb::BarbId] = $barbs;
-        }
-    };
-}
+// A `BoundaryCodec` trait and its `impl_boundary_codec!` macro stood here — a **second,
+// parallel** wire-bound system: a `MAX_BYTES`/`METERING_SCORE` per message type, plus
+// `quote`/`eval` for §10.5. It was introduced as a "Phase 1 pilot" and no phase ever
+// consumed it: a repository-wide grep finds the trait, the macro and twelve impls, and
+// **zero readers**. The bound that is actually enforced is `Message::MAX_BYTES` (the trait
+// below), which `src/net/message_publisher.rs` reads.
+//
+// It is removed rather than wired, and that is the lesson this file has already paid for
+// once: **a constant nothing reads is not a bound, it is somewhere for a reader to believe
+// a bound exists.** Two of its values had already drifted from the live ones — it carried
+// `BlockBroadcast` at 32 MiB while that type's live `Message::MAX_BYTES` is `0`, so the
+// guard that runs is *skipped* for the message type carrying the largest objects; and it
+// carried `METERING_SCORE = 5` against a live value of `1`, so the comment beside the
+// registration described a weight the node does not use.
+//
+// Phase 3 of this comment — "Message trait drops async bounds" — is unrelated and still
+// stands for the trait below.
 
 /// Generic message template.
 /// Phase 2: AsyncDecodable + AsyncEncodable bound shifted to net-full only.
@@ -197,8 +166,8 @@ pub struct PingMessage {
     pub nonce: u16,
 }
 impl_p2p_message!(PingMessage, "ping", PING_PONG_MAX_BYTES, 1, PING_PONG_METERING_CONFIGURATION);
-// Phase D.1 pilot: BoundaryCodec for PingMessage — same constants as Message.
-impl_boundary_codec!(PingMessage, PING_PONG_MAX_BYTES, 1);
+// `impl_boundary_codec!(PingMessage, PING_PONG_MAX_BYTES, 1)` stood here — dead, see the
+// note above the `Message` trait.
 
 /// Inbound keepalive message.
 #[derive(Debug, Copy, Clone, SerialEncodable, SerialDecodable)]
@@ -206,8 +175,7 @@ pub struct PongMessage {
     pub nonce: u16,
 }
 impl_p2p_message!(PongMessage, "pong", PING_PONG_MAX_BYTES, 1, PING_PONG_METERING_CONFIGURATION);
-// Phase D.1 pilot: BoundaryCodec for PongMessage.
-impl_boundary_codec!(PongMessage, PING_PONG_MAX_BYTES, 1);
+// `impl_boundary_codec!(PongMessage, PING_PONG_MAX_BYTES, 1)` stood here — dead.
 
 /// Requests address of outbound connection.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -240,7 +208,7 @@ impl_p2p_message!(
     1,
     GET_ADDRS_METERING_CONFIGURATION
 );
-impl_boundary_codec!(GetAddrsMessage, GET_ADDRS_MAX_BYTES, 1);
+// `impl_boundary_codec!(GetAddrsMessage, GET_ADDRS_MAX_BYTES, 1)` stood here — dead.
 
 /// Sends address information to inbound connection.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -260,7 +228,7 @@ pub const ADDRS_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfigur
 pub const ADDRS_MAX_BYTES: u64 = 65281;
 
 impl_p2p_message!(AddrsMessage, "addr", ADDRS_MAX_BYTES, 1, ADDRS_METERING_CONFIGURATION);
-impl_boundary_codec!(AddrsMessage, ADDRS_MAX_BYTES, 1);
+// `impl_boundary_codec!(AddrsMessage, ADDRS_MAX_BYTES, 1)` stood here — dead.
 
 /// Requests version information of outbound connection.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -330,7 +298,7 @@ pub fn handshake_string_fits(s: &str) -> bool {
 }
 
 impl_p2p_message!(VersionMessage, "version", VERSION_MAX_BYTES, 1, VERSION_METERING_CONFIGURATION);
-impl_boundary_codec!(VersionMessage, VERSION_MAX_BYTES, 1);
+// `impl_boundary_codec!(VersionMessage, VERSION_MAX_BYTES, 1)` stood here — dead.
 
 impl VersionMessage {
     pub(in crate::net) fn get_ipv6_addr(&self) -> Option<Ipv6Addr> {
@@ -370,7 +338,7 @@ pub const VERACK_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfigu
 pub const VERACK_MAX_BYTES: u64 = 257;
 
 impl_p2p_message!(VerackMessage, "verack", VERACK_MAX_BYTES, 1, VERACK_METERING_CONFIGURATION);
-impl_boundary_codec!(VerackMessage, VERACK_MAX_BYTES, 1);
+// `impl_boundary_codec!(VerackMessage, VERACK_MAX_BYTES, 1)` stood here — dead.
 
 /// Maximum number of error responses per connection to prevent DoS
 /// amplification. After this limit is reached, further errors are
@@ -449,9 +417,10 @@ impl dwow_serial::Decodable for SeedErrorCode {
     }
 }
 
-// Async bridge — delegates to u32's async impls. Minimal upstream compatibility
-// shim. Per Phase D plan: removed when BoundaryCodec replaces AsyncEncodable/
-// AsyncDecodable on the Message trait (Phase D.3).
+// Async bridge — delegates to u32's async impls. Minimal upstream compatibility shim.
+// The Phase D plan that would have removed it — `BoundaryCodec` replacing
+// `AsyncEncodable`/`AsyncDecodable` on the `Message` trait — is cancelled: `BoundaryCodec`
+// was removed on 2026-09-25 as dead code, so this shim is the only async path and stays.
 #[async_trait]
 impl dwow_serial::AsyncEncodable for SeedErrorCode {
     async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(
@@ -517,4 +486,4 @@ impl_p2p_message!(
     1,
     SEED_ERROR_METERING_CONFIGURATION
 );
-impl_boundary_codec!(SeedErrorMessage, SEED_ERROR_MAX_BYTES, 1);
+// `impl_boundary_codec!(SeedErrorMessage, SEED_ERROR_MAX_BYTES, 1)` stood here — dead.

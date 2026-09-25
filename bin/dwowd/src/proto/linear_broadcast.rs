@@ -39,7 +39,7 @@ use tracing::info;
 
 use rand::seq::SliceRandom;
 use dwow_core::{
-    impl_p2p_message, impl_boundary_codec,
+    impl_p2p_message,
     net::{
         metering::MeteringConfiguration,
         protocol::protocol_generic::{
@@ -89,10 +89,23 @@ const LINEAR_BROADCAST_METERING_CONFIGURATION: MeteringConfiguration = MeteringC
 // P2P Message Registration
 // ============================================================================
 
+// The third argument is the **live** wire bound, and it was `0`.
+//
+// `0` does not mean "unlimited" here. `src/net/message_publisher.rs` reads
+// `if M::MAX_BYTES > 0 && length > M::MAX_BYTES` — so a zero **skips the guard entirely**,
+// and it did so for the message type that carries the largest objects on the network. That
+// is why a 4 MiB figure written into the now-removed `impl_boundary_codec!` call below looked
+// like enforcement while nothing enforced it.
+//
+// The value is the same 32 MiB frame bound the sync rail carries and the miner's template
+// budget is derived from (`dwow_chain::sync_connection::MAX_FRAME_PAYLOAD`), so the rail
+// that carries a block and the rail that serves one now agree instead of merely both
+// existing. The 100 MB `MAX_GENESIS_SIZE` take inside `decode_async` remains as the
+// allocation guard in front of it.
 impl_p2p_message!(
     BlockBroadcast,
     "linearlblock",
-    0,
+    dwow_chain::sync_connection::MAX_FRAME_PAYLOAD as u64,
     1,
     LINEAR_BROADCAST_METERING_CONFIGURATION,
     &[
@@ -103,7 +116,7 @@ impl_p2p_message!(
     ]
 );
 
-// JSON-based sync Encodable/Decodable — BoundaryCodec requires these
+// JSON-based sync Encodable/Decodable — the boundary codec requires these
 // supertraits (§10.5). Wire format matches the async codec above.
 //
 // The MAX_BYTES argument on the boundary codec below is 32 MiB, and it is not a
@@ -122,20 +135,19 @@ impl_p2p_message!(
 // ban,* by this one at 4 MiB. Every rail that carries a block now states the same
 // bound, so no rail can refuse what another accepts.
 //
-// CORRECTED 2026-09-25 by an adversarial audit, because the note that stood here
-// was wrong about its own mechanism. It claimed an over-limit frame is rejected at
-// `net/message_publisher.rs:278` and that `channel.rs` then bans the peer. **That
-// check cannot fire for this message type**: it reads `Message::MAX_BYTES`, and
-// `BlockBroadcast` is registered with `MAX_BYTES = 0` (see the `impl_p2p_message!`
-// call in this file), so the guard `if M::MAX_BYTES > 0 && length > M::MAX_BYTES`
-// is skipped entirely for blocks. `BoundaryCodec::MAX_BYTES` — the 32 MiB written
-// into the `impl_boundary_codec!` call below — has **no reader anywhere in the
-// tree**, so that figure changes nothing at runtime.
+// CORRECTED 2026-09-25 by an adversarial audit, because the note that stood here was wrong
+// about its own mechanism. It claimed an over-limit frame is rejected at
+// `net/message_publisher.rs:278` and that `channel.rs` then bans the peer — but that check
+// **could not fire for this message type**: it reads `Message::MAX_BYTES`, and
+// `BlockBroadcast` was registered with `0`, which *skips* the guard rather than lifting it.
+// Both halves are fixed now: the registration carries the derived 32 MiB frame bound (see
+// the `impl_p2p_message!` call below), and the dead `impl_boundary_codec!` that made a
+// separate 4 MiB figure look like enforcement is removed.
 //
-// The broadcast rail's real bound is `MAX_GENESIS_SIZE` (100 MB), inside
-// `decode_async`. The pre-change rejection of a large block came from the deleted
-// `MAX_BLOCK_SIZE` check *within that function*, not from this constant — which is
-// why removing the constant removed the cascade and editing this one did not.
+// The rail's outer guard is still `MAX_GENESIS_SIZE` (100 MB) inside `decode_async`, and
+// the pre-change rejection of a large block came from the deleted `MAX_BLOCK_SIZE` check
+// *within that function* rather than from any constant here — which is why removing that
+// check removed the cascade and editing the codec did not.
 //
 // The live defect is the resulting mismatch: a node without a `linearlblock`
 // dispatcher (the wallet), pushed a block frame between 32 MiB and 100 MB, returns
@@ -158,14 +170,13 @@ impl dwow_serial::Decodable for BlockBroadcast {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 }
-impl_boundary_codec!(BlockBroadcast, 32 * 1024 * 1024, 5,
-    &[
-        dwow_core::net::barb_trait::BarbId::Commit,
-        dwow_core::net::barb_trait::BarbId::Verify,
-        dwow_core::net::barb_trait::BarbId::Broadcast,
-        dwow_core::net::barb_trait::BarbId::GossipForward,
-    ]
-);
+// `impl_boundary_codec!(BlockBroadcast, 32 * 1024 * 1024, 5, …)` stood here. It was
+// **inert twice over**: `BoundaryCodec` has no reader anywhere in the repository, and even
+// the live guard that would consume such a value is skipped for this type because
+// `impl_p2p_message!` below registers it with `MAX_BYTES = 0`. So the 32 MiB written here
+// enforced nothing while reading as enforcement, and its `METERING_SCORE` of `5` described
+// a weight the node does not use (the live value is `1`). Removed with the trait; the
+// live bound is the `MAX_BYTES` argument of the `impl_p2p_message!` call.
 
 // ============================================================================
 // Async Serialization

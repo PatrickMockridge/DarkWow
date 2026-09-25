@@ -350,15 +350,19 @@ mod p2p_impls {
     impl_p2p_message!(GetTip, "lineargettip", MAX_SMALL, 1, SYNC_METERING, SYNC_BARBS);
     impl_p2p_message!(Tip, "lineartip", MAX_TIP, 1, SYNC_METERING, SYNC_BARBS);
 
-    // ── BoundaryCodec with JSON encoding ───────────────────────────────
+    // ── JSON wire encoding for the sync types ──────────────────────────
     //
-    // These types use serde_json for wire encoding (matching the async
-    // codec at impl_sync_codec! above). BoundaryCodec requires Encodable +
-    // Decodable supertraits (§10.5), so we provide JSON-based impls instead
-    // of deriving SerialEncodable/SerialDecodable (which would use
-    // dwow_serial's binary format and break wire compatibility).
+    // These types use serde_json for wire encoding (matching the async codec at
+    // impl_sync_codec! above). They do not derive SerialEncodable/SerialDecodable, which
+    // would use dwow_serial's binary format and break wire compatibility.
+    //
+    // This macro also used to take `$max_bytes`/`$metering_score` and pass them to
+    // `dwow_core::impl_boundary_codec!`. That trait has **no reader anywhere in the
+    // repository** — the enforced bound is `Message::MAX_BYTES`, set by the
+    // `impl_p2p_message!` calls above — so the arguments were removed with it. The JSON
+    // impls are live and stay.
     macro_rules! impl_sync_boundary_codec {
-        ($ty:ty, $max_bytes:expr, $metering_score:expr) => {
+        ($ty:ty) => {
             impl dwow_serial::Encodable for $ty {
                 fn encode<W: std::io::Write>(&self, e: &mut W) -> std::io::Result<usize> {
                     let json = serde_json::to_vec(self)
@@ -374,14 +378,13 @@ mod p2p_impls {
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
                 }
             }
-            dwow_core::impl_boundary_codec!($ty, $max_bytes, $metering_score, SYNC_BARBS);
         };
     }
 
-    impl_sync_boundary_codec!(GetBlocks, MAX_SMALL, 1);
-    impl_sync_boundary_codec!(Blocks, MAX_BLOCK_BATCH, 1);
-    impl_sync_boundary_codec!(GetTip, MAX_SMALL, 1);
-    impl_sync_boundary_codec!(Tip, MAX_TIP, 1);
+    impl_sync_boundary_codec!(GetBlocks);
+    impl_sync_boundary_codec!(Blocks);
+    impl_sync_boundary_codec!(GetTip);
+    impl_sync_boundary_codec!(Tip);
 }
 
 #[cfg(test)]
