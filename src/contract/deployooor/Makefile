@@ -27,6 +27,7 @@ RUST_TARGET = $(shell rustc -Vv | grep '^host: ' | cut -d' ' -f2)
 # .cargo/config.toml — see the note in that file for what was measured.
 RUSTFLAGS += --remap-path-prefix=$(HOME)/.cargo=/cargo
 RUSTFLAGS += --remap-path-prefix=$(HOME)/.rustup=/rustup
+RUSTFLAGS += -C link-arg=--max-memory=268435456
 # Uncomment when doing musl static builds
 #RUSTFLAGS = -C target-feature=+crt-static -C link-self-contained=yes
 

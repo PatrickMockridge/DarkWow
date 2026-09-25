@@ -534,13 +534,35 @@ impl Runtime {
                     )));
                 }
             }
+
+            // The memory the instance will hand the host must declare a bound. Checked here, with
+            // the signatures, because this is the one place that sees the module before anything
+            // depends on it — and because the exported memory is the one the host adopts.
+            for export in module.exports() {
+                if let wasmer::ExternType::Memory(ty) = export.ty() {
+                    check_declared_memory_max(export.name(), &ty)?;
+                }
+            }
         }
 
 
-        // Create a larger Memory for the instance
+        // The memory offered as the `env.memory` import.
+        //
+        // **This is not the contract's memory, and its maximum is not a cap on one.** It is only
+        // used by a module that *imports* `env.memory`; every contract in this repository
+        // *defines* its own, and the host adopts that one below
+        // (`env_mut.memory = Some(instance.exports.get_with_generics(MEMORY)?)`). Until
+        // 2026-09-25 the host's maximum read as a bound a contract could never exceed, and it was
+        // believed as one by two reviewers, while the guest's actual memory had no maximum at all
+        // — reachable by `memory.grow` for 8 gas flat (F14).
+        //
+        // The bound for a *defining* module is therefore in the module: every contract declares
+        // `max=4096` pages from `-C link-arg=--max-memory=268435456` in its Makefile, and
+        // `check_declared_memory_max` below refuses a module that declares none, so the two paths
+        // agree on one number.
         let memory_type = MemoryType::new(
             Pages(256),        // init: 16 MB (256 * 64KB)
-            Some(Pages(4096)), // max: 256 MB
+            Some(Pages(MEMORY_MAX_PAGES)),
             false,
         );
         let memory = Memory::new(&mut store, memory_type)?;
@@ -807,12 +829,22 @@ impl Runtime {
         // said metering "already charges the contract's own `memory.grow` per
         // opcode". The metering middleware charges **8 gas flat per instruction
         // whatever the page count** (see the cost tiers above) and does not account
-        // `MemoryGrow` at all. So nothing prices attacker-chosen memory growth —
-        // before or after this change. That gap is recorded rather than papered
-        // over: a contract can request up to 65536 pages in a single `memory.grow`
-        // for 8 gas. Related and UNVERIFIED: `MemoryFill` is likewise 8 gas flat for
-        // any length with bulk-memory enabled, which would make a multi-GiB fill
-        // nearly free. Flagged, not fixed, and not introduced here.
+        // `MemoryGrow` at all.
+        //
+        // How far that can reach was corrected on 2026-09-25 (F14). This paragraph used
+        // to say a contract could request 65536 pages — the wasm32 address space — in one
+        // `memory.grow` for 8 gas, and that was true only because nothing bounded a
+        // contract's memory: the host's `MemoryType` maximum is for modules that *import*
+        // `env.memory`, and every contract defines its own. The bound is now declared in
+        // the artifact (`max=4096` pages, from `-C link-arg=--max-memory` in every
+        // contract Makefile) and enforced by `check_declared_memory_max` at
+        // instantiation, so the worst case is 256 MiB.
+        //
+        // What remains unpriced, and is recorded rather than papered over: the *cost* of
+        // growth. 8 gas buys a page or 4096 of them, so a contract can still commit the
+        // node to the whole 256 MiB for 8 gas, and `MemoryFill` is likewise 8 gas flat for
+        // any length with bulk-memory enabled. The bound is real; the pricing is not.
+        // Flagged, not fixed, and not introduced here.
         // The guest allocates the buffer this payload goes into; the host only writes
         // it. See `__dwow_alloc` in `src/sdk/src/wasm/entrypoint.rs` for why no
         // host-chosen address works: dlmalloc owns `[__heap_base, max)`, so a payload
@@ -1240,6 +1272,39 @@ impl Runtime {
     }
 }
 
+/// The largest linear memory a contract may declare: 4096 pages (256 MiB).
+///
+/// **The derivation is the host's own stated intent, made real.** Until 2026-09-25 the memory the
+/// host offered as the `env.memory` import carried `Some(Pages(4096))` while every contract
+/// defined its own memory with no maximum, so there was no bound at all: `memory.grow` reached
+/// the wasm32 address space for 8 gas flat (F14). This is that same figure, now enforced where it
+/// applies. It is 8x the 32 MiB frame bound — the largest payload the transport will carry — and
+/// the measured peak at a 1.5 MB artifact is ~5 MB, so it is generous by design rather than
+/// tight.
+pub const MEMORY_MAX_PAGES: u32 = 4096;
+
+/// A contract must declare a linear-memory maximum, and it must not exceed [`MEMORY_MAX_PAGES`].
+///
+/// An absent maximum is not "no limit set yet" — it means the wasm32 address space, which
+/// `memory.grow` reaches for 8 gas flat per call, so it is the unbounded case and is refused.
+///
+/// A free function rather than a loop body so the refusal can be tested directly: the negative
+/// control is a memory type with no maximum, which no artifact in the tree has any more.
+fn check_declared_memory_max(name: &str, ty: &MemoryType) -> Result<()> {
+    match ty.maximum {
+        Some(pages) if pages.0 <= MEMORY_MAX_PAGES => Ok(()),
+        declared => Err(Error::WasmerRuntimeError(format!(
+            "contract memory export `{}` declares maximum {:?}; a contract must declare one no \
+             larger than {MEMORY_MAX_PAGES} pages ({MEMORY_MAX_PAGES} * 64 KiB), and an absent \
+             maximum means the wasm32 address space, which the guest can reach with `memory.grow` \
+             for 8 gas. Add `-C link-arg=--max-memory={}` to the contract's RUSTFLAGS.",
+            name,
+            declared.map(|p| p.0),
+            MEMORY_MAX_PAGES * wasmer::WASM_PAGE_SIZE as u32,
+        ))),
+    }
+}
+
 /// `OBL-C17` — the non-determinism scanner, which was enforced on every instantiation and had no
 /// test at all.
 ///
@@ -1272,6 +1337,38 @@ mod tests {
         out.push(full.len() as u8);
         out.extend_from_slice(&full);
         out
+    }
+
+    /// F14's negative control — and its acceptance control, without which a check that refused
+    /// every memory type would pass.
+    ///
+    /// `check_declared_memory_max` is the only thing bounding a contract's linear memory: the host
+    /// adopts the instance's own memory, and a module that declares no maximum gets the wasm32
+    /// address space, reachable with `memory.grow` for 8 gas. So the case worth pinning is the one
+    /// that is now invisible in the tree — an absent maximum, which no artifact has any more — and
+    /// the boundary itself.
+    #[test]
+    fn a_contract_memory_must_declare_a_bounded_maximum() {
+        // The defect, as it stood: no declared maximum at all.
+        let unbounded = MemoryType::new(Pages(18), None, false);
+        let err = check_declared_memory_max("memory", &unbounded)
+            .expect_err("an absent maximum means the wasm32 address space and must be refused");
+        assert!(
+            matches!(err, Error::WasmerRuntimeError(ref m) if m.contains("must declare one")),
+            "wrong error for an unbounded memory: {err:?}"
+        );
+
+        // One page over the bound.
+        let too_big = MemoryType::new(Pages(18), Some(Pages(MEMORY_MAX_PAGES + 1)), false);
+        check_declared_memory_max("memory", &too_big)
+            .expect_err("one page over the bound must be refused");
+
+        // Acceptance control: exactly the bound is allowed, and so is anything below it. Every
+        // artifact in the tree declares this value, so a stricter check would reject the chain.
+        let exact = MemoryType::new(Pages(18), Some(Pages(MEMORY_MAX_PAGES)), false);
+        check_declared_memory_max("memory", &exact).expect("the bound itself must be accepted");
+        let small = MemoryType::new(Pages(18), Some(Pages(18)), false);
+        check_declared_memory_max("memory", &small).expect("a smaller maximum must be accepted");
     }
 
     #[test]

@@ -31,6 +31,7 @@ SOURCE_HASH_FILE := .source_hash
 # .cargo/config.toml — see the note in that file for what was measured.
 RUSTFLAGS += --remap-path-prefix=$(HOME)/.cargo=/cargo
 RUSTFLAGS += --remap-path-prefix=$(HOME)/.rustup=/rustup
+RUSTFLAGS += -C link-arg=--max-memory=268435456
 
 # Inputs whose contents can change the built WASM. $(wildcard) drops any that
 # do not exist and sorts what remains.

@@ -22,6 +22,7 @@ RUST_TARGET = $(shell rustc -Vv | grep '^host: ' | cut -d' ' -f2)
 # be expanded in .cargo/config.toml, which is why the flags live in this file.
 RUSTFLAGS += --remap-path-prefix=$(HOME)/.cargo=/cargo
 RUSTFLAGS += --remap-path-prefix=$(HOME)/.rustup=/rustup
+RUSTFLAGS += -C link-arg=--max-memory=268435456
 
 # wasm build target
 WASM_TARGET = wasm32-unknown-unknown
