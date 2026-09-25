@@ -84,11 +84,21 @@ structure PublicState where
 
    For Box:
      objectId = box_id
-     contentsCommit = poseidon_hash(DOMAIN_MERKLE_LEAF, box_id, contents, nonce)
+     contentsCommit = poseidon_hash(DOMAIN_MERKLE_LEAF, box_id, contents, nonce, owner_pub)
 
    For Purse:
      objectId = purse_id
-     contentsCommit = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, balance, nonce)
+     contentsCommit = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, balance, nonce, owner_pub)
+
+   **The fourth `owner_pub` argument is the owner-binding fix, and it is not decoration.** Both
+   commitments were `poseidon_hash(DOMAIN_MERKLE_LEAF, <id>, <contents-or-balance>, <nonce>)` — no owner
+   term — which meant the spender's secret was bound only to the nullifier and never to the leaf. Anyone
+   who knew a leaf's preimage (the call params publish it in plaintext) could consume the leaf with a
+   secret of their own choosing, and one leaf admitted one nullifier *per distinct secret*, so the
+   "exercised exactly once" property was not circuit-enforced and the chain's nullifier de-duplication
+   could not see it. The leaf now commits to `owner_pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET,
+   owner_secret)`, so a second spend of the same leaf needs the same secret and therefore the same
+   nullifier. Register row `OBL-C81` and its box counterpart.
 -/
 
 structure WitnessState where

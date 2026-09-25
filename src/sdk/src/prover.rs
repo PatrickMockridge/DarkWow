@@ -73,11 +73,17 @@ pub enum DerivedRule {
     Nullifier { secret: usize, id: usize, nonce: usize },
     /// `poseidon(3, tx_commitment, tx_nonce)`
     TxBinding { txc: usize, txn: usize },
-    /// `poseidon(5, id, contents, nonce)`
-    Leaf { id: usize, contents: usize, nonce: usize },
-    /// `poseidon(5, id, contents, nonce + 1)` — purse in-circuit nonce increment
-    /// (HAZOP V1/V2: express the produced-nonce as a derived value, not a witness).
-    LeafIncrement { id: usize, contents: usize, nonce: usize },
+    /// `poseidon(5, id, contents, nonce, poseidon(7, secret))` — the fourth operand is the
+    /// **secret**, not the `owner_pub` slot, and the reason is the DAG rule below: a derived
+    /// operand must be an *input* slot, and `owner_pub` is itself derived (it sits after the
+    /// leaf in the witness map, because the circuit declares it where the ownership constraint
+    /// needs it). Passing the secret keeps the leaf's owner-binding without a forward
+    /// reference, and the derivation happens inside this rule.
+    Leaf { id: usize, contents: usize, nonce: usize, secret: usize },
+    /// `poseidon(5, id, contents, nonce + 1, poseidon(7, secret))` — purse in-circuit nonce
+    /// increment (HAZOP V1/V2: express the produced-nonce as a derived value, not
+    /// a witness).
+    LeafIncrement { id: usize, contents: usize, nonce: usize, secret: usize },
     /// `w[a] + 1` (base field) — expose the incremented nonce for the produce note.
     Increment { a: usize },
     /// `merkle_root(pos, path, poseidon(5, id, contents, nonce))`
@@ -114,8 +120,10 @@ impl DerivedRule {
         match *self {
             DerivedRule::Nullifier { secret, id, nonce } => vec![secret, id, nonce],
             DerivedRule::TxBinding { txc, txn } => vec![txc, txn],
-            DerivedRule::Leaf { id, contents, nonce } => vec![id, contents, nonce],
-            DerivedRule::LeafIncrement { id, contents, nonce } => vec![id, contents, nonce],
+            DerivedRule::Leaf { id, contents, nonce, secret } =>
+                vec![id, contents, nonce, secret],
+            DerivedRule::LeafIncrement { id, contents, nonce, secret } =>
+                vec![id, contents, nonce, secret],
             DerivedRule::Increment { a } => vec![a],
             DerivedRule::MerkleRoot { pos, path, id, contents, nonce } =>
                 vec![pos, path, id, contents, nonce],
@@ -272,8 +280,8 @@ fn parse_derived_rule(s: &str) -> Result<DerivedRule, crate::error::ProverError>
     Ok(match name {
         "nullifier" => { let a = slots(3)?; DerivedRule::Nullifier { secret: a[0], id: a[1], nonce: a[2] } }
         "tx_binding" => { let a = slots(2)?; DerivedRule::TxBinding { txc: a[0], txn: a[1] } }
-        "leaf" => { let a = slots(3)?; DerivedRule::Leaf { id: a[0], contents: a[1], nonce: a[2] } }
-        "leaf_increment" => { let a = slots(3)?; DerivedRule::LeafIncrement { id: a[0], contents: a[1], nonce: a[2] } }
+        "leaf" => { let a = slots(4)?; DerivedRule::Leaf { id: a[0], contents: a[1], nonce: a[2], secret: a[3] } }
+        "leaf_increment" => { let a = slots(4)?; DerivedRule::LeafIncrement { id: a[0], contents: a[1], nonce: a[2], secret: a[3] } }
         "increment" => { let a = slots(1)?; DerivedRule::Increment { a: a[0] } }
         "merkle_root" => { let a = slots(5)?; DerivedRule::MerkleRoot { pos: a[0], path: a[1], id: a[2], contents: a[3], nonce: a[4] } }
         "owner_pub" => { let a = slots(1)?; DerivedRule::OwnerPub { secret: a[0] } }

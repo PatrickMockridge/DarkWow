@@ -39,10 +39,12 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({
                     // Recompute the new Merkle root after PutV1 appends new_leaf.
-                    // new_leaf nl = poseidon_hash([dml=5, bid=1, ncc, nsn=1]),
+                    // new_leaf nl = poseidon_hash([dml=5, bid=1, ncc, nsn=1, op]),
+                    // op = poseidon_hash([dss=7, os=42]) — the owner-binding argument,
                     // ncc = poseidon_hash([100]); initial tree = [ZERO].
+                    let op = poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(42u64)]);
                     let ncc = poseidon_hash([pallas::Base::from(100u64)]);
-                    let nl = poseidon_hash([pallas::Base::from(5u64), pallas::Base::from(1u64), ncc, pallas::Base::from(1u64)]);
+                    let nl = poseidon_hash([pallas::Base::from(5u64), pallas::Base::from(1u64), ncc, pallas::Base::from(1u64), op]);
                     let mut tree = MerkleTree::new(1);
                     tree.append(MerkleNode::from_base(pallas::Base::zero()));
                     tree.append(MerkleNode::from_base(nl));

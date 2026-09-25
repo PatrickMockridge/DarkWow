@@ -41,13 +41,14 @@ witness_map = [
     "param:new_contents_commit",
     "derived:nullifier:8,0,1",
     "merkle_root",
-    "derived:leaf:0,4,2",
+    "derived:leaf:0,4,2,8",
     "secret",
     "leaf_position",
     "merkle_path",
     "tx_commitment",
     "param:tx_nonce",
     "derived:tx_binding:11,12",
+    "derived:owner_pub:8",
 ]
 
 [[circuits]]
@@ -65,6 +66,7 @@ witness_map = [
     "tx_commitment",
     "param:tx_nonce",
     "derived:tx_binding:8,9",
+    "derived:owner_pub:5",
 ]
 
 [[parameters]]

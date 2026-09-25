@@ -8135,11 +8135,23 @@ _FIELD_TYPE_VARTYPES = {
 
 # Derived rule name → operand (0-based witness-slot) arity, for the closed
 # `derived:<rule>:<slots>` vocabulary (wallet.md §6.4.1).
+#
+# `leaf` and `leaf_increment` take FOUR operands as of the owner-binding fix: the
+# Merkle leaf is `poseidon(5, id, contents, nonce, poseidon(7, secret))`, so a leaf
+# commits to its owner's public key. The fourth operand is the **secret** rather
+# than the `owner_pub` slot because the prover requires a derived rule's operands to
+# be input slots or earlier derived slots (`prover.rs`, write-path invariant 5), and
+# `owner_pub` is itself derived. It did not (`poseidon(5, id, contents, nonce)`), and the
+# consequence was that knowing a leaf's preimage — which the params publish in
+# plaintext — was enough to consume it with a secret of one's own choosing, and that
+# one leaf admitted one nullifier per distinct secret, so linearity was unenforced.
+# This table is where the vocabulary is closed, which is why it moves with the
+# circuits rather than after them.
 _DERIVED_RULE_ARITY = {
     "nullifier": 3,
     "tx_binding": 2,
-    "leaf": 3,
-    "leaf_increment": 3,
+    "leaf": 4,
+    "leaf_increment": 4,
     "increment": 1,
     "merkle_root": 5,
     "owner_pub": 1,

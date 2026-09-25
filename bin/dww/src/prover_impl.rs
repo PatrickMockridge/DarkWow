@@ -416,17 +416,21 @@ fn compute_derived(
             base(*txc)?,
             base(*txn)?,
         ])),
-        DerivedRule::Leaf { id, contents, nonce } => SlotValue::Base(poseidon_hash([
+        // The leaf commits to its owner: the fourth operand is the *secret* (an input slot,
+        // so the DAG rule is satisfied), and `owner_pub = poseidon(7, secret)` is derived here.
+        DerivedRule::Leaf { id, contents, nonce, secret } => SlotValue::Base(poseidon_hash([
             DRK_POSEIDON_DOMAIN_MERKLE_LEAF,
             base(*id)?,
             base(*contents)?,
             base(*nonce)?,
+            poseidon_hash([DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, base(*secret)?]),
         ])),
-        DerivedRule::LeafIncrement { id, contents, nonce } => SlotValue::Base(poseidon_hash([
+        DerivedRule::LeafIncrement { id, contents, nonce, secret } => SlotValue::Base(poseidon_hash([
             DRK_POSEIDON_DOMAIN_MERKLE_LEAF,
             base(*id)?,
             base(*contents)?,
             base(*nonce)? + pallas::Base::one(),
+            poseidon_hash([DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, base(*secret)?]),
         ])),
         DerivedRule::Increment { a } => SlotValue::Base(base(*a)? + pallas::Base::one()),
         DerivedRule::MerkleRoot { .. } => {
@@ -655,8 +659,13 @@ mod tests {
         let ncc = poseidon_hash([pallas::Base::from(200u64)]); // new_contents_commit
         let tn = pallas::Base::zero(); // tx_nonce
 
-        // old_leaf = poseidon(5, bid, occ, osn) — the seed put's new_leaf.
-        let old_leaf = poseidon_hash([dml, bid, occ, osn]);
+        // The owner-binding argument (2026-09-25): the leaf commits to
+        // owner_pub = poseidon(7, owner_secret), so the spender's secret is pinned by
+        // the leaf and not only by the nullifier.
+        let op = poseidon_hash([pallas::Base::from(7u64), *secret.inner()]);
+
+        // old_leaf = poseidon(5, bid, occ, osn, op) — the seed put's new_leaf.
+        let old_leaf = poseidon_hash([dml, bid, occ, osn, op]);
 
         // Reconstruct the contract tree [zero, old_leaf] exactly as
         // walletdb::reconstruct_contract_tree does.
@@ -696,7 +705,7 @@ mod tests {
         let expected = vec![
             poseidon_hash([dnl, *secret.inner(), bid, osn]), // nullifier
             root,                                           // expected_root
-            poseidon_hash([dml, bid, ncc, nsn]),            // new_leaf
+            poseidon_hash([dml, bid, ncc, nsn, op]),        // new_leaf
             poseidon_hash([dtb, pallas::Base::zero(), tn]), // tx_binding
             tn,                                             // tx_nonce
         ];

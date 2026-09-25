@@ -805,8 +805,8 @@ is a parse error. Domain constants are the 7 `DRK_POSEIDON_DOMAIN_*` values
 |------|-----------------|
 | `derived:nullifier:<secret>,<id>,<nonce>` | `poseidon(1, w[secret], w[id], w[nonce])` |
 | `derived:tx_binding:<txc>,<txn>` | `poseidon(3, w[txc], w[txn])` |
-| `derived:leaf:<id>,<contents>,<nonce>` | `poseidon(5, w[id], w[contents], w[nonce])` |
-| `derived:merkle_root:<pos>,<path>,<id>,<contents>,<nonce>` | `merkle_root(w[pos], w[path], poseidon(5, w[id], w[contents], w[nonce]))` |
+| `derived:leaf:<id>,<contents>,<nonce>,<secret>` | `poseidon(5, w[id], w[contents], w[nonce], poseidon(7, w[secret]))` — the fourth operand is the secret, not the `owner_pub` slot: invariant 5 requires a derived rule's operands to be input slots or earlier derived slots, and `owner_pub` is derived |
+| `derived:merkle_root:<pos>,<path>,<id>,<contents>,<nonce>` | **parsed but not evaluated** — the prover returns "derived:merkle_root is unsupported — bind the root as note:merkle_root" (`bin/dww/src/prover_impl.rs`). The row's `poseidon(5, …)` is therefore a vocabulary entry rather than a derivation the wallet performs, and the leaf it names is the four-operand one. |
 | `derived:owner_pub:<secret>` | `poseidon(7, w[secret])` |
 | `derived:token_commit:<asset_id>,<blind>` | `poseidon(2, w[asset_id], w[blind])` |
 | `derived:purse_id:<owner_pub>,<asset_id>,<purse_id>` | `poseidon(4, w[owner_pub], w[asset_id], w[purse_id])` |

@@ -52,7 +52,7 @@ Identical structure to Box (see box.md for full description):
 ## Data Model
 
 ```
-purse_leaf  = poseidon_hash(DOMAIN_SIGNATURE_SECRET, purse_id, balance, state_nonce)
+purse_leaf  = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, balance, state_nonce, owner_pub)
 nullifier   = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, purse_id, state_nonce)
 owner_pub    = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)
 balance_commit = pedersen_commit(balance, balance_blind)

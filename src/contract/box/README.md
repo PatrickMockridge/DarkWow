@@ -31,16 +31,22 @@ constraints in `proof/put.zk` and `proof/take.zk`.
 | Barb | Mechanism |
 |------|-----------|
 | `↓spend` + `↓nullify` | Circuit constrains `nullifier == poseidon_hash(1, owner_secret, box_id, old_state_nonce)` — proves the caller holds `owner_secret` and emits the consuming nullifier (`DOMAIN_NULLIFIER = witness_base(1)`) |
-| `↓prove-inclusion` | Circuit constrains `merkle_root(leaf_pos, path, old_leaf) == expected_root` where `old_leaf = poseidon_hash(5, box_id, old_contents_commit, old_state_nonce)` (`DOMAIN_MERKLE_LEAF = witness_base(5)`) |
-| `↓commit` | Circuit constrains `new_leaf == poseidon_hash(5, box_id, new_contents_commit, new_state_nonce)`; Apply appends `new_leaf` via `merkle_add` and marks the nullifier spent |
+| `↓prove-inclusion` | Circuit constrains `merkle_root(leaf_pos, path, old_leaf) == expected_root` where `old_leaf = poseidon_hash(5, box_id, old_contents_commit, old_state_nonce, owner_pub)` (`DOMAIN_MERKLE_LEAF = witness_base(5)`) |
+| `↓commit` | Circuit constrains `new_leaf == poseidon_hash(5, box_id, new_contents_commit, new_state_nonce, owner_pub)`; Apply appends `new_leaf` via `merkle_add` and marks the nullifier spent |
 
 ### `take`
 
 | Barb | Mechanism |
 |------|-----------|
 | `↓spend` + `↓nullify` | `nullifier == poseidon_hash(1, owner_secret, box_id, state_nonce)` |
-| `↓prove-inclusion` | `merkle_root(leaf_pos, path, box_leaf) == expected_root` where `box_leaf = poseidon_hash(5, box_id, contents_commit, state_nonce)` |
+| `↓prove-inclusion` | `merkle_root(leaf_pos, path, box_leaf) == expected_root` where `box_leaf = poseidon_hash(5, box_id, contents_commit, state_nonce, owner_pub)` |
 | `↓commit` | Terminal consumption — Apply adds a block-level anchor (`merkle_anchor_add`) and marks the nullifier spent; no new leaf |
+
+Both circuits also pin the leaf's **owner**: `owner_pub == poseidon_hash(7, owner_secret)`
+(`DOMAIN_SIGNATURE_SECRET = witness_base(7)`). The owner is inside the leaf hash and the leaf
+preimage travels in the plaintext params, so without this constraint anyone who reads the params
+could consume the box with a secret of their own choosing — and, one nullifier per distinct
+secret, exhaust a single leaf more than once.
 
 Both circuits also bind the transaction: `tx_binding == poseidon_hash(3, tx_commitment, tx_nonce)` (`DOMAIN_TX_BINDING = witness_base(3)`).
 
@@ -68,9 +74,10 @@ Exec validates; Apply writes. Exec never writes state; Apply never reads it.
 ## Data Model
 
 ```
-nullifier  = poseidon_hash(1, owner_secret, box_id, state_nonce)      # DOMAIN_NULLIFIER
-box_leaf   = poseidon_hash(5, box_id, contents_commit, state_nonce)   # DOMAIN_MERKLE_LEAF
-tx_binding = poseidon_hash(3, tx_commitment, tx_nonce)                # DOMAIN_TX_BINDING
+nullifier  = poseidon_hash(1, owner_secret, box_id, state_nonce)                  # DOMAIN_NULLIFIER
+owner_pub  = poseidon_hash(7, owner_secret)                                       # DOMAIN_SIGNATURE_SECRET
+box_leaf   = poseidon_hash(5, box_id, contents_commit, state_nonce, owner_pub)    # DOMAIN_MERKLE_LEAF
+tx_binding = poseidon_hash(3, tx_commitment, tx_nonce)                            # DOMAIN_TX_BINDING
 ```
 
 ## State Trees

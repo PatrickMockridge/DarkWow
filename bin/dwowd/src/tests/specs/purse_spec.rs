@@ -41,11 +41,14 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                     // The circuit increments the nonce IN-CIRCUIT
                     // (`purse/proof/deposit.zk`: `new_nonce = base_add(state_nonce, ONE)`;
                     // `new_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id,
-                    // new_balance, new_nonce)`), and this purse is fresh, so its
-                    // state_nonce is 0 and the appended leaf carries 1 — not 0. With
+                    // new_balance, new_nonce, owner_pub)`), and this purse is fresh, so
+                    // its state_nonce is 0 and the appended leaf carries 1 — not 0. With
                     // the old value this recomputed the leaf for a nonce that the
                     // chain never holds, so `purse_roots` could not contain the root.
-                    let nl = poseidon_hash([pallas::Base::from(5u64), pallas::Base::from(1u64), pallas::Base::from(100u64), pallas::Base::from(1u64)]);
+                    // `owner_pub = poseidon_hash([dss=7, os=42])` is the owner-binding
+                    // argument the leaf gained on 2026-09-25.
+                    let op = poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(42u64)]);
+                    let nl = poseidon_hash([pallas::Base::from(5u64), pallas::Base::from(1u64), pallas::Base::from(100u64), pallas::Base::from(1u64), op]);
                     let mut tree = MerkleTree::new(1);
                     tree.append(MerkleNode::from_base(pallas::Base::zero()));
                     tree.append(MerkleNode::from_base(nl));

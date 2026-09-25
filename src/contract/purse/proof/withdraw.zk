@@ -60,7 +60,7 @@ circuit "Withdraw" {
     constrain_instance(nullifier);
 
     # Merkle inclusion of OLD state
-    old_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, old_balance, state_nonce);
+    old_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, old_balance, state_nonce, owner_pub);
     root = merkle_root(leaf_pos, path, old_leaf);
     constrain_equal_base(root, expected_root);
     constrain_instance(expected_root);
@@ -94,7 +94,7 @@ circuit "Withdraw" {
 
     # NEW state — nonce increments in-circuit (new_nonce = state_nonce + 1).
     new_nonce = base_add(state_nonce, ONE);
-    new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, new_balance, new_nonce);
+    new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, new_balance, new_nonce, owner_pub);
     constrain_equal_base(new_leaf_circuit, new_leaf);
     constrain_instance(new_leaf);
 

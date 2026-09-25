@@ -44,7 +44,11 @@ circuit "Balance" {
     constrain_equal_base(derived_owner, owner_pub);
 
     # Merkle inclusion
-    purse_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, balance, state_nonce);
+    # The leaf pins its owner (2026-09-25), and it must: Deposit and Withdraw append
+    # five-input leaves to this same tree, so a four-input inclusion could never hold.
+    # `owner_pub` is already a witness here — this file derives `derived_purse_id` from
+    # it — so no slot moves.
+    purse_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, balance, state_nonce, owner_pub);
     root = merkle_root(leaf_pos, path, purse_leaf);
     constrain_equal_base(root, expected_root);
     constrain_instance(expected_root);

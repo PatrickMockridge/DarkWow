@@ -24,7 +24,7 @@ in the ZK witness but is never exposed as a public input.
 |------|-----------|
 | `↓spend` | Circuit constrains `owner_pub == poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)` |
 | `↓nullify` | Circuit constrains `nullifier == poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, old_state_nonce)` |
-| `↓prove-inclusion` | Circuit constrains `merkle_root(leaf_pos, path, leaf) == expected_root` where `leaf = poseidon_hash(DOMAIN_SIGNATURE_SECRET, box_id, old_contents_commit, old_state_nonce)` |
+| `↓prove-inclusion` | Circuit constrains `merkle_root(leaf_pos, path, leaf) == expected_root` where `leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, box_id, old_contents_commit, old_state_nonce, owner_pub)` |
 | `↓commit` | Apply appends new leaf to Merkle tree, marks nullifier in DB |
 
 ### Take
@@ -52,7 +52,7 @@ Every operation follows the same architectural pattern:
 ## Data Model
 
 ```
-box_leaf  = poseidon_hash(DOMAIN_MERKLE_LEAF, box_id, contents_commit, state_nonce)
+box_leaf  = poseidon_hash(DOMAIN_MERKLE_LEAF, box_id, contents_commit, state_nonce, owner_pub)
 nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, state_nonce)
 owner_pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)
 ```

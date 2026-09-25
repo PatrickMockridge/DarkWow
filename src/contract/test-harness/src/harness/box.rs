@@ -45,14 +45,15 @@ impl BoxHarness {
     /// another contract require a take of *its* box rather than of any box: the caller puts its
     /// commitment and the verifier's host compares `TakeParams.contents_commit` against it.
     pub fn put_contents(&self, contents: pallas::Base) -> Result<BoxPutResult> {
-        let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);
+        let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);let dsig=pallas::Base::from(7u64);
         let os=pallas::Base::from(42u64);let bid=pallas::Base::from(1u64);
+        let op=poseidon_hash([dsig,os]);
         let osn=pallas::Base::zero();let nsn=pallas::Base::from(1u64);let occ=pallas::Base::zero();
         let ncc=contents;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
-        let nf=poseidon_hash([dnl,os,bid,osn]);let tb=poseidon_hash([dtb,tc,tn]);let nl=poseidon_hash([dml,bid,ncc,nsn]);
-        let ol=poseidon_hash([dml,bid,occ,osn]);let (lp,p,root)=Self::build_root(ol);
+        let nf=poseidon_hash([dnl,os,bid,osn]);let tb=poseidon_hash([dtb,tc,tn]);let nl=poseidon_hash([dml,bid,ncc,nsn,op]);
+        let ol=poseidon_hash([dml,bid,occ,osn,op]);let (lp,p,root)=Self::build_root(ol);
         let er_base: pallas::Base = root.inner();
-        let w=vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(osn)),Witness::Base(Value::known(nsn)),Witness::Base(Value::known(occ)),Witness::Base(Value::known(ncc)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(os)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb))];
+        let w=vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(osn)),Witness::Base(Value::known(nsn)),Witness::Base(Value::known(occ)),Witness::Base(Value::known(ncc)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(os)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb)),Witness::Base(Value::known(op))];
         let pi=vec![nf,er_base,nl,tb,tn];let c=ZkCircuit::new(w,&self.put_zkbin);
         let proof=Proof::create(&self.put_pk,&[c],&pi,rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
@@ -83,13 +84,14 @@ impl BoxHarness {
     /// Take a box whose contents commitment is `contents`. It must be the contents a `put_contents`
     /// wrote, or box's own exec rejects the take.
     pub fn take_contents(&self, contents: pallas::Base) -> Result<BoxTakeResult> {
-        let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);
+        let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);let dsig=pallas::Base::from(7u64);
         let os=pallas::Base::from(42u64);let bid=pallas::Base::from(1u64);let sn=pallas::Base::from(1u64);
+        let op=poseidon_hash([dsig,os]);
         let cc=contents;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
-        let nf=poseidon_hash([dnl,os,bid,sn]);let tb=poseidon_hash([dtb,tc,tn]);let ol=poseidon_hash([dml,bid,cc,sn]);
+        let nf=poseidon_hash([dnl,os,bid,sn]);let tb=poseidon_hash([dtb,tc,tn]);let ol=poseidon_hash([dml,bid,cc,sn,op]);
         let (lp,p,root)=Self::build_root(ol);
         let er_base: pallas::Base = root.inner();
-        let w=vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(cc)),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(os)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb))];
+        let w=vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(cc)),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(os)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb)),Witness::Base(Value::known(op))];
         let pi=vec![nf,er_base,tb,tn];let c=ZkCircuit::new(w,&self.take_zkbin);
         let proof=Proof::create(&self.take_pk,&[c],&pi,rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;

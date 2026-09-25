@@ -19,25 +19,36 @@ witness "Put" {
     Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
+    # LAST on purpose: the manifest's witness_map, its [[parameters]] witness = N
+    # annotations and the public_inputs list are all positional, so appending
+    # rather than inserting keeps every existing slot index intact.
+    Base owner_pub,
 }
 
 circuit "Put" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_MERKLE_LEAF = witness_base(5);
+    DOMAIN_SIGNATURE_SECRET = witness_base(7);
+
+    # Ownership — the leaf pins its owner, so a leaf preimage lifted from the
+    # plaintext params cannot be consumed with a secret of the attacker's choosing
+    derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
+    constrain_equal_base(derived_owner, owner_pub);
+
     # Nullifier — circuit computes, constrains against caller-provided
     nullifier_circuit = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, old_state_nonce);
     constrain_equal_base(nullifier_circuit, nullifier);
     constrain_instance(nullifier);
 
     # Merkle inclusion of OLD state
-    old_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, box_id, old_contents_commit, old_state_nonce);
+    old_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, box_id, old_contents_commit, old_state_nonce, owner_pub);
     root = merkle_root(leaf_pos, path, old_leaf);
     constrain_equal_base(root, expected_root);
     constrain_instance(expected_root);
 
     # NEW state — circuit computes, constrains against caller-provided
-    new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, box_id, new_contents_commit, new_state_nonce);
+    new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, box_id, new_contents_commit, new_state_nonce, owner_pub);
     constrain_equal_base(new_leaf_circuit, new_leaf);
     constrain_instance(new_leaf);
 

@@ -9,15 +9,26 @@ import DarkFi.AxiomBudget
 
 Formalizes the purse write-path invariant that the previous code-first attempt
 missed: the nullifier is `poseidon(1, owner_secret, purse_id, state_nonce)` and
-the produced leaf is `poseidon(5, purse_id, new_balance, new_nonce)`. When a
-single `state_nonce` is reused for both the nullifier and the produced leaf, a
-deposit→withdraw chain collides on the nullifier. Separating the old nonce
+the produced leaf is `poseidon(5, purse_id, new_balance, new_nonce, owner_pub)`.
+When a single `state_nonce` is reused for both the nullifier and the produced
+leaf, a deposit→withdraw chain collides on the nullifier. Separating the old nonce
 (nullifier) from the new nonce (leaf), with the new nonce strictly increasing,
 makes the chain fresh.
 
-This is the HAZOP vector V2, carried as `OBL-C31` in
-`doc/src/arch/verification-hazop.md`. The nullifier is modeled
+This is the HAZOP vector V2, carried as `CRIT-5` in `DarkFi/HAZOP/Critical.lean`
+(`purseNullifier_nonce_injective`, whose consumer `purse_chained_nullifiers_distinct`
+is the theorem below). **The citation here read `OBL-C31` until 2026-09-25, when
+`OBL-C31`'s proposition was the generic prover's derived-rule DAG** — a different
+finding that had taken the row over, which is why the reference moved to the Lean
+HAZOP entry rather than to a register row. The nullifier is modeled
 as an opaque compression; its injectivity in the nonce is the crypto assumption.
+
+**And the leaf gained its `owner_pub` argument on 2026-09-25**, so that a leaf
+commits to its owner: without it the spender's secret was bound to the nullifier
+alone, and knowing a leaf's preimage — which the call params publish in plaintext
+— was enough to spend it. The module's theorems are about the nonce chain and are
+unaffected by the extra argument; what changed is what the leaf *is*, and the model
+follows the circuit.
 -/
 
 namespace DarkFi.Capability

@@ -283,12 +283,15 @@ fn test_box_send_receive() {
 
         // ── Sender builds the produce-side box_capability note (put) ───────
         // Same field derivation as test-harness/src/harness/box.rs::put: the note
-        // carries { commitment = poseidon(dml, bid, ncc, nsn), state_nonce = nsn }.
+        // carries { commitment = poseidon(dml, bid, ncc, nsn, op), state_nonce = nsn },
+        // where op = poseidon(dss=7, os=42) is the owner-binding argument the leaf
+        // gained on 2026-09-25.
         let dml = pallas::Base::from(5u64);
         let bid = pallas::Base::from(1u64);
         let ncc = poseidon_hash([pallas::Base::from(100u64)]);
         let nsn = pallas::Base::from(1u64);
-        let nl = poseidon_hash([dml, bid, ncc, nsn]);
+        let op = poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(42u64)]);
+        let nl = poseidon_hash([dml, bid, ncc, nsn, op]);
 
         #[derive(dwow_serial::SerialEncodable)]
         struct BoxNote { commitment: pallas::Base, state_nonce: pallas::Base }
@@ -393,10 +396,12 @@ fn test_box_put_accepts_through_accept_block() {
 
         // ── On-chain acceptance gate: the new leaf root is in box_roots ───
         // Mirrors box_spec.rs verify_state: nl = poseidon_hash([dml=5, bid=1,
-        // ncc, nsn=1]) with ncc = poseidon_hash([100]), tree = [ZERO, nl].
+        // ncc, nsn=1, op]) with ncc = poseidon_hash([100]), op = poseidon(dss=7, os=42),
+        // tree = [ZERO, nl].
         let ncc = poseidon_hash([pallas::Base::from(100u64)]);
         let nl = poseidon_hash([
             pallas::Base::from(5u64), pallas::Base::from(1u64), ncc, pallas::Base::from(1u64),
+            poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(42u64)]),
         ]);
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
@@ -1103,10 +1108,13 @@ fn test_box_transfer_to_new_owner_wallet_driven() {
             "capability name from the Box manifest");
 
         // The produce-side note's commitment is the new leaf (derived:leaf slot 7):
-        // poseidon([DRK_POSEIDON_DOMAIN_MERKLE_LEAF=5, box_id=1, new_cc, new_sn=2]).
+        // poseidon([DRK_POSEIDON_DOMAIN_MERKLE_LEAF=5, box_id=1, new_cc, new_sn=2,
+        //           owner_pub]), the fourth argument being the owner-binding fix —
+        // owner_pub = poseidon([DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET=7, os=42]).
+        let owner_pub = poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(42u64)]);
         let new_leaf = poseidon_hash([
             pallas::Base::from(5u64), pallas::Base::from(1u64),
-            new_cc, pallas::Base::from(2u64),
+            new_cc, pallas::Base::from(2u64), owner_pub,
         ]);
         assert_eq!(rec.commitment, Commitment::from_base(new_leaf),
             "B's discovered commitment is the transferred box new leaf");
@@ -1209,10 +1217,12 @@ fn test_purse_deposit_withdraw_accepts_through_accept_block() {
 
         // ── On-chain acceptance gate: the withdraw's expected_root (the deposit's
         // new root) is a purse_roots key. Mirrors purse_spec.rs verify_state:
-        // nl = poseidon_hash([dml=5, pid=1, nb=100, sn=1]), tree = [ZERO, nl].
+        // nl = poseidon_hash([dml=5, pid=1, nb=100, sn=1, op]), tree = [ZERO, nl],
+        // op = poseidon(dss=7, os=42) — the owner-binding argument.
+        let op = poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(42u64)]);
         let nl = poseidon_hash([
             pallas::Base::from(5u64), pallas::Base::from(1u64),
-            pallas::Base::from(100u64), pallas::Base::from(1u64),
+            pallas::Base::from(100u64), pallas::Base::from(1u64), op,
         ]);
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
