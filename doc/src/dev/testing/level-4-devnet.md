@@ -38,8 +38,8 @@ as a native binary on your host or as a Docker container on the same network.
 ### Step 1: Build the wallet binary (host, one-time)
 
 ```bash
-git clone https://codeberg.org/PatrickM123/darkwow.git
-cd darkwow
+git clone https://github.com/PatrickMockridge/DarkWow.git
+cd DarkWow
 cargo build -p dwow_wallet --release
 DRK="./target/release/dwow_wallet"
 NETWORK="darkwow-testnet"
@@ -114,7 +114,7 @@ docker compose --profile join-merge up -d
 See the [darkwow-testnet README] for the full join-testnet.sh flow,
 environment variable reference, and merge mining configuration.
 
-[darkwow-testnet README]: https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md
+[darkwow-testnet README]: https://github.com/PatrickMockridge/DarkWow/blob/linear-master/contrib/docker/darkwow-testnet/README.md
 
 ## Network Parameters
 
@@ -351,5 +351,5 @@ you need parameters matching the public testnet.
 - [Wallet Testing in Dockernet](wallet-testing.md) — Complete wallet test guardrails, commands, and failure modes
 - [Wallet Architecture](../../arch/wallet.md) — Full node P2P wallet specification
 - [Bootstrapping Plan](../../testnet/bootstrapping.md) — Multi-phase testnet deployment
-- [DarkWow Testnet README](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md) — Full env var reference and pipeline docs
+- [DarkWow Testnet README](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/contrib/docker/darkwow-testnet/README.md) — Full env var reference and pipeline docs
 - [Merge Mining](../../testnet/merge-mining.md) — Monero merge mining guide

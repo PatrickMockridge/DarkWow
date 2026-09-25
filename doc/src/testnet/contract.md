@@ -35,7 +35,7 @@ First, open another terminal, clone the template repository and enter
 its directory:
 
 ```shell
-$ git clone https://codeberg.org/PatrickM123/darkwow
+$ git clone https://github.com/PatrickMockridge/DarkWow
 $ cd smart-contract
 ```
 
@@ -352,7 +352,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 
 [1]: ../zkas/zkvm.md
 [2]: ../arch/sc/sc.md
-[3]: https://codeberg.org/PatrickM123/darkwow
+[3]: https://github.com/PatrickMockridge/DarkWow
 [4]: ../spec/crypto-schemes.md#poseidonhash-function
 [5]: ../zkas/zkas.md
 [6]: ../clients/dwowd_jsonrpc.md

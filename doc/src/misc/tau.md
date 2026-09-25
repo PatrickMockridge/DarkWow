@@ -8,9 +8,10 @@ and all users will have synced tasks.
 ## Install 
 
 ```shell
-% git clone https://codeberg.org/PatrickM123/darkwow
-% # Mirror: git clone https://github.com/PatrickMockridge/DarkWow
-% cd dwow
+% git clone https://github.com/PatrickMockridge/DarkWow
+% # Development started on Codeberg and has moved to GitHub: Codeberg has banned
+% # cryptocurrency projects, so this repository is no longer hosted there.
+% cd DarkWow
 % make taud
 ```
 

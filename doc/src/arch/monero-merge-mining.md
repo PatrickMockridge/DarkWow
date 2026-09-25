@@ -327,7 +327,7 @@ Every miner runs on 1 thread:
 ### Quick Start
 
 Run the merge mining pipeline or start a merge-mined devnet directly. See the
-[darkwow-testnet README](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md)
+[darkwow-testnet README](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/contrib/docker/darkwow-testnet/README.md)
 for the full command reference and environment variables.
 
 ### Relationship to Bare-Metal Test

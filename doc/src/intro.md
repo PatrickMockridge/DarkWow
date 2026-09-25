@@ -112,9 +112,10 @@ See [DarkIRC Guide](misc/darkirc/darkirc.md) for joining the anonymous p2p chat.
 ## Building
 
 ```bash
-git clone https://codeberg.org/PatrickM123/darkwow
-# Mirror: git clone https://github.com/PatrickMockridge/DarkWow
-cd darkwow
+git clone https://github.com/PatrickMockridge/DarkWow
+# Development started on Codeberg and has moved to GitHub: Codeberg has banned
+# cryptocurrency projects, so this repository is no longer hosted there.
+cd DarkWow
 make
 ```
 

@@ -119,9 +119,10 @@ See [Testing Overview](../dev/testing/overview.md) for the full taxonomy.
 
 ```
 # Clone and build
-git clone https://codeberg.org/PatrickM123/darkwow
-# Mirror: git clone https://github.com/PatrickMockridge/DarkWow
-cd darkwow
+git clone https://github.com/PatrickMockridge/DarkWow
+# Development started on Codeberg and has moved to GitHub: Codeberg has banned
+# cryptocurrency projects, so this repository is no longer hosted there.
+cd DarkWow
 cargo build --release -p dwowd -p dwow_wallet
 
 # Run the test pipeline (Docker required)

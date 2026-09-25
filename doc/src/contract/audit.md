@@ -2,7 +2,7 @@
 
 > **USE AT YOUR OWN RISK.** The smart contracts in this repository have undergone internal simulation-based security review but have NOT been audited by an independent third-party firm.
 
-The full security audit is available at [src/contract/AUDIT.md](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/AUDIT.md) in the repository.
+The full security audit is available at [src/contract/AUDIT.md](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/src/contract/AUDIT.md) in the repository.
 
 ## Summary
 
@@ -44,8 +44,8 @@ The following risks remain:
 - [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
 
 
-- [Full Audit Report](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/AUDIT.md)
+- [Full Audit Report](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/src/contract/AUDIT.md)
 - [Bridge Contract](bridge.md)
 - [Relayer Endowment Contract](relayer_endowment.md)
-- [Simulation Report](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/sim/report.md)
+- [Simulation Report](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/sim/report.md)
 - [Relayer Economics](../relayer/relayer_economics.md)

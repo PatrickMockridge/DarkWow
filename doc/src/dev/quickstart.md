@@ -55,7 +55,7 @@ The test pipeline supports four modes — two local devnet modes plus two join m
 
 See the [darkwow-testnet README] for the full modes comparison table, Docker image catalog, and compose profile reference.
 
-[darkwow-testnet README]: https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md
+[darkwow-testnet README]: https://github.com/PatrickMockridge/DarkWow/blob/linear-master/contrib/docker/darkwow-testnet/README.md
 
 → [Level 3: Containerized Localnet](testing/level-3-localnet.md)
 
@@ -111,7 +111,7 @@ docker run -d --name dwow-node --network=host \
 ./contrib/docker/darkwow-testnet/join-testnet.sh --mode merge
 ```
 
-→ [darkwow-testnet README](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md)
+→ [darkwow-testnet README](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/contrib/docker/darkwow-testnet/README.md)
 
 ## Contract Suite
 
@@ -150,8 +150,8 @@ customize contracts to suit your needs, run the test pipeline to validate, deplo
 to a localnet, then scale to a shared devnet.
 
 ```bash
-git clone https://codeberg.org/PatrickM123/darkwow
-cd darkwow
+git clone https://github.com/PatrickMockridge/DarkWow
+cd DarkWow
 make                                    # Build everything
 
 # Fast iteration: modify a contract, then

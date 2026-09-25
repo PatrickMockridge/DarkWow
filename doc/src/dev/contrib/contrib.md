@@ -4,8 +4,8 @@
 
 1. **Clone and build** (5 minutes):
    ```
-   git clone https://codeberg.org/PatrickM123/darkwow
-   cd darkwow
+   git clone https://github.com/PatrickMockridge/DarkWow
+   cd DarkWow
    rustup target add wasm32-unknown-unknown
    make
    ```
@@ -208,7 +208,7 @@ Reports are in `target/llvm-cov/html/index.html`.
 
 Report vulnerabilities privately via Codeberg:
 
-1. Go to the [Security](https://codeberg.org/PatrickM123/darkwow/security) tab
+1. Go to the [Security](https://github.com/PatrickMockridge/DarkWow/security) tab
 2. Use **"Report a vulnerability"** to submit details privately
 
 This notifies the maintainers without disclosing the issue publicly. Expect a

@@ -116,9 +116,10 @@ All self-contained with their own ZK circuits, tests, and harnesses.
 ## Quick Start
 
 ```bash
-git clone https://codeberg.org/PatrickM123/darkwow
-# Mirror: git clone https://github.com/PatrickMockridge/DarkWow
-cd darkwow
+git clone https://github.com/PatrickMockridge/DarkWow
+# Development started on Codeberg and has moved to GitHub: Codeberg has banned
+# cryptocurrency projects, so this repository is no longer hosted there.
+cd DarkWow
 rustup target add wasm32-unknown-unknown
 make
 

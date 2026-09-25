@@ -10,14 +10,14 @@ a developer-focused overview with code examples.
 
 | Contract | Purpose | Key Features |
 |---------|---------|--------------|
-| [PromissoryNote](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/README.md) | DeFi token layer | Bearer instruments, Pedersen commitments |
-| [NativeToken](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/native_token/README.md) | Consensus token layer | Fee payments, block rewards |
-| [Oracle](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/oracle/README.md) | External data feeds | Stake-based attestations |
+| [PromissoryNote](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/src/contract/promissory_note/README.md) | DeFi token layer | Bearer instruments, Pedersen commitments |
+| [NativeToken](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/src/contract/native_token/README.md) | Consensus token layer | Fee payments, block rewards |
+| [Oracle](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/src/contract/oracle/README.md) | External data feeds | Stake-based attestations |
 | [DAO-Escrow](../../../src/contract/dao_escrow/README.md) | Community insurance | DAO-governed endowment |
-| [Auction](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/auction/README.md) | Sealed-bid auctions | Escrow integration |
-| [Attestation](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/attestation/README.md) | Credential verification | Predicate-based claims |
-| [Tender](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/tender/README.md) | Request for proposals | O-Cap capability gating |
-| [Labor Market](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/labor_market/README.md) | Service marketplaces | Milestone-based payments |
+| [Auction](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/src/contract/auction/README.md) | Sealed-bid auctions | Escrow integration |
+| [Attestation](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/src/contract/attestation/README.md) | Credential verification | Predicate-based claims |
+| [Tender](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/src/contract/tender/README.md) | Request for proposals | O-Cap capability gating |
+| [Labor Market](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/src/contract/labor_market/README.md) | Service marketplaces | Milestone-based payments |
 | [Bridge](contracts/bridge.md) | Cross-chain transfers | Object Capability Security |
 | [DEX](contracts/dex.md) | Atomic swap DAO | Minimal viable information |
 | [Identity](contracts/identity.md) | Credential proofs | Selective disclosure |
@@ -38,7 +38,7 @@ a developer-focused overview with code examples.
 | [Game Room](../../../src/contract/game_room/README.md) | Gaming | Multi-game lobby |
 | [Darkbet Exchange](../../../src/contract/darkbet_exchange/README.md) | Prediction market | Binary options with O-Cap |
 | [OTC Swap](../../../src/contract/otc_swap/src/lib.rs) | P2P trading | OTC token swaps |
-| [MultiSig](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/multisig/README.md) | Threshold voting | N-of-M private ballots |
+| [MultiSig](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/src/contract/multisig/README.md) | Threshold voting | N-of-M private ballots |
 | [Deployooor](../../../src/contract/deployooor/README.md) | Contract deployment | Production deployment path |
 
 ## Core Principles

@@ -20,7 +20,7 @@ control.
 
 ```bash
 git clone https://github.com/PatrickMockridge/DarkWow.git
-cd darkwow
+cd DarkWow
 cargo build -p dwow_wallet --release
 DRK="./target/release/dwow_wallet"
 NETWORK="darkwow-testnet"

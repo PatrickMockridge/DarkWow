@@ -5,7 +5,7 @@ run the p2p network, we'll need to implement our own daemon.  So we'll
 start building `dchat` by creating a daemon that we call `dchatd`.
 
 To do this, we'll make use of a DarkWow macro called
-[async_daemonize](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/util/cli.rs).
+[async_daemonize](https://github.com/PatrickMockridge/DarkWow/blob/linear-master/src/util/cli.rs).
 
 `async_daemonize` is the standard way of daemonizing DarkWow binaries. It
 implements TOML config file configuration, argument parsing and a

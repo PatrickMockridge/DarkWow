@@ -22,7 +22,7 @@ ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 WORKDIR /app
 
-RUN git clone https://codeberg.org/PatrickM123/darkwow.git /app && \
+RUN git clone https://github.com/PatrickMockridge/DarkWow.git /app && \
     git -C /app checkout linear-master
 
 RUN cargo build --release -p zkas

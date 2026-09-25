@@ -229,8 +229,8 @@ Running a relayer requires maintaining full nodes for the chains you're servicin
 
 ```bash
 # Clone the repository
-git clone https://codeberg.org/PatrickM123/darkwow.git
-cd dwow
+git clone https://github.com/PatrickMockridge/DarkWow.git
+cd DarkWow
 
 # Build the universal relayer
 cargo build -p universal_relayer --release
