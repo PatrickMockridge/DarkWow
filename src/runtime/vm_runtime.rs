@@ -813,45 +813,31 @@ impl Runtime {
         // for 8 gas. Related and UNVERIFIED: `MemoryFill` is likewise 8 gas flat for
         // any length with bulk-memory enabled, which would make a multi-GiB fill
         // nearly free. Flagged, not fixed, and not introduced here.
-        // The payload is stashed **below `__heap_base`** — the shadow stack's unused
-        // space, which is the one region the guest's allocator never hands out. It fits
-        // only while `payload.len()` is under `__stack_pointer`, which is **1,048,576**
-        // in all 32 artifacts, with `.rodata` beginning exactly at that address and the
-        // heap at `__heap_base` (1,151,648) above it.
+        // The guest allocates the buffer this payload goes into; the host only writes
+        // it. See `__dwow_alloc` in `src/sdk/src/wasm/entrypoint.rs` for why no
+        // host-chosen address works: dlmalloc owns `[__heap_base, max)`, so a payload
+        // parked above `__heap_base` can be reached by a later allocation, and one
+        // parked below `__stack_pointer` shares that window with a descending stack.
+        // Handing the choice to the allocator is the only arrangement in which nothing
+        // else can take the buffer.
         //
-        // Past that the write covers `.rodata`, the bss tail and the allocator's own
-        // state — and the guest's first `malloc` returns payload bytes. That is the
-        // `out of bounds memory access` in `dlmalloc::malloc` → `finish_grow` →
-        // `dwow_serial::deserialize` that deployooor's own 1,494,589-byte artifact
-        // produced: it is the only artifact over the window, which is why it was the
-        // only one of 32 that failed.
+        // Two earlier attempts and why they failed, recorded because both looked right:
+        // writing at offset 0 put the payload in the shadow stack, which is sound only
+        // while `payload.len() < __stack_pointer` — and `deployooor`'s own
+        // 1,494,589-byte artifact, the only one of 32 over that window, overwrote
+        // `.rodata` and dlmalloc's state instead, surfacing as `out of bounds memory
+        // access` in `dlmalloc::malloc` → `dwow_serial::deserialize`. Writing at the
+        // memory's pre-growth end put it ~28 KB above `__heap_base`, *inside* the heap,
+        // so the guest's own allocations overwrote it.
         //
-        // So an oversized payload is **refused**, loudly, rather than written. This is
-        // a *policy* limit, not a validity verdict — the transaction is not malformed,
-        // it asks for something this ABI cannot carry. Making the ABI carry it is a
-        // guest-side change (the payload must be placed where the allocator cannot
-        // reach, which the guest has to be told about), and it is its own unit.
-        //
-        // An earlier attempt moved the payload to the memory's pre-growth end and
-        // handed the guest that address. That was WRONG and the tree said so: the
-        // pre-growth end is only ~28 KB above `__heap_base`, so the payload sat inside
-        // the heap and the guest's own allocations overwrote it — which surfaced
-        // further along the deploy as `unreachable` inside `wasmparser`, validating
-        // bytes that were no longer the artifact.
-        const GUEST_STACK_WINDOW: usize = 1_048_576;
-        if payload.len() >= GUEST_STACK_WINDOW {
-            return Err(Error::WasmerRuntimeError(format!(
-                "payload of {} bytes does not fit the guest's stack window ({} bytes): the \
-                 host stashes the payload below `__heap_base`, the only region the guest's \
-                 allocator never returns, and a larger payload would be written over \
-                 `.rodata` and the allocator's state",
-                payload.len(),
-                GUEST_STACK_WINDOW
-            )))
-        }
+        // `set_memory_page_size` stays, but no longer bounds anything: it gives the
+        // allocator a contiguous region so its first real allocation does not
+        // immediately have to grow the memory itself. The `>= 1 MiB` refusal that used
+        // to follow it is gone — with the payload out of the stack window there is no
+        // length at which this ABI cannot carry it.
         let pages_required = payload.len() / WASM_PAGE_SIZE + 1;
         self.set_memory_page_size(pages_required as u32)?;
-        self.copy_to_memory(&payload)?;
+        let payload_ptr = self.write_payload(&payload)?;
 
         debug!(target: "runtime::vm_runtime", "Getting {} function", section.name());
         let entrypoint = self.instance.exports.get_function(section.name())?;
@@ -868,10 +854,13 @@ impl Runtime {
         // Gas metering bounds instruction count but not wall-clock time.
         // A contract with 400M expensive opcodes can consume unbounded CPU.
         let call_start = std::time::Instant::now();
-        // The guest reads the payload from offset 0 — the shadow-stack region the
-        // allocator never returns. See `copy_to_memory` for why that offset, and for the
-        // refusal that keeps the payload inside it.
-        let ret = match entrypoint.call(&mut self.store, &[Value::I32(0_i32)]) {
+        // The guest reads the payload from the buffer it allocated for us, above.
+        let call_result = entrypoint.call(&mut self.store, &[Value::I32(payload_ptr as i32)]);
+        // Released on both paths: the guest's `deserialize` has read the payload by the
+        // time the call returns, and one `Runtime` serves metadata, exec and update in
+        // sequence (`execution.rs`), so a buffer left behind would accumulate per section.
+        self.release_payload(payload_ptr, payload.len());
+        let ret = match call_result {
             Ok(retvals) => {
                 let elapsed = call_start.elapsed();
                 // MAX_WASM_CALL_TIME is a soft limit — exceeded calls log a
@@ -1166,23 +1155,55 @@ impl Runtime {
         m
     }
 
-    /// Copy payload to the start of the memory
-    /// Copy the payload into guest memory at offset 0.
+    /// Ask the guest to allocate a buffer and write the payload into it.
     ///
-    /// Offset 0 is not arbitrary: it is the guest's **shadow stack** region, which lies
-    /// below `__heap_base` and is therefore the one region the guest's allocator never
-    /// hands out. The payload fits only below `__stack_pointer` — 1,048,576, uniform
-    /// across all 32 artifacts — and the caller **refuses** anything larger rather than
-    /// writing it over `.rodata` and the allocator's state. See the call site.
-    ///
-    /// (An attempt on 2026-09-25 moved this write to the memory's pre-growth end and
-    /// handed the guest that address. It was wrong: the pre-growth end sits ~28 KB above
-    /// `__heap_base`, i.e. *inside* the heap, so the guest's own allocations overwrote
-    /// the payload.)
-    fn copy_to_memory(&self, payload: &[u8]) -> Result<()> {
+    /// Returns the pointer the guest must be handed, and which
+    /// [`Self::release_payload`] must be given afterwards. The buffer belongs to the
+    /// guest's allocator, so nothing else — not a later `malloc`, not the shadow stack —
+    /// can take it. See `__dwow_alloc` in `src/sdk/src/wasm/entrypoint.rs`.
+    fn write_payload(&mut self, payload: &[u8]) -> Result<u32> {
+        // The store is not `Clone`, so the allocation call and the memory write are
+        // sequenced rather than sharing a handle: `alloc` is an owned `Function` handle,
+        // and `get_function`'s borrow of `self.instance` ends when it returns.
+        let ret = match self.instance.exports.get_function("__dwow_alloc") {
+            Ok(alloc) => alloc.call(&mut self.store, &[Value::I32(payload.len() as i32)])?,
+            Err(e) => {
+                return Err(Error::WasmerRuntimeError(format!(
+                    "contract does not export __dwow_alloc, so the host has nowhere sound to \
+                     write the {} -byte payload: {e}",
+                    payload.len()
+                )))
+            }
+        };
+        let Some(Value::I32(ptr)) = ret.first() else {
+            return Err(Error::WasmerRuntimeError(
+                "__dwow_alloc did not return an i32 pointer".to_string(),
+            ))
+        };
+        let ptr = *ptr as u32;
         let env = self.ctx.as_ref(&self.store);
         let memory_view = env.memory_view(&self.store);
-        memory_view.write_slice(payload, 0)
+        memory_view.write_slice(payload, ptr)?;
+        Ok(ptr)
+    }
+
+    /// Release a buffer obtained from [`Self::write_payload`].
+    ///
+    /// Errors are logged rather than propagated: the caller has already decided the
+    /// outcome of the section call, and a failed deallocation must not turn a successful
+    /// call into a failed one. The buffer dies with the instance in any case.
+    fn release_payload(&mut self, ptr: u32, len: usize) {
+        let Ok(dealloc) = self.instance.exports.get_function("__dwow_dealloc") else {
+            debug!(
+                target: "runtime::vm_runtime",
+                "no __dwow_dealloc export; the payload buffer dies with the instance"
+            );
+            return
+        };
+        if let Err(e) = dealloc.call(&mut self.store, &[Value::I32(ptr as i32), Value::I32(len as i32)])
+        {
+            debug!(target: "runtime::vm_runtime", "release_payload({ptr}, {len}) failed: {e}");
+        }
     }
 
     /// Serialize contract payload to the format accepted by the runtime functions.

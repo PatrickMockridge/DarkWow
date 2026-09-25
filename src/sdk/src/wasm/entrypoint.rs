@@ -88,6 +88,55 @@ macro_rules! __contract_exports {
                 Err(e) => e.into(),
             }
         }
+
+        /// Allocate the buffer the host writes a call payload into.
+        ///
+        /// **Why this exists.** Every section export above takes `input: *mut u8` and the host
+        /// writes `[32-byte contract_id][u64 length][payload]` there. The host used to write
+        /// that at offset 0, inside the guest's **shadow stack**: the one region the allocator
+        /// never returns, and safe only while the payload fits below `__stack_pointer`
+        /// (1,048,576 in every artifact). A payload of 1,494,589 bytes — `deployooor`
+        /// deploying its own artifact, the only one over the window — overwrote `.rodata` and
+        /// dlmalloc's own state, so the guest's first `malloc` inside `deserialize` allocated
+        /// from payload bytes.
+        ///
+        /// No host-side placement is sound, because dlmalloc owns `[__heap_base, max)`: the
+        /// heap can grow to the memory's maximum (256 MB, set by the host's `MemoryType`), so
+        /// a payload parked anywhere above `__heap_base` can be reached by a later allocation,
+        /// and one parked below `__stack_pointer` shares the window with a descending stack.
+        /// Handing the choice to the allocator is the only arrangement in which nothing else
+        /// can take the buffer.
+        ///
+        /// **The contract with the host:** call this, write the payload at the returned
+        /// pointer, pass that pointer to the section export, then call [`__dwow_dealloc`].
+        /// The buffer must not be freed by the guest before then.
+        ///
+        /// # Safety
+        /// Returns a pointer to `len` writable bytes owned by the guest, or a dangling
+        /// pointer if `len` is 0. The caller must pass the same `len` to `__dwow_dealloc`.
+        #[no_mangle]
+        pub unsafe extern "C" fn __dwow_alloc(len: u32) -> *mut u8 {
+            let mut buf = ::std::vec::Vec::<u8>::with_capacity(len as usize);
+            let ptr = buf.as_mut_ptr();
+            // Ownership moves to the caller, which returns it through `__dwow_dealloc`.
+            // Dropping the `Vec` here would free the buffer the host is about to write.
+            ::core::mem::forget(buf);
+            ptr
+        }
+
+        /// Release a buffer from [`__dwow_alloc`].
+        ///
+        /// # Safety
+        /// `ptr` and `len` must be exactly the values `__dwow_alloc` returned and was called
+        /// with, and the buffer must not be used afterwards.
+        #[no_mangle]
+        pub unsafe extern "C" fn __dwow_dealloc(ptr: *mut u8, len: u32) {
+            if !ptr.is_null() && len > 0 {
+                // Reconstructed with length 0 and the original capacity: `__dwow_alloc`
+                // `forget`s a `Vec` of capacity `len` that never held any elements.
+                drop(::std::vec::Vec::from_raw_parts(ptr, 0, len as usize));
+            }
+        }
     };
 }
 

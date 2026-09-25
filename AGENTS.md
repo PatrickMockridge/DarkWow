@@ -98,10 +98,13 @@ These are mechanical, not advisory. They are here because agents have broken eac
   artifact at once. Rebuild once, after the last such edit.
 - **A stale contract artifact cannot be refreshed by `make all`.** It is `make -C src/contract/<name> clean &&
   make -C src/contract/<name> all`; the Makefile exits 1 and says so.
-- **`bin/dwowd/genesis_hash.txt`** pins genesis (`c8afdeb7…`). Any change to a genesis artifact's inputs —
+- **`bin/dwowd/genesis_hash.txt`** pins genesis. Any change to a genesis artifact's inputs —
   including `src/sdk/**` — moves it: rebuild, recompute, re-record, re-run the pin test
   (`bin/dwowd/src/tests/genesis.rs`) and its negative control. This is a routine, recorded procedure the repository
-  has performed repeatedly; it is **not** a reason to defer a fix (R1).
+  has performed repeatedly (17 times by 2026-09-25); it is **not** a reason to defer a fix (R1).
+  **The hash itself is deliberately not quoted here.** It was, and it went stale within hours of being written —
+  which is the failure mode a constant in a doctrine document always has. Quote the procedure, never the value;
+  `genesis_pin_is_current` is what reports the value.
 - **Never modify `src/zk/vm.rs`.** The VM is off-limits.
 - **Never `sed` Rust.** Use precise edits so changes are auditable.
 - **Never `git add -A`, `git stash`, `checkout` or `reset` in the shared tree.** Several sessions share it; commit
