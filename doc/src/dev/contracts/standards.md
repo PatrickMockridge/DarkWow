@@ -56,7 +56,21 @@ DARKWOW (burn-mint):
 
 ### Standard: Poseidon-Only
 
-**All internal DarkWow ZK circuits MUST use Poseidon-only design.**
+**Every hash in an internal DarkWow ZK circuit MUST be domain-separated Poseidon. Curve operations are
+permitted only where the mathematics requires them — a Pedersen value commitment, or public-key derivation
+— and MUST NOT stand in for a hash.**
+
+The heading is shorthand, and the earlier statement of this rule ("all cryptographic operations use
+Poseidon hash, no EC operations in ZK") was false of the shipped corpus in both directions, so it is
+recorded here rather than repeated. **Pedersen value commitments are required, not tolerated**: value
+conservation is proven by additive homomorphism, which a hash cannot provide — all five `promissory_note`
+circuits carry the block (`redeem.zk:44-46`, `transfer.zk:44-46`, and the same four lines in `issue.zk`,
+`register_type.zk`, `revoke.zk`), and `purse/proof/{deposit,withdraw}.zk` carry it with three commitments apiece
+(`old`, the amount moved, and `new`) and `purse/proof/balance.zk:57-60` with one. **Curve key derivation is also live**: 23 contracts' circuits call
+`ec_mul_base(secret, NULLIFIER_K)` (e.g. `escrow/proof/claim.zk:67`, `bridge/proof/deposit.zk:35`), while
+`promissory_note`, `box` and `purse` derive the key with `poseidon_hash(witness_base(7), secret)` instead.
+Which family a contract belongs to is visible in its circuits, and a claim that one of the two is used
+everywhere is the claim this paragraph exists to stop.
 
 ```zk
 // CORRECT: Poseidon-only circuit
@@ -78,7 +92,8 @@ circuit "ExampleV1" {
 }
 ```
 
-**Exception**: External chain verification (Bitcoin, Ethereum signatures) MAY use EC, but internal DarkWow circuits must remain Poseidon-only.
+**Exception**: External chain verification (Bitcoin, Ethereum signatures) MAY use EC. Internally, the rule
+binds the *hashes* — internal DarkWow circuits must hash with domain-separated Poseidon.
 
 ---
 

@@ -55,7 +55,8 @@ markets are volatile. A permanent subsidy guarantees a minimum hash rate forever
 
 Bitcoin halves every 4 years in a single step — miners lose 50% of revenue
 overnight. DarkWow uses the same 4-year half-life but applies it continuously:
-`R(h) = max(R₀ × 2^(-h/H), R_tail)`. Every block's reward is fractionally
+`R(h) = max(R₀ × 2^(-(h-1)/H), R_tail)` — the exponent is `height - 1`, so
+`R(1) = R₀` (§4.4 derives it). Every block's reward is fractionally
 smaller than the last. The emission curve is identical in total area under the
 curve — it just doesn't have step-function shocks.
 
@@ -888,13 +889,27 @@ R_tail = ⌊21,000,000 × 0.01 × 10^8 / 262,980⌋
 
 ### 4.5 Supply Over Time
 
-| Years after launch | Approx total supply | Annual inflation rate |
-|-------------------|---------------------|----------------------|
-| 20 | ~21.0M | 1.0% |
-| 50 | ~27.3M | 0.77% |
-| 100 | ~37.8M | 0.56% |
-| 200 | ~58.8M | 0.36% |
-| 500 | ~115.5M | 0.18% |
+| Years after launch | Height | Exact total supply | Annual inflation rate |
+|-------------------|--------|--------------------|----------------------|
+| 20 | 5,259,600 | 20,526,004 DRKW | 1.02% |
+| 50 | 13,149,000 | 26,826,004 DRKW | 0.78% |
+| 100 | 26,298,000 | 37,326,004 DRKW | 0.56% |
+| 200 | 52,596,000 | 58,326,004 DRKW | 0.36% |
+| 500 | 131,490,000 | 121,326,004 DRKW | 0.17% |
+
+Each figure is the **exact integer sum** of `expected_reward(h)` for `h = 1..height` — the function the
+chain runs, not an evaluation of the continuous curve. The reference implementation is
+`sim/crypto.py`'s `expected_cumulative_supply` (whose docstring pins it to
+`src/sdk/src/blockchain.rs::expected_reward`); `verify_cumulative_supply.sh` compares a running node's
+supply against that same function. An earlier version of this table printed the pure exponential's
+*infinite-horizon* asymptote, `R₀ × H / ln 2 = 21.0M`, as the 20-year total and then added
+`(years − 50) × 0.21M` of tail emission — which is why the 500-year row was 5.8M low: the tail runs
+from height 4,327,299 (16.45 years), not from year 50.
+
+Reproducing the sums without a 13-million-iteration loop: the per-block reward reaches the tail floor at
+height **4,327,299**, where the cumulative supply is **19,781,525 DRKW**; from there the series is linear,
+`S(H) = 19,781,525 + (H − 4,327,299) × 0.79853981 DRKW`. Both forms were measured against each other at
+the 20- and 50-year marks before this table was written.
 
 Inflation approaches zero as total supply grows. The tail maintains a minimum
 security budget — it does not meaningfully inflate the supply.

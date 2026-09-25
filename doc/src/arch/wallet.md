@@ -135,7 +135,9 @@ a `SecretKey` the wallet holds.
 
 The transaction-level Schnorr signature (`create_sigs` / `verify_sigs`) is removed.
 Authorization is via ZK proof + nullifier exclusively. The ZK circuit proves
-secret key knowledge (`ec_mul_base(secret, NULLIFIER_K)`), the contract verifies
+secret key knowledge — by `ec_mul_base(secret, NULLIFIER_K)` in the curve-derivation contracts (escrow,
+bridge, oracle and their siblings) or by `poseidon_hash(witness_base(7), secret)` in `promissory_note`,
+`box` and `purse`; see contract-standards.md §3 — the contract verifies
 the proof against public inputs from metadata, and the nullifier prevents replay.
 No signature is required, produced, or verified at any layer of the wallet stack.
 See contract-standards.md §3 for the full rationale.

@@ -58,9 +58,15 @@ Philosophy: **Tokens are pipework, not reactors.** One job, done well.
 ### promissory_note
 
 Privacy-first DeFi token contract:
-- **Poseidon-only ZK circuits**: All cryptographic operations use Poseidon hash. No EC operations in ZK.
-- **Commitment model**: `poseidon_hash(pub, value, asset_id, spend_hook, user_data, blind)`
-- **Function IDs**: TokenMintV1, MintV1, BurnV1, TransferV1, OtcSwapV1
+- **Poseidon for every commitment and derivation**: the coin, token and nullifier hashes, and the key
+  derivation `poseidon_hash(witness_base(7), spend_secret)`, all use domain-separated Poseidon. The one
+  exception is the **Pedersen value commitment** (`redeem.zk:44-46`, `transfer.zk:44-46`, and the same
+  four-line block in `issue.zk`, `register_type.zk` and `revoke.zk`):
+  EC operations are what give value commitments their additive homomorphism, and conservation is proven
+  through it. "Poseidon-only" was the earlier claim and the shipped circuits do not satisfy it.
+- **Commitment model**: `coin = poseidon_hash(witness_base(4), coin_public, value, asset_id, coin_spend_hook, user_data, commitment_blind)`
+- **Function IDs**: `RegisterTypeV1 0x00`, `RedeemV1 0x01`, `IssueV1 0x02`, `RevokeV1 0x03`,
+  `TransferV1 0x04`, `OtcSwapV1 0x05` (`promissory_note/src/lib.rs:74-99`)
 
 ## Cross-Contract Calls
 

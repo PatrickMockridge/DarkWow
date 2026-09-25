@@ -88,7 +88,13 @@ The signature pubkeys component SHALL be empty `vec![]`.
 - **Signature pubkeys**: SHALL be `Vec::new()` (empty). Schnorr signatures are PROHIBITED in contract metadata.
 
 DarkWow contracts authorize via ZK proofs + nullifiers (o-cap model). Every ZK circuit
-proves secret key knowledge via `ec_mul_base(secret, NULLIFIER_K)` — this IS the authorization.
+proves secret key knowledge, and the proof binds the nullifier — this IS the authorization. The
+*derivation* of the key from the secret takes one of two forms in this tree, and the earlier statement of
+this paragraph named only the first as if it were universal: **curve derivation**,
+`ec_mul_base(secret, NULLIFIER_K)` (23 contracts, e.g. `escrow/proof/claim.zk:67`,
+`bridge/proof/deposit.zk:35`), and **Poseidon derivation**,
+`poseidon_hash(witness_base(7), secret)` (`promissory_note/proof/revoke.zk:39`, `box/proof/put.zk:36`,
+`purse/proof/deposit.zk:48`). Both are secret-key knowledge proofs; neither is a signature.
 A Schnorr signature adds no security and actively harms privacy by deanonymizing the signer
 to every verifier. Per ocap.md §2: "The verifier observes only: the predicate result, the
 nullifier, and the commitment's inclusion proof. Nothing else." A Schnorr pubkey in metadata

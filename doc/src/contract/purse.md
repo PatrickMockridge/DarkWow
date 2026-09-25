@@ -27,7 +27,6 @@ proven via additive homomorphism in the circuit.
 | `↓spend` | Circuit constrains `owner_pub == poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)` |
 | `↓nullify` | Circuit constrains `nullifier == poseidon_hash(DOMAIN_NULLIFIER, owner_secret, purse_id, state_nonce)` |
 | `↓prove-inclusion` | Circuit constrains `merkle_root(leaf_pos, path, leaf) == expected_root` |
-| `↓denominate` | Circuit constrains `token_commit == poseidon_hash(DOMAIN_TOK_COMMIT, asset_id, token_blind)` |
 | `↓conserve` | Circuit constrains Pedersen homomorphism: `old_commit + deposit_commit == new_commit` |
 | `↓commit` | Apply appends new leaf to Merkle tree, marks nullifier |
 
@@ -36,8 +35,15 @@ Same as Deposit plus:
 | `↓bound` | Circuit constrains `withdraw_amount > 0` and `withdraw_amount <= old_balance` |
 
 ### Balance
+| Barb | Mechanism |
+|------|-----------|
 | `↓prove-inclusion` | Circuit constrains Merkle inclusion of current state |
-No `↓nullify` — read-only operation.
+| `↓denominate` | Circuit constrains `token_commit == poseidon_hash(DOMAIN_TOK_COMMIT, asset_id, token_blind)` (`balance.zk:66-68`) |
+
+No `↓nullify` — read-only operation. `↓denominate` is listed here rather than under Deposit because
+`balance.zk` is the only Purse circuit that derives `token_commit`; `deposit.zk` and `withdraw.zk` carry
+no `DOMAIN_TOK_COMMIT` and no `token_blind`, and the manifest requires no `Denominate` barb on any
+operation (`purse/manifest.toml`, `[[actions]]`).
 
 ## The Four-Component Flow
 
@@ -62,10 +68,14 @@ balance_commit = pedersen_commit(balance, balance_blind)
 
 | Tree | Purpose |
 |------|---------|
-| `purses` | Purse records |
 | `nullifiers` | Spent nullifiers (flat DB) |
 | `info` | Merkle tree data, root pointers |
 | `purse_roots` | Historical Merkle roots |
+
+These three are what `init_contract` creates (`purse/src/entrypoint/mod.rs:24-27`) and what the manifest
+declares; there is no `purses` tree. The `Purse { version, purse_id, token_commit, balance_commit,
+owner_commit }` struct in `purse/src/model/mod.rs:108` is not persisted by any entrypoint — its own doc
+comment says so — and `apply` writes only the Merkle leaf, the nullifier, and the block anchor.
 
 ## Circuit Version
 

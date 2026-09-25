@@ -50,6 +50,17 @@
 # retired two entries from the defect column without touching this file's rules, which is what the
 # rules were for. `OBL-C81` carries the correction to its own proposition (see the register).
 #
+# **RECOUNTED 2026-09-25, and the finding is that these classes overlap — which is why three documents
+# carried three numbers.** Measured over the 51 data entries: 44 name an arm (a)/(b)/(c), 7 name a defect
+# row (11 row-mentions across them — `OBL-C81` ×5, `OBL-C84` ×4, `OBL-C83` ×2, and an entry may name more
+# than one), 5 are marked inert, 1 is deferred. **These are not a partition**: an entry can be "arm (b)"
+# and "inert" at once, and the container rows C81/C83/C84 overlap by construction, so no sum of them equals
+# 51 and none is printed as a total here. The one mechanical number is the entry count, and the checker
+# derives it rather than restating it:
+# `PASS: no unexcepted vacuous bindings (178 circuit(s) scanned; N adjudicated ...)`. The class of a given
+# entry is its own text; `hooks/pre-commit` and the checker's header no longer print a count of defects,
+# for the reason the paragraph above records three times.
+#
 # **Six citations re-pinned, each re-read at its new line rather than renumbered by an offset.** The
 # cause is ordinary — the stablecoin and subscription sweeps moved those files — and the effect is the
 # one this file's reason column exists to prevent: a citation that does not resolve is a mechanism a

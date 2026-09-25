@@ -1707,8 +1707,10 @@ the contract SHALL:
 1. **`↓gate`** — Dispatch to the correct function handler by the selector byte.
 2. **`↓spend`** — Verify that the nullifier was produced by knowledge of the
    capability's authorization secret (`poseidon_hash(secret, resource_id)`).
-   The ZK circuit proves secret key knowledge via `ec_mul_base(secret, NULLIFIER_K)`
-   and constrains the nullifier as a public input. No Schnorr signature is involved.
+   The ZK circuit proves secret key knowledge — via `ec_mul_base(secret, NULLIFIER_K)` or via
+   `poseidon_hash(witness_base(7), secret)`, depending on the contract's derivation family (see
+   dev/contracts/contract-standards.md §3) — and constrains the nullifier as a public input. No Schnorr
+   signature is involved.
 3. **`↓nullify`** — Check that the input's nullifier is not already in the
    nullifiers_db (`db_contains_key(nullifiers_db, &nullifier.to_bytes()) == false`).
 4. **`↓prove-inclusion`** — Verify that the input's Merkle root exists in the

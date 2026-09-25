@@ -39,9 +39,12 @@
 #
 # THE LIST IS A RATCHET, NOT AN AMNESTY, and this is the whole of what changed on 2026-09-23.
 # The detector stayed deliberately shallow — it cannot see a host — and the 57 candidates it
-# reports are adjudicated by *reading*, recorded one line at a time in that list. Fifteen of them
-# are genuine defects and their entries say so, naming OBL-C81, C82, C83, C84 and OBL-C75's first
-# measured instance; the rest name the mechanism. A new site anywhere still fails, which is what
+# reports are adjudicated by *reading*, recorded one line at a time in that list. That sweep found
+# **15** genuine defects at the time, each named in a register row (OBL-C81, C82, C83, C84 and
+# OBL-C75's first measured instance) and each since repaired or scheduled; the rest name the
+# mechanism. What the list holds *now* is its own entries' text: no count of defects is restated
+# here, because the classes overlap — an entry can be an arm and inert at once — and every tally
+# this file's header carried had drifted from its own contents. A new site anywhere still fails, which is what
 # the report-only mode was waiting for: before the sweep the class was invisible, and after it the
 # class is scheduled and watched. See script/circuit_pubkey_binding_exceptions.txt's own header
 # for why the classifier was not made cleverer to shrink the list.

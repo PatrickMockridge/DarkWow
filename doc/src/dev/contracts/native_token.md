@@ -168,7 +168,7 @@ bolted onto the side — it is part of how minting works. Every coinbase call
 carries the cumulative chain forward by exactly the expected reward.
 
 DarkWow uses continuous exponential decay with a ~4-year half-life
-(`HALF_LIFE_BLOCKS = 1_051_920`): `R(h) = max(R₀ × 2^(-h/H), R_tail)` with
+(`HALF_LIFE_BLOCKS = 1_051_920`): `R(h) = max(R₀ × 2^(-(h-1)/H), R_tail)` with
 `R₀ = 1_383_764_049` base units (~13.838 DRKW) at genesis. The decay
 asymptotically approaches the 21M DRKW reference supply; when the per-block
 reward drops below the tail floor `R_tail = 79_853_981` (~0.7985 DRKW, ~16.5
@@ -343,9 +343,9 @@ fees continue regardless.
 | | NativeToken | PromissoryNote |
 |---|---|---|
 | Role | Consensus | DeFi |
-| Token | DRKW (single) | Multiple (via TokenMint) |
+| Token | DRKW (single) | Multiple (via RegisterTypeV1) |
 | Supply tracking | Pedersen cumulative chain | Per-token commitment count |
-| EC operations | Yes (Pedersen) | No (Poseidon-only) |
+| EC operations | Yes (Pedersen value commitment) | Yes (Pedersen value commitment — every hash is Poseidon) |
 
 ## Reference
 

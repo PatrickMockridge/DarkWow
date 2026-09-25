@@ -75,10 +75,10 @@ if printf '%s' "$OUT" | grep -q '^EXCEPTED:'; then
     N="$(printf '%s' "$OUT" | grep -c '^EXCEPTED:')"
     echo ""
     echo "OK: $N vacuous-binding site(s) adjudicated and scheduled (OBL-Z18)."
-    echo "  Fifteen are genuine defects and their entries name the register rows — OBL-C81, C82,"
-    echo "  C83, C84 and OBL-C75; the rest name the mechanism that makes them sound. This hook now"
-    echo "  fails on a finding that is NOT in that list. See"
-    echo "  script/circuit_pubkey_binding_exceptions.txt, or run scripts/check-pubkey-binding.sh."
+    echo "  Each entry names either the register row that schedules its repair or the mechanism that"
+    echo "  makes it sound, and this hook fails on a finding that is NOT in that list. No count of"
+    echo "  defects is printed here: the classes overlap, so every tally that was written drifted."
+    echo "  See script/circuit_pubkey_binding_exceptions.txt, or run scripts/check-pubkey-binding.sh."
 else
     echo "OK: no vacuous bindings."
 fi
