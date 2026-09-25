@@ -154,7 +154,15 @@ impl<'a> ContractTestSpec<'a> {
 ///
 /// Idempotent: `set_global_default` fails after the first install, which is the
 /// expected outcome for every test after the first in a process.
-fn init_contract_logging() {
+///
+/// `pub(crate)` because the standalone pipeline tests need it too. Until
+/// 2026-09-25 it was private to this runner, so `DWOW_TEST_LOGS=1` did nothing for
+/// `tests::pipeline::*` — which is where `test_all_contracts_deploy` lives, the one
+/// test that deploys all 32 contracts and reports a count. A batch run that names
+/// the contracts it failed to deploy could not say *why* any of them failed, since
+/// the contract's own `msg!` — the only channel that carries the reason — was
+/// discarded.
+pub(crate) fn init_contract_logging() {
     if std::env::var("DWOW_TEST_LOGS").is_err() {
         return;
     }

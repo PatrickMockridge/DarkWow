@@ -439,6 +439,7 @@ impl ContractTestingPipeline {
 /// passes the moment the ABI can carry the payload.
 #[test]
 fn test_deployooor_deploys_a_contract_larger_than_the_guest_stack() -> Result<()> {
+    crate::tests::uniform_runner::init_contract_logging();
     // Guard the witness against itself: if the artifact ever falls inside the window,
     // this test stops exercising the defect and a pass would then mean nothing.
     // `__stack_pointer`'s value is the measured layout, not a chosen figure — every
@@ -464,6 +465,7 @@ fn test_deployooor_deploys_a_contract_larger_than_the_guest_stack() -> Result<()
 /// Deploy a specific contract (default: dex, override via CONTRACT_NAME env).
 #[test]
 fn test_pipeline() -> Result<()> {
+    crate::tests::uniform_runner::init_contract_logging();
     let contract_name = env::var("CONTRACT_NAME").unwrap_or_else(|_| "dex".to_string());
     println!("=== Lightweight Pipeline: {} ===", contract_name);
 
@@ -478,6 +480,7 @@ fn test_pipeline() -> Result<()> {
 /// Batch deploy all contracts to verify deployment plumbing.
 #[test]
 fn test_all_contracts_deploy() -> Result<()> {
+    crate::tests::uniform_runner::init_contract_logging();
     let contracts = [
         "attestation", "auction", "baccarat", "bearer_bond",
         "betting_stake", "box", "bridge", "dao_escrow",
@@ -555,6 +558,7 @@ fn test_all_contracts_deploy() -> Result<()> {
 /// production deploy path.
 #[test]
 fn test_metadata_deploy_lightweight() -> Result<()> {
+    crate::tests::uniform_runner::init_contract_logging();
     use dwow_sdk::deploy::{Category, ContractMetadata};
 
     println!("=== Lightweight Pipeline: Escrow + ContractMetadata ===");
