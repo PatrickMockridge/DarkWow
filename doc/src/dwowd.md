@@ -139,7 +139,7 @@ Cranelift will be re-evaluated alongside other performance approaches:
 | Module cache | None — always recompile (avoids cross-Engine corruption) |
 | Stack requirement | Default OS stack (8 MB) — no special configuration needed |
 | Block gas limit | `BLOCK_GAS_LIMIT = 100_000_000_000` (250× per-call `GAS_LIMIT` of 400M) |
-| Max calls per block | `MAX_CALLS_PER_BLOCK = 10` — enforced at template generation |
+| Max calls per block | Bounded by gas, not by a count: `BLOCK_GAS_LIMIT / GAS_LIMIT = 250` calls, since template assembly charges each call `GAS_LIMIT` against the block budget (`bin/dwowd/src/registry/model.rs`). **There is no `MAX_CALLS_PER_BLOCK` constant** — this cell claimed one existed and was "enforced at template generation"; nothing in the tree enforced it, and no such symbol exists (measured 2026-09-25). `MinerConfig.max_txs = 250` states the same figure independently |
 
 The `cranelift-compiler` feature flag is available as a compile-time opt-in:
 ```toml

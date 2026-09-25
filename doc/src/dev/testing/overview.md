@@ -24,7 +24,7 @@ public-facing (LAN/internet).
 | 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** — all 32 contracts with exhaustive function coverage. Deployment not tested (uses direct path for setup). | Minutes | `./bin/dwowd/src/tests/heavyweight.sh --all`, `cargo test --release -p dwowd test_<contract>_heavyweight` |
 | 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX, bridge lifecycle, wallet, 6 modes, 21 phases, composable flags | Persistent | `./test_pipeline.sh --mode native\|merge\|bridge\|wallet\|join-native\|join-merge` in `contrib/docker/darkwow-testnet/` |
 | 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true darkwow-devnet` |
-| Wallet | Wallet capabilities | L1: Bash CLI (seconds). L2: Rust in-process (20 tests, <2s). L3: Docker container (persistent). | Seconds to Persistent | `./bin/dww/test_capability_lightweight.sh`, `cargo test -p dwow_wallet --lib -- capability::tests`, `./contrib/docker/darkwow-testnet/test-wallet.sh` |
+| Wallet | Wallet capabilities | L1: Bash CLI (seconds). L2: Rust in-process (`cargo test -p dwow_wallet --lib` — 60 tests, seconds; the `-- capability::tests` filter this cell used to name selected **nothing**, because `bin/dww/src/capability.rs` contains no tests — the capability assertions are in `bin/dww/src/walletdb.rs`, e.g. `test_get_capabilities_by_asset_filter`). L3: Docker container (persistent). | Seconds to Persistent | `./bin/dww/test_capability_lightweight.sh`, `cargo test -p dwow_wallet --lib -- capability::tests`, `./contrib/docker/darkwow-testnet/test-wallet.sh` |
 | Wallet | Wallet in Dockernet | End-to-end wallet testing with mining nodes + wallet container. Guardrailed commands, verified subcommand syntax, pre-flight checklist. | Persistent | See [Wallet Testing in Dockernet](wallet-testing.md) |
 | **Fee System** | **Cross-stack coordination** | **Invariant-driven integrative testing across wallet→mempool→miner→contract. Risk factor emergence, encrypted fee channel, PID congestion control, Pedersen accumulator lifecycle. Python model as executable specification (70 tests).** | Seconds to Persistent | `python3 contrib/model/fee_window_model.py`, `cargo test -p dwowd --lib -- fee`, see [Fee System Testing](fee-testing.md) |
 
@@ -503,6 +503,17 @@ execution, wallet scan, merge-mining, or strict-mode rejection paths.
 | Test harness crate (32 contracts) | `src/contract/test-harness/` |
 | ZK coverage CI audit test | `src/contract/test-harness/tests/zk_audit.rs` |
 | Encode/decode round-trip test | `src/contract/test-harness/tests/encode_roundtrip.rs` |
+| Manifest proof declarations | `src/contract/test-harness/tests/manifest_proof_declarations.rs` |
+| Bearer-bond commitment vectors | `src/contract/test-harness/tests/bearer_bond_commitment_vectors.rs` |
+| Client proof self-verification | `src/contract/test-harness/tests/client_proof_self_verification.rs` |
+| Governance ratio bounds | `src/contract/test-harness/tests/governance_ratio_bounds.rs` |
+| Stablecoin governance report | `src/contract/test-harness/tests/stablecoin_governance_report.rs` |
+
+The five rows above were **missing from this File Map until 2026-09-25**: the directory
+holds seven files and the map named two. A File Map that omits files gives the schema
+nothing to decide their level, location rule or assertion requirements against, which is
+a gap in the map rather than in the tests — noted rather than filled with a rule I would
+be inventing. Their level assignment is still open.
 | Relayer unit tests (Level 1) | `bin/universal_relayer/src/` |
 | Relayer lightweight test runner | `bin/universal_relayer/test_relayer_lightweight.sh` |
 | Daemon integration tests | `bin/dwowd/src/tests/` |

@@ -291,13 +291,20 @@ accept_block SHALL pass raw call_data directly.
 A test disabled due to a known bug SHALL have a tracking issue and a remediation
 timeline. `#[ignore]` without a fix plan is acceptance of the bug.
 
-**Status:** The previously-documented violation — `test_wallet_integration`
-`#[ignore]` due to a halo2 plonk synthesis error in `build_native_transfer` — is
-resolved: the test is active (`bin/dwowd/src/tests/wallet_integration.rs`). The two
-remaining `#[ignore]` tests carry tracking IDs and are compliant: `H-TF-002`
-(uncle-merkle proof validation not yet enforced in consensus) and `H-TF-003`
-(harness-exercise test that does not go through `accept_block`), both in
-`bin/dwowd/src/tests/heavyweight_pipeline.rs`.
+**Status:** Both previously-documented violations are resolved, and **no `#[ignore]`
+remains in `bin/dwowd/src/`** — re-measured 2026-09-25: `grep -rn '#\[ignore'
+bin/dwowd/src/` matches only doc comments *recording* the removals, never an attribute.
+The wallet-integration halo2 plonk synthesis error in `build_native_transfer` was fixed
+and the test is active (`bin/dwowd/src/tests/wallet_integration.rs`); `H-TF-002`'s reason
+("uncle-merkle proof validation not yet enforced in consensus") stopped being true when
+`check_uncles` gained `verify_uncle_proof`; and `H-TF-003`'s harness-exercise test was
+un-ignored and now runs as what it is. Both removals name their own reasons at
+`bin/dwowd/src/tests/heavyweight_pipeline.rs:849` and `:1518`.
+
+This cell previously said the two "remaining `#[ignore]` tests carry tracking IDs and are
+compliant", naming those two as still ignored. They are not ignored, so the claim was
+stale in the direction that matters least — but a standards document asserting a
+violation is being carried is a reason to go and look, and there was nothing there.
 
 ### 2.7 Schnorr signature prohibition for ZK contracts
 

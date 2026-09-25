@@ -25,11 +25,36 @@ Verified against the working tree (not documentation claims):
 | `tests/zk_circuit_test.sh` | 31 | `deployooor` (no ZK) and `entropy` (library) excluded |
 | Harness modules (`test-harness/src/harness/*.rs`) | 32 | one per deployable contract |
 | Contract spec files (`bin/dwowd/src/tests/specs/*_spec.rs`) | 33 | 32 contract specs + `fee_integration_spec.rs` |
-| Contract `.zk.bin` files (`src/contract/*/proof/`) | 175 | docs claim "99 harness-loaded" |
+| Contract `.zk.bin` files (`src/contract/*/proof/`) | 175 → **166** | docs claim "99 harness-loaded" |
 | `sim/contracts/*.py` modules | 8 | `gaming.py` models 7 gambling contracts |
-| `contrib/model/*.py` files | 21 | incl. `chain_model.py` and `chain_validation_model.py` |
+| `contrib/model/*.py` files | 21 → **22** | incl. `chain_model.py` and `chain_validation_model.py` |
 | Pipeline `lib/*.sh` modules | 18 | matches `level-3-localnet.md` |
-| `#[test]` fns in `heavyweight_pipeline.rs` | 59 | `heavyweight.sh --all` selects 43 |
+| `#[test]` fns in `heavyweight_pipeline.rs` | 59 → **55** | `heavyweight.sh --all` selects **45**, not 43 |
+
+**Correction, 2026-09-25.** This table is a dated snapshot (see the header: *"static
+audit (read + map, no test runs)"*, 2026-08-16) and four of its figures had drifted since
+it was written. Re-measured, with the command that measured each:
+
+| Figure | Was | Is | Measured by |
+|---|---|---|---|
+| `.zk.bin` under `src/contract/*/proof/` | 175 | **166** | `ls src/contract/*/proof/*.zk.bin \| wc -l` (a whole-tree `find` gives 180 — `proofs/core` holds 10 and `bin/darkirc/proof` 2, and the cell's own scope is `src/contract/*/proof/`) |
+| `contrib/model/*.py` | 21 | **22** | `ls contrib/model/*.py \| wc -l` |
+| `#[test]` in `heavyweight_pipeline.rs` | 59 | **55** | `grep -c '#\[test\]' bin/dwowd/src/tests/heavyweight_pipeline.rs` |
+| what `heavyweight.sh --all` selects | 43 | **45** | its filter is `test_heavyweight_` + `test_relayer_lifecycle_heavyweight`; the count is *not* "all" — nine `test_fee_integration_*`/`test_bridge_*` and `test_recruitment_pipeline_call_data` are never selected by any flag, and the script's own help text still says 43 |
+
+Two further claims were **false**, not merely stale, and they matter because each named
+something a reader would go looking for:
+
+* the row below listing `bin/dwowd/tests/*` as `consensus_coordination.rs,
+  calibration_session_filter.rs` — **`calibration_session_filter.rs` has never existed**;
+  that directory holds one file. Corrected below.
+* §"models that cannot fail" below lists `chain_model.py` as a diagnostic model that
+  "exit[s] 0; no pass/fail runner". It is not: it has 15 tests and
+  `raise SystemExit(0 if passed == len(tests) else 1)`. Only `vm_state_model.py` matched
+  that description, and it is the one that was gated on an exit status it did not set.
+
+The remaining rows were **not** re-measured in this pass. They are as-of 2026-08-16, and
+this note is the reason to re-measure before relying on any of them.
 
 ### 1.1 Genesis contracts (L3-blocking scope)
 
@@ -53,10 +78,10 @@ Each row maps a documentation claim to its actual implementation. Status:
 | "all 32 contracts have `integration.rs`" (`overview.md:481`) | 31 `integration.rs`; `native_token` has `unit.rs`; `entropy` none | DRIFT | F-1 |
 | "all 22 ZK-enabled contracts" have `zk_circuit_test.sh` (`overview.md:482`) | 31 `zk_circuit_test.sh` files | DRIFT | F-2 |
 | `cargo test -p dwowd test_pipeline` (Deployooor) | `bin/dwowd/src/tests/pipeline.rs` | OK | — |
-| `test-harness/tests/zk_audit.rs` decodes "99 harness-loaded `.zk.bin`" (`overview.md:260`) | `zk_audit.rs` runs `verify_zk_coverage()` over 32 harnesses; 175 `.zk.bin` in tree | DRIFT | F-3 |
+| `test-harness/tests/zk_audit.rs` decodes "99 harness-loaded `.zk.bin`" (`overview.md:260`) | `zk_audit.rs` runs `verify_zk_coverage()` over 32 harnesses; **166** `.zk.bin` under `src/contract/*/proof/` (was 175 when written; see the correction above) | DRIFT | F-3 |
 | `test-harness/tests/encode_roundtrip.rs` | present | OK | — |
 | Root crate tests `tests/*` | 8 files (`dyn_circuit`, `halo2_vk_ser`, `jsonrpc`, `network_transports`, `smt`, `socks5`, `vdf_eval`, `zkvm_opcodes`) | OK | — |
-| `bin/dwowd/tests/*` | `consensus_coordination.rs`, `calibration_session_filter.rs` | OK | — |
+| `bin/dwowd/tests/*` | `consensus_coordination.rs` — and nothing else. This cell also named **`calibration_session_filter.rs`, which has never existed** (`ls bin/dwowd/tests/`, measured 2026-09-25) | corrected 2026-09-25 | — |
 | `bin/dww/tests/contract_metadata_tests.rs` | present | OK | — |
 
 **Harness tier guard:** `zk_audit.rs` asserts every harness has a non-empty
