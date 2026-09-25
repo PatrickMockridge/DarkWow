@@ -31,7 +31,11 @@ Error: PlonkError("General synthesis error")
 
 2. **Namespace constant mismatch**
    - The constant in `src/lib.rs` doesn't match the actual namespace in the binary
-   - Example: `MONEY_CONTRACT_ZKAS_TOKEN_MINT_NS_V2 = "TokenMint_V2"` but binary contains `"TokenMint_V1"`
+   - Example: `PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V1 = "Issue_V1"` while the only issue circuit
+     on disk is `Issue_V2` (`proof/issue.zk`). This is not a migration in progress: the `_V1`
+     constants are declared and re-exported but never read, so they name a circuit that does not
+     exist — the class `scripts/check-artifact-freshness.sh` reports as dead legacy constants that
+     mislead about which circuit is in use
 
 3. **Missing or corrupted binary**
    - Binary file doesn't exist or is corrupted
@@ -66,17 +70,21 @@ To check what namespace a binary actually contains:
 strings proof/*.zk.bin | grep -E "^[A-Z].*_" | head
 ```
 
-Example output:
+Example output (promissory_note):
 ```
-Mint_V2.constant
-Fee_V3.constant
-Burn_V2.constant
-TokenMint_V1.constant
+Issue_V2.constant
+Redeem_V2.constant
+RegisterType_V2.constant
+Transfer_V2.constant
+Revoke_V2.constant
 ```
 
-Then verify the constants in `src/lib.rs` match:
+Then verify the constants in `src/lib.rs` match what the binary contains. A constant naming a
+circuit that is not on disk is the mismatch this guide is about:
+
 ```rust
-pub const MONEY_CONTRACT_ZKAS_TOKEN_MINT_NS_V2: &str = "TokenMint_V1";
+pub const PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V1: &str = "Issue_V1";  // no Issue_V1 circuit on disk
+pub const PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V2: &str = "Issue_V2";  // this one resolves
 ```
 
 ## Prevention
@@ -117,14 +125,22 @@ This issue tends to recur during the test lifecycle because:
 
 ## PromissoryNote Contract Specific Notes
 
-The promissory_note contract has these circuits:
+The promissory_note contract's circuits, as they are on disk (`proof/*.zk`), with the namespace
+constant that must match each:
 
 | Binary | Namespace | Used By |
 |--------|-----------|---------|
-| `token_mint_v1.zk.bin` | `TokenMint_V1` | Create new token types |
-| `mint_v1.zk.bin` | `Mint_V1` | Mint tokens |
-| `burn_v1.zk.bin` | `Burn_V1` | Burn tokens (nullifier) |
+| `issue.zk.bin` | `Issue_V2` | Issue a note |
+| `redeem.zk.bin` | `Redeem_V2` | Redeem a note |
+| `register_type.zk.bin` | `RegisterType_V2` | Register a note type |
+| `revoke.zk.bin` | `Revoke_V2` | Revoke a note |
+| `transfer.zk.bin` | `Transfer_V2` | Transfer a note |
 
-TransferV1 and OtcSwapV1 reuse Burn_V1 + Mint_V1 circuits.
+Its `lib.rs` also declares five `_V1` namespace constants (`PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V1
+= "Issue_V1"` and its four siblings), which the SDK re-exports at
+`src/sdk/src/contracts/promissory_note.rs:56-59`. Nothing reads them and no `_V1` circuit is on disk:
+they are dead lookups, the same class the artifact-freshness gate reports, not a pending migration.
 
-Note: The filename pattern (`_v1.zk.bin`) does NOT necessarily mean it's a "v1" circuit. The namespace inside the file determines the actual version.
+Note: The filename does NOT indicate the circuit's version — the namespace inside the file does. No
+native contract filename carries a version suffix; see
+[Circuit Versioning](../arch/circuit-versioning.md).

@@ -48,6 +48,9 @@ pub fn verify_zkp(
 
 ### 2. ZkBinEntry for Sync
 
+> **This type does not exist in the tree** — see the measurement in the field list below. Read the
+> rest of this section as the record of a removed design.
+
 The `ZkBinEntry` type carries all data needed for sync verification:
 
 ```rust
@@ -155,6 +158,13 @@ pub type ZkBinEntry = (ContractId, String, Vec<u8>, Vec<pallas::Base>);
 - `zkas_ns`: Namespace of the ZK circuit (e.g., "Mint_V1")
 - `zkbin_bytes`: Compiled circuit binary
 - `instances`: Public inputs for proof verification
+
+> **None of `ZkBinEntry`, its fields, or `zkbin_data` exists in the tree.** Measured 2026-09-25:
+> `ZkBinEntry` occurs **0** times and `zkbin_data` **0** times under `src/` and `bin/`. The coinbase
+> and the fee collection are plaintext calls — `PoWRewardV1` (0x05), `FeeCollectV1` (0x06) and
+> `UncleMintV1` (0x07) carry no proof and have no circuit — so there is no per-block public-input
+> vector for such a type to carry. This section is a record of the removed proof-carrying sync
+> design, not an interface to program against.
 
 ### ZkVerifyResult
 
