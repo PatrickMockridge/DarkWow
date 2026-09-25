@@ -200,4 +200,28 @@ for line in text.splitlines():
     if re.search(r'\b(satisfied|closed|are\b.*\brows)\b', s, re.I) and \
        re.search(r'\b(twenty|two|three|four|five|six|seven|eight|nine|ten|\d+)\b', s, re.I):
         print("  " + (s[:190] + "…" if len(s) > 190 else s))
+
+# ── Size, so the register's bulk is measured rather than discovered by scrolling ──
+#
+# The register is ~885 KB, which is not readable, and a reader has no way to tell which
+# rows carry the bulk. Measured 2026-09-25: 58 of 190 rows exceed 4 KB and hold 475,894 of
+# 729,083 characters of row text — 65% of it in 31% of the rows. The median row is 2,690
+# characters, so this is NOT a uniformly bloated file: it is a readable table with a few
+# dozen essays inside it, which is a smaller problem than the byte count suggests.
+#
+# Reported, not gated — deliberately. A size limit would be a number nobody derived, which
+# is the defect `OBL-C143` records. And relocating the long cells is not a drive-by:
+# `check-register-artifacts.sh` and `check-doc-index.sh` both hard-code THIS path, so prose
+# moved to a companion file would silently leave both gates' scope. The extraction has to
+# widen them in the same change, which makes it a unit rather than an edit. This block
+# keeps the debt visible and counted until that unit is taken.
+rows = [(len(l), l.split("|")[1].strip()) for l in text.splitlines() if l.startswith("| OBL-")]
+if rows:
+    sizes = sorted((n for n, _ in rows), reverse=True)
+    big = [r for r in rows if r[0] > 4000]
+    print("")
+    print(f"row size: {len(rows)} rows, median {sizes[len(sizes)//2]:,} chars, largest {sizes[0]:,}")
+    print(f"          {len(big)} row(s) over 4 KB hold {sum(n for n, _ in big):,} of "
+          f"{sum(sizes):,} chars ({100 * sum(n for n, _ in big) // sum(sizes)}%)")
+    print("          largest 5: " + ", ".join(f"{rid} ({n:,})" for n, rid in sorted(rows, reverse=True)[:5]))
 PYEOF
