@@ -158,7 +158,16 @@ crate::impl_p2p_message!(
 /// Calls tree bounds definitions
 // TODO: increase min to 2 when fees are implement
 pub const MIN_TX_CALLS: usize = 1;
-// TODO: verify max value
+/// A **client-side packing limit**, not a consensus rule, and corrected on 2026-09-25 because
+/// this comment used to invite the opposite reading (`// TODO: verify max value` beside a constant
+/// the docs cited as a chain limit).
+///
+/// It is enforced only where transactions are *built* — `TransactionBuilder::build` below, and the
+/// Python SDK — and nowhere on the validation path: no block was ever rejected for carrying more
+/// calls than this. The on-chain bound is `MAX_CALLS_BY_INDEX_ENCODING` (255) in
+/// `dwow_chain::zk_verifier`, derived from the one-byte `call_idx` the host hands the guest and the
+/// state key commits. This value stays as the client's conservative default; it is not what makes
+/// a 300-call transaction invalid.
 pub const MAX_TX_CALLS: usize = 20;
 
 /// Auxiliarry structure containing all the information

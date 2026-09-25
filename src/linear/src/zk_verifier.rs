@@ -35,6 +35,20 @@
 
 
 use crate::Transaction as ChainTransaction;
+use dwow_sdk::dark_tree::dark_forest_leaf_vec_integrity_check;
+
+/// The largest number of calls a transaction may carry.
+///
+/// **Derived, not chosen.** The host hands the guest its position as a one-byte `call_idx`
+/// (`execution.rs`: `u8::try_from(call_idx).unwrap_or(u8::MAX)`), and the state key commits that
+/// same byte — `runtime/import/merkle.rs` asserts its encoding is exactly `32 + 1`. So an index
+/// above 255 cannot be named: `unwrap_or(u8::MAX)` collapses every index from 255 upward to 255,
+/// and a contract's `get_call_index()` then reports the wrong call. `execution.rs` reads the same
+/// truncated index to decide which call Deployooor should deploy.
+///
+/// The bound is therefore the encoding's capacity — nothing is invented, and a stricter figure
+/// would need its own derivation, which `MAX_TX_CALLS` in `src/tx/mod.rs` does not have.
+const MAX_CALLS_BY_INDEX_ENCODING: usize = u8::MAX as usize;
 
 // ---------------------------------------------------------------------------
 // 1. Witness decode + reconciliation (L2 soundness gate #1)
@@ -66,6 +80,32 @@ pub fn decode_and_reconcile(
         dwow_serial::deserialize(&chain_tx.witness).map_err(|e| {
             VerifyError::WitnessDecode(format!("{}", e))
         })?;
+
+    // -- The tree must be well-formed and bounded BEFORE anything reads it. --
+    //
+    // The witness is where the tree lives: `parent_index` and `children_indexes` are carried in
+    // it, and they are in neither `Transaction::hash` nor the merkle root, so nothing else commits
+    // to them. The reconciliation below proves the *leaves* — each call's `(contract_id, data)`
+    // against the chain tx — and says nothing about the shape they are arranged in. But the guest
+    // is handed exactly this shape (`extract_wasm_call_tree` serialises `core_tx.calls` straight
+    // into the payload) and more than twenty entrypoints gate value custody on the parent/child
+    // relation, so a relaying node that re-encoded the tree could change contract behaviour while
+    // every hash still passed (F10).
+    //
+    // The bound is the second half of the same call: at 255 calls the largest index is 255, which
+    // the one-byte `call_idx` can name, so `u8::try_from` cannot saturate and `get_call_index()`
+    // cannot report the wrong call (F7d). `MAX_CALLS_BY_INDEX_ENCODING` carries the derivation.
+    dark_forest_leaf_vec_integrity_check(
+        &core_tx.calls,
+        Some(dwow_core::tx::MIN_TX_CALLS),
+        Some(MAX_CALLS_BY_INDEX_ENCODING),
+    )
+    .map_err(|e| {
+        VerifyError::Reconciliation(format!(
+            "witness call tree is not well-formed, or has more than {} calls: {}",
+            MAX_CALLS_BY_INDEX_ENCODING, e
+        ))
+    })?;
 
     // -- Reconciliation: chain_tx.contract_calls MUST equal core_tx.calls.data
     //    (contract_id + data, in order), and nullifiers must match. --
@@ -323,6 +363,108 @@ mod tests {
     use crate::ContractCall;
     use dwow_sdk::pasta::pallas;
     use dwow_sdk::blockchain::BlockVersion;
+
+    type Leaf = dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::tx::ContractCall>;
+
+    /// `id` must be a canonical, non-identity contract id — `from_bytes` rejects the rest, so tests
+    /// pass 1..=3. The byte is also the call's payload, keeping the two in step.
+    fn leaf(id: u8, parent: Option<usize>, children: Vec<usize>) -> Leaf {
+        dwow_sdk::dark_tree::DarkLeaf {
+            data: dwow_sdk::tx::ContractCall {
+                contract_id: dwow_sdk::crypto::ContractId::from_bytes([id; 32]).unwrap(),
+                data: vec![id],
+            },
+            children_indexes: children,
+            parent_index: parent,
+        }
+    }
+
+    /// A chain tx whose flat call list matches `calls` exactly, so that only the *structure* of the
+    /// witness can be what a test rejects. Without this, a structural test would pass for the wrong
+    /// reason — the count or the leaves would fail reconciliation first.
+    fn chain_tx_for(calls: &[Leaf], witness: &[u8]) -> ChainTransaction {
+        ChainTransaction {
+            version: BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: calls
+                .iter()
+                .map(|l| ContractCall {
+                    contract_id: l.data.contract_id,
+                    data: l.data.data.clone(),
+                })
+                .collect(),
+            lock_time: 0,
+            nullifiers: vec![],
+            witness: witness.to_vec(),
+        }
+    }
+
+    fn core_tx_of(calls: Vec<Leaf>) -> dwow_core::tx::Transaction {
+        dwow_core::tx::Transaction {
+            calls,
+            proofs: vec![],
+            tx_commitment: [0u8; 32],
+            nullifiers: vec![],
+        }
+    }
+
+    /// F10's witness, with its acceptance control.
+    ///
+    /// The tree is two children under one root, flattened in the order the tree format uses — the
+    /// **root last**, with `children_indexes` naming the earlier leaves. With the root naming both
+    /// children it reconciles; with `children_indexes` emptied — the mutation a relaying node would
+    /// make, since the tree is in neither the tx hash nor the merkle root — it must be rejected.
+    /// The leaves are identical in both cases and match the chain tx, so the *only* difference the
+    /// check can see is the shape, which is the claim being tested.
+    #[test]
+    fn a_mutated_children_indexes_is_rejected_at_reconciliation() {
+        let intact =
+            vec![leaf(1, Some(2), vec![]), leaf(2, Some(2), vec![]), leaf(3, None, vec![0, 1])];
+        let witness = dwow_serial::serialize(&core_tx_of(intact.clone()));
+        decode_and_reconcile(&chain_tx_for(&intact, &witness))
+            .expect("a well-formed tree with matching leaves must reconcile");
+
+        // Same leaves, same chain tx; the root no longer names its children.
+        let mut mutated = intact.clone();
+        mutated[2].children_indexes = vec![];
+        let witness = dwow_serial::serialize(&core_tx_of(mutated.clone()));
+        let err = decode_and_reconcile(&chain_tx_for(&mutated, &witness))
+            .expect_err("a tree whose parent does not name its children must be rejected");
+        assert!(
+            matches!(err, VerifyError::Reconciliation(ref m) if m.contains("not well-formed")),
+            "wrong rejection for a mutated tree: {err:?}"
+        );
+    }
+
+    /// F7d's witness. 256 parentless calls are each a well-formed one-leaf tree, so structure
+    /// cannot be what rejects them — only the bound can, and the bound is what keeps a one-byte
+    /// `call_idx` from saturating.
+    #[test]
+    fn more_calls_than_the_index_can_name_are_rejected() {
+        let ids = |i: usize| 1 + (i % 3) as u8; // 1..=3: canonical, non-identity
+
+        let over: Vec<Leaf> = (0..=MAX_CALLS_BY_INDEX_ENCODING)
+            .map(|i| leaf(ids(i), None, vec![]))
+            .collect();
+        assert_eq!(over.len(), MAX_CALLS_BY_INDEX_ENCODING + 1);
+        let witness = dwow_serial::serialize(&core_tx_of(over.clone()));
+        let err = decode_and_reconcile(&chain_tx_for(&over, &witness))
+            .expect_err("more calls than the index encoding can name must be rejected");
+        assert!(
+            matches!(err, VerifyError::Reconciliation(ref m) if m.contains("more than 255 calls")),
+            "wrong rejection for an over-long call list: {err:?}"
+        );
+
+        // Acceptance control: exactly the bound is still fine, so this is a bound and not a blanket
+        // refusal.
+        let at_bound: Vec<Leaf> = (0..MAX_CALLS_BY_INDEX_ENCODING)
+            .map(|i| leaf(ids(i), None, vec![]))
+            .collect();
+        let witness = dwow_serial::serialize(&core_tx_of(at_bound.clone()));
+        decode_and_reconcile(&chain_tx_for(&at_bound, &witness))
+            .expect("exactly the bound must be accepted");
+    }
 
     #[test]
     fn test_reconciliation_rejects_divergent_calls() {
