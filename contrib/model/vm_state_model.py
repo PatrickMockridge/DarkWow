@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Dict, List, Optional, Set, Tuple
 import random
+import sys
 
 
 class TaskState(Enum):
@@ -719,8 +720,41 @@ def main():
     print(f"  2. OR: add a per-key Mutex<()> in vm_cache, miner holds it while hashing")
     print(f"  3. Replace std::sync::Mutex → smol::lock::Mutex for vm_cache + connect_lock")
 
-    crash_count = sum(1 for v in results.values() if v)
-    print(f"\n{crash_count}/{len(results)} tests found crash paths")
+    # The verdict, and the exit status that carries it.
+    #
+    # Until 2026-09-25 this function collected its results, printed them, and
+    # fell off the end, so the script always exited 0 — while its own output
+    # above read "FAIL — CRASH PATH". `scripts/run-all-tests.sh` gates on the
+    # exit status, so it counted a model that reports crash paths as a passing
+    # gate. A model whose findings do not reach its exit status is a report, not
+    # a gate.
+    #
+    # The line removed here was `sum(1 for v in results.values() if v)` printed
+    # as "N/M tests found crash paths". Two of the five values are stored
+    # NEGATED (`not simulate_defence_in_depth_per_vm_mutex()`), so that sum added
+    # "the defence works" to "found a crash path" and the number meant nothing.
+    #
+    # Only the three keys whose BAD direction this file states in print
+    # statements are part of the verdict:
+    #   same_key          truthy -> "FAIL — CRASH PATH"
+    #   different_key     truthy -> "FAIL"
+    #   connect_lock_gap  truthy -> "FAIL — lock insufficient"
+    #
+    # `per_vm_mutex` and `all_paths_mutex` are stored negated and printed
+    # nowhere, so which polarity means "the defence holds" is ambiguous from this
+    # file alone. They are deliberately left out rather than guessed at: a guess
+    # would make this gate's meaning an artefact of a reading, which is the
+    # defect class this pass exists to remove. Resolving their polarity belongs
+    # to whoever owns this model.
+    crash_paths = [
+        key
+        for key in ("same_key", "different_key", "connect_lock_gap")
+        if results[key]
+    ]
+    if crash_paths:
+        print(f"\nFAIL: {len(crash_paths)} simulated condition(s) found crash paths: {crash_paths}")
+        sys.exit(1)
+    print("\nPASS: no crash path found in the simulated conditions")
 
 
 if __name__ == "__main__":

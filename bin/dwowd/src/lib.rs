@@ -126,12 +126,21 @@ impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
     }
 
     fn declare_charge(&self, tx: &dwow_chain::Transaction) -> BlockCharge {
-        // Declarative capacity charge per contract call. This is a structural
-        // parameter (like WINDOW_SIZE) — not a fee value. It defines the
-        // nameplate rating for block packing, not an economic price.
-        // Uses BlockCharge nominal type per type-system.md §2.3.1.
-        const DECLARATIVE_CHARGE_PER_CALL: BlockCharge = BlockCharge::new(400_000_000);
-        BlockCharge::new(tx.contract_calls.len() as u64 * DECLARATIVE_CHARGE_PER_CALL.get())
+        // Declarative capacity charge per contract call: one call's gas budget. A
+        // structural parameter — the nameplate rating for block packing, not an
+        // economic price.
+        //
+        // This was `const DECLARATIVE_CHARGE_PER_CALL: BlockCharge =
+        // BlockCharge::new(400_000_000)`. Two things were wrong with it. The
+        // literal duplicated `GAS_LIMIT`, which is the same figure — so it was a
+        // magic number with a hidden relationship. And it was a compile-time
+        // constant of a consensus domain type, which is exactly what FI-GEN-2
+        // forbids (`contrib/ci/check_fee_guardrails.sh`). Naming the relationship
+        // removes both, so no exemption is needed and the invariant stays honest.
+        // (The check that forbids it could not fire until 2026-09-25 — its
+        // pattern was an unmatchable BRE — so this was invisible.)
+        let per_call = BlockCharge::new(dwow_core::runtime::vm_runtime::GAS_LIMIT);
+        BlockCharge::new(tx.contract_calls.len() as u64 * per_call.get())
     }
 }
 

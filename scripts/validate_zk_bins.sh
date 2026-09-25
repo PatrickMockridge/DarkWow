@@ -126,4 +126,21 @@ echo "========================================"
 if [ $CORRUPTED -gt 0 ]; then
     exit 1
 fi
+
+# A check that validated nothing must not report success.
+#
+# `.zk.bin` is gitignored, so on a tree where the circuits have not been built
+# this script printed "0 OK, 0 corrupted", noted that every source "has no binary
+# here to check", and exited 0 — which is indistinguishable from a tree where
+# every binary was validated and found well-formed. That is the tripwire defect:
+# a guardrail that cannot see what it guards must not report success.
+#
+# `scripts/run-all-tests.sh` runs this immediately after `build-contract-zk.sh`,
+# so inside the umbrella there is always something to check. Reaching this branch
+# there means that ordering broke, which is itself the finding.
+if [ $((OK + CORRUPTED)) -eq 0 ]; then
+    echo -e "${RED}FAIL:${NC} no .zk.bin was validated — this check cannot see what it guards" >&2
+    echo "  Build the circuits first: scripts/build-contract-zk.sh" >&2
+    exit 2
+fi
 exit 0

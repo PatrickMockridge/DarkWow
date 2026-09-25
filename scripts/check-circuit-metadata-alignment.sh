@@ -226,7 +226,17 @@ def extract_push_vecs(src):
         results.append((ns, split_top(src[i:k - 1])))
     return results
 
-METADATA_EXCEPTIONS = os.path.join(repo, "script", "circuit_metadata_exceptions.txt")
+# Overridable so the gate can be run against a deliberately malformed file — the
+# negative control for the failure path below. A path that can only point at the
+# real file cannot be tested against a planted defect.
+METADATA_EXCEPTIONS = os.environ.get(
+    "METADATA_EXCEPTIONS",
+    os.path.join(repo, "script", "circuit_metadata_exceptions.txt"))
+
+# Malformed lines in the exceptions file, collected by the loader below and folded
+# into the exit status. A gate that prints FAIL and exits 0 has a verdict nobody
+# can act on, which is what this list exists to prevent.
+EXCEPTION_FILE_ERRORS = []
 
 def load_metadata_exceptions():
     """`<contract>/<circuit> : <reason citing an OBL- ID>`.
@@ -244,10 +254,20 @@ def load_metadata_exceptions():
             continue
         parts = [p.strip() for p in line.split(":", 1)]
         if len(parts) != 2 or not parts[1]:
+            # Recorded as well as printed. Until 2026-09-25 these branches printed
+            # FAIL and `continue`d without touching `failures`, so a malformed
+            # line was reported on stderr and the gate still exited 0 — a failure
+            # it could see and could not act on. Sibling gates have a stale-entry
+            # check; this one now has a failure path.
+            EXCEPTION_FILE_ERRORS.append(
+                f"{METADATA_EXCEPTIONS}:{lineno}: expected "
+                f"`<contract>/<circuit> : <reason [OBL-…]>`")
             print(f"FAIL: {METADATA_EXCEPTIONS}:{lineno}: expected "
                   f"`<contract>/<circuit> : <reason [OBL-…]>`", file=sys.stderr)
             continue
         if "OBL-" not in parts[1]:
+            EXCEPTION_FILE_ERRORS.append(
+                f"{METADATA_EXCEPTIONS}:{lineno}: the reason cites no register ID")
             print(f"FAIL: {METADATA_EXCEPTIONS}:{lineno}: the reason cites no register ID",
                   file=sys.stderr)
             continue
@@ -611,7 +631,7 @@ if not COVERED:
     print("FAIL: no contract with a `proof/` directory was found — the enumeration is broken.")
     sys.exit(1)
 
-if failures == 0 and not literal_findings:
+if failures == 0 and not literal_findings and not EXCEPTION_FILE_ERRORS:
     print(f"PASS: All {len(seen)} circuits across {len(COVERED)} contracts have matching metadata "
           f"push counts")
     if order_warnings:
@@ -629,6 +649,8 @@ else:
     if literal_findings:
         parts.append(f"{len(literal_findings)} literal-vs-value position(s) over "
                      f"{len(literal_circuits)} circuit(s)")
+    if EXCEPTION_FILE_ERRORS:
+        parts.append(f"{len(EXCEPTION_FILE_ERRORS)} malformed line(s) in {METADATA_EXCEPTIONS}")
     print(f"FAIL: {' and '.join(parts)}")
     print("")
     print("Root cause: a circuit's constrain_instance order must match the metadata")

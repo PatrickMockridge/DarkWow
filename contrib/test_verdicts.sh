@@ -72,6 +72,17 @@ mode="${1:-}"
 shift || true
 
 case "$mode" in
+    --self-test)
+        # Negative control. A cargo invocation that MUST fail, and fails in well
+        # under a second: an argument cargo does not accept. The wrapper has to
+        # propagate that status. It previously did not — see the `run` arm.
+        if "$0" run --definitely-not-a-cargo-flag >/dev/null 2>&1; then
+            echo "SELF-TEST FAIL: returned 0 for a cargo invocation that failed" >&2
+            echo "  (a runner whose exit code is not its run's verdict is not a runner)" >&2
+            exit 1
+        fi
+        echo "SELF-TEST PASS: a failing cargo invocation propagates a non-zero status"
+        ;;
     parse)
         show_causes=0
         if [ "${1:-}" = "--causes" ]; then show_causes=1; shift; fi
@@ -103,6 +114,12 @@ case "$mode" in
         rc=$?
         echo "test_verdicts: cargo exit=$rc" >&2
         parse_one "$log"
+        # The run's verdict IS cargo's status, so it is the script's status.
+        # Without this the script exited with parse_one's — `sed | awk | sort`,
+        # i.e. 0 — while the real status went only to stderr. Measured
+        # 2026-09-25: it printed `cargo exit=101` and exited 0 for a chunk that
+        # failed, so a caller reading the exit code saw a failing run as passing.
+        exit "$rc"
         ;;
     *)
         sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
