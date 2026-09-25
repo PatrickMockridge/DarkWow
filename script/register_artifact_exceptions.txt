@@ -38,3 +38,12 @@ proofs/core/lead.zk : OBL-Z16 : deleted 2026-09-24 — cited as the record of a 
 proofs/core/set_v1.zk : OBL-Z16 : deleted 2026-09-24 — same disposition, and the same six sites were split between the two files
 
 src/contract/subscription/src/client/rate_limit.rs : OBL-C108 : cited as the state found; the closure removed the file and its `pub mod` declaration, which is what the row says
+
+# OBL-C142 — a row whose subject is a staleness verdict decided by a *timestamp*: `box`'s `take.zk.bin`
+# is newer than its `.wasm`, so `check_zkbin_freshness.sh` fires. The row names the artefact pair as its
+# evidence, and `*.wasm` is gitignored (`.gitignore:8`), so this path cannot exist in HEAD — its absence
+# is the subject rather than an omission. This is the case the gate's own header describes ("build
+# artefacts … the register cites them *as evidence of absence*"), which its `EXT` regex does not
+# implement for `.wasm`; noted rather than fixed here, because 7 `.wasm` ARE tracked (baccarat and the
+# other rebuilds) and narrowing the regex would drop their coverage.
+src/contract/box/dwow_box_contract.wasm : OBL-C142 : cited as the artefact a timestamp-based staleness verdict names; `.wasm` is gitignored, so its absence from HEAD is the row's subject

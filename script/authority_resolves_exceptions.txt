@@ -1,0 +1,18 @@
+# Authorities a gate cites deliberately as DEAD — declared, with a reason, rather than silently
+# admitted. Read by scripts/check-authority-resolves.sh.
+#
+# Format:  <citation> : <reason>
+#
+# The key is the cited *string*, so an edit elsewhere in a file moves nothing — the same decision
+# script/register_artifact_exceptions.txt records for its own keys. An entry the gates no longer cite
+# is reported as stale, and a key with no reason is a finding rather than an exemption.
+#
+# WHY ANY EXEMPTION EXISTS: some citations are evidence rather than claims. When a check is removed
+# because its authority does not exist, the removal note has to name WHICH authority was missing —
+# that naming is the finding. The gate cannot tell a claim apart from a record, so each is declared
+# here with the reason that makes it a record.
+
+fee-spec.md §5.6.2.1 : quoted as the DEAD authority in the note removing [Check-9]; doc/src/arch/consensus/fee-spec.md runs §5.6 straight to §5.7, and AccumulatorPoint exists nowhere in the repository — the record of the defect, not a claim it exists
+FI-ENCRYPT-3 : quoted as the DEAD clause in the note removing the [FI-ENCRYPT-3] check; removed with the privacy-preserving-fee channel by the FeeV3 migration (5a9ddb6da4), which safety.md records as "FI-ENCRYPT-1..3 … RULED OUT" — the record of the defect
+M-9 : quoted as the DEAD clause in the note removing [Check-14]; the id is defined in no document under doc/ and compute_fee(gas_units) exists nowhere — the record of the defect
+sync-protocol.md §16 : quoted as the DEAD clause in the header of contrib/ci/check_sync_conformance.sh; deleted by c7512b2269 ("collapse node sync to a wallet-shaped pull loop"), so the document runs §14 straight to §17 — the record of the defect
