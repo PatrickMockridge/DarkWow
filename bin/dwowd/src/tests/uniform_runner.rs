@@ -219,6 +219,11 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     // ── Initialize (if contract has InitializeV1) ───────────────────
     let mut height_before = chain_a.height();
     if let Some(ref init_fn) = spec.initialize {
+        // A contract's circuits can bind the verifying block height into a public input, and a
+        // generator runs before the block exists — so the runner publishes the height the call
+        // will land at (the tip plus one) immediately before generating. See
+        // `ContractHarness::set_next_block_height`.
+        spec.harness.set_next_block_height(height_before.succ());
         let result = init_fn().map_err(|e| dwow_core::Error::Custom(
             format!("TEST-FAIL [{}::initialize]: InitializeV1 harness failed — {}", spec.name, e)
         ))?;
@@ -245,6 +250,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
         };
 
         // Use generate_with_coinbase if this endpoint needs coinbase params (FeeV3/BurnV1)
+        spec.harness.set_next_block_height(height_before.succ());
         let result = if let Some(ref gen) = endpoint.generate_with_coinbase {
             gen(coinbase.as_ref().expect("needs_coinbase_coordination must be true when generate_with_coinbase is set"))?
         } else {
@@ -303,6 +309,10 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     // ── Nullifier replay rejection (spec §3.6) ─────────────────────
     if let Some(idx) = spec.first_zk_index() {
         let endpoint = &spec.endpoints[idx];
+        // Regenerate for the block the replay will actually land in, not the one the original
+        // call landed in: a height-bound proof made for the old height would be rejected as an
+        // invalid proof and the replay assertion would then hold for a reason it does not name.
+        spec.harness.set_next_block_height(height_before.succ());
         let result = (endpoint.generate)()?;
         modules::nullifier_replay::verify_nullifier_replay(
             &chain_a, cid, spec.harness,
@@ -333,6 +343,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
 
     // Replay init on chain B
     if let Some(ref init_fn) = spec.initialize {
+        spec.harness.set_next_block_height(chain_b.height().succ());
         let result = init_fn()?;
         let _ = modules::block_submission::submit_single_call_block(
             &chain_b, cid_b, spec.harness,
@@ -366,6 +377,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
                 spec.name, endpoint.name);
             h_b = new_h;
         } else {
+            spec.harness.set_next_block_height(h_b.succ());
             let result = (endpoint.generate)()?;
             if endpoint.expectation == EndpointExpectation::Rejection {
                 let _ = modules::block_submission::submit_multi_call_block(

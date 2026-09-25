@@ -28,10 +28,9 @@ use dwow_core::{
     zkas::ZkBinary,
     Result,
 };
-use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey},
-    pasta::pallas,
-};
+use dwow_sdk::{crypto::PublicKey, pasta::pallas};
+
+use crate::model::{derive_claim_id, derive_tx_binding};
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
@@ -44,8 +43,11 @@ pub struct ClaimFeesV1PublicInputs {
 }
 
 impl ClaimFeesV1PublicInputs {
+    /// The instances in `constrain_instance` order. `claim_fees.zk` constrains
+    /// `tx_binding`, then `tx_nonce`, then `derived_claim_id` — the same order the
+    /// contract's `…_claim_fees_get_metadata_v1` publishes.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_claim_id, self.tx_binding, self.tx_nonce]
+        vec![self.tx_binding, self.tx_nonce, self.derived_claim_id]
     }
 }
 
@@ -53,10 +55,10 @@ impl ClaimFeesV1PublicInputs {
 #[derive(Debug, Clone)]
 pub struct ClaimFeesV1CallData {
     pub deployment_id: pallas::Base,
-    pub backer_pub_x: pallas::Base,
-    pub backer_pub_y: pallas::Base,
-    pub fee_share: pallas::Base,
-    pub nonce: pallas::Base,
+    pub backer_public: PublicKey,
+    pub fee_share: u64,
+    /// The **verifying block height** — see `InitializeV1CallData::nonce`.
+    pub nonce: u64,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -68,41 +70,43 @@ impl ClaimFeesV1CallData {
         fee_share: u64,
         nonce: u64,
     ) -> Self {
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-        let (bx, by) = backer_public.xy().expect("pk not identity");
         Self {
             deployment_id,
-            backer_pub_x: bx,
-            backer_pub_y: by,
-            fee_share: pallas::Base::from(fee_share),
-            nonce: pallas::Base::from(nonce),
+            backer_public,
+            fee_share,
+            nonce,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
     }
 
+    /// The backer's public key coordinates exactly as `ClaimFeesParamsV1` carries them — the
+    /// contract's metadata reads them out of the params and hashes them, so the params and the
+    /// proof must name the same point.
+    pub fn backer_pub_xy(&self) -> (pallas::Base, pallas::Base) {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+        self.backer_public.xy().expect("pk not identity")
+    }
+
     pub fn compute_public_inputs(&self) -> ClaimFeesV1PublicInputs {
-        let derived_claim_id = poseidon_hash([
-            self.deployment_id,
-            self.backer_pub_x,
-            self.backer_pub_y,
-            self.fee_share,
-            self.nonce,
-        ]);
-        ClaimFeesV1PublicInputs { derived_claim_id, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
+        let (bx, by) = self.backer_pub_xy();
+        let derived_claim_id =
+            derive_claim_id(self.deployment_id, bx, by, self.fee_share, self.nonce);
+        ClaimFeesV1PublicInputs { derived_claim_id, tx_binding: derive_tx_binding(self.tx_commitment, self.tx_nonce), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        let (bx, by) = self.backer_pub_xy();
         vec![
             Witness::Base(Value::known(self.deployment_id)),
-            Witness::Base(Value::known(self.backer_pub_x)),
-            Witness::Base(Value::known(self.backer_pub_y)),
-            Witness::Base(Value::known(self.fee_share)),
-            Witness::Base(Value::known(self.nonce)),
+            Witness::Base(Value::known(bx)),
+            Witness::Base(Value::known(by)),
+            Witness::Base(Value::known(pallas::Base::from(self.fee_share))),
+            Witness::Base(Value::known(pallas::Base::from(self.nonce))),
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
+            Witness::Base(Value::known(derive_tx_binding(self.tx_commitment, self.tx_nonce))), // tx_binding
         ]
     }
 }

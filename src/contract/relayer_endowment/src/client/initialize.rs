@@ -28,10 +28,9 @@ use dwow_core::{
     zkas::ZkBinary,
     Result,
 };
-use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey},
-    pasta::pallas,
-};
+use dwow_sdk::{crypto::PublicKey, pasta::pallas};
+
+use crate::model::{derive_config_hash, derive_endowment_id, derive_tx_binding};
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
@@ -44,50 +43,69 @@ pub struct InitializeV1PublicInputs {
 }
 
 impl InitializeV1PublicInputs {
+    /// The instances in `constrain_instance` order, which is what `Proof::create`
+    /// and `verify_proof` index the instance column by.
+    ///
+    /// `initialize.zk` constrains `tx_binding`, then `tx_nonce`, then
+    /// `derived_endowment_id` — and the contract's `…_initialize_get_metadata_v1`
+    /// publishes them in that same order. This vector used to be
+    /// `[endowment_id, tx_binding, tx_nonce]`, which is not that order; it is the
+    /// order the *circuit's own witness block* is written in, which is a different
+    /// list. A proof built from it fails verify with `invalid proof`, naming neither
+    /// the ordering nor the circuit.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.endowment_id, self.tx_binding, self.tx_nonce]
+        vec![self.tx_binding, self.tx_nonce, self.endowment_id]
     }
 }
 
 /// Input data for initialize proof generation
 #[derive(Debug, Clone)]
 pub struct InitializeV1CallData {
-    pub relayer_pub_x: pallas::Base,
-    pub relayer_pub_y: pallas::Base,
-    pub config_hash: pallas::Base,
-    pub nonce: pallas::Base,
+    pub relayer_public: PublicKey,
+    pub default_backer_cut_bp: u32,
+    /// The **verifying block height** — the height of the block this call will land in. The
+    /// `InitializeV2` instance contains it, so a client must know it: the chain tip plus one
+    /// when the transaction is built. It is not a free nonce and cannot be chosen.
+    pub nonce: u64,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl InitializeV1CallData {
     pub fn new(relayer_public: PublicKey, default_backer_cut_bp: u32, nonce: u64) -> Self {
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-        let (px, py) = relayer_public.xy().expect("pk not identity");
-        let config_hash = poseidon_hash([pallas::Base::from(default_backer_cut_bp as u64)]);
-        Self { relayer_pub_x: px, relayer_pub_y: py, config_hash, nonce: pallas::Base::from(nonce), tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
+        Self {
+            relayer_public,
+            default_backer_cut_bp,
+            nonce,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        }
     }
 
     pub fn compute_public_inputs(&self) -> InitializeV1PublicInputs {
-        let endowment_id = poseidon_hash([
-            self.relayer_pub_x,
-            self.relayer_pub_y,
-            self.config_hash,
-            self.nonce,
-        ]);
-        InitializeV1PublicInputs { endowment_id, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
+        // Both ids come from `crate::model`, which is the same code the contract's metadata
+        // and its exec path run — deriving them here is what keeps the three in step.
+        let endowment_id =
+            derive_endowment_id(&self.relayer_public, self.default_backer_cut_bp, self.nonce);
+        InitializeV1PublicInputs {
+            endowment_id,
+            tx_binding: derive_tx_binding(self.tx_commitment, self.tx_nonce),
+            tx_nonce: self.tx_nonce,
+        }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+        let (px, py) = self.relayer_public.xy().expect("pk not identity");
         vec![
-            Witness::Base(Value::known(self.relayer_pub_x)),
-            Witness::Base(Value::known(self.relayer_pub_y)),
-            Witness::Base(Value::known(self.config_hash)),
-            Witness::Base(Value::known(self.nonce)),
+            Witness::Base(Value::known(px)),
+            Witness::Base(Value::known(py)),
+            Witness::Base(Value::known(derive_config_hash(self.default_backer_cut_bp))),
+            Witness::Base(Value::known(pallas::Base::from(self.nonce))),
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
+            Witness::Base(Value::known(derive_tx_binding(self.tx_commitment, self.tx_nonce))), // tx_binding
         ]
     }
 }

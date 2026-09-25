@@ -29,7 +29,10 @@ pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
                 name: "InitializeV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.initialize(pk, 1000u32, 0u64)
+                    // No height argument: the harness takes the verifying block height from the
+                    // runner (`ContractHarness::set_next_block_height`), because it is the one
+                    // input to `InitializeV2` that a caller cannot choose.
+                    let r = h.initialize(pk, 1000u32)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -38,8 +41,8 @@ pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
                 name: "DeployCapitalV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.deploy_capital(pallas::Base::from(1u64), pk, 1000,
-                        pallas::Base::from(1u64), 0u64,
+                    let r = h.deploy_capital(pk, 1000,
+                        pallas::Base::from(1u64),
                         pallas::Scalar::from(100u64), r_pk, 1000u32)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
@@ -49,7 +52,7 @@ pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
                 name: "ClaimFeesV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.claim_fees(pallas::Base::from(1u64), pk, 100, 0u64)
+                    let r = h.claim_fees(pallas::Base::from(1u64), pk, 100)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),

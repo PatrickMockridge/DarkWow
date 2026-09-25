@@ -115,6 +115,7 @@ pub use subscription::SubscriptionHarness;
 pub use tender::TenderHarness;
 
 use dwow_core::{zk::{ProvingKey, VerifyingKey, ZkCircuit, empty_witnesses}, zkas::ZkBinary, Result};
+use dwow_sdk::blockchain::BlockHeight;
 
 /// Trait for contract test harnesses providing ZK circuit access.
 ///
@@ -132,6 +133,18 @@ pub trait ContractHarness {
 
     /// Get proving key for a circuit namespace
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey>;
+
+    /// Tell this harness the height of the block the next generated call will land in.
+    ///
+    /// The runner calls this immediately before every `generate`, because a contract's circuits
+    /// can bind `get_verifying_block_height()` into a public input — `relayer_endowment`'s three
+    /// circuits all do — and a generator, which runs before the block is built, cannot learn that
+    /// height any other way. The height of the block a call lands in is `chain.height() + 1`; it
+    /// is not the current tip, and it is not a value a spec may choose.
+    ///
+    /// The default ignores it, which is correct: a harness whose circuits are
+    /// height-independent has nothing to do with it.
+    fn set_next_block_height(&self, _height: BlockHeight) {}
 
     /// Verify ZK coverage: every circuit in `circuits()` has a valid ZK binary
     /// and proving key. Called as a pre-deploy gate by `HeavyweightPipeline`.

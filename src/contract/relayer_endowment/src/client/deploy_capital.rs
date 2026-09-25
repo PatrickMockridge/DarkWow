@@ -29,9 +29,14 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{pedersen_commitment_u64, pasta_prelude::{Curve, CurveAffine}, poseidon_hash, Blind, PublicKey},
+    crypto::{
+        pasta_prelude::{Curve, CurveAffine},
+        pedersen_commitment_u64, Blind, PublicKey,
+    },
     pasta::pallas,
 };
+
+use crate::model::{derive_deployment_id, derive_endowment_id, derive_tx_binding};
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
@@ -46,85 +51,101 @@ pub struct DeployCapitalV1PublicInputs {
 }
 
 impl DeployCapitalV1PublicInputs {
+    /// The instances in `constrain_instance` order. `deploy_capital.zk` constrains
+    /// `derived_deployment_id`, the commitment's `x`, `tx_binding`, `tx_nonce`, then
+    /// the commitment's `y` — the value commitment is **split by the binding pair**,
+    /// not written as an `(x, y)` adjacency. The contract's
+    /// `…_deploy_capital_get_metadata_v1` publishes the same order.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_deployment_id, self.value_commit_x, self.value_commit_y, self.tx_binding, self.tx_nonce]
+        vec![self.derived_deployment_id, self.value_commit_x, self.tx_binding, self.tx_nonce, self.value_commit_y]
     }
 }
 
 /// Input data for deploy_capital proof generation
 #[derive(Debug, Clone)]
 pub struct DeployCapitalV1CallData {
-    pub endowment_id: pallas::Base,
-    pub backer_pub_x: pallas::Base,
-    pub backer_pub_y: pallas::Base,
-    pub deploy_amount: pallas::Base,
-    pub deploy_amount_u64: u64,
+    pub relayer_public: PublicKey,
+    pub backer_public: PublicKey,
+    pub backer_cut_bp: u32,
+    pub deploy_amount: u64,
     pub asset_id: pallas::Base,
-    pub nonce: pallas::Base,
+    /// The **verifying block height** — see `InitializeV1CallData::nonce`.
+    pub nonce: u64,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl DeployCapitalV1CallData {
+    /// `endowment_id` is **derived here, not taken as an argument**. It was a parameter, and a
+    /// caller that passed the wrong one — a placeholder, or an id computed before the block it
+    /// lands in was known — produced a proof for an endowment that does not exist, with no
+    /// error naming the argument. It is a function of the relayer, the cut and the height, so
+    /// the client derives it.
     pub fn new(
-        endowment_id: pallas::Base,
+        relayer_public: PublicKey,
         backer_public: PublicKey,
+        backer_cut_bp: u32,
         deploy_amount: u64,
         asset_id: pallas::Base,
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-        let (bx, by) = backer_public.xy().expect("pk not identity");
         Self {
-            endowment_id,
-            backer_pub_x: bx,
-            backer_pub_y: by,
-            deploy_amount: pallas::Base::from(deploy_amount),
-            deploy_amount_u64: deploy_amount,
+            relayer_public,
+            backer_public,
+            backer_cut_bp,
+            deploy_amount,
             asset_id,
-            nonce: pallas::Base::from(nonce),
+            nonce,
             value_blind,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
     }
 
+    pub fn endowment_id(&self) -> pallas::Base {
+        derive_endowment_id(&self.relayer_public, self.backer_cut_bp, self.nonce)
+    }
+
     pub fn compute_public_inputs(&self) -> DeployCapitalV1PublicInputs {
-        let derived_deployment_id = poseidon_hash([
-            self.endowment_id,
-            self.backer_pub_x,
-            self.backer_pub_y,
+        // `crate::model`'s derivation, which is the one the exec path stores under and the
+        // metadata publishes — see the section there.
+        let derived_deployment_id = derive_deployment_id(
+            &self.relayer_public,
+            &self.backer_public,
+            self.backer_cut_bp,
             self.deploy_amount,
             self.nonce,
-        ]);
+        );
 
-        let value_commit = pedersen_commitment_u64(self.deploy_amount_u64, Blind(self.value_blind));
+        let value_commit = pedersen_commitment_u64(self.deploy_amount, Blind(self.value_blind));
         let value_coords = value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
 
         DeployCapitalV1PublicInputs {
             derived_deployment_id,
             value_commit_x: *value_coords.x(),
             value_commit_y: *value_coords.y(),
-            tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
+            tx_binding: derive_tx_binding(self.tx_commitment, self.tx_nonce),
             tx_nonce: self.tx_nonce,
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+        let (bx, by) = self.backer_public.xy().expect("pk not identity");
         vec![
-            Witness::Base(Value::known(self.endowment_id)),
-            Witness::Base(Value::known(self.backer_pub_x)),
-            Witness::Base(Value::known(self.backer_pub_y)),
-            Witness::Base(Value::known(self.deploy_amount)),
+            Witness::Base(Value::known(self.endowment_id())),
+            Witness::Base(Value::known(bx)),
+            Witness::Base(Value::known(by)),
+            Witness::Base(Value::known(pallas::Base::from(self.deploy_amount))),
             Witness::Base(Value::known(self.asset_id)),
-            Witness::Base(Value::known(self.nonce)),
+            Witness::Base(Value::known(pallas::Base::from(self.nonce))),
             Witness::Scalar(Value::known(self.value_blind)),
             // tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
+            Witness::Base(Value::known(derive_tx_binding(self.tx_commitment, self.tx_nonce))), // tx_binding
         ]
     }
 }

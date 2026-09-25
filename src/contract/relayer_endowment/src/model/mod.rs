@@ -25,7 +25,12 @@
 
 use dwow_sdk::{
     blockchain::SerializedLen,
-    crypto::{pasta_prelude::PrimeField, PublicKey},
+    crypto::{
+        constants::{DRK_POSEIDON_DOMAIN_COMMITMENT, DRK_POSEIDON_DOMAIN_TX_BINDING},
+        pasta_prelude::PrimeField,
+        poseidon_hash,
+        PublicKey,
+    },
     error::ContractError,
     pasta::pallas,
 };
@@ -790,4 +795,99 @@ impl DeactivateEndowmentUpdateV1 {
         let account = RelayerEndowmentAccount::decode(data)?;
         Ok(DeactivateEndowmentUpdateV1 { account })
     }
+}
+
+// ============================================================================
+// ID DERIVATIONS
+// ============================================================================
+//
+// These three ids are each needed in **three** places: the exec path that stores the
+// object, the `…_get_metadata_v1` function the host reads the ZK instances from, and the
+// client that builds the proof. They live here once, and all three call them.
+//
+// They did not live here once. The V2 domain-separation migration (`4d52703e55`, HAZOP RC3)
+// rewrote the `.zk` circuits and the metadata functions, and left the exec path's own copy
+// on V1 and the client's on V1 as well, so three copies of one derivation disagreed:
+//
+//   * the exec path stored a deployment under `poseidon(relayer_x, relayer_y, backer_x,
+//     backer_y, height)` — no domain tag, no `endowment_id`, no amount;
+//   * the circuit and the metadata published `poseidon(DOMAIN_COMMITMENT, endowment_id,
+//     backer_x, backer_y, amount, height)`, so the proof verified against an id the exec
+//     path never used, and the stored key could not be recomputed from it;
+//   * the client hashed a third thing again, and its instances were in witness order rather
+//     than `constrain_instance` order, so no proof it built could verify at all.
+//
+// `DOMAIN_COMMITMENT` (4) is the tag the V2 circuits prepend to every id derivation — the tag
+// a circuit writes as `witness_base(4)`. `DOMAIN_TX_BINDING` (3) prefixes `tx_binding`.
+
+/// `config_hash = poseidon(DOMAIN_COMMITMENT, cut_bp)` — the relayer's declared fee cut, as
+/// `InitializeV2` and `DeployCapitalV2` take it as a witness.
+pub fn derive_config_hash(backer_cut_bp: u32) -> pallas::Base {
+    poseidon_hash([DRK_POSEIDON_DOMAIN_COMMITMENT, pallas::Base::from(backer_cut_bp as u64)])
+}
+
+/// `endowment_id = poseidon(DOMAIN_COMMITMENT, relayer_x, relayer_y, config_hash, nonce)`.
+///
+/// `nonce` is the **verifying block height** — the height of the block the call lands in, as
+/// `get_verifying_block_height()` reports it to the guest. A client must supply the height its
+/// transaction will be validated at, which is the chain tip plus one at build time.
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+pub fn derive_endowment_id(relayer_pub: &PublicKey, backer_cut_bp: u32, nonce: u64) -> pallas::Base {
+    poseidon_hash([
+        DRK_POSEIDON_DOMAIN_COMMITMENT,
+        relayer_pub.x().expect("pk not identity"),
+        relayer_pub.y().expect("pk not identity"),
+        derive_config_hash(backer_cut_bp),
+        pallas::Base::from(nonce),
+    ])
+}
+
+/// `deployment_id = poseidon(DOMAIN_COMMITMENT, endowment_id, backer_x, backer_y, amount, nonce)`.
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+pub fn derive_deployment_id(
+    relayer_pub: &PublicKey,
+    backer_pub: &PublicKey,
+    backer_cut_bp: u32,
+    amount: u64,
+    nonce: u64,
+) -> pallas::Base {
+    poseidon_hash([
+        DRK_POSEIDON_DOMAIN_COMMITMENT,
+        derive_endowment_id(relayer_pub, backer_cut_bp, nonce),
+        backer_pub.x().expect("pk not identity"),
+        backer_pub.y().expect("pk not identity"),
+        pallas::Base::from(amount),
+        pallas::Base::from(nonce),
+    ])
+}
+
+/// `claim_id = poseidon(DOMAIN_COMMITMENT, deployment_id, backer_x, backer_y, fee_share, nonce)`.
+///
+/// Unlike the other two this has no exec-path copy: `process_claim_fees_instruction` looks the
+/// deployment up by the `deployment_id` in its params and never re-derives the claim id, so the
+/// proven instance is checked only against the metadata.
+pub fn derive_claim_id(
+    deployment_id: pallas::Base,
+    backer_pub_x: pallas::Base,
+    backer_pub_y: pallas::Base,
+    fee_share: u64,
+    nonce: u64,
+) -> pallas::Base {
+    poseidon_hash([
+        DRK_POSEIDON_DOMAIN_COMMITMENT,
+        deployment_id,
+        backer_pub_x,
+        backer_pub_y,
+        pallas::Base::from(fee_share),
+        pallas::Base::from(nonce),
+    ])
+}
+
+/// `tx_binding = poseidon(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`.
+///
+/// Every V2 circuit in this contract binds the transaction this way, and the contract's
+/// metadata publishes the same value for an unsigned call (`tx_commitment` and `tx_nonce`
+/// both zero). It is here rather than written out four times so the two cannot drift.
+pub fn derive_tx_binding(tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> pallas::Base {
+    poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, tx_commitment, tx_nonce])
 }

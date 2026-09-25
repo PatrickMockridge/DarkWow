@@ -226,15 +226,13 @@ fn relayer_endowment_initialize_get_metadata_v1(
     params: InitializeParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-    let (rx, ry) = params.signature_public.xy().expect("pk not identity");
-    let config_hash = poseidon_hash([pallas::Base::from(4), pallas::Base::from(params.default_backer_cut_bp as u64)]);
-    let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()?.get());
-    let endowment_id = poseidon_hash([pallas::Base::from(4), rx, ry, config_hash, nonce]);
+    let nonce = wasm::util::get_verifying_block_height()?.get();
+    let endowment_id =
+        derive_endowment_id(&params.signature_public, params.default_backer_cut_bp, nonce);
     // Circuit order: tx_binding(0), tx_nonce(1), derived_endowment_id(2)
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_INIT_NS_V2.to_string(),
-        vec![poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero(), endowment_id],
+        vec![derive_tx_binding(pallas::Base::zero(), pallas::Base::zero()), pallas::Base::zero(), endowment_id],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -246,21 +244,14 @@ fn relayer_endowment_deploy_capital_get_metadata_v1(
     params: DeployCapitalParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-    let (rx, ry) = params.relayer_pub.xy().expect("pk not identity");
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-    let (bx, by) = params.signature_public.xy().expect("pk not identity");
-    let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()?.get());
-    let config_hash = poseidon_hash([pallas::Base::from(4), pallas::Base::from(params.backer_cut_bp as u64)]);
-    let endowment_id = poseidon_hash([pallas::Base::from(4), rx, ry, config_hash, nonce]);
-    let deployment_id = poseidon_hash([
-        pallas::Base::from(4),
-        endowment_id,
-        bx,
-        by,
-        pallas::Base::from(params.amount),
+    let nonce = wasm::util::get_verifying_block_height()?.get();
+    let deployment_id = derive_deployment_id(
+        &params.relayer_pub,
+        &params.signature_public,
+        params.backer_cut_bp,
+        params.amount,
         nonce,
-    ]);
+    );
     let vc_affine = params.value_commit.to_affine();
     let coords = vc_affine.coordinates();
     if coords.is_none().into() {
@@ -270,7 +261,7 @@ fn relayer_endowment_deploy_capital_get_metadata_v1(
     // Circuit order: deployment_id(0), vc_x(1), tx_binding(2), tx_nonce(3), vc_y(4)
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V2.to_string(),
-        vec![deployment_id, *vc_coords.x(), poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero(), *vc_coords.y()],
+        vec![deployment_id, *vc_coords.x(), derive_tx_binding(pallas::Base::zero(), pallas::Base::zero()), pallas::Base::zero(), *vc_coords.y()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -283,19 +274,18 @@ fn relayer_endowment_claim_fees_get_metadata_v1(
     params: ClaimFeesParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()?.get());
-    let claim_id = poseidon_hash([
-        pallas::Base::from(4),
+    let nonce = wasm::util::get_verifying_block_height()?.get();
+    let claim_id = derive_claim_id(
         params.deployment_id,
         pallas::Base::from_repr(params.backer_pub_x).unwrap(),
         pallas::Base::from_repr(params.backer_pub_y).unwrap(),
-        pallas::Base::from(params.fee_share),
+        params.fee_share,
         nonce,
-    ]);
+    );
     // Circuit order: tx_binding(0), tx_nonce(1), derived_claim_id(2)
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V2.to_string(),
-        vec![poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero(), claim_id],
+        vec![derive_tx_binding(pallas::Base::zero(), pallas::Base::zero()), pallas::Base::zero(), claim_id],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -567,11 +557,18 @@ fn process_deploy_capital_instruction(
         }
     }
 
-    // Generate deployment ID
+    // Generate deployment ID — the same derivation the `DeployCapitalV2` instance is
+    // verified against, so the stored key is the proven id.
     // Use signature_public from params as the backer's public key
     let backer_pub = params.signature_public;
     let block_height = wasm::util::get_verifying_block_height()?.get();
-    let deployment_id = derive_deployment_id(params.relayer_pub, &backer_pub, block_height);
+    let deployment_id = derive_deployment_id(
+        &params.relayer_pub,
+        &backer_pub,
+        params.backer_cut_bp,
+        params.amount,
+        block_height,
+    );
 
     // Update account
     account.total_deployed += params.amount;
@@ -1034,8 +1031,5 @@ fn apply_deactivate_endowment_update(
 // HELPERS
 // ============================================================================
 
-#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-fn derive_deployment_id(relayer_pub: PublicKey, backer_pub: &PublicKey, nonce: u64) -> pallas::Base {
-    use dwow_sdk::crypto::poseidon_hash;
-    poseidon_hash([relayer_pub.x().expect("pk not identity"), relayer_pub.y().expect("pk not identity"), backer_pub.x().expect("pk not identity"), backer_pub.y().expect("pk not identity"), pallas::Base::from(nonce)])
-}
+// The ids this contract derives are defined once, in `crate::model` — see the section there
+// for why they must not be defined a second time.

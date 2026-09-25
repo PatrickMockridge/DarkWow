@@ -1739,19 +1739,22 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         let backer_secret = pallas::Base::from(20u64);
         let backer_pub = PublicKey::from_secret(SecretKey::from_base(backer_secret));
 
-        let init = relayer_harness.initialize(relayer_pub, 500, 42)?;
+        // Both calls ride in block `height4`, so both proofs must bind `height4` — the verifying
+        // block height, which the harness takes from this call rather than from an argument.
+        let height4 = chain.height().succ();
+        relayer_harness.set_next_block_height(height4);
+        let init = relayer_harness.initialize(relayer_pub, 500)?;
         assert!(!init.call_data.is_empty(), "initialize call_data must not be empty");
         println!("  Initialize call_data={}B", init.call_data.len());
 
         let deploy = relayer_harness.deploy_capital(
-            pallas::Base::from(1u64), backer_pub, 10000,
-            pallas::Base::from(2u64), 0, pallas::Scalar::from(3u64),
+            backer_pub, 10000,
+            pallas::Base::from(2u64), pallas::Scalar::from(3u64),
             relayer_pub, 500,
         )?;
         assert!(!deploy.call_data.is_empty(), "deploy_capital call_data must not be empty");
         println!("  DeployCapital call_data={}B", deploy.call_data.len());
 
-        let height4 = chain.height().succ();
         {
             let cb = chain.build_coinbase_for_height(height4, dwow_sdk::blockchain::expected_reward(height4)).await?;
             let mut init_tx = build_contract_tx(relayer_id, init.call_data);
