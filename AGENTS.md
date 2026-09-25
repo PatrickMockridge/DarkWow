@@ -74,6 +74,10 @@ These are mechanical, not advisory. They are here because agents have broken eac
   `-j 1`**, which throttles rather than fixes. Test-phase memory is concurrent in-process proving, so use
   `--test-threads 4` — **never 1**. `RAYON_NUM_THREADS=10` on every cargo invocation (`RAYON` does not affect
   rustc codegen memory).
+- **Do not edit sources while a build is running.** cargo reads the tree as it compiles, so an edit landing
+  mid-build is compiled in whatever half-finished state it happened to be in. The failure then presents as *the
+  run's own result* — a build error where a test verdict was expected — which is worse than a wrong answer,
+  because it looks like an answer. Finish the edit, then start the build.
 - **Everything heavy runs inside a cgroup scope**, the repository's own pattern
   (`scripts/lean-build.sh`): `systemd-run --user --scope -q --unit=<name> -p MemoryMax=28G -p MemorySwapMax=0
   -- bash -c '<cmd>'`. **Lean is the exception** — it always goes through `scripts/lean-build.sh`, which owns its

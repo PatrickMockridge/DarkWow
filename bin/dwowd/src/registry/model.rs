@@ -115,6 +115,37 @@ pub struct LinearBlockTemplate {
     // blocks; see runbook noted-not-fixed.
 }
 
+/// Does this assembled block fit the frame bound the peers enforce?
+///
+/// A **packing** rule for the miner, not a validity rule, and deliberately not a
+/// check in `block_acceptor` — that function's removal of a size gate in 2026-09-25
+/// was correct.
+///
+/// It exists because **gas is not a byte bound**: gas charges by call *count*
+/// (`contract_calls.len() * GAS_LIMIT`), while proof witnesses, `encrypted_note`, call
+/// data and uncle transaction lists add bytes without gas, so a block can be gas-cheap
+/// and byte-huge. A `byte_budget` used to live here derived from the deleted
+/// `MAX_BLOCK_SIZE`; deleting the number deleted the *obligation* with it.
+///
+/// The bound is the one peers actually apply, measured in the encoding the wire uses:
+/// `BlockBroadcast`'s codec is `serde_json`, and `MAX_FRAME_PAYLOAD` /
+/// `MAX_BLOCK_BATCH` hold 32 MiB, derived in
+/// `doc/src/arch/consensus/consensus.md` §"Block and Payload Size". A miner that
+/// exceeds it builds a block its own node accepts and every peer rejects — and
+/// `net/channel.rs` **bans** the sender rather than declining the block.
+///
+/// Uncles count: they ride the same `BlockBroadcast` frame.
+pub fn block_fits_frame_bound(
+    txs: &[dwow_chain::Transaction],
+    uncles: &[dwow_chain::UncleBlock],
+) -> bool {
+    let frames = serde_json::to_vec(txs)
+        .map(|v| v.len())
+        .unwrap_or(usize::MAX)
+        .saturating_add(serde_json::to_vec(uncles).map(|v| v.len()).unwrap_or(usize::MAX));
+    frames <= dwow_chain::sync_connection::MAX_FRAME_PAYLOAD
+}
+
 /// Build the plaintext coinbase transaction for stratum/mm_rpc mining.
 ///
 /// Since b6bf44f79 the coinbase is a plaintext contract call (PoWRewardV1,
@@ -612,33 +643,62 @@ pub async fn generate_linear_block_template(
     // computation below so the mining blob commits to it, and it rides in
     // template.transactions into the submit-reconstructed block (stratum /
     // mm_rpc paths).
+    //
+    // ── The block-bytes budget: a PACKING rule, not a validity rule ──────────────
+    //
+    // Gas is not a byte bound. It charges by call *count*
+    // (`contract_calls.len() * GAS_LIMIT`), while proof witnesses, `encrypted_note`,
+    // call data and uncle transaction lists add bytes without gas — so a block can be
+    // gas-cheap and byte-huge. Nothing else bounded it: a `byte_budget` stood here
+    // derived from the deleted `MAX_BLOCK_SIZE`, and deleting the number deleted the
+    // *obligation* with it — "the miner must not build what the transport will drop".
+    //
+    // The bound is the one the peers actually enforce, measured in the encoding the
+    // wire uses: `BlockBroadcast`'s codec is `serde_json`, and the rails hold
+    // `MAX_FRAME_PAYLOAD` / `MAX_BLOCK_BATCH` at 32 MiB, themselves derived in
+    // `doc/src/arch/consensus/consensus.md` §"Block and Payload Size". A miner that
+    // exceeds them builds a block its own node accepts and every peer rejects — and
+    // `net/channel.rs` **bans** the sender rather than declining the block, so the
+    // miner forks itself off and is blacklisted for it.
+    //
+    // The comparison is made against the **fully assembled** list, appends included,
+    // so no headroom constant is guessed: FeeCollectV1 depends on the selection, so
+    // the only exact measurement is the assembled one. Transactions are dropped from
+    // the tail of the selection until it fits; the remainder stays in the mempool.
+    let selection = transactions;
     let transactions: Vec<dwow_chain::Transaction> = {
-        let mut txs = transactions;
-        // P2-9-5: plaintext fee sum — FeeV3 fees need no decryption, so the
-        // old FI-ENCRYPT-3 zero-sum fallback (which produced structurally
-        // invalid blocks whenever the selection included fee-paying txs) is
-        // replaced by the same sum the built-in miner uses.
-        let tf = sum_block_fee_v3(&txs);
-        if let Some(fee_tx) = build_fee_collect_tx(
-            &recipient_config.recipient,
-            &txs,
-            height,
-            tf,
-        )? {
-            txs.push(fee_tx);
-        }
-        // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Per-uncle note mint".
-        // Mint one spendable note per accepted uncle, appended to the block so
-        // its commitment + nullifier ride into connect_block's 0x07 extraction.
-        for (idx, uncle) in uncles.iter().enumerate() {
-            if !uncle.pin_accepted || uncle.pin_confirmed.get() == 0 {
-                continue;
+        let mut selected = selection;
+        loop {
+            let mut txs = selected.clone();
+            // P2-9-5: plaintext fee sum — FeeV3 fees need no decryption, so the
+            // old FI-ENCRYPT-3 zero-sum fallback (which produced structurally
+            // invalid blocks whenever the selection included fee-paying txs) is
+            // replaced by the same sum the built-in miner uses.
+            let tf = sum_block_fee_v3(&txs);
+            if let Some(fee_tx) = build_fee_collect_tx(
+                &recipient_config.recipient,
+                &txs,
+                height,
+                tf,
+            )? {
+                txs.push(fee_tx);
             }
-            let tx_nonce = pallas::Base::from(height.get() * 1000 + idx as u64);
-            let uncle_tx = build_uncle_mint_tx(uncle, height, tx_nonce)?;
-            txs.push(uncle_tx);
+            // Spec: uncle_merkle.md §Uncle Minting & Maturity — "Per-uncle note mint".
+            // Mint one spendable note per accepted uncle, appended to the block so
+            // its commitment + nullifier ride into connect_block's 0x07 extraction.
+            for (idx, uncle) in uncles.iter().enumerate() {
+                if !uncle.pin_accepted || uncle.pin_confirmed.get() == 0 {
+                    continue;
+                }
+                let tx_nonce = pallas::Base::from(height.get() * 1000 + idx as u64);
+                let uncle_tx = build_uncle_mint_tx(uncle, height, tx_nonce)?;
+                txs.push(uncle_tx);
+            }
+            if block_fits_frame_bound(&txs, &uncles) || selected.is_empty() {
+                break txs;
+            }
+            selected.pop();
         }
-        txs
     };
 
     #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]

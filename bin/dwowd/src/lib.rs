@@ -1090,11 +1090,15 @@ impl Dwowd {
                         vec![],
                     ).await;
                     // NO DAG announce for genesis: the genesis block carries
-                    // the 9 contract deployments (multi-MB WASM payload) and
-                    // is exempt from the block size cap. Flood broadcast +
-                    // GetBlocks sync are the load-bearing delivery paths for
-                    // genesis; the DAG substrate (§10.4) carries only
-                    // post-genesis blocks.
+                    // the 9 contract deployments (multi-MB WASM payload), so
+                    // flood broadcast + GetBlocks sync are the load-bearing
+                    // delivery paths for it; the DAG substrate (§10.4) carries
+                    // only post-genesis blocks.
+                    //
+                    // (This read "and is exempt from the block size cap" until
+                    // 2026-09-25. There is no block size cap — the constant was
+                    // removed as an invented number. The decision on this line
+                    // never depended on it, so only the citation changed.)
                 }
             }
         }
@@ -1389,12 +1393,41 @@ async fn prepare_block(
         drop(tracker);
     }
     let prod_tf = total_fees;
-    let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
-        &recipient,
-        &mempool_txs,
-        height,
-        prod_tf,
-    )?;
+    // ── The same packing obligation the template path enforces ───────────────────
+    //
+    // See `registry::model::block_fits_frame_bound`: gas charges by call *count*
+    // while proof witnesses, `encrypted_note` and uncle transaction lists add bytes
+    // without gas, so without this a miner builds a block its own node accepts and
+    // every peer rejects — and `net/channel.rs` **bans** the sender rather than
+    // declining the block. The earlier `byte_budget` derived from the deleted
+    // `MAX_BLOCK_SIZE`, so both the number and the obligation went together.
+    //
+    // Measured on the fully assembled set — selection + coinbase + FeeCollectV1 +
+    // uncles — so no headroom constant is guessed. FeeCollectV1 depends on the
+    // selection, so the assembled measurement is the only exact one; transactions are
+    // dropped from the tail until it fits, and the remainder stays in the mempool.
+    let (fee_collect_tx, mempool_txs) = {
+        let mut selected = mempool_txs;
+        loop {
+            let fee_tx = crate::registry::model::build_fee_collect_tx(
+                &recipient,
+                &selected,
+                height,
+                prod_tf,
+            )?;
+            let mut assembled: Vec<dwow_chain::Transaction> = selected.clone();
+            assembled.push(coinbase_tx.clone());
+            if let Some(ref f) = fee_tx {
+                assembled.push(f.clone());
+            }
+            if crate::registry::model::block_fits_frame_bound(&assembled, &uncles)
+                || selected.is_empty()
+            {
+                break (fee_tx, selected);
+            }
+            selected.pop();
+        }
+    };
 
     // 6. Destructively take the competing blocks — the LAST step.
     //    take_competing_blocks is DESTRUCTIVE. All fallible operations
