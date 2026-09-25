@@ -4,10 +4,29 @@
 # Invariants). Each check maps to a specific FI- invariant or SPEC- guardrail.
 # Zero output on success; explicit FAIL message on violation.
 #
-# NOTE ON PROVENANCE: this header used to claim "Runs on every push". No CI exists
-# in this repository (.github/workflows/ and .gitlab-ci.yml are absent) and
-# nothing invoked this script, so that claim was false. It is now wired into
-# scripts/run-all-tests.sh, and it carries a negative control (`--self-test`).
+# PROVENANCE AND WIRING, corrected 2026-09-25. This header used to claim "Runs on every
+# push". No CI exists in this repository (`.github/workflows/` and `.gitlab-ci.yml` are
+# absent) and nothing invoked this script, so that claim was false.
+#
+# It is NOT yet wired into `scripts/run-all-tests.sh`. Its negative control (`--self-test`)
+# IS wired, because an instrument that cannot fail must be caught regardless of what it
+# says. The gate itself is held back on one open question, stated here rather than left
+# for a reader to rediscover:
+#
+#   Its one remaining red is `[Check-12]`, which requires a nominal `ThresholdAmount`.
+#   That requirement is real — `doc/book/arch/type-system.html:539,542` specifies
+#   `ThresholdAmount(u64)` as the "mempool admission threshold" and requires
+#   `verify_threshold_proof(tx, ThresholdAmount)` not to accept a `FeeAmount` — but the
+#   SOURCE markdown (`doc/src/arch/type-system.md`) no longer contains any of that text,
+#   and no `ThresholdAmount` exists in Rust anywhere. So the check enforces a
+#   specification that survives only in a build artefact. Whether to restore the source
+#   text and implement the type, or to drop the requirement, is a decision rather than a
+#   repair, and this gate stays out of the umbrella until it is taken.
+#
+# Three checks were removed on 2026-09-25 because neither their authority nor their
+# subject exists (`FI-ENCRYPT-3`, `Check-9`'s `AccumulatorPoint`, `Check-13`'s
+# `decrypt_fee_for_miner`), and `Check-14`'s authority `M-9` likewise. Each removal is
+# recorded where it stood. See `scripts/check-authority-resolves.sh`.
 set -euo pipefail
 
 # ── Negative control ────────────────────────────────────────────────────────────
@@ -246,15 +265,17 @@ else
     echo "PASS"
 fi
 
-# ── Check 13: decrypt_fee_for_miner returns Result<FeeAmount, _> not Result<u64, _> ──
-echo -n "[Check-13] decrypt_fee_for_miner returns FeeAmount, not u64... "
-if grep -q "Result<FeeAmount" "$ROOT"/bin/dwowd/src/lib.rs 2>/dev/null; then
-    echo "PASS"
-else
-    echo "FAIL"
-    echo "  fee-spec.md H-3: decrypt_fee_for_miner SHALL return Result<FeeAmount, FeeDecryptError>."
-    FAILED=1
-fi
+# ── [Check-13] — REMOVED 2026-09-25, its authority and its subject do not exist ──
+#
+# The check was named for `decrypt_fee_for_miner` and cited `fee-spec.md H-3`. `H-3` is
+# defined in no document under doc/, and the function exists **nowhere in the
+# repository** — while the check's actual test was `grep -q "Result<FeeAmount"` against
+# `bin/dwowd/src/lib.rs`, a string with no reference to the function it named. So it was
+# red for a reason unrelated to its own rule: it named a missing function and a missing
+# clause, and failed on an absent type signature in a file neither of them is in.
+#
+# Detected by `scripts/check-authority-resolves.sh`, now wired into run-all-tests.sh.
+# Restoring it requires restoring the clause and the function.
 
 # ── [Check-14] — REMOVED 2026-09-25, its authority does not exist ──
 #

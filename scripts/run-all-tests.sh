@@ -66,6 +66,32 @@ for arg in "$@"; do
     [ "$arg" = "--fail-fast" ] && FAIL_FAST=1
 done
 
+# ── Negative controls, before anything they judge ────────────────────────────────
+#
+# A gate whose control cannot make it fail is not a gate: it reports a verdict it has no
+# way to justify. These run FIRST, because a broken instrument makes every verdict below
+# it worthless — and because this failure mode is silent. `[FI-GEN-2]` in
+# `contrib/ci/check_fee_guardrails.sh` was unmatchable for as long as it existed: its
+# pattern put a bare `|` inside a BRE `\(...\)`, where `|` is a LITERAL character, so the
+# group could only match the text "(FeeAmount|CongestionFactor|...)" — parentheses and
+# pipes, in a source file. It reported PASS on every tree, including one containing a
+# planted violation. Made matchable, it reported a real one within minutes
+# (`bin/dwowd/src/lib.rs`'s `DECLARATIVE_CHARGE_PER_CALL`, a compile-time constant of a
+# consensus domain type that also duplicated `GAS_LIMIT`).
+#
+# This is the tree's own pattern rather than a new one — `check_lean_axioms.py --self-test`
+# is already a gate below. Each control plants a defect, requires a NON-ZERO exit, and
+# checks that the failure NAMES the planted defect, so a gate that dies for an unrelated
+# reason cannot satisfy its own control by accident.
+run_gate "control: fee guardrails can fail [FI-GEN-2]" \
+    bash "$REPO_ROOT/contrib/ci/check_fee_guardrails.sh" --self-test
+run_gate "control: verdict runner keeps cargo's exit status" \
+    bash "$REPO_ROOT/contrib/test_verdicts.sh" --self-test
+run_gate "control: authority gate can report a dead citation" \
+    bash "$SCRIPT_DIR/check-authority-resolves.sh" --self-test
+run_gate "control: sync conformance reports a missing header" \
+    bash "$REPO_ROOT/contrib/ci/check_sync_conformance.sh" --self-test
+
 # Static circuit audits first — they are seconds, and they need no build.
 #
 # Artifact freshness goes before everything that builds, deliberately. `make test` has
@@ -208,6 +234,31 @@ run_gate "documentation index"            bash "$SCRIPT_DIR/check-doc-index.sh"
 # (`3e5dc703ed`, `e5ef7c1c96`). It ran nowhere, so the signal was never delivered — the tree's own
 # "gate that cannot fail" class, in the shape of a gate that cannot *report*. Wired now; 0.23 s.
 run_gate "register artifacts resolve (OBL-T7)" bash "$SCRIPT_DIR/check-register-artifacts.sh"
+# A gate's AUTHORITY, resolved — the class that let an invented constant stand.
+# `MAX_BLOCK_SIZE`'s doc comment cited "L1 barrier #7", and "L1 barrier" appears in no
+# document in this repository (the barrier list was deleted 2026-09-22). This resolves the
+# section and clause-id citations the gates and the register make — 25 sections and 26
+# clause ids today — and found six dead ones on its first run: `fee-spec.md §5.6.2.1`,
+# `FI-ENCRYPT-3`, `M-9`, `sync-protocol.md §16` and `§14.3`, and the register's
+# `type-system.md §7.3`. Three checks whose authority AND whose subject both failed to
+# exist (nothing to cite, nothing to find) were removed rather than repaired.
+#
+# It checks EXISTENCE, never agreement: a pass does not mean the cited clause says what
+# the gate claims. Its header states that limit, the same limit check-register-artifacts.sh
+# states for file citations. `OBL-*` ids are deliberately not re-checked here —
+# check-doc-index.sh resolves those, and a second, weaker copy of a check is how this
+# tree's last duplicate propagated.
+run_gate "authority resolves (cited clause exists)" bash "$SCRIPT_DIR/check-authority-resolves.sh"
+# The heavyweight anti-pattern scanner: the ONE red `contrib/ci/*` gate whose authority is
+# real. `heavyweight-spec.md` §4.11 quotes the exact prohibited snippet (`empty_witnesses()`
+# + `Proof::create(pk, &[circuit], &[], OsRng)`) and says verbatim "CI SHALL fail if either
+# pattern is found". No CI exists in this repository, so it has never run; this is the
+# runner. **It is expected RED**, and that is the point: its 8 findings are live — four in
+# `src/contract/test-harness/src/harness/insurance_market.rs` and four in `harness/dex.rs`.
+# Wiring it does not make the umbrella green, it makes the umbrella TRUE, which is what the
+# register's OBL-C137 asks for. Its siblings are declassified instead: see the note below.
+run_gate "heavyweight anti-patterns (spec §4.11)" \
+    bash "$REPO_ROOT/contrib/ci/scan_heavyweight_antipatterns.sh"
 # The barb alphabet, in five representations: the Lean `inductive Barb`, the core `BarbId`, the sdk
 # `Barb`, the Python model, and `type-system.md` §1.1. `contrib/barb_alphabet_diff.sh` extracts and
 # diffs the four sets mechanically; `contrib/primitive_barbs_diff.sh` does the same for the *type→barb

@@ -3,6 +3,22 @@
 # Checks for all 9 prohibited patterns from heavyweight-spec.md §4.
 # Usage: ./scan_heavyweight_antipatterns.sh [--json]
 # Exit 0 = clean, Exit 1 = violations found, Exit 2 = scanner error
+#
+# WIRING, added 2026-09-25. Wired into `scripts/run-all-tests.sh` as the gate
+# "heavyweight anti-patterns (spec §4.11)". It was invoked by nothing before that,
+# and it is the one red `contrib/ci/*` gate whose authority is real:
+# `heavyweight-spec.md` §4.11 quotes the exact prohibited snippet — `empty_witnesses()`
+# plus `Proof::create(pk, &[circuit], &[], OsRng)` — and says verbatim "CI SHALL fail if
+# either pattern is found". No CI exists in this repository, so a spec clause demanding
+# that CI fail has never been honoured by anything.
+#
+# **IT IS EXPECTED RED.** Its findings are live: 4 sites in
+# `src/contract/test-harness/src/harness/insurance_market.rs` and 4 in `harness/dex.rs`.
+# The dex pair is not a defect — dex's spec declares those two endpoints `is_zk: false`,
+# so the stubs match the spec. The insurance_market pair is: `empty_witnesses()` cannot
+# synthesise a circuit that needs a real witness, so `Proof::create` fails, and the
+# `.map_err(|_| "Proof::create failed")` throws away the real error, which is why that
+# red has never had a stated cause.
 
 set -euo pipefail
 

@@ -4,6 +4,27 @@
 # the heavyweight test exercises each variant through accept_block.
 # Usage: ./check_heavyweight_coverage.sh [--json]
 # Exit 0 = full coverage, Exit 1 = gaps found
+#
+# WIRING, decided 2026-09-25: NOT wired, because its verdict is not supported by its own
+# code. Two independent defects, both measured, both in this file:
+#
+#   * The `accept_block` check (`check_has_accept_block`) greps from the test function's
+#     line to the next `^fn ` line. For a 4-line wrapper — which the schema MANDATES
+#     (`doc/src/dev/testing/level-2-heavyweight.md:141-150`) — that window collapses to
+#     the function's own signature line, so the check returns `NO_ACCEPT_BLOCK` for **all
+#     nine** genesis contracts, including the two it prints as `[OK]`, while
+#     `bin/dwowd/src/tests/heavyweight_pipeline.rs` contains `accept_block` 39 times and
+#     `submit()` 18 times. It is structurally impossible to satisfy under the schema it
+#     polices.
+#   * `check_variant_in_test` (`:65-77`) assigns `$test_fn` and **never uses it** — the
+#     grep runs against the whole 145 KB file, so "covered" means "the name appears
+#     somewhere in the module".
+#
+# Both directions of its verdict — `Covered: 17` and `Gaps: 38` — are therefore
+# unsupported, and wiring it would put the umbrella red for a reason nobody can act on.
+# It is kept for the rebuild that fixes those two defects; until then it is a report, not
+# a gate. This is the other half of OBL-C137: one of the three red `contrib/ci` gates was
+# a live defect and is now wired, and this one is a broken instrument.
 
 set -u
 
