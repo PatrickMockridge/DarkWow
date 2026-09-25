@@ -81,13 +81,29 @@ pub(crate) fn merkle_anchor_add(
         entry_bytes[i] = cell.read().unwrap_or(0);
     }
 
-    // Validate contract_id matches executing contract (R5)
-    if let Ok(entry) = AnchorEntry::from_leaf_bytes(&entry_bytes) {
-        if entry.contract_id != cid {
+    // Validate contract_id matches executing contract (R5).
+    //
+    // This is a `match`, not an `if let`, and that is the whole fix: the check was
+    // **skipped exactly when the input was malformed**, and the malformed entry was
+    // appended anyway. So a contract could write an unparseable — or forged —
+    // `contract_id` into the block-level anchor tree, which is the one thing this check
+    // exists to prevent. A parse failure is a refusal, not a pass.
+    match AnchorEntry::from_leaf_bytes(&entry_bytes) {
+        Ok(entry) => {
+            if entry.contract_id != cid {
+                error!(
+                    target: "runtime::merkle_anchor::merkle_anchor_add",
+                    "[WASM] [{cid}] merkle_anchor_add(): contract_id mismatch — entry claims {}",
+                    entry.contract_id
+                );
+                return dwow_sdk::error::IO_ERROR
+            }
+        }
+        Err(e) => {
             error!(
                 target: "runtime::merkle_anchor::merkle_anchor_add",
-                "[WASM] [{cid}] merkle_anchor_add(): contract_id mismatch — entry claims {}",
-                entry.contract_id
+                "[WASM] [{cid}] merkle_anchor_add(): entry is not a well-formed \
+                 AnchorEntry ({e}); refusing rather than skipping the check"
             );
             return dwow_sdk::error::IO_ERROR
         }

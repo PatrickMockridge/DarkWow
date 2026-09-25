@@ -313,14 +313,28 @@ impl Mempool {
             ));
         }
 
-        // Size limit
-        if let Ok(serialized) = serde_json::to_vec(&tx) {
-            if serialized.len() > self.config.max_tx_size {
-                return Err(dwow_core::Error::Custom(format!(
-                    "Transaction too large: {} bytes (max: {})",
-                    serialized.len(), self.config.max_tx_size
-                )));
-            }
+        // Size limit.
+        //
+        // The failure-to-measure case is now **decided** rather than implicit. This was
+        // `if let Ok(serialized) = serde_json::to_vec(&tx) { … }`, whose error arm fell
+        // through to **admit**: a transaction this node cannot measure entered the pool
+        // with no size check at all — while the template assembler *skips* the very same
+        // transaction (`bin/dwowd/src/registry/model.rs`). Two components, opposite
+        // defaults, one condition.
+        //
+        // Refused here, because a transaction that cannot be serialized cannot be relayed
+        // or persisted either: admitting it bypasses the bound in exchange for nothing.
+        let serialized = serde_json::to_vec(&tx).map_err(|e| {
+            dwow_core::Error::Custom(format!(
+                "Transaction cannot be measured for admission (serialization failed): {e}"
+            ))
+        })?;
+        if serialized.len() > self.config.max_tx_size {
+            return Err(dwow_core::Error::Custom(format!(
+                "Transaction too large: {} bytes (max: {})",
+                serialized.len(),
+                self.config.max_tx_size
+            )));
         }
 
         let fee = self.fee_extractor.extract_fee(&tx);
