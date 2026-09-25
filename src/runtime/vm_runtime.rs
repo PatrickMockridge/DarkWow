@@ -731,34 +731,56 @@ impl Runtime {
         let payload = Self::serialize_payload(&env_mut.contract_id, payload);
 
         // Allocate enough memory for the payload and copy it into the memory.
-        let pages_required = payload.len() / WASM_PAGE_SIZE + 1;
-        // HAZOP M-14: charge gas proportional to memory growth.
-        // Previously memory.grow cost 1 gas per opcode (uniform cost model).
-        // Now charges per page to make memory exhaustion attacks expensive.
-        let current_pages = self.memory_pages();
-        if pages_required as u64 > current_pages {
-            let new_pages = pages_required as u64 - current_pages;
-            let gas_cost = new_pages * WASM_PAGE_SIZE as u64;
-            match get_remaining_points(&mut self.store, &self.instance) {
-                MeteringPoints::Remaining(rem) => {
-                    if gas_cost > rem {
-                        set_remaining_points(&mut self.store, &self.instance, 0);
-                        return Err(Error::WasmerRuntimeError(
-                            "Gas exhausted during memory allocation".into(),
-                        ));
-                    }
-                    set_remaining_points(&mut self.store, &self.instance, rem - gas_cost);
-                }
-                MeteringPoints::Exhausted => {
-                    set_remaining_points(&mut self.store, &self.instance, 0);
-                    return Err(Error::WasmerRuntimeError(
-                        "Gas exhausted during memory allocation".into(),
-                    ));
-                }
-            }
-        }
+        // (The payload's address and the page count are computed together, below,
+        // because the payload is placed *above* the guest's live data rather than
+        // at offset 0.)
+        // REMOVED 2026-09-25 — a `HAZOP M-14` block stood here that charged gas
+        // proportional to this growth (`new_pages * WASM_PAGE_SIZE`) and could
+        // return "Gas exhausted during memory allocation".
+        //
+        // It is deleted because it charged for the wrong thing: this growth is
+        // HOST-driven — the line below copies the payload in — so it is not an
+        // attack surface, and its only lever was to return an error on an honest
+        // call. An adversarial audit measured its magnitude and confirms it was
+        // never a bound: for deployooor's ~1.49 MB payload it cost 327,680 gas,
+        // 0.082% of `GAS_LIMIT`, and 8.1% in the worst case the frame caps permit.
+        // The allocation it nominally policed was bounded all along by the frame
+        // codec upstream.
+        //
+        // A justification that stood here is CORRECTED, because it was false. It
+        // said metering "already charges the contract's own `memory.grow` per
+        // opcode". The metering middleware charges **8 gas flat per instruction
+        // whatever the page count** (see the cost tiers above) and does not account
+        // `MemoryGrow` at all. So nothing prices attacker-chosen memory growth —
+        // before or after this change. That gap is recorded rather than papered
+        // over: a contract can request up to 65536 pages in a single `memory.grow`
+        // for 8 gas. Related and UNVERIFIED: `MemoryFill` is likewise 8 gas flat for
+        // any length with bulk-memory enabled, which would make a multi-GiB fill
+        // nearly free. Flagged, not fixed, and not introduced here.
+        // The payload is written ABOVE everything the guest has already touched, and
+        // the guest is handed its address — not 0.
+        //
+        // `__entrypoint(input: *mut u8)` has always taken that pointer
+        // (`src/sdk/src/wasm/entrypoint.rs`); the host passed a hardcoded
+        // `Value::I32(0)`, which placed the payload in the guest's **shadow stack**.
+        // That is safe only below `__stack_pointer` — 1,048,576 (1 MiB) in all 32
+        // artifacts, with `.rodata` beginning exactly at that address and the heap at
+        // `__heap_base` above it. deployooor's own artifact is 1,494,589 bytes, so
+        // deploying it wrote over all 102,464 bytes of `.rodata`, the bss tail and the
+        // first 343,021 bytes of the heap: dlmalloc's state became payload bytes, and
+        // the first `malloc` inside `deserialize` allocated from garbage. That is the
+        // `out of bounds memory access` in `dlmalloc::malloc` → `finish_grow` →
+        // `dwow_serial::deserialize` → `__metadata`, and it is why exactly one of 32
+        // contracts failed — deployooor is the only artifact over 1 MiB.
+        //
+        // Writing at the pre-growth end removes the window rather than narrowing it:
+        // the payload lands above every byte the guest has used, so a collision
+        // requires the guest's heap to grow past it. Host-side only — no guest change,
+        // no artifact rebuild, no pin move.
+        let payload_start = self.memory_bytes();
+        let pages_required = (payload_start + payload.len()) / WASM_PAGE_SIZE + 1;
         self.set_memory_page_size(pages_required as u32)?;
-        self.copy_to_memory(&payload)?;
+        self.copy_to_memory(&payload, payload_start as u32)?;
 
         debug!(target: "runtime::vm_runtime", "Getting {} function", section.name());
         let entrypoint = self.instance.exports.get_function(section.name())?;
@@ -775,7 +797,9 @@ impl Runtime {
         // Gas metering bounds instruction count but not wall-clock time.
         // A contract with 400M expensive opcodes can consume unbounded CPU.
         let call_start = std::time::Instant::now();
-        let ret = match entrypoint.call(&mut self.store, &[Value::I32(0_i32)]) {
+        // The guest is handed the payload's address. wasm32 pointers are `u32`, so the
+        // bit pattern is converted through `u32` rather than cast straight to `i32`.
+        let ret = match entrypoint.call(&mut self.store, &[Value::I32(payload_start as u32 as i32)]) {
             Ok(retvals) => {
                 let elapsed = call_start.elapsed();
                 // MAX_WASM_CALL_TIME is a soft limit — exceeded calls log a
@@ -1015,21 +1039,40 @@ impl Runtime {
         }
     }
 
-    /// Get the current number of memory pages.
-    fn memory_pages(&self) -> u64 {
-        let env = self.ctx.as_ref(&self.store);
-        env.memory.as_ref().map_or(0, |m| m.size(&self.store).0 as u64)
-    }
-
-    /// Set the memory page size. Returns the previous memory size.
-    fn set_memory_page_size(&mut self, pages: u32) -> Result<Pages> {
+    /// Grow the memory so it is at least `pages` pages. Returns nothing; the
+    /// previous size was discarded by the single caller.
+    ///
+    /// (`memory_pages()` stood above this until 2026-09-25. Its only caller was
+    /// the removed `HAZOP M-14` block, so it went with it.)
+    fn set_memory_page_size(&mut self, pages: u32) -> Result<()> {
         // Grab memory by value
         let memory = self.take_memory();
-        // Modify the memory
-        let ret = memory.grow(&mut self.store, Pages(pages))?;
+        // `grow_at_least`, NOT `grow`. wasmer's `Memory::grow(store, delta)` takes a
+        // DELTA, and this caller computes an ABSOLUTE requirement
+        // (`payload.len() / WASM_PAGE_SIZE + 1`) — so the old `grow(Pages(pages))`
+        // grew the memory BY the absolute figure on every contract call instead of
+        // TO it. A contract's memory therefore over-allocated by that figure on each
+        // of its calls.
+        //
+        // An adversarial audit corrected the severity that stood here: this said the
+        // memory "would eventually pass its maximum and fail `CouldNotGrow`, on a
+        // chain that had done nothing wrong". It would not. A fresh `Runtime` is
+        // built per call job and at most three sections run on one, so the old
+        // ceiling was `18 + 3 × pages_required` — 1,557 pages for the largest
+        // permitted payload, against a 65,536-page maximum. The real defect was a
+        // ~3x over-allocation, not a cap blowout, and `grow_at_least` fixes it.
+        //
+        // `grow_at_least` is the existing wasmer API whose meaning matches this
+        // caller, and it is idempotent: if the memory is already big enough it does
+        // nothing. Verified against the backend (wasmer-vm 6.1.0
+        // `src/memory.rs:128-137`): `min_size` is in BYTES — it compares against
+        // `self.size.bytes()` and converts the byte growth to pages itself — so the
+        // page count is converted here.
+        let min_size = (pages as u64) * WASM_PAGE_SIZE as u64;
+        memory.grow_at_least(&mut self.store, min_size)?;
         // Replace the memory back again
         self.ctx.as_mut(&mut self.store).memory = Some(memory);
-        Ok(ret)
+        Ok(())
     }
 
     /// Take Memory by value. Needed to modify the Memory object
@@ -1043,12 +1086,23 @@ impl Runtime {
     }
 
     /// Copy payload to the start of the memory
-    fn copy_to_memory(&self, payload: &[u8]) -> Result<()> {
-        // Payload is copied to index 0.
-        // Get the memory view
+    /// The guest memory's current size in bytes.
+    fn memory_bytes(&self) -> usize {
+        let env = self.ctx.as_ref(&self.store);
+        env.memory.as_ref().map_or(0, |m| m.size(&self.store).0 as usize) * WASM_PAGE_SIZE
+    }
+
+    /// Copy the payload into guest memory at `at`.
+    ///
+    /// `at` was hardcoded to 0 until 2026-09-25. Zero is inside the guest's **shadow
+    /// stack**: the layout is stack-first, `__stack_pointer` is 1,048,576 in all 32
+    /// artifacts, `.rodata` begins exactly there and the heap sits above it. A payload
+    /// larger than 1 MiB therefore overwrote `.rodata` and dlmalloc's own state. See
+    /// the call site for the full account.
+    fn copy_to_memory(&self, payload: &[u8], at: u32) -> Result<()> {
         let env = self.ctx.as_ref(&self.store);
         let memory_view = env.memory_view(&self.store);
-        memory_view.write_slice(payload, 0)
+        memory_view.write_slice(payload, at)
     }
 
     /// Serialize contract payload to the format accepted by the runtime functions.
