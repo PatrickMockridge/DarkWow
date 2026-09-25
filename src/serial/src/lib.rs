@@ -54,6 +54,30 @@ pub trait Encodable {
 /// Data which can be decoded in a consensus-consistent way.
 pub trait Decodable: Sized {
     fn decode<D: Read>(d: &mut D) -> Result<Self, Error>;
+
+    /// Decode `len` values into a `Vec`.
+    ///
+    /// The default is one [`Self::decode`] per element, which is what every type gets. A type
+    /// whose wire form is a fixed-width block overrides this to read the whole block in one go —
+    /// a **cost** change and nothing else, because the bytes consumed are identical either way.
+    ///
+    /// Why it is worth a hook on the trait: the runtime's gas meter charges per wasm
+    /// instruction, so a per-element decode of a large `Vec<u8>` costs roughly 65 gas per byte,
+    /// and the deploy path decodes a contract's whole artifact twice per section against a
+    /// single budget for the call job. Measured 2026-09-25, that combination put an undeclared
+    /// ceiling of about **1.2 MB** on deployable artifacts, and a deploy above it failed with the
+    /// metering middleware's injected `unreachable` — a failure that named neither gas nor a
+    /// limit. See F13.
+    fn decode_vec<D: Read>(d: &mut D, len: usize) -> Result<Vec<Self>, Error> {
+        let mut ret = Vec::new();
+        // `try_reserve`, not `with_capacity`: `len` is attacker-controlled on the wire, and an
+        // allocation failure must be a rejected decode rather than an abort.
+        ret.try_reserve(len).map_err(|_| std::io::ErrorKind::InvalidData)?;
+        for _ in 0..len {
+            ret.push(Self::decode(d)?);
+        }
+        Ok(ret)
+    }
 }
 
 /// Encode an object into a vector.
@@ -297,7 +321,39 @@ macro_rules! impl_int_encodable {
     };
 }
 
-impl_int_encodable!(u8, read_u8, write_u8);
+// `u8` is written out rather than taken from `impl_int_encodable!` for one reason: it is the only
+// type that overrides `decode_vec`. A `Vec<u8>` is the one large vector on the critical path — a
+// contract's entire artifact, decoded twice per section — and the per-element default cost ~65 gas
+// per byte under the runtime's meter, which is what capped deployable artifacts at ~1.2 MB (F13).
+// Everything below `read_u8` is the macro's own body, unchanged; the `decode_vec` is the addition.
+impl Decodable for u8 {
+    #[inline]
+    fn decode<D: Read>(d: &mut D) -> Result<Self, Error> {
+        ReadExt::read_u8(d).map(u8::from_le)
+    }
+
+    /// Read all of them at once. `u8`'s wire form is already a byte block, so this is a single
+    /// `read_exact` instead of one bounds-checked read and one `push` per element.
+    #[inline]
+    fn decode_vec<D: Read>(d: &mut D, len: usize) -> Result<Vec<Self>, Error> {
+        let mut ret = Vec::new();
+        // Same guard as the default body, and for the same reason: `len` comes off the wire, so
+        // an absurd value must be a rejected decode rather than an abort on allocation.
+        ret.try_reserve(len).map_err(|_| std::io::ErrorKind::InvalidData)?;
+        ret.resize(len, 0);
+        d.read_exact(&mut ret).map_err(|_| std::io::ErrorKind::InvalidData)?;
+        Ok(ret)
+    }
+}
+
+impl Encodable for u8 {
+    #[inline]
+    fn encode<S: WriteExt>(&self, s: &mut S) -> Result<usize, Error> {
+        s.write_u8(self.to_le())?;
+        Ok(core::mem::size_of::<u8>())
+    }
+}
+
 impl_int_encodable!(u16, read_u16, write_u16);
 impl_int_encodable!(u32, read_u32, write_u32);
 impl_int_encodable!(u64, read_u64, write_u64);
@@ -522,12 +578,9 @@ impl<T: Decodable> Decodable for Vec<T> {
     #[inline]
     fn decode<D: Read>(d: &mut D) -> Result<Self, Error> {
         let len = VarInt::decode(d)?.0;
-        let mut ret = Vec::new();
-        ret.try_reserve(len as usize).map_err(|_| std::io::ErrorKind::InvalidData)?;
-        for _ in 0..len {
-            ret.push(Decodable::decode(d)?);
-        }
-        Ok(ret)
+        // The element type decides how to read them: one `decode` each by default, or the whole
+        // block at once for a type that overrides `decode_vec`.
+        T::decode_vec(d, len as usize)
     }
 }
 
@@ -666,6 +719,32 @@ impl Decodable for Cow<'static, str> {
 mod tests {
     use super::{endian::*, *};
     use futures_lite::AsyncWriteExt;
+
+    /// `Vec<u8>` takes the bulk path (`u8::decode_vec`), and that path must be indistinguishable
+    /// on the wire from the per-element one it replaced — same bytes written, same bytes read,
+    /// and a short read still rejected rather than silently returning a shorter vector.
+    ///
+    /// The size is a contract artifact rather than a toy vector, because that is the case F13 is
+    /// about: a 1.5 MB `Vec<u8>` is what the deploy path decodes, twice per section, against one
+    /// gas budget.
+    #[test]
+    fn vec_u8_bulk_decode_round_trips_at_artifact_scale() {
+        let data: Vec<u8> = (0..1_500_000u32).map(|i| (i % 251) as u8).collect();
+        let encoded = serialize(&data);
+
+        // Wire format unchanged: a VarInt length (5 bytes at this size: 0xfe + u32), then the
+        // raw bytes. A `push`-per-element decoder produced exactly this too.
+        assert_eq!(encoded.len(), data.len() + 5);
+        assert_eq!(encoded[0], 0xfe);
+
+        let decoded: Vec<u8> = deserialize(&encoded).expect("bulk decode round trip");
+        assert_eq!(decoded, data);
+
+        // Negative control: one byte short of the declared length must be an error. `read_exact`
+        // gives this for free; the point is that the bulk path did not lose it.
+        let short = &encoded[..encoded.len() - 1];
+        assert!(deserialize::<Vec<u8>>(short).is_err());
+    }
 
     #[test]
     fn serialize_int_test() {
