@@ -992,7 +992,7 @@ the cumulative supply chain accumulates the full base reward. The header field
 `total_reward == canonical_reward == base_reward − Σ pin_confirmed_i`.
 `verify_uncle_split()` enforces it before the block reaches disk.
 
-### PoWReward Function — Relationship to Uncle Split
+### PoWRewardV1 Function — Relationship to Uncle Split
 
 The uncle reward is a **subtractive** split of the base coinbase reward: the
 canonical miner's note is reduced by `Σ pin_confirmed_i`, and each accepted
