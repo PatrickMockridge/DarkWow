@@ -167,7 +167,6 @@ sha2 = {version = "0.10.9", optional = true}
 dwow-sdk = {path = "src/sdk", optional = true}
 wasmer = {version = "6.1.0", features = ["singlepass"], optional = true}
 wasmer-compiler-singlepass = {version = "6.1.0", optional = true}
-wasmer-compiler-cranelift = {version = "6.1.0", optional = true}
 wasmer-middlewares = {version = "6.1.0", optional = true}
 
 # Blockchain store
@@ -391,13 +390,18 @@ wasm-runtime = [
     "blockchain",
 ]
 
-# Opt-in Cranelift compiler for 3-10× faster WASM execution.
-# Comes with deeper native stack frames — may require larger thread stacks
-# and RUST_MIN_STACK. Use for benchmarking or high-throughput scenarios
-# where the stability tradeoff is acceptable.
-cranelift-compiler = [
-    "wasmer-compiler-cranelift",
-]
+# `cranelift-compiler` stood here — an opt-in backend swap for "3-10x faster WASM
+# execution ... where the stability tradeoff is acceptable". The tradeoff was never
+# acceptable here, and the opt-in was not opt-in: it was enabled by every
+# `--all-features` invocation, including `make test` and seven other targets in the
+# Makefile, while the node builds and ships Singlepass
+# (`contrib/docker/testnet-node/Dockerfile:46`, `cargo build -p dwowd --release`).
+# So the suite verified a backend the chain does not run, and the two are not
+# guaranteed to agree: `src/runtime/vm_runtime.rs` allows scalar floats exactly
+# because they are "IEEE-754 deterministic within a single wasmer backend", which is
+# only true while there is one. Removed 2026-09-25 — the backend is now unconditional
+# in `vm_runtime.rs`. A benchmark that genuinely wants Cranelift can re-add it, but it
+# must not arrive with a blanket flag.
 
 zk = [
     "halo2_proofs",

@@ -119,12 +119,20 @@ with the **Singlepass** compiler backend by default. Singlepass provides fast
 compilation and predictable stack usage, matching the upstream project's proven
 configuration.
 
-**Cranelift is available as an opt-in performance enhancer** via the
-`cranelift-compiler` Cargo feature flag. Cranelift provides 3-10× faster WASM
-execution but comes with deeper native stack frames and larger memory
-requirements. It is not the default because stability and determinism take
-precedence over raw execution speed. When wasmer's concurrency model matures,
-Cranelift will be re-evaluated alongside other performance approaches:
+**Singlepass is the only backend.** Cranelift was reachable through a
+`cranelift-compiler` Cargo feature, offering 3-10× faster WASM execution at the cost
+of deeper native stack frames. It was never the default, for the reason this section
+already gave — stability and determinism take precedence over raw execution speed —
+but the option existing as a Cargo feature **defeated that intent**: `--all-features`
+silently selected it, and that is the flag `make test` and seven other Makefile
+targets use, so the test suite verified a different WASM backend from the one the
+node ships (`contrib/docker/testnet-node/Dockerfile` builds `cargo build -p dwowd
+--release`, without the flag). The two backends are not guaranteed to agree, and this
+repository relies on them agreeing: `src/runtime/vm_runtime.rs` allows scalar floats
+precisely because they are deterministic *within a single backend*. The feature, its
+optional dependency and the `cfg` that selected the backend were removed on
+2026-09-25, so no flag can select one. When wasmer's concurrency model matures,
+alternative approaches can be re-evaluated:
 
 - **Batch compilation**: Dedicated compilation threads with compiled artifact
   caching (requires wasmer Engine-per-thread safety)
@@ -135,21 +143,22 @@ Cranelift will be re-evaluated alongside other performance approaches:
 
 | Aspect | Detail |
 |--------|--------|
-| Compiler | Singlepass (default); Cranelift via `cranelift-compiler` feature |
+| Compiler | Singlepass, unconditionally — `wasmer_compiler_singlepass::Singlepass as Compiler` in `src/runtime/vm_runtime.rs`. A `cranelift-compiler` feature used to make this selectable and was removed 2026-09-25 |
 | Module cache | None — always recompile (avoids cross-Engine corruption) |
 | Stack requirement | Default OS stack (8 MB) — no special configuration needed |
 | Block gas limit | `BLOCK_GAS_LIMIT = 100_000_000_000` (250× per-call `GAS_LIMIT` of 400M) |
 | Max calls per block | Bounded by gas, not by a count: `BLOCK_GAS_LIMIT / GAS_LIMIT = 250` calls, since template assembly charges each call `GAS_LIMIT` against the block budget (`bin/dwowd/src/registry/model.rs`). **There is no `MAX_CALLS_PER_BLOCK` constant** — this cell claimed one existed and was "enforced at template generation"; nothing in the tree enforced it, and no such symbol exists (measured 2026-09-25). `MinerConfig.max_txs = 250` states the same figure independently |
 
-The `cranelift-compiler` feature flag is available as a compile-time opt-in:
+The dependency set is Singlepass only:
 ```toml
-# Default: Singlepass (stable, predictable stacks)
 wasmer = { version = "6.1.0", features = ["singlepass"] }
-wasmer-compiler-singlepass = { version = "6.1.0" }
-
-# Opt-in: Cranelift (3-10× faster, deeper stacks)
-wasmer-compiler-cranelift = { version = "6.1.0", optional = true }
+wasmer-compiler-singlepass = { version = "6.1.0", optional = true }
 ```
+
+Note that `wasmer` still links `wasmer-compiler-cranelift` through its own default
+features, so the crate appears in `cargo tree`. That is not a backend choice: nothing
+instantiates Cranelift, and the linker drops it — a `-p dwowd` build measures 0
+cranelift symbols against 994 singlepass ones.
 
 ## Startup Sequence
 

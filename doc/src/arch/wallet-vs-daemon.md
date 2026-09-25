@@ -140,7 +140,7 @@ needs (`GetTip`/`Tip`, `GetBlocks`/`Blocks`, `TxMessage`).
 | | Daemon | Wallet |
 |---|---|---|
 | **Block validation** | Full: PoW, PoW consensus, Uncle Merkle, WASM execution, ZK verification, Pedersen mass balance, finality | None — inserts blocks as-is from P2P sync |
-| **Contract execution** | Full WASM runtime (`wasmer`, singlepass/cranelift) | No execution |
+| **Contract execution** | Full WASM runtime (`wasmer`, Singlepass) | No execution |
 | **Mempool** | Yes (10k tx, 1hr TTL) | No |
 | **Mining** | Built-in miner + Stratum + Merge-mining | No |
 | **Genesis** | Creates genesis block, stores 9 genesis contracts with WASM + manifests | Reads genesis blocks from P2P sync |

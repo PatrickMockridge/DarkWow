@@ -42,10 +42,12 @@ use wasmer::{
     FunctionEnv, Instance, Memory, MemoryType, MemoryView, Module, Pages, Store, Value,
     WASM_PAGE_SIZE,
 };
-#[cfg(not(feature = "cranelift-compiler"))]
+// Singlepass, unconditionally. A `cranelift-compiler` feature used to swap this
+// alias, so `make test` — which runs `--all-features` — exercised a different WASM
+// backend from the one the node ships. The two are not guaranteed to agree, and the
+// scanner below allows scalar floats *because* they are deterministic within one
+// backend. Removed 2026-09-25; see the note in `Cargo.toml` where the feature stood.
 use wasmer_compiler_singlepass::Singlepass as Compiler;
-#[cfg(feature = "cranelift-compiler")]
-use wasmer_compiler_cranelift::Cranelift as Compiler;
 use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
     Metering,
@@ -347,10 +349,17 @@ impl Runtime {
     ) -> Result<Self> {
         info!(target: "runtime::vm_runtime", "[WASM] Instantiating a new runtime");
 
-        // HAZOP H10 fix: reject WASM binaries that use non-deterministic features
-        // (floating-point, bulk memory, SIMD) before module compilation. These can
-        // produce different results on different wasmer backends (Singlepass vs
-        // Cranelift) or architectures, causing consensus splits.
+        // HAZOP H10 fix: reject WASM binaries that use the non-deterministic feature
+        // set — SIMD (0xFD) and threads/atomics (0xFE) — before module compilation.
+        //
+        // Scalar floats (0x8A..=0xBF) are deliberately ALLOWED, and this comment said
+        // the opposite until 2026-09-25 (it claimed floats and bulk memory are
+        // rejected; this function's own doc has always been the accurate description).
+        // Corrected here because this is the line a reader consults to decide what the
+        // guard protects. The allowance is sound only because there is now exactly one
+        // backend: wasm floats are IEEE-754, but only "deterministic within a single
+        // wasmer backend" — which was this repository's own stated reason for the
+        // scanner, back when `cranelift-compiler` could silently swap the backend.
         Self::reject_nondeterministic_features(wasm_bytes)?;
 
         // HAZOP M-12: tiered WASM opcode costs.

@@ -2638,7 +2638,6 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "wasmer",
- "wasmer-compiler-cranelift",
  "wasmer-compiler-singlepass",
  "wasmer-middlewares",
  "x509-parser 0.18.1",
