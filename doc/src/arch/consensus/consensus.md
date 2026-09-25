@@ -36,10 +36,22 @@ absence of a constant, because a cap was previously invented into this vacuum an
 enforced as block validity (see the note below).
 
 **A block's resource bound is `BLOCK_GAS_LIMIT`** (`src/linear/src/block.rs`),
-enforced deterministically during execution at every height, including genesis,
-as `BlockGasLimitExceeded`. Gas accounting is the consensus bound on what a block
-may contain. A byte-size bound is a different quantity and is not a substitute
-for it.
+enforced deterministically during execution as `BlockGasLimitExceeded` — **but not
+at genesis**, which this paragraph asserted until an adversarial audit read the
+code. Genesis deployment transactions are routed around the gas-accounted job loop
+(`execution.rs`: `if is_genesis && is_genesis_deployment_tx(tx) { continue; }`) and
+`apply_genesis_deployments` performs no gas check at all. Genesis's integrity is the
+pinned hash, not a resource bound.
+
+**Gas is not, however, a bound on a block's *bytes*.** An earlier revision of this
+paragraph said gas accounting "is the consensus bound on what a block may contain".
+It is not. Gas prices *executed instructions*, and the byte-carrying fields — proof
+witnesses, `encrypted_note`, call data, and entire uncle transaction lists — add
+size without adding gas. `db_set`'s charge is per *state-write byte*
+(`ptr_len − existing_len`), not per payload byte, so a `BLOCK_GAS_LIMIT` of 10¹¹
+permits on the order of 10¹¹ bytes. **There is currently no byte bound on a block at
+all** — a known open regression recorded in the rails table below, not a settled
+design.
 
 **If a cap is ever introduced, it SHALL be decided from testing.** The determiner
 is a measured payload distribution against a measured node capacity — never a
@@ -47,22 +59,28 @@ number chosen to make a test pass, never a round number carried in from another
 chain, and never a constant inherited from one that already exists. The two
 bounds in this repository that were set this way are the model to follow:
 
-- `src/linear/src/sync_types.rs:311-315` — the `Blocks` message `MAX_BYTES` is
-  16 MiB, derived from a *measured* largest payload: the genesis block, whose 9
-  contract-WASM deployments measure **~11.35 MiB**, plus headroom.
-- `bin/dwowd/src/proto/linear_broadcast.rs` — the block-broadcast receive bound
-  is 100 MB, stated as 6x the expected ~15 MB genesis.
+- `src/linear/src/sync_types.rs` — the `Blocks` message `MAX_BYTES` is **32 MiB**
+  (`MAX_BLOCK_BATCH`), derived from a *measured* largest payload: the genesis block,
+  whose 9 contract-WASM deployments measure **~11.35 MiB**, plus headroom.
+- `bin/dwowd/src/proto/linear_broadcast.rs` — the block-broadcast receive bound is
+  **100 MB** (`MAX_GENESIS_SIZE`), ~8.8x the measured ~11.35 MiB genesis.
+
+**Both bullets were wrong here until 2026-09-25, in the section written to make
+these numbers derivable.** The first said 16 MiB where the code enforces 32. The
+second quoted a *"6x the expected ~15 MB genesis"* comment that the same commit had
+already replaced with an 8.8x-of-measured figure. A normative section that miscites
+the code it derives from is precisely the defect class this pass exists to remove —
+and an adversarial audit found it in this section, one commit after it was written.
 
 A future cap SHALL be specified **here, before it appears in code**, and its
 derivation SHALL be recorded with it.
 
 ### The transport frame bound: 32 MiB
 
-The only byte bound in the protocol is a **transport frame bound of 32 MiB**,
-applied on every rail that can carry a block or a transaction. It bounds one
-frame before allocation. It is **not** a block-size cap and it does not make any
-block or transaction invalid — an over-limit frame is dropped, never interpreted
-as bad data.
+The byte bounds in the protocol are **per-rail transport frame bounds**, applied
+before allocation. They are **not** block-size caps and they do not make any block
+or transaction invalid — an over-limit frame is dropped, never interpreted as bad
+data.
 
 Its derivation, which is what distinguishes it from the 4 MiB it replaces:
 
@@ -82,12 +100,39 @@ which any value of this order achieves. A tight bound buys no additional securit
 and refuses legitimate data; that is what the 4 MiB value did, and it is why this
 one is set above the measured worst case rather than near it.
 
-**Every rail states the same bound.** A rail that carries a block must accept
-what another rail accepts, and a drain bound must be at least as large as the
-block bound — a drain bound *below* it cannot consume a legitimate push and
-desyncs or bans the sender. The previous arrangement had the sync rail at 16 MiB,
-the broadcast rail at 4 MiB and the drain at 4 MiB, so the same block was
-relayable by one rail and peer-banned by another.
+**The rails do NOT all state the same figure, and an earlier version of this
+section asserted that they did.** An adversarial audit refuted it. The truth:
+
+| Rail | Bound | Enforced? |
+|---|---|---|
+| sync frame (`MAX_FRAME_PAYLOAD`) | 32 MiB | yes — rejected before allocating |
+| `Blocks` message (`MAX_BLOCK_BATCH`) | 32 MiB | yes |
+| block broadcast, receive (`MAX_GENESIS_SIZE`) | **100 MB** | yes — the decode-side `take` |
+| block broadcast, boundary codec | 32 MiB | **no — inert** |
+| transaction (`TX_MAX_BYTES`) | 32 MiB | yes |
+| unknown-command drain (`MAX_INBOUND_PAYLOAD`) | 32 MiB | yes |
+| `MAX_BATCH_BYTES` (batching target) | 12 MiB | trims a batch, never rejects |
+
+The 32 MiB written into `impl_boundary_codec!(BlockBroadcast, …)` **changed nothing
+at runtime**: `BoundaryCodec::MAX_BYTES` has no reader anywhere in the tree, and the
+check that would consume it reads `Message::MAX_BYTES`, which `BlockBroadcast`
+registers as `0` — so that check is skipped entirely for blocks. The broadcast
+rail's real bound is 100 MB, inherited and unchanged. A commit message in this
+repository cited `net/message_publisher.rs:278` as the mechanism that banned a peer
+for an oversize block; that line cannot fire for this message type.
+
+**The mismatch that follows is a live defect, stated rather than smoothed over.** A
+node without a `linearlblock` dispatcher (the wallet) that is pushed a block frame
+between 32 MiB and 100 MB returns `MessageInvalid`, and under `BanPolicy::Strict`
+that bans the sender — while `MAX_INBOUND_PAYLOAD`'s own comment claims it "must be
+at least as large as the block bound". Against the broadcast rail it is not.
+
+The rule that must hold is the one the previous arrangement violated: **a rail that
+carries a block must accept what another rail accepts, and a drain bound must be at
+least as large as the block bound.** That arrangement had the sync rail at 16 MiB,
+the broadcast rail at 4 MiB and the drain at 4 MiB, so the same block was relayable
+by one rail and peer-banned by another. That specific defect is fixed; the
+100 MB/32 MiB mismatch is not.
 
 **A node-local bound is a policy bound, not a validity rule.** A node may apply a
 local resource limit — an allocation guard, a rate limit, a frame size — and such

@@ -210,8 +210,13 @@ pub fn accept_block_with_mempool(
     // policy that decides acceptance is a consensus rule, and two nodes with
     // different policies would refuse each other's blocks. A block's resource
     // bound is `BLOCK_GAS_LIMIT`, enforced during execution
-    // (`dwow_chain::execution`, `BlockGasLimitExceeded`), which is deterministic
-    // and applies at every height including genesis.
+    // (`dwow_chain::execution`, `BlockGasLimitExceeded`) — **but not at genesis**,
+    // which this comment claimed until the adversarial audit read the code. Genesis
+    // deployment transactions are routed around the gas-accounted job loop
+    // (`execution.rs`: `if is_genesis && is_genesis_deployment_tx(tx) { continue; }`)
+    // and `apply_genesis_deployments` performs no gas check at all. Genesis's
+    // integrity is the pinned hash, not a resource bound — which is exactly why the
+    // deleted `height != GENESIS` size exemption was not covered by anything.
     //
     // There is no block size cap. If one is ever introduced it is decided from
     // testing — a measured payload distribution against a measured node capacity
@@ -410,8 +415,9 @@ pub fn accept_block_with_mempool(
         // commits to, so an unbound key would let a producer mint a note spendable
         // by someone other than `header.miner`.
         //
-        // GENESIS IS EXEMPT, for the same reason as the block-size cap (0.5) and
-        // the witness checks (2.5): genesis authenticity is the pinned genesis hash,
+        // GENESIS IS EXEMPT, for the same reason as the witness checks (2.5) —
+        // and, until 2026-09-25, for the same reason as the block-size cap (0.5),
+        // which no longer exists: genesis authenticity is the pinned genesis hash,
         // and genesis deliberately carries NO miner identity — `init_genesis` sets
         // `miner: [0u8; 32]` and genesis.md documents that as "No miner identity in
         // the header — the coinbase binds the mining key". Genesis runs through this

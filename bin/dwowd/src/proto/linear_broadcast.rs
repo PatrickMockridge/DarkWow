@@ -122,12 +122,25 @@ impl_p2p_message!(
 // ban,* by this one at 4 MiB. Every rail that carries a block now states the same
 // bound, so no rail can refuse what another accepts.
 //
-// KNOWN RESIDUE, reported rather than silently patched: an over-limit frame is
-// rejected at `net/message_publisher.rs:278` as `MessageInvalid`, and under
-// `BanPolicy::Strict` that makes `net/channel.rs:604-607` **ban the peer**.
-// "Too large" and "malformed" are not distinguished on that path, so a peer
-// sending an honest but oversized block is banned rather than the block being
-// declined. That is a defect about the *failure mode*, separate from the number.
+// CORRECTED 2026-09-25 by an adversarial audit, because the note that stood here
+// was wrong about its own mechanism. It claimed an over-limit frame is rejected at
+// `net/message_publisher.rs:278` and that `channel.rs` then bans the peer. **That
+// check cannot fire for this message type**: it reads `Message::MAX_BYTES`, and
+// `BlockBroadcast` is registered with `MAX_BYTES = 0` (see the `impl_p2p_message!`
+// call in this file), so the guard `if M::MAX_BYTES > 0 && length > M::MAX_BYTES`
+// is skipped entirely for blocks. `BoundaryCodec::MAX_BYTES` — the 32 MiB written
+// into the `impl_boundary_codec!` call below — has **no reader anywhere in the
+// tree**, so that figure changes nothing at runtime.
+//
+// The broadcast rail's real bound is `MAX_GENESIS_SIZE` (100 MB), inside
+// `decode_async`. The pre-change rejection of a large block came from the deleted
+// `MAX_BLOCK_SIZE` check *within that function*, not from this constant — which is
+// why removing the constant removed the cascade and editing this one did not.
+//
+// The live defect is the resulting mismatch: a node without a `linearlblock`
+// dispatcher (the wallet), pushed a block frame between 32 MiB and 100 MB, returns
+// `MessageInvalid`, and under `BanPolicy::Strict` that bans the sender. See
+// `doc/src/arch/consensus/consensus.md`, "Block and Payload Size".
 //
 // METERING_SCORE=5 (blocks are expensive to validate).
 impl dwow_serial::Encodable for BlockBroadcast {

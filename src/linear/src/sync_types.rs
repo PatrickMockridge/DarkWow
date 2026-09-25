@@ -34,7 +34,12 @@
 //! mismatched peers.
 //!
 //! §4 — **Unified MAX_BYTES.** Canonical values: GetTip=256, Tip=512,
-//! GetBlocks=256, Blocks=16MiB.
+//! GetBlocks=256, Blocks=32MiB.
+//!
+//! (This module doc read `Blocks=16MiB` until 2026-09-25. The constant moved to
+//! 32 MiB and only the comment beside the constant was updated — the same
+//! incomplete correction the HAZOP found in three other places. The enforced
+//! figure is `MAX_BLOCK_BATCH` below.)
 
 use serde::{Deserialize, Serialize};
 

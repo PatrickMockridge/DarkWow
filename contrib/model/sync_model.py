@@ -127,9 +127,22 @@ class Blocks:
 # ==============================================================================
 
 # A peer with no dispatcher for a push command (linearlblock/tx) SHALL drain the
-# frame payload (cap = largest legitimate Block/Transaction) and continue, never
-# desync the stream. Mirrors MAX_INBOUND_PAYLOAD in src/net/message.rs.
-MAX_INBOUND_PAYLOAD = 4 * 1024 * 1024  # 4 MiB
+# frame payload and continue, never desync the stream.
+#
+# This constant HARD-CODES the figure — it does not read the Rust source — so the
+# comment that stood here, "Mirrors MAX_INBOUND_PAYLOAD in src/net/message.rs", was
+# a claim nothing checked, and it went stale in silence: the Rust constant moved
+# 4 MiB -> 32 MiB on 2026-09-25 while this stayed at 4 MiB, and
+# `test_inbound_payload_cap_4mib` compared this value against its own literal, so
+# it passed throughout. A model that asserts `x == x` is not a conformance gate.
+#
+# 32 MiB, matching the enforced transport frame bound; its derivation is in
+# doc/src/arch/consensus/consensus.md, "Block and Payload Size". NOTE the live
+# mismatch this exposes rather than smooths over: the drain bound must be >= the
+# *block* bound, and the broadcast rail's real bound is 100 MB (MAX_GENESIS_SIZE),
+# so 32 MiB is below it — an honest node pushed a 33-100 MB block is refused, and
+# under BanPolicy::Strict, banned.
+MAX_INBOUND_PAYLOAD = 32 * 1024 * 1024  # 32 MiB
 
 # Node-only push commands (§14.1): the node registers these; the wallet's
 # ManualSession does not (drain-and-ignore).
@@ -430,7 +443,12 @@ if __name__ == "__main__":
     check("test_longest_chain_empty", longest_chain_tip([]).get() == 0)
 
     # Test 15: unknown-command drain (§14.1)
-    check("test_inbound_payload_cap_4mib", MAX_INBOUND_PAYLOAD == 4 * 1024 * 1024)
+    # NOTE: this compares the constant against the same literal it is defined as —
+    # against itself — so it can never detect drift from the Rust source, which is
+    # exactly what happened (4 MiB here, 32 MiB in src/net/message.rs). It is kept
+    # as a pin on the value and named for what it is. Making it a real conformance
+    # check means reading `src/net/message.rs` from here.
+    check("test_inbound_payload_cap_32mib", MAX_INBOUND_PAYLOAD == 32 * 1024 * 1024)
     check("test_node_push_commands", set(NODE_PUSH_COMMANDS) == {"linearlblock", "tx"})
 
     # Test 16: node caught-up is a LOCAL property; mining is a separate gate (§18.1.1).

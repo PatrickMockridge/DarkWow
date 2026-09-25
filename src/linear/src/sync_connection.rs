@@ -542,7 +542,10 @@ async fn serve_conn(
                 // NOT the compact `dwow_serial` binary — JSON is ~3-4x larger, so
                 // the budget MUST be measured in JSON bytes. Measuring binary
                 // previously produced ~30-45 MiB JSON batches that the client
-                // rejected at its 16 MiB MAX_FRAME_PAYLOAD, stalling sync.
+                // rejected at its *then*-16 MiB `MAX_FRAME_PAYLOAD`, stalling
+                // sync. (The constant is 32 MiB since 2026-09-25; the incident it
+                // records happened at 16, which is why the measurement is in JSON
+                // rather than in binary.)
                 let mut bytes_used: usize = 0;
                 let mut height = request.start_height;
                 for _ in 0..count {

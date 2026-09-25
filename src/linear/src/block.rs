@@ -61,11 +61,26 @@ pub const BLOCK_GAS_LIMIT: u64 = 100_000_000_000;
 // barrier list was deleted 2026-09-22), and the value traces to a bulk commit
 // whose message says only "Add 4 MB size cap on block decode". It was then
 // enforced as *block validity*, and it rejected a legitimate contract-deployment
-// block at height 2. Byte size is bounded by `BLOCK_GAS_LIMIT` through gas
-// accounting; a node-local resource policy is not a validity rule and must not
-// reject data. If a cap is ever wanted it is decided from testing — a measured
-// payload distribution against a measured node capacity — and it goes in the
-// consensus specification before it goes in code. See
+// block at height 2.
+//
+// There is **no byte bound on a block**, here or anywhere else, and one earlier
+// comment in this file claimed otherwise — it said byte size "is bounded by
+// `BLOCK_GAS_LIMIT` through gas accounting". That is false, and the adversarial
+// audit caught it: gas bounds *computation*, and `db_set`'s charge is
+// approximately one gas per byte of state write (`src/runtime/import/db.rs`,
+// `charge = ptr_len - existing_len`), so a `BLOCK_GAS_LIMIT` of 10^11 gas permits
+// on the order of 10^11 bytes within one block's budget. Gas is not a size bound
+// by roughly nine orders of magnitude.
+//
+// That absence is a **known open regression**, not a settled design: the miner's
+// template byte budget was removed on 2026-09-25 along with the invented cap it
+// derived from, and nothing replaced it, so a miner can now assemble a block that
+// no peer will accept. It is reported, not hidden here.
+//
+// A node-local resource policy is not a validity rule and must not reject data.
+// If a cap or a packing budget is ever wanted it is decided from testing — a
+// measured payload distribution against a measured node capacity — and it goes in
+// the consensus specification before it goes in code. See
 // `doc/src/arch/consensus/consensus.md`, "Block and Payload Size".
 
 /// Block header - contains metadata about a block
