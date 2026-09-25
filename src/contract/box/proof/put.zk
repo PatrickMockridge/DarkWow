@@ -30,6 +30,7 @@ circuit "Put" {
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_MERKLE_LEAF = witness_base(5);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
+    ONE = witness_base(1);
 
     # Ownership — the leaf pins its owner, so a leaf preimage lifted from the
     # plaintext params cannot be consumed with a secret of the attacker's choosing
@@ -46,6 +47,21 @@ circuit "Put" {
     root = merkle_root(leaf_pos, path, old_leaf);
     constrain_equal_base(root, expected_root);
     constrain_instance(expected_root);
+
+    # The successor nonce is derived, not chosen. Purse's Deposit derives its own the same way
+    # (`deposit.zk`: `computed_new = base_add(old_balance, deposit_amount)` then
+    # `constrain_equal_base(computed_new, new_balance)`); here it arrived as a free witness, so a Put
+    # could re-use the nonce it had just consumed — the new leaf would then be identical to the old one,
+    # whose nullifier this same call already spent, and the box could never be consumed again. The field
+    # is still carried in the call params (nothing reads it there) and is now pinned to this value.
+    #
+    # The assign-then-constrain form is purse's, copied deliberately: it is the only form the corpus
+    # uses for an arithmetic check (`deposit.zk:89-90`), and `tests/box_put_successor_nonce.rs` verifies
+    # it holds — three negative arms, plus a control on the nullifier constraint so the file's arms are
+    # evidence rather than assertions about `Proof::create`, which produces bytes for an unsatisfying
+    # assignment either way.
+    computed_nsn = base_add(old_state_nonce, ONE);
+    constrain_equal_base(computed_nsn, new_state_nonce);
 
     # NEW state — circuit computes, constrains against caller-provided
     new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, box_id, new_contents_commit, new_state_nonce, owner_pub);

@@ -1,9 +1,12 @@
 # Circuit design note:
-# state_nonce is shared across old_leaf, new_leaf, and nullifier.
-# This means the nonce stays constant within a single operation.
-# Multi-operation chaining (Deposit→Withdraw) requires distinct
-# owner_secret values per operation for unique nullifiers.
-# See harness withdraw() — os=43 (vs deposit os=42) for test chaining.
+# The consumed leaf and the nullifier both use `state_nonce`. The produced leaf does not: it uses
+# `new_nonce = base_add(state_nonce, ONE)`, derived in-circuit in the NEW state block below.
+# Chaining (Deposit→Withdraw) therefore needs no distinct owner_secret values — the incremented nonce
+# is what makes the second operation's nullifier differ from the first's, and the harness chains one
+# owner throughout (`harness/purse.rs:87`: "Single owner (os=42)").
+# An earlier version of this note said the nonce was shared across old and new leaf and that chaining
+# required `os=43`, citing a harness comment that does not exist. Both statements were false — the
+# `base_add` two lines below is the whole of the correction.
 k = 11;
 field = "pallas";
 

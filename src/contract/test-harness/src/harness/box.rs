@@ -45,15 +45,35 @@ impl BoxHarness {
     /// another contract require a take of *its* box rather than of any box: the caller puts its
     /// commitment and the verifier's host compares `TakeParams.contents_commit` against it.
     pub fn put_contents(&self, contents: pallas::Base) -> Result<BoxPutResult> {
+        self.put_contents_with_successor(contents, pallas::Base::from(1u64))
+    }
+
+    /// The same put with the successor nonce supplied by the caller, so a test can attempt one the
+    /// circuit's `new_state_nonce == old_state_nonce + ONE` constraint forbids. `old_state_nonce` stays
+    /// zero, so the only difference from `put_contents` is the value that constraint binds.
+    pub fn put_contents_with_successor(&self, contents: pallas::Base, nsn: pallas::Base) -> Result<BoxPutResult> {
+        self.put_inner(contents, nsn, false)
+    }
+
+    /// A control for the arms above: everything as `put_contents` — the successor nonce is the valid
+    /// one — except the nullifier *witness* is zeroed while the public input keeps its real value. The
+    /// circuit's `nullifier == poseidon(DOMAIN_NULLIFIER, owner_secret, box_id, old_state_nonce)`
+    /// constraint must reject it. If this call proves, the negative arms above prove nothing about the
+    /// circuit and the reader must not read them as evidence.
+    pub fn put_with_zeroed_nullifier_witness(&self) -> Result<BoxPutResult> {
+        self.put_inner(poseidon_hash([pallas::Base::from(100u64)]), pallas::Base::from(1u64), true)
+    }
+
+    fn put_inner(&self, contents: pallas::Base, nsn: pallas::Base, zero_nullifier_witness: bool) -> Result<BoxPutResult> {
         let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);let dsig=pallas::Base::from(7u64);
         let os=pallas::Base::from(42u64);let bid=pallas::Base::from(1u64);
         let op=poseidon_hash([dsig,os]);
-        let osn=pallas::Base::zero();let nsn=pallas::Base::from(1u64);let occ=pallas::Base::zero();
+        let osn=pallas::Base::zero();let occ=pallas::Base::zero();
         let ncc=contents;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
         let nf=poseidon_hash([dnl,os,bid,osn]);let tb=poseidon_hash([dtb,tc,tn]);let nl=poseidon_hash([dml,bid,ncc,nsn,op]);
         let ol=poseidon_hash([dml,bid,occ,osn,op]);let (lp,p,root)=Self::build_root(ol);
         let er_base: pallas::Base = root.inner();
-        let w=vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(osn)),Witness::Base(Value::known(nsn)),Witness::Base(Value::known(occ)),Witness::Base(Value::known(ncc)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(os)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb)),Witness::Base(Value::known(op))];
+        let w=vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(osn)),Witness::Base(Value::known(nsn)),Witness::Base(Value::known(occ)),Witness::Base(Value::known(ncc)),Witness::Base(Value::known(if zero_nullifier_witness { pallas::Base::zero() } else { nf })),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(os)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb)),Witness::Base(Value::known(op))];
         let pi=vec![nf,er_base,nl,tb,tn];let c=ZkCircuit::new(w,&self.put_zkbin);
         let proof=Proof::create(&self.put_pk,&[c],&pi,rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
@@ -73,7 +93,7 @@ impl BoxHarness {
         let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
         let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;
         cd.extend_from_slice(&note_bytes);
-        Ok(BoxPutResult{call_data:cd,proof})
+        Ok(BoxPutResult{call_data:cd,proof,inputs:pi})
     }
 
     /// Take the default contents — the counterpart of `put`.
@@ -112,5 +132,5 @@ impl ContractHarness for BoxHarness {
     fn function_count(&self) -> usize { 3 }
 }
 
-pub struct BoxPutResult { pub call_data: Vec<u8>, pub proof: Proof }
+pub struct BoxPutResult { pub call_data: Vec<u8>, pub proof: Proof, pub inputs: Vec<pallas::Base> }
 pub struct BoxTakeResult { pub call_data: Vec<u8>, pub proof: Proof }
