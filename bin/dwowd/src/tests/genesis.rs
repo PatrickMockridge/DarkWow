@@ -1191,16 +1191,17 @@ mod tests {
         smol::block_on(async {
             let (_har_a, genesis_block, hash_a) = build_genesis().await?;
 
-            // Sizing witness: the genesis block (WASM in serde_json byte
-            // arrays) exceeds the non-genesis cap — the height-1 size
-            // exemption in accept_block is load-bearing.
-            let genesis_len = serde_json::to_vec(&genesis_block)
-                .infra("serializing the genesis block")?
-                .len();
-            ensure!(genesis_len > dwow_chain::execution::MAX_BLOCK_SIZE,
-                format!("genesis block {genesis_len} bytes should exceed MAX_BLOCK_SIZE {} — \
-                         if not, the size exemption is dead code",
-                        dwow_chain::execution::MAX_BLOCK_SIZE));
+            // A "sizing witness" stood here until 2026-09-25, asserting
+            // `genesis_len > MAX_BLOCK_SIZE` to prove that the height-1 size
+            // exemption in `accept_block` was load-bearing. Both the exemption
+            // and the constant are gone: a block carrying contract deployments
+            // is not oversized, it is ordinary, and the bound it exceeded had no
+            // derivation and cited an authority that does not exist. The
+            // measurement this test took is not lost — the genesis block's size
+            // is recorded where it is used to size a receive bound, at
+            // `src/linear/src/sync_types.rs:311-315` ("measured ~11.35 MiB").
+            // See `doc/src/arch/consensus/consensus.md`, "Block and Payload
+            // Size".
 
             // Harness B: the syncing node — empty contracts tree.
             let har_b = GenesisHarness::new_without_contracts().infra("creating harness B")?;

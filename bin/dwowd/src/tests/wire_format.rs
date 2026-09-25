@@ -167,72 +167,17 @@ fn block_broadcast_wire_carries_pow_source() {
     );
 }
 
-/// OBL-C70 (fixed) — the `MAX_BLOCK_SIZE` measurement is sensitive to the merge-mining proof.
-///
-/// `block_acceptor.rs:164` sizes a block with `serde_json::to_vec(block).len()` and rejects it against
-/// `MAX_BLOCK_SIZE`; `linear_broadcast.rs:175` applies the same bound to the same encoding on the wire.
-/// While that encoding omitted `pow_source` (`OBL-C69`) the measured length was invariant under the size
-/// of the Monero proof, so for a merge-mined block the bound did not bound the block. With `pow_source`
-/// carried again, the measure grows with the proof.
-///
-/// Measured on the *acceptance measure itself* (`serde_json::to_vec`), not on a proxy, so the assertion
-/// is about the number the code compares against its limit. The `assert_ne!` on the canonical codec is
-/// the control: it proves the proof is genuinely present, so a `serde` impl that silently wrote nothing
-/// could not make the second assertion pass.
-///
-/// The comment at `block_acceptor.rs:167-172` reasons about serde *version* drift across the 1% margin.
-/// That is a different concern and this test does not bear on it.
-#[test]
-fn block_size_measurement_is_sensitive_to_the_monero_proof() {
-    let proof = build_test_monero_powdata().expect("the Monero testnet fixture must build");
-
-    let head = |pow_source: PowSource| Block {
-        header: BlockHeader {
-            version: BlockVersion::CURRENT,
-            previous: blake3::hash(b"genesis"),
-            merkle_root: compute_merkle_root(&[]),
-            timestamp: BlockTimestamp::new(1),
-            target: dwow_sdk::blockchain::BlockTarget::MAX,
-            nonce: 0,
-            height: BlockHeight::new(2),
-            uncle_merkle_root: [0u8; 32],
-            total_reward: expected_reward(BlockHeight::new(2)),
-            randomx_key: [0u8; 32],
-            miner: [0u8; 32],
-            commitment_merkle_root: [0u8; 32],
-            nullifier_root: [0u8; 32],
-            anchor_owner: [0u8; 32],
-            anchor_tx_id: [0u8; 32],
-            caribina_anchor: None,
-            anchor_monero_height: MoneroBlockHeight::new(0),
-            anchor_monero_hash: [0u8; 32],
-            finality_flags: 0,
-            pow_source,
-            fee_window_flags: dwow_chain::fee_window::FeeWindowFlags::default(),
-        },
-        transactions: vec![],
-    };
-
-    let merge_mined = head(PowSource::Monero(proof));
-    let native = head(PowSource::Native);
-
-    let json_len = |b: &Block| serde_json::to_vec(b).expect("Block is Serialize").len();
-    let canonical_len = |b: &Block| dwow_serial::serialize(b).len();
-
-    // The proof is genuinely there: the canonical codec, which encodes `pow_source`, sees it.
-    assert_ne!(
-        canonical_len(&merge_mined),
-        canonical_len(&native),
-        "the merge-mined block must really carry more data than the native one, or this test asserts \
-         nothing about the proof being omitted"
-    );
-
-    // The measure `block_acceptor.rs:164` and `linear_broadcast.rs:175` compare against `MAX_BLOCK_SIZE`
-    // must grow with it, or the bound does not bound the block.
-    assert!(
-        json_len(&merge_mined) > json_len(&native),
-        "the acceptance measure must grow with the merge-mining proof; while it did not, a \
-         merge-mined block's `MAX_BLOCK_SIZE` check measured a form that omitted the proof entirely \
-         (OBL-C70)"
-    );
-}
+// A test named `block_size_measurement_is_sensitive_to_the_monero_proof` stood
+// here until 2026-09-25. Its own doc comment said its assertion "is about the
+// number the code compares against its limit" — the `serde_json` length that
+// `block_acceptor.rs` compared against `MAX_BLOCK_SIZE`. That comparison, the
+// constant, and the whole block-size gate are removed (see
+// `doc/src/arch/consensus/consensus.md`, "Block and Payload Size"), so the
+// assertion had no subject left. It is deleted rather than relocated onto a
+// renamed constant: re-pointing it would have preserved the invented number by
+// giving it a new home.
+//
+// The property it was protecting is still tested, by the stronger half of the
+// pair it was written with: `block_broadcast_wire_carries_pow_source` above
+// asserts that a merge-mined block's proof survives the canonical round trip,
+// which is a property of the codec rather than of a limit.

@@ -473,6 +473,24 @@ fn test_all_contracts_deploy() -> Result<()> {
         for (name, err) in &failed {
             println!("  FAILED: {} — {}", name, err);
         }
+        // A batch check that collects failures, prints them and then returns
+        // `Ok(())` is a check that cannot fail. This test reported
+        // `test result: ok` while its own output named two contracts it had
+        // failed to deploy — and that `ok` is how the dex init-framing bug
+        // (`OBL-C131`) and the rejected deployment block at height 2 stayed
+        // invisible to every suite run before 2026-09-25. The failure detail is
+        // already printed above; this makes the verdict match the output.
+        let detail = failed
+            .iter()
+            .map(|(name, err)| format!("{name}: {err}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(dwow_core::Error::Custom(format!(
+            "{} of {} contracts failed to deploy — {}",
+            failed.len(),
+            contracts.len(),
+            detail
+        )));
     }
 
     Ok(())

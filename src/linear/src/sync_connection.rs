@@ -86,14 +86,20 @@ pub fn sync_batch_len(best: u64, next: u64) -> u64 {
     let remaining = best.saturating_sub(next).saturating_add(1);
     (LINEAR_SYNC_BATCH as u64).min(remaining)
 }
-/// Max cumulative encoded size of a single `Blocks` response, under the 16 MiB
-/// `Blocks` wire cap (sync-protocol.md §4/§8.6.2). A batch of 20 large blocks
-/// could otherwise exceed the cap and be dropped at the wire.
+/// Batching *target* for one `Blocks` response, deliberately below the frame
+/// bound so a full batch still fits. This is a heuristic, not a limit: the
+/// assembly loop always includes at least one block even when that single block
+/// exceeds this figure, because a block must be servable. A batch of 20 large
+/// blocks measured in binary rather than JSON was previously ~30-45 MiB of JSON
+/// and was dropped at the wire; the measurement is taken on `serde_json` for that
+/// reason (see the assembly loop below).
 pub const MAX_BATCH_BYTES: usize = 12 * 1024 * 1024;
-/// Upper bound on any single sync-frame payload. Matches the `Blocks` wire cap
-/// (16 MiB, sync-protocol.md §4). A peer-controlled length above this is rejected
-/// before allocation — prevents an unbounded `vec![0u8; payload_len]` OOM.
-pub const MAX_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
+/// Upper bound on any single sync-frame payload, rejected before allocation —
+/// prevents an unbounded `vec![0u8; payload_len]` OOM from a peer-controlled
+/// length. 32 MiB, matching the `Blocks` message bound and the broadcast rail:
+/// this is a transport policy with a stated derivation, not a block-size cap.
+/// See `doc/src/arch/consensus/consensus.md`, "Block and Payload Size".
+pub const MAX_FRAME_PAYLOAD: usize = 32 * 1024 * 1024;
 
 const CMD_GET_TIP: &str = "lineargettip";
 const CMD_TIP: &str = "lineartip";

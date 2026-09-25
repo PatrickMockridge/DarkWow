@@ -97,7 +97,7 @@ Production pattern: Bitcoin Core uses `uint256` for hashes and a dedicated
 ## 4. MAX_BYTES (unified-rail frame bound)
 
 The sync rail enforces **one** upper bound on any sync-frame payload:
-`MAX_FRAME_PAYLOAD = 16 MiB` (`sync_connection.rs`). It is applied uniformly in
+`MAX_FRAME_PAYLOAD = 32 MiB` (`sync_connection.rs`). It is applied uniformly in
 `read_frame` to **every** command — `GetTip`, `Tip`, `GetBlocks`, `Blocks`,
 `BroadcastTx`, and `BroadcastTxAck` alike. A peer-controlled payload length above
 `MAX_FRAME_PAYLOAD` SHALL be rejected **before** allocation (`read_frame` returns
@@ -106,8 +106,14 @@ The sync rail enforces **one** upper bound on any sync-frame payload:
 
 Production pattern: Bitcoin Core bounds inbound P2P payloads with a single
 `MAX_SIZE`/`MAX_PROTOCOL_MESSAGE_LENGTH` guard before allocation; geth bounds
-`MaxMessageSize`; Monero caps `MAX_BLOCK_SIZE`. DarkWow applies the same single-rail
+`MaxMessageSize`; Monero bounds block size. DarkWow applies the same single-rail
 bound across all sync commands.
+
+Note: DarkWow itself has **no block-size cap** — the `MAX_BLOCK_SIZE` constant
+this paragraph used to refer to was removed on 2026-09-25 as an invented number,
+and a block's resource bound is gas (`BLOCK_GAS_LIMIT`). The bounds named here are
+*frame* bounds: they protect allocation before parsing and are local policy, not
+validity. See [consensus.md](consensus/consensus.md) §"Block and Payload Size".
 
 ## 5. genesis_hash Validation
 
@@ -152,8 +158,8 @@ Primary implementation: `src/linear/src/sync_connection.rs` (gated `sync-p2p`).
 | `BLOCKS_TIMEOUT` | `30s` | every `GetBlocks` request |
 | `BROADCAST_TIMEOUT` | `10s` | every `BroadcastTx` request (single frame, shorter than block fetch) |
 | `LINEAR_SYNC_BATCH` | `20` | max blocks per response (genesis served alone = 1) |
-| `MAX_BATCH_BYTES` | `12 MiB` | cumulative encoded-size budget, under the 16 MiB `Blocks` cap |
-| `MAX_FRAME_PAYLOAD` | `16 MiB` | unified upper bound on any sync-frame payload (§4) |
+| `MAX_BATCH_BYTES` | `12 MiB` | batching target for one `Blocks` response, deliberately under the 32 MiB `Blocks` frame bound; a single larger block is still served |
+| `MAX_FRAME_PAYLOAD` | `32 MiB` | unified upper bound on any sync-frame payload (§4) |
 
 ### 8.2 Command names
 
@@ -234,7 +240,7 @@ error** — there is no silent-fail path.
 | S3 | Chain identity | `genesis_hash` checked at handshake (and in `Tip`) | handshake `ok=false` / peer skipped |
 | S4 | Request liveness | `TIP_TIMEOUT` (5s), `BLOCKS_TIMEOUT` (30s) on every request | timeout → `Err`, retried |
 | S5 | Command size | command length ≤ 255 bytes | `Err(InvalidData)` |
-| S6 | Payload size | `MAX_FRAME_PAYLOAD` (16 MiB) unified-rail bound in `read_frame` | oversized payload rejected before allocation |
+| S6 | Payload size | `MAX_FRAME_PAYLOAD` (32 MiB) unified-rail bound in `read_frame` | oversized payload rejected before allocation |
 | S7 | Batch size | `LINEAR_SYNC_BATCH` (20) + `MAX_BATCH_BYTES` (12 MiB), genesis alone | response trimmed |
 | S8 | Observability | every dial/TLS/framing/handshake failure logs | `warn!`/`error!` always emitted |
 
@@ -401,9 +407,9 @@ discards the payload — so the stream stays frame-aligned and the caller can ho
 policy (wallet `Relaxed` log-and-continue, node `Strict` ban). This is the
 **interior** invariant of type-system.md §10.5.2, proved in
 `proofs/lean/src/DarkFi/Net/Framing.lean` (`dispatchOrDrain_total`, `recvLoop_frame_aligned`); it is
-enforced by the receive loop's type, not by a runtime check. The `MAX_INBOUND_PAYLOAD` bound (4 MiB)
-is the declared `drain` budget (type-system.md §10.5 obligation 4): a length over the bound is
-`MessageInvalid`.
+enforced by the receive loop's type, not by a runtime check. The `MAX_INBOUND_PAYLOAD` bound (32 MiB,
+matching the block frame bound so a legitimate block push is always drainable) is the declared
+`drain` budget (type-system.md §10.5 obligation 4): a length over the bound is `MessageInvalid`.
 
 - `BanPolicy::Relaxed` (wallet): log-and-continue — the whole frame was consumed (dispatched or
   drained), so the NEXT frame parses cleanly. The prior behaviour — return `MissingDispatcher`

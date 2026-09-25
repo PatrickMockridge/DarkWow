@@ -24,6 +24,93 @@ rationale and architectural divergence.
 | Monero merge-mining anchoring | [IMPLEMENTED] | `src/linear/src/monero/` |
 | Sharding (uncle merkle topology) | [VISION] | Design exploration — see [scaling.md](scaling.md) |
 | Parallel contract execution | [VISION] | Gated on wasmer thread safety |
+| Block size cap | **NONE — by decision** | There is no cap; see "Block and Payload Size" below |
+| P2P payload cap on block data | **NONE — by decision** | Frame bounds exist and are policy, never validity; see the same section |
+
+## Block and Payload Size
+
+**There is no block size cap.** DarkWow does not bound a block by its serialized
+byte length, and a node SHALL NOT reject a block for being too large. This is
+stated as a fact about the protocol rather than left to be inferred from the
+absence of a constant, because a cap was previously invented into this vacuum and
+enforced as block validity (see the note below).
+
+**A block's resource bound is `BLOCK_GAS_LIMIT`** (`src/linear/src/block.rs`),
+enforced deterministically during execution at every height, including genesis,
+as `BlockGasLimitExceeded`. Gas accounting is the consensus bound on what a block
+may contain. A byte-size bound is a different quantity and is not a substitute
+for it.
+
+**If a cap is ever introduced, it SHALL be decided from testing.** The determiner
+is a measured payload distribution against a measured node capacity — never a
+number chosen to make a test pass, never a round number carried in from another
+chain, and never a constant inherited from one that already exists. The two
+bounds in this repository that were set this way are the model to follow:
+
+- `src/linear/src/sync_types.rs:311-315` — the `Blocks` message `MAX_BYTES` is
+  16 MiB, derived from a *measured* largest payload: the genesis block, whose 9
+  contract-WASM deployments measure **~11.35 MiB**, plus headroom.
+- `bin/dwowd/src/proto/linear_broadcast.rs` — the block-broadcast receive bound
+  is 100 MB, stated as 6x the expected ~15 MB genesis.
+
+A future cap SHALL be specified **here, before it appears in code**, and its
+derivation SHALL be recorded with it.
+
+### The transport frame bound: 32 MiB
+
+The only byte bound in the protocol is a **transport frame bound of 32 MiB**,
+applied on every rail that can carry a block or a transaction. It bounds one
+frame before allocation. It is **not** a block-size cap and it does not make any
+block or transaction invalid — an over-limit frame is dropped, never interpreted
+as bad data.
+
+Its derivation, which is what distinguishes it from the 4 MiB it replaces:
+
+| Input | Value | How obtained |
+|---|---|---|
+| Largest contract WASM | 1.43 MiB (`deployooor`) | measured over all 32 artifacts, 2026-09-25 |
+| All 32 contract WASMs | 10.22 MiB total, 335 KB mean | measured, same |
+| Measured worst-case block | **~11.35 MiB** | the genesis block's 9 contract-WASM deployments, which forced the sync rail from 10 MiB to 16 MiB (`7135d58921`) after it was dropped at the wire |
+| Largest single deployment block | 8.78 MiB | measured, `test_all_contracts_deploy` |
+| Headroom | 4x contract growth | a contract ~4x `deployooor` puts a deployment block near 18 MiB |
+| **Chosen bound** | **32 MiB** | ≥ the 18 MiB growth case, with margin |
+
+**Why it is generous rather than tight.** Fees bound *volume* — what a peer can
+afford to store — and the mempool separately bounds the count. So this bound's
+remaining job is only to stop a single frame claiming a multi-gigabyte length,
+which any value of this order achieves. A tight bound buys no additional security
+and refuses legitimate data; that is what the 4 MiB value did, and it is why this
+one is set above the measured worst case rather than near it.
+
+**Every rail states the same bound.** A rail that carries a block must accept
+what another rail accepts, and a drain bound must be at least as large as the
+block bound — a drain bound *below* it cannot consume a legitimate push and
+desyncs or bans the sender. The previous arrangement had the sync rail at 16 MiB,
+the broadcast rail at 4 MiB and the drain at 4 MiB, so the same block was
+relayable by one rail and peer-banned by another.
+
+**A node-local bound is a policy bound, not a validity rule.** A node may apply a
+local resource limit — an allocation guard, a rate limit, a frame size — and such
+a limit SHALL NOT cause the node to treat data as *invalid*. The distinction is
+not pedantic: a rejection is a consensus statement, and two nodes with different
+resource policies would refuse each other's blocks, which is a chain split by
+policy. If a bound is to reject, it is a consensus rule and belongs in this
+document with a derivation; if it is not, it may drop, defer, throttle, or refuse
+to serve — but it MUST NOT declare the data invalid.
+
+### Why this section exists
+
+A `MAX_BLOCK_SIZE = 4 * 1024 * 1024` stood in `src/linear/src/block.rs` until
+2026-09-25. It cited *"single source of truth pinned across nodes (L1 barrier
+#7)"* — and **"L1 barrier" appears in no document in this repository**; the
+barrier list was deleted on 2026-09-22. The value traces to a bulk remediation
+commit whose message says only *"Add 4 MB size cap on block decode"*. It was
+enforced as block validity in `block_acceptor.rs`, and it rejected a legitimate
+contract-deployment block, reporting a block 2.2x over its limit as being
+*"within 1%"* of it. It had then reproduced into four constants, two of which
+cited it as their entire justification. The lesson recorded here is not about
+that number: it is that an unspecified bound is a *policy*, and a policy that
+decides validity is a consensus rule by another name.
 
 ## Why Uncle Merkle
 

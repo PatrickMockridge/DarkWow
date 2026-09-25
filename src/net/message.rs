@@ -146,11 +146,26 @@ macro_rules! impl_p2p_message {
 pub const MAX_COMMAND_LENGTH: u8 = 255;
 
 /// Upper bound on the payload of an unhandled (unknown) command that a
-/// Relaxed-mode peer will drain-and-ignore. Set to the largest legitimate
-/// wire payload (a `dwow_chain::Block` / `Transaction`, both capped at 4 MiB)
-/// so a node pushing `linearlblock`/`tx` at a pull-only peer does not desync
-/// the stream, while a bogus VarInt length cannot force an unbounded read.
-pub const MAX_INBOUND_PAYLOAD: u64 = 4 * 1024 * 1024;
+/// Relaxed-mode peer will drain-and-ignore.
+///
+/// Its purpose is frame alignment and bounded allocation, and it is the only
+/// thing standing between a bogus wire VarInt and an unbounded read at
+/// `message_publisher.rs:439` — the length it bounds is attacker-chosen and is
+/// read before any allocation. It applies to *unknown* commands only, so it
+/// never rejects valid data.
+///
+/// WHAT IT IS NOT: it is not a block-size limit. It bounds a frame.
+///
+/// The value is 32 MiB, matching every other frame bound on a rail that can
+/// carry a block. It must be **at least** as large as the block bound, because a
+/// peer legitimately pushing a block at a pull-only peer must be drainable
+/// without desyncing the stream — a drain bound below the block bound is
+/// self-defeating, which is exactly what a 4 MiB value here did against a 32 MiB
+/// block bound. This previously read 4 MiB under a comment citing
+/// `MAX_BLOCK_SIZE` and `TX_MAX_BYTES`, both of which were themselves derived
+/// from nothing. See `doc/src/arch/consensus/consensus.md`,
+/// "Block and Payload Size", for the derivation of the 32 MiB policy figure.
+pub const MAX_INBOUND_PAYLOAD: u64 = 32 * 1024 * 1024;
 
 /// Outcome of reading one inbound P2P frame. A frame is either `Dispatched`
 /// (a registered dispatcher decoded its payload) or `Drained` (no dispatcher;

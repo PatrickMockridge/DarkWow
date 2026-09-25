@@ -189,30 +189,34 @@ pub fn accept_block_with_mempool(
         )))?;
     }
 
-    // 0.5 Block size — consensus-level acceptance rule (fail-closed), not
-    // just a wire cap. The genesis block is EXEMPT: it carries the 9 contract
-    // deployments (WASM in transactions), and its integrity check is the
-    // pinned genesis hash, not a size cap.
-    if block.header.height != BlockHeight::GENESIS {
-        let block_len = serde_json::to_vec(block)
-            .map_err(|e| dwow_core::Error::Custom(format!("Block serialization: {}", e)))?
-            .len();
-        // Closes: M5 (block size check uses non-canonical serde_json —
-        // different serde versions can produce different byte lengths).
-        // A 1% safety margin prevents a block whose JSON size straddles
-        // MAX_BLOCK_SIZE across serde versions from causing a chain split.
-        // MAX_BLOCK_SIZE is a DOS gate, not a consensus rule — a generous
-        // margin is acceptable per type-system.md §8.6.2.
-        let max = dwow_chain::execution::MAX_BLOCK_SIZE;
-        // Reject if within 1% of max (floor: at least 1 byte margin)
-        let soft_limit = max.saturating_sub(max / 100).max(1);
-        if block_len > soft_limit {
-            return Err(dwow_core::Error::Custom(format!(
-                "Block at height {} is {} bytes — within 1% of MAX_BLOCK_SIZE {} (soft limit {})",
-                block.header.height, block_len, max, soft_limit
-            )));
-        }
-    }
+    // 0.5 Block size — deliberately NOT checked here.
+    //
+    // A `MAX_BLOCK_SIZE` byte gate stood at this point until 2026-09-25. It is
+    // removed, not re-sized: the number had no derivation (it entered in a bulk
+    // commit whose message reads only "Add 4 MB size cap on block decode"), its
+    // cited authority "L1 barrier #7" exists in no document in this repository,
+    // and it measured `serde_json::to_vec(block)` — a JSON length ~3.6x the
+    // canonical one — against a constant defined as the *serialized* size, so
+    // the quantity compared and the quantity named were different things.
+    //
+    // The consequence was not theoretical. It rejected a legitimate
+    // contract-deployment block at height 2 with the message "Block at height 2
+    // is 9209523 bytes — within 1% of MAX_BLOCK_SIZE 4194304", whose two numbers
+    // are JSON bytes and binary bytes and which therefore describes a block 2.2x
+    // over the limit as being "within 1%" of it.
+    //
+    // The gate's own comment said "MAX_BLOCK_SIZE is a DOS gate, not a consensus
+    // rule" while this function used it to *reject* blocks. A node-local resource
+    // policy that decides acceptance is a consensus rule, and two nodes with
+    // different policies would refuse each other's blocks. A block's resource
+    // bound is `BLOCK_GAS_LIMIT`, enforced during execution
+    // (`dwow_chain::execution`, `BlockGasLimitExceeded`), which is deterministic
+    // and applies at every height including genesis.
+    //
+    // There is no block size cap. If one is ever introduced it is decided from
+    // testing — a measured payload distribution against a measured node capacity
+    // — and it is specified in `doc/src/arch/consensus/consensus.md` ("Block and
+    // Payload Size") before it appears in code.
 
     proof_of_token_balance::verify_proof_of_token_balance(block)
         .map_err(|e| dwow_core::Error::Custom(format!("Block {} proof of token balance failed: {}", block.header.height, e)))?;

@@ -89,7 +89,7 @@ pub use dwow_sdk::blockchain::{BlockReward, BlockTarget, BlockCharge};
 pub use block::{
     build_uncle_merkle, compute_merkle_root, compute_reward, create_block,
     create_block_with_uncles, create_uncle, total_accepted_pin,
-    Block, BlockHeader, PowSource, BLOCK_GAS_LIMIT, MAX_BLOCK_SIZE,
+    Block, BlockHeader, PowSource, BLOCK_GAS_LIMIT,
     UncleBlock, UncleProof, MAX_COMPETING_BLOCKS, MAX_UNCLE_DEPTH, MAX_UNCLE_COUNT,
 };
 #[cfg(feature = "pow")]

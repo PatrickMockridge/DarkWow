@@ -105,8 +105,31 @@ impl_p2p_message!(
 
 // JSON-based sync Encodable/Decodable — BoundaryCodec requires these
 // supertraits (§10.5). Wire format matches the async codec above.
-// MAX_BYTES=4 MiB (MAX_BLOCK_SIZE), METERING_SCORE=5 (blocks are
-// expensive to validate).
+//
+// The MAX_BYTES argument on the boundary codec below is 32 MiB, and it is not a
+// block-size cap. It is a transport policy figure with a stated derivation, set
+// deliberately and recorded in `doc/src/arch/consensus/consensus.md`, "Block and
+// Payload Size": the measured worst-case legitimate block is ~11.35 MiB (the
+// genesis block's 9 contract-WASM deployments — the figure that forced the sync
+// rail from 10 MiB to 16 MiB in commit `7135d58921` after the block was observed
+// being dropped at the wire), and 32 MiB carries that with headroom for a
+// contract roughly 4x larger than the largest today (`deployooor`, 1.43 MiB).
+//
+// This constant previously read `4 * 1024 * 1024`, justified by a comment saying
+// only "MAX_BYTES=4 MiB (MAX_BLOCK_SIZE)" — a derivation from an invented
+// constant that was removed on 2026-09-25. The discrepancy was the damage: the
+// same block was relayable by the sync rail at 16 MiB and *refused, with a peer
+// ban,* by this one at 4 MiB. Every rail that carries a block now states the same
+// bound, so no rail can refuse what another accepts.
+//
+// KNOWN RESIDUE, reported rather than silently patched: an over-limit frame is
+// rejected at `net/message_publisher.rs:278` as `MessageInvalid`, and under
+// `BanPolicy::Strict` that makes `net/channel.rs:604-607` **ban the peer**.
+// "Too large" and "malformed" are not distinguished on that path, so a peer
+// sending an honest but oversized block is banned rather than the block being
+// declined. That is a defect about the *failure mode*, separate from the number.
+//
+// METERING_SCORE=5 (blocks are expensive to validate).
 impl dwow_serial::Encodable for BlockBroadcast {
     fn encode<W: std::io::Write>(&self, e: &mut W) -> std::io::Result<usize> {
         let json = serde_json::to_vec(self)
@@ -122,7 +145,7 @@ impl dwow_serial::Decodable for BlockBroadcast {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 }
-impl_boundary_codec!(BlockBroadcast, 4 * 1024 * 1024, 5,
+impl_boundary_codec!(BlockBroadcast, 32 * 1024 * 1024, 5,
     &[
         dwow_core::net::barb_trait::BarbId::Commit,
         dwow_core::net::barb_trait::BarbId::Verify,
@@ -152,11 +175,18 @@ impl AsyncEncodable for BlockBroadcast {
 #[async_trait]
 impl AsyncDecodable for BlockBroadcast {
     async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
-        // Genesis blocks carry contract deployments (multi-MB WASM as
-        // serde_json) and cannot use the MAX_BLOCK_SIZE cap. Apply a
-        // generous upper bound (100 MB — 6x the expected ~15 MB genesis)
-        // to prevent a malicious peer from causing OOM by sending a
-        // multi-GB payload claiming to be genesis.
+        // Blocks carry contract deployments (multi-MB WASM as serde_json), so no
+        // block-size cap applies to them. This is a *receive* bound, applied
+        // before parsing so that a peer cannot make this node allocate an
+        // unbounded buffer: 100 MB is ~8.8x the measured worst case — the genesis
+        // block's 9 contract-WASM deployments at ~11.35 MiB, the figure that
+        // forced the sync rail from 10 MiB to 16 MiB when it was observed dropped
+        // at the wire. The figure is deliberately loose because a genesis-style
+        // batch is the largest thing that will ever cross this rail and it must
+        // never be refused. It is a local resource policy; the `Err` below is
+        // allocation protection, not a statement that an oversized block is
+        // invalid. See `doc/src/arch/consensus/consensus.md`,
+        // "Block and Payload Size".
         const MAX_GENESIS_SIZE: u64 = 100 * 1024 * 1024; // 100 MB
         let mut buf = Vec::new();
         {
@@ -171,17 +201,11 @@ impl AsyncDecodable for BlockBroadcast {
         }
         let msg: Self = serde_json::from_slice(&buf)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        if msg.block.header.height != dwow_sdk::blockchain::BlockHeight::GENESIS
-            && buf.len() > MAX_BLOCK_SIZE
-        {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "non-genesis block at height {} is {} bytes — exceeds MAX_BLOCK_SIZE {}",
-                    msg.block.header.height, buf.len(), MAX_BLOCK_SIZE
-                ),
-            ));
-        }
+        // No block-size rejection here. A non-genesis size check against
+        // `MAX_BLOCK_SIZE` stood at this point until 2026-09-25 and refused
+        // legitimate deployment blocks; it was a validity rule wearing a wire
+        // cap's clothes. The `MAX_GENESIS_SIZE` take above is the real
+        // protection and it applies to every block, not just genesis.
         Ok(msg)
     }
 }
@@ -348,11 +372,6 @@ async fn fan_out_block(p2p: &P2pPtr, msg: &BlockBroadcast) {
 // ============================================================================
 // Receive Loop
 // ============================================================================
-
-/// Max block size in bytes for P2P reception. Pinned to the single shared
-/// source of truth (L1 barrier #7) so the wire decode cap and the miner's
-/// template byte cap can never drift apart.
-const MAX_BLOCK_SIZE: usize = dwow_chain::execution::MAX_BLOCK_SIZE;
 
 /// Handle incoming block messages from peers
 async fn handle_receive_block(

@@ -116,11 +116,23 @@ use crate::{
 };
 
 /// Transaction P2P message size limit.
+///
 /// Per type-system.md §8.6.2: "A generous bound is acceptable; zero (unlimited)
-/// is not." This matches `MAX_BLOCK_SIZE` (4 MiB) — the maximum serialized
-/// block on the P2P wire and on disk. A single transaction cannot be larger
-/// than the block that contains it.
-pub const TX_MAX_BYTES: u64 = 4 * 1024 * 1024;
+/// is not." This was `4 * 1024 * 1024`, justified by a comment reading only
+/// "This matches `MAX_BLOCK_SIZE`" — a derivation from a constant that was itself
+/// invented and was removed on 2026-09-25.
+///
+/// 32 MiB is a transport policy with a stated derivation, not a block-size cap,
+/// and this document's writer set it deliberately. The derivation is in
+/// `doc/src/arch/consensus/consensus.md`, "Block and Payload Size": the largest
+/// legitimate payload is a contract deployment, the largest contract today is
+/// `deployooor` at 1.43 MiB, the measured worst-case block carrying one is
+/// ~11.35 MiB of JSON, and 32 MiB carries that with headroom for a contract
+/// roughly 4x larger. Fees bound *volume* in the mempool, so this bound's only
+/// job is to cap a single allocation before parsing — which is why it is
+/// generous rather than tight. Over-limit means the frame is dropped, never that
+/// a transaction is invalid.
+pub const TX_MAX_BYTES: u64 = 32 * 1024 * 1024;
 
 #[cfg(any(feature = "net", feature = "net-wallet"))]
 // Each message score will be 1, with a threshold of 100 and expiry time of 5.

@@ -75,8 +75,8 @@ use crate::schedule::ExecutionSchedule;
 use dwow_core::runtime::vm_runtime::RuntimeBackend;
 
 // Re-exported from `block.rs` so the non-`pow` wallet build can read the block
-// constants without compiling this contract-execution module.
-pub use crate::block::{BLOCK_GAS_LIMIT, MAX_BLOCK_SIZE};
+// gas budget without compiling this contract-execution module.
+pub use crate::block::BLOCK_GAS_LIMIT;
 
 /// WASM runtime backend providing sled overlay access for contract execution.
 ///

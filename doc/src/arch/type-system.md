@@ -1581,7 +1581,7 @@ enforcement mechanisms are:
 | Wallet manifest (`manifest.rs`) | Closed vocabularies for parameter types, barbs, primitives — unknown name = parse error, not passthrough | Typed error barbs returned to caller; no fallback | TOML length / field count caps; circuit witness binding depth | SDK manifest tests; Lean `walletConstruct_sound` |
 | Persistence (`store.rs`/`walletdb.rs`/`supply_chain.rs`) | `from_le_bytes`/`from_bytes` named constructors; sled key width is canonical 8-byte LE (§2.3) | Write failure returns `Result::Err` — no silent truncation | B-tree key ordering; SQLite `INTEGER` domain | `chain_state.rs` persistence round-trip tests |
 | WASM host FFI (`import/*.rs`) | `acl_allow` section-check; `try_from` width conversions at i64 boundary; return-data len `u32::try_from`; buffer size caps | Access denied for unauthorized sections; negative error codes | `subtract_gas` per operation; host-object count cap | Contract tests (indirect via execution) |
-| C FFI + JSON-RPC (`ffi.rs`; RPC handlers) | Null-pointer checks; buffer-len caps; `catch_unwind` isolation; `BlockHeight::new` param lift | Error buffer return; JSON error response | Output buffer sizes; `MAX_BLOCK_SIZE` | RPC-level tests; wallet FFI integration |
+| C FFI + JSON-RPC (`ffi.rs`; RPC handlers) | Null-pointer checks; buffer-len caps; `catch_unwind` isolation; `BlockHeight::new` param lift | Error buffer return; JSON error response | Output buffer sizes (RPC-level only — there is **no** block-size cap; see [consensus.md](consensus/consensus.md) §"Block and Payload Size") | RPC-level tests; wallet FFI integration |
 
 **Tests SHALL NOT re-verify interior facts.** A test whose failure condition
 is "the code failed to compile" (e.g. a type error on `BlockHeight→u64`

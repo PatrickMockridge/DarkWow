@@ -55,13 +55,18 @@ impl PowSource {
 /// the contract-execution stack.
 pub const BLOCK_GAS_LIMIT: u64 = 100_000_000_000;
 
-/// Maximum serialized size (bytes) of a block on the P2P wire and on disk.
-/// Single source of truth pinned across nodes (L1 barrier #7): the block-wire
-/// decoder fails closed at this bound, and the miner's template must never
-/// exceed it — otherwise a self-built block is rejected by every peer. Proof
-/// witnesses now ride inside each transaction, so byte accounting is required
-/// in addition to gas accounting.
-pub const MAX_BLOCK_SIZE: usize = 4 * 1024 * 1024;
+// There is deliberately no block-size limit here, and none anywhere in the
+// node. A `MAX_BLOCK_SIZE = 4 * 1024 * 1024` stood here until 2026-09-25; it
+// cited "L1 barrier #7", which exists in no document in this repository (the
+// barrier list was deleted 2026-09-22), and the value traces to a bulk commit
+// whose message says only "Add 4 MB size cap on block decode". It was then
+// enforced as *block validity*, and it rejected a legitimate contract-deployment
+// block at height 2. Byte size is bounded by `BLOCK_GAS_LIMIT` through gas
+// accounting; a node-local resource policy is not a validity rule and must not
+// reject data. If a cap is ever wanted it is decided from testing — a measured
+// payload distribution against a measured node capacity — and it goes in the
+// consensus specification before it goes in code. See
+// `doc/src/arch/consensus/consensus.md`, "Block and Payload Size".
 
 /// Block header - contains metadata about a block
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -300,18 +300,33 @@ mod p2p_impls {
 
     // ── P2P message registration ─────────────────────────────────────
     //
-    // MAX_BYTES per sync-protocol.md §4:
-    //   GetTip: 256, Tip: 512, GetBlocks: 256,
-    //   Blocks: 0 (unlimited, consensus-level validation)
+    // MAX_BYTES per message type, per type-system.md §8.6.2 ("a generous bound
+    // is acceptable; zero (unlimited) is not").
+    //
+    // The two small bounds are for the request/response messages, whose payloads
+    // are a height and a tip — a few VarInts. These numbers are generous by
+    // inspection of the payloads, not derived from a measurement, and they are
+    // local frame bounds: over-limit means the frame is dropped, never that a
+    // block is invalid.
+    //
+    // (A comment here previously cited "sync-protocol.md §4" for these three
+    // numbers and stated "Blocks: 0 (unlimited, consensus-level validation)".
+    // Neither was true: §4 of that document contains none of these figures, and
+    // a zero/unlimited MAX_BYTES is forbidden by §8.6.2.)
 
     const MAX_SMALL: u64 = 256;
     const MAX_TIP: u64 = 512;
-    // §8.6.2: MAX_BYTES=0 (unlimited) SHALL NOT appear on any message type.
-    // 16 MiB accommodates the genesis block (9 contract WASM deployments,
-    // measured ~11.35 MiB) served ALONE by handle_get_blocks, plus headroom.
-    // The normal MAX_BLOCK_SIZE (4 MiB) does NOT bound genesis — genesis is a
-    // special multi-contract bootstrap block. Metering is not a substitute.
-    const MAX_BLOCK_BATCH: u64 = 16 * 1024 * 1024; // 16 MiB
+    // 32 MiB, and this is not a block-size cap. It bounds one `Blocks` frame
+    // before allocation. The figure is a user-set transport policy with a stated
+    // derivation, in `doc/src/arch/consensus/consensus.md`, "Block and Payload
+    // Size": the measured worst-case legitimate block is ~11.35 MiB (the genesis
+    // block's 9 contract-WASM deployments, which is why this bound was raised
+    // from 10 MiB to 16 MiB by commit `7135d58921` after it was observed being
+    // dropped at the wire), and 32 MiB carries that with headroom for a contract
+    // roughly 4x larger than the largest one today (`deployooor`, 1.43 MiB).
+    // There is NO block-size cap; a frame bound must never reject data as invalid.
+    // Metering is not a substitute.
+    const MAX_BLOCK_BATCH: u64 = 32 * 1024 * 1024; // 32 MiB
 
     const SYNC_METERING: MeteringConfiguration = MeteringConfiguration {
         threshold: 20,
