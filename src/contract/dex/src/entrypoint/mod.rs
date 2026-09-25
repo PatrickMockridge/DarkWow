@@ -152,7 +152,14 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
             transparency_config: Default::default(),
         }
     } else {
-        InitializeParams::decode(&ix[1..])
+        // `ix` is `DeployParamsV1::ix` verbatim — a byte vector with no selector
+        // byte in front of it. The only selector in this path is the tx-level
+        // `0x00` that `apply_deploy_tx` strips before decoding `DeployParamsV1`
+        // (`src/linear/src/execution.rs:618,993`), so stripping one here reads
+        // the payload one byte short of the 37 `InitializeParams::decode`
+        // requires — the fix `OBL-C131` records. `stablecoin`'s init decodes
+        // `ix` and is the discriminator that settles the convention.
+        InitializeParams::decode(ix)
             .map_err(|_| dwow_sdk::error::ContractError::IoError("Decode error".to_string()))?
     };
 
