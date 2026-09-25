@@ -167,7 +167,7 @@ Every circuit of the set below was audited for this vulnerability class — and 
 | Tender | 5 | 0 | ✓ |
 | Core (proof/) | 12 | 0 | ✓ |
 
-**Result**: 1 Orchard-class vulnerability found (C1 — PN MintV1 `mint_public` unconstrained, FIXED).
+**Result**: 1 Orchard-class vulnerability found (C1 — PN IssueV1 `mint_public` unconstrained, FIXED).
 
 **Corrected 2026-09-24, and the sentence that stood here was the same claim `Circuits/All.lean`
 carried until it was corrected the same day.** It read "All 120 circuits now pass the detection rule:
@@ -216,7 +216,7 @@ were citing three such placeholders. Each is recorded in
 
 | # | Bug | Severity | Circuit | Status |
 |---|-----|----------|---------|--------|
-| C1 | `mint_public` unconstrained | CRITICAL | PN MintV1 | FIXED |
+| C1 | `mint_public` unconstrained | CRITICAL | PN IssueV1 | FIXED |
 | IsEqualBase | `delta_invert` unconstrained when a=b | LOW | zkVM 0x54 | FIXED (0f69cd89) — purity constraint `out * (delta_invert - 1) = 0` applied |
 
 ---

@@ -347,7 +347,7 @@ Bond mechanics:
 | Contract | Integration |
 |----------|-------------|
 | Identity | O-Cap authorization via capabilities and DAGs |
-| PromissoryNote | Premium payments and claim payouts via BurnV1/MintV1 |
+| PromissoryNote | Premium payments and claim payouts via RevokeV1/IssueV1 |
 | Oracle | Claim resolution attestation |
 
 ## Promissory Note Lifecycle Integration

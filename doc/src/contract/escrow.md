@@ -248,7 +248,7 @@ The escrow contract manages its own value commitments but integrates with Promis
 │                                                                       │
 │   PromissoryNote Contract                                            │
 │   ├── Owns commitment ledger (commitments, nullifiers, Merkle tree)             │
-│   ├── Issues tokens (MintV1/BurnV1)                                  │
+│   ├── Issues tokens (IssueV1/RevokeV1)                                  │
 │   └── Transfer semantics (TransferV1)                                 │
 │                                                                       │
 │   Escrow Contract                                                    │
@@ -258,8 +258,8 @@ The escrow contract manages its own value commitments but integrates with Promis
 │                                                                       │
 │   Flow:                                                               │
 │   1. User creates escrow + funds via PromissoryNote::TransferV1      │
-│   2. Escrow::Claim → spend_hook → PromissoryNote::BurnV1 (consumes)  │
-│                    + PromissoryNote::MintV1 (mints to seller)        │
+│   2. Escrow::Claim → spend_hook → PromissoryNote::RevokeV1 (consumes)  │
+│                    + PromissoryNote::IssueV1 (mints to seller)        │
 │                                                                       │
 └─────────────────────────────────────────────────────────────────────┘
 ```

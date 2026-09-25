@@ -100,9 +100,9 @@ This creates API proliferation as new contracts are added. The generalized `cont
 | Function | Selector | Description |
 |----------|----------|-------------|
 | `TransferV1` | `0x04` | Private token transfers |
-| `TokenMintV1` | `0x00` | Create new token type |
-| `MintV1` | `0x01` | Mint tokens |
-| `BurnV1` | `0x02` | Burn tokens |
+| `RegisterTypeV1` | `0x00` | Create new token type |
+| `IssueV1` | `0x02` | Mint tokens |
+| `RevokeV1` | `0x03` | Burn tokens |
 
 ### NativeToken (`native_token`)
 

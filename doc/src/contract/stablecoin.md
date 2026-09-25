@@ -77,7 +77,7 @@ The stablecoin is the **sole issuer** in the Promissory Note ecosystem. It creat
 |-------|-----------|---------------------|--------|
 | **Mint** | TransferV1 (0x04) | `MintStableV1` — issues stablecoins to borrower | Implemented |
 | **Transfer** | TransferV1 (0x04) | All collateral movements, repayments, liquidations | Implemented |
-| **Burn** | BurnV1 (0x03) | `PN::BurnV1` — direct burn with spend_hook callback | Implemented |
+| **Burn** | RevokeV1 (0x03) | `PN::RevokeV1` — direct burn with spend_hook callback | Implemented |
 | **Redeem** | RedeemV1 (0x01) | `RedeemStableV1` — redeem stablecoins for collateral | Implemented |
 
 ### Architecture Note: PN Lifecycle Usage
@@ -89,21 +89,21 @@ lifecycle is increasingly used:
 - **RedeemV1 (0x01)**: `RedeemStableV1` calls PN::RedeemV1 to release collateral
   proportionally when stablecoins are redeemed. `total_redeemed` is atomically
   incremented.
-- **BurnV1 (0x03)**: Direct burns via PN::BurnV1 with `spend_hook = stablecoin_cid`
+- **RevokeV1 (0x03)**: Direct burns via PN::RevokeV1 with `spend_hook = stablecoin_cid`
   trigger the `__spend_hook` callback. The callback records nullifiers and
   increments `total_redeemed` in the same overlay for atomicity.
-- **TokenMintV1 (0x00) / MintV1 (0x02)**: Not yet used directly; minting remains
+- **RegisterTypeV1 (0x00) / IssueV1 (0x02)**: Not yet used directly; minting remains
   via TransferV1.
 
 ### spend_hook Callback Architecture
 
 The stablecoin uses `define_contract_with_spend_hook!` to export a `__spend_hook`
 WASM function alongside the standard 4 exports. When a user burns stablecoins via
-`PromissoryNote::BurnV1` with `spend_hook = stablecoin_contract_id`, the PN
+`PromissoryNote::RevokeV1` with `spend_hook = stablecoin_contract_id`, the PN
 contract dispatches a callback to the stablecoin:
 
 ```
-User calls PN::BurnV1 (spend_hook = stablecoin_cid)
+User calls PN::RevokeV1 (spend_hook = stablecoin_cid)
   → PN verifies nullifiers, builds BurnSpendHookPayload
   → PN calls emit_spend_hook(stablecoin_cid, payload)
     → Host writes to Env.spend_hook_request
@@ -150,7 +150,7 @@ The contract tracks:
 
 `CDP_TOTAL_REDEEMED` is incremented by both `RedeemStableV1` (when stablecoins
 are redeemed for collateral via PN::RedeemV1) and `apply_spend_hook_callback`
-(when stablecoins are burned via PN::BurnV1 with spend_hook). Outstanding
+(when stablecoins are burned via PN::RevokeV1 with spend_hook). Outstanding
 circulation is computed as `Outstanding = CDP_TOTAL_DEBT - CDP_TOTAL_REDEEMED`.
 
 ### Governance Report: No Fractional Reserve Proof

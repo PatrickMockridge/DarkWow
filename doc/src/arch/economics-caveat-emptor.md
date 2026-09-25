@@ -59,16 +59,16 @@ token, a real-world asset, etc.).
 
 Several structural facts complicate this pricing:
 
-**No supply cap.** [MintV1](../contract/promissory_note.md#issuev1--0x02-)
+**No supply cap.** [IssueV1](../contract/promissory_note.md#issuev1--0x02-)
 has no `max_supply` parameter. The only gate is knowledge of the `mint_secret` —
 whoever proves they know it can mint unlimited commitments of that token type. There is
 no on-chain mechanism to cap or audit total supply. If the `mint_secret` leaks,
 unlimited minting occurs with no on-chain detection until someone does a
-retrospective scan of all MintV1 nullifiers.
+retrospective scan of all IssueV1 nullifiers.
 
 **Supply is computed off-chain.** Outstanding circulation for a token type is
 calculated by scanning nullifier and commitment events from blockchain history:
-$\text{Outstanding} = \sum \text{MintV1 outputs} - \sum \text{RedeemV1 inputs}$.
+$\text{Outstanding} = \sum \text{IssueV1 outputs} - \sum \text{RedeemV1 inputs}$.
 There is no on-chain `total_supply` counter for PN token types (unlike
 [NativeToken](../contract/native_token.md) which tracks `TOTAL_SUPPLY`).
 
@@ -205,8 +205,8 @@ get real value from later investors. Last claimants get nothing.
 
 **Actor:** Malicious insider with `mint_secret` knowledge, or hacked issuer.
 
-**Mechanism:** TokenMintV1 registers a token type with `token_auth_parent =
-\text{H}(\text{mint_secret})`. Any MintV1 that proves knowledge of `mint_secret`
+**Mechanism:** RegisterTypeV1 registers a token type with `token_auth_parent =
+\text{H}(\text{mint_secret})`. Any IssueV1 that proves knowledge of `mint_secret`
 against this stored commitment mints new commitments. There is no `max_supply`
 parameter. The `mint_secret` is the only gate. If it leaks, anyone who knows it
 can mint unlimited commitments of that token type, and **no on-chain mechanism can
@@ -214,7 +214,7 @@ distinguish authorized mints from unauthorized ones** — the ZK proof is
 identical in both cases. This would be the equivalent of someone discovering the
 private key that mints USDC on Ethereum with no cap.
 
-**Detection:** Off-chain supply scanning. Someone must count all MintV1
+**Detection:** Off-chain supply scanning. Someone must count all IssueV1
 nullifiers for the token type and compare to the declared outstanding. Detection
 is entirely retroactive — commitments are already in circulation by the time someone
 notices the discrepancy.
@@ -227,7 +227,7 @@ Cascades to all contracts holding the token as reserves.
 
 | Existing | Needed |
 |----------|--------|
-| Only `mint_secret` holder can mint (ZK proof of capability) | Optional `max_supply` parameter on TokenMintV1, checked at MintV1 |
+| Only `mint_secret` holder can mint (ZK proof of capability) | Optional `max_supply` parameter on RegisterTypeV1, checked at IssueV1 |
 | Nullifier uniqueness prevents double-spending individual commitments | Mint cap per token type stored in token registry, enforced on-chain |
 | | Mint_secret rotation protocol (change secret, re-register `token_auth_parent` while keeping existing commitments valid) |
 | | Multi-signature mint authorization (require N-of-M to mint above threshold) |
@@ -320,7 +320,7 @@ redemption never happens on-chain for most token types.
 | Existing | Needed |
 |----------|--------|
 | RedeemV1 is fully implemented and available | More contracts need to build RedeemV1 paths. The stablecoin pattern works and is reusable. |
-| Redeem_V1 ZK circuit correctly constrains zero-value receipt commitment | Documentation should emphasize: TokenMintV1 without a corresponding RedeemV1 path creates a token that can never be formally redeemed on-chain. |
+| Redeem_V1 ZK circuit correctly constrains zero-value receipt commitment | Documentation should emphasize: RegisterTypeV1 without a corresponding RedeemV1 path creates a token that can never be formally redeemed on-chain. |
 | | Wallet resolvers could flag tokens with zero RedeemV1 usage as "unproven redemption path" |
 
 ### 7. The Maturity Arbitrage
@@ -409,8 +409,8 @@ without requiring trust in a central regulator:
 - **Merkle proof of on-chain reserve:** ProveCoverageV2 could include a Merkle
   inclusion proof against the commitments tree root, proving the reported
   `reserve_amount` actually exists at a specific on-chain location.
-- **Supply cap enforcement:** Optional `max_supply` parameter on TokenMintV1,
-  checked cumulatively across all MintV1 calls for that token type.
+- **Supply cap enforcement:** Optional `max_supply` parameter on RegisterTypeV1,
+  checked cumulatively across all IssueV1 calls for that token type.
 - **Profit attestation:** Require DeclareProfitsV1 to reference on-chain revenue
   events (DEX fee records, bridge fee logs) with ZK proofs of revenue inclusion.
 - **Maturity enforcement at entrypoint level:** Add `require(current_height >=
@@ -444,7 +444,7 @@ What an individual holder can do today, with existing infrastructure:
 2. **Check RedeemV1 usage for the token.** If a token type has zero RedeemV1
    calls in its entire history, the full bearer-instrument lifecycle has never
    been exercised for that token. The "promise" is untested.
-3. **Cross-check total supply.** Scan MintV1 events for the token type and
+3. **Cross-check total supply.** Scan IssueV1 events for the token type and
    compare the total minted to what the issuer claims as `total_outstanding` in
    their coverage reports.
 4. **Diversify across issuers.** No single issuer should be "too big to fail"
@@ -490,7 +490,7 @@ They depend entirely on issuer honesty:
 | Anyone will redeem your notes | RedeemV1 exists but is unused by most token types. Redemption is purely voluntary. |
 | Stake commitments will pay yield or hold principal | Profits can be zero. Coverage can be fraudulent. |
 | Maturity locks prevent early unstaking | Enforced on-chain at entrypoint level (`entrypoint/mod.rs:878`) | N/A (protocol-enforced) |
-| Supply doesn't explode | No supply cap at MintV1. `mint_secret` compromise = unlimited minting. |
+| Supply doesn't explode | No supply cap at IssueV1. `mint_secret` compromise = unlimited minting. |
 
 ### Summary Table
 

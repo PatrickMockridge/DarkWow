@@ -195,7 +195,7 @@ If governance can freeze minting:
 ┌──────────────────────────────────────────────────────────────┐
 │                    DEFI TOKENS (PromissoryNote)                     │
 │                                                                  │
-│  - MintV1: OK (token-specific)                               │
+│  - IssueV1: OK (token-specific)                              │
 │  - Weighted DAO: OK (voluntary membership)                   │
 │  - Freeze: OK (contained within token)                        │
 │                                                                  │
@@ -226,7 +226,7 @@ DarkWow uses **spend_hook** for atomic cross-contract composition:
 
 ```rust
 // Burning tokens triggers cross-contract call
-BurnV1 {
+RevokeV1 {
     commitment: Commitment,
     spend_hook: CONTRACT_ID,  // Which contract to invoke
     user_data: PARAMS,       // Data passed to contract

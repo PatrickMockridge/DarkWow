@@ -62,29 +62,29 @@ Stablecoin uses **PromissoryNote** for token management via `spend_hook`:
 │  1. OPEN POSITION                                                     │
 │     User ──► Stablecoin::OpenPositionV1                              │
 │              │                                                        │
-│              └───► PromissoryNote::MintV1 (mint collateral receipt tokens)   │
+│              └───► PromissoryNote::IssueV1 (mint collateral receipt tokens)   │
 │                       spend_hook = stablecoin_contract_id               │
 │                                                                      │
 │  2. MINT STABLE                                                       │
-│     User ──► PromissoryNote::BurnV1 (burn collateral tokens)                 │
+│     User ──► PromissoryNote::RevokeV1 (burn collateral tokens)                 │
 │              │                                                        │
 │              └───► spend_hook ──► Stablecoin::exec()                  │
 │                                        │                              │
-│                                        └───► PromissoryNote::MintV1 (mint USDx)│
+│                                        └───► PromissoryNote::IssueV1 (mint USDx)│
 │                                                                      │
 │  3. REPAY STABLE                                                      │
-│     User ──► PromissoryNote::BurnV1 (burn USDx)                              │
+│     User ──► PromissoryNote::RevokeV1 (burn USDx)                              │
 │              │                                                        │
 │              └───► spend_hook ──► Stablecoin::exec()                  │
 │                                        │                              │
-│                                        └───► PromissoryNote::MintV1 (mint col)│
+│                                        └───► PromissoryNote::IssueV1 (mint col)│
 │                                                                      │
 │  4. LIQUIDATE                                                         │
-│     User ──► PromissoryNote::BurnV1 (burn USDx to cover debt)               │
+│     User ──► PromissoryNote::RevokeV1 (burn USDx to cover debt)               │
 │              │                                                        │
 │              └───► spend_hook ──► Stablecoin::exec() (seizure)       │
 │                                        │                              │
-│                                        └───► PromissoryNote::MintV1 (col seized)
+│                                        └───► PromissoryNote::IssueV1 (col seized)
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -207,7 +207,7 @@ In the pooled debt model, liquidation is **global** - the entire pool is either 
 │  1. Pool becomes undercollateralized (ratio < threshold)          │
 │     → Global check, not per-position                              │
 │                                                                   │
-│  2. Liquidator calls PromissoryNote::BurnV1                              │
+│  2. Liquidator calls PromissoryNote::RevokeV1                              │
 │     → spend_hook = stablecoin_contract_id                         │
 │     → user_data encodes seizure parameters                       │
 │                                                                   │
@@ -219,7 +219,7 @@ In the pooled debt model, liquidation is **global** - the entire pool is either 
 │  4. Contract executes:                                            │
 │     → Burn USDx (debt coverage)                                  │
 │     → Release seized collateral proportionally                   │
-│     → Liquidator receives via PromissoryNote::MintV1                     │
+│     → Liquidator receives via PromissoryNote::IssueV1                     │
 │                                                                   │
 │  NOTE: Individual positions are NOT tracked.                     │
 │        The pool itself is the only state.                       │
@@ -269,8 +269,8 @@ src/contract/stablecoin/
 | Function | PromissoryNote Integration |
 |----------|-------------------|
 | `InitializeV1` | Creates stablecoin token type in PromissoryNote |
-| `OpenPositionV1` | Mints collateral receipt tokens via PromissoryNote::MintV1 |
-| `MintStableV1` | Burns collateral via PromissoryNote::BurnV1 with spend_hook |
+| `OpenPositionV1` | Mints collateral receipt tokens via PromissoryNote::IssueV1 |
+| `MintStableV1` | Burns collateral via PromissoryNote::RevokeV1 with spend_hook |
 | `RepayStableV1` | Burns stablecoin, mints collateral via spend_hook |
 | `LiquidateV1` | Burns stablecoin, seized collateral via spend_hook |
 

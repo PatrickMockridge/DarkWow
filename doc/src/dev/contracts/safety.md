@@ -67,7 +67,7 @@ lending pools, no governance), but more logic than NativeToken because compositi
 
 | What it adds | Why it's needed |
 |---|---|
-| `TokenMintV1` | Permissionless token creation for stablecoins, wrapped assets, LP tokens |
+| `RegisterTypeV1` | Permissionless token creation for stablecoins, wrapped assets, LP tokens |
 | Multi-token support (`asset_id`) | DEX, lending, yield — all need multiple token types |
 | Token registry | Prevents unauthorized minting of unregistered token types |
 | `BlindOutput_V1` circuit | Proves all output commitments are correctly formed, fully private |
@@ -137,11 +137,11 @@ the source, so review reads it as protection, but no input makes it return failu
 **How it has manifested.**
 
 * *A two-step authorization whose second step never verifies the first.* PromissoryNote's
-  `AuthTokenMintV1` → `MintV1` pair: `MintV1` accepted an `auth_proof` containing a nullifier and
+  `AuthTokenMintV1` → `IssueV1` pair: `IssueV1` accepted an `auth_proof` containing a nullifier and
   **never checked that the nullifier was spent**. The ZK proof verified correctly; the on-chain
   authorization step was decorative. Anyone could mint without ever calling the authorization
   function. Removed in May 2026 — `AuthTokenMintV1` and `RotateMintAuthorityV1` were deleted, and
-  `MintV1` now proves knowledge of the backing secret directly against the stored
+  `IssueV1` now proves knowledge of the backing secret directly against the stored
   `token_auth_parent`. There is no prior step left to forget.
 * *Stub verifiers.* The Bridge's `verify_xmr_deposit`, `verify_zcash_deposit` and siblings validated
   *shape* — non-empty, valid point, non-zero — and returned `Ok`, with the real cryptographic
@@ -153,7 +153,7 @@ the source, so review reads it as protection, but no input makes it return failu
 * *A guard conditional on configuration.* `if value != ContractId::ZERO { validate(value) }` and
   `if let Some(token) = auth_token { check(token) }` mean an unconfigured deployment runs with the
   check disabled — the default deployment is the insecure one. See also RC9.
-* *An authorization value the circuit never derived.* `MintV1` exposed `public_key` as an independent
+* *An authorization value the circuit never derived.* `IssueV1` exposed `public_key` as an independent
   witness, so a prover could mint commitments to keys they do not control — permanently unspendable
   rewards. Fixed by `constrain_equal_base(public_key, mint_public)` with `mint_public` bound to
   `backing_secret`. This is the circuit-side form of the same class; the circuit-side mechanism is

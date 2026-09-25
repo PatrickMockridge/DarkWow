@@ -13,11 +13,11 @@ Commitment = poseidon_hash(owner_pub, value, asset_id, spend_hook, user_data, bl
 ```
 
 It is typically set to a `ContractId` (truncated to 32 bytes and interpreted as a
-field element). When a commitment is burned via BurnV1 with `spend_hook != 0`, the PN
+field element). When a commitment is burned via RevokeV1 with `spend_hook != 0`, the PN
 contract calls the target contract's `__spend_hook` export. When `spend_hook == 0`,
 no callback fires — the burn is a plain destruction.
 
-The field is also present on `Output` and `TokenMintParamsV1`/`MintParamsV1`, so
+The field is also present on `Output` and `RegisterTypeParamsV1`/`IssueParamsV1`, so
 issuing contracts can set the spend_hook on newly created commitments.
 
 ## ZK Circuit Coverage
@@ -39,11 +39,11 @@ the proof.
 
 ## Callback Mechanism
 
-When a BurnV1 transaction includes inputs with non-zero `spend_hook`, the full
+When a RevokeV1 transaction includes inputs with non-zero `spend_hook`, the full
 dispatch chain is:
 
 ```
-User calls PN::BurnV1
+User calls PN::RevokeV1
   ├── PN verifies all inputs share the same spend_hook (SpendHookMismatch if not)
   ├── PN verifies nullifiers (no double-spend)
   ├── PN builds BurnSpendHookPayload {
@@ -188,7 +188,7 @@ variant to your update enum and process it in `process_update`.
 The stablecoin receives spend_hook callbacks when users burn stablecoins:
 
 ```
-User burns stablecoin via PN::BurnV1 (spend_hook = stablecoin_cid)
+User burns stablecoin via PN::RevokeV1 (spend_hook = stablecoin_cid)
   → PN dispatches callback to stablecoin
     → stablecoin.process_spend_hook() verifies:
         - Caller is the expected PN contract

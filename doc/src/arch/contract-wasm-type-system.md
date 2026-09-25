@@ -1191,7 +1191,7 @@ sled tree name includes the contract ID hash — `blake3(contract_id || tree_nam
 separate sled trees. The host SHALL enforce this via `db_lookup(cid, tree_name)`,
 which derives the tree handle from the caller's `ContractId`.
 
-The exception is the **spend hook** mechanism: PromissoryNote's `BurnV1` can
+The exception is the **spend hook** mechanism: PromissoryNote's `RevokeV1` can
 emit a spend hook targeting another contract's `__spend_hook` entrypoint. The
 target contract's WASM is loaded and its `__spend_hook` + `__update` are invoked
 with the payload from the burn call. The target contract accesses its OWN state

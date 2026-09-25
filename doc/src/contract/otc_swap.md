@@ -256,7 +256,7 @@ uses child calls to `promissory_note::transfer_v1` (0x04) for actual token movem
 │                                                                       │
 │   PromissoryNote Contract                                            │
 │   ├── Owns commitment ledger (commitments, nullifiers, Merkle tree)             │
-│   ├── Issues tokens (MintV1/BurnV1)                                  │
+│   ├── Issues tokens (IssueV1/RevokeV1)                                  │
 │   └── Transfer semantics (0x04 = TransferV1)                          │
 │                                                                       │
 │   OTC Swap Contract                                                  │

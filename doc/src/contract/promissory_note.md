@@ -231,7 +231,7 @@ DeFi assets are born.
 
 **Parameters:**
 ```rust
-struct TokenMintParamsV1 {
+struct RegisterTypeParamsV1 {
     commitment: Commitment,       // Initial commitment (first mint)
     value_commit: pallas::Point,  // Pedersen commitment
     asset_id: pallas::Base,       // H(auth_parent, user_data, blind)
@@ -322,7 +322,7 @@ against the stored `token_auth_parent`.
 
 **Parameters:**
 ```rust
-struct MintParamsV1 {
+struct IssueParamsV1 {
     commitment: Commitment,          // The newly minted commitment
     value_commit: pallas::Point,     // Pedersen value commitment
     asset_id: pallas::Base,          // Token being minted
@@ -344,7 +344,7 @@ Destroys commitments. Publishes nullifiers to prevent double-spending.
 
 **Parameters:**
 ```rust
-struct BurnParamsV1 {
+struct RevokeParamsV1 {
     inputs: Vec<Input>,
 }
 ```
