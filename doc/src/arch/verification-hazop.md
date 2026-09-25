@@ -1980,6 +1980,44 @@ they stand as the dated records they are.
   misleading but not this). Three bridge test artifacts are stale for independent reasons — see
   Stage 3 of the remediation plan:
 
+  **The whole workspace was swept end to end on 2026-09-25 — the first complete pass this tree has
+  had — and the ten heavy reds now carry verbatim causes rather than names.** It took five
+  invocations rather than one, and the reason is itself a finding: a workspace-wide run in the
+  background is killed by this machine's memory guard while a 22 GiB test binary is live, so the
+  sweep was chunked and each chunk ran inside a `MemoryMax=28G`/`MemorySwapMax=0` scope — the
+  repository's own Lean guardrail (`scripts/lean-build.sh:127-128`) applied to cargo. The chunks:
+  the workspace minus `dwowd` and the contract test-harness, **112 binaries + 45 doctest suites,
+  1315 passed, 0 failed**; `dwow-contract-test-harness`, **27 passed, 0 failed**, including the
+  582-second `zk_audit::test_all_harnesses_zk_coverage`; `dwowd` minus the heavy module,
+  **85 passed, 1 failed** — the failure being `test_pipeline`, now `OBL-C131`; and the heavy module,
+  **45 passed, 10 failed** in 4187 s. The plan's baseline of "107 binaries, 1327 passed, 4 failed"
+  is a **truncated** measurement: its log carries 108 `Running` banners and **zero** `Doc-tests`
+  suites and was killed with one binary still open — the four it found are all green now
+  (`client_proof_self_verification` **3/0**, was 1/2; `stablecoin_governance_report` **3/0**, was
+  2/1; the attestation enum control passes), and nothing had ever been measured past the binary where
+  it stopped until this sweep.
+
+  **Four of the 2026-09-22 reds are green** — `drain_protection`, `purse`, `slot`, `subscription` —
+  and the ten that remain are ten of the same set, so **nothing new is red**. Each now has its own
+  line, quoted from the run's output rather than inferred:
+
+  - `auction` — `L2 proof verify … invalid proof: call[0] namespace 'CreateAuctionV2'`
+  - `bearer_bond` — `metadata-decode-zkp … fn_code=0x01 … contract signalled EMPTY metadata, which is the documented re…`
+  - `bridge` — `exec … fn_code=0x02 … ContractError(Custom(13))`
+  - `dao_escrow` — `metadata-decode-zkp … fn_code=0x01 … contract signalled EMPTY metadata …`
+  - `escrow` — `exec … call_idx=1 fn_code=0x03 … ContractError(Custom(2))`
+  - `insurance_market` — `TEST-FAIL [insurance_market::PurchaseCoverageDirectV1]: harness generate failed — Proof::create failed`
+  - `labor_market` — `exec … fn_code=0x01 … ContractError(Custom(31))`
+  - `relayer_endowment` — `L2 proof verify … invalid proof: call[0] namespace 'InitializeV2'`
+  - `tender` — `metadata … fn_code=0x01 … ContractError(InvalidFunction)`
+  - `relayer_lifecycle_heavyweight` — `deposit: exec … fn_code=0x01 … ContractError(Custom(19))`
+
+  Two of the ten surface the same words at the same stage — `bearer_bond` and `dao_escrow` both fail
+  at `metadata-decode-zkp` with "EMPTY metadata" — and that is stated as what the runs printed, not
+  as a claim that the causes are one. `tender`'s `InvalidFunction` at `metadata` and `auction`'s
+  `CreateAuctionV2` proof failure are the two whose rows already carry a diagnosis from elsewhere in
+  the tree; the rest are names with a measured surface and no cause yet.
+
 * nineteen of the repository's contract artifacts were stale for a day — committed `.source_hash`
   files that no longer matched committed sources — which made `make test` unrunnable from any clone
   until they were rebuilt. Whatever changes a contract's sources has to rebuild them in the same
