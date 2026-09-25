@@ -68,7 +68,13 @@ The full sequence is:
 1. `init_linear()` constructs the genesis block when `create_genesis = true`.
 2. `init_genesis()` builds the PoWRewardV1 coinbase (transaction 0) and appends the nine
    deployment transactions at positions 1..=9, in the order: Deployooor, NativeToken,
-   PromissoryNote, Identity, Oracle, Attestation, Purse, Box, MultiSig. Deployooor and
+   PromissoryNote, Identity, Oracle, Attestation, Purse, Box, MultiSig.
+   **These positions are not the counters in the table above, and the two must not be indexed by
+   each other**: NativeToken has counter 4 but is deployed at position 2, and Promissory Note has counter
+   3 at position 3. `genesis_contracts()` (`src/linear/src/execution.rs:915-927`) is the authority for
+   the order and `contract_id.rs`'s constants are the authority for the ids; the ordering trap is
+   recorded in that file's own comment (`:139-149`), where `GENESIS_CONTRACT_IDS_BYTES` had to be
+   reordered to match the deployment array. Deployooor and
    NativeToken are deployed with EMPTY manifest bytes by design — the wallet handles
    those two natively (Path 1, wallet.md §6.4) rather than through manifest-declared
    capability discovery, so deploying their manifests would make the wallet scan them

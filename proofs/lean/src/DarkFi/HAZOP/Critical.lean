@@ -426,7 +426,20 @@ def pallasModulusWasCompositeStatus : String :=
     These are not Lean findings and no Lean theorem is affected. They are recorded here because
     this file is where the critical findings live, and because the mechanism that surfaced them —
     `script/circuit_instance_derivation.py` reporting "unclassified" rather than "safe" — is the one
-    the Lean work is written against. -/
+    the Lean work is written against.
+
+    **Both halves were repaired after this file recorded them, and the register's rows are the
+    evidence.** `oracle` was closed 2026-09-21: every authorizing circuit derives the operator
+    commitment from the secret and exposes it (`push_value.zk:69`, domain `witness_base(8)`, and all six
+    circuits carry the same derivation), the
+    host compares it against the stored record, and `set_oracle_active` gained the circuit it lacked —
+    `OBL-Z9`/`OBL-Z10`, both `CLOSED`. `multisig` was closed 2026-09-22 and was more severe than the
+    paragraph above says: the attacker repeating the claim over the group's other members *forged
+    threshold approval*, not merely blocked one signer — `sign.zk` now derives and exposes
+    `member_commitment = poseidon_hash(witness_base(4), signer_secret)` and the host checks it against
+    the group's set (`multisig/src/entrypoint/mod.rs:322`) — `OBL-Z11`, `CLOSED`. The analysis above is
+    kept as it was found, which is what this file is for; `CRIT-7`'s own entry below carries the
+    status. -/
 def actorKeyNotBoundToProofStatus : String :=
   "CRIT-7: oracle (4 circuits) and multisig (2 circuits) authorize an actor by comparing a derived pubkey to an unexposed WITNESS; the proof binds no key, and neither ParamsV1 carries one. oracle: any value pushable to any registered oracle, and set_oracle_active is non-ZK and copy-keyable. multisig: a non-member can claim a member's key and spend their nullifier, blocking them"
 
@@ -436,7 +449,7 @@ def criticalAxiomFindings : List (String × Nat × String) := [
   ("CRIT-6: pallasPrime was FALSE", 90,
    "FALSE, not merely unproved: PALLAS_MODULUS was divisible by 3, and Fact (Nat.Prime …) made ZMod PALLAS_MODULUS a Field from it, so all of Pedersen.lean was vacuous. Fixed; the tie to pasta_curves and a proof of the old value's compositeness are now in the tree"),
   ("CRIT-7: the actor's key is not bound to the proof", 85,
-   "oracle and multisig — both genesis contracts — authorize by comparing a derived pubkey against an unexposed witness, which holds for any secret, and no host-side check supplies the missing link. Recorded as OBL-Z9/Z10/Z11 in the register")
+   "oracle and multisig — both genesis contracts — authorized by comparing a derived pubkey against an unexposed witness, which held for any secret, and no host-side check supplied the missing link. REPAIRED: oracle 2026-09-21, multisig 2026-09-22, each by deriving the actor's commitment from the secret and exposing it for the host to compare against stored state — OBL-Z9, OBL-Z10 and OBL-Z11 are CLOSED, and the multisig half was the more severe of the two (a non-member could forge threshold approval, not only block one signer). Recorded as the shape that was found; nothing in it is open")
 ]
 
 end HAZOP.Critical
