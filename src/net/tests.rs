@@ -300,8 +300,32 @@ macro_rules! test_body {
         let ex_ = ex.clone();
         let (signal, shutdown) = channel::unbounded::<()>();
 
+        // The previous hook is saved and restored at the end of this body, because
+        // `set_hook` is PROCESS-GLOBAL: installing one here without restoring it
+        // edits every other test that runs in the same binary afterwards. This is
+        // not hypothetical — `src/event_graph/tests.rs` installs no hook of its
+        // own, is in the same `dwow` library target as this module, and its DAG
+        // assertion's message was therefore formatted by *this* hook whenever a
+        // `net` test had already run. That is why the `eventgraph_propagation`
+        // flake reported a location and no cause.
+        let prev_hook = panic::take_hook();
         panic::set_hook(Box::new(|panic_info| {
-            error!("Panic occurred: {:?}", panic_info);
+            // The payload is extracted explicitly rather than logged with `{:?}`.
+            // `PanicHookInfo`'s payload is a `&dyn Any`, and `dyn Any`'s `Debug`
+            // prints `Any { .. }` — so `error!("... {:?}", panic_info)` discarded
+            // the panic message and kept only the location. A failure that states
+            // no cause is not a failure anyone can act on.
+            let msg = panic_info
+                .payload()
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_string())
+                .or_else(|| panic_info.payload().downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "<panic payload is not a string>".to_string());
+            let loc = panic_info
+                .location()
+                .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+                .unwrap_or_else(|| "<unknown location>".to_string());
+            error!("Panic occurred at {loc}: {msg}");
         }));
 
         // Run a thread for each node.
@@ -312,7 +336,15 @@ macro_rules! test_body {
                     res
                 });
                 if let Err(err) = result {
-                    error!("Thread panicked: {:?}", err);
+                    // `err` is a `Box<dyn Any>`, whose `Debug` is `Any { .. }` for
+                    // the same reason as above. Downcast it, or the thread's panic
+                    // message is lost here a second time.
+                    let msg = err
+                        .downcast_ref::<&str>()
+                        .map(|s| (*s).to_string())
+                        .or_else(|| err.downcast_ref::<String>().cloned())
+                        .unwrap_or_else(|| "<panic payload is not a string>".to_string());
+                    error!("Thread panicked: {msg}");
                 }
             })
             .finish(|| {
@@ -321,6 +353,11 @@ macro_rules! test_body {
                     drop(signal);
                 });
             });
+
+        // Restore the previous hook, so this one cannot outlive the test body and
+        // edit another test's panic output. `set_hook` is process-global and
+        // `take_hook` appeared nowhere in this tree before this line.
+        panic::set_hook(prev_hook);
     };
 }
 
