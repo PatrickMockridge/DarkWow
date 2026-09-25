@@ -165,10 +165,28 @@ impl ProtocolAddress {
             // First we grab address with the requested transports from the gold list
             debug!(target: "net::protocol_address::handle_receive_get_addrs",
             "Fetching gold entries with schemes");
+            // Clamp `max` before it is used as a count, and give every fetch below one
+            // shared budget.
+            //
+            // The field is a `u32`, but this protocol's own intent is `u8::MAX` — that is
+            // what this tree's sender asks for (`:362`) — so clamping there cannot refuse
+            // a legitimate request. And the response is documented as at most `2 * max`
+            // addresses (`src/net/message.rs:217-219`), so the fetches share that budget
+            // rather than each taking `max`.
+            //
+            // Without both, the first three fetches (gold/white/grey, with schemes) alone
+            // reached `3 * max`, and the `2 * max - addrs.len()` subtractions that follow
+            // **underflowed**. In release — `Cargo.toml` declares no `[profile]`, so
+            // `overflow-checks = false` — they wrapped to ~`usize::MAX`; the remaining
+            // fetches then drained the entire hostlist into the reply, the reply exceeded
+            // `ADDRS_MAX_BYTES`, and **every peer that received it rejected it and banned
+            // the victim**. One 57-byte request, a persistent ban of an honest node. Debug
+            // builds panicked instead.
+            let max = (get_addrs_msg.max as usize).min(u8::MAX as usize);
             let mut addrs = self.hosts.container.fetch_n_random_with_schemes(
                 HostColor::Gold,
                 &requested_transports,
-                get_addrs_msg.max as usize,
+                remaining_reply_budget(max, 0),
             );
 
             // Then we grab address with the requested transports from the whitelist
@@ -177,7 +195,7 @@ impl ProtocolAddress {
             addrs.append(&mut self.hosts.container.fetch_n_random_with_schemes(
                 HostColor::White,
                 &requested_transports,
-                get_addrs_msg.max as usize,
+                remaining_reply_budget(max, addrs.len()),
             ));
 
             // Greylist (matching transports) — share recently-connected peers
@@ -188,7 +206,7 @@ impl ProtocolAddress {
             addrs.append(&mut self.hosts.container.fetch_n_random_with_schemes(
                 HostColor::Grey,
                 &requested_transports,
-                get_addrs_msg.max as usize,
+                remaining_reply_budget(max, addrs.len()),
             ));
 
             // Next we grab addresses without the requested transports
@@ -197,7 +215,7 @@ impl ProtocolAddress {
             // Then we grab address without the requested transports from the gold list
             debug!(target: "net::protocol_address::handle_receive_get_addrs",
             "Fetching gold entries without schemes");
-            let remain = 2 * get_addrs_msg.max as usize - addrs.len();
+            let remain = remaining_reply_budget(max, addrs.len());
             addrs.append(&mut self.hosts.container.fetch_n_random_excluding_schemes(
                 HostColor::Gold,
                 &requested_transports,
@@ -207,7 +225,7 @@ impl ProtocolAddress {
             // Then we grab address without the requested transports from the white list
             debug!(target: "net::protocol_address::handle_receive_get_addrs",
             "Fetching white entries without schemes");
-            let remain = 2 * get_addrs_msg.max as usize - addrs.len();
+            let remain = remaining_reply_budget(max, addrs.len());
             addrs.append(&mut self.hosts.container.fetch_n_random_excluding_schemes(
                 HostColor::White,
                 &requested_transports,
@@ -217,7 +235,7 @@ impl ProtocolAddress {
             // Greylist (excluding transports) — share for transport diversity
             debug!(target: "net::protocol_address::handle_receive_get_addrs",
             "Fetching greylist entries without schemes");
-            let remain = 2 * get_addrs_msg.max as usize - addrs.len();
+            let remain = remaining_reply_budget(max, addrs.len());
             addrs.append(&mut self.hosts.container.fetch_n_random_excluding_schemes(
                 HostColor::Grey,
                 &requested_transports,
@@ -233,7 +251,7 @@ impl ProtocolAddress {
 
             debug!(target: "net::protocol_address::handle_receive_get_addrs",
             "Fetching dark entries");
-            let remain = 2 * get_addrs_msg.max as usize - addrs.len();
+            let remain = remaining_reply_budget(max, addrs.len());
             addrs.append(&mut self.hosts.container.fetch_n_random(HostColor::Dark, remain));
 
             // Filter out transports not meant to be shared like Socks5 and Socks5+tls
@@ -347,6 +365,21 @@ impl ProtocolBase for ProtocolAddress {
     }
 }
 
+/// How many addresses a `GetAddrs` reply may still take, given what it already holds.
+///
+/// Extracted so the arithmetic can be witnessed directly, because the defect lived in it:
+/// the handler used `2 * max - addrs.len()` unguarded, and the gold/white/grey fetches
+/// come *before* it and can return up to `3 * max` between them — more than the `2 * max`
+/// the response is documented to be (`src/net/message.rs:217-219`). When
+/// `addrs.len() > 2 * max` the subtraction underflowed; in release — `Cargo.toml` declares
+/// no `[profile]`, so `overflow-checks = false` — it wrapped to ~`usize::MAX`, the
+/// remaining fetches drained the entire hostlist into the reply, the reply exceeded
+/// `ADDRS_MAX_BYTES`, and every peer that received it rejected it and banned the victim.
+/// Debug builds panicked instead.
+fn remaining_reply_budget(max: usize, already: usize) -> usize {
+    (2 * max).saturating_sub(already)
+}
+
 #[cfg(test)]
 mod tests {
     use dwow_serial::serialize;
@@ -364,5 +397,41 @@ mod tests {
         };
 
         assert_eq!(serialize(&message).len() as u64, GET_ADDRS_MAX_BYTES);
+    }
+
+    /// The reply's remaining budget cannot underflow — the defect's mechanism.
+    ///
+    /// Before the fix the handler subtracted `addrs.len()` from `2 * max` unguarded, and
+    /// the three "with schemes" fetches that run first can return up to `3 * max` between
+    /// them. So `addrs.len() > 2 * max` was reachable with a single small request, the
+    /// subtraction wrapped, and the rest of the reply drained the whole hostlist — which
+    /// every receiving peer then rejected *and banned the sender for*. This asserts the
+    /// two properties that matter: it never wraps, and it never exceeds the documented
+    /// `2 * max` response.
+    #[test]
+    fn test_reply_budget_never_underflows_or_overruns() {
+        for max in [0usize, 1, 2, 100, u8::MAX as usize] {
+            assert_eq!(
+                super::remaining_reply_budget(max, 0),
+                2 * max,
+                "an empty reply may take the whole documented budget"
+            );
+            assert_eq!(
+                super::remaining_reply_budget(max, 2 * max),
+                0,
+                "an exact budget leaves nothing"
+            );
+            assert_eq!(
+                super::remaining_reply_budget(max, 3 * max),
+                0,
+                "over budget must saturate at zero, never wrap — `3 * max` is reachable \
+                 from the three with-schemes fetches alone"
+            );
+            assert_eq!(
+                super::remaining_reply_budget(max, usize::MAX),
+                0,
+                "no input can make the budget wrap to a huge value"
+            );
+        }
     }
 }
