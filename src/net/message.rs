@@ -293,14 +293,41 @@ pub const VERSION_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfig
 };
 
 /// Version message fields size:
-/// * node_id = 8  (this will be empty most of the time)
+/// * node_id = 1 (str_len) + 128 = 129
+/// * app_name = 1 (str_len) + 128 = 129
 /// * version = 128 (look at VerackMessage for the reasoning)
 /// * timestamp = 8
 /// * connect_recv_addr = 128
 /// * resolve_recv_addr = 1 (enum_len) + 128(url) = 129
 /// * ext_send_addr = 1 (vec_len)  + 128 * 10 = 1281 (10 is a reasonable cap for number of external addresses)
 /// * features = 1 (vec_len) + (32 (service_name) + 4 (service_version)) * 10 = 361 (10 features is an estimate)
-pub const VERSION_MAX_BYTES: u64 = 2043;
+///
+/// **`app_name` was absent from this list until 2026-09-25, and `node_id` was sized as
+/// if it were a `u64` although it is a `String`.** Both are set from configuration
+/// (`src/net/settings.rs`), so a node with a long application name produced a `version`
+/// frame larger than this bound — and under `BanPolicy::Strict` **every peer it handshook
+/// with rejected the frame and banned it**, from a purely local config value. The
+/// derivation now names every field, and `MAX_HANDSHAKE_STRING_LEN` is enforced where the
+/// value is produced rather than only in this total.
+pub const VERSION_MAX_BYTES: u64 = 2293;
+
+/// Longest variable-length string a handshake message may carry — `app_name`, `node_id`.
+///
+/// 128 is the bound this file already uses for the other variable-length string it
+/// carries, a `Url`, so it is the tree's own convention rather than a new figure. It is
+/// **enforced where the value is produced** (`src/net/settings.rs`), because a bound
+/// stated only in a message total cannot stop a node from building a message that
+/// exceeds it.
+pub const MAX_HANDSHAKE_STRING_LEN: usize = 128;
+
+/// Does this string fit what a handshake message can carry?
+///
+/// A predicate rather than an inline comparison so the bound can be witnessed directly:
+/// the defect was that `VERSION_MAX_BYTES` and `VERACK_MAX_BYTES` did not account for
+/// `app_name` at all, so *no* value of the string was refused by anything.
+pub fn handshake_string_fits(s: &str) -> bool {
+    s.len() <= MAX_HANDSHAKE_STRING_LEN
+}
 
 impl_p2p_message!(VersionMessage, "version", VERSION_MAX_BYTES, 1, VERSION_METERING_CONFIGURATION);
 impl_boundary_codec!(VersionMessage, VERSION_MAX_BYTES, 1);
@@ -332,10 +359,15 @@ pub const VERACK_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfigu
 };
 
 /// Verack message fields size:
-/// * app_version = 24 (major = 8, minor = 8, patch = 8) + 52 (prerelease =  1(str_len) + 51(str)) + 52 (build = 1(str_len) + 51(str))
+/// * app_version = 24 (major = 8, minor = 8, patch = 8) + 52 (prerelease =  1(str_len) + 51(str)) + 52 (build = 1(str_len) + 51(str)) = 128
+/// * app_name = 1 (str_len) + 128 = 129
 ///
 /// Prerelease and build strings are variable length but shouldn't be larger than 102 bytes.
-pub const VERACK_MAX_BYTES: u64 = 128;
+///
+/// `app_name` was absent here too, and it is the same defect as `VERSION_MAX_BYTES`'s: a
+/// configured name longer than the missing allowance makes the frame exceed this bound,
+/// and `BanPolicy::Strict` then bans the sender.
+pub const VERACK_MAX_BYTES: u64 = 257;
 
 impl_p2p_message!(VerackMessage, "verack", VERACK_MAX_BYTES, 1, VERACK_METERING_CONFIGURATION);
 impl_boundary_codec!(VerackMessage, VERACK_MAX_BYTES, 1);

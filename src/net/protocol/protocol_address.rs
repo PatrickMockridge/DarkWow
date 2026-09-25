@@ -133,7 +133,33 @@ impl ProtocolAddress {
                 "Appending to greylist...",
             );
 
-            self.hosts.insert(HostColor::Grey, &addrs_msg.addrs).await;
+            // Filter before inserting, to the size `ADDRS_MAX_BYTES` assumes per address.
+            //
+            // That bound is derived as `1 (vec_len) + (u8::MAX * 2) * 128` — i.e. it
+            // assumes **128 bytes per address** — so an address longer than that silently
+            // breaks the bound the reply is sized against. Nothing else checks it: this
+            // node accepts whatever a peer sends, relays it in its own reply, the reply
+            // exceeds `ADDRS_MAX_BYTES`, and under `BanPolicy::Strict` **every peer that
+            // receives that reply rejects it and bans this node**. One small `addr`
+            // frame, a persistent ban of an honest node, and the attacker is not the one
+            // punished. Measured in the same encoding the bound is derived from.
+            let usable: Vec<(Url, u64)> = addrs_msg
+                .addrs
+                .iter()
+                .filter(|(addr, _)| dwow_serial::serialize(addr).len() <= MAX_ADDR_BYTES)
+                .cloned()
+                .collect();
+            if usable.len() < addrs_msg.addrs.len() {
+                debug!(
+                    target: "net::protocol_address::handle_receive_addrs",
+                    "discarded {} of {} received addresses: longer than the {} bytes \
+                     `ADDRS_MAX_BYTES` assumes per address",
+                    addrs_msg.addrs.len() - usable.len(),
+                    addrs_msg.addrs.len(),
+                    MAX_ADDR_BYTES
+                );
+            }
+            self.hosts.insert(HostColor::Grey, &usable).await;
         }
     }
 
@@ -365,6 +391,15 @@ impl ProtocolBase for ProtocolAddress {
     }
 }
 
+/// The size `ADDRS_MAX_BYTES` assumes per address.
+///
+/// `src/net/message.rs` derives that bound as `1 (vec_len) + (u8::MAX * 2) * 128`, so this
+/// is the tree's own figure rather than a new one. It is enforced when an address is
+/// *received* (`handle_receive_addrs`), because an address longer than this makes the
+/// node's own relayed reply exceed the bound it is sized against — and the peers that
+/// receive that reply ban *this* node.
+const MAX_ADDR_BYTES: usize = 128;
+
 /// How many addresses a `GetAddrs` reply may still take, given what it already holds.
 ///
 /// Extracted so the arithmetic can be witnessed directly, because the defect lived in it:
@@ -433,5 +468,41 @@ mod tests {
                 "no input can make the budget wrap to a huge value"
             );
         }
+    }
+
+    /// The handshake derivations account for every field the messages carry.
+    ///
+    /// `app_name` was absent from both until 2026-09-25, and `node_id` was sized as if it
+    /// were a `u64` although it is a `String`. So a configured application name longer than
+    /// the missing allowance produced a `version`/`verack` frame **over** the bound — and
+    /// under `BanPolicy::Strict` every peer that received it rejected the frame and banned
+    /// the sender, over a purely local config value. A bound that does not account for a
+    /// field it carries is not a bound.
+    #[test]
+    fn test_handshake_bounds_account_for_every_field() {
+        use crate::net::message::{MAX_HANDSHAKE_STRING_LEN, VERACK_MAX_BYTES, VERSION_MAX_BYTES};
+        let s = MAX_HANDSHAKE_STRING_LEN as u64;
+        // VersionMessage: node_id + app_name + version + timestamp + connect_recv_addr
+        //   + resolve_recv_addr + ext_send_addr (10) + features (10)
+        assert_eq!(
+            VERSION_MAX_BYTES,
+            (1 + s) * 2 + 128 + 8 + 128 + (1 + 128) + (1 + 128 * 10) + (1 + 36 * 10),
+            "every field the message carries must appear in the sum"
+        );
+        // VerackMessage: app_version (24 + 52 + 52) + app_name
+        assert_eq!(VERACK_MAX_BYTES, (24 + 52 + 52) + (1 + s));
+    }
+
+    /// And the bound is enforced on the *value*, not only in the total.
+    #[test]
+    fn test_handshake_string_bound_is_enforced() {
+        use crate::net::message::{handshake_string_fits, MAX_HANDSHAKE_STRING_LEN};
+        assert!(handshake_string_fits(""));
+        assert!(handshake_string_fits(&"a".repeat(MAX_HANDSHAKE_STRING_LEN)));
+        assert!(
+            !handshake_string_fits(&"a".repeat(MAX_HANDSHAKE_STRING_LEN + 1)),
+            "one byte over must be refused — a bound stated only in a message total \
+             cannot stop a node from building a message that exceeds it"
+        );
     }
 }

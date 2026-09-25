@@ -460,6 +460,22 @@ impl TryFrom<(&str, &str, SettingsOpt)> for Settings {
     type Error = Error;
     fn try_from(st: (&str, &str, SettingsOpt)) -> Result<Self> {
         let app_name = st.0.to_string();
+        // Enforced where the value is produced, not only in the message total.
+        //
+        // `app_name` goes into `VersionMessage` and `VerackMessage` verbatim. A bound
+        // stated only in `VERSION_MAX_BYTES` / `VERACK_MAX_BYTES` — and, until
+        // 2026-09-25, *absent* from both derivations — cannot stop a node from building a
+        // frame larger than the bound, and the consequence is not a local one: under
+        // `BanPolicy::Strict` every peer that receives the oversized handshake rejects it
+        // and **bans this node**, so a long application name in a config file gets its
+        // owner blacklisted network-wide.
+        if !crate::net::message::handshake_string_fits(&app_name) {
+            return Err(Error::Custom(format!(
+                "app_name is {} bytes; a handshake message can carry at most {}",
+                app_name.len(),
+                crate::net::message::MAX_HANDSHAKE_STRING_LEN
+            )))
+        }
         let app_version = semver::Version::parse(st.1)?;
         let opt = st.2;
 
