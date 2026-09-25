@@ -11,6 +11,24 @@ references.
 
 ---
 
+## Before anything else — the rules
+
+**[`AGENTS.md`](../../../AGENTS.md)** (repository root) and **[HAZOP and remediation rules](../dev/hazop-rules.md)**
+state how to work here. They are short, they are binding, and each rule names the defect that earned it — read them
+before changing the critical path (block validity, block assembly, transport, contract execution).
+
+The rules exist because this repository repeatedly learned them and recorded them where the next agent did not
+read: `hooks/pre-commit` ("a gate whose authority is not yet defensible is worse than a report"),
+`bin/dwowd/src/tests/tripwire.rs` ("a guardrail that cannot see what it guards must not report success"), and two
+memory entries. The failure was **reachability**, not knowledge.
+
+The four that matter most in practice: **a fix is never blocked by a test, a gate, a pin or a ceremony** (fix
+first, verification follows); **nothing is invented** — every constant cites a measurement or a clause, and the
+citation must resolve; **a policy refusal is not a validity verdict**; and **a fix is verified by a run, never by a
+gate exit code or a clean diffstat**.
+
+---
+
 ## 1. What This Project Is
 
 Start here. These three documents define the project's identity, design intent,

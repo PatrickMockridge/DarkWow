@@ -171,6 +171,7 @@
 
 # Developer Resources
 
+- [HAZOP and remediation rules](dev/hazop-rules.md) ← **Read first if you are an agent** (with `AGENTS.md` at the repo root). How to work on the critical path, and the defect that earned each rule
 - [Developer Quick Start](dev/quickstart.md)
 - [Contributing & Developer Guide](dev/contrib/contrib.md)
 - [Contract Development](dev/contracts.md)
