@@ -36,7 +36,7 @@ use wasmer::{FunctionEnvMut, WasmPtr};
 use super::acl::acl_allow;
 use crate::{
     runtime::vm_runtime::{ContractSection, Env},
-    zk::{empty_witnesses, VerifyingKey, ZkCircuit},
+    zk::cached_verifying_key,
     zkas::ZkBinary,
 };
 
@@ -1010,39 +1010,31 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
         }
     };
 
-    // We didn't find any existing bincode, so let's create a new VerifyingKey and write it all.
+    // We didn't find any existing bincode, so we derive the VerifyingKey and write it all.
+    //
+    // Derivation goes through the process-global cache in `zk::verifier`, keyed on
+    // the zkas bytes. Calling `VerifyingKey::build` directly here — as this line did
+    // until 2026-09-25 — bypassed it and made every deploy pay `keygen_vk` again:
+    // measured, the contract-deploy sweep derived 1246 VKs for 141 distinct circuits,
+    // 1105 of them redundant, ≈81% of its 1962 s. The `zkbin_bytes` equality check
+    // above only skips a re-store *within* one chain; a fresh chain holds no zkas
+    // rows, so across a test run's many chains every circuit was re-derived.
     info!(
         target: "runtime::db::zkas_db_set",
-        "[WASM] [{cid}] zkas_db_set(): Creating VerifyingKey for {} zkas circuit",
-        zkbin.namespace,
+        "[WASM] [{cid}] zkas_db_set(): Creating VerifyingKey for {} zkas circuit (k={})",
+        zkbin.namespace, zkbin.k,
     );
 
-    let witnesses = match empty_witnesses(&zkbin) {
-        Ok(w) => w,
-        Err(e) => {
-            error!(
-                target: "runtime::db::zkas_db_set",
-                "[WASM] [{cid}] zkas_db_set(): Failed to create empty witnesses: {e}"
-            );
-            return dwow_sdk::error::DB_SET_FAILED
-        }
+    let Some(vk) = cached_verifying_key(&zkbin_bytes) else {
+        error!(
+            target: "runtime::db::zkas_db_set",
+            "[WASM] [{cid}] zkas_db_set(): could not derive a VerifyingKey for circuit '{}' \
+             (undecodable zkas, no empty witnesses, or keygen_vk failed)",
+            zkbin.namespace,
+        );
+        return dwow_sdk::error::DB_SET_FAILED
     };
 
-    // Construct the circuit and build the VerifyingKey.
-    let circuit = ZkCircuit::new(witnesses, &zkbin);
-    eprintln!("[ZKAS_DB_SET] Building VK for {} k={}", zkbin.namespace, zkbin.k);
-    let vk = match VerifyingKey::build(zkbin.k, &circuit) {
-        Ok(vk) => vk,
-        Err(e) => {
-            eprintln!("[ZKAS_DB_SET] VK BUILD FAILED for {}: {e}", zkbin.namespace);
-            error!(
-                target: "runtime::db::zkas_db_set",
-                "[WASM] [{cid}] zkas_db_set(): VerifyingKey::build failed for circuit '{}': {e}",
-                zkbin.namespace,
-            );
-            return dwow_sdk::error::DB_SET_FAILED
-        }
-    };
     let mut vk_buf = vec![];
     if let Err(e) = vk.write(&mut vk_buf) {
         error!(

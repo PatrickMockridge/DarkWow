@@ -160,6 +160,16 @@ pub trait ContractHarness {
             // Verify k is sufficient: build VerifyingKey with the circuit's declared k.
             // Catches circuits whose constraint count exceeds the selected k before
             // genesis init or deploy — preventing 60-minute pipeline failures.
+            //
+            // This derivation is deliberately NOT routed through
+            // `zk::cached_verifying_key`, even though the VK it discards is exactly
+            // what that cache holds. The cache is keyed on the raw zkas bytes and
+            // this trait exposes only the decoded `ZkBinary` (`get_zkbin`), so
+            // sharing it would mean adding a byte accessor to the trait and to every
+            // implementation — a wider change than a test-side pre-flight check
+            // warrants. Recorded, not silently skipped: this is a second place that
+            // derives a VK without the cache, and it is not counted by the
+            // `[ZKAS_DB_SET]` instrumentation used to measure the deploy path.
             if has_zkbin && has_pk {
                 let zkbin = self.get_zkbin(ns).unwrap();
                 let witnesses = match empty_witnesses(zkbin) {

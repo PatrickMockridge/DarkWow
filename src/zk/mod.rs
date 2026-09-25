@@ -38,7 +38,7 @@ pub use proof::{Proof, ProvingKey, VerifyingKey};
 
 /// Pure ZK proof verification (stateless, deterministic)
 pub mod verifier;
-pub use verifier::{verify_zkp, ZkVerifyResult};
+pub use verifier::{cached_verifying_key, verify_zkp, ZkVerifyResult};
 
 /// Trace computation of intermediate values in circuit
 mod tracer;
@@ -49,6 +49,8 @@ pub use debug::zkas_type_checks;
 
 #[cfg(test)]
 mod merkle_root_test;
+#[cfg(test)]
+mod verifier_test;
 #[cfg(feature = "tinyjson")]
 pub use debug::{export_witness_json, import_witness_json};
 
