@@ -480,6 +480,53 @@ impl Runtime {
         let mut store = Store::new(compiler_config);
         let module = Module::new(&store, wasm_bytes)?;
 
+        // Every section export the host calls must have the signature the host calls it
+        // with — `(i32) -> i64`. That is checked **here**, host-side, because the
+        // deploy-time validator inside the Deployooor contract checks only that these
+        // exports *exist as functions*, never their signatures.
+        //
+        // The consequence of the missing check was a node halt: an artifact exporting
+        // `__entrypoint() -> i32` was deployable, reached `Runtime::call`, and returned a
+        // `Value::I32` where an `i64` was expected — hitting
+        // `unreachable!("Got unexpected result return value")` in the host. There is no
+        // `catch_unwind` around a contract call, so that is a panic in the consensus
+        // path, triggered from a deployed artifact.
+        //
+        // Host-side rather than in the contract for two reasons: it covers *every*
+        // module rather than only those deployed through Deployooor, and Deployooor is a
+        // genesis contract, so an edit there would rebuild an artifact and move the
+        // genesis pin for a check the host can make for free.
+        {
+            const SECTION_EXPORTS: [&str; 4] =
+                ["__initialize", "__metadata", "__entrypoint", "__update"];
+            for export in module.exports() {
+                if !SECTION_EXPORTS.contains(&export.name()) {
+                    continue;
+                }
+                let wasmer::ExternType::Function(ty) = export.ty() else {
+                    return Err(Error::WasmerRuntimeError(format!(
+                        "contract export `{}` is not a function",
+                        export.name()
+                    )));
+                };
+                let params = ty.params();
+                let results = ty.results();
+                let signature_ok = params.len() == 1
+                    && params[0] == wasmer::Type::I32
+                    && results.len() == 1
+                    && results[0] == wasmer::Type::I64;
+                if !signature_ok {
+                    return Err(Error::WasmerRuntimeError(format!(
+                        "contract export `{}` has signature ({:?}) -> ({:?}); the host calls \
+                         every section as (i32) -> i64",
+                        export.name(),
+                        params,
+                        results
+                    )));
+                }
+            }
+        }
+
 
         // Create a larger Memory for the instance
         let memory_type = MemoryType::new(
@@ -757,30 +804,45 @@ impl Runtime {
         // for 8 gas. Related and UNVERIFIED: `MemoryFill` is likewise 8 gas flat for
         // any length with bulk-memory enabled, which would make a multi-GiB fill
         // nearly free. Flagged, not fixed, and not introduced here.
-        // The payload is written ABOVE everything the guest has already touched, and
-        // the guest is handed its address — not 0.
+        // The payload is stashed **below `__heap_base`** — the shadow stack's unused
+        // space, which is the one region the guest's allocator never hands out. It fits
+        // only while `payload.len()` is under `__stack_pointer`, which is **1,048,576**
+        // in all 32 artifacts, with `.rodata` beginning exactly at that address and the
+        // heap at `__heap_base` (1,151,648) above it.
         //
-        // `__entrypoint(input: *mut u8)` has always taken that pointer
-        // (`src/sdk/src/wasm/entrypoint.rs`); the host passed a hardcoded
-        // `Value::I32(0)`, which placed the payload in the guest's **shadow stack**.
-        // That is safe only below `__stack_pointer` — 1,048,576 (1 MiB) in all 32
-        // artifacts, with `.rodata` beginning exactly at that address and the heap at
-        // `__heap_base` above it. deployooor's own artifact is 1,494,589 bytes, so
-        // deploying it wrote over all 102,464 bytes of `.rodata`, the bss tail and the
-        // first 343,021 bytes of the heap: dlmalloc's state became payload bytes, and
-        // the first `malloc` inside `deserialize` allocated from garbage. That is the
+        // Past that the write covers `.rodata`, the bss tail and the allocator's own
+        // state — and the guest's first `malloc` returns payload bytes. That is the
         // `out of bounds memory access` in `dlmalloc::malloc` → `finish_grow` →
-        // `dwow_serial::deserialize` → `__metadata`, and it is why exactly one of 32
-        // contracts failed — deployooor is the only artifact over 1 MiB.
+        // `dwow_serial::deserialize` that deployooor's own 1,494,589-byte artifact
+        // produced: it is the only artifact over the window, which is why it was the
+        // only one of 32 that failed.
         //
-        // Writing at the pre-growth end removes the window rather than narrowing it:
-        // the payload lands above every byte the guest has used, so a collision
-        // requires the guest's heap to grow past it. Host-side only — no guest change,
-        // no artifact rebuild, no pin move.
-        let payload_start = self.memory_bytes();
-        let pages_required = (payload_start + payload.len()) / WASM_PAGE_SIZE + 1;
+        // So an oversized payload is **refused**, loudly, rather than written. This is
+        // a *policy* limit, not a validity verdict — the transaction is not malformed,
+        // it asks for something this ABI cannot carry. Making the ABI carry it is a
+        // guest-side change (the payload must be placed where the allocator cannot
+        // reach, which the guest has to be told about), and it is its own unit.
+        //
+        // An earlier attempt moved the payload to the memory's pre-growth end and
+        // handed the guest that address. That was WRONG and the tree said so: the
+        // pre-growth end is only ~28 KB above `__heap_base`, so the payload sat inside
+        // the heap and the guest's own allocations overwrote it — which surfaced
+        // further along the deploy as `unreachable` inside `wasmparser`, validating
+        // bytes that were no longer the artifact.
+        const GUEST_STACK_WINDOW: usize = 1_048_576;
+        if payload.len() >= GUEST_STACK_WINDOW {
+            return Err(Error::WasmerRuntimeError(format!(
+                "payload of {} bytes does not fit the guest's stack window ({} bytes): the \
+                 host stashes the payload below `__heap_base`, the only region the guest's \
+                 allocator never returns, and a larger payload would be written over \
+                 `.rodata` and the allocator's state",
+                payload.len(),
+                GUEST_STACK_WINDOW
+            )))
+        }
+        let pages_required = payload.len() / WASM_PAGE_SIZE + 1;
         self.set_memory_page_size(pages_required as u32)?;
-        self.copy_to_memory(&payload, payload_start as u32)?;
+        self.copy_to_memory(&payload)?;
 
         debug!(target: "runtime::vm_runtime", "Getting {} function", section.name());
         let entrypoint = self.instance.exports.get_function(section.name())?;
@@ -797,9 +859,10 @@ impl Runtime {
         // Gas metering bounds instruction count but not wall-clock time.
         // A contract with 400M expensive opcodes can consume unbounded CPU.
         let call_start = std::time::Instant::now();
-        // The guest is handed the payload's address. wasm32 pointers are `u32`, so the
-        // bit pattern is converted through `u32` rather than cast straight to `i32`.
-        let ret = match entrypoint.call(&mut self.store, &[Value::I32(payload_start as u32 as i32)]) {
+        // The guest reads the payload from offset 0 — the shadow-stack region the
+        // allocator never returns. See `copy_to_memory` for why that offset, and for the
+        // refusal that keeps the payload inside it.
+        let ret = match entrypoint.call(&mut self.store, &[Value::I32(0_i32)]) {
             Ok(retvals) => {
                 let elapsed = call_start.elapsed();
                 // MAX_WASM_CALL_TIME is a soft limit — exceeded calls log a
@@ -850,9 +913,18 @@ impl Runtime {
                         debug!(target: "runtime::vm_runtime", "Contract returned: {:?}", ret[0]);
                         v
                     }
-                    // The only supported return type is i64, so panic if another
-                    // value is returned.
-                    _ => unreachable!("Got unexpected result return value: {ret:?}"),
+                    // A non-`i64` return kind. The export-signature check in
+                    // `Runtime::new` makes this unreachable — but it must not *panic*:
+                    // this is the consensus path, there is no `catch_unwind` around a
+                    // contract call, and `unreachable!` here means a deployed artifact
+                    // can halt the node. A bad callback fails the *call*, not the process.
+                    _ => {
+                        return Err(Error::WasmerRuntimeError(format!(
+                            "contract returned an unexpected value kind: {:?} — the host \
+                             calls every section as (i32) -> i64",
+                            ret[0]
+                        )))
+                    }
                 }
             }
         };
@@ -1086,23 +1158,22 @@ impl Runtime {
     }
 
     /// Copy payload to the start of the memory
-    /// The guest memory's current size in bytes.
-    fn memory_bytes(&self) -> usize {
-        let env = self.ctx.as_ref(&self.store);
-        env.memory.as_ref().map_or(0, |m| m.size(&self.store).0 as usize) * WASM_PAGE_SIZE
-    }
-
-    /// Copy the payload into guest memory at `at`.
+    /// Copy the payload into guest memory at offset 0.
     ///
-    /// `at` was hardcoded to 0 until 2026-09-25. Zero is inside the guest's **shadow
-    /// stack**: the layout is stack-first, `__stack_pointer` is 1,048,576 in all 32
-    /// artifacts, `.rodata` begins exactly there and the heap sits above it. A payload
-    /// larger than 1 MiB therefore overwrote `.rodata` and dlmalloc's own state. See
-    /// the call site for the full account.
-    fn copy_to_memory(&self, payload: &[u8], at: u32) -> Result<()> {
+    /// Offset 0 is not arbitrary: it is the guest's **shadow stack** region, which lies
+    /// below `__heap_base` and is therefore the one region the guest's allocator never
+    /// hands out. The payload fits only below `__stack_pointer` — 1,048,576, uniform
+    /// across all 32 artifacts — and the caller **refuses** anything larger rather than
+    /// writing it over `.rodata` and the allocator's state. See the call site.
+    ///
+    /// (An attempt on 2026-09-25 moved this write to the memory's pre-growth end and
+    /// handed the guest that address. It was wrong: the pre-growth end sits ~28 KB above
+    /// `__heap_base`, i.e. *inside* the heap, so the guest's own allocations overwrote
+    /// the payload.)
+    fn copy_to_memory(&self, payload: &[u8]) -> Result<()> {
         let env = self.ctx.as_ref(&self.store);
         let memory_view = env.memory_view(&self.store);
-        memory_view.write_slice(payload, at)
+        memory_view.write_slice(payload, 0)
     }
 
     /// Serialize contract payload to the format accepted by the runtime functions.
