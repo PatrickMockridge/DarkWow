@@ -43,14 +43,29 @@
 //!
 //! ## Contract Functions
 //!
-//! | Function | Opcode | Purpose |
-//! |----------|--------|---------|
-//! | FeeV1 | 0x00 | REMOVED — returns InvalidFunction (use FeeV3 0x08) |
-//! | MintV1 | 0x01 | DISABLED — walled off behind PoWRewardV1 (consensus-locked coinbase) |
-//! | BurnV1 | 0x02 | Destroy commitments |
-//! | TransferV1 | 0x03 | Private transfers |
-//! | SpendV1 | 0x04 | Spend with change |
-//! | PoWRewardV1 | 0x05 | Block rewards for miners |
+//! These are **contract function codes** — the selector byte that begins a call — not zkVM opcodes,
+//! which are the 32 instructions in `src/zkas/opcode.rs` that a circuit compiles to. The authoritative
+//! list, including each function's plaintext-or-circuit status, is `doc/src/contract/native_token.md`
+//! §Function IDs; this table is the ABI summary.
+//!
+//! | ID | Function | Description |
+//! |----|----------|-------------|
+//! | 0x00 | — | Unassigned — returns `InvalidFunction` (fee payment is FeeV3 0x08) |
+//! | 0x01 | `MintV1` | DISABLED — walled off behind `PoWRewardV1` (consensus-locked coinbase) |
+//! | 0x02 | `BurnV1` | Destroy commitments |
+//! | 0x03 | `TransferV1` | Private transfers |
+//! | 0x04 | `SpendV1` | Spend with change |
+//! | 0x05 | `PoWRewardV1` | Coinbase — the block reward |
+//! | 0x06 | `FeeCollectV1` | Fee collection — claims the block's fee pot |
+//! | 0x07 | `UncleMintV1` | Uncle note mint — spendable uncle reward, no supply bump |
+//! | 0x08 | `FeeV3` | Pay fees — plaintext fee + tier (`FeeParamsV3`) |
+//!
+//! **Plaintext, no proof.** `PoWRewardV1` (0x05), `FeeCollectV1` (0x06) and `UncleMintV1` (0x07) are
+//! ordinary consensus calls that carry **no ZK proof and have no circuit**: no `.zk` source exists for
+//! any of them, and the WASM entrypoint verifies each in the clear with Pedersen/Poseidon arithmetic.
+//! The circuits that once proved them are deleted — `Mint_V2` was removed from the coinbase path,
+//! `FeeCollect_V2` was dropped. The only native-token circuits are `Mint_V2` (transfer/spend outputs),
+//! `Burn_V2` and `Fee_V3`.
 
 // Re-export from dwow_native_token_contract
 pub use dwow_native_token_contract::NativeTokenFunction;
