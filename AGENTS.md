@@ -78,6 +78,12 @@ These are mechanical, not advisory. They are here because agents have broken eac
   mid-build is compiled in whatever half-finished state it happened to be in. The failure then presents as *the
   run's own result* — a build error where a test verdict was expected — which is worse than a wrong answer,
   because it looks like an answer. Finish the edit, then start the build.
+  **And know how to tell, because the obvious check is wrong.** Use `systemctl --user is-active <scope>` for a
+  scoped run, or `pgrep -c rustc` — **never** `pgrep -f <name>` when `<name>` also appears in the *filter
+  argument* of the command you are looking for. A `pgrep -f protocol_address` matches cargo's own argv and
+  reports a running test while the build is still compiling, which is how the author of this rule broke it
+  within the hour. A build of a mid-edit tree is worthless, and a *mixed* build is worse than none: it can
+  succeed.
 - **Everything heavy runs inside a cgroup scope**, the repository's own pattern
   (`scripts/lean-build.sh`): `systemd-run --user --scope -q --unit=<name> -p MemoryMax=28G -p MemorySwapMax=0
   -- bash -c '<cmd>'`. **Lean is the exception** — it always goes through `scripts/lean-build.sh`, which owns its
