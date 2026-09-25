@@ -115,6 +115,17 @@ impl ContractTestingPipeline {
     /// in `execute_block` stores WASM and calls `__initialize`.
     pub async fn deploy(&self) -> Result<ContractId> {
         let wasm = self.load_contract_wasm()?;
+        self.deploy_wasm(wasm).await
+    }
+
+    /// Deploy **explicit** wasm bytes through Deployooor, using this pipeline's contract
+    /// name only to build the init params.
+    ///
+    /// Split out of [`deploy`] so a test can deploy an artifact the repository does not
+    /// ship — specifically a *padded* one. `test_a_padded_artifact_over_1mib_deploys`
+    /// uses it to ask whether the payload size alone is the variable in the deployooor
+    /// failure, without changing any contract's source or moving the genesis pin.
+    pub async fn deploy_wasm(&self, wasm: Vec<u8>) -> Result<ContractId> {
         let deploy_keypair = Keypair::new(SecretKey::random(&mut OsRng));
         let contract_id = ContractId::derive_public(deploy_keypair.public);
 
@@ -475,6 +486,89 @@ fn test_pipeline() -> Result<()> {
         println!("Deployed {} at {:?}", contract_name, contract_id.to_bytes());
         Ok(())
     })
+}
+
+/// Is payload *size* the variable in the deployooor failure, or is that artifact?
+///
+/// `test_all_contracts_deploy` reaches 31/32: every contract deploys through Deployooor
+/// except deployooor itself, whose artifact is the only one over 1 MiB. That correlation
+/// is not a cause, and the two candidates need opposite fixes — a delivery defect above
+/// some size, or something about deployooor's own artifact.
+///
+/// So this takes a contract that **does** deploy and makes its artifact large, by
+/// appending a custom section. Custom sections are legal anywhere and are ignored by
+/// validation, by the host's opcode scan (which reads the code section), and by
+/// Deployooor's export check — so the artifact is as deployable as before, only bigger.
+/// If a padded 1.5 MB artifact deploys, size alone is not the variable and the failure
+/// belongs to deployooor's artifact; if it fails the same way, delivery is size-dependent.
+#[test]
+fn test_a_padded_artifact_over_1mib_deploys() -> Result<()> {
+    crate::tests::uniform_runner::init_contract_logging();
+
+    // native_token is a genesis contract: small, and known to deploy through this path.
+    // `include_bytes!` rather than a runtime read, matching `load_contract_wasm` — and
+    // because a test binary's working directory is the package root, not the workspace.
+    let base: &[u8] =
+        include_bytes!("../../../../src/contract/native_token/dwow_native_token_contract.wasm");
+    // `PAD_TO` lets the failure boundary be bisected without a recompile: the
+    // threshold is what identifies the mechanism, and a single size does not.
+    let target: usize = std::env::var("PAD_TO")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1_500_000);
+    let padded = pad_with_custom_section(base, target);
+    println!(
+        "=== Padded artifact: {} bytes -> {} bytes ===",
+        base.len(),
+        padded.len()
+    );
+    assert!(padded.len() > 1_048_576, "the padding must exceed the old refusal bound");
+
+    // The padding is only meaningful if the artifact is still valid wasm; a pad that
+    // broke the module would make a failure here say nothing about size.
+    wasmparser::validate(&padded)
+        .map_err(|e| dwow_core::Error::Custom(format!("padded artifact is not valid wasm: {e}")))?;
+
+    smol::block_on(async {
+        let mut pipeline = ContractTestingPipeline::new("native_token").await?;
+        let contract_id = pipeline.deploy_wasm(padded).await?;
+        println!("Deployed padded native_token at {:?}", contract_id.to_bytes());
+        assert_ne!(contract_id.to_bytes(), [0u8; 32], "contract_id must not be zero");
+        Ok(())
+    })
+}
+
+/// Append a custom section (id 0) so the module is at least `min_len` bytes.
+///
+/// Layout: `[0x00][varuint32 body_len][varuint32 name_len][name][data]`. The payload is
+/// zeroed; nothing reads it, because nothing knows the section's name.
+fn pad_with_custom_section(wasm: &[u8], min_len: usize) -> Vec<u8> {
+    const NAME: &[u8] = b".dwow-padding";
+    // 4 bytes for the section id + LEB128 length + 1 for the name length is ample
+    // headroom for the framing of a section this size.
+    let target_data = min_len
+        .saturating_sub(wasm.len())
+        .saturating_sub(NAME.len() + 6);
+    let body_len = NAME.len() + 1 + target_data;
+
+    let mut out = wasm.to_vec();
+    out.push(0x00);
+    let mut len = body_len as u64;
+    loop {
+        let mut byte = (len & 0x7f) as u8;
+        len >>= 7;
+        if len != 0 {
+            byte |= 0x80;
+        }
+        out.push(byte);
+        if len == 0 {
+            break;
+        }
+    }
+    out.push(NAME.len() as u8);
+    out.extend_from_slice(NAME);
+    out.extend(std::iter::repeat_n(0u8, target_data));
+    out
 }
 
 /// Batch deploy all contracts to verify deployment plumbing.
