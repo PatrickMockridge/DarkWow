@@ -100,7 +100,7 @@ open Circuits.InstanceDerivation
 
 /-! ===== The circuits, in source order =====
 
-178 circuits, 2677 statements transcribed; **11** satisfy the model's property and **167** do not, the latter named by the
+178 circuits, 2686 statements transcribed; **11** satisfy the model's property and **167** do not, the latter named by the
 first undetermined exposure in each, with the checker's class for that exposure named beneath it.
 -/
 
@@ -1414,7 +1414,7 @@ theorem betting_stake_update_risk_has_a_free_instance :
 
 /-- `src/contract/box/proof/put.zk` — 5 exposure(s). -/
 
-def box_put_held : List Name := ["box_id", "expected_root", "leaf_pos", "new_contents_commit", "new_leaf", "new_state_nonce", "nullifier", "old_contents_commit", "old_state_nonce", "owner_secret", "path", "tx_binding", "tx_commitment", "tx_nonce"]
+def box_put_held : List Name := ["box_id", "expected_root", "leaf_pos", "new_contents_commit", "new_leaf", "new_state_nonce", "nullifier", "old_contents_commit", "old_state_nonce", "owner_pub", "owner_secret", "path", "tx_binding", "tx_commitment", "tx_nonce"]
 
 
 def box_put_stmts : List Stmt :=
@@ -1422,14 +1422,20 @@ def box_put_stmts : List Stmt :=
   .assign "DOMAIN_NULLIFIER" (.op "witness_base" [.lit 1]),
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "DOMAIN_MERKLE_LEAF" (.op "witness_base" [.lit 5]),
+  .assign "DOMAIN_SIGNATURE_SECRET" (.op "witness_base" [.lit 7]),
+  .assign "ONE" (.op "witness_base" [.lit 1]),
+  .assign "derived_owner" (.op "poseidon_hash" [.var "DOMAIN_SIGNATURE_SECRET", .var "owner_secret"]),
+  .constrainEq (.var "derived_owner") (.var "owner_pub"),
   .assign "nullifier_circuit" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "owner_secret", .var "box_id", .var "old_state_nonce"]),
   .constrainEq (.var "nullifier_circuit") (.var "nullifier"),
   .constrainInstance (.var "nullifier"),
-  .assign "old_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "box_id", .var "old_contents_commit", .var "old_state_nonce"]),
+  .assign "old_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "box_id", .var "old_contents_commit", .var "old_state_nonce", .var "owner_pub"]),
   .assign "root" (.op "merkle_root" [.var "leaf_pos", .var "path", .var "old_leaf"]),
   .constrainEq (.var "root") (.var "expected_root"),
   .constrainInstance (.var "expected_root"),
-  .assign "new_leaf_circuit" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "box_id", .var "new_contents_commit", .var "new_state_nonce"]),
+  .assign "computed_nsn" (.op "base_add" [.var "old_state_nonce", .var "ONE"]),
+  .constrainEq (.var "computed_nsn") (.var "new_state_nonce"),
+  .assign "new_leaf_circuit" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "box_id", .var "new_contents_commit", .var "new_state_nonce", .var "owner_pub"]),
   .constrainEq (.var "new_leaf_circuit") (.var "new_leaf"),
   .constrainInstance (.var "new_leaf"),
   .assign "tx_binding_circuit" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
@@ -1451,7 +1457,7 @@ theorem box_put_has_a_free_instance :
 
 /-- `src/contract/box/proof/take.zk` — 4 exposure(s). -/
 
-def box_take_held : List Name := ["box_id", "contents_commit", "expected_root", "leaf_pos", "nullifier", "owner_secret", "path", "state_nonce", "tx_binding", "tx_commitment", "tx_nonce"]
+def box_take_held : List Name := ["box_id", "contents_commit", "expected_root", "leaf_pos", "nullifier", "owner_pub", "owner_secret", "path", "state_nonce", "tx_binding", "tx_commitment", "tx_nonce"]
 
 
 def box_take_stmts : List Stmt :=
@@ -1459,10 +1465,13 @@ def box_take_stmts : List Stmt :=
   .assign "DOMAIN_NULLIFIER" (.op "witness_base" [.lit 1]),
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "DOMAIN_MERKLE_LEAF" (.op "witness_base" [.lit 5]),
+  .assign "DOMAIN_SIGNATURE_SECRET" (.op "witness_base" [.lit 7]),
+  .assign "derived_owner" (.op "poseidon_hash" [.var "DOMAIN_SIGNATURE_SECRET", .var "owner_secret"]),
+  .constrainEq (.var "derived_owner") (.var "owner_pub"),
   .assign "nullifier_circuit" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "owner_secret", .var "box_id", .var "state_nonce"]),
   .constrainEq (.var "nullifier_circuit") (.var "nullifier"),
   .constrainInstance (.var "nullifier"),
-  .assign "box_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "box_id", .var "contents_commit", .var "state_nonce"]),
+  .assign "box_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "box_id", .var "contents_commit", .var "state_nonce", .var "owner_pub"]),
   .assign "root" (.op "merkle_root" [.var "leaf_pos", .var "path", .var "box_leaf"]),
   .constrainEq (.var "root") (.var "expected_root"),
   .constrainInstance (.var "expected_root"),
@@ -5075,7 +5084,7 @@ def purse_balance_stmts : List Stmt :=
   .constrainInstance (.var "derived_purse_id"),
   .assign "derived_owner" (.op "poseidon_hash" [.var "DOMAIN_SIGNATURE_SECRET", .var "owner_secret"]),
   .constrainEq (.var "derived_owner") (.var "owner_pub"),
-  .assign "purse_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "balance", .var "state_nonce"]),
+  .assign "purse_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "balance", .var "state_nonce", .var "owner_pub"]),
   .assign "root" (.op "merkle_root" [.var "leaf_pos", .var "path", .var "purse_leaf"]),
   .constrainEq (.var "root") (.var "expected_root"),
   .constrainInstance (.var "expected_root"),
@@ -5124,7 +5133,7 @@ def purse_deposit_stmts : List Stmt :=
   .assign "nf_circuit" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "owner_secret", .var "purse_id", .var "state_nonce"]),
   .constrainEq (.var "nf_circuit") (.var "nullifier"),
   .constrainInstance (.var "nullifier"),
-  .assign "old_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "old_balance", .var "state_nonce"]),
+  .assign "old_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "old_balance", .var "state_nonce", .var "owner_pub"]),
   .assign "root" (.op "merkle_root" [.var "leaf_pos", .var "path", .var "old_leaf"]),
   .constrainEq (.var "root") (.var "expected_root"),
   .constrainInstance (.var "expected_root"),
@@ -5150,7 +5159,7 @@ def purse_deposit_stmts : List Stmt :=
   .assign "computed_new" (.op "base_add" [.var "old_balance", .var "deposit_amount"]),
   .constrainEq (.var "computed_new") (.var "new_balance"),
   .assign "new_nonce" (.op "base_add" [.var "state_nonce", .var "ONE"]),
-  .assign "new_leaf_circuit" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "new_balance", .var "new_nonce"]),
+  .assign "new_leaf_circuit" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "new_balance", .var "new_nonce", .var "owner_pub"]),
   .constrainEq (.var "new_leaf_circuit") (.var "new_leaf"),
   .constrainInstance (.var "new_leaf"),
   .assign "tb_circuit" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
@@ -5193,7 +5202,7 @@ def purse_withdraw_stmts : List Stmt :=
   .assign "nf_circuit" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "owner_secret", .var "purse_id", .var "state_nonce"]),
   .constrainEq (.var "nf_circuit") (.var "nullifier"),
   .constrainInstance (.var "nullifier"),
-  .assign "old_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "old_balance", .var "state_nonce"]),
+  .assign "old_leaf" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "old_balance", .var "state_nonce", .var "owner_pub"]),
   .assign "root" (.op "merkle_root" [.var "leaf_pos", .var "path", .var "old_leaf"]),
   .constrainEq (.var "root") (.var "expected_root"),
   .constrainInstance (.var "expected_root"),
@@ -5219,7 +5228,7 @@ def purse_withdraw_stmts : List Stmt :=
   .assign "computed_new" (.op "base_sub" [.var "old_balance", .var "withdraw_amount"]),
   .constrainEq (.var "computed_new") (.var "new_balance"),
   .assign "new_nonce" (.op "base_add" [.var "state_nonce", .var "ONE"]),
-  .assign "new_leaf_circuit" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "new_balance", .var "new_nonce"]),
+  .assign "new_leaf_circuit" (.op "poseidon_hash" [.var "DOMAIN_MERKLE_LEAF", .var "purse_id", .var "new_balance", .var "new_nonce", .var "owner_pub"]),
   .constrainEq (.var "new_leaf_circuit") (.var "new_leaf"),
   .constrainInstance (.var "new_leaf"),
   .assign "tb_circuit" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
