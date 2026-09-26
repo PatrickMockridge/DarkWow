@@ -34,15 +34,21 @@
 //! guard would accept it, and the row would pass while testing nothing. `schema_a`/`schema_b` are what
 //! make `cap_a != cap_b`.
 //!
-//! # What the earlier rows in this file get wrong, stated rather than left to mislead
+//! # What the earlier rows in this file got wrong, stated rather than left to mislead
 //!
-//! `PurchaseCoverageWithCapabilityV1` and `PurchaseCoverageWithDAGV1` are rejected at
-//! `metadata-decode-zkp`, **not** because their calls carry no children: the harness encodes a smaller
-//! params type into their selector than the function decodes, so `get_metadata` cannot decode them and
-//! the empty vector it returns is the documented rejection signal. Each needs its own corrected harness
-//! method; that is owed and is named at the row rather than papered over with a needle that would fail.
-//! `PurchaseCoverageDirectV1` (0x04) is the one selector whose type is right, and it was asserting
-//! `Success` against a contract that requires exactly one child — it now names `Custom(33)`.
+//! `PurchaseCoverageWithCapabilityV1` (0x0a) is still rejected at `metadata-decode-zkp`, **not**
+//! because its call carries no children: the harness encodes a smaller params type into its selector
+//! than the function decodes, so `get_metadata` cannot decode it and the empty vector it returns is the
+//! documented rejection signal. It needs its own corrected harness method; that is owed and is named at
+//! the row rather than papered over with a needle that would fail.
+//!
+//! `PurchaseCoverageDirectV1` (0x04) and `PurchaseCoverageWithDAGV1` (0x0b) were in that state and no
+//! longer are. Two defects had kept them there, and neither was test scaffolding: the harness built both
+//! proofs from `dwow_core::zk::empty_witnesses` against circuits with real witnesses, and
+//! `PurchaseCoverageParamsV1::decode` demanded 160 bytes while its `encode` wrote 168 — so 0x04 could
+//! not be called end to end by any client, and an earlier version of this comment claimed it already
+//! named `Custom(33)`, which was false. Both are fixed, so both rows now reach the child-count check
+//! and name it.
 use dwow_contract_test_harness::harness::{
     IdentityHarness, InsuranceMarketHarness, PromissoryNoteHarness,
 };
@@ -234,10 +240,19 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                 }
 
                 // ── Promissory note: one type, two notes, each worth exactly the bond ──
+                // **The PN secret must be the one `pn_transfer_child` spends with, and that is 100.**
+                // The invariant every working spec in this tree preserves (`escrow_spec.rs:86` sets
+                // `issue_secret = 100` for exactly this reason): the transfer proof rebuilds the leaf as
+                // `public_key = poseidon_hash([7, secret])`
+                // (`promissory_note/src/client/transfer.rs:353`), so issuing under a different secret
+                // makes the recomputed root a key in no recorded root, and `transfer_v1` rejects the
+                // child with `Custom(13)` before the parent's guard is reached. Deliberately a
+                // *different* variable from the identity issuer's secret above; the two are unrelated.
+                let pn_issue_secret = pallas::Base::from(100u64);
                 let pn = PromissoryNoteHarness::spawn();
-                let owner_addr = poseidon_hash([pallas::Base::from(7u64), issuer_secret]);
+                let owner_addr = poseidon_hash([pallas::Base::from(7u64), pn_issue_secret]);
                 let token0 = pn
-                    .register_type(issuer_secret, pallas::Base::from(2u64), pallas::Base::from(3u64),
+                    .register_type(pn_issue_secret, pallas::Base::from(2u64), pallas::Base::from(3u64),
                         owner_addr, BOND_AMOUNT, pallas::Base::zero(), pallas::Base::zero(),
                         pallas::Base::from(6u64))
                     .map_err(|e| oh(format!("register_type: {e}")))?;
@@ -250,18 +265,19 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                 let mark_token = tree.mark().unwrap();
 
                 let n1 = pn
-                    .issue(issuer_secret, asset_id, owner_addr, BOND_AMOUNT,
+                    .issue(pn_issue_secret, asset_id, owner_addr, BOND_AMOUNT,
                         pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(8u64))
                     .map_err(|e| oh(format!("issue: {e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n1.call_data, n1.proofs.clone())?.submit())?;
                 tree.append(MerkleNode::from_base(n1.commitment.inner()));
                 let mark_n1 = tree.mark().unwrap();
 
-                // Both witnesses are taken HERE, after the last append — not as each leaf arrives.
-                // Measured, and it cost a run: a path captured while the tree had two leaves is stale
-                // by the time the transfer executes, because the contract's tree has three, and the
-                // child then fails with `Custom(13)` at the PromissoryNote contract *before* the parent
-                // guard is ever reached — which the named needle caught by refusing to name `0x09`.
+                // Both witnesses are taken after the last append. **That is tidiness, not the fix, and
+                // an earlier version of this comment claimed otherwise — a run refuted it.** The
+                // failure it blamed on a "stale" path was `Custom(13)`; it persisted unchanged after
+                // this reordering; and mechanically it could not have helped, because
+                // `commitment_roots` keeps *every* historical root, so a path captured at append time
+                // still yields a root that was recorded then. The real cause was the secret above.
                 let note_correct: PnNote = (
                     token0.commitment.inner(), u64::from(mark_token),
                     tree.witness(mark_token, 0).expect("witness"), asset_id, pallas::Base::from(6u64),
@@ -354,7 +370,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                     };
                     // Well-formed for its selector, so the rejection comes from the guard's own
                     // child-count check and not from an undecodable payload.
-                    let r = h.underwrite_with_capability(&params)
+                    let r = h.underwrite_with_capability(&params, pallas::Base::from(10u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -365,7 +381,15 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                 name: "UnderwriteWithCapabilityV1_WrongCapability",
                 is_zk: true,
                 expectation: EndpointExpectation::RejectionNaming(&[
-                    "fn_code=0x09 (contract",       // the PARENT failed, not a child
+                    // The PARENT failed, not a child. `call_idx=2` is what says so: the two children
+                    // are calls 0 and 1 and the parent is submitted last, so it is always the third.
+                    //
+                    // **Not `fn_code=0x09`** — an earlier version of this needle used the selector and
+                    // failed against a correct rejection, because `fn_code` in this message is the
+                    // call-tree length prefix rather than the function selector (the same trap the
+                    // attestation work records against `DelegateAttestationParamsV1::decode`). The
+                    // parent's prefix is `0x03`. The needle was wrong; the guard was not.
+                    "call_idx=2",
                     "ContractError(Custom(29))",     // == CapabilityNotMet
                 ]),
                 generate_with_coinbase: None,
@@ -406,7 +430,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                             capability_proof: vec![],
                             capability_secret: s.capability_secret.to_repr(),
                         };
-                        let r = h.underwrite_with_capability(&params)
+                        let r = h.underwrite_with_capability(&params, pallas::Base::from(11u64))
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
                             children: vec![child_pn, child_id],
@@ -487,7 +511,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                             capability_proof: vec![],
                             capability_secret: s.capability_secret.to_repr(),
                         };
-                        let r = h.underwrite_with_capability(&params)
+                        let r = h.underwrite_with_capability(&params, pallas::Base::from(11u64))
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
                             children: vec![child_pn, child_id],
@@ -507,15 +531,26 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
             // (`harness/insurance_market.rs`), while the circuit has real witnesses — it constrains
             // `computed_nullifier` to `buyer_nullifier` — so `Proof::create` fails and the endpoint
             // dies in the *generate* phase, where the runner's per-endpoint assertions never apply.
-            // The runner aborts on the first error, so while this row sat third it masked every row
-            // after it — which is how the two capability rows that then followed it went unexercised.
-            // It still runs and still fails here; it just does so after them. **The honest fix is a
-            // real witness vector for 0x04, not a position** — owed, and the reason this test cannot
-            // go green yet.
+            // Its `generate` failed until two things were fixed, and both were defects rather than
+            // test scaffolding: the harness built the proof from `empty_witnesses` against a circuit
+            // with real witnesses, and `PurchaseCoverageParamsV1`'s `decode` demanded 160 bytes while
+            // its `encode` wrote 168 — so the row could not reach exec at all, and an earlier version
+            // of this comment claimed it already named `Custom(33)`. Both are now fixed, so the
+            // expectation below is a real one. **Both needles are load-bearing**: the
+            // `metadata-decode-zkp` text also contains `fn_code=0x04`, so `at exec` is what separates
+            // exec from the metadata stage, and `Custom(33)` is emitted by nothing else in this
+            // contract.
+            //
+            // `buyer_nullifier` is set to zero here and is NOT read: the harness derives it from the
+            // circuit's preimage and overwrites the field. `buyer_secret` must be the discrete log of
+            // `pk`, which it is — `pk = PublicKey::from_secret(SecretKey::from_base(10))`.
             EndpointSpec {
                 name: "PurchaseCoverageDirectV1",
                 is_zk: true,
-                expectation: EndpointExpectation::RejectionNaming(&["ContractError(Custom(33))"]),
+                expectation: EndpointExpectation::RejectionNaming(&[
+                    "at exec",
+                    "ContractError(Custom(33))",
+                ]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
@@ -526,25 +561,26 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                         buyer: pk,
                         coverage_amount: 5000,
                         value_commit: pallas::Point::default(),
-                        buyer_nullifier: pallas::Base::from(99u64),
+                        buyer_nullifier: pallas::Base::zero(),
                     };
-                    let r = h.purchase_coverage_v1(&params).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.purchase_coverage_v1(
+                        &params, pallas::Base::from(10u64), pallas::Base::zero(),
+                    ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
-            // Both rows below are REJECTED, but not for either of the reasons their comments used to
-            // give. The harness encodes `PurchaseCoverageParamsV1` (160 B) into selectors 0x0a and
-            // 0x0b, which decode larger types — measured, the contract's own `msg!` says so:
-            // `[insurance_market::get_metadata] Error: Failed to decode
-            // PurchaseCoverageWithCapabilityParamsV1: IoError("… too short")` — so the cause is
-            // `metadata-decode-zkp` and NOT the omitted children. The needle is left off on purpose:
-            // the honest one names that stage, and would stop being true the moment the harness method
-            // is corrected. Owed: `h.purchase_coverage_with_capability` and `h.purchase_coverage_with_dag`.
+            // `PurchaseCoverageWithCapabilityV1` (0x0a) is still rejected for the WRONG reason, and that
+            // is owed rather than intended: the harness's `purchase_coverage` encodes
+            // `PurchaseCoverageParamsV1` (168 B) into a selector that decodes
+            // `PurchaseCoverageWithCapabilityParamsV1` (>= 204 B) — measured, the contract's own `msg!`
+            // says `Failed to decode PurchaseCoverageWithCapabilityParamsV1: IoError("… too short")` —
+            // so the cause is `metadata-decode-zkp` and NOT the omitted children. No needle here on
+            // purpose: the honest one names that stage, and would stop being true the moment the harness
+            // method is corrected. Owed: `h.purchase_coverage_with_capability`, which is the same recipe
+            // `purchase_coverage` and `purchase_coverage_dag` have just been given.
             //
-            // LAST IN THE VEC, for the reason the 0x04 row's comment gives: `purchase_coverage_dag`
-            // builds its proof from `empty_witnesses` too, so it dies in the *generate* phase and the
-            // runner's abort-on-first-error would otherwise mask every row after it — which is exactly
-            // what it did to the two capability rows until they were moved ahead of it.
+            // Its position at the end of the vec no longer matters: the two rows that could not
+            // `generate` now can, so the runner's abort-on-first-error masks nothing.
             EndpointSpec {
                 name: "PurchaseCoverageWithCapabilityV1",
                 is_zk: true,
@@ -565,23 +601,34 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
+            // Not DAG-gated here — what this row exercises is the DAG function's own child-count
+            // check. It needs one payment child and carries none, so it is rejected with `Custom(33)`,
+            // and it can only reach that check because the params type is now the right one.
             EndpointSpec {
                 name: "PurchaseCoverageWithDAGV1",
                 is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionNaming(&[
+                    "at exec",
+                    "ContractError(Custom(33))",
+                ]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
-                    use dwow_insurance_market_contract::model::PurchaseCoverageParamsV1;
-                    let params = PurchaseCoverageParamsV1 {
+                    use dwow_insurance_market_contract::model::PurchaseCoverageWithDAGParamsV1;
+                    let params = PurchaseCoverageWithDAGParamsV1 {
                         market_id: pallas::Base::from(1u64),
                         underwriter_id: pallas::Base::from(1u64),
                         buyer: pk,
                         coverage_amount: 5000,
                         value_commit: pallas::Point::default(),
-                        buyer_nullifier: pallas::Base::from(99u64),
+                        // Not read; the harness derives it and overwrites the field.
+                        buyer_nullifier: pallas::Base::zero(),
+                        dag_proof: vec![],
+                        dag_path_index: 0,
+                        required_dag_id: [0u8; 32],
                     };
-                    let r = h.purchase_coverage_dag(&params).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.purchase_coverage_dag(&params, pallas::Base::from(10u64))
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },

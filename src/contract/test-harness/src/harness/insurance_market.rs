@@ -41,6 +41,13 @@ use dwow_insurance_market_contract::client::{
         PurchaseCoverageWithCapabilityV1CallData, PurchaseCoverageWithCapabilityV1PublicInputs,
         purchase_coverage_with_capability_v1_proof,
     },
+    purchase_coverage::{
+        PurchaseCoverageV1CallData, PurchaseCoverageV1PublicInputs, purchase_coverage_v1_proof,
+    },
+    purchase_coverage_with_dag::{
+        PurchaseCoverageWithDAGV1CallData, PurchaseCoverageWithDAGV1PublicInputs,
+        purchase_coverage_with_dag_v1_proof,
+    },
 };
 
 /// InsuranceMarket Harness for isolated testing
@@ -157,9 +164,26 @@ impl InsuranceMarketHarness {
     pub fn underwrite_with_capability(
         &self,
         params: &dwow_insurance_market_contract::model::UnderwriteWithCapabilityParamsV1,
+        underwriter_secret: dwow_sdk::pasta::pallas::Base,
     ) -> Result<UnderwriteResult> {
         use dwow_sdk::crypto::pasta_prelude::PrimeField;
         use dwow_sdk::pasta::pallas;
+        // The circuit constrains `derived_pub_x/y` — `ec_mul_base(underwriter_secret, NULLIFIER_K)` —
+        // to the exposed `underwriter_pub_x/y`. A secret that is not the discrete log of
+        // `params.underwriter` therefore makes the circuit **unsatisfiable**, and the failure surfaces
+        // as an *invalid proof* at block acceptance rather than as a prover error, which is how it read
+        // the first time: `L2 proof verify … call[2] namespace 'UnderwriteV2': invalid proof`. Refuse
+        // it here, where the message can say why.
+        let derived = dwow_sdk::crypto::PublicKey::from_secret(
+            dwow_sdk::crypto::SecretKey::from_base(underwriter_secret),
+        );
+        if derived != params.underwriter {
+            return Err(dwow_core::Error::Custom(
+                "underwrite_with_capability: underwriter_secret is not the discrete log of \
+                 params.underwriter"
+                    .to_string(),
+            ))
+        }
         let required_capability_id =
             Option::<pallas::Base>::from(pallas::Base::from_repr(params.capability_secret))
                 .ok_or_else(|| {
@@ -169,7 +193,7 @@ impl InsuranceMarketHarness {
                 })?;
         let input = UnderwriteWithCapabilityV1CallData::new(
             pallas::Scalar::from(1u64),
-            pallas::Base::from(1u64),
+            underwriter_secret,
             params.underwriter,
             required_capability_id,
             pallas::Base::from(1u64),
@@ -245,31 +269,83 @@ impl InsuranceMarketHarness {
     }
 
     /// Purchase coverage v1 (function code 0x04)
+    /// Purchase coverage (fn `0x04` = `PurchaseCoverageV1`).
+    ///
+    /// **`params.buyer_nullifier` is not read.** `purchase_coverage_get_metadata_v1` publishes it
+    /// verbatim and apply only inserts it into the nullifier set, so a caller-chosen value would be a
+    /// public input the contract never checks — the `build_fee_v3_tx` shape. This derives the nullifier
+    /// from the circuit's own preimage and overwrites the field on the wire, which is what `escrow`'s
+    /// harness does with `commitment`.
+    ///
+    /// `buyer_secret` must be the discrete log of `params.buyer` with respect to `NULLIFIER_K`: the
+    /// circuit binds `buyer_pub_x/y` to `ec_mul_base(buyer_secret, NULLIFIER_K)`. A secret that is not
+    /// returns an error here rather than a proof that fails later for a reason nobody can read.
     pub fn purchase_coverage_v1(
         &self,
         params: &dwow_insurance_market_contract::model::PurchaseCoverageParamsV1,
+        buyer_secret: dwow_sdk::pasta::pallas::Base,
+        purchase_nonce: dwow_sdk::pasta::pallas::Base,
     ) -> Result<PurchaseCoverageV1Result> {
-        let w = dwow_core::zk::empty_witnesses(&self.purchase_coverage_v1_zkbin)?;
-        let c = ZkCircuit::new(w, &self.purchase_coverage_v1_zkbin);
-        let proof = Proof::create(&self.purchase_coverage_v1_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let derived = dwow_sdk::crypto::PublicKey::from_secret(
+            dwow_sdk::crypto::SecretKey::from_base(buyer_secret),
+        );
+        if derived != params.buyer {
+            return Err(dwow_core::Error::Custom(
+                "purchase_coverage_v1: buyer_secret is not the discrete log of params.buyer"
+                    .to_string(),
+            ))
+        }
+        let input = PurchaseCoverageV1CallData::new(buyer_secret, params.buyer, purchase_nonce);
+        let (proof, public_inputs) = purchase_coverage_v1_proof(
+            &self.purchase_coverage_v1_zkbin,
+            &self.purchase_coverage_v1_pk,
+            &input,
+        )?;
+
+        let mut wire = params.clone();
+        wire.buyer_nullifier = public_inputs.buyer_nullifier;
         let mut call_data = vec![0x04];
-        call_data.extend_from_slice(&params.encode());
-        Ok(PurchaseCoverageV1Result { call_data, proof })
+        call_data.extend_from_slice(&wire.encode());
+
+        Ok(PurchaseCoverageV1Result { call_data, proof, public_inputs })
     }
 
     /// Purchase coverage with DAG (function code 0x0b)
+    /// Purchase coverage with DAG (fn `0x0b` = `PurchaseCoverageWithDAGV1`).
+    ///
+    /// Takes `PurchaseCoverageWithDAGParamsV1`, not `PurchaseCoverageParamsV1`: 0x0b decodes the DAG
+    /// params (>= 208 B with an empty `dag_proof`) and the 160-byte type the sibling method encodes
+    /// would be rejected at `metadata-decode-zkp`. Same two notes as [`Self::purchase_coverage_v1`]:
+    /// `params.buyer_nullifier` is not read and is overwritten from the proof's own derivation, and
+    /// `buyer_secret` must be the discrete log of `params.buyer`.
     pub fn purchase_coverage_dag(
         &self,
-        params: &dwow_insurance_market_contract::model::PurchaseCoverageParamsV1,
+        params: &dwow_insurance_market_contract::model::PurchaseCoverageWithDAGParamsV1,
+        buyer_secret: dwow_sdk::pasta::pallas::Base,
     ) -> Result<PurchaseCoverageDagResult> {
-        let w = dwow_core::zk::empty_witnesses(&self.purchase_coverage_dag_zkbin)?;
-        let c = ZkCircuit::new(w, &self.purchase_coverage_dag_zkbin);
-        let proof = Proof::create(&self.purchase_coverage_dag_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let derived = dwow_sdk::crypto::PublicKey::from_secret(
+            dwow_sdk::crypto::SecretKey::from_base(buyer_secret),
+        );
+        if derived != params.buyer {
+            return Err(dwow_core::Error::Custom(
+                "purchase_coverage_dag: buyer_secret is not the discrete log of params.buyer"
+                    .to_string(),
+            ))
+        }
+        let input = PurchaseCoverageWithDAGV1CallData::new(buyer_secret, params.buyer);
+        let (proof, public_inputs) = purchase_coverage_with_dag_v1_proof(
+            &self.purchase_coverage_dag_zkbin,
+            &self.purchase_coverage_dag_pk,
+            &input,
+        )?;
+
+        let mut wire = params.clone();
+        wire.buyer_nullifier = public_inputs.buyer_nullifier;
         let mut call_data = vec![0x0b];
-        call_data.extend_from_slice(&params.encode());
-        Ok(PurchaseCoverageDagResult { call_data, proof })
+        call_data
+            .extend_from_slice(&wire.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+
+        Ok(PurchaseCoverageDagResult { call_data, proof, public_inputs })
     }
 }
 
@@ -330,5 +406,15 @@ pub struct CreateMarketResult {
     pub call_data: Vec<u8>,
 }
 
-pub struct PurchaseCoverageV1Result { pub call_data: Vec<u8>, pub proof: Proof }
-pub struct PurchaseCoverageDagResult { pub call_data: Vec<u8>, pub proof: Proof }
+pub struct PurchaseCoverageV1Result {
+    pub call_data: Vec<u8>,
+    pub proof: Proof,
+    /// The five instances the proof was created over. A caller cannot choose them: the harness derives
+    /// the nullifier and writes it onto the wire, so this is the only place the value is legible.
+    pub public_inputs: PurchaseCoverageV1PublicInputs,
+}
+pub struct PurchaseCoverageDagResult {
+    pub call_data: Vec<u8>,
+    pub proof: Proof,
+    pub public_inputs: PurchaseCoverageWithDAGV1PublicInputs,
+}

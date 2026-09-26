@@ -29,6 +29,8 @@ pub mod zkbins;
 
 pub mod underwrite_with_capability;
 pub mod purchase_coverage_with_capability;
+pub mod purchase_coverage;
+pub mod purchase_coverage_with_dag;
 
 use dwow_sdk::{
     crypto::{
