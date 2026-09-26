@@ -11,6 +11,17 @@
 # the note's `value` type rather than on a choice: see `src/contract/purse/src/model/mod.rs`
 # and `scripts/check-l1-wire-conformance.sh`, which declares each remaining slot.
 # owner_secret and the Pedersen blinds stay private (wallet.md §6.4.1).
+# **`Deposit` and `Withdraw` declare `public_inputs`, and they must.** Measured 2026-09-26: with
+# the lists removed, `test_purse_deposit_withdraw_wallet_driven_generic_prover` fails with
+# `public input references intermediate heap slot 23 (>= 22); circuits whose constrain_instance
+# targets are intermediates require the manifest public_inputs declaration` — the wallet's derive
+# path (`bin/dww/src/prover_impl.rs`'s `extract_instances`) reads the compiled circuit's
+# `ConstrainInstance` operands and refuses any that land on an intermediate heap slot. `Balance`
+# and both box circuits declare none because theirs resolve to witness slots, which is the state
+# `manifest.rs`'s field doc describes as "the box/purse case" — and that sentence is wrong for
+# these two (recorded for the next batch that touches `src/sdk`). An audit that reads these lists
+# as redundant leftovers is reading them wrong: they are the difference between a proof that
+# builds and one that verifies.
 
 [contract]
 name = "purse"
@@ -83,7 +94,6 @@ public_inputs = [
     "slot:21",
     "slot:20",
 ]
-
 [[circuits]]
 name = "Withdraw"
 namespace = "Withdraw"
@@ -122,7 +132,6 @@ public_inputs = [
     "slot:21",
     "slot:20",
 ]
-
 [[circuits]]
 name = "Balance"
 namespace = "Balance"
