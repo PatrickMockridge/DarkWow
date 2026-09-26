@@ -102,8 +102,6 @@ fn test_state_nonce_roundtrip() {
 #[test]
 fn test_put_params_encode_decode_roundtrip() {
     let params = PutParams {
-        box_id: BoxId(pallas::Base::from(99u64)),
-        old_state_nonce: StateNonce::new(pallas::Base::from(1u64)),
         new_state_nonce: StateNonce::new(pallas::Base::from(2u64)),
         old_contents_commit: pallas::Base::from(3u64),
         new_contents_commit: pallas::Base::from(4u64),
@@ -121,8 +119,7 @@ fn test_put_params_encode_decode_roundtrip() {
     assert!(!encoded.is_empty());
 
     let decoded = PutParams::decode(&encoded).expect("round-trip must succeed");
-    assert_eq!(decoded.box_id.inner(), params.box_id.inner());
-    assert_eq!(decoded.old_state_nonce.inner(), params.old_state_nonce.inner());
+    assert_eq!(decoded.new_state_nonce.inner(), params.new_state_nonce.inner());
     assert_eq!(
         decoded.old_contents_commit, params.old_contents_commit,
         "old_contents_commit must survive round-trip"
@@ -135,8 +132,8 @@ fn test_put_params_encode_decode_roundtrip() {
 
 #[test]
 fn test_put_params_rejects_truncated() {
-    // PutParams header is 260 bytes + 1024 bytes merkle_path + 1 byte proof_len
-    // min: 260 + 1024 + 1 + 0 + 64 = 1349 bytes (min proof is 0 bytes)
+    // PutParams header is 196 bytes + 1024 bytes merkle_path + 1 byte proof_len
+    // min: 196 + 1024 + 1 + 0 + 64 = 1285 bytes (min proof is 0 bytes)
     let short = vec![0u8; 500]; // well below minimum
     assert!(
         PutParams::decode(&short).is_err(),
@@ -174,9 +171,7 @@ fn test_put_update_rejects_wrong_length() {
 #[test]
 fn test_take_params_encode_decode_roundtrip() {
     let params = TakeParams {
-        box_id: BoxId(pallas::Base::from(99u64)),
         contents_commit: pallas::Base::from(3u64),
-        state_nonce: StateNonce::new(pallas::Base::from(1u64)),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         leaf_pos: MerklePosition::new(0),
@@ -190,7 +185,6 @@ fn test_take_params_encode_decode_roundtrip() {
     assert!(!encoded.is_empty());
 
     let decoded = TakeParams::decode(&encoded).expect("round-trip must succeed");
-    assert_eq!(decoded.box_id.inner(), params.box_id.inner());
     assert_eq!(decoded.contents_commit, params.contents_commit);
     assert_eq!(decoded.proof, params.proof);
 

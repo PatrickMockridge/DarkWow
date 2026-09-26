@@ -79,7 +79,7 @@ impl BoxHarness {
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=dwow_sdk::crypto::Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
         let nl_node = dwow_sdk::crypto::MerkleNode::from_base(nl);
-        let params=dwow_box_contract::model::PutParams{box_id:dwow_box_contract::model::BoxId(bid),old_state_nonce:dwow_box_contract::model::StateNonce::new(osn),new_state_nonce:dwow_box_contract::model::StateNonce::new(nsn),old_contents_commit:occ,new_contents_commit:ncc,nullifier:nf_val,expected_root:root,new_leaf:nl_node,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
+        let params=dwow_box_contract::model::PutParams{new_state_nonce:dwow_box_contract::model::StateNonce::new(nsn),old_contents_commit:occ,new_contents_commit:ncc,nullifier:nf_val,expected_root:root,new_leaf:nl_node,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
         let mut cd=vec![0x01u8];cd.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         // Self-addressed AEAD note (wallet.md §2.3, contract-wasm-type-system.md
         // §A.8.2): the produce-side box_capability note carries {commitment,
@@ -87,8 +87,8 @@ impl BoxHarness {
         // new leaf by trial-decryption. Appended to the call data — the scan
         // byte-slides over call.data looking for AeadEncryptedNote structures.
         #[derive(dwow_serial::SerialEncodable)]
-        struct BoxNote { commitment: pallas::Base, state_nonce: pallas::Base }
-        let note = BoxNote { commitment: nl, state_nonce: nsn };
+        struct BoxNote { commitment: pallas::Base, state_nonce: pallas::Base, box_id: pallas::Base }
+        let note = BoxNote { commitment: nl, state_nonce: nsn, box_id: bid };
         let owner_pk = dwow_sdk::crypto::keypair::PublicKey::from_secret(dwow_sdk::crypto::keypair::SecretKey::from_base(os));
         let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
         let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;
@@ -116,7 +116,7 @@ impl BoxHarness {
         let proof=Proof::create(&self.take_pk,&[c],&pi,rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=dwow_sdk::crypto::Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
-        let params=dwow_box_contract::model::TakeParams{box_id:dwow_box_contract::model::BoxId(bid),contents_commit:cc,state_nonce:dwow_box_contract::model::StateNonce::new(sn),nullifier:nf_val,expected_root:root,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
+        let params=dwow_box_contract::model::TakeParams{contents_commit:cc,nullifier:nf_val,expected_root:root,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
         let mut cd=vec![0x02u8];cd.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);Ok(BoxTakeResult{call_data:cd,proof})
     }
 }

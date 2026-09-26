@@ -41,6 +41,14 @@ Every operation follows the same architectural pattern:
 2. **Params** (`PutParams` / `TakeParams`): Every `constrain_instance` position
    maps to a field. The caller pre-computes all circuit-derived values
    (nullifier, expected_root, tx_binding) with matching domain constants.
+   **What the circuit needs but a verifier does not is not a param.** `box_id` and
+   `state_nonce` were, until 2026-09-26, and are now `note:` witness sources served from
+   the wallet's own record — §2 promises an observer learns "not which resource was
+   operated on", §5.5 says `box_id` "is never a public input", and a value in `Call.data`
+   is plaintext committed to by the transaction hash. `scripts/check-l1-wire-conformance.sh`
+   holds the rule and declares the residue: the two contents commitments, and
+   `new_state_nonce`, which the *prover* must supply because the circuit constrains it to
+   `old + 1` and no `note:` field yields a successor.
 
 3. **Metadata** (`get_metadata`): Pure echo — reads `params.field` directly.
    No domain constants, no poseidon_hash, no computation.

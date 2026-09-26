@@ -1063,7 +1063,12 @@ fn scan_block(
                             created_at_height: height,
                             key_coords, // resolved via find_owner
                             spend_secret: None,
-                            object_id: dwow_sdk::manifest::note_field(&fields, "purse_id")
+                            // The object id's note-field name is each schema's own
+                            // (`purse_id`, `box_id`), so this reads a documented list rather
+                            // than hardcoding one contract's spelling — the single-spelling
+                            // version silently yielded `None` for every box note.
+                            object_id: ["object_id", "box_id", "purse_id"].iter()
+                                .find_map(|n| dwow_sdk::manifest::note_field(&fields, n))
                                 .and_then(|v| v.as_base()),
                             state_nonce: dwow_sdk::manifest::note_field(&fields, "state_nonce")
                                 .and_then(|v| v.as_base()),

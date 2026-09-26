@@ -34,8 +34,8 @@ proof_circuit = "Take"
 name = "Put"
 namespace = "Put"
 witness_map = [
-    "param:box_id",
-    "param:old_state_nonce",
+    "note:box_id",
+    "note:state_nonce",
     "param:new_state_nonce",
     "param:old_contents_commit",
     "param:new_contents_commit",
@@ -55,9 +55,9 @@ witness_map = [
 name = "Take"
 namespace = "Take"
 witness_map = [
-    "param:box_id",
+    "note:box_id",
     "param:contents_commit",
-    "param:state_nonce",
+    "note:state_nonce",
     "derived:nullifier:5,0,2",
     "merkle_root",
     "secret",
@@ -72,8 +72,6 @@ witness_map = [
 [[parameters]]
 function = "put"
 fields = [
-    { name = "box_id", type = "pallas_base" },
-    { name = "old_state_nonce", type = "pallas_base" },
     { name = "new_state_nonce", type = "pallas_base" },
     { name = "old_contents_commit", type = "pallas_base" },
     { name = "new_contents_commit", type = "pallas_base" },
@@ -90,9 +88,7 @@ fields = [
 [[parameters]]
 function = "take"
 fields = [
-    { name = "box_id", type = "pallas_base" },
     { name = "contents_commit", type = "pallas_base" },
-    { name = "state_nonce", type = "pallas_base" },
     { name = "nullifier", type = "pallas_base", witness = 3 },
     { name = "expected_root", type = "pallas_base", witness = 4 },
     { name = "leaf_pos", type = "u32", witness = 6 },
@@ -121,6 +117,7 @@ primitives = ["SecretKey", "Commitment", "Nullifier", "MerkleNode", "ContractId"
 note_schema = [
     { name = "commitment", type = "pallas_base", witness = 7 },
     { name = "state_nonce", type = "pallas_base", source = "new_state_nonce" },
+    { name = "box_id", type = "pallas_base", witness = 0 },
 ]
 
 [[actions]]

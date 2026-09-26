@@ -115,8 +115,6 @@ fn test_box_encode_roundtrip() {
 
     let path = [dummy_merkle_node(); 32];
     let put = PutParams {
-        box_id: BoxId(pallas::Base::from(99u64)),
-        old_state_nonce: StateNonce::new(pallas::Base::from(1u64)),
         new_state_nonce: StateNonce::new(pallas::Base::from(2u64)),
         old_contents_commit: pallas::Base::from(3u64),
         new_contents_commit: pallas::Base::from(4u64),
@@ -138,9 +136,7 @@ fn test_box_encode_roundtrip() {
     assert_roundtrip!(PutUpdate, put_update);
 
     let take = TakeParams {
-        box_id: BoxId(pallas::Base::from(99u64)),
         contents_commit: pallas::Base::from(3u64),
-        state_nonce: StateNonce::new(pallas::Base::from(1u64)),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         leaf_pos: MerklePosition::new(0),

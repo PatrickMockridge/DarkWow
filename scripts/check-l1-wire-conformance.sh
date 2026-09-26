@@ -59,23 +59,24 @@ L1_CONTRACTS = ["promissory_note", "box", "purse"]
 # The measured debt, expiry = removing the field from the wire (this batch's B1-iii).
 # key: (contract, circuit, witness_map slot, params field)
 #
-# PURSE'S 8 RETIRED (2026-09-26): `purse_id` and `state_nonce` on all three circuits, plus
-# `asset_id`/`balance` on Balance, are off the wire; their slots now read `note:` from the wallet's
-# record (`CapRecord.object_id`, `.state_nonce`, `.value`, `.asset_id`, mapped in
-# `bin/dww/src/lib.rs`'s `cap_record_note_fields`). **The balances stay, and the reason is measured,
-# not preferred**: the note's `value` is declared `u64`, `encode_params_values` refuses any other type
-# (`src/sdk/src/manifest.rs:645-666`), a `witness = N` source yields the circuit's `Base`, and
-# `NoteFieldValue::as_u64()` matches only `U64` — so a balance that leaves the params can no longer
-# reach the note, and the note is how the wallet learns the produced state's balance.
+# PURSE'S 8 and BOX'S 4 RETIRED (2026-09-26): `purse_id`/`state_nonce` on all three purse circuits,
+# `asset_id`/`balance` on Balance, and `box_id`/`state_nonce` — their slots now read `note:` from the
+# wallet's record (`CapRecord.object_id`, `.state_nonce`, `.value`, `.asset_id`, mapped in
+# `bin/dww/src/lib.rs`'s `cap_record_note_fields`, and read out of the note by
+# `bin/dww/src/scan.rs`, which now tries the schemas' several spellings instead of one).
+# **What stays, and why each is measured rather than preferred:**
+#   * the purse balances — the note's `value` is declared `u64`, `encode_params_values` refuses any
+#     other type (`src/sdk/src/manifest.rs:645-666`), a `witness = N` source yields the circuit's
+#     `Base`, and `NoteFieldValue::as_u64()` matches only `U64`, so a balance that leaves the params
+#     cannot reach the note;
+#   * box's `new_state_nonce` — the *prover* must supply it (the circuit constrains it to `old + 1`)
+#     and no `note:` field yields a successor, where purse's circuit derives its own;
+#   * the contents commitments — what the box holds, which the note does not yet carry.
 DECLARED = {
-    ("box", "Put", 0, "box_id"): "the object identity, published; the wallet learns it from its own scan record",
-    ("box", "Put", 1, "old_state_nonce"): "the consumed nonce, published; the record holds it",
-    ("box", "Put", 2, "new_state_nonce"): "the successor nonce, published; derived in-circuit since 2026-09-25",
+    ("box", "Put", 2, "new_state_nonce"): "the successor nonce; the prover supplies it and no note field yields it",
     ("box", "Put", 3, "old_contents_commit"): "what the box held, published; the note is the transport §C.8.1 names",
     ("box", "Put", 4, "new_contents_commit"): "what the box will hold, published; same",
-    ("box", "Take", 0, "box_id"): "as Put, slot 0",
     ("box", "Take", 1, "contents_commit"): "as Put, slot 3",
-    ("box", "Take", 2, "state_nonce"): "as Put, slot 1",
     ("purse", "Deposit", 1, "old_balance"): "how much, published — blocked on the note's `value` type, see above",
     ("purse", "Deposit", 3, "deposit_amount"): "how much moved, published — the record holds the balance, not the amount",
     ("purse", "Deposit", 5, "new_balance"): "how much, published — same block as slot 1",
@@ -129,8 +130,15 @@ def main():
                                 pathlib.Path(tmp) / "src" / "contract" / c, ignore=ig)
             dst = pathlib.Path(tmp) / "src" / "contract" / "box"
             m = (dst / "manifest.toml").read_text()
-            # plant a leak: a new param-sourced witness-only slot on Put
-            m = m.replace('    "param:box_id",', '    "param:box_id",\n    "param:probe_field",', 1)
+            # Plant a leak: a new param-sourced witness-only slot on Put. The anchor is the
+            # `witness_map` header rather than a field line, because the field lines are exactly
+            # what this batch changes — the first attempt anchored on `"param:box_id"` and, once
+            # that field left the wire, planted nothing and failed its own assertion instead.
+            anchor = 'name = "Put"\nnamespace = "Put"\nwitness_map = [\n'
+            if anchor not in m:
+                print("FAIL: --self-test could not find box Put's witness_map to plant into")
+                return 1
+            m = m.replace(anchor, anchor + '    "param:probe_field",\n', 1)
             (dst / "manifest.toml").write_text(m)
             os.environ["L1_WIRE_ROOT"] = tmp
             ROOT = pathlib.Path(tmp)

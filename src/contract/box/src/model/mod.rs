@@ -104,7 +104,7 @@ fn read_merkle_node(data: &[u8]) -> Result<MerkleNode, ContractError> {
 
 #[derive(Debug, Clone)]
 pub struct PutParams {
-    pub box_id: BoxId, pub old_state_nonce: StateNonce, pub new_state_nonce: StateNonce,
+    pub new_state_nonce: StateNonce,
     pub old_contents_commit: pallas::Base, pub new_contents_commit: pallas::Base,
     pub nullifier: Nullifier, pub expected_root: MerkleNode, pub new_leaf: MerkleNode,
     pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>,
@@ -116,9 +116,10 @@ impl dwow_serial::Decodable for PutParams { fn decode<D: std::io::Read>(d: &mut 
 impl PutParams {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let path_bytes: Vec<u8> = self.merkle_path.iter().flat_map(|n| n.to_bytes()).collect();
-        let hdr = 260usize;
+        // hdr = 196 (was 260): `box_id` and `old_state_nonce` are off the wire — see the
+        // note above `TakeParams` and `scripts/check-l1-wire-conformance.sh`.
+        let hdr = 196usize;
         let mut b = Vec::with_capacity(hdr + path_bytes.len() + 1usize + self.proof.len() + 64usize);
-        b.extend_from_slice(&self.box_id.to_bytes()); b.extend_from_slice(&self.old_state_nonce.to_repr());
         b.extend_from_slice(&self.new_state_nonce.to_repr()); b.extend_from_slice(&self.old_contents_commit.to_repr());
         b.extend_from_slice(&self.new_contents_commit.to_repr()); b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.expected_root.to_bytes()); b.extend_from_slice(&self.new_leaf.to_bytes());
@@ -127,21 +128,19 @@ impl PutParams {
         b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let hdr = 260usize; if data.len() <= hdr + 1024usize { return Err(BoxError::DecodeFailure{field:"PutParams".into()}.into()); }
-        let box_id = BoxId::decode(read_slice(data, 0, 32)?)?;
-        let old_state_nonce = StateNonce::from_repr(read_field::<32>(data, 32)?).ok_or_else(|| ContractError::IoError("PutParams: invalid old_state_nonce".into()))?;
-        let new_state_nonce = StateNonce::from_repr(read_field::<32>(data, 64)?).ok_or_else(|| ContractError::IoError("PutParams: invalid new_state_nonce".into()))?;
-        let old_contents_commit = read_base(read_slice(data, 96, 32)?)?;
-        let new_contents_commit = read_base(read_slice(data, 128, 32)?)?; let nullifier = read_nullifier(read_slice(data, 160, 32)?)?;
-        let expected_root = read_merkle_node(read_slice(data, 192, 32)?)?; let new_leaf = read_merkle_node(read_slice(data, 224, 32)?)?;
-        let leaf_pos = MerklePosition::from_le_bytes(read_field::<4>(data, 256)?);
+        let hdr = 196usize; if data.len() <= hdr + 1024usize { return Err(BoxError::DecodeFailure{field:"PutParams".into()}.into()); }
+        let new_state_nonce = StateNonce::from_repr(read_field::<32>(data, 0)?).ok_or_else(|| ContractError::IoError("PutParams: invalid new_state_nonce".into()))?;
+        let old_contents_commit = read_base(read_slice(data, 32, 32)?)?;
+        let new_contents_commit = read_base(read_slice(data, 64, 32)?)?; let nullifier = read_nullifier(read_slice(data, 96, 32)?)?;
+        let expected_root = read_merkle_node(read_slice(data, 128, 32)?)?; let new_leaf = read_merkle_node(read_slice(data, 160, 32)?)?;
+        let leaf_pos = MerklePosition::from_le_bytes(read_field::<4>(data, 192)?);
         let mut merkle_path = [MerkleNode::from_base(pallas::Base::zero()); 32];
         for (i, slot) in merkle_path.iter_mut().enumerate() { *slot = read_merkle_node(read_slice(data, hdr.saturating_add(i.saturating_mul(32)), 32)?)?; }
         let path_end = hdr + 1024usize; let proof_len = usize::from(read_byte(data, path_end)?);
         if data.len() < path_end + 1usize + proof_len + 64usize { return Err(BoxError::DecodeFailure{field:"PutParams".into()}.into()); }
         let proof = read_slice(data, path_end+1, proof_len)?.to_vec(); let pos2 = path_end + 1usize + proof_len;
         let tx_binding = read_base(read_slice(data, pos2, 32)?)?; let tx_nonce = read_base(read_slice(data, pos2+32, 32)?)?;
-        Ok(PutParams { box_id, old_state_nonce, new_state_nonce, old_contents_commit, new_contents_commit, nullifier, expected_root, new_leaf, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
+        Ok(PutParams { new_state_nonce, old_contents_commit, new_contents_commit, nullifier, expected_root, new_leaf, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
     }
 }
 
@@ -155,11 +154,23 @@ impl PutUpdate {
 
 // ============================================================================
 // TAKE
+//
+// `box_id` and `state_nonce` are NOT on the wire — the same reduction as purse, on
+// the same grounds: `privacy.md` §2 promises an observer learns "not which resource
+// was operated on", §5.5 says `box_id` "is never a public input", and §2.4's table
+// has Box hiding "which box … in Poseidon commitment". A value in `Call.data` is
+// plaintext, committed to byte-for-byte by the transaction hash. Measured before
+// removal: no host read either, and the wallet's prover takes both from its own
+// record (`CapRecord.object_id`, `.state_nonce`) through `note:` witness sources.
+// **Residue, declared in `scripts/check-l1-wire-conformance.sh`**: the two contents
+// commitments and `new_state_nonce`, whose slot the *prover* must supply (the
+// circuit constrains it to `old + 1`) and which no `note:` field can yield — purse's
+// circuit derives its successor internally, so it has no such witness.
 // ============================================================================
 
 #[derive(Debug, Clone)]
 pub struct TakeParams {
-    pub box_id: BoxId, pub contents_commit: pallas::Base, pub state_nonce: StateNonce,
+    pub contents_commit: pallas::Base,
     pub nullifier: Nullifier, pub expected_root: MerkleNode,
     pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>,
     pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base,
@@ -170,28 +181,28 @@ impl dwow_serial::Decodable for TakeParams { fn decode<D: std::io::Read>(d: &mut
 impl TakeParams {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let path_bytes: Vec<u8> = self.merkle_path.iter().flat_map(|n| n.to_bytes()).collect();
-        let hdr = 164usize; let mut b = Vec::with_capacity(hdr + path_bytes.len() + 1usize + self.proof.len() + 64usize);
-        b.extend_from_slice(&self.box_id.to_bytes()); b.extend_from_slice(&self.contents_commit.to_repr());
-        b.extend_from_slice(&self.state_nonce.to_repr()); b.extend_from_slice(&self.nullifier.to_bytes());
+        // hdr = 100 (was 164): `box_id` and `state_nonce` are off the wire.
+        let hdr = 100usize; let mut b = Vec::with_capacity(hdr + path_bytes.len() + 1usize + self.proof.len() + 64usize);
+        b.extend_from_slice(&self.contents_commit.to_repr());
+        b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.expected_root.to_bytes()); b.extend_from_slice(&self.leaf_pos.to_le_bytes());
         b.extend_from_slice(&path_bytes);
         b.push(u8::try_from(self.proof.len()).map_err(|_| ContractError::IoError("proof too long".into()))?);
         b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let hdr = 164usize; if data.len() <= hdr + 1024usize { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
-        let box_id = BoxId::decode(read_slice(data, 0, 32)?)?; let contents_commit = read_base(read_slice(data, 32, 32)?)?;
-        let state_nonce = StateNonce::from_repr(read_field::<32>(data, 64)?).ok_or_else(|| ContractError::IoError("TakeParams: invalid state_nonce".into()))?;
-        let nullifier = read_nullifier(read_slice(data, 96, 32)?)?;
-        let expected_root = read_merkle_node(read_slice(data, 128, 32)?)?;
-        let leaf_pos = MerklePosition::from_le_bytes(read_field::<4>(data, 160)?);
+        let hdr = 100usize; if data.len() <= hdr + 1024usize { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
+        let contents_commit = read_base(read_slice(data, 0, 32)?)?;
+        let nullifier = read_nullifier(read_slice(data, 32, 32)?)?;
+        let expected_root = read_merkle_node(read_slice(data, 64, 32)?)?;
+        let leaf_pos = MerklePosition::from_le_bytes(read_field::<4>(data, 96)?);
         let mut merkle_path = [MerkleNode::from_base(pallas::Base::zero()); 32];
         for (i, slot) in merkle_path.iter_mut().enumerate() { *slot = read_merkle_node(read_slice(data, hdr.saturating_add(i.saturating_mul(32)), 32)?)?; }
         let path_end = hdr + 1024usize; let proof_len = usize::from(read_byte(data, path_end)?);
         if data.len() < path_end + 1usize + proof_len + 64usize { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
         let proof = read_slice(data, path_end+1, proof_len)?.to_vec(); let pos2 = path_end + 1usize + proof_len;
         let tx_binding = read_base(read_slice(data, pos2, 32)?)?; let tx_nonce = read_base(read_slice(data, pos2+32, 32)?)?;
-        Ok(TakeParams { box_id, contents_commit, state_nonce, nullifier, expected_root, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
+        Ok(TakeParams { contents_commit, nullifier, expected_root, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
     }
 }
 

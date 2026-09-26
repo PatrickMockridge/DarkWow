@@ -1062,12 +1062,20 @@ fn cap_record_note_fields(
             // The 4-arg L1 nullifier's operands (`poseidon(1, secret, object_id, nonce)`):
             // the record holds both, and they are what the purse's and box's circuits need
             // as witnesses once those values stop travelling in the call params.
-            "purse_id" | "box_id" | "object_id" => NoteFieldValue::Base(
-                cap.object_id.unwrap_or_else(|| pallas::Base::zero()),
-            ),
-            "state_nonce" => NoteFieldValue::Base(
-                cap.state_nonce.unwrap_or_else(|| pallas::Base::zero()),
-            ),
+            //
+            // **Absent means absent, never zero.** A zero here binds a wrong value that
+            // fails only at verification ("invalid proof"), which is how the first run of
+            // this change read; skipping the name fails loudly where it should, in the
+            // prover: `witness[N]: note field 'box_id' not found` (A.3.4's `unwrap_or` rule,
+            // whose whole point is that the fallback hides the case).
+            "purse_id" | "box_id" | "object_id" => match cap.object_id {
+                Some(v) => NoteFieldValue::Base(v),
+                None => return None,
+            },
+            "state_nonce" => match cap.state_nonce {
+                Some(v) => NoteFieldValue::Base(v),
+                None => return None,
+            },
             "spend_hook" => NoteFieldValue::Base(
                 cap.spend_hook.map(|h| h.inner()).unwrap_or_else(|| pallas::Base::zero()),
             ),
