@@ -67,3 +67,11 @@ doc/book/
 
 # Ad-hoc compiler output
 a.out
+
+# The status report's raw instrument capture. `reports/status-<date>.md` IS tracked — it is evidence, and
+# `scripts/check-register-artifacts.sh` requires a row that cites an artefact to have it in HEAD. The raw
+# directory beside it is the verbatim stdout/stderr/exit of each instrument: regenerable in seconds by
+# re-running `scripts/report-status.sh`, and large, so it is not. The extensions are deliberately not
+# `.md`: `scripts/check-doc-index.sh` globs the WORKING TREE (`:121-126`), so a `.md` written here would
+# enter the doc gate's scope whether or not it is tracked.
+/reports/*.raw/
