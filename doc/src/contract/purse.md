@@ -52,6 +52,14 @@ Identical structure to Box (see box.md for full description):
 1. **Circuit**: All `constrain_instance` values are caller-provided witnesses.
 2. **Params**: Every constrain_instance position maps to a field. Caller pre-computes
    nullifier, expected_root, Pedersen commitment coordinates, derived IDs.
+   **What the circuit needs but a verifier does not is not a param.** `purse_id` and
+   `state_nonce` were, until 2026-09-26, and are now `note:` witness sources served from
+   the wallet's own record — `privacy.md` §2 promises an observer learns "not which
+   resource was operated on" and §5.5 says the object id "is never a public input", so a
+   value in the call data (which the transaction hash commits to byte-for-byte) is a leak
+   with no verifier on the other side of it. `scripts/check-l1-wire-conformance.sh` holds
+   the rule and declares the residue — the balances, blocked on the note's `value` type,
+   which `encode_params_values` requires to be `u64` while a witness slot is a field element.
 3. **Metadata**: Pure echo — `params.field` only.
 4. **Exec**: Nullifier check. **Apply**: merkle_add, db_set.
 

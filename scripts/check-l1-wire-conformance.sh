@@ -58,6 +58,15 @@ L1_CONTRACTS = ["promissory_note", "box", "purse"]
 
 # The measured debt, expiry = removing the field from the wire (this batch's B1-iii).
 # key: (contract, circuit, witness_map slot, params field)
+#
+# PURSE'S 8 RETIRED (2026-09-26): `purse_id` and `state_nonce` on all three circuits, plus
+# `asset_id`/`balance` on Balance, are off the wire; their slots now read `note:` from the wallet's
+# record (`CapRecord.object_id`, `.state_nonce`, `.value`, `.asset_id`, mapped in
+# `bin/dww/src/lib.rs`'s `cap_record_note_fields`). **The balances stay, and the reason is measured,
+# not preferred**: the note's `value` is declared `u64`, `encode_params_values` refuses any other type
+# (`src/sdk/src/manifest.rs:645-666`), a `witness = N` source yields the circuit's `Base`, and
+# `NoteFieldValue::as_u64()` matches only `U64` — so a balance that leaves the params can no longer
+# reach the note, and the note is how the wallet learns the produced state's balance.
 DECLARED = {
     ("box", "Put", 0, "box_id"): "the object identity, published; the wallet learns it from its own scan record",
     ("box", "Put", 1, "old_state_nonce"): "the consumed nonce, published; the record holds it",
@@ -67,20 +76,12 @@ DECLARED = {
     ("box", "Take", 0, "box_id"): "as Put, slot 0",
     ("box", "Take", 1, "contents_commit"): "as Put, slot 3",
     ("box", "Take", 2, "state_nonce"): "as Put, slot 1",
-    ("purse", "Deposit", 0, "purse_id"): "the object identity, published",
-    ("purse", "Deposit", 1, "old_balance"): "how much, published — §2.4's claim is that the Pedersen commitment hides this",
-    ("purse", "Deposit", 3, "deposit_amount"): "how much moved, published",
-    ("purse", "Deposit", 5, "new_balance"): "how much, published",
-    ("purse", "Deposit", 7, "state_nonce"): "the consumed nonce, published",
-    ("purse", "Withdraw", 0, "purse_id"): "as Deposit, slot 0",
+    ("purse", "Deposit", 1, "old_balance"): "how much, published — blocked on the note's `value` type, see above",
+    ("purse", "Deposit", 3, "deposit_amount"): "how much moved, published — the record holds the balance, not the amount",
+    ("purse", "Deposit", 5, "new_balance"): "how much, published — same block as slot 1",
     ("purse", "Withdraw", 1, "old_balance"): "as Deposit, slot 1",
     ("purse", "Withdraw", 3, "withdraw_amount"): "as Deposit, slot 3",
     ("purse", "Withdraw", 5, "new_balance"): "as Deposit, slot 5",
-    ("purse", "Withdraw", 7, "state_nonce"): "as Deposit, slot 7",
-    ("purse", "Balance", 0, "purse_id"): "as Deposit, slot 0",
-    ("purse", "Balance", 1, "asset_id"): "the token, published",
-    ("purse", "Balance", 2, "balance"): "how much, published",
-    ("purse", "Balance", 4, "state_nonce"): "the nonce, published",
 }
 
 def circuit_body(text):

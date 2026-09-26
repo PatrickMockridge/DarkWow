@@ -1,8 +1,16 @@
 # Purse contract manifest — capability declarations for type construction.
 # The wallet reads this manifest to construct capability types per wallet.md §2.2.
 # Purse is L1: three ZK circuits, Merkle inclusion, Pedersen balance commitments.
-# Purse is params-based (no AEAD note): witness values travel in the call params,
-# with owner_secret and the Pedersen blinds private (wallet.md §6.4.1).
+# The wire carries what a verifier needs and no more: the public inputs, the Merkle
+# path, the proof, and — for the two operations that emit one — the fields the note
+# schema is filled from. `purse_id` and `state_nonce` are NOT on the wire; their
+# witness slots read `note:` and the wallet serves them from its own record
+# (`CapRecord.object_id`/`.state_nonce`, `bin/dww/src/lib.rs`), because `privacy.md`
+# §2 promises an observer learns "not which resource was operated on" and §5.5 says
+# the object id "is never a public input". The balances are the residue, blocked on
+# the note's `value` type rather than on a choice: see `src/contract/purse/src/model/mod.rs`
+# and `scripts/check-l1-wire-conformance.sh`, which declares each remaining slot.
+# owner_secret and the Pedersen blinds stay private (wallet.md §6.4.1).
 
 [contract]
 name = "purse"
@@ -41,14 +49,14 @@ proof_circuit = "Balance"
 name = "Deposit"
 namespace = "Deposit"
 witness_map = [
-    "param:purse_id",
+    "note:purse_id",
     "param:old_balance",
     "note:balance_blind",
     "param:deposit_amount",
     "blind:deposit",
     "param:new_balance",
     "derived:blind_sum:2,4",
-    "param:state_nonce",
+    "note:state_nonce",
     "derived:nullifier:15,0,7",
     "merkle_root",
     "derived:leaf_increment:0,5,7,15",
@@ -80,14 +88,14 @@ public_inputs = [
 name = "Withdraw"
 namespace = "Withdraw"
 witness_map = [
-    "param:purse_id",
+    "note:purse_id",
     "param:old_balance",
     "note:balance_blind",
     "param:withdraw_amount",
     "blind:withdraw",
     "param:new_balance",
     "derived:blind_sub:2,4",
-    "param:state_nonce",
+    "note:state_nonce",
     "derived:nullifier:15,0,7",
     "merkle_root",
     "derived:leaf_increment:0,5,7,15",
@@ -119,11 +127,11 @@ public_inputs = [
 name = "Balance"
 namespace = "Balance"
 witness_map = [
-    "param:purse_id",
-    "param:asset_id",
-    "param:balance",
+    "note:purse_id",
+    "note:asset_id",
+    "note:value",
     "note:balance_blind",
-    "param:state_nonce",
+    "note:state_nonce",
     "param:derived_purse_id",
     "param:expected_root",
     "param:token_commit",
@@ -142,11 +150,9 @@ witness_map = [
 [[parameters]]
 function = "deposit"
 fields = [
-    { name = "purse_id", type = "pallas_base" },
     { name = "old_balance", type = "u64" },
     { name = "deposit_amount", type = "u64" },
     { name = "new_balance", type = "u64" },
-    { name = "state_nonce", type = "pallas_base" },
     { name = "nullifier", type = "pallas_base", witness = 8 },
     { name = "expected_root", type = "pallas_base", witness = 9 },
     { name = "new_leaf", type = "pallas_base", witness = 10, leaf = true },
@@ -165,11 +171,9 @@ fields = [
 [[parameters]]
 function = "withdraw"
 fields = [
-    { name = "purse_id", type = "pallas_base" },
     { name = "old_balance", type = "u64" },
     { name = "withdraw_amount", type = "u64" },
     { name = "new_balance", type = "u64" },
-    { name = "state_nonce", type = "pallas_base" },
     { name = "nullifier", type = "pallas_base", witness = 8 },
     { name = "expected_root", type = "pallas_base", witness = 9 },
     { name = "new_leaf", type = "pallas_base", witness = 10, leaf = true },
@@ -188,10 +192,6 @@ fields = [
 [[parameters]]
 function = "balance"
 fields = [
-    { name = "purse_id", type = "pallas_base" },
-    { name = "asset_id", type = "pallas_base" },
-    { name = "balance", type = "u64" },
-    { name = "state_nonce", type = "pallas_base" },
     { name = "derived_purse_id", type = "pallas_base" },
     { name = "expected_root", type = "pallas_base" },
     { name = "token_commit", type = "pallas_base" },
@@ -225,7 +225,7 @@ note_schema = [
     { name = "value", type = "u64", source = "new_balance" },
     { name = "balance_blind", type = "pallas_scalar", witness = 6 },
     { name = "commitment", type = "pallas_base", witness = 10 },
-    { name = "purse_id", type = "pallas_base" },
+    { name = "purse_id", type = "pallas_base", witness = 0 },
     { name = "state_nonce", type = "pallas_base", derived = "increment:7" },
 ]
 

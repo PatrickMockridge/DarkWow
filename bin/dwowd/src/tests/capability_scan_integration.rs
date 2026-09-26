@@ -836,9 +836,7 @@ fn test_purse_deposit_withdraw_wallet_driven_generic_prover() {
 
         // Deposit: consume nonce 1 (seed's output, balance 100), produce nonce 2 (150).
         let deposit_params_json = format!(
-            r#"{{"purse_id":"{}","old_balance":100,"deposit_amount":50,"new_balance":150,"state_nonce":"{}","tx_nonce":"{}","asset_id":"{}"}}"#,
-            base_hex(&pallas::Base::from(1u64)),
-            base_hex(&pallas::Base::from(1u64)),
+            r#"{{"old_balance":100,"deposit_amount":50,"new_balance":150,"tx_nonce":"{}","asset_id":"{}"}}"#,
             base_hex(&pallas::Base::zero()),
             base_hex(&pallas::Base::from(1u64)),
         );
@@ -868,9 +866,7 @@ fn test_purse_deposit_withdraw_wallet_driven_generic_prover() {
 
         // Withdraw: consume nonce 2 (balance 150), produce nonce 3 (100).
         let withdraw_params_json = format!(
-            r#"{{"purse_id":"{}","old_balance":150,"withdraw_amount":50,"new_balance":100,"state_nonce":"{}","tx_nonce":"{}","asset_id":"{}"}}"#,
-            base_hex(&pallas::Base::from(1u64)),
-            base_hex(&pallas::Base::from(2u64)),
+            r#"{{"old_balance":150,"withdraw_amount":50,"new_balance":100,"tx_nonce":"{}","asset_id":"{}"}}"#,
             base_hex(&pallas::Base::zero()),
             base_hex(&pallas::Base::from(1u64)),
         );

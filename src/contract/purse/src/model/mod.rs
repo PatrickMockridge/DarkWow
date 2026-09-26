@@ -116,14 +116,38 @@ fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { if data.len()
 type MerklePath = [MerkleNode; 32];
 
 // ============================================================================
-// DEPOSIT — hdr=316
+// DEPOSIT — hdr=252
+//
+// `purse_id` and `state_nonce` are NOT on the wire. `privacy.md` §2 promises an
+// observer sees "only a nullifier and a Merkle root — not which resource was
+// operated on", and §5.5 says the object id "is never a public input"; both were in
+// the plaintext call data, which the transaction hash commits to byte for byte.
+// Measured before removal: nothing read them — not the host (purse/src/entrypoint),
+// not the circuit as an instance — and the wallet's prover takes them from its own
+// record (`CapRecord.object_id`, `.state_nonce`) through the `note:` witness sources.
+//
+// **The balances stay, and the reason is measured rather than chosen.** The note's
+// `value` field is declared `u64`, and `encode_params_values` (`src/sdk/src/manifest.rs:645-666`)
+// refuses a value of another type; a `witness = N` source yields the circuit's
+// `Base`, and `NoteFieldValue::as_u64()` matches only `U64`. So a balance that leaves
+// the params can no longer reach the note, and the note is how the wallet learns the
+// produced state's balance. Removing it needs either a `pallas_base` note field with
+// a conversion on the scan side, or a typed note as PromissoryNote's `Output.note`
+// is — a design step, not a plumb. `scripts/check-l1-wire-conformance.sh` declares
+// the three per circuit until then.
 // ============================================================================
 
 #[derive(Debug, Clone)] pub struct DepositParams {
-    pub purse_id: PurseId, pub old_balance: Balance, pub deposit_amount: Amount, pub new_balance: Balance,
-    pub state_nonce: StateNonce, pub nullifier: Nullifier, pub expected_root: MerkleNode, pub new_leaf: MerkleNode,
+    pub old_balance: Balance, pub deposit_amount: Amount, pub new_balance: Balance,
+    pub nullifier: Nullifier, pub expected_root: MerkleNode, pub new_leaf: MerkleNode,
     pub old_commit_x: pallas::Base, pub old_commit_y: pallas::Base, pub new_commit_x: pallas::Base, pub new_commit_y: pallas::Base,
     pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>, pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base,
+    /// The one field here that is neither a public input nor host-read, and it stays
+    /// because the *note* needs it: `note_schema`'s `asset_id` is filled from the
+    /// caller's params at emit time (`contract_client.rs`'s `encode_params_values`),
+    /// and the deposit circuit has no `asset_id` witness to source it from instead.
+    /// `scripts/check-l1-wire-conformance.sh` does not see it — its rule covers
+    /// witness-map `param:` slots — and that limitation is recorded in its header.
     pub asset_id: pallas::Base,
 }
 
@@ -131,11 +155,10 @@ impl dwow_serial::Encodable for DepositParams { fn encode<W: std::io::Write>(&se
 impl dwow_serial::Decodable for DepositParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl DepositParams {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
-        let hdr=316usize; let pb:Vec<u8>=self.merkle_path.iter().flat_map(|n|n.to_bytes()).collect();
+        let hdr=252usize; let pb:Vec<u8>=self.merkle_path.iter().flat_map(|n|n.to_bytes()).collect();
         let mut b=Vec::with_capacity(hdr+pb.len()+1+self.proof.len()+64);
-        b.extend_from_slice(&self.purse_id.encode()); b.extend_from_slice(&self.old_balance.to_le_bytes());
-        b.extend_from_slice(&self.deposit_amount.to_le_bytes()); b.extend_from_slice(&self.new_balance.to_le_bytes());
-        b.extend_from_slice(&self.state_nonce.to_repr()); b.extend_from_slice(&self.nullifier.to_bytes());
+        b.extend_from_slice(&self.old_balance.to_le_bytes()); b.extend_from_slice(&self.deposit_amount.to_le_bytes());
+        b.extend_from_slice(&self.new_balance.to_le_bytes()); b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.expected_root.to_bytes()); b.extend_from_slice(&self.new_leaf.to_bytes());
         b.extend_from_slice(&self.old_commit_x.to_repr()); b.extend_from_slice(&self.old_commit_y.to_repr());
         b.extend_from_slice(&self.new_commit_x.to_repr()); b.extend_from_slice(&self.new_commit_y.to_repr());
@@ -144,23 +167,21 @@ impl DepositParams {
         b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b.extend_from_slice(&self.asset_id.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let hdr=316usize; if data.len()<=hdr+1024usize { return Err(PurseError::DecodeFailure{field:"DepositParams".into()}.into()); }
-        let pid=PurseId::decode(read_slice(data,0,32)?)?;
-        let ob=Balance::from_le_bytes(read_field::<8>(data,32)?);
-        let da=Amount::from_le_bytes(read_field::<8>(data,40)?)?;
-        let nb=Balance::from_le_bytes(read_field::<8>(data,48)?);
-        let sn=StateNonce::from_repr(read_field::<32>(data,56)?).ok_or_else(||ContractError::IoError("DepositParams: invalid state_nonce".into()))?;
-        let nf={let a:[u8;32]=read_field::<32>(data,88)?; Nullifier::from_bytes(a)?};
-        let er=read_merkle_node(read_slice(data,120,32)?)?; let nl=read_merkle_node(read_slice(data,152,32)?)?;
-        let ocx=read_base(read_slice(data,184,32)?)?; let ocy=read_base(read_slice(data,216,32)?)?;
-        let ncx=read_base(read_slice(data,248,32)?)?; let ncy=read_base(read_slice(data,280,32)?)?;
-        let lp=MerklePosition::from_le_bytes(read_field::<4>(data,312)?);
+        let hdr=252usize; if data.len()<=hdr+1024usize { return Err(PurseError::DecodeFailure{field:"DepositParams".into()}.into()); }
+        let ob=Balance::from_le_bytes(read_field::<8>(data,0)?);
+        let da=Amount::from_le_bytes(read_field::<8>(data,8)?)?;
+        let nb=Balance::from_le_bytes(read_field::<8>(data,16)?);
+        let nf={let a:[u8;32]=read_field::<32>(data,24)?; Nullifier::from_bytes(a)?};
+        let er=read_merkle_node(read_slice(data,56,32)?)?; let nl=read_merkle_node(read_slice(data,88,32)?)?;
+        let ocx=read_base(read_slice(data,120,32)?)?; let ocy=read_base(read_slice(data,152,32)?)?;
+        let ncx=read_base(read_slice(data,184,32)?)?; let ncy=read_base(read_slice(data,216,32)?)?;
+        let lp=MerklePosition::from_le_bytes(read_field::<4>(data,248)?);
         let mut mp=[MerkleNode::from_base(pallas::Base::zero());32]; for (i,slot) in mp.iter_mut().enumerate() { *slot=read_merkle_node(read_slice(data,hdr.saturating_add(i.saturating_mul(32)),32)?)?; }
         let pe=hdr+1024usize; let pl=usize::from(read_byte(data,pe)?);
         if data.len()<pe+1usize+pl+96usize { return Err(PurseError::DecodeFailure{field:"DepositParams".into()}.into()); }
         let proof=read_slice(data,pe+1,pl)?.to_vec(); let p2=pe+1+pl;
         let tb=read_base(read_slice(data,p2,32)?)?; let tn=read_base(read_slice(data,p2+32,32)?)?; let aid=read_base(read_slice(data,p2+64,32)?)?;
-        Ok(DepositParams{purse_id:pid,old_balance:ob,deposit_amount:da,new_balance:nb,state_nonce:sn,nullifier:nf,expected_root:er,new_leaf:nl,old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:lp,merkle_path:mp,proof,tx_binding:tb,tx_nonce:tn,asset_id:aid})
+        Ok(DepositParams{old_balance:ob,deposit_amount:da,new_balance:nb,nullifier:nf,expected_root:er,new_leaf:nl,old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:lp,merkle_path:mp,proof,tx_binding:tb,tx_nonce:tn,asset_id:aid})
     }
 }
 
@@ -174,20 +195,20 @@ impl DepositUpdate { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { le
 // ============================================================================
 
 #[derive(Debug, Clone)] pub struct WithdrawParams {
-    pub purse_id: PurseId, pub old_balance: Balance, pub withdraw_amount: Amount, pub new_balance: Balance,
-    pub state_nonce: StateNonce, pub nullifier: Nullifier, pub expected_root: MerkleNode, pub new_leaf: MerkleNode,
+    pub old_balance: Balance, pub withdraw_amount: Amount, pub new_balance: Balance,
+    pub nullifier: Nullifier, pub expected_root: MerkleNode, pub new_leaf: MerkleNode,
     pub old_commit_x: pallas::Base, pub old_commit_y: pallas::Base, pub new_commit_x: pallas::Base, pub new_commit_y: pallas::Base,
     pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>, pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base,
     pub asset_id: pallas::Base,
 }
 
-// WithdrawParams shares DepositParams' wire format (hdr=316).
+// WithdrawParams shares DepositParams' wire format (hdr=236).
 // encode/decode delegates to DepositParams with withdraw_amount aliased as
 // deposit_amount. This is intentional — the two operations have identical
 // payload layout. If DepositParams' encoding changes, verify WithdrawParams
 // round-trip tests in tests/integration.rs still pass.
-impl WithdrawParams { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { DepositParams{purse_id:self.purse_id,old_balance:self.old_balance,deposit_amount:self.withdraw_amount,new_balance:self.new_balance,state_nonce:self.state_nonce,nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_binding:self.tx_binding,tx_nonce:self.tx_nonce,asset_id:self.asset_id}.encode() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { let dp = DepositParams::decode(data)?; Ok(WithdrawParams{purse_id:dp.purse_id,old_balance:dp.old_balance,withdraw_amount:dp.deposit_amount,new_balance:dp.new_balance,state_nonce:dp.state_nonce,nullifier:dp.nullifier,expected_root:dp.expected_root,new_leaf:dp.new_leaf,old_commit_x:dp.old_commit_x,old_commit_y:dp.old_commit_y,new_commit_x:dp.new_commit_x,new_commit_y:dp.new_commit_y,leaf_pos:dp.leaf_pos,merkle_path:dp.merkle_path,proof:dp.proof,tx_binding:dp.tx_binding,tx_nonce:dp.tx_nonce,asset_id:dp.asset_id}) } }
-impl dwow_serial::Encodable for WithdrawParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = DepositParams{purse_id:self.purse_id,old_balance:self.old_balance,deposit_amount:self.withdraw_amount,new_balance:self.new_balance,state_nonce:self.state_nonce,nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_binding:self.tx_binding,tx_nonce:self.tx_nonce,asset_id:self.asset_id}.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
+impl WithdrawParams { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { DepositParams{old_balance:self.old_balance,deposit_amount:self.withdraw_amount,new_balance:self.new_balance,nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_binding:self.tx_binding,tx_nonce:self.tx_nonce,asset_id:self.asset_id}.encode() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { let dp = DepositParams::decode(data)?; Ok(WithdrawParams{old_balance:dp.old_balance,withdraw_amount:dp.deposit_amount,new_balance:dp.new_balance,nullifier:dp.nullifier,expected_root:dp.expected_root,new_leaf:dp.new_leaf,old_commit_x:dp.old_commit_x,old_commit_y:dp.old_commit_y,new_commit_x:dp.new_commit_x,new_commit_y:dp.new_commit_y,leaf_pos:dp.leaf_pos,merkle_path:dp.merkle_path,proof:dp.proof,tx_binding:dp.tx_binding,tx_nonce:dp.tx_nonce,asset_id:dp.asset_id}) } }
+impl dwow_serial::Encodable for WithdrawParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = DepositParams{old_balance:self.old_balance,deposit_amount:self.withdraw_amount,new_balance:self.new_balance,nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_binding:self.tx_binding,tx_nonce:self.tx_nonce,asset_id:self.asset_id}.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for WithdrawParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[derive(Debug, Clone)] pub struct WithdrawUpdate { pub nullifier: Nullifier, pub new_leaf: MerkleNode }
@@ -196,11 +217,16 @@ impl dwow_serial::Decodable for WithdrawUpdate { fn decode<D: std::io::Read>(d: 
 impl WithdrawUpdate { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut v=Vec::with_capacity(64); v.extend_from_slice(&self.nullifier.to_bytes()); v.extend_from_slice(&self.new_leaf.to_bytes()); Ok(v) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len()!=64 { return Err(PurseError::DecodeFailure{field:"WithdrawUpdate".into()}.into()); } Ok(WithdrawUpdate{nullifier:{let a:[u8;32]=read_field::<32>(data,0)?; Nullifier::from_bytes(a)?}, new_leaf:read_merkle_node(read_slice(data,32,32)?)?}) } }
 
 // ============================================================================
-// BALANCE — hdr=268
+// BALANCE — hdr=164
+//
+// Same reduction as DEPOSIT above, and for the same reason: `purse_id`, `asset_id`,
+// `balance` and `state_nonce` are in the wallet's record (`CapRecord.object_id`,
+// `.asset_id`, `.value`, `.state_nonce`), no host reads them, and publishing them
+// told an observer which purse, which token and how much. What remains is the
+// read-only operation's public inputs.
 // ============================================================================
 
 #[derive(Debug, Clone)] pub struct BalanceParams {
-    pub purse_id: PurseId, pub asset_id: pallas::Base, pub balance: Balance, pub state_nonce: StateNonce,
     pub derived_purse_id: pallas::Base, pub expected_root: MerkleNode, pub token_commit: pallas::Base,
     pub balance_commit_x: pallas::Base, pub balance_commit_y: pallas::Base,
     pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>, pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base,
@@ -210,10 +236,8 @@ impl dwow_serial::Encodable for BalanceParams { fn encode<W: std::io::Write>(&se
 impl dwow_serial::Decodable for BalanceParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl BalanceParams {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
-        let hdr=268usize; let pb:Vec<u8>=self.merkle_path.iter().flat_map(|n|n.to_bytes()).collect();
+        let hdr=164usize; let pb:Vec<u8>=self.merkle_path.iter().flat_map(|n|n.to_bytes()).collect();
         let mut b=Vec::with_capacity(hdr+pb.len()+1+self.proof.len()+64);
-        b.extend_from_slice(&self.purse_id.encode()); b.extend_from_slice(&self.asset_id.to_repr());
-        b.extend_from_slice(&self.balance.to_le_bytes()); b.extend_from_slice(&self.state_nonce.to_repr());
         b.extend_from_slice(&self.derived_purse_id.to_repr()); b.extend_from_slice(&self.expected_root.to_bytes());
         b.extend_from_slice(&self.token_commit.to_repr()); b.extend_from_slice(&self.balance_commit_x.to_repr());
         b.extend_from_slice(&self.balance_commit_y.to_repr()); b.extend_from_slice(&self.leaf_pos.to_le_bytes());
@@ -222,18 +246,15 @@ impl BalanceParams {
         b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let hdr=268usize; if data.len()<=hdr+1024usize { return Err(PurseError::DecodeFailure{field:"BalanceParams".into()}.into()); }
-        let pid=PurseId::decode(read_slice(data,0,32)?)?; let tid=read_base(read_slice(data,32,32)?)?;
-        let bal=Balance::from_le_bytes(read_field::<8>(data,64)?);
-        let sn=StateNonce::from_repr(read_field::<32>(data,72)?).ok_or_else(||ContractError::IoError("BalanceParams: invalid state_nonce".into()))?;
-        let dpi=read_base(read_slice(data,104,32)?)?; let er=read_merkle_node(read_slice(data,136,32)?)?; let tc=read_base(read_slice(data,168,32)?)?;
-        let bcx=read_base(read_slice(data,200,32)?)?; let bcy=read_base(read_slice(data,232,32)?)?;
-        let lp=MerklePosition::from_le_bytes(read_field::<4>(data,264)?);
+        let hdr=164usize; if data.len()<=hdr+1024usize { return Err(PurseError::DecodeFailure{field:"BalanceParams".into()}.into()); }
+        let dpi=read_base(read_slice(data,0,32)?)?; let er=read_merkle_node(read_slice(data,32,32)?)?; let tc=read_base(read_slice(data,64,32)?)?;
+        let bcx=read_base(read_slice(data,96,32)?)?; let bcy=read_base(read_slice(data,128,32)?)?;
+        let lp=MerklePosition::from_le_bytes(read_field::<4>(data,160)?);
         let mut mp=[MerkleNode::from_base(pallas::Base::zero());32]; for (i,slot) in mp.iter_mut().enumerate() { *slot=read_merkle_node(read_slice(data,hdr.saturating_add(i.saturating_mul(32)),32)?)?; }
         let pe=hdr+1024usize; let pl=usize::from(read_byte(data,pe)?);
         if data.len()<pe+1usize+pl+64usize { return Err(PurseError::DecodeFailure{field:"BalanceParams".into()}.into()); }
         let proof=read_slice(data,pe+1,pl)?.to_vec(); let p2=pe+1+pl;
         let tb=read_base(read_slice(data,p2,32)?)?; let tn=read_base(read_slice(data,p2+32,32)?)?;
-        Ok(BalanceParams{purse_id:pid,asset_id:tid,balance:bal,state_nonce:sn,derived_purse_id:dpi,expected_root:er,token_commit:tc,balance_commit_x:bcx,balance_commit_y:bcy,leaf_pos:lp,merkle_path:mp,proof,tx_binding:tb,tx_nonce:tn})
+        Ok(BalanceParams{derived_purse_id:dpi,expected_root:er,token_commit:tc,balance_commit_x:bcx,balance_commit_y:bcy,leaf_pos:lp,merkle_path:mp,proof,tx_binding:tb,tx_nonce:tn})
     }
 }

@@ -1059,6 +1059,15 @@ fn cap_record_note_fields(
         let v = match f.name.as_str() {
             "value" => NoteFieldValue::U64(cap.value),
             "asset_id" => NoteFieldValue::Base(cap.asset_id.inner()),
+            // The 4-arg L1 nullifier's operands (`poseidon(1, secret, object_id, nonce)`):
+            // the record holds both, and they are what the purse's and box's circuits need
+            // as witnesses once those values stop travelling in the call params.
+            "purse_id" | "box_id" | "object_id" => NoteFieldValue::Base(
+                cap.object_id.unwrap_or_else(|| pallas::Base::zero()),
+            ),
+            "state_nonce" => NoteFieldValue::Base(
+                cap.state_nonce.unwrap_or_else(|| pallas::Base::zero()),
+            ),
             "spend_hook" => NoteFieldValue::Base(
                 cap.spend_hook.map(|h| h.inner()).unwrap_or_else(|| pallas::Base::zero()),
             ),

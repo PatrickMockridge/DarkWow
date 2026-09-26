@@ -88,11 +88,9 @@ fn test_purse_encode_decode_roundtrip() {
 #[test]
 fn test_deposit_params_encode_decode_roundtrip() {
     let params = DepositParams {
-        purse_id: PurseId(pallas::Base::from(99u64)),
         old_balance: Balance::new(0),
         deposit_amount: Amount::new(1000).expect("positive amount"),
         new_balance: Balance::new(1000),
-        state_nonce: StateNonce::new(pallas::Base::from(1u64)),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         new_leaf: dummy_merkle_node(),
@@ -112,9 +110,10 @@ fn test_deposit_params_encode_decode_roundtrip() {
     assert!(!encoded.is_empty());
 
     let decoded = DepositParams::decode(&encoded).expect("round-trip must succeed");
-    assert_eq!(decoded.purse_id.inner(), params.purse_id.inner());
+    assert_eq!(decoded.old_balance.inner(), params.old_balance.inner());
     assert_eq!(decoded.deposit_amount.inner(), params.deposit_amount.inner());
     assert_eq!(decoded.new_balance.inner(), params.new_balance.inner());
+    assert_eq!(decoded.asset_id, params.asset_id);
     assert_eq!(decoded.proof, params.proof);
 
     let re_encoded = params.encode().expect("re-encode must succeed");
@@ -124,11 +123,9 @@ fn test_deposit_params_encode_decode_roundtrip() {
 #[test]
 fn test_withdraw_params_encode_decode_roundtrip() {
     let params = WithdrawParams {
-        purse_id: PurseId(pallas::Base::from(99u64)),
         old_balance: Balance::new(1000),
         withdraw_amount: Amount::new(500).expect("positive amount"),
         new_balance: Balance::new(500),
-        state_nonce: StateNonce::new(pallas::Base::from(1u64)),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         new_leaf: dummy_merkle_node(),
@@ -148,8 +145,9 @@ fn test_withdraw_params_encode_decode_roundtrip() {
     assert!(!encoded.is_empty());
 
     let decoded = WithdrawParams::decode(&encoded).expect("round-trip must succeed");
-    assert_eq!(decoded.purse_id.inner(), params.purse_id.inner());
+    assert_eq!(decoded.old_balance.inner(), params.old_balance.inner());
     assert_eq!(decoded.withdraw_amount.inner(), params.withdraw_amount.inner());
+    assert_eq!(decoded.new_balance.inner(), params.new_balance.inner());
     assert_eq!(decoded.proof, params.proof);
 
     let re_encoded = params.encode().expect("re-encode must succeed");
@@ -159,10 +157,6 @@ fn test_withdraw_params_encode_decode_roundtrip() {
 #[test]
 fn test_balance_params_encode_decode_roundtrip() {
     let params = BalanceParams {
-        purse_id: PurseId(pallas::Base::from(99u64)),
-        asset_id: pallas::Base::from(1u64),
-        balance: Balance::new(100),
-        state_nonce: StateNonce::new(pallas::Base::from(1u64)),
         derived_purse_id: pallas::Base::from(2u64),
         expected_root: dummy_merkle_node(),
         token_commit: pallas::Base::from(3u64),
@@ -179,8 +173,7 @@ fn test_balance_params_encode_decode_roundtrip() {
     assert!(!encoded.is_empty());
 
     let decoded = BalanceParams::decode(&encoded).expect("round-trip must succeed");
-    assert_eq!(decoded.purse_id.inner(), params.purse_id.inner());
-    assert_eq!(decoded.balance.inner(), params.balance.inner());
+    assert_eq!(decoded.token_commit, params.token_commit);
     assert_eq!(decoded.proof, params.proof);
 
     let re_encoded = params.encode().expect("re-encode must succeed");

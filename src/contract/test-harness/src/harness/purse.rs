@@ -67,7 +67,7 @@ impl PurseHarness {
         let old_bal = dwow_purse_contract::model::Balance::new(ob);
         let new_bal = dwow_purse_contract::model::Balance::new(nb);
         let tid=pallas::Base::from(1u64);
-        let pr=dwow_purse_contract::model::DepositParams{purse_id:dwow_purse_contract::model::PurseId(pid),old_balance:old_bal,deposit_amount:amt,new_balance:new_bal,state_nonce:dwow_purse_contract::model::StateNonce::new(sn),nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn,asset_id:tid};
+        let pr=dwow_purse_contract::model::DepositParams{old_balance:old_bal,deposit_amount:amt,new_balance:new_bal,nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn,asset_id:tid};
         let mut cd=vec![0x01u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         // Self-addressed AEAD note (wallet.md §2.3, §A.8.2): purse_capability note
         // carries {asset_id, value, balance_blind, commitment, purse_id, state_nonce}
@@ -109,7 +109,7 @@ impl PurseHarness {
         let old_bal = dwow_purse_contract::model::Balance::new(ob);
         let new_bal = dwow_purse_contract::model::Balance::new(nb);
         let tid=pallas::Base::from(1u64);
-        let pr=dwow_purse_contract::model::WithdrawParams{purse_id:dwow_purse_contract::model::PurseId(pid),old_balance:old_bal,withdraw_amount:amt,new_balance:new_bal,state_nonce:dwow_purse_contract::model::StateNonce::new(sn),nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn,asset_id:tid};
+        let pr=dwow_purse_contract::model::WithdrawParams{old_balance:old_bal,withdraw_amount:amt,new_balance:new_bal,nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn,asset_id:tid};
         let mut cd=vec![0x02u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         // Self-addressed AEAD note — same {asset_id, value, balance_blind, commitment,
         // purse_id, state_nonce} schema (matches the manifest note_schema order).
@@ -154,7 +154,7 @@ impl PurseHarness {
         }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let bal_typed = dwow_purse_contract::model::Balance::new(bal);
-        let pr=dwow_purse_contract::model::BalanceParams{purse_id:dwow_purse_contract::model::PurseId(pid),asset_id:tid,balance:bal_typed,state_nonce:dwow_purse_contract::model::StateNonce::new(sn),derived_purse_id:dpi,expected_root:root,token_commit:tcom,balance_commit_x:bcx,balance_commit_y:bcy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn_};
+        let pr=dwow_purse_contract::model::BalanceParams{derived_purse_id:dpi,expected_root:root,token_commit:tcom,balance_commit_x:bcx,balance_commit_y:bcy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn_};
         let mut cd=vec![0x03u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);Ok(PurseBalanceResult{call_data:cd,proof})
     }
 }

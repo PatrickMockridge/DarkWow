@@ -65,11 +65,9 @@ fn test_purse_encode_roundtrip() {
 
     let path = [dummy_merkle_node(); 32];
     let deposit = DepositParams {
-        purse_id: PurseId(pallas::Base::from(99u64)),
         old_balance: Balance::new(0),
         deposit_amount: Amount::new(1000).unwrap(),
         new_balance: Balance::new(1000),
-        state_nonce: StateNonce::new(pallas::Base::from(1u64)),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         new_leaf: dummy_merkle_node(),
@@ -87,11 +85,9 @@ fn test_purse_encode_roundtrip() {
     assert_roundtrip!(DepositParams, deposit);
 
     let withdraw = WithdrawParams {
-        purse_id: PurseId(pallas::Base::from(99u64)),
         old_balance: Balance::new(1000),
         withdraw_amount: Amount::new(500).unwrap(),
         new_balance: Balance::new(500),
-        state_nonce: StateNonce::new(pallas::Base::from(2u64)),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         new_leaf: dummy_merkle_node(),
