@@ -764,6 +764,13 @@ w(f"| Toolchain | `{probes['toolchain']['out']}` · `{probes['rustc']['out']}` |
 w(f"| Budget | static instruments only: no cargo, make, lake, docker or rustc. **No artifact was rebuilt, "
   f"so the genesis pin cannot have moved as a result of this run.** |")
 w("")
+w("**Which tree this describes, stated because a committed report cannot name its own commit.** The "
+  "subject above is HEAD at generation time, and every instrument ran against that tree *plus the "
+  "modifications listed*. This file does not exist in that HEAD — it is committed as the change on top of "
+  "it — so a reader reconstructing the subject should take that commit and apply the report's own commit, "
+  "or simply note that the modified-path count is the rest of the delta. The alternative, naming the "
+  "commit that carries the file, is not available from inside the run that writes it.")
+w("")
 w(f"**This report does not establish everything it reports on.** {sum(1 for c in CRITERIA if c['v']==NOTEST)} "
   f"criteria read NOT ESTABLISHED because this budget cannot decide them; each names the exact command "
   f"that would. That is a result, not a gap (R7).")

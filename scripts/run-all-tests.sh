@@ -91,6 +91,13 @@ run_gate "control: authority gate can report a dead citation" \
     bash "$SCRIPT_DIR/check-authority-resolves.sh" --self-test
 run_gate "control: sync conformance reports a missing header" \
     bash "$REPO_ROOT/contrib/ci/check_sync_conformance.sh" --self-test
+# The status report's verdict mapper. `scripts/report-status.sh` decides MET / NOT MET / NOT ESTABLISHED
+# from instrument exits, so a mapper that could only ever say "green" would make every later verdict in
+# that report worthless — this is the control for the instrument that judges the others. Its own reported
+# verdicts are content, not exit status: a red gate does not fail this gate, because a red gate is what
+# the report exists to state.
+run_gate "control: the report generator's verdicts can fail" \
+    bash "$SCRIPT_DIR/report-status.sh" --self-test
 
 # Static circuit audits first — they are seconds, and they need no build.
 #
