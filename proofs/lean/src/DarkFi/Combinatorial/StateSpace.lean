@@ -1,3 +1,5 @@
+import DarkFi.AxiomBudget
+
 /-!
 # L1 Combinatorial State Space Types
 
@@ -172,5 +174,64 @@ def mkL2State : L2SingletonState :=
               : WitnessState }
   , publicHash := 0
   }
+
+/-! ==========================================================================
+   Part 5: The Anonymity Premise, Stated
+   ==========================================================================
+   `Transitions.l1_exceeds_l2` counts `N ^ K` valid trajectories for K sequential operations over N
+   concurrent objects, and `privacy.md` §2.4 reads that N as the anonymity set. **The count is only
+   an anonymity set if an observer cannot tell which of the N an operation touched** — a premise the
+   arithmetic assumes and which, until 2026-09-26, nothing in this tree stated. It is stated here
+   because Box's and Purse's call data carried the object identity, the nonces and the balances in
+   plaintext, and a transcript that carries the object id determines the object: N = 1, where
+   `1 ^ K = 1` is the L2 (singleton) count rather than the L1 one.
+
+   The model below is the smallest one that separates the two wires, and the separation is
+   *computed*: `anonymitySet` is 1 for a wire that publishes the id and 3 for one whose observation
+   does not depend on the object. The residual 10 slots declared in
+   `scripts/check-l1-wire-conformance.sh` are what a real contract would have to shed to move from
+   the first wire to the second.
+-/
+
+/-- What one operation's wire exposes, as a function of the object it operated on: everything an
+    observer can see of the call — the public inputs plus `Call.data`, which the transaction hash
+    commits to byte-for-byte. A `Nat` is enough for the distinction this Part is about, and keeping
+    it one is what makes both instances below `decide`-able. -/
+abbrev Obs := ObjectId → Nat
+
+/-- The transcript determines the object when two objects that produce the same observation are the
+    same object. Where this holds, N is 1. -/
+def DeterminesObject (obs : Obs) (objs : List ObjectId) : Prop :=
+  ∀ o₁ ∈ objs, ∀ o₂ ∈ objs, obs o₁ = obs o₂ → o₁ = o₂
+
+/-- The anonymity set of one observation: the objects in `objs` that would have produced it. -/
+def anonymitySet (obs : Obs) (objs : List ObjectId) (o : ObjectId) : Nat :=
+  (objs.filter (fun x => obs x == obs o)).length
+
+/-- A wire that publishes the object id: the pre-2026-09-26 Box and Purse, where `box_id` and
+    `purse_id` were call params. -/
+def wirePublishingTheId : Obs := fun o => o
+
+/-- A wire whose observation does not depend on the object: what an AEAD note looks like from
+    outside, since the chain carries the same shape whatever object moved. -/
+def wireCarryingANote : Obs := fun _ => 0
+
+/-- The publishing wire's anonymity set is a singleton. -/
+@[axiom_budget 0]
+theorem the_publishing_wire_collapses_the_anonymity_set :
+    anonymitySet wirePublishingTheId [1, 2, 3] 2 = 1 := by decide
+
+/-- The note-carrying wire's is the whole set: every object could have produced the observation. -/
+@[axiom_budget 0]
+theorem the_note_wire_keeps_the_anonymity_set :
+    anonymitySet wireCarryingANote [1, 2, 3] 2 = 3 := by decide
+
+/-- The premise separates the two wires, computed rather than argued: the publishing wire satisfies
+    it (which is what makes N = 1) and the note-carrying wire does not. -/
+@[axiom_budget 0]
+theorem the_premise_separates_the_two_wires :
+    DeterminesObject wirePublishingTheId [1, 2, 3] ∧
+      ¬ DeterminesObject wireCarryingANote [1, 2, 3] := by
+  refine ⟨fun o₁ _ o₂ _ h => h, fun h => absurd (h 1 (by decide) 2 (by decide) rfl) (by decide)⟩
 
 end Combinatorial

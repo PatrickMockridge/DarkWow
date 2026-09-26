@@ -91,6 +91,19 @@ every box in the one box tree, every purse in the one purse tree. An observer
 knows the contract type but cannot distinguish objects within it. This is the
 structural guarantee that prevents L1 from collapsing to degenerate N=1.
 
+**That last sentence is a premise, not a consequence, and it depends on the wire.**
+"An observer … cannot distinguish objects within it" holds only if the *transcript* an
+operation leaves behind does not determine which object it touched — and until 2026-09-26
+Box's and Purse's call data carried `box_id`/`purse_id`, the nonces and the balances in
+plaintext, which the transaction hash commits to byte-for-byte. `Combinatorial/StateSpace.lean`
+now states the premise (`DeterminesObject`) and computes the consequence: `anonymitySet` is 1
+for a wire that publishes the id (`the_publishing_wire_collapses_the_anonymity_set`) and 3 for
+one whose observation does not depend on the object (`the_note_wire_keeps_the_anonymity_set`).
+Where the premise fails, N is 1 and `Transitions.l1_exceeds_l2`'s `N ^ K` is `1 ^ K = 1` — the
+L2 singleton count, which is the sense in which L1 collapses. `OBL-C145` is the register row,
+and `scripts/check-l1-wire-conformance.sh` counts what remains: 10 declared slots across Box and
+Purse, each with the reason it is still there.
+
 **Why DAOs are L2.** A DAO contract deployed at L1 would force every DAO into
 the same template — one Merkle tree, one anonymity set, one state machine. This
 is architecturally wrong: DAOs differ in governance rules, membership criteria,
