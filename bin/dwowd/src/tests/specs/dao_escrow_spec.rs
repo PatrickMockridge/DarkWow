@@ -1,5 +1,14 @@
 //! ContractTestSpec for dao_escrow. Tier: HARVESTABLE — 13 harness methods.
 //! 12 endpoints active, 1 deferred (pay_premium: circuit bug).
+//!
+//! The four capability-carrying endpoints build a **fabricated** `CapabilityProof`: no credential is
+//! issued and `proof` is empty. Its `nullifier` was `IntentNullifier::ZERO` until 2026-09-26, which the
+//! type refuses by construction — so `ProposeClaimParamsV1::decode` failed and the contract's metadata
+//! arm returned its bare `vec![]`, which the host reports as "the call is rejected by design". That is
+//! why the red for this contract read only `metadata-decode-zkp … EMPTY metadata` for a week. The value
+//! below is a placeholder chosen to satisfy the type guard, NOT a credential nullifier; the real fix is
+//! the fixture `insurance_market`'s spec now has, and this file's remaining reds are expected until it
+//! is ported.
 use dwow_contract_test_harness::harness::{DaoEscrowHarness, ContractHarness};
 use dwow_dao_escrow_contract::model::{CapabilityProof, ClaimType};
 use dwow_sdk::crypto::{PublicKey, SecretKey, IntentNullifier, pasta_prelude::PrimeField};
@@ -48,19 +57,19 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
         deploy_ix: None,
         endpoints: vec![
             mk_ep("ProposeClaimV1", true, Box::new(move || {
-                let r = h.propose_claim(nullifier_k, dao_bulla, claim_id, capability_id, capability_secret, proposer_secret, 10_000, pallas::Base::from(50u64), owner_pub, proposer_pub, ClaimType::Endowment, pallas::Base::from(10u64), CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::ZERO,issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.propose_claim(nullifier_k, dao_bulla, claim_id, capability_id, capability_secret, proposer_secret, 10_000, pallas::Base::from(50u64), owner_pub, proposer_pub, ClaimType::Endowment, pallas::Base::from(10u64), CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("VoteClaimV1", true, Box::new(move || {
-                let r = h.vote_claim(nullifier_k, pallas::Point::default(), pallas::Point::default(), proposal_id, capability_id, capability_secret, voter_secret, true, pallas::Base::from(1u64), dao_bulla, claim_id, voter_pub, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::ZERO,issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.vote_claim(nullifier_k, pallas::Point::default(), pallas::Point::default(), proposal_id, capability_id, capability_secret, voter_secret, true, pallas::Base::from(1u64), dao_bulla, claim_id, voter_pub, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("VerifyMemberCapabilityV1", true, Box::new(move || {
-                let r = h.verify_member_capability(nullifier_k, capability_id, dao_bulla, capability_secret, holder_secret, holder_pub, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::ZERO,issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.verify_member_capability(nullifier_k, capability_id, dao_bulla, capability_secret, holder_secret, holder_pub, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("ResolveDisputeV1", true, Box::new(move || {
-                let r = h.resolve_dispute(nullifier_k, capability_id, dao_bulla, dispute_id, capability_secret, arbitrator_secret, vec![], pallas::Base::from(700u64), true, 5000, arbitrator_pub, proposal_id, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::ZERO,issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.resolve_dispute(nullifier_k, capability_id, dao_bulla, dispute_id, capability_secret, arbitrator_secret, vec![], pallas::Base::from(700u64), true, 5000, arbitrator_pub, proposal_id, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("WithdrawV1", false, Box::new(move || {
