@@ -732,7 +732,7 @@ CRITERIA = [
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 # FINDINGS, rendered FROM THE REGISTER. Each id must exist as a row in the register or the section says
 # so — so a finding cannot appear here without existing as an obligation (constraint 4).
-MINTED_IDS = ["OBL-C147", "OBL-C148", "OBL-C149"]
+MINTED_IDS = ["OBL-C147", "OBL-C148", "OBL-C149", "OBL-C150"]
 
 def render_findings():
     rowmap = {r[0]: r for r in rows}
