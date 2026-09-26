@@ -26,6 +26,24 @@ Every genesis contract ID is derived deterministically:
 ContractId = poseidon_hash([42, 0, counter])
 ```
 
+**The nine results, so the table above is usable without a Rust build.** Each string is the base58
+rendering of the derived field element, and `bin/dwowd/src/tests/genesis_contract_ids.rs` pins all
+nine: a change to the prefix, a counter or the hash fails that test rather than shipping silently.
+("Regenerate them with the crate and pin them" was the external report's finding 7 — the derivation
+was documented and its *output* was not.)
+
+| Counter | Contract | ContractId (base58) |
+|---|---|---|
+| 2 | Deployooor | `EJs7oEjKkvCeEVCmpRsd6fEoTGCFJ7WKUBfmAjwaegN` |
+| 3 | Promissory Note | `21LYoifepcySKhyDA1vzxRDWGHyDizPQ8f11zSqhep7t` |
+| 4 | NativeToken | `DgmXpuU1EcM54E8GuNTAkBUThcCoYzGN5kRCNXA4cPtw` |
+| 5 | Identity | `AyJtw5sxYrKBkeec73hxLDUPh6ZY32gXRagWcZ3hctBA` |
+| 6 | Oracle | `DkrPpNQERff36c7B7qhryCfpnzUjGKcYipbpegKxVYnr` |
+| 7 | Attestation | `5sKmJNgZCjJ2sFjxzpwS9R1sLyrNc9DZ6gL1KcDHihfe` |
+| 8 | Purse | `8v6z9CTT7ed8fDdyY9iNBL9DY8co5GqMyNT7azQcFZPB` |
+| 9 | Box | `2afzyKdAkNu9tVZe7aug7xPBcgjGkGZRC3bH6doDWEy7` |
+| 10 | MultiSig | `G7ZRpbi8AQeU38JGYehRRyirPpcM3WXqSZGxXCQVLYpn` |
+
 Where `42` is the `CONTRACT_ID_PREFIX` constant and `0` is the x-coordinate
 (`pallas::Base::zero()`). The x-coordinate is zero because 0 is not a valid
 x-coordinate for any Pallas curve point — this means a signature can never be

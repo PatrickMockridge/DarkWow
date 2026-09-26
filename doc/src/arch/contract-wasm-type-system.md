@@ -2657,9 +2657,20 @@ N^K, composition, or combinatorial bounds SHALL cite the corresponding theorem.
 
 ### C.9.2 CompositionBounds.lean
 
-- **`ocap_additive_composition`** — `T(A ∘ B) = T(A) + T(B)` under o-caps
-- **`additive_vs_multiplicative_gap`** — additive < multiplicative for positive params
-- **`unconstrained_composition_explosion`** — `T(A × B) = T(A) × T(B)` without o-caps
+**Retracted as a claim about composition — read §C.7.1's correction before citing any of these.**
+`ocap_additive_composition` rewrites the two per-contract count functions into closed form and adds
+them, so the `+` is stipulated by its own statement: no operation composing two contracts appears in
+the file, and what is actually additive is *containment*, not the count (`Combinations.card_biUnion_le_sum`).
+The number of distinct operation combinations is a product, `∏(nᵢ + 1) − 1`, even with perfect state
+isolation. This listing carried the retracted reading without a pointer to its own correction, which is
+the external report's finding 16; the correction is at §C.7.1 above and in `privacy.md`.
+
+- **`ocap_additive_composition`** — `T(A ∘ B) = T(A) + T(B)` under o-caps — **retracted as a claim
+  about composition**; the file restates two count functions and adds them (see §C.7.1)
+- **`additive_vs_multiplicative_gap`** — additive < multiplicative for positive params — a comparison
+  between two numbers the statement chose to write with `+` and `×`, not about a composed system
+- **`unconstrained_composition_explosion`** — `T(A × B) = T(A) × T(B)` without o-caps — this one *is*
+  about composition, and it is the multiplicative half that is mechanized
 
 ### C.9.3 GeneralTheorem.lean
 
