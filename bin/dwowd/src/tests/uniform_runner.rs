@@ -65,6 +65,21 @@ pub enum EndpointExpectation {
     Success,
     /// Expect accept_block to return an error (e.g., MintV1 FunctionDisabled).
     Rejection,
+    /// Expect accept_block to return an error **whose text contains each of these strings**.
+    ///
+    /// A bare `Rejection` is satisfied by *any* earlier failure in the frame — a missing or extra
+    /// child, a wrong selector, an undecodable parent payload, a failed child — so a row that exists
+    /// to test one specific check and asserts only `Rejection` is a control that cannot fail. This
+    /// variant is how such a row names the check it is about. Use it wherever the rejection's
+    /// *reason* is the thing under test.
+    RejectionNaming(&'static [&'static str]),
+}
+
+impl EndpointExpectation {
+    /// Both reject arms mean "expect a rejection"; the payload only narrows *which* one.
+    fn is_rejection(&self) -> bool {
+        !matches!(self, Self::Success)
+    }
 }
 
 /// Specification for a single contract endpoint.
@@ -261,7 +276,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
         assert!(!result.call_data.is_empty(),
             "TEST-FAIL [{}::{}]: call_data must not be empty", spec.name, endpoint.name);
 
-        if endpoint.expectation == EndpointExpectation::Rejection {
+        if endpoint.expectation.is_rejection() {
             // Expect accept_block to REJECT this call (e.g., MintV1 FunctionDisabled).
             //
             // The endpoint's child calls ride with it. Without them, a call whose rejection comes
@@ -274,9 +289,21 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
                 &chain_a, cid, spec.harness,
                 &result.call_data, result.proofs, endpoint.is_zk, result.children,
             ).await;
-            assert!(submit_result.is_err(),
+            let err = submit_result.expect_err(&format!(
                 "TEST-FAIL [{}::{}]: expected rejection but accept_block succeeded",
-                spec.name, endpoint.name);
+                spec.name, endpoint.name
+            ));
+            // When the row names the check it tests, require the run's own error text to say so.
+            // This is what separates "rejected, for the reason under test" from "rejected, earlier".
+            if let EndpointExpectation::RejectionNaming(needles) = endpoint.expectation {
+                let text = format!("{err}");
+                for needle in needles {
+                    assert!(text.contains(needle),
+                        "TEST-FAIL [{}::{}]: rejection did not name {:?} — it was rejected for \
+                         some other reason. Full error: {}",
+                        spec.name, endpoint.name, needle, text);
+                }
+            }
         } else if endpoint.generate_with_coinbase.is_some() {
             // Coinbase-dependent endpoints use submit_with_coinbase
             let cb = coinbase.as_ref().expect("needs_coinbase_coordination must be true");
@@ -379,7 +406,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
         } else {
             spec.harness.set_next_block_height(h_b.succ());
             let result = (endpoint.generate)()?;
-            if endpoint.expectation == EndpointExpectation::Rejection {
+            if endpoint.expectation.is_rejection() {
                 let _ = modules::block_submission::submit_multi_call_block(
                     &chain_b, cid_b, spec.harness,
                     &result.call_data, result.proofs, endpoint.is_zk, result.children,

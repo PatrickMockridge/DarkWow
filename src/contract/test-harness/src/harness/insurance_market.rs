@@ -140,6 +140,54 @@ impl InsuranceMarketHarness {
         Ok(UnderwriteResult { call_data, proof, public_inputs })
     }
 
+    /// Underwrite **with capability** (fn `0x09` = `UnderwriteWithCapabilityV1`).
+    ///
+    /// Distinct from [`Self::underwrite`] above, which stamps the *same* selector `0x09` but encodes
+    /// `UnderwriteParamsV1` — 80 bytes into a function that decodes `UnderwriteWithCapabilityParamsV1`
+    /// (>= 116), so that call is rejected at `metadata-decode-zkp` before the child-call guard is ever
+    /// reached. `insurance_market_spec.rs`'s header records that as a correction to what its comments
+    /// used to claim.
+    ///
+    /// **The fifth circuit instance is `required_capability_id`, and the contract's own `get_metadata`
+    /// derives it from `params.capability_secret` — the same field this reads.** Deriving it from
+    /// anything else here (the sibling method passes `Base::from(1u64)`) fabricates a public input the
+    /// contract never checks, which is the `build_fee_v3_tx` scar in this tree. With this derivation the
+    /// proof's public inputs and the published metadata agree by construction:
+    /// `[underwriter_pub_x, underwriter_pub_y, tx_binding, tx_nonce, required_capability_id]`.
+    pub fn underwrite_with_capability(
+        &self,
+        params: &dwow_insurance_market_contract::model::UnderwriteWithCapabilityParamsV1,
+    ) -> Result<UnderwriteResult> {
+        use dwow_sdk::crypto::pasta_prelude::PrimeField;
+        use dwow_sdk::pasta::pallas;
+        let required_capability_id =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(params.capability_secret))
+                .ok_or_else(|| {
+                    dwow_core::Error::Custom(
+                        "capability_secret is not a pallas::Base".to_string(),
+                    )
+                })?;
+        let input = UnderwriteWithCapabilityV1CallData::new(
+            pallas::Scalar::from(1u64),
+            pallas::Base::from(1u64),
+            params.underwriter,
+            required_capability_id,
+            pallas::Base::from(1u64),
+        );
+        let (proof, public_inputs) = underwrite_with_capability_v1_proof(
+            &self.underwrite_zkbin,
+            &self.underwrite_pk,
+            &input,
+        )?;
+
+        let mut call_data = vec![0x09];
+        call_data.extend_from_slice(
+            &params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?,
+        );
+
+        Ok(UnderwriteResult { call_data, proof, public_inputs })
+    }
+
     /// Purchase coverage with ZK proof (fn 0x0a = PurchaseCoverageWithCapabilityV1)
     /// NOTE: V1/V2 namespace mismatch — contract metadata uses "PurchaseCoverageV2"
     pub fn purchase_coverage(
