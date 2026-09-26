@@ -82,7 +82,7 @@ params are the public inputs and the values a *note* is built from — and nothi
 
 | Call | Carries | Does **not** carry | Header |
 |---|---|---|---|
-| `Deposit` | `old_balance`, `deposit_amount`, `new_balance` (the amount moves; the note's `value` is read from it), `asset_id`, `nullifier`, `expected_root`, `new_leaf`, the four commitment coordinates, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `purse_id`, `state_nonce` | 252 bytes |
+| `Deposit` | `old_balance`, `deposit_amount`, `new_balance` (the note's `value` field is filled from it), `asset_id`, `nullifier`, `expected_root`, `new_leaf`, the four commitment coordinates, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `purse_id`, `state_nonce` | 252 bytes |
 | `Withdraw` | as `Deposit`, with `withdraw_amount` | `purse_id`, `state_nonce` | 252 bytes |
 | `Balance` | `derived_purse_id`, `expected_root`, `token_commit`, the balance commitment coordinates, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `purse_id`, `asset_id`, `balance`, `state_nonce` | 164 bytes |
 
