@@ -95,6 +95,15 @@ impl InitV1CallData {
         }
     }
 
+    /// `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`, domain 3 — the
+    /// value `InitV2` constrains at instance 2. This was a literal `Base::zero()`, written as both
+    /// the public input and the witness, while the circuit constrains the witness to equal this
+    /// hash: the proof was unsatisfiable, not merely unbound. The host published the same literal
+    /// zero, so both sides agreed on a value the circuit rejects (register OBL-C78).
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
+    }
+
     pub fn compute_public_inputs(&self) -> InitV1PublicInputs {
         // endowment_bulla = poseidon_hash(DOMAIN_COIN_COMMIT, dao_bulla, owner_pub_x, owner_pub_y,
         //                                  endowment_asset_id, bulla_blind)
@@ -108,23 +117,26 @@ impl InitV1CallData {
         ]);
         InitV1PublicInputs {
             dao_bulla: self.dao_bulla,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
             endowment_bulla,
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        // Must match `init.zk`'s `witness` block exactly:
+        //   dao_bulla, owner_secret, endowment_asset_id, bulla_blind, tx_commitment, tx_nonce,
+        //   tx_binding
+        // (`owner_pub_x/y` are derived in-circuit from `owner_secret` and `NULLIFIER_K`, and
+        // `nullifier_k` is a circuit constant — neither is a witness.)
         vec![
-            // nullifier_k is a CONSTANT in circuit - do NOT pass as witness
-            // owner_pub_x/y are DERIVED inside circuit from owner_secret and NULLIFIER_K
             Witness::Base(Value::known(self.dao_bulla)),
             Witness::Base(Value::known(self.owner_secret)),
             Witness::Base(Value::known(self.endowment_asset_id)),
             Witness::Base(Value::known(self.bulla_blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }

@@ -109,34 +109,49 @@ impl PayPremiumV1CallData {
         }
     }
 
+    /// `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`, domain 3 — the
+    /// value `PayPremiumV2` constrains at instance 1. This was a literal `Base::zero()` on both
+    /// sides while the circuit constrains the witness to equal this hash: unsatisfiable, not merely
+    /// unbound (register OBL-C78).
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
+    }
+
     pub fn compute_public_inputs(&self) -> PayPremiumV1PublicInputs {
         // Circuit constrain_instance order: [tx_binding, tx_nonce]
         PayPremiumV1PublicInputs {
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        // Must match `pay_premium.zk`'s `witness` block exactly:
+        //   dao_escrow_bulla, member_secret, member_pub_x, member_pub_y, mpc_secret_1,
+        //   mpc_secret_2, mpc_secret_3, value, asset_id, expiry, current_block, membership_blind,
+        //   tx_commitment, tx_nonce, tx_binding
+        // `member_pub_x/y` were missing (14 entries against 15) and `value_blind` was supplied as a
+        // `Scalar` although the circuit declares no such witness; the mpcs were also
+        // mis-ordered relative to `value`/`asset_id`/`expiry`/`current_block` (register OBL-C78).
         vec![
             // nullifier_k is a CONSTANT in circuit - do NOT pass as witness
             // max_membership_blocks/max_expiry are INTERNAL to circuit (witness_base, base_add)
-            // member_pub_x/y are DERIVED inside circuit from member_secret and NULLIFIER_K
             Witness::Base(Value::known(self.dao_escrow_bulla)),
-            Witness::Base(Value::known(pallas::Base::from(self.current_block))),
             Witness::Base(Value::known(self.member_secret)),
-            Witness::Base(Value::known(pallas::Base::from(self.value))),
-            Witness::Base(Value::known(self.asset_id)),
-            Witness::Base(Value::known(pallas::Base::from(self.expiry))),
-            Witness::Base(Value::known(self.membership_blind)),
-            Witness::Scalar(Value::known(self.value_blind)),
+            Witness::Base(Value::known(self.member_pub_x)),
+            Witness::Base(Value::known(self.member_pub_y)),
             // mpc_secret_* are declared as Base in the circuit
             Witness::Base(Value::known(self.mpc_secret_1)),
             Witness::Base(Value::known(self.mpc_secret_2)),
             Witness::Base(Value::known(self.mpc_secret_3)),
+            Witness::Base(Value::known(pallas::Base::from(self.value))),
+            Witness::Base(Value::known(self.asset_id)),
+            Witness::Base(Value::known(pallas::Base::from(self.expiry))),
+            Witness::Base(Value::known(pallas::Base::from(self.current_block))),
+            Witness::Base(Value::known(self.membership_blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }

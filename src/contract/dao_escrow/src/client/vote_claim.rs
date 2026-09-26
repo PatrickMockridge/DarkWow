@@ -59,9 +59,15 @@ pub struct VoteClaimV1CallData {
     pub proposal_id: pallas::Base,
     pub capability_id: pallas::Base,
     pub capability_secret: pallas::Base,
+    /// The DAO escrow this vote belongs to — `VoteClaimV2` constrains it as the first witness.
+    pub dao_escrow_bulla: pallas::Base,
     pub voter_secret: pallas::Base,
     pub vote_type: pallas::Base,
-    pub vote_blind: pallas::Scalar,
+    /// A **Base**, not a Scalar: `VoteClaimV2` declares `vote_blind` as a Base witness, so the
+    /// client must supply one. It was a `Scalar` here and was passed to `Witness::Base`, which is a
+    /// type error the compiler catches — and would have been a silent domain mismatch if it had
+    /// been coerced (`numeric-domain-nominal-types`).
+    pub vote_blind: pallas::Base,
     pub voter_pub_x: pallas::Base,
     pub voter_pub_y: pallas::Base,
     pub tx_commitment: pallas::Base,
@@ -76,9 +82,10 @@ impl VoteClaimV1CallData {
         proposal_id: pallas::Base,
         capability_id: pallas::Base,
         capability_secret: pallas::Base,
+        dao_escrow_bulla: pallas::Base,
         voter_secret: pallas::Base,
         vote_yes: bool,
-        vote_blind: pallas::Scalar,
+        vote_blind: pallas::Base,
     ) -> Self {
         let voter_pub = PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_base(voter_secret));
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
@@ -90,6 +97,7 @@ impl VoteClaimV1CallData {
             proposal_id,
             capability_id,
             capability_secret,
+            dao_escrow_bulla,
             voter_secret,
             vote_type: if vote_yes { pallas::Base::one() } else { pallas::Base::zero() },
             vote_blind,
@@ -113,23 +121,39 @@ impl VoteClaimV1CallData {
 
         // Circuit constrain_instance order: [tx_binding, tx_nonce, vote_nullifier]
         VoteClaimV1PublicInputs {
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
             vote_nullifier,
         }
     }
 
+    /// `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`, domain 3 — the
+    /// value `VoteClaimV2` constrains at instance 1 (register OBL-C78).
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
+    }
+
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        // Must match `vote_claim.zk`'s `witness` block exactly:
+        //   dao_escrow_bulla, voter_secret, voter_pub_x, voter_pub_y, capability_id,
+        //   capability_secret, proposal_id, vote_type, vote_blind, tx_commitment, tx_nonce,
+        //   tx_binding
+        // `vote_blind` is declared a **Base** in the circuit, not a Scalar, and `voter_pub_x/y`
+        // and `dao_escrow_bulla` were missing entirely — eight entries against twelve, in the wrong
+        // order (register OBL-C78).
         vec![
-            Witness::Base(Value::known(self.proposal_id)),
+            Witness::Base(Value::known(self.dao_escrow_bulla)),
+            Witness::Base(Value::known(self.voter_secret)),
+            Witness::Base(Value::known(self.voter_pub_x)),
+            Witness::Base(Value::known(self.voter_pub_y)),
             Witness::Base(Value::known(self.capability_id)),
             Witness::Base(Value::known(self.capability_secret)),
-            Witness::Base(Value::known(self.voter_secret)),
+            Witness::Base(Value::known(self.proposal_id)),
             Witness::Base(Value::known(self.vote_type)),
-            Witness::Scalar(Value::known(self.vote_blind)),
+            Witness::Base(Value::known(self.vote_blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }

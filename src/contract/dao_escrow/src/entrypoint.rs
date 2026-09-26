@@ -199,8 +199,22 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
         params.bulla_blind.inner(),
     ]);
 
-    let tx_binding = pallas::Base::zero(); // Pattern A: pass-through placeholder
-    let tx_nonce_val = pallas::Base::zero(); // Pattern A: pass-through placeholder
+    // `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` with
+    // `DOMAIN_TX_BINDING = 3` (`src/sdk/src/crypto/constants.rs:57`). This contract's tx pair is
+    // the constant `(0, 0)` — the convention `attestation` and `identity` use, and one of the 21
+    // constant bindings the register already records.
+    //
+    // It was `pallas::Base::zero()`, labelled "Pattern A: pass-through placeholder", which is NOT
+    // that hash. The circuit constrains `tx_binding == poseidon(3, tx_commitment, tx_nonce)`, so
+    // publishing a literal zero required `poseidon(3, 0, 0) == 0` — a preimage. Every proof for
+    // this circuit was unsatisfiable, not merely unbound, and a count check cannot see it because
+    // the vector had the right length (register OBL-C78).
+    let tx_binding = poseidon_hash([
+        pallas::Base::from(3u64),
+        pallas::Base::zero(),
+        pallas::Base::zero(),
+    ]);
+    let tx_nonce_val = pallas::Base::zero();
 
     // Circuit constrain_instance order: [dao_bulla, tx_binding, tx_nonce, endowment_bulla]
     let zk_public_inputs = vec![(
@@ -221,8 +235,22 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
 /// Metadata for PayPremiumV1 (0x02) — PayPremiumV2 circuit
 /// Circuit constrain_instance order: [tx_binding, tx_nonce]
 fn pay_premium_get_metadata(_cid: ContractId, _call_idx: usize, _calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Result<Vec<u8>, ContractError> {
-    let tx_binding = pallas::Base::zero(); // Pattern A: pass-through placeholder
-    let tx_nonce_val = pallas::Base::zero(); // Pattern A: pass-through placeholder
+    // `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` with
+    // `DOMAIN_TX_BINDING = 3` (`src/sdk/src/crypto/constants.rs:57`). This contract's tx pair is
+    // the constant `(0, 0)` — the convention `attestation` and `identity` use, and one of the 21
+    // constant bindings the register already records.
+    //
+    // It was `pallas::Base::zero()`, labelled "Pattern A: pass-through placeholder", which is NOT
+    // that hash. The circuit constrains `tx_binding == poseidon(3, tx_commitment, tx_nonce)`, so
+    // publishing a literal zero required `poseidon(3, 0, 0) == 0` — a preimage. Every proof for
+    // this circuit was unsatisfiable, not merely unbound, and a count check cannot see it because
+    // the vector had the right length (register OBL-C78).
+    let tx_binding = poseidon_hash([
+        pallas::Base::from(3u64),
+        pallas::Base::zero(),
+        pallas::Base::zero(),
+    ]);
+    let tx_nonce_val = pallas::Base::zero();
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_PREMIUM_NS_V2.to_string(),
@@ -1115,8 +1143,22 @@ fn propose_claim_get_metadata(
         cap_secret_fp, // claim_blind placeholder (needs dedicated field in params)
     ]);
 
-    let tx_binding = pallas::Base::zero(); // Pattern A: pass-through placeholder
-    let tx_nonce_val = pallas::Base::zero(); // Pattern A: pass-through placeholder
+    // `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` with
+    // `DOMAIN_TX_BINDING = 3` (`src/sdk/src/crypto/constants.rs:57`). This contract's tx pair is
+    // the constant `(0, 0)` — the convention `attestation` and `identity` use, and one of the 21
+    // constant bindings the register already records.
+    //
+    // It was `pallas::Base::zero()`, labelled "Pattern A: pass-through placeholder", which is NOT
+    // that hash. The circuit constrains `tx_binding == poseidon(3, tx_commitment, tx_nonce)`, so
+    // publishing a literal zero required `poseidon(3, 0, 0) == 0` — a preimage. Every proof for
+    // this circuit was unsatisfiable, not merely unbound, and a count check cannot see it because
+    // the vector had the right length (register OBL-C78).
+    let tx_binding = poseidon_hash([
+        pallas::Base::from(3u64),
+        pallas::Base::zero(),
+        pallas::Base::zero(),
+    ]);
+    let tx_nonce_val = pallas::Base::zero();
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_PROPOSE_CLAIM_NS_V2.to_string(),
@@ -1158,8 +1200,22 @@ fn vote_claim_get_metadata(
         voter_pub_y,
     ]);
 
-    let tx_binding = pallas::Base::zero(); // Pattern A: pass-through placeholder
-    let tx_nonce_val = pallas::Base::zero(); // Pattern A: pass-through placeholder
+    // `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` with
+    // `DOMAIN_TX_BINDING = 3` (`src/sdk/src/crypto/constants.rs:57`). This contract's tx pair is
+    // the constant `(0, 0)` — the convention `attestation` and `identity` use, and one of the 21
+    // constant bindings the register already records.
+    //
+    // It was `pallas::Base::zero()`, labelled "Pattern A: pass-through placeholder", which is NOT
+    // that hash. The circuit constrains `tx_binding == poseidon(3, tx_commitment, tx_nonce)`, so
+    // publishing a literal zero required `poseidon(3, 0, 0) == 0` — a preimage. Every proof for
+    // this circuit was unsatisfiable, not merely unbound, and a count check cannot see it because
+    // the vector had the right length (register OBL-C78).
+    let tx_binding = poseidon_hash([
+        pallas::Base::from(3u64),
+        pallas::Base::zero(),
+        pallas::Base::zero(),
+    ]);
+    let tx_nonce_val = pallas::Base::zero();
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_VOTE_CLAIM_NS_V2.to_string(),
@@ -1199,8 +1255,22 @@ fn verify_member_cap_get_metadata(
         params.dao_escrow_bulla.inner(),
     ]);
 
-    let tx_binding = pallas::Base::zero(); // Pattern A: pass-through placeholder
-    let tx_nonce_val = pallas::Base::zero(); // Pattern A: pass-through placeholder
+    // `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` with
+    // `DOMAIN_TX_BINDING = 3` (`src/sdk/src/crypto/constants.rs:57`). This contract's tx pair is
+    // the constant `(0, 0)` — the convention `attestation` and `identity` use, and one of the 21
+    // constant bindings the register already records.
+    //
+    // It was `pallas::Base::zero()`, labelled "Pattern A: pass-through placeholder", which is NOT
+    // that hash. The circuit constrains `tx_binding == poseidon(3, tx_commitment, tx_nonce)`, so
+    // publishing a literal zero required `poseidon(3, 0, 0) == 0` — a preimage. Every proof for
+    // this circuit was unsatisfiable, not merely unbound, and a count check cannot see it because
+    // the vector had the right length (register OBL-C78).
+    let tx_binding = poseidon_hash([
+        pallas::Base::from(3u64),
+        pallas::Base::zero(),
+        pallas::Base::zero(),
+    ]);
+    let tx_nonce_val = pallas::Base::zero();
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_NS_V2.to_string(),
@@ -1244,8 +1314,22 @@ fn resolve_dispute_get_metadata(
         cap_secret_fp, // resolution_blind placeholder (needs dedicated field in params)
     ]);
 
-    let tx_binding = pallas::Base::zero(); // Pattern A: pass-through placeholder
-    let tx_nonce_val = pallas::Base::zero(); // Pattern A: pass-through placeholder
+    // `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` with
+    // `DOMAIN_TX_BINDING = 3` (`src/sdk/src/crypto/constants.rs:57`). This contract's tx pair is
+    // the constant `(0, 0)` — the convention `attestation` and `identity` use, and one of the 21
+    // constant bindings the register already records.
+    //
+    // It was `pallas::Base::zero()`, labelled "Pattern A: pass-through placeholder", which is NOT
+    // that hash. The circuit constrains `tx_binding == poseidon(3, tx_commitment, tx_nonce)`, so
+    // publishing a literal zero required `poseidon(3, 0, 0) == 0` — a preimage. Every proof for
+    // this circuit was unsatisfiable, not merely unbound, and a count check cannot see it because
+    // the vector had the right length (register OBL-C78).
+    let tx_binding = poseidon_hash([
+        pallas::Base::from(3u64),
+        pallas::Base::zero(),
+        pallas::Base::zero(),
+    ]);
+    let tx_nonce_val = pallas::Base::zero();
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS_V2.to_string(),

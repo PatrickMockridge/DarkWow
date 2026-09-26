@@ -138,6 +138,12 @@ pub const INSURANCE_MARKET_NULLIFIERS_TREE: &str = "nullifiers";
 pub const INSURANCE_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 /// Money_v3 contract ID key for cross-contract validation
 pub const INSURANCE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
+/// Canonical Identity contract id, seeded at `__initialize` and read by the capability guards.
+///
+/// The key bytes are `labor_market`'s (`b"identity_cid"`), copied rather than re-invented: the guard
+/// that reads this is a port of `labor_market/src/entrypoint.rs`'s `AcceptJobWithCapabilityV1`
+/// child-call check, so the two contracts read the same entry under the same name.
+pub const INSURANCE_CONTRACT_IDENTITY_CONTRACT_ID: &[u8] = b"identity_cid";
 
 // ============================================================================
 // CONSTANTS

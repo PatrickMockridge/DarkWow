@@ -13,21 +13,25 @@ code = 0
 name = "commit_bet"
 code = 1
 requires_proof = true
-proof_circuit = "CommitBetV2"
+proof_circuit = "CommitBet_V2"
 
 [[functions]]
 name = "draw_cards"
 code = 2
+requires_proof = true
+proof_circuit = "DrawCards_V2"
 
 [[functions]]
 name = "settle_bet"
 code = 3
 requires_proof = true
-proof_circuit = "SettleBetV2"
+proof_circuit = "SettleBet_V2"
 
 [[functions]]
 name = "house_close"
 code = 4
+requires_proof = true
+proof_circuit = "HouseClose_V2"
 
 [[capabilities]]
 discriminant = 0

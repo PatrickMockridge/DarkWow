@@ -18,6 +18,10 @@ rand = "0.8"
 dwow_core = { path = "../../../", features = ["zk"], optional = true }
 halo2_proofs = { version = "0.3.2", optional = true }
 dwow_promissory_note_contract = { version = "0.1.0", path = "../promissory_note", features = ["no-entrypoint"] }
+# For `model::VerifyCapabilityParams`, so the capability guards can compare the capability the child
+# call actually verified against the one the market requires. Without this decode the parent can only
+# check the child's selector and target, which admits any valid capability.
+dwow_identity_contract = { version = "0.1.0", path = "../identity", features = ["no-entrypoint"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["custom"] }

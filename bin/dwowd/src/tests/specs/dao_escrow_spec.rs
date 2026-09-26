@@ -52,7 +52,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("VoteClaimV1", true, Box::new(move || {
-                let r = h.vote_claim(nullifier_k, pallas::Point::default(), pallas::Point::default(), proposal_id, capability_id, capability_secret, voter_secret, true, pallas::Scalar::from(1u64), dao_bulla, claim_id, voter_pub, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::ZERO,issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.vote_claim(nullifier_k, pallas::Point::default(), pallas::Point::default(), proposal_id, capability_id, capability_secret, voter_secret, true, pallas::Base::from(1u64), dao_bulla, claim_id, voter_pub, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::ZERO,issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("VerifyMemberCapabilityV1", true, Box::new(move || {

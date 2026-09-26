@@ -64,6 +64,10 @@ pub struct ProposeClaimV1CallData {
     pub recipient_pub_x: pallas::Base,
     pub recipient_pub_y: pallas::Base,
     pub proposal_blind: pallas::Base,
+    /// Proposer's public key coordinates — `ProposeClaimV2` constrains both as witnesses and
+    /// derives them from `proposer_secret`, so the client must supply the same values.
+    pub proposer_pub_x: pallas::Base,
+    pub proposer_pub_y: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -83,6 +87,10 @@ impl ProposeClaimV1CallData {
     ) -> Self {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (rx, ry) = recipient_pubkey.xy().expect("pk not identity");
+        let proposer_pub =
+            PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_base(proposer_secret));
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+        let (px, py) = proposer_pub.xy().expect("pk not identity");
         Self {
             nullifier_k,
             dao_escrow_bulla,
@@ -95,6 +103,8 @@ impl ProposeClaimV1CallData {
             recipient_pub_x: rx,
             recipient_pub_y: ry,
             proposal_blind,
+            proposer_pub_x: px,
+            proposer_pub_y: py,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
@@ -111,27 +121,40 @@ impl ProposeClaimV1CallData {
 
         // Circuit constrain_instance order: [tx_binding, tx_nonce, claim_commit]
         ProposeClaimV1PublicInputs {
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
             claim_commit,
         }
     }
 
+    /// `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`, domain 3 — the
+    /// value `ProposeClaimV2` constrains at instance 1 (register OBL-C78).
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
+    }
+
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        // Must match `propose_claim.zk`'s `witness` block exactly:
+        //   dao_escrow_bulla, proposer_secret, proposer_pub_x, proposer_pub_y, capability_id,
+        //   capability_secret, claim_id, claim_amount, claim_blind, tx_commitment, tx_nonce,
+        //   tx_binding
+        // `claim_amount` is this struct's `value` and `claim_blind` its `proposal_blind` — the same
+        // pairing `compute_public_inputs` already uses for `claim_commit`. `description_hash` and
+        // the recipient coordinates are record fields exec needs, not witnesses: they were three of
+        // the four extra entries (register OBL-C78).
         vec![
             Witness::Base(Value::known(self.dao_escrow_bulla)),
-            Witness::Base(Value::known(self.claim_id)),
+            Witness::Base(Value::known(self.proposer_secret)),
+            Witness::Base(Value::known(self.proposer_pub_x)),
+            Witness::Base(Value::known(self.proposer_pub_y)),
             Witness::Base(Value::known(self.capability_id)),
             Witness::Base(Value::known(self.capability_secret)),
-            Witness::Base(Value::known(self.proposer_secret)),
+            Witness::Base(Value::known(self.claim_id)),
             Witness::Base(Value::known(pallas::Base::from(self.value))),
-            Witness::Base(Value::known(self.description_hash)),
-            Witness::Base(Value::known(self.recipient_pub_x)),
-            Witness::Base(Value::known(self.recipient_pub_y)),
             Witness::Base(Value::known(self.proposal_blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }

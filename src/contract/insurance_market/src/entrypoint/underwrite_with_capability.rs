@@ -25,8 +25,19 @@
 //!
 //! Allows underwriting with an O-Cap capability token instead of direct authorization.
 
-use dwow_sdk::{error::ContractError, msg, wasm};
+use dwow_sdk::{
+    crypto::{poseidon_hash, ContractId},
+    error::ContractError,
+    msg,
+    pasta::pallas,
+    wasm,
+};
+use dwow_serial::deserialize;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id,
+    validate_child_value_commit,
+};
 
 use crate::error::InsuranceMarketError;
 use crate::InsuranceMarketFunction;
@@ -37,8 +48,9 @@ use crate::model::{
     UnderwriteWithCapabilityUpdateV1,
 };
 use crate::{
-    INSURANCE_CONTRACT_MARKETS_TREE, INSURANCE_CONTRACT_RISK_TYPES_TREE,
-    INSURANCE_CONTRACT_UNDERWRITERS_TREE,
+    INSURANCE_CONTRACT_IDENTITY_CONTRACT_ID, INSURANCE_CONTRACT_INFO_TREE,
+    INSURANCE_CONTRACT_MARKETS_TREE, INSURANCE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
+    INSURANCE_CONTRACT_RISK_TYPES_TREE, INSURANCE_CONTRACT_UNDERWRITERS_TREE,
 };
 
 /// Process instruction for UnderwriteWithCapabilityV1
@@ -47,6 +59,70 @@ pub fn insurance_market_underwrite_with_capability_process_instruction_v1(
     call_idx: usize,
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
+    // Validate child calls: (1) PN::TransferV1 to pay the bond, (2) Identity::VerifyCapabilityV1 to
+    // prove the caller holds the capability the market requires.
+    //
+    // Both were absent, and their absence was two separate holes rather than one. The non-capability
+    // path (`underwrite.rs`) requires child 0 and this one required neither, so an underwriter could
+    // name any `bond_amount`, transfer nothing, and still be credited `coverage_sold` and a
+    // `max_coverage` computed from the unpaid figure. And the only capability check was
+    // `market.required_underwriter_capability.is_none()` — *does the market require one* — while the
+    // value the circuit publishes as `required_capability_id` came from `params.capability_secret`,
+    // the caller's own input, compared to nothing. A capability-gated market was open to anyone
+    // (register OBL-Z16).
+    //
+    // The shapes are ports, not new mechanisms: child 0 from `underwrite.rs:60-83`, child 1 from
+    // `labor_market/src/entrypoint.rs`'s `accept_job_with_capability_v1`, which OBL-Z16 names as the
+    // repository's only working capability pattern.
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 2 {
+        msg!("[insurance_market::underwrite_with_cap] Error: Expected 2 child calls (PN::transfer_v1 + Identity::VerifyCapabilityV1), got {}", this_call.children_indexes.len());
+        return Err(InsuranceMarketError::InvalidChildrenIndexes.into())
+    }
+
+    // Child 0: PN transfer — moves the bond
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[insurance_market::underwrite_with_cap] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
+        return Err(InsuranceMarketError::InvalidChildCall.into())
+    }
+    let info_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_INFO_TREE)?;
+    let promissory_note_bytes = wasm::db::db_get(info_db, INSURANCE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
+        .ok_or(InsuranceMarketError::InvalidChildCall)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
+    }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+
+    // Child 1: Identity::VerifyCapabilityV1 — the capability check itself, delegated to Identity's
+    // own proof. The parent's obligations are the child call's *shape* (present, the right function,
+    // addressed to the configured Identity contract) and, at the end of this function, that the
+    // capability the child verified is the one this market requires.
+    //
+    // The second half is not optional here and is not done anywhere else in the tree. Identity reads
+    // `capability_id` from its **own** params (`identity/src/entrypoint.rs:583`) and checks the
+    // caller's credential against *that* capability's requirement — so a shape-only check admits any
+    // valid, unrelated capability. `labor_market` stops at the shape: it reads
+    // `job.required_capability_id` (`labor_market/src/entrypoint.rs:1682`) and uses it only in a log
+    // line (`:1696`), which is why this file goes further than the pattern it is otherwise ported
+    // from (register OBL-Z16).
+    let identity_idx = this_call.children_indexes[1];
+    let identity_call = &calls[identity_idx].data;
+    if identity_call.data[0] != 0x06 {
+        msg!("[insurance_market::underwrite_with_cap] Error: Expected Identity::VerifyCapabilityV1 (0x06), got 0x{:02x}", identity_call.data[0]);
+        return Err(InsuranceMarketError::InvalidChildCall.into())
+    }
+    let identity_bytes = wasm::db::db_get(info_db, INSURANCE_CONTRACT_IDENTITY_CONTRACT_ID)?
+        .ok_or(InsuranceMarketError::InvalidChildCall)?;
+    let identity_cid: ContractId = deserialize(&identity_bytes)?;
+    if identity_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("identity contract ID not configured".into()));
+    }
+    validate_child_contract_id(&identity_call.contract_id, &identity_cid)?;
+
     let self_ = &calls[call_idx].data;
     let params = UnderwriteWithCapabilityParamsV1::decode(&self_.data[1..])?;
 
@@ -70,6 +146,24 @@ pub fn insurance_market_underwrite_with_capability_process_instruction_v1(
 
     #[expect(clippy::unwrap_used, reason = "guarded by is_none() check above")]
     let required_capability_id = market.required_underwriter_capability.unwrap();
+
+    // The child must have verified *this* capability, not merely some capability.
+    //
+    // Identity's handler takes `capability_id` from the child's own params, looks that capability up
+    // and checks the caller's credential against it. It never learns what this market requires, so
+    // without the comparison below a caller holding any valid, unrelated capability is accepted and
+    // the market's `required_underwriter_capability` is consulted only for its `is_none()`.
+    //
+    // `CapabilityId::to_bytes()` is `pallas::Base::to_repr()` and the market stores a `[u8; 32]`
+    // (`model/mod.rs`), so this is a byte-for-byte comparison of the same encoding — not a re-hash.
+    let identity_params = dwow_identity_contract::model::VerifyCapabilityParams::decode(
+        &identity_call.data[1..],
+    )?;
+    if identity_params.capability_proof.capability_id.to_bytes() != required_capability_id {
+        msg!("[insurance_market::underwrite_with_cap] Error: child verified capability {:?}, market requires {:?}",
+             identity_params.capability_proof.capability_id.to_bytes(), required_capability_id);
+        return Err(InsuranceMarketError::CapabilityNotMet.into())
+    }
 
     // ZK proof verified by host via get_metadata
     // (namespace: INSURANCE_MARKET_ZKAS_UNDERWRITE_WITH_CAPABILITY_NS_V1)
@@ -103,6 +197,18 @@ pub fn insurance_market_underwrite_with_capability_process_instruction_v1(
     // Derive underwriter ID
     let underwriter_id =
         derive_underwriter_id(params.market_id, &params.underwriter, params.bond_amount);
+
+    // The child call must move *this* bond, not merely exist. `underwrite.rs:166-170` is the source
+    // of both the blind and the comparison, and this is the half the shape guard above cannot do:
+    // without it a caller attaches a transfer of any amount — one unit — while declaring
+    // `bond_amount` arbitrarily large, and the coverage credited below is still computed from the
+    // declared figure. `validate_child_value_commit` recomputes
+    // `pedersen(bond_amount, fp_mod_fv(value_blind))` and compares it to the child's commitment.
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.bond_amount),
+        underwriter_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.bond_amount, value_blind)?;
 
     let current_block = wasm::util::get_verifying_block_height()?.get();
 

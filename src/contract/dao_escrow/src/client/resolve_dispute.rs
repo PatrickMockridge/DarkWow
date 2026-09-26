@@ -66,6 +66,10 @@ pub struct ResolveDisputeV1CallData {
     pub recipient_pub_x: pallas::Base,
     pub recipient_pub_y: pallas::Base,
     pub attestation_root: pallas::Base,
+    /// Arbitrator's public key coordinates — `ResolveDisputeV2` constrains both as witnesses and
+    /// derives them in-circuit from `arbitrator_secret`.
+    pub arbitrator_pub_x: pallas::Base,
+    pub arbitrator_pub_y: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -87,6 +91,10 @@ impl ResolveDisputeV1CallData {
     ) -> Self {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (rx, ry) = payout_recipient.xy().expect("pk not identity");
+        let arbitrator_pub =
+            PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_base(arbitrator_secret));
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+        let (ax, ay) = arbitrator_pub.xy().expect("pk not identity");
         Self {
             nullifier_k,
             capability_id,
@@ -101,6 +109,8 @@ impl ResolveDisputeV1CallData {
             recipient_pub_x: rx,
             recipient_pub_y: ry,
             attestation_root,
+            arbitrator_pub_x: ax,
+            arbitrator_pub_y: ay,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
@@ -118,29 +128,41 @@ impl ResolveDisputeV1CallData {
 
         // Circuit constrain_instance order: [tx_binding, tx_nonce, resolution_commit]
         ResolveDisputeV1PublicInputs {
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
             resolution_commit,
         }
     }
 
+    /// `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`, domain 3 — the
+    /// value `ResolveDisputeV2` constrains at instance 1 (register OBL-C78).
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
+    }
+
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        // Must match `resolve_dispute.zk`'s `witness` block exactly:
+        //   dao_escrow_bulla, arbitrator_secret, arbitrator_pub_x, arbitrator_pub_y, capability_id,
+        //   capability_secret, dispute_id, resolution_type, resolution_blind, tx_commitment,
+        //   tx_nonce, tx_binding
+        // The circuit names two of these differently from this struct, and `compute_public_inputs`
+        // above already pairs them the same way: `resolution_type` is `resolution_result as u64` and
+        // `resolution_blind` is `payout_amount`. `attestation_count`, `threshold`,
+        // `attestation_root` and the recipient coordinates are record fields exec needs — they were
+        // five of the six extra entries (register OBL-C78).
         vec![
-            Witness::Base(Value::known(self.capability_id)),
             Witness::Base(Value::known(self.dao_escrow_bulla)),
-            Witness::Base(Value::known(self.dispute_id)),
-            Witness::Base(Value::known(self.capability_secret)),
             Witness::Base(Value::known(self.arbitrator_secret)),
-            Witness::Base(Value::known(pallas::Base::from(self.attestation_count))),
-            Witness::Base(Value::known(pallas::Base::from(self.threshold))),
+            Witness::Base(Value::known(self.arbitrator_pub_x)),
+            Witness::Base(Value::known(self.arbitrator_pub_y)),
+            Witness::Base(Value::known(self.capability_id)),
+            Witness::Base(Value::known(self.capability_secret)),
+            Witness::Base(Value::known(self.dispute_id)),
             Witness::Base(Value::known(pallas::Base::from(self.resolution_result as u64))),
             Witness::Base(Value::known(pallas::Base::from(self.payout_amount))),
-            Witness::Base(Value::known(self.recipient_pub_x)),
-            Witness::Base(Value::known(self.recipient_pub_y)),
-            Witness::Base(Value::known(self.attestation_root)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }

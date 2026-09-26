@@ -100,21 +100,35 @@ impl VerifyMemberCapabilityV1CallData {
 
         // Circuit constrain_instance order: [tx_binding, tx_nonce, capability_commit]
         VerifyMemberCapabilityV1PublicInputs {
-            tx_binding: pallas::Base::zero(),
+            tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
             capability_commit,
         }
     }
 
+    /// `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`, domain 3 — the
+    /// value `VerifyMemberCapabilityV2` constrains at instance 1 (register OBL-C78).
+    pub fn compute_tx_binding(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
+    }
+
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        // Must match `verify_member_capability.zk`'s `witness` block exactly:
+        //   dao_escrow_bulla, holder_secret, holder_pub_x, holder_pub_y, capability_id,
+        //   capability_secret, tx_commitment, tx_nonce, tx_binding
+        // `holder_pub_x/y` were missing (7 entries against 9 — the derivation is constrained
+        // in-circuit, so the coordinates must still be supplied) and the order was wrong
+        // (register OBL-C78).
         vec![
-            Witness::Base(Value::known(self.capability_id)),
             Witness::Base(Value::known(self.dao_escrow_bulla)),
-            Witness::Base(Value::known(self.capability_secret)),
             Witness::Base(Value::known(self.holder_secret)),
+            Witness::Base(Value::known(self.holder_pub_x)),
+            Witness::Base(Value::known(self.holder_pub_y)),
+            Witness::Base(Value::known(self.capability_id)),
+            Witness::Base(Value::known(self.capability_secret)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(self.compute_tx_binding())), // tx_binding
         ]
     }
 }
