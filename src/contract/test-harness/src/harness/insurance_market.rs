@@ -188,6 +188,41 @@ impl InsuranceMarketHarness {
         Ok(UnderwriteResult { call_data, proof, public_inputs })
     }
 
+    /// Register a risk type (fn `0x01` = `RegisterRiskTypeV1`).
+    ///
+    /// Non-ZK: `insurance_market` has four circuits and none is for this function, so this is call
+    /// data only. It returns the id the contract itself derives, because [`Self::create_market`] needs
+    /// it and a caller that recomputed it would be re-implementing `derive_risk_type_id`.
+    pub fn register_risk_type(
+        &self,
+        params: &dwow_insurance_market_contract::model::RegisterRiskTypeParamsV1,
+    ) -> Result<RegisterRiskTypeResult> {
+        let mut call_data = vec![0x01];
+        call_data.extend_from_slice(
+            &params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?,
+        );
+        let risk_type_id = dwow_insurance_market_contract::model::derive_risk_type_id(
+            params.category,
+            &params.description,
+            &params.oracle_pubkey,
+        );
+        Ok(RegisterRiskTypeResult { call_data, risk_type_id })
+    }
+
+    /// Create a market (fn `0x02` = `CreateMarketV1`). Non-ZK, as above.
+    ///
+    /// **This is the only way to set `required_underwriter_capability`**, and the capability guard
+    /// reads that field from the *stored market record* rather than from a caller param — so a row
+    /// that exercises the guard needs a market created here, not one of the spec's hardcoded ids.
+    pub fn create_market(
+        &self,
+        params: &dwow_insurance_market_contract::model::CreateMarketParamsV1,
+    ) -> Result<CreateMarketResult> {
+        let mut call_data = vec![0x02];
+        call_data.extend_from_slice(&params.encode());
+        Ok(CreateMarketResult { call_data })
+    }
+
     /// Purchase coverage with ZK proof (fn 0x0a = PurchaseCoverageWithCapabilityV1)
     /// NOTE: V1/V2 namespace mismatch — contract metadata uses "PurchaseCoverageV2"
     pub fn purchase_coverage(
@@ -280,6 +315,19 @@ pub struct PurchaseCoverageResult {
     pub call_data: Vec<u8>,
     pub proof: Proof,
     pub public_inputs: PurchaseCoverageWithCapabilityV1PublicInputs,
+}
+
+/// Result of register_risk_type
+pub struct RegisterRiskTypeResult {
+    pub call_data: Vec<u8>,
+    /// The id the contract derives from these params (`derive_risk_type_id`). Published because
+    /// `create_market` takes it.
+    pub risk_type_id: dwow_insurance_market_contract::model::RiskTypeId,
+}
+
+/// Result of create_market
+pub struct CreateMarketResult {
+    pub call_data: Vec<u8>,
 }
 
 pub struct PurchaseCoverageV1Result { pub call_data: Vec<u8>, pub proof: Proof }

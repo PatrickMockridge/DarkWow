@@ -725,6 +725,10 @@ fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::e
     dwow_native_token_contract::enable_deterministic_zk();
     dwow_promissory_note_contract::enable_deterministic_zk();
     dwow_insurance_market_contract::enable_deterministic_zk();
+    // Required once this spec builds an Identity capability proof: `verify_capability.rs` and
+    // `issue_credential.rs` branch on `deterministic_zk_enabled()`, so without this the two chain runs
+    // produce different proofs and the PI-7 determinism replay fails on the last block hash.
+    dwow_identity_contract::enable_deterministic_zk();
     use crate::tests::specs::insurance_market_spec::insurance_market_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&insurance_market_test_spec()))?)
