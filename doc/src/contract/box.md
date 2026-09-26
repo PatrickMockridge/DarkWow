@@ -65,6 +65,33 @@ nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, state_nonce)
 owner_pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)
 ```
 
+## The Wire — what a call publishes
+
+`privacy.md` §2 promises that an L1 observer sees "only a nullifier and a Merkle root — not which
+resource was operated on, not by whom, not what's inside", §5.5 says `box_id` "is never a public
+input", and §2.4's table has Box hiding "which box … in Poseidon commitment". A value in `Call.data`
+is none of those things: it is plaintext, and the transaction hash commits to every byte of it. So the
+params are the public inputs and nothing else, and this table is the contract of that:
+
+| Call | Carries | Does **not** carry | Header |
+|---|---|---|---|
+| `Put` | `nullifier`, `expected_root`, `new_leaf`, the four `new`/`old` commitment coordinates, `tx_binding`, `tx_nonce`, `new_state_nonce`, the contents commitments, `leaf_pos`, `merkle_path`, `proof` | `box_id`, `old_state_nonce` | 196 bytes |
+| `Take` | `nullifier`, `expected_root`, `tx_binding`, `tx_nonce`, `contents_commit`, `leaf_pos`, `merkle_path`, `proof` | `box_id`, `state_nonce` | 100 bytes |
+
+**How the removed values reach the circuit.** They are `note:` witness sources: the wallet serves them
+from its own record of the box (`CapRecord.object_id`, `.state_nonce`, mapped in
+`bin/dww/src/lib.rs`'s `cap_record_note_fields`), not from the call. `Put` emits the box's AEAD note —
+`{commitment, state_nonce, box_id}` encrypted to the holder — which is how the wallet discovers the new
+leaf and learns both values for the next operation (`contract-wasm-type-system.md` §C.8.1).
+
+**What is still on the wire, each for a measured reason** (declared, with an expiry, in
+`scripts/check-l1-wire-conformance.sh`): `new_state_nonce`, because the *prover* must supply the
+successor — the circuit constrains it to `old + 1` and no `note:` field yields a successor, where
+Purse's circuit derives its own; and the two contents commitments, because the note does not yet carry
+what the box holds. **And one gap this page cannot paper over**: §C.8.2 requires an L1 note to carry
+`nullifier`, `merkle_root` and `leaf_position` for trajectory identification, and Box's schema carries
+none of them yet.
+
 ## Database Trees
 
 | Tree | Purpose |

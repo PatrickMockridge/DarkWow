@@ -568,9 +568,18 @@ counterparties to a transfer, it belongs behind a commitment.
 - Does a client builder carry a full `Keypair`?
 - Does the same raw wallet pubkey appear across multiple contract instances?
 - Does any type in `src/sdk/src/crypto/` that wraps a field element derive `Debug` or `Display`?
+- **Is a witness-only value a `param:` in an L1 manifest?** The boundary paragraph above decides it:
+  an object id, a state nonce, a balance or a contents commitment is needed only by the counterparties,
+  so it belongs behind a commitment or in the AEAD note — and a `param:` value is plaintext call data
+  that the transaction hash commits to byte-for-byte. `scripts/check-l1-wire-conformance.sh` asks every
+  such slot to be a `constrain_instance` target or host-read, and declares the residue with an expiry.
 
 **Taught by.** Lessons 5, 6, 7, 8, 9; old `RC-E`; the flakey-pattern rows for shared pubkeys and
-placeholder signatures.
+placeholder signatures. **And, from 2026-09-26, the L1 wire itself** — see *What the wire may carry*
+below: Box's and Purse's call data carried the object identity, the nonces, the contents commitments and
+the balances in plaintext while §2 promised an observer learns "not which resource was operated on, not
+by whom, not how much". This class is the one where the *specification* was right and the code was not,
+which is why the correction was to the code.
 
 ---
 
@@ -935,6 +944,69 @@ constraining `constrain_equal_base(computed, params_value)` before publishing th
 only reason a value appears in both params and the circuit, and it is the rule that made the earlier
 "replicate the domain constant on the Rust side" workaround unnecessary for anything but values whose
 inputs are *all* public.
+
+### What the wire may carry — the L1 o-cap learnings
+
+Seven rules, each earned by a defect found in Box and Purse and each general to every transferable
+o-cap. They are stated here rather than in a contract chapter because none of them is about Box or
+Purse: they are what "L1" constrains once the object is anonymous and the transcript is public.
+
+**L1-1. The leaf commits to its owner — a nullifier-only binding is not an ownership check.** A leaf
+that hashes `H(5, id, contents, nonce)` while the nullifier hashes `H(1, owner_secret, id, nonce)`
+binds the spender's secret to nothing the tree stores: anyone who knows the leaf preimage consumes it
+with a secret of their choosing, and — because nullifiers genuinely differ per secret — one leaf admits
+one valid nullifier *per distinct secret*, which the chain's de-duplication cannot see. Fold
+`owner_pub = H(DOMAIN_SIGNATURE_SECRET, owner_secret)` into the leaf, so a second spend needs the same
+secret and therefore the same nullifier. *Detected by* `scripts/check-pubkey-binding.sh` (an equality
+with no exposed operand) plus a verify-side falsifier. *Taught by* the leaf-owner finding
+(`OBL-C81`/`OBL-C144`).
+
+**L1-2. Params carry public inputs, never the witness.** The paragraph above this section is right that
+a witness-derived *public input* must be a params field — and it is the sentence that gets over-read:
+a value that is neither a `constrain_instance` target nor read by the host has no business on the wire
+at all. It travels in the AEAD note (§C.8.1) or comes from the caller's own record. *Detected by*
+`scripts/check-l1-wire-conformance.sh`, whose declarations **expire** — a declared leak that stops
+appearing fails the gate, so the count is the measure. *Taught by* the wire finding (`OBL-C145`): 22
+slots, 12 retired.
+
+**L1-3. A value the circuit binds must be *determined*, not merely checked.** A parameter the circuit
+echoes is a freedom the caller keeps. The successor nonce is the worked case: Purse derived it in
+circuit (`new_nonce = base_add(state_nonce, ONE)`), Box took it as a free witness, and a Put could
+therefore name the nonce it had just consumed — minting a leaf identical to the old one, whose nullifier
+the same call spends. The corpus's form is assign-then-constrain; it is the one to copy. *Detected by* a
+negative control that must fail verification, in the proving direction's mirror: `Proof::create`
+succeeds for an unsatisfying assignment, so the check is `verify_zkp`. *Taught by* the successor-nonce
+finding.
+
+**L1-4. The contract's own nullifier tree is the replay gate; the chain's set reads a declaration.**
+`tx.nullifiers` is a field the transaction declares — `TransactionBuilder` never derives it — and the
+rules that depend on it alone (`COINBASE_MATURITY`, the mempool's filter) are bypassed by a transaction
+that declares fewer nullifiers than it spends. Every L1 contract's exec MUST check its own
+nullifiers tree against the params its proof binds; that check is not defence in depth, it is the gate.
+*Detected by* reading the exec, per contract. *Taught by* the declaration finding (`OBL-C146`).
+
+**L1-5. The note is the transport, and its declared field types are part of the design.** §C.8.1 has
+the wallet identifying trajectories "by trial-decrypting AEAD notes on the new Merkle leaves", and
+§C.8.2 requires `nullifier`, `merkle_root` and `leaf_position` in the note — without them a note is
+trajectory-ambiguous. A note field can only be filled from a value of its declared type
+(`encode_params_values` refuses the rest), which is a real constraint on the wire rather than a
+formality: a `u64` balance cannot be sourced from a circuit's `Base` witness, and that is what still
+holds three declared slots per purse circuit. *Detected by* comparing each `note_schema` against
+§C.8.2 and against what the circuits can yield. *Taught by* the note work (`OBL-C145`).
+
+**L1-6. An anonymity count is a claim about the transcript, not about the tree.** `T = N^K` is an
+anonymity set only if an observer cannot tell *which* of the N an operation touched. Where the
+transcript determines the object, N is 1 and `1^K = 1` is the L2 singleton count. `Combinatorial/StateSpace.lean`
+states the premise (`DeterminesObject`) and computes both sides (`anonymitySet` is 1 for a wire that
+publishes the id, 3 for one that does not). *Detected by* that computation, and by §2.4's premise
+being annotated as a premise rather than a guarantee.
+
+**L1-7. A conformance check must be per operation.** The ceilings are per operation, and an earlier
+version of the check divided a contract's *totals* by its operation count — which cannot fail for one
+operation, since Nat division truncates and `(a + b) / 2 ≤ c` is satisfied by `b = 0` whenever
+`a ≤ 2c`. PromissoryNote is the instance: `(42) / 5 = 8 ≤ 9` passes while `RevokeV2` alone carries 10.
+*Detected by* `CeilingDerivation.lean`'s per-operation table and its refutation of the sum shape
+(`a_sum_over_operations_cannot_bound_one_operation`). *Taught by* the triage finding.
 
 ### Version every state struct
 

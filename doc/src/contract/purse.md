@@ -72,6 +72,38 @@ owner_pub    = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)
 balance_commit = pedersen_commit(balance, balance_blind)
 ```
 
+## The Wire — what a call publishes
+
+`privacy.md` §2 promises that an L1 observer sees "only a nullifier and a Merkle root — not which
+resource was operated on, not by whom, not how much", §2.4's table has Purse hiding the balance "in
+Pedersen commitment … not which purse or how much", and §5.5 says the object id "is never a public
+input". A value in `Call.data` is plaintext, committed to byte-for-byte by the transaction hash, so the
+params are the public inputs and the values a *note* is built from — and nothing else:
+
+| Call | Carries | Does **not** carry | Header |
+|---|---|---|---|
+| `Deposit` | `old_balance`, `deposit_amount`, `new_balance` (the amount moves; the note's `value` is read from it), `asset_id`, `nullifier`, `expected_root`, `new_leaf`, the four commitment coordinates, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `purse_id`, `state_nonce` | 252 bytes |
+| `Withdraw` | as `Deposit`, with `withdraw_amount` | `purse_id`, `state_nonce` | 252 bytes |
+| `Balance` | `derived_purse_id`, `expected_root`, `token_commit`, the balance commitment coordinates, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `purse_id`, `asset_id`, `balance`, `state_nonce` | 164 bytes |
+
+**How the removed values reach the circuit.** They are `note:` witness sources served from the wallet's
+own record — `CapRecord.object_id`, `.state_nonce`, `.value`, `.asset_id`, mapped in
+`bin/dww/src/lib.rs`'s `cap_record_note_fields`, and read out of the note by `bin/dww/src/scan.rs`.
+The loop closes because both operations already emit an AEAD note
+(`{asset_id, value, balance_blind, commitment, purse_id, state_nonce}`, the `state_nonce` derived
+in-circuit as `increment:7`) and the scan already wrote both values into the record
+(`contract-wasm-type-system.md` §C.8.1).
+
+**What is still on the wire, and why it is a type rather than a preference** (declared, with an expiry,
+in `scripts/check-l1-wire-conformance.sh`): the balances and the amount. The note's `value` field is
+declared `u64`, and `encode_params_values` (`src/sdk/src/manifest.rs:645-666`) refuses a value of any
+other type — while a `witness = N` note source yields the circuit's `Base`, and `NoteFieldValue::as_u64()`
+matches only `U64`. So a balance that leaves the params can no longer reach the note, and the note is
+how the wallet learns the produced state's balance. Removing it needs a `pallas_base` note field with a
+conversion on the scan side, or a typed note as PromissoryNote's `Output.note` is. **And the §C.8.2 gap
+is open here too**: an L1 note SHALL carry `nullifier`, `merkle_root` and `leaf_position`, and this
+schema carries none of them.
+
 ## Database Trees
 
 | Tree | Purpose |
