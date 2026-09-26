@@ -183,26 +183,77 @@ theorem scrutiny_gt_safe : P_SCRUTINY > P_CEILING ∧ W_SCRUTINY > W_CEILING ∧
 /-! ==========================================================================
    Part 6: Contract-Specific Ceiling Check
    ==========================================================================
-   Verify that Box and Purse are within their respective ceilings.
-   These are computational validations, not formal proofs — the proofs
-   are in GeneralTheorem.lean (box_is_safeL1, purse_is_safeL1).
+   **Recounted 2026-09-26, and the accounting here is measured rather than recalled.** Each row is
+   one circuit: (name, `constrain_instance` sites, *private* witness slots), where the private count
+   is the circuit's witness declarations minus its instances. That definition is not a convenience
+   chosen to fit — it is what the four figures this section already carried meant: `Box Put 9` was
+   14 declarations − 5 instances before the owner-binding fix, `Purse Deposit 13` is 22 − 9,
+   `Purse Balance 11` is 18 − 7, and `Box Take 7` is 11 − 4.
+
+   Two things changed with the recount, and the second is why this section is rewritten rather than
+   corrected. (1) **The owner binding added a witness to five circuits**, so Box's rows moved 9 → 10
+   and 7 → 8; the sums this section used to check were therefore stale as well as unverifiable.
+   (2) **The shape was wrong**: `(9 : Nat) / 2 ≤ P_CEILING` is a *sum over operations* divided by the
+   operation count, and `Nat` division truncates, so it cannot fail per operation —
+   `a_sum_over_operations_cannot_bound_one_operation` below is the refutation, and PromissoryNote is
+   the instance that matters, because `RevokeV2` carries ten public inputs while the sum-shaped check
+   over the same contract passes at `(42) / 5 = 8 ≤ 9`.
+
+   The two theorems this replaces (`box_within_ceilings`, `purse_within_ceilings`) were referenced
+   nowhere else; their claim is subsumed by the per-operation statement, which is strictly stronger.
 -/
 
-/-- Box: 9 PI total / 2 ops = 4.5 per op ≤ 9 ✓, 16 WV / 2 = 8 ≤ 13 ✓, 2 ops ≤ 3 ✓
+/-- Every L1 circuit's public inputs and private witnesses, counted from the circuit sources on
+    2026-09-26: `constrain_instance` sites, and witness declarations minus those instances. -/
+def l1Operations : List (String × Nat × Nat) := [
+  ("promissory_note/RegisterTypeV2", 8, 5),
+  ("promissory_note/IssueV2", 9, 5),
+  ("promissory_note/RedeemV2", 8, 3),
+  ("promissory_note/RevokeV2", 10, 5),
+  ("promissory_note/TransferV2", 7, 4),
+  ("box/Put", 5, 10),
+  ("box/Take", 4, 8),
+  ("purse/Deposit", 9, 13),
+  ("purse/Withdraw", 9, 13),
+  ("purse/Balance", 7, 11),
+]
 
-    Both of these were `: True := by … trivial`, with the three real inequalities proved by
-    `native_decide` into hypotheses that the `trivial` then discarded. The work was already being
-    done; only the statement was empty. The three `<T> / <ops> ≤ <C>_CEILING` facts *are* the
-    claim the name makes, so they are now the conclusion. -/
-@[axiom_budget 0]
-theorem box_within_ceilings :
-    (9 : Nat) / 2 ≤ P_CEILING ∧ (16 : Nat) / 2 ≤ W_CEILING ∧ (2 : Nat) ≤ O_CEILING := by
-  exact ⟨by decide, by decide, by decide⟩
+/-- The operations each L1 contract carries, against `O_CEILING`. -/
+def l1Contracts : List (String × Nat) :=
+  [("promissory_note", 5), ("box", 2), ("purse", 3)]
 
-/-- Purse: 25 PI total / 3 ops = 8.3 ≤ 9 ✓, 37 WV / 3 = 12.3 ≤ 13 ✓, 3 ops ≤ 3 ✓ --/
+/-- **The per-operation statement the sum shape could not make.** Every measured L1 operation is
+    inside `P_CEILING` in the `W` axis and, for all but one, in the `P` axis too — and the exception
+    is the point: `RevokeV2` carries ten public inputs, one above `P_CEILING`, and a contract-level
+    sum cannot say so. -/
 @[axiom_budget 0]
-theorem purse_within_ceilings :
-    (25 : Nat) / 3 ≤ P_CEILING ∧ (37 : Nat) / 3 ≤ W_CEILING ∧ (3 : Nat) ≤ O_CEILING := by
-  exact ⟨by decide, by decide, by decide⟩
+theorem every_measured_l1_operation_is_within_the_w_ceiling :
+    l1Operations.all (fun op => decide (op.2.2 ≤ W_CEILING)) = true := by
+  decide
+
+/-- The operations above `P_CEILING`, by name: the scrutiny tier, computed rather than listed. -/
+@[axiom_budget 0]
+theorem the_operations_above_p_ceiling :
+    l1Operations.filterMap (fun op => if P_CEILING < op.2.1 then some op.1 else none) =
+      ["promissory_note/RevokeV2"] := by
+  decide
+
+/-- The contracts above `O_CEILING`, by name. **PromissoryNote is in the operations scrutiny tier at
+    five circuits**, which the earlier section did not say because it looked at Box and Purse only —
+    the external report's finding 15, as a computation. -/
+@[axiom_budget 0]
+theorem the_contracts_above_o_ceiling :
+    l1Contracts.filterMap (fun c => if O_CEILING < c.2 then some c.1 else none) =
+      ["promissory_note"] := by
+  decide
+
+/-- **Why the previous shape could not be the claim.** `(a + b) / 2 ≤ c` is satisfiable with `a` twice
+    the ceiling: take `b = 0`. Averages of a sum over its operation count cannot bound one operation,
+    so a conformance check written that way is green for exactly the contracts a per-operation
+    ceiling exists to catch. -/
+@[axiom_budget 0]
+theorem a_sum_over_operations_cannot_bound_one_operation :
+    ∃ a b c : Nat, (a + b) / 2 ≤ c ∧ ¬ (a ≤ c) :=
+  ⟨2 * P_CEILING, 0, P_CEILING, by decide, by decide⟩
 
 end Combinatorial.CeilingDerivation

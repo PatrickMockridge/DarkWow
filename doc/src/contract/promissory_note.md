@@ -510,7 +510,7 @@ Promissory Note uses 5 ZK circuits:
 | `register_type.zk` | `RegisterTypeV2` | `asset_id`, `token_auth_parent`, `commitment`, `vc_x`, `vc_y`, `spend_hook` | Create token type |
 | `redeem.zk` | `RedeemV2` | `commitment`, `vc_x`, `vc_y`, `token_commit`, `value`, `spend_hook` | Redeem receipt (value=0) |
 | `issue.zk` | `IssueV2` | `token_root`, `mint_public`, `commitment`, `vc_x`, `vc_y`, `asset_id`, `spend_hook` | Mint with backing proof |
-| `revoke.zk` | `RevokeV2` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public` | Spend commitments |
+| `revoke.zk` | `RevokeV2` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public`, `tx_binding`, `tx_nonce` | Spend commitments |
 | `transfer.zk` | `TransferV2` | `commitment`, `vc_x`, `vc_y`, `token_commit`, `spend_hook` | Create output commitments |
 
 **Design principles:**

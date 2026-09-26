@@ -855,6 +855,34 @@ The ceiling constants are **derived, not observed**:
 Purse *is* the ceiling: Box Put 5/9, Box Take 4/7, Purse Deposit 9/13, Purse Withdraw 9/13, Purse
 Balance 7/11. Any contract more complex than Purse exceeds safe single-contract L1 bounds.
 
+**Recounted 2026-09-26, and the table now covers every L1 contract rather than the two it was derived
+from.** Each pair is (public inputs, private witness slots) with the private count taken as witness
+declarations minus `constrain_instance` sites, which is what the figures above already meant; the
+owner-binding fix of 2026-09-25 added a witness to five circuits, so **Box's rows moved to 5/10 and
+4/8**. The report's finding 15 is the part the derivation did not reach: **PromissoryNote is L1 by the
+same criterion** (§2's list, `privacy.md:46`) and is not in the table.
+
+| L1 circuit | Public inputs | Witness values | Tier |
+|---|---|---|---|
+| Box `Put` | 5 | 10 | Safe |
+| Box `Take` | 4 | 8 | Safe |
+| Purse `Deposit` | 9 | 13 | Safe, on both axes |
+| Purse `Withdraw` | 9 | 13 | Safe, on both axes |
+| Purse `Balance` | 7 | 11 | Safe |
+| PN `RegisterTypeV2` | 8 | 5 | Safe |
+| PN `IssueV2` | 9 | 5 | Safe |
+| PN `RedeemV2` | 8 | 3 | Safe |
+| PN `RevokeV2` | **10** | 5 | **Scrutiny** — one above `P_CEILING` |
+| PN `TransferV2` | 7 | 4 | Safe |
+
+And on the operations axis PromissoryNote carries five circuits against `O_CEILING = 3`, which is the
+scrutiny band (4–6) again — so **the contract is in the scrutiny tier on two axes**, and the
+computation is in `CeilingDerivation.lean` (`the_operations_above_p_ceiling`,
+`the_contracts_above_o_ceiling`) rather than in this prose. A per-operation ceiling is what makes that
+visible: the earlier check divided a contract's totals by its operation count, and `(42) / 5 = 8 ≤ 9`
+passes however large one operation is — `a_sum_over_operations_cannot_bound_one_operation` is the
+refutation, and PN's revoke circuit is the instance.
+
 Two structural invariants come with it. **Consume+create:** each non-terminal L1 operation nullifies
 exactly one old state and creates exactly one new Merkle leaf, keeping the active object count bounded
 at N — without it, stale objects accumulate unboundedly (RC10) and degrade anonymity for everyone.
