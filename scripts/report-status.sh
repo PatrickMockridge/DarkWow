@@ -340,15 +340,21 @@ def ids_from_lib():
     matched nothing — which reported the three enumerations as disagreeing when they do not."""
     txt = open(os.path.join(REPO,"bin/dwowd/src/lib.rs"), errors="replace").read()
     return re.findall(r'include_bytes!\("(?:\.\./)+src/contract/([a-z_]+)/dwow_[a-z_]+_contract\.wasm"\)', txt)
-exec_names = [n for _, n in ids_from_execution()]
 sdk_names  = [n.lower() for n in ids_from_sdk()]
 lib_names  = ids_from_lib()
-agree = (exec_names and
-         [n.lower() for n in exec_names] == lib_names == sdk_names and len(exec_names) == 9)
+# Compare the ID CONSTANTS, not the display names. `execution.rs` carries human labels —
+# `("NativeToken", "PromissoryNote")` — whose lowercase form is `nativetoken`, while the other two
+# enumerations carry crate/id names, `native_token`. Comparing label to id is a category error that
+# reported the three enumerations as disagreeing when they agree exactly; it was a false red in this
+# report's first published run, caught by reading the comparison rather than trusting its verdict.
+exec_ids   = [cid.lower() for cid, _ in ids_from_execution()]
+exec_label = [lbl for _, lbl in ids_from_execution()]
+agree = (len(exec_ids) == 9 and exec_ids == lib_names == sdk_names)
 probes["genesis_ids"] = {"rc": 0 if agree else 1, "out":
-    f"execution.rs ({len(exec_names)}): {exec_names}\n"
-    f"  lib.rs       ({len(lib_names)}): {lib_names}\n"
+    f"execution.rs ({len(exec_ids)}) id constants: {exec_ids}\n"
+    f"  lib.rs        ({len(lib_names)}): {lib_names}\n"
     f"  contract_id.rs({len(sdk_names)}): {sdk_names}\n"
+    f"  display labels in execution.rs (compared as labels, not ids): {exec_label}\n"
     f"  agree={agree}"}
 
 # The register census — Status column ONLY. See the header note about the histogram.
