@@ -536,7 +536,12 @@ fn extract_instances(
 /// Evaluate the circuit's public inputs (wallet.md §6.4.1 invariant 6): if the
 /// manifest declares `public_inputs` (intermediate `constrain_instance` targets),
 /// evaluate each `slot:<idx>` / `derived:<rule>:<slots>` entry in order; else
-/// derive from the witness-slot `constrain_instance` opcodes (box/purse).
+/// derive from the witness-slot `constrain_instance` opcodes.
+///
+/// This comment said "(box/purse)" until 2026-09-26, and that is wrong for two of the
+/// five: measured, purse's `Deposit` and `Withdraw` have a `constrain_instance` whose
+/// operand is an intermediate heap slot, so they *must* declare `public_inputs` — the
+/// `extract_instances` arm below returns an error for them rather than a value.
 fn evaluate_public_inputs(
     ctx: &ProverContext,
     zkbin: &ZkBinary,

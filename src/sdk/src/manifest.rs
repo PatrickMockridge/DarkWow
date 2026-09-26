@@ -166,7 +166,16 @@ pub struct ManifestCircuit {
     /// targets are VM intermediates (not witness slots). Each entry is
     /// `slot:<idx>` (a witness slot) or `derived:<rule>:<slots>` (a computed
     /// intermediate). Empty = derive from the witness-slot `constrain_instance`
-    /// opcodes directly (the box/purse case). See wallet.md §6.4.1.
+    /// opcodes directly. See wallet.md §6.4.1.
+    ///
+    /// **This is per circuit, and purse's `Deposit`/`Withdraw` must declare it.**
+    /// This doc said "empty = … (the box/purse case)" until 2026-09-26, which is wrong:
+    /// measured, removing purse's lists makes the generic prover fail with `public input
+    /// references intermediate heap slot 23 (>= 22)` — the wallet's `extract_instances`
+    /// (`bin/dww/src/prover_impl.rs`) reads the compiled circuit's `ConstrainInstance`
+    /// operands and refuses any that land on an intermediate. Box's two circuits and
+    /// purse's `Balance` derive cleanly because theirs resolve to witness slots, so the
+    /// rule is *read the circuit*, not *read the contract name*.
     #[serde(default)]
     pub public_inputs: Vec<String>,
 }
