@@ -1127,7 +1127,14 @@ fn propose_claim_get_metadata(
     let self_ = &calls[call_idx].data;
     let params = match model::ProposeClaimParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
-        Err(_) => return Ok(vec![]),
+        // Behaviour is unchanged — the empty vector is still the refusal signal the host reads as "the
+        // call is rejected by design" — but the reason is now logged instead of discarded. Without
+        // this, a decoder error is indistinguishable from an intended refusal, which is why this
+        // contract's red carried no cause: the register could only ever record the symptom.
+        Err(e) => {
+            msg!("[dao_escrow::propose_claim_get_metadata] ProposeClaimParamsV1::decode failed: {:?}", e);
+            return Ok(vec![])
+        }
     };
 
     // Reconstruct capability_secret as Base from capability_proof bytes
