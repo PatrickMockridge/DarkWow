@@ -178,7 +178,13 @@ impl DaoEscrowHarness {
             instance_seed: [0u8; 32],
         };
 
-        let mut call_data = vec![];
+        // The selector IS part of the call data: the runner submits `call_data` verbatim
+        // (`uniform_runner.rs:246-249`), and the contract's `initialize_get_metadata` decodes
+        // `data[1..]`. Without the `0x00` this was 161 bytes of params and a 160-byte slice, so the
+        // decode failed, the metadata arm returned its bare `vec![]`, and the host read that as the
+        // documented rejection signal — which is how `test_heavyweight_dao_escrow` died at height 2
+        // with "EMPTY metadata" while the register recorded only the symptom.
+        let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode());
 
         Ok(InitializeResult { call_data, public_inputs, proof })
