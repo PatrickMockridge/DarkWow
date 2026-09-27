@@ -51,17 +51,11 @@ impl EncodeResult for Vec<u8> {
 
 #[test]
 fn test_purse_encode_roundtrip() {
-    use dwow_purse_contract::model::{Purse, PurseId, DepositParams, WithdrawParams,
+    // The `Purse` record's round-trip stood here; the struct is removed. It was a "future schema" that
+    // no entrypoint read, and the owner check it would have made possible has no operand — see the note
+    // in `purse/src/model/mod.rs` where it lived.
+    use dwow_purse_contract::model::{DepositParams, WithdrawParams,
         Balance, Amount, StateNonce, MerklePosition};
-
-    let purse = Purse {
-        version: 0,
-        purse_id: PurseId(pallas::Base::from(99u64)),
-        token_commit: pallas::Base::from(1u64),
-        balance_commit: dummy_point(),
-        owner_commit: pallas::Base::from(2u64),
-    };
-    assert_roundtrip!(Purse, purse);
 
     let path = [dummy_merkle_node(); 32];
     let deposit = DepositParams {

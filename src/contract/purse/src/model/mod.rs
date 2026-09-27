@@ -1,5 +1,5 @@
 use crate::error::PurseError;
-use dwow_sdk::{crypto::{pasta_prelude::PrimeField, MerkleNode, Nullifier}, error::ContractError, pasta::{group::GroupEncoding, pallas}};
+use dwow_sdk::{blockchain::SerializedLen, crypto::{pasta_prelude::PrimeField, MerkleNode, Nullifier}, error::ContractError, pasta::pallas};
 
 // ============================================================================
 // TOTAL BYTE READS
@@ -24,15 +24,9 @@ fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], Con
         })
 }
 
-/// Read exactly one byte at `offset` — total, for the same reason as [`read_field`].
-fn read_byte(data: &[u8], offset: usize) -> Result<u8, ContractError> {
-    data.get(offset).copied().ok_or_else(|| {
-        ContractError::IoError(format!(
-            "truncated byte at offset {offset}, buffer has {}",
-            data.len()
-        ))
-    })
-}
+// `read_byte` lived here — for the three one-byte proof-length prefixes and the `Purse` record's
+// version byte. All four are gone, so the only caller that needed a bare byte is gone and the helper
+// with it.
 
 /// Borrow exactly `len` bytes at `offset` — total, for the same reason as [`read_field`]. Borrowed
 /// rather than copied, so a nested `decode` can take the sub-slice directly.
@@ -45,14 +39,9 @@ fn read_slice(data: &[u8], offset: usize, len: usize) -> Result<&[u8], ContractE
     })
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)] pub struct PurseId(pub pallas::Base);
-impl PurseId {
-    pub fn inner(&self) -> pallas::Base { self.0 }
-    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
-    pub fn from_bytes(bytes: &[u8; 32]) -> Option<Self> { pallas::Base::from_repr(*bytes).into_option().map(PurseId) }
-    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("PurseId: expected 32 bytes, got {}", data.len()))); } Self::from_bytes(&read_field::<32>(data, 0)?).ok_or_else(|| ContractError::IoError("PurseId: invalid field element".into())) }
-}
+// `PurseId` lived here. The `Purse` record was its only user, and both are gone — `purse_id` is not on
+// the wire (`privacy.md` §5.5), the host never names one, and the prover's `derived = "purse_id"` rule
+// is a different thing entirely: a `DerivedRule` in `src/sdk/src/prover.rs`, not this type.
 
 /// Amount transferred in a single Purse operation.
 /// Non-zero by construction — zero amounts are rejected at decode.
@@ -100,17 +89,25 @@ impl StateNonce {
     pub fn from_repr(b: [u8; 32]) -> Option<Self> { pallas::Base::from_repr(b).into_option().map(Self) }
 }
 
-/// On-chain Purse representation (future schema).
-/// Not yet used by entrypoints — currently only exercised in integration tests.
-/// Encoded as 129 bytes: version(1) + purse_id(32) + token_commit(32) +
-/// balance_commit(32) + owner_commit(32).
-/// When wire-format usage begins, this doc comment must be removed.
-#[derive(Debug, Clone)] pub struct Purse { pub version: u8, pub purse_id: PurseId, pub token_commit: pallas::Base, pub balance_commit: pallas::Point, pub owner_commit: pallas::Base }
-impl Purse {
-    pub const ENCODED_SIZE: usize = 129;
-    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut b=Vec::with_capacity(129); b.push(self.version); b.extend_from_slice(&self.purse_id.to_bytes()); b.extend_from_slice(&self.token_commit.to_repr()); b.extend_from_slice(&self.balance_commit.to_bytes()); b.extend_from_slice(&self.owner_commit.to_repr()); Ok(b) }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len()!=129 { return Err(ContractError::IoError(format!("Purse: expected 129 bytes, got {}", data.len()))); } Ok(Purse{version:read_byte(data,0)?,purse_id:PurseId::decode(read_slice(data,1,32)?)?,token_commit:Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data,33)?)).ok_or_else(||ContractError::IoError("Purse: invalid token_commit".into()))?,balance_commit:Option::<pallas::Point>::from(pallas::Point::from_bytes(&read_field::<32>(data,65)?)).ok_or_else(||ContractError::IoError("Purse: invalid balance_commit".into()))?,owner_commit:Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data,97)?)).ok_or_else(||ContractError::IoError("Purse: invalid owner_commit".into()))?}) }
-}
+// The `Purse` record — `version`, `purse_id`, `token_commit`, `balance_commit`, `owner_commit`, 129
+// bytes — lived here, described in its own doc comment as a "future schema. Not yet used by
+// entrypoints — currently only exercised in integration tests."
+//
+// **Removed rather than wired, and the reason is a measurement.** The re-wire programme called for
+// wiring it: `initialize` would create it and deposit/withdraw would read it, which is what would make
+// the host-level owner check constructible. Nothing can read it. A deposit or withdrawal carries no
+// owner — `DepositParams` has no such field, and the owner is bound *inside* the circuit, which is the
+// point of the leaf being a commitment: `new_leaf = poseidon_hash(DOMAIN, purse_id, new_balance,
+// state_nonce, owner_pub)` cannot be inverted by the host, and `purse_id` and `state_nonce` were
+// deliberately taken off the wire. So an owner check would need a plaintext owner field added to a
+// genesis contract's call data, which is exactly what `privacy.md` §2 and §5.5 and
+// `scripts/check-l1-wire-conformance.sh` exist to prevent — and it would be a *second* source of truth
+// beside the proof that already binds the owner, the argument `OBL-C101` records for not re-counting a
+// threshold the child contract already enforces.
+//
+// A record written and never read is dead state in a new place, so it goes. Everything the record
+// claimed to hold is in the state that is actually used: the merkle leaf holds the balance and the
+// owner commitment, and `Purse::derive_*` on the client side holds the derivation.
 
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { if data.len()!=32 { return Err(ContractError::IoError(format!("read_base: expected 32 bytes, got {}", data.len()))); } Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 0)?)).ok_or_else(||ContractError::IoError("invalid base".into())) }
 type MerklePath = [MerkleNode; 32];
@@ -163,7 +160,13 @@ impl DepositParams {
         b.extend_from_slice(&self.old_commit_x.to_repr()); b.extend_from_slice(&self.old_commit_y.to_repr());
         b.extend_from_slice(&self.new_commit_x.to_repr()); b.extend_from_slice(&self.new_commit_y.to_repr());
         b.extend_from_slice(&self.leaf_pos.to_le_bytes()); b.extend_from_slice(&pb);
-        b.push(u8::try_from(self.proof.len()).map_err(|_|ContractError::IoError("proof too long".into()))?);
+        // `SerializedLen`, not a bare `u8`. The prefix was one byte, decoded with `read_byte`, so a
+        // proof of 256 bytes or more could not be encoded at all (`u8::try_from` failed) and a
+        // *truncated* frame could not be told from a short one — the same class `OBL-C150` records for
+        // `dao_escrow`, and the reason `SerializedLen` exists: it is always four bytes, it refuses a
+        // length that does not fit, and its decoder is the exact inverse of its encoder.
+        let pl = SerializedLen::try_from_len(self.proof.len())?;
+        b.extend_from_slice(&pl.to_le_bytes());
         b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b.extend_from_slice(&self.asset_id.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -177,9 +180,16 @@ impl DepositParams {
         let ncx=read_base(read_slice(data,184,32)?)?; let ncy=read_base(read_slice(data,216,32)?)?;
         let lp=MerklePosition::from_le_bytes(read_field::<4>(data,248)?);
         let mut mp=[MerkleNode::from_base(pallas::Base::zero());32]; for (i,slot) in mp.iter_mut().enumerate() { *slot=read_merkle_node(read_slice(data,hdr.saturating_add(i.saturating_mul(32)),32)?)?; }
-        let pe=hdr+1024usize; let pl=usize::from(read_byte(data,pe)?);
-        if data.len()<pe+1usize+pl+96usize { return Err(PurseError::DecodeFailure{field:"DepositParams".into()}.into()); }
-        let proof=read_slice(data,pe+1,pl)?.to_vec(); let p2=pe+1+pl;
+        let pe=hdr+1024usize; let pl=SerializedLen::from_le_bytes(read_field::<4>(data,pe)?).to_usize();
+        let p2 = pe.saturating_add(SerializedLen::ENCODED_SIZE).saturating_add(pl);
+        // **A minimum, not an equality, and that is load-bearing.** The params are the *front* of the
+        // payload, not the whole of it: call data is `selector ++ params ++ AEAD note`, and the note is
+        // what the wallet scans for the produced state. An equality here refuses every real call — which
+        // is how this was found, on the first deposit of `test_heavyweight_purse`. The length prefix
+        // still does its job: it says where the proof ends, so the three trailing fields are read at the
+        // right offsets whatever follows them.
+        if data.len() < p2.saturating_add(96) { return Err(PurseError::DecodeFailure{field:"DepositParams".into()}.into()); }
+        let proof=read_slice(data,pe+SerializedLen::ENCODED_SIZE,pl)?.to_vec();
         let tb=read_base(read_slice(data,p2,32)?)?; let tn=read_base(read_slice(data,p2+32,32)?)?; let aid=read_base(read_slice(data,p2+64,32)?)?;
         Ok(DepositParams{old_balance:ob,deposit_amount:da,new_balance:nb,nullifier:nf,expected_root:er,new_leaf:nl,old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:lp,merkle_path:mp,proof,tx_binding:tb,tx_nonce:tn,asset_id:aid})
     }
@@ -202,7 +212,10 @@ impl DepositUpdate { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { le
     pub asset_id: pallas::Base,
 }
 
-// WithdrawParams shares DepositParams' wire format (hdr=236).
+// WithdrawParams shares DepositParams' wire format (hdr=252, not 236: the header is the eleven fixed
+// fields before the merkle path — 8+8+8+32+32+32+32+32+32+32+4 — and the number written here had been
+// stale for long enough that a reader checking it against the encoder would conclude the encoder was
+// wrong).
 // encode/decode delegates to DepositParams with withdraw_amount aliased as
 // deposit_amount. This is intentional — the two operations have identical
 // payload layout. If DepositParams' encoding changes, verify WithdrawParams
@@ -242,7 +255,10 @@ impl BalanceParams {
         b.extend_from_slice(&self.token_commit.to_repr()); b.extend_from_slice(&self.balance_commit_x.to_repr());
         b.extend_from_slice(&self.balance_commit_y.to_repr()); b.extend_from_slice(&self.leaf_pos.to_le_bytes());
         b.extend_from_slice(&pb);
-        b.push(u8::try_from(self.proof.len()).map_err(|_|ContractError::IoError("proof too long".into()))?);
+        // `SerializedLen`, for the reason stated at `DepositParams::encode` — the third and last bare
+        // `u8` proof prefix in this file.
+        let pl = SerializedLen::try_from_len(self.proof.len())?;
+        b.extend_from_slice(&pl.to_le_bytes());
         b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -251,9 +267,12 @@ impl BalanceParams {
         let bcx=read_base(read_slice(data,96,32)?)?; let bcy=read_base(read_slice(data,128,32)?)?;
         let lp=MerklePosition::from_le_bytes(read_field::<4>(data,160)?);
         let mut mp=[MerkleNode::from_base(pallas::Base::zero());32]; for (i,slot) in mp.iter_mut().enumerate() { *slot=read_merkle_node(read_slice(data,hdr.saturating_add(i.saturating_mul(32)),32)?)?; }
-        let pe=hdr+1024usize; let pl=usize::from(read_byte(data,pe)?);
-        if data.len()<pe+1usize+pl+64usize { return Err(PurseError::DecodeFailure{field:"BalanceParams".into()}.into()); }
-        let proof=read_slice(data,pe+1,pl)?.to_vec(); let p2=pe+1+pl;
+        let pe=hdr+1024usize; let pl=SerializedLen::from_le_bytes(read_field::<4>(data,pe)?).to_usize();
+        let p2 = pe.saturating_add(SerializedLen::ENCODED_SIZE).saturating_add(pl);
+        // A minimum, for the reason stated at `DepositParams::decode`: the payload continues past the
+        // params with the caller's note.
+        if data.len() < p2.saturating_add(64) { return Err(PurseError::DecodeFailure{field:"BalanceParams".into()}.into()); }
+        let proof=read_slice(data,pe+SerializedLen::ENCODED_SIZE,pl)?.to_vec();
         let tb=read_base(read_slice(data,p2,32)?)?; let tn=read_base(read_slice(data,p2+32,32)?)?;
         Ok(BalanceParams{derived_purse_id:dpi,expected_root:er,token_commit:tc,balance_commit_x:bcx,balance_commit_y:bcy,leaf_pos:lp,merkle_path:mp,proof,tx_binding:tb,tx_nonce:tn})
     }

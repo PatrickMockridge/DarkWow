@@ -1,20 +1,9 @@
 //! Integration tests for the Purse contract — data model encode/decode round-trips.
 //! Updated for L1 type system (Part C §C.3.2): Amount, Balance, SDK Nullifier.
 
-use dwow_purse_contract::model::{Amount, Balance, BalanceParams, DepositParams, MerklePosition, Purse, PurseId, StateNonce, WithdrawParams};
-use dwow_sdk::crypto::{pasta_prelude::PrimeField, Keypair, MerkleNode, Nullifier, PublicKey, SecretKey};
-use dwow_sdk::pasta::{group::GroupEncoding, pallas};
-
-fn dummy_pubkey() -> PublicKey {
-    Keypair::new(SecretKey::from_base(pallas::Base::from(42))).public
-}
-
-fn dummy_point() -> pallas::Point {
-    let sk = SecretKey::from_base(pallas::Base::from(7));
-    let pk = Keypair::new(sk).public;
-    pallas::Point::from_bytes(&pk.to_bytes()).into_option()
-        .expect("valid point from keypair")
-}
+use dwow_purse_contract::model::{Amount, Balance, BalanceParams, DepositParams, MerklePosition, WithdrawParams};
+use dwow_sdk::crypto::{pasta_prelude::PrimeField, MerkleNode, Nullifier};
+use dwow_sdk::pasta::pallas;
 
 fn dummy_merkle_node() -> MerkleNode {
     MerkleNode::from_base(pallas::Base::from(1u64))
@@ -63,27 +52,10 @@ fn test_balance_roundtrip() {
     assert_eq!(b.inner(), c.inner());
 }
 
-#[test]
-fn test_purse_encode_decode_roundtrip() {
-    let purse = Purse {
-        version: 0,
-        purse_id: PurseId(pallas::Base::from(99u64)),
-        token_commit: pallas::Base::from(1u64),
-        balance_commit: dummy_point(),
-        owner_commit: pallas::Base::from(2u64),
-    };
-
-    let encoded = purse.encode().expect("encode must succeed");
-    assert_eq!(encoded.len(), 129, "Purse must encode to exactly 129 bytes");
-
-    let decoded = Purse::decode(&encoded).expect("round-trip must succeed");
-    assert_eq!(decoded.version, purse.version);
-    assert_eq!(decoded.purse_id.inner(), purse.purse_id.inner());
-    assert_eq!(decoded.token_commit, purse.token_commit);
-
-    let re_encoded = purse.encode().expect("re-encode must succeed");
-    assert_eq!(re_encoded, encoded, "encode must be deterministic");
-}
+// `test_purse_encode_decode_roundtrip` — the `Purse` record's 129-byte round-trip — stood here. The
+// record is removed: it was a "future schema" that no entrypoint read, and the host-level owner check it
+// would have made possible has no operand, because a deposit carries no owner and the one the circuit
+// binds is not recoverable from the leaf. The note in `src/model/mod.rs` states the measurement.
 
 #[test]
 fn test_deposit_params_encode_decode_roundtrip() {
@@ -182,7 +154,6 @@ fn test_balance_params_encode_decode_roundtrip() {
 
 #[test]
 fn test_decode_rejects_empty() {
-    assert!(Purse::decode(&[]).is_err());
     assert!(DepositParams::decode(&[]).is_err());
     assert!(WithdrawParams::decode(&[]).is_err());
     assert!(BalanceParams::decode(&[]).is_err());

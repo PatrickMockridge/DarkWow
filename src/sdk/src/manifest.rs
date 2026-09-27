@@ -634,11 +634,11 @@ pub fn encode_params_values(
     let lookup = |name: &str| values.iter().find(|(n, _)| n == name).map(|(_, v)| v);
     let mut buf = Vec::new();
     for field in schema {
-        // `proof` is the contract's u8-length-prefixed ZK-proof placeholder; the
-        // real proof travels in the tx witness, so it is always empty on the wire
-        // (one 0x00 length byte). It is never user-supplied or witness-tagged.
+        // `proof` is the contract's `SerializedLen`-prefixed ZK-proof placeholder; the real proof
+        // travels in the tx witness, so it is always empty on the wire — four `0x00` bytes, matching
+        // `SerializedLen::ENCODED_SIZE`. It is never user-supplied or witness-tagged.
         if field.param_type == "proof" {
-            buf.push(0u8);
+            buf.extend_from_slice(&0u32.to_le_bytes());
             continue
         }
         let val = lookup(&field.name);
@@ -690,7 +690,12 @@ pub fn field_wire_len(param_type: &str) -> Result<usize, String> {
         "pallas_base" | "asset_id" | "func_id" | "contract_id" | "public_key" => Ok(32),
         "pallas_scalar" => Ok(32),
         "merkle_path" => Ok(32 * 32),
-        "proof" => Ok(1),
+        // Four, not one. The convention was a bare `u8` length prefix, and `purse` and `box` — the two
+        // contracts whose manifests declare a `proof` parameter — both used it. Both are
+        // `SerializedLen` now (always four bytes; the class `OBL-C150` records), so this models what
+        // the contracts actually write. A caller reading one byte here built params three bytes short
+        // of what the contract's decoder requires.
+        "proof" => Ok(4),
         other => Err(format!("field_wire_len: unknown type '{other}'")),
     }
 }

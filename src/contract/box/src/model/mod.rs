@@ -28,15 +28,8 @@ fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], Con
         })
 }
 
-/// Read exactly one byte at `offset` — total, for the same reason as [`read_field`].
-fn read_byte(data: &[u8], offset: usize) -> Result<u8, ContractError> {
-    data.get(offset).copied().ok_or_else(|| {
-        ContractError::IoError(format!(
-            "truncated byte at offset {offset}, buffer has {}",
-            data.len()
-        ))
-    })
-}
+// `read_byte` lived here, for the two one-byte proof-length prefixes. Both are `SerializedLen` now, so
+// the only caller that needed a bare byte is gone and the helper with it.
 
 /// Borrow exactly `len` bytes at `offset` — total, for the same reason as [`read_field`]. Borrowed
 /// rather than copied, so a nested `decode` can take the sub-slice directly.
@@ -124,7 +117,13 @@ impl PutParams {
         b.extend_from_slice(&self.new_contents_commit.to_repr()); b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.expected_root.to_bytes()); b.extend_from_slice(&self.new_leaf.to_bytes());
         b.extend_from_slice(&self.leaf_pos.to_le_bytes()); b.extend_from_slice(&path_bytes);
-        b.push(u8::try_from(self.proof.len()).map_err(|_| ContractError::IoError("proof too long".into()))?);
+        // `SerializedLen`, not a bare `u8`: it is always four bytes, refuses a length that does not
+        // fit, and its decoder is the exact inverse of its encoder. With one byte a proof of 256+
+        // bytes could not be encoded at all, and a truncated frame could not be told from a short one
+        // — the class `OBL-C150` records. `purse` was converted in the same pass, so this is now the
+        // convention every contract in the tree follows and the one the SDK's manifest models.
+        let pl = dwow_sdk::blockchain::SerializedLen::try_from_len(self.proof.len())?;
+        b.extend_from_slice(&pl.to_le_bytes());
         b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -136,9 +135,14 @@ impl PutParams {
         let leaf_pos = MerklePosition::from_le_bytes(read_field::<4>(data, 192)?);
         let mut merkle_path = [MerkleNode::from_base(pallas::Base::zero()); 32];
         for (i, slot) in merkle_path.iter_mut().enumerate() { *slot = read_merkle_node(read_slice(data, hdr.saturating_add(i.saturating_mul(32)), 32)?)?; }
-        let path_end = hdr + 1024usize; let proof_len = usize::from(read_byte(data, path_end)?);
-        if data.len() < path_end + 1usize + proof_len + 64usize { return Err(BoxError::DecodeFailure{field:"PutParams".into()}.into()); }
-        let proof = read_slice(data, path_end+1, proof_len)?.to_vec(); let pos2 = path_end + 1usize + proof_len;
+        let path_end = hdr + 1024usize;
+        let proof_len = dwow_sdk::blockchain::SerializedLen::from_le_bytes(read_field::<4>(data, path_end)?).to_usize();
+        let pos2 = path_end.saturating_add(dwow_sdk::blockchain::SerializedLen::ENCODED_SIZE).saturating_add(proof_len);
+                // A minimum, not an equality: the payload is `selector ++ params ++ AEAD note`, so the
+        // params are its front and something follows them. See `purse`'s note — the same shape was
+        // measured there by a failing first deposit.
+        if data.len() < pos2.saturating_add(64) { return Err(BoxError::DecodeFailure{field:"PutParams".into()}.into()); }
+        let proof = read_slice(data, path_end+dwow_sdk::blockchain::SerializedLen::ENCODED_SIZE, proof_len)?.to_vec();
         let tx_binding = read_base(read_slice(data, pos2, 32)?)?; let tx_nonce = read_base(read_slice(data, pos2+32, 32)?)?;
         Ok(PutParams { new_state_nonce, old_contents_commit, new_contents_commit, nullifier, expected_root, new_leaf, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
     }
@@ -187,7 +191,13 @@ impl TakeParams {
         b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.expected_root.to_bytes()); b.extend_from_slice(&self.leaf_pos.to_le_bytes());
         b.extend_from_slice(&path_bytes);
-        b.push(u8::try_from(self.proof.len()).map_err(|_| ContractError::IoError("proof too long".into()))?);
+        // `SerializedLen`, not a bare `u8`: it is always four bytes, refuses a length that does not
+        // fit, and its decoder is the exact inverse of its encoder. With one byte a proof of 256+
+        // bytes could not be encoded at all, and a truncated frame could not be told from a short one
+        // — the class `OBL-C150` records. `purse` was converted in the same pass, so this is now the
+        // convention every contract in the tree follows and the one the SDK's manifest models.
+        let pl = dwow_sdk::blockchain::SerializedLen::try_from_len(self.proof.len())?;
+        b.extend_from_slice(&pl.to_le_bytes());
         b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -198,9 +208,14 @@ impl TakeParams {
         let leaf_pos = MerklePosition::from_le_bytes(read_field::<4>(data, 96)?);
         let mut merkle_path = [MerkleNode::from_base(pallas::Base::zero()); 32];
         for (i, slot) in merkle_path.iter_mut().enumerate() { *slot = read_merkle_node(read_slice(data, hdr.saturating_add(i.saturating_mul(32)), 32)?)?; }
-        let path_end = hdr + 1024usize; let proof_len = usize::from(read_byte(data, path_end)?);
-        if data.len() < path_end + 1usize + proof_len + 64usize { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
-        let proof = read_slice(data, path_end+1, proof_len)?.to_vec(); let pos2 = path_end + 1usize + proof_len;
+        let path_end = hdr + 1024usize;
+        let proof_len = dwow_sdk::blockchain::SerializedLen::from_le_bytes(read_field::<4>(data, path_end)?).to_usize();
+        let pos2 = path_end.saturating_add(dwow_sdk::blockchain::SerializedLen::ENCODED_SIZE).saturating_add(proof_len);
+                // A minimum, not an equality: the payload is `selector ++ params ++ AEAD note`, so the
+        // params are its front and something follows them. See `purse`'s note — the same shape was
+        // measured there by a failing first deposit.
+        if data.len() < pos2.saturating_add(64) { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
+        let proof = read_slice(data, path_end+dwow_sdk::blockchain::SerializedLen::ENCODED_SIZE, proof_len)?.to_vec();
         let tx_binding = read_base(read_slice(data, pos2, 32)?)?; let tx_nonce = read_base(read_slice(data, pos2+32, 32)?)?;
         Ok(TakeParams { contents_commit, nullifier, expected_root, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
     }

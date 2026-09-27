@@ -7685,7 +7685,7 @@ class ParamType(Enum):
     STRING = "string"
     BYTES = "bytes"                      # u32 length-prefixed (wallet convention)
     MERKLE_PATH = "merkle_path"          # 32 × 32-byte MerklePath
-    PROOF = "proof"                      # u8 length-prefixed (contract convention; empty on the wire)
+    PROOF = "proof"                      # `SerializedLen`-prefixed, 4 bytes (empty on the wire)
 
 
 # Closed wire-type vocabulary for `[[parameters]]` (T1): every manifest
@@ -8548,7 +8548,9 @@ def field_wire_len(field: ParameterField) -> int:
     This is the spec-level wire-layout source of truth: a corrected manifest's
     `[[parameters]]` must sum to the contract struct's encoded length. Variable
     `bytes` fields are excluded (the caller adds their runtime length); `proof`
-    is always the 1-byte u8 length prefix (0) with zero payload on the wire.
+    is always the `SerializedLen` prefix — four bytes, `0x00000000` — with zero
+    payload on the wire, which is what `purse` and `box` both encode and what
+    `src/sdk/src/manifest.rs`'s `field_wire_len` reports.
     """
     t = field.type
     if t in ("u64",):
@@ -8562,7 +8564,7 @@ def field_wire_len(field: ParameterField) -> int:
     if t == "merkle_path":
         return 32 * 32
     if t == "proof":
-        return 1  # u8 length prefix (0)
+        return 4  # `SerializedLen` prefix (0)
     raise ValueError(f"field_wire_len: unknown fixed-width type '{t}'")
 
 
@@ -9454,7 +9456,7 @@ def test_wire_layout_matches_contract_structs():
         F("leaf_pos", "u32", witness=9), F("merkle_path", "merkle_path", witness=10),
         F("proof", "proof"), F("tx_binding", "pallas_base", witness=13), F("tx_nonce", "pallas_base"),
     ]
-    assert schema_wire_len(box_put) == 1285, schema_wire_len(box_put)
+    assert schema_wire_len(box_put) == 1288, schema_wire_len(box_put)
 
     # box take (TakeParams): 8 fields → 1189 bytes. Was 10/1253.
     box_take = [
@@ -9463,7 +9465,7 @@ def test_wire_layout_matches_contract_structs():
         F("merkle_path", "merkle_path", witness=7), F("proof", "proof"),
         F("tx_binding", "pallas_base", witness=10), F("tx_nonce", "pallas_base"),
     ]
-    assert schema_wire_len(box_take) == 1189, schema_wire_len(box_take)
+    assert schema_wire_len(box_take) == 1192, schema_wire_len(box_take)
 
     # purse deposit (DepositParams): 16 fields → 1373 bytes. Was 18/1437.
     purse_deposit = [
@@ -9477,7 +9479,7 @@ def test_wire_layout_matches_contract_structs():
         F("tx_binding", "pallas_base", witness=21), F("tx_nonce", "pallas_base"),
         F("asset_id", "pallas_base"),
     ]
-    assert schema_wire_len(purse_deposit) == 1373, schema_wire_len(purse_deposit)
+    assert schema_wire_len(purse_deposit) == 1376, schema_wire_len(purse_deposit)
 
     # purse withdraw (WithdrawParams): 16 fields → 1373 bytes, the same width as
     # deposit — `WithdrawParams::encode` delegates to `DepositParams` and only the
@@ -9496,7 +9498,7 @@ def test_wire_layout_matches_contract_structs():
         F("tx_binding", "pallas_base", witness=21), F("tx_nonce", "pallas_base"),
         F("asset_id", "pallas_base"),
     ]
-    assert schema_wire_len(purse_withdraw) == 1373, schema_wire_len(purse_withdraw)
+    assert schema_wire_len(purse_withdraw) == 1376, schema_wire_len(purse_withdraw)
 
     # purse balance (BalanceParams): 10 fields → 1253 bytes. Was 14/1357; `purse_id`,
     # `asset_id`, `balance` and `state_nonce` are all off the wire, and what identifies
@@ -9510,7 +9512,7 @@ def test_wire_layout_matches_contract_structs():
         F("proof", "proof"),
         F("tx_binding", "pallas_base"), F("tx_nonce", "pallas_base"),
     ]
-    assert schema_wire_len(purse_balance) == 1253, schema_wire_len(purse_balance)
+    assert schema_wire_len(purse_balance) == 1256, schema_wire_len(purse_balance)
 
     print("PASS: wire layout — [[parameters]] widths match contract *Params::encode")
 
