@@ -19,6 +19,11 @@ tracing = "0.1.44"
 dwow_core = { path = "../../../", features = ["zk"], optional = true }
 rand = { version = "0.8.5", optional = true }
 dwow_promissory_note_contract = { version = "0.1.0", path = "../promissory_note", features = ["no-entrypoint"] }
+# `ClaimV1` requires a `Box::TakeV1` child that consumes the escrow's own claim capability, and it
+# compares the child's `contents_commit` against the commitment the escrow derived. The params type
+# therefore crosses, exactly as `multisig`'s does for `dao_escrow` and for the same reason: reading a
+# field out of a foreign call by byte offset instead of decoding it is how the two drift.
+dwow_box_contract = { version = "0.1.0", path = "../box", features = ["no-entrypoint"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.8", features = ["custom"] }

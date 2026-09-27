@@ -200,7 +200,10 @@ pub const IDENTITY_CONTRACT_CAPABILITIES_TREE: &str = "capabilities";
 // ============================================================================
 
 /// Box contract ID key — stored in info tree for cross-contract validation
-pub const IDENTITY_CONTRACT_BOX_CONTRACT_ID: &[u8] = b"box_cid";
+// `IDENTITY_CONTRACT_BOX_CONTRACT_ID` (`box_cid`) lived here: a stored `BOX_CONTRACT_ID` written once at
+// init and never read, "for cross-contract child call validation" that no handler performs. Removed with
+// the note in `process_verify_capability_instruction` explaining why the possession check it named cannot
+// be written against the box wire as it stands.
 
 // Info tree
 /// Info tree - stores contract info (version, config)

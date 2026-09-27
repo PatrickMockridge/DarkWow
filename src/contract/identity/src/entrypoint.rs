@@ -29,7 +29,7 @@
 //! or additional details.
 
 use dwow_sdk::{
-    crypto::{BOX_CONTRACT_ID, ContractId, pasta_prelude::PrimeField, poseidon_hash, PublicKey,
+    crypto::{ContractId, pasta_prelude::PrimeField, poseidon_hash, PublicKey,
         schnorr::SchnorrPublic},
     dark_tree::DarkLeaf,
     error::ContractResult,
@@ -48,7 +48,6 @@ use crate::{
     IDENTITY_CONTRACT_ISSUERS_TREE, IDENTITY_CONTRACT_CONFIG_TREE,
     IDENTITY_CONTRACT_CAPABILITIES_TREE,
     IDENTITY_CONTRACT_INFO_TREE,
-    IDENTITY_CONTRACT_BOX_CONTRACT_ID,
     IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V2,
     IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V2,
 };
@@ -71,9 +70,11 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         Err(_) => wasm::db::db_init(cid, IDENTITY_CONTRACT_INFO_TREE)?,
     };
 
-    // Store BOX_CONTRACT_ID for cross-contract child call validation
-    let info_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_INFO_TREE)?;
-    wasm::db::db_set(info_db, IDENTITY_CONTRACT_BOX_CONTRACT_ID, &BOX_CONTRACT_ID.to_bytes())?;
+    // The `box_cid` key was written here — `BOX_CONTRACT_ID` under `IDENTITY_CONTRACT_BOX_CONTRACT_ID` —
+    // "for cross-contract child call validation" that no handler performs. One `db_set`, zero `db_get`,
+    // so it was dead state whose only purpose named a check nobody wrote. See the note at the end of
+    // `process_verify_capability_instruction` for why that check cannot be written against the box wire
+    // as it stands.
 
     // Initialize database trees with redeployment guards
     if wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE).is_err() {
@@ -668,13 +669,30 @@ fn process_verify_capability_instruction(
     // nullifier is already spent at issuance, so the write was a no-op and the check it was meant to
     // support was backwards.
     //
-    // STILL OPEN, and it is the last piece: *possession*. The credential is a box, and
-    // `IDENTITY_CONTRACT_BOX_CONTRACT_ID` is stored for precisely the `Box::Take` child call that
-    // proves the caller holds it — nothing requires that call, so a caller who can produce a valid
-    // credential's preimage (the issuer's and holder's keys, the schema, both attributes and the
-    // blind) still passes without holding the box. Everything else — that the credential exists, is
-    // live, is for this capability's schema and issuer, and that the predicate held over an attribute
-    // it actually committed to — is checked above. Remaining work of OBL-Z17.
+    // **Possession is not checked, and it cannot be checked through the box child as specified.** This
+    // is the last open piece of `OBL-Z17`, and the earlier note here said the credential "is a box" whose
+    // `Box::Take` child would prove holding it. Two things stop that:
+    //
+    //   * **Nothing requires the child.** No handler in this contract reads `children_indexes` at all,
+    //     so a caller who can produce a valid credential's preimage — the issuer's and holder's keys, the
+    //     schema, both attributes and the blind — passes without holding anything. That part is a missing
+    //     check rather than a missing mechanism.
+    //   * **The box wire cannot express it.** Even requiring the child would not deliver possession:
+    //     `TakeParams` exposes `contents_commit`, `nullifier`, `expected_root`, `leaf_pos`,
+    //     `merkle_path`, `tx_binding` and `tx_nonce` — and **no owner public key**. The box's proof
+    //     constrains `owner_pub == ec_mul_base(owner_secret, NULLIFIER_K)` and folds it into the leaf,
+    //     but the leaf is a commitment, so the parent sees only that *someone* who knew some secret put
+    //     and took a box. Comparing `contents_commit` against the credential's commitment would compare
+    //     a value the caller chose — anyone may put a box carrying any commitment — which is the
+    //     `OBL-C152` shape arriving through a child call instead of a params field.
+    //
+    // So the claim is **dropped rather than left standing**, and the `box_cid` key that was written "for
+    // cross-contract child call validation" is removed with it: it had one `db_set` and no reader, and
+    // what it named is what this note explains. What *is* checked is everything above — the credential
+    // exists, is live, is for this capability's schema and issuer, that the proof is about the stored
+    // credential, that the predicate held, over the capability's own attribute, at or above its floor.
+    // Closing possession needs either an owner key on the box wire or a credential-carried secret the
+    // proof can bind — both are changes to genesis contracts, and neither is this unit's.
 
     let update = VerifyCapabilityUpdateV1 {
         capability_id: params.capability_proof.capability_id,

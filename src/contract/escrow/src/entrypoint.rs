@@ -429,6 +429,9 @@ fn escrow_create_process_instruction_v1(
         created_at: wasm::util::get_verifying_block_height()?.get(),
         funded_at: None,
         instance_seed: params.instance_seed,
+        // Derived from this record's own id and value, so the claim box this escrow will accept is a
+        // function of the escrow itself — see the field's note and `ClaimV1`'s box check.
+        claim_box_contents: Escrow::derive_claim_box_contents(params.commitment, params.value),
     };
 
     let update = CreateEscrowUpdateV1 { escrow };
@@ -542,6 +545,18 @@ fn escrow_claim_process_instruction_v1(
     }
     validate_child_contract_id(&box_call.contract_id, &*BOX_CONTRACT_ID)?;
 
+    // **The box must be *this* escrow's.** Selector and contract id were the whole check, and they say
+    // only "a `Box::TakeV1` against the box contract" — so a caller who owned *any* box could satisfy
+    // this endpoint with it, consuming a capability that had nothing to do with the escrow. That is
+    // wrong-object substitution, and it is the reason a claim capability could not be said to exist.
+    //
+    // `contents_commit` is the first field of `TakeParams` on the wire, and the escrow's own recorded
+    // `claim_box_contents` is `poseidon_hash(DOMAIN, id, value)` — a public derivation, so whoever
+    // creates the box off-chain computes the same value and `Box::PutV1` folds it into the leaf. The
+    // comparison is what makes the child call a *claim capability* rather than a box-shaped formality.
+    let box_params = dwow_box_contract::model::TakeParams::decode(&box_call.data[1..])
+        .map_err(|_| EscrowError::InvalidChildCall)?;
+
     // Access databases
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
     let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_SPENT_FLAGS_TREE)?;
@@ -550,6 +565,17 @@ fn escrow_claim_process_instruction_v1(
     let escrow_data = wasm::db::db_get(escrows_db, &params.escrow_id.to_bytes())?
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
     let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
+
+    // **The wrong-object check, and it runs before the state check deliberately.** The commitment it
+    // compares against lives on the record, and the record is loaded above. A take of somebody else's
+    // box is refused here whether or not the escrow is funded, which is the order the child checks
+    // follow everywhere else in this contract: is this call *about* the right objects, then is the
+    // object in the right state. It also means a caller learns "wrong capability" rather than "not
+    // funded" when both are true, which is the more specific and more actionable of the two.
+    if box_params.contents_commit != escrow.claim_box_contents {
+        msg!("[ClaimV1] Error: the box taken is not this escrow's claim capability");
+        return Err(EscrowError::InvalidChildCall.into())
+    }
 
     // CRITICAL: Verify the escrow is in Funded state
     if escrow.state != EscrowState::Funded {
