@@ -80,9 +80,10 @@ pub enum DaoEscrowError {
     #[error("Invalid ZK proof")]
     InvalidZkProof,
 
-    #[error("Unauthorized: not claim proposer")]
-    NotClaimProposer,
-
+    // `NotClaimProposer` (Custom(19)) was retired here: `cancel_claim_v1` no longer compares the caller's
+    // pubkey to the proposal's proposer, because that comparison admitted anyone who knew a published key
+    // (`OBL-C152`). Cancellation is authorised by the endowment's group instead. The code 19 is left
+    // unmapped rather than reused, so a recorded code keeps its old meaning.
     #[error("Unauthorized: not DAO-Escrow owner")]
     NotOwner,
 
@@ -220,7 +221,6 @@ impl From<DaoEscrowError> for ContractError {
             DaoEscrowError::InvalidNullifier => Self::Custom(16),
             DaoEscrowError::DoubleSpend => Self::Custom(17),
             DaoEscrowError::InvalidZkProof => Self::Custom(18),
-            DaoEscrowError::NotClaimProposer => Self::Custom(19),
             DaoEscrowError::NotOwner => Self::Custom(20),
             DaoEscrowError::NotAuthorizedToWithdraw => Self::Custom(21),
             DaoEscrowError::VoteNotAuthorized => Self::Custom(22),
