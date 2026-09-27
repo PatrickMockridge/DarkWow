@@ -183,6 +183,20 @@ pub enum DaoEscrowError {
 
     #[error("Capability expired")]
     CapabilityExpired,
+
+    // ── `OBL-C151` governance approvals. Appended after `ChildContractIdMismatch` (52) so no
+    // existing `Custom(N)` moves: the register cites `Custom(43)` for `GovernanceNotActive`.
+    #[error("Governance approval names a different group than the endowment's")]
+    GovernanceApprovalForeignGroup,
+
+    #[error("Governance approval names a different action than the one being authorised")]
+    GovernanceApprovalWrongMessage,
+
+    #[error("Governance is already active for this endowment, and there is no rotation")]
+    GovernanceAlreadyActive,
+
+    #[error("This ownership proof has already been used")]
+    OwnershipProofReplayed,
 }
 
 impl From<DaoEscrowError> for ContractError {
@@ -240,6 +254,10 @@ impl From<DaoEscrowError> for ContractError {
             DaoEscrowError::ProposalAlreadyExecuted => Self::Custom(50),
             DaoEscrowError::CapabilityExpired => Self::Custom(51),
             DaoEscrowError::ChildContractIdMismatch => Self::Custom(52),
+            DaoEscrowError::GovernanceApprovalForeignGroup => Self::Custom(53),
+            DaoEscrowError::GovernanceApprovalWrongMessage => Self::Custom(54),
+            DaoEscrowError::GovernanceAlreadyActive => Self::Custom(55),
+            DaoEscrowError::OwnershipProofReplayed => Self::Custom(56),
         }
     }
 }

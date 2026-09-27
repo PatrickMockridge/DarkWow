@@ -66,6 +66,7 @@
 pub mod zkbins;
 
 pub mod init;
+pub mod update;
 pub mod pay_premium;
 pub mod propose_claim;
 pub mod resolve_dispute;

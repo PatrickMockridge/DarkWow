@@ -261,6 +261,10 @@ pub const PURSE_CONTRACT_ID_KEY: &[u8] = b"purse_cid";
 /// Box contract ID (genesis counter 9) — replaces hand-rolled capability proofs
 /// for governance roles (member_vote, board_treasury, board_endowment, dispute_arbitrator).
 pub const BOX_CONTRACT_ID_KEY: &[u8] = b"box_cid";
+/// MultiSig contract ID — the contract a governance approval child must target. A governance-gated
+/// endpoint validates that its `multisig::FinalizeV1` child is addressed here before reading the
+/// approval, so a child aimed at a different contract cannot stand in for one (`OBL-C151`).
+pub const MULTISIG_CONTRACT_ID_KEY: &[u8] = b"multisig_cid";
 
 /// Thread-safe flag for deterministic ZK proof generation.
 /// Set by tests before endpoint exercise to eliminate OsRng from collateral/debt

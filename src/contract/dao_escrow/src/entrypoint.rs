@@ -40,7 +40,7 @@
 //! ```
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID, AssetId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, BOX_CONTRACT_ID, ContractId, MULTISIG_CONTRACT_ID, PURSE_CONTRACT_ID, AssetId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas,
@@ -62,6 +62,7 @@ use crate::{
     BOX_CONTRACT_ID_KEY, PROMISSORY_NOTE_CONTRACT_ID_KEY,
     PURSE_CONTRACT_ID_KEY,
     IDENTITY_CONTRACT_ID_KEY,
+    MULTISIG_CONTRACT_ID_KEY,
 };
 
 // ============================================================================
@@ -114,6 +115,11 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_set(info_db, IDENTITY_CONTRACT_ID_KEY, &[0u8; 32])?;
     wasm::db::db_set(info_db, BOX_CONTRACT_ID_KEY, &BOX_CONTRACT_ID.to_bytes())?;
     wasm::db::db_set(info_db, PURSE_CONTRACT_ID_KEY, &PURSE_CONTRACT_ID.to_bytes())?;
+    // The REAL id, unlike `IDENTITY_CONTRACT_ID_KEY` above: that one is seeded `[0u8; 32]` and its reader
+    // treats zero as "skip the routing check" (fail-open). The governance helper treats zero as "refuse
+    // everything" (HAZOP H-11), so seeding zero here would fail every gate closed forever — `OBL-C151`
+    // again with a different field name (`OBL-C151`).
+    wasm::db::db_set(info_db, MULTISIG_CONTRACT_ID_KEY, &MULTISIG_CONTRACT_ID.to_bytes())?;
 
     // Initialize bullas tree (endowment instances)
     wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_BULLAS_TREE)?;
@@ -156,15 +162,18 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         DaoEscrowFunction::VoteClaimV1 => vote_claim_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::VerifyMemberCapabilityV1 => verify_member_cap_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::ResolveDisputeV1 => resolve_dispute_get_metadata(cid, call_idx, &calls),
-        DaoEscrowFunction::SetGovernanceConfigV1 => set_governance_config_get_metadata(cid, call_idx, &calls),
-        // The ten non-ZK functions below fall here. They must return an **encoded** empty
+        DaoEscrowFunction::UpdateV1 => update_get_metadata(cid, call_idx, &calls),
+        // The non-ZK functions below fall here. They must return an **encoded** empty
         // `zk_public_inputs`, not a bare `vec![]`: the host decodes the metadata as
         // `Vec<(String, Vec<Base>)>` (`execution.rs:423`), so a 0-byte buffer fails that decode and
         // is reported as "contract signalled EMPTY metadata, the documented rejection signal" —
         // which made every one of them uncallable (register OBL-C77). The functions are
-        // `UpdateV1`, `WithdrawV1`, `EndowmentWithdrawV1`, `TreasurySpendV1`,
+        // `WithdrawV1`, `EndowmentWithdrawV1`, `TreasurySpendV1`,
         // `EnableDrainProtectionV1`, `ExecuteClaimV1`, `RegisterCapabilityRequirementV1`,
-        // `CancelClaimV1`, `SetGovernanceActiveV1`, `DeactivateCapabilityRequirementV1`.
+        // `CancelClaimV1`, `SetGovernanceConfigV1`, `SetGovernanceActiveV1`,
+        // `DeactivateCapabilityRequirementV1`. `UpdateV1` left this list on 2026-09-27, when it became
+        // the caller of the `SetGovernanceConfigV2` ownership circuit (`OBL-C151`), and
+        // `SetGovernanceConfigV1` joined it: a retired no-op has no circuit to publish instances for.
         _ => {
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             let mut m = vec![];
@@ -495,28 +504,74 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
 }
 
 /// UpdateV1 instruction - update endowment parameters
+/// `UpdateV1` (0x01) — register the endowment's governance group (`OBL-C151`).
+///
+/// **The owner is proved, not asserted.** The accompanying `SetGovernanceConfigV2` proof derives
+/// `owner_pub = ec_mul_base(owner_secret, NULLIFIER_K)` and constrains the *exposed* `owner_pub_x/y` to
+/// it, so the coordinates read here off the params are known to whoever could build that proof. The
+/// comparison below is therefore against a value the caller has demonstrated knowledge of — unlike
+/// `withdraw_v1`'s owner path, which compares a public key against a public key and so gates nothing
+/// (`OBL-C152`).
+///
+/// **It is one-shot.** `owner_nullifier` is deterministic in `(owner_secret, dao_escrow_bulla)` because
+/// the circuit binds it, so recording it in the nullifiers tree makes a replay of the same proof
+/// impossible and a caller cannot mint a fresh nullifier per call. A record that already carries a group
+/// refuses a second write: there is no rotation in this design, so the choice is irreversible by
+/// construction.
 fn update_v1(cid: ContractId, params: model::UpdateParamsV1) -> ContractResult {
     msg!("[dao_escrow::update_v1] Updating DAO-Escrow: {:?}", params.bulla);
 
-    // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.bulla.to_bytes())?;
-    if endowment_data.is_none() {
-        msg!("[dao_escrow::update_v1] ERROR: Endowment not found");
-        return Err(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()).into())
+    let endowment_data = wasm::db::db_get(endowments_db, &params.bulla.to_bytes())?
+        .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
+    let mut endowment = model::DaoEscrow::decode(&endowment_data)?;
+
+    // The proof exposed these coordinates; the record's owner must be the same point.
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+    let (ox, oy) = params.owner_pubkey.xy().expect("pk not identity");
+    #[expect(clippy::expect_used, reason = "the stored owner is a PublicKey, so xy() is always Some")]
+    let (ex, ey) = endowment.owner_pubkey.xy().expect("pk not identity");
+    if ox != ex || oy != ey {
+        msg!("[dao_escrow::update_v1] ERROR: the proof's owner is not this endowment's owner");
+        return Err(DaoEscrowError::NotOwner.into())
     }
 
-    // Create update
-    let update = model::UpdateUpdateV1 { bulla: params.bulla };
+    let nullifiers_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &params.owner_nullifier.to_repr())? {
+        msg!("[dao_escrow::update_v1] ERROR: this ownership proof has already been used");
+        return Err(DaoEscrowError::OwnershipProofReplayed.into())
+    }
+
+    match params.multisig_group_id {
+        None => {}
+        Some(gid) => {
+            if gid == pallas::Base::zero() {
+                msg!("[dao_escrow::update_v1] ERROR: a zero group id does not activate governance");
+                return Err(DaoEscrowError::GovernanceNotActive.into())
+            }
+            if endowment.multisig_group_id != pallas::Base::zero() {
+                msg!("[dao_escrow::update_v1] ERROR: this endowment already has a governance group");
+                return Err(DaoEscrowError::GovernanceAlreadyActive.into())
+            }
+            endowment.multisig_group_id = gid;
+        }
+    }
+
+    let update =
+        model::UpdateUpdateV1 { bulla: params.bulla, endowment_bytes: endowment.encode() };
 
     msg!("[dao_escrow::update_v1] Endowment update prepared: {:?}", params.bulla);
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::UpdateV1 as u8], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[DaoEscrowFunction::UpdateV1 as u8], &update.encode()?[..]].concat())
 }
 
 /// UpdateV1 apply - update endowment parameters
-fn update_apply_v1(_cid: ContractId, update: model::UpdateUpdateV1) -> ContractResult {
+/// Blind write of what exec encoded — apply may not read (`OBL-C72`). This replaced a stub whose only
+/// statement was a comment claiming the write would happen "in a full implementation", which is the
+/// false statement that let the field go unset for as long as it did (`OBL-C151`).
+fn update_apply_v1(cid: ContractId, update: model::UpdateUpdateV1) -> ContractResult {
+    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
+    wasm::db::db_set(endowments_db, &update.bulla.to_bytes(), &update.endowment_bytes)?;
     msg!("[dao_escrow::update_apply_v1] Endowment updated: {:?}", update.bulla);
-    // In a full implementation, this would update the endowment state
     Ok(())
 }
 
@@ -645,9 +700,12 @@ fn withdraw_v1(
 
     // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled
     let self_ = &calls[call_idx];
-    if self_.children_indexes.len() != 1 {
+    // One child — the payment — plus, when governance is active, a second: the MultiSig approval at slot
+    // 1 (`OBL-C151`). The approval is appended rather than prepended because the payment's validation
+    // below runs *before* the endowment is loaded, so it must keep slot 0.
+    if self_.children_indexes.is_empty() || self_.children_indexes.len() > 2 {
         msg!(
-            "[WithdrawV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
+            "[WithdrawV1] Error: Expected 1 child call (promissory_note::transfer_v1), plus a MultiSig approval when governance is active; got {}",
             self_.children_indexes.len()
         );
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
@@ -698,7 +756,21 @@ fn withdraw_v1(
     // Verify authorization: governance-active uses capability proof,
     // otherwise fall back to owner pubkey check (backward compat)
     if endowment.multisig_group_id != pallas::Base::zero() {
-        // MultiSig composition: governance authorization via group membership
+        // The endowment's group authorises (`OBL-C151`). **This branch used to be an empty body with a
+        // comment** — so setting a group id removed the owner check below and left nothing, which is
+        // fail-open. Recording a group and leaving the branch unread is the R8 case: a check with no
+        // reader is not a check.
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+        let (rx, _ry) = params.recipient_pubkey.xy().expect("pk not identity");
+        let action = model::governance_message(
+            model::governance_role::WITHDRAW,
+            poseidon_hash([
+                params.dao_escrow_bulla.inner(),
+                pallas::Base::from(params.value),
+                rx,
+            ]),
+        );
+        require_governance_child(cid, call_idx, &calls, &endowment, 1, action)?;
     } else if endowment.owner_pubkey != params.recipient_pubkey {
         msg!("[dao_escrow::withdraw_v1] ERROR: Not authorized to withdraw");
         return Err(DaoEscrowError::NotAuthorizedToWithdraw.into())
@@ -852,10 +924,22 @@ fn endowment_withdraw_v1(
     // - Otherwise, reject (this function requires governance authorization)
     if let Some(proposal_id) = params.proposal_id {
         verify_proposal_approved(cid, proposal_id, params.dao_escrow_bulla.inner(), params.value, &params.recipient_pubkey)?;
-    } else if let Some(ref capability_proof) = params.capability_proof {
-        verify_capability_for_action(
-            cid, &endowment, capability_proof, "board_endowment",
-        )?;
+    } else if params.capability_proof.is_some() {
+        // The governance-approval path (`OBL-C151`). `capability_proof` is now only a *path selector* —
+        // nothing reads its contents, and a bare `is_some()` standing in for "the caller chose the
+        // governance path" is a phantom the field's name no longer describes. Removing it is its own
+        // unit: it changes `EndowmentWithdrawParamsV1`'s codec and the Python binding pins that struct.
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+        let (rx, _ry) = params.recipient_pubkey.xy().expect("pk not identity");
+        let action = model::governance_message(
+            model::governance_role::ENDOWMENT_WITHDRAW,
+            poseidon_hash([
+                params.dao_escrow_bulla.inner(),
+                pallas::Base::from(params.value),
+                rx,
+            ]),
+        );
+        require_governance_child(cid, call_idx, &calls, &endowment, 0, action)?;
     } else {
         msg!("[dao_escrow::endowment_withdraw_v1] ERROR: No authorization provided");
         return Err(DaoEscrowError::EndowmentWithdrawUnauthorized.into())
@@ -983,10 +1067,23 @@ fn treasury_spend_v1(
     // - Otherwise, reject (this function requires governance authorization)
     if params.proposal_id != pallas::Base::zero() {
         verify_proposal_approved(cid, params.proposal_id, params.dao_escrow_bulla.inner(), params.value, &params.recipient_pubkey)?;
-    } else if let Some(ref capability_proof) = params.capability_proof {
-        verify_capability_for_action(
-            cid, &endowment, capability_proof, "board_treasury",
-        )?;
+    } else if params.capability_proof.is_some() {
+        // The governance-approval path (`OBL-C151`); see the sibling note in `endowment_withdraw_v1`
+        // about the path-selector phantom. The action id is a `(bulla, value, recipient_x)` triple and
+        // not `params.proposal_id`: this branch is reached exactly when `proposal_id == 0`, so an
+        // id-based message would be zero for every call here and one approval of zero would authorise
+        // every treasury spend forever.
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+        let (rx, _ry) = params.recipient_pubkey.xy().expect("pk not identity");
+        let action = model::governance_message(
+            model::governance_role::TREASURY_SPEND,
+            poseidon_hash([
+                params.dao_escrow_bulla.inner(),
+                pallas::Base::from(params.value),
+                rx,
+            ]),
+        );
+        require_governance_child(cid, call_idx, &calls, &endowment, 0, action)?;
     } else {
         msg!("[dao_escrow::treasury_spend_v1] ERROR: No authorization provided");
         return Err(DaoEscrowError::EndowmentWithdrawUnauthorized.into())
@@ -1041,31 +1138,82 @@ fn treasury_spend_apply_v1(
 // ============================================================================
 
 /// Verify a capability proof against the capability requirements registered for this DAO.
-fn verify_capability_for_action(
+/// The approval a governance-gated endpoint requires (`OBL-C151`): the endowment's group's
+/// `multisig::FinalizeV1` (0x03) at `child_slot`, over `message`.
+///
+/// **The threshold is not re-counted here, and deliberately.** The multisig contract's `FinalizeV1`
+/// refuses below the group's threshold, and a child that fails fails this transaction — so "the group
+/// requires it" is enforced where the group's record lives. A count here would be a second source of
+/// truth that could disagree with the first; that is the argument `OBL-C101` records for
+/// `drain_protection`.
+///
+/// This replaces `verify_capability_for_action`, whose capability-requirement lookup could never
+/// succeed — nothing in this contract registers a requirement, so every governance call would have
+/// failed `CapabilityRequirementNotRegistered("board_endowment")` even once the gates were reachable.
+/// A function named for a capability that checks a MultiSig approval is itself a false statement in the
+/// tree (R11), which is why it is renamed rather than kept.
+///
+/// Every step has its own message so a rejection names its cause: this contract's red was recorded for
+/// a week as "EMPTY metadata" precisely because a refusal's reason was discarded.
+fn require_governance_child(
     cid: ContractId,
+    call_idx: usize,
+    calls: &[DarkLeaf<ContractCall>],
     endowment: &model::DaoEscrow,
-    capability_proof: &model::CapabilityProof,
-    role: &str,
+    child_slot: usize,
+    message: pallas::Base,
 ) -> ContractResult {
     if endowment.multisig_group_id == pallas::Base::zero() {
         return Err(DaoEscrowError::GovernanceNotActive.into());
     }
-
-    // Look up capability requirement for this role
-    let caps_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE)?;
-    let role_bytes = role.as_bytes().to_vec();
-    let req_data = wasm::db::db_get(caps_db, &role_bytes)?
-        .ok_or_else(|| DaoEscrowError::CapabilityRequirementNotRegistered(role.to_string()))?;
-    let _requirement: model::CapabilityRequirement = model::CapabilityRequirement::decode(&req_data)?;
-
-    // Verify the capability proof references the correct capability ID
-    // and the proof is well-formed (non-empty proof bytes or valid nullifier)
-    if capability_proof.proof.is_empty() && capability_proof.nullifier.inner() == pallas::Base::zero() {
-        msg!("[dao_escrow::verify_capability] ERROR: Invalid capability proof");
-        return Err(DaoEscrowError::CapabilityVerificationFailed.into());
+    if message == pallas::Base::zero() {
+        msg!("[dao_escrow::require_governance_child] ERROR: the action id is zero");
+        return Err(DaoEscrowError::GovernanceApprovalWrongMessage.into());
     }
 
-    msg!("[dao_escrow::verify_capability] Capability verified for role: {}", role);
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() <= child_slot {
+        msg!("[dao_escrow::require_governance_child] ERROR: expected an approval child at slot {}, got {} child(ren)",
+             child_slot, this_call.children_indexes.len());
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[child_slot];
+    if child_idx >= calls.len() {
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x03 {
+        msg!("[dao_escrow::require_governance_child] ERROR: expected multisig::FinalizeV1 (0x03), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(DaoEscrowError::InvalidChildCall.into())
+    }
+
+    // Validate the child targets the multisig contract (prevent cross-contract routing).
+    let info_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
+    let multisig_bytes = wasm::db::db_get(info_db, MULTISIG_CONTRACT_ID_KEY)?
+        .ok_or(DaoEscrowError::InvalidChildCall)?;
+    let multisig_cid: ContractId = deserialize(&multisig_bytes)?;
+    // HAZOP H-11: fail closed. Do not copy `identity_cid`'s zero-means-skip, which is fail-open.
+    if multisig_cid == ContractId::ZERO {
+        msg!("[dao_escrow::require_governance_child] ERROR: multisig contract id is not configured");
+        return Err(ContractError::IoError("multisig contract ID not configured".into()));
+    }
+    validate_child_contract_id(&child_call.contract_id, &multisig_cid)?;
+
+    let child = dwow_multisig_contract::model::FinalizeParamsV1::decode(
+        child_call.data.get(1..).unwrap_or_default(),
+    )
+    .map_err(|_| DaoEscrowError::InvalidChildCall)?;
+    if child.group_id.inner() != endowment.multisig_group_id {
+        msg!("[dao_escrow::require_governance_child] ERROR: the approval belongs to another group");
+        return Err(DaoEscrowError::GovernanceApprovalForeignGroup.into())
+    }
+    if child.message_hash != message {
+        msg!("[dao_escrow::require_governance_child] ERROR: the approval names a different action");
+        return Err(DaoEscrowError::GovernanceApprovalWrongMessage.into())
+    }
+
+    msg!("[dao_escrow::require_governance_child] Governance approval verified");
     Ok(())
 }
 
@@ -1350,22 +1498,39 @@ fn resolve_dispute_get_metadata(
 
 /// Metadata for SetGovernanceConfigV1 (0x0e) — SetGovernanceConfigV2 circuit
 /// Circuit constrain_instance order: [owner_pub_x, owner_pub_y, owner_nullifier, tx_binding, tx_nonce]
-fn set_governance_config_get_metadata(
+/// Metadata for `UpdateV1` (0x01) — the `SetGovernanceConfigV2` circuit (`OBL-C151`).
+///
+/// This function used to be `set_governance_config_get_metadata` and publish **five zeros** under the
+/// comment "SetGovernanceConfig was migrated to MultiSig; params struct removed" — a placeholder that
+/// described nothing, because the function it served is a retired no-op. The circuit was never removed,
+/// and it is the one that proves ownership: it derives `owner_pub = ec_mul_base(owner_secret,
+/// NULLIFIER_K)` and constrains the exposed `owner_pub_x/y` to it. `UpdateV1` is now its caller, so the
+/// vector below is the real one — the circuit's `constrain_instance` order — read from the params that
+/// rode with the proof.
+fn update_get_metadata(
     _cid: ContractId,
-    _call_idx: usize,
-    _calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
+    call_idx: usize,
+    calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
 ) -> Result<Vec<u8>, ContractError> {
-    // SetGovernanceConfig was migrated to MultiSig; params struct removed.
-    // Return five-element placeholder vector matching circuit public input count.
-    let owner_pub_x = pallas::Base::zero();
-    let owner_pub_y = pallas::Base::zero();
-    let owner_nullifier = pallas::Base::zero();
-    let tx_binding = pallas::Base::zero();
-    let tx_nonce_val = pallas::Base::zero();
+    let self_ = &calls[call_idx].data;
+    let params = model::UpdateParamsV1::decode(&self_.data[1..])?;
 
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+    let (owner_pub_x, owner_pub_y) = params.owner_pubkey.xy().expect("pk not identity");
+    // Constant `(0, 0)`, the convention this contract and its siblings use; the circuit constrains
+    // `tx_binding == poseidon_hash(3, tx_commitment, tx_nonce)`, so a literal zero here would require a
+    // preimage and make every proof unsatisfiable (the defect `OBL-C78` records for this contract).
+    let tx_binding = poseidon_hash([
+        pallas::Base::from(3u64),
+        pallas::Base::zero(),
+        pallas::Base::zero(),
+    ]);
+
+    // The circuit's `constrain_instance` order: owner_pub_x, owner_pub_y, owner_nullifier, tx_binding,
+    // tx_nonce.
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_SET_GOVERNANCE_CONFIG_NS_V2.to_string(),
-        vec![owner_pub_x, owner_pub_y, owner_nullifier, tx_binding, tx_nonce_val],
+        vec![owner_pub_x, owner_pub_y, params.owner_nullifier, tx_binding, pallas::Base::zero()],
     )];
 
     let mut metadata = vec![];
@@ -1380,8 +1545,8 @@ fn set_governance_config_get_metadata(
 /// ProposeClaimV1 instruction - creates a new governance proposal with capability verification
 fn propose_claim_v1(
     cid: ContractId,
-    _call_idx: usize,
-    _calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
+    call_idx: usize,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
     params: model::ProposeClaimParamsV1,
 ) -> ContractResult {
     msg!("[dao_escrow::propose_claim_v1] Processing claim proposal");
@@ -1401,6 +1566,17 @@ fn propose_claim_v1(
     if endowment.multisig_group_id == pallas::Base::zero() {
         return Err(DaoEscrowError::GovernanceNotActive.into());
     }
+    // ...and the group must have approved *this* claim (`OBL-C151`). The role tag is load-bearing: the
+    // vote below keys on the same `claim_id`, and a MultiSig approval is spend-once, so an untagged
+    // message would make the vote's approval name nullifiers this one had already spent.
+    require_governance_child(
+        cid,
+        call_idx,
+        &calls,
+        &endowment,
+        0,
+        model::governance_message(model::governance_role::PROPOSE_CLAIM, params.claim_id.inner()),
+    )?;
 
     // Verify proposal does not already exist
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
@@ -1463,8 +1639,8 @@ fn propose_claim_apply_v1(cid: ContractId, update: model::ProposeClaimUpdateV1) 
 /// VoteClaimV1 instruction - casts a vote on a pending proposal
 fn vote_claim_v1(
     cid: ContractId,
-    _call_idx: usize,
-    _calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
+    call_idx: usize,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
     params: model::VoteClaimParamsV1,
 ) -> ContractResult {
     msg!("[dao_escrow::vote_claim_v1] Processing vote");
@@ -1484,6 +1660,16 @@ fn vote_claim_v1(
     if endowment.multisig_group_id == pallas::Base::zero() {
         return Err(DaoEscrowError::GovernanceNotActive.into());
     }
+    // ...and the group must have approved this vote (`OBL-C151`), under its own role tag so it cannot
+    // reuse the proposal's spent approval.
+    require_governance_child(
+        cid,
+        call_idx,
+        &calls,
+        &endowment,
+        0,
+        model::governance_message(model::governance_role::VOTE_CLAIM, params.claim_id.inner()),
+    )?;
 
     // Load proposal
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
@@ -1836,9 +2022,29 @@ fn resolve_dispute_v1(
         return Err(DaoEscrowError::GovernanceNotActive.into());
     }
 
-    // MultiSig: dispute resolution via separate oracle MultiSig group.
-    // Oracle attestation threshold verified via FinalizeV1 child call.
+    // The action id is derived HERE rather than below, because the approval is over it and the check has
+    // to precede the work it authorises (`OBL-C151`). `dispute_id` =
+    // `poseidon_hash(proposal_id, attestation_count, payout_recipient_x)` — the contract's own
+    // derivation, not a caller-supplied id, so the fixture must compute it the same way.
     let attestation_count = params.attestations.len() as u64;
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+    let payout_recipient_x = params.payout_recipient.xy().expect("pk not identity").0;
+    let dispute_id = dwow_sdk::crypto::poseidon_hash([
+        params.proposal_id.inner(),
+        pallas::Base::from(attestation_count),
+        payout_recipient_x,
+    ]);
+    // The count stays a *minimum*: today's `is_empty()` check is not narrowed to exactly one, because a
+    // minimum causes no false rejection and narrowing would remove an acceptance the contract's own
+    // comment ("attestation verification calls + promissory_note transfer") says it intends.
+    require_governance_child(
+        cid,
+        call_idx,
+        &calls,
+        &endowment,
+        0,
+        model::governance_message(model::governance_role::RESOLVE_DISPUTE, dispute_id),
+    )?;
 
     // Verify sufficient endowment balance for payout
     // Purse::WithdrawV1 verifies balance >= payout_amount
@@ -1848,11 +2054,6 @@ if false {
 
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let payout_recipient_x = params.payout_recipient.xy().expect("pk not identity").0;
-    let dispute_id = dwow_sdk::crypto::poseidon_hash([
-        params.proposal_id.inner(),
-        pallas::Base::from(attestation_count),
-        payout_recipient_x,
-    ]);
 
     let consumed_ids: Vec<pallas::Base> = params.attestations.iter()
         .map(|a| a.attestation_id)

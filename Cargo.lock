@@ -2650,6 +2650,7 @@ dependencies = [
  "dwow-sdk",
  "dwow-serial",
  "dwow_core",
+ "dwow_multisig_contract",
  "dwow_promissory_note_contract",
  "getrandom 0.2.17",
  "rand 0.8.6",

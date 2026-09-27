@@ -15,6 +15,10 @@ serde = "1.0"
 sled = "0.34"
 tracing = "0.1.44"
 dwow_promissory_note_contract = { path = "../promissory_note", features = ["no-entrypoint"] }
+# `OBL-C151`: a governance-gated endpoint decodes the `multisig::FinalizeV1` child it requires and checks
+# the group it names, so the params type crosses with it — `drain_protection` carries the same dependency
+# for the same reason (`OBL-C101`).
+dwow_multisig_contract = { path = "../multisig", features = ["no-entrypoint"] }
 
 # The following dependencies are used for the client API
 dwow_core = { path = "../../../", features = ["zk"], optional = true }

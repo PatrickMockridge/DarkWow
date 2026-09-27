@@ -271,6 +271,60 @@ impl DaoEscrow {
 }
 
 // ============================================================================
+// GOVERNANCE APPROVALS (`OBL-C151`)
+// ============================================================================
+
+/// Domain constant for the message a governance group approves.
+///
+/// Eleven is the next free value: `src/sdk/src/crypto/constants.rs` registers 1..=10 (`NULLIFIER` 1 …
+/// `ATTRIBUTE` 10). It lives here rather than in that registry for a blast-radius reason — a change under
+/// `src/sdk/**` stales every artifact — and it does not need to be there for correctness: the domain only
+/// has to be distinct from every other `poseidon_hash` over this contract's values.
+pub const DAO_ESCROW_DOMAIN_GOVERNANCE_APPROVAL: pallas::Base =
+    pallas::Base::from_raw([11, 0, 0, 0]);
+
+/// Role tags, one per governance-gated action.
+///
+/// **These are load-bearing rather than decorative.** A MultiSig approval is spend-once: `FinalizeV1`
+/// consumes the nullifiers it names, and each is `H(1, member_secret, group_id, message_hash)`. The
+/// endpoints do not all key on distinct ids — `propose_claim_v1` and `vote_claim_v1` both take a
+/// `claim_id` — so with an untagged message the vote's approval would name nullifiers the proposal had
+/// already spent, the child would fail, and the parent with it.
+pub mod governance_role {
+    /// `ProposeClaimV1` — the action id is the claim id.
+    pub const PROPOSE_CLAIM: u8 = 1;
+    /// `VoteClaimV1` — the action id is the claim id.
+    pub const VOTE_CLAIM: u8 = 2;
+    /// `ResolveDisputeV1` — the action id is the derived dispute id.
+    pub const RESOLVE_DISPUTE: u8 = 3;
+    /// `EndowmentWithdrawV1` — the action id is `(bulla, value, recipient_x)`.
+    pub const ENDOWMENT_WITHDRAW: u8 = 4;
+    /// `TreasurySpendV1` — the action id is `(bulla, value, recipient_x)`.
+    pub const TREASURY_SPEND: u8 = 5;
+    /// `WithdrawV1` — the action id is `(bulla, value, recipient_x)`.
+    pub const WITHDRAW: u8 = 6;
+}
+
+/// What a governance group signs to authorise one action: `H(domain, role, action_id)`.
+///
+/// The contract and the fixture both call this rather than re-implementing it, so the message the group
+/// signs and the message the contract checks cannot drift — the same reason `MultiSigHarness::group_id`
+/// delegates to the multisig contract's own `derive_group_id`.
+///
+/// **Why the two spend endpoints use a triple and not an id**: `treasury_spend_v1` reaches its gate
+/// exactly when `proposal_id == 0`, so an id-based message there would be zero for every call and one
+/// approval of zero would authorise every spend forever. `(bulla, value, recipient_x)` binds the
+/// instance, the amount and the payee, and cannot be zero because `recipient_x` comes from a `PublicKey`
+/// that cannot be the identity.
+pub fn governance_message(role: u8, action_id: pallas::Base) -> pallas::Base {
+    poseidon_hash([
+        DAO_ESCROW_DOMAIN_GOVERNANCE_APPROVAL,
+        pallas::Base::from(role as u64),
+        action_id,
+    ])
+}
+
+// ============================================================================
 // MEMBERSHIP NOTE
 // ============================================================================
 
@@ -363,6 +417,18 @@ pub struct InitializeUpdateV1 {
 pub struct UpdateParamsV1 {
     /// DAO-Escrow bulla
     pub bulla: DaoEscrowBulla,
+    /// The governance group this call registers, if it registers one (`OBL-C151`). `None` writes
+    /// nothing; the record refuses a second write, so setting it is one-shot.
+    pub multisig_group_id: Option<pallas::Base>,
+    /// The endowment's owner. Its coordinates are what the accompanying proof exposes and constrains to
+    /// knowledge of `owner_secret` (`set_governance_config.zk`), so the handler compares the *exposed*
+    /// value rather than trusting this field — a public key on its own proves nothing (see `OBL-C152`).
+    pub owner_pubkey: PublicKey,
+    /// `poseidon_hash(DOMAIN_NULLIFIER, owner_pub_x, owner_pub_y, owner_secret, dao_escrow_bulla)`, which
+    /// the circuit binds to the secret and this contract records to make the ownership proof one-shot.
+    /// It travels in params because it is witness-derived: `get_metadata` publishes the expected instances
+    /// from params alone, so a value only the witness knew could not be published to compare against.
+    pub owner_nullifier: pallas::Base,
 }
 
 /// State update for `DaoEscrow::UpdateV1`
@@ -370,6 +436,10 @@ pub struct UpdateParamsV1 {
 pub struct UpdateUpdateV1 {
     /// Updated DAO-Escrow bulla
     pub bulla: DaoEscrowBulla,
+    /// `DaoEscrow::encode()`, as exec left it — carried so apply re-stores it without reading
+    /// (register OBL-C72). Before `OBL-C151` this struct carried only the bulla and its apply was a
+    /// no-op, so nothing an `UpdateV1` call could say ever reached the record.
+    pub endowment_bytes: Vec<u8>,
 }
 
 /// Parameters for `DaoEscrow::PayPremiumV1`
@@ -1091,7 +1161,7 @@ impl InitializeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::wit
 impl dwow_serial::Encodable for UpdateParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdateParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
-impl UpdateParamsV1 { pub fn encode(&self) -> Vec<u8> { self.bulla.to_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("UpdateParamsV1: expected 32 got {}", data.len()))); } Ok(UpdateParamsV1 { bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateParamsV1: invalid bulla".into()))?) }) } }
+impl UpdateParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(129); b.extend_from_slice(&self.bulla.to_bytes()); b.push(self.multisig_group_id.is_some() as u8); if let Some(gid) = self.multisig_group_id { b.extend_from_slice(&gid.to_repr()); } b.extend_from_slice(&self.owner_pubkey.to_bytes()); b.extend_from_slice(&self.owner_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 97 { return Err(ContractError::IoError(format!("UpdateParamsV1: too short, got {}", data.len()))); } let bulla = DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateParamsV1: invalid bulla".into()))?); let has_gid = data[32] != 0; let expected = if has_gid { 129 } else { 97 }; if data.len() != expected { return Err(ContractError::IoError(format!("UpdateParamsV1: expected {} got {}", expected, data.len()))); } let multisig_group_id = if has_gid { Some(Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateParamsV1: invalid multisig_group_id".into()))?) } else { None }; let owner_pubkey = PublicKey::from_bytes(data[expected-64..expected-32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("UpdateParamsV1: invalid owner_pubkey: {}", e)))?; let owner_nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(data[expected-32..expected].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateParamsV1: invalid owner_nullifier".into()))?; Ok(UpdateParamsV1 { bulla, multisig_group_id, owner_pubkey, owner_nullifier }) } }
 
 impl dwow_serial::Encodable for PayPremiumParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PayPremiumParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
@@ -1147,10 +1217,10 @@ impl OracleAttestationRef { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::w
 
 // --- Bridge update structs ---
 
-impl dwow_serial::Encodable for UpdateUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for UpdateUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for UpdateUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
-impl UpdateUpdateV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.bulla.to_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("UpdateUpdateV1: expected 32 bytes, got {}", data.len()))); } Ok(UpdateUpdateV1 { bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateUpdateV1: invalid bulla".into()))?) }) } }
+impl UpdateUpdateV1 { pub const FIXED: usize = 36; pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let n = dwow_sdk::blockchain::SerializedLen::try_from_len(self.endowment_bytes.len())?; let mut b = Vec::with_capacity(Self::FIXED + self.endowment_bytes.len()); b.extend_from_slice(&self.bulla.to_bytes()); b.extend_from_slice(&n.to_le_bytes()); b.extend_from_slice(&self.endowment_bytes); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < Self::FIXED { return Err(ContractError::IoError(format!("UpdateUpdateV1: expected at least {} bytes, got {}", Self::FIXED, data.len()))); } let bulla = DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateUpdateV1: invalid bulla".into()))?); let n = dwow_sdk::blockchain::SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize(); let expected = n.saturating_add(Self::FIXED); if data.len() != expected { return Err(ContractError::IoError(format!("UpdateUpdateV1: expected {} got {}", expected, data.len()))); } let endowment_bytes = data[36..expected].to_vec(); Ok(UpdateUpdateV1 { bulla, endowment_bytes }) } }
 
 impl dwow_serial::Encodable for InitializeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for InitializeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
