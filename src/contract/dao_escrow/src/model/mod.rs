@@ -72,7 +72,7 @@
 
 use dwow_sdk::{
     blockchain::SerializedLen,
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind, AssetId},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_COMMITMENT, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind, AssetId},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
@@ -258,6 +258,20 @@ impl DaoEscrow {
         Ok(DaoEscrow { version, instance_seed, bulla, mode, owner_pubkey, pool_asset_id, multisig_group_id, pool_purse_id, treasury_purse_id, endowment_purse_id, member_count, fee_config, min_premium, max_members, created_at, bulla_blind, paused, drain_protection_enabled, drain_protection_bulla })
     }
     /// Derive the DAO-Escrow bulla from parameters.
+    ///
+    /// **This must be the same derivation `proof/init.zk` constrains.** The circuit computes
+    /// `endowment_bulla = poseidon_hash(DOMAIN_COMMITMENT, dao_bulla, owner_pub_x, owner_pub_y,
+    /// endowment_asset_id, bulla_blind)` and publishes it as instance 4; `client/init.rs` and
+    /// `initialize_get_metadata` build the same six elements, so prover and host agreed and the proof
+    /// always verified.
+    ///
+    /// This function — the value the endowment is actually **stored under** — hashed five elements with
+    /// **no domain constant**. Nothing compared the two, so the instance the circuit attested was a value
+    /// the chain never used, in two disjoint worlds that no test could tell apart (`OBL-C156`). The
+    /// observable consequence was interoperability rather than authorisation: a client deriving the bulla
+    /// the way the circuit and the documentation state it computed a value the contract had never stored,
+    /// and every call it built failed `DaoEscrowNotFound`. The fixture only escaped that by discovering
+    /// the derived value empirically.
     pub fn derive_bulla(
         dao_bulla: DaoEscrowBulla,
         owner_pubkey: &PublicKey,
@@ -266,7 +280,14 @@ impl DaoEscrow {
     ) -> DaoEscrowBulla {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ox, oy) = owner_pubkey.xy().expect("pk not identity");
-        DaoEscrowBulla(poseidon_hash([dao_bulla.inner(), ox, oy, pool_asset_id.inner(), bulla_blind.inner()]))
+        DaoEscrowBulla(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_COMMITMENT,
+            dao_bulla.inner(),
+            ox,
+            oy,
+            pool_asset_id.inner(),
+            bulla_blind.inner(),
+        ]))
     }
 }
 
