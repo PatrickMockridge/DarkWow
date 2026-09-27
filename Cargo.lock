@@ -2771,6 +2771,7 @@ version = "0.1.0"
 dependencies = [
  "dwow-sdk",
  "dwow-serial",
+ "dwow_box_contract",
  "dwow_core",
  "dwow_promissory_note_contract",
  "getrandom 0.2.17",
