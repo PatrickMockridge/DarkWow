@@ -74,7 +74,17 @@ fi
 if printf '%s' "$OUT" | grep -q '^EXCEPTED:'; then
     N="$(printf '%s' "$OUT" | grep -c '^EXCEPTED:')"
     echo ""
-    echo "OK: $N vacuous-binding site(s) adjudicated and scheduled (OBL-Z18)."
+    # **The scope is stated, and it has to be.** With `--all` the number is the whole tree's; without
+    # it, it counts only the circuits in this commit — so the same hook prints 52 on a broad commit and
+    # 4 on one that touches a single contract. A reviewer who sees 4 where a previous commit printed 52
+    # reads a tally that shrank, which looks like 48 defects were fixed. They were not: the scan was
+    # narrower. Naming the scope costs a word and removes the reading.
+    echo "OK: $N vacuous-binding site(s) adjudicated and scheduled (OBL-Z18), of the circuits this"
+    if [ "${#FILES[@]}" -eq 0 ]; then
+        echo "    commit touches — none: no .zk file is staged, so the whole corpus was scanned."
+    else
+        echo "    commit touches: ${#FILES[@]} staged .zk file(s), not the whole corpus."
+    fi
     echo "  Each entry names either the register row that schedules its repair or the mechanism that"
     echo "  makes it sound, and this hook fails on a finding that is NOT in that list. No count of"
     echo "  defects is printed here: the classes overlap, so every tally that was written drifted."
