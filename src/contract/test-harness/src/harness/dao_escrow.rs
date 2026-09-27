@@ -41,13 +41,14 @@ use dwow_dao_escrow_contract::client::{
     pay_premium::{pay_premium_v1_proof, PayPremiumV1CallData, PayPremiumV1PublicInputs},
     propose_claim::{propose_claim_v1_proof, ProposeClaimV1CallData, ProposeClaimV1PublicInputs},
     resolve_dispute::{resolve_dispute_v1_proof, ResolveDisputeV1CallData, ResolveDisputeV1PublicInputs},
+    update::{update_v1_proof, UpdateV1CallData, UpdateV1PublicInputs},
     verify_member_capability::{verify_member_capability_v1_proof, VerifyMemberCapabilityV1CallData, VerifyMemberCapabilityV1PublicInputs},
     vote_claim::{vote_claim_v1_proof, VoteClaimV1CallData, VoteClaimV1PublicInputs},
 };
 use dwow_dao_escrow_contract::model::{
     CancelClaimParamsV1, CapabilityProof, ClaimId, DaoEscrowBulla, ClaimType, ExecuteClaimParamsV1,
     InitializeParamsV1, PayPremiumParamsV1, ProposeClaimParamsV1,
-    RegisterCapabilityRequirementParamsV1, ResolveDisputeParamsV1,
+    RegisterCapabilityRequirementParamsV1, ResolveDisputeParamsV1, UpdateParamsV1,
     VerifyMemberCapabilityParamsV1,
     VoteClaimParamsV1, WithdrawParamsV1, MembershipNote, ProposalId, EndowmentWithdrawParamsV1,
     TreasurySpendParamsV1, OracleAttestationRef, VoteType,
@@ -588,6 +589,86 @@ impl DaoEscrowHarness {
         call_data.extend_from_slice(&params.encode());
         Ok(CancelClaimResult { call_data })
     }
+
+    // ── Governance (`OBL-C151`) ──────────────────────────────────────────────────────────────────
+
+    /// The governing group's **threshold**, and the secrets of the members who join it — three members,
+    /// two of whom must approve.
+    ///
+    /// These are the fixture's, and they are the only place the group is defined: `governance_group`
+    /// below derives its id with the multisig contract's own `derive_group_id`, so the id the endowment
+    /// stores and the id the group signs under are one value computed once. The shape is
+    /// `DrainProtectionHarness`'s (`OBL-C101`).
+    pub const GOVERNANCE_THRESHOLD: u8 = 2;
+    pub const GOVERNANCE_MEMBERS: [pallas::Base; 3] = [
+        pallas::Base::from_raw([11, 0, 0, 0]),
+        pallas::Base::from_raw([12, 0, 0, 0]),
+        pallas::Base::from_raw([13, 0, 0, 0]),
+    ];
+
+    /// The member commitments of the governance group, in the order `create_group` is given them.
+    pub fn governance_member_commitments() -> Vec<pallas::Base> {
+        Self::GOVERNANCE_MEMBERS
+            .iter()
+            .map(|s| crate::harness::multisig::MultiSigHarness::member_commitment(*s))
+            .collect()
+    }
+
+    /// The id of the governance group: the multisig contract's derivation, called rather than
+    /// re-implemented, over the members above. The endowment stores this id and every approval has to
+    /// name it, so the id has one definition.
+    pub fn governance_group() -> pallas::Base {
+        crate::harness::multisig::MultiSigHarness::group_id(
+            Self::GOVERNANCE_THRESHOLD,
+            &Self::governance_member_commitments(),
+        )
+    }
+
+    /// `UpdateV1` (0x01) — the governance setter (`OBL-C151`).
+    ///
+    /// **ZK, because the owner must be proved rather than asserted.** The proof is the
+    /// `SetGovernanceConfigV2` circuit's: it derives `owner_pub = ec_mul_base(owner_secret,
+    /// NULLIFIER_K)` and constrains the exposed coordinates to it, so a caller who does not hold
+    /// `owner_secret` cannot produce a proof the contract's owner check will accept. A harness that
+    /// supplied `owner_pubkey` without the matching secret would produce a proof that cannot
+    /// satisfy the circuit — a failure at proving time, not a forged authorisation.
+    ///
+    /// `owner_nullifier` is taken from the proof's own public inputs rather than accepted from the
+    /// caller, because it is witness-derived and the contract records it to make the proof one-shot.
+    pub fn update(
+        &self,
+        dao_escrow_bulla: pallas::Base,
+        owner_secret: pallas::Base,
+        owner_pubkey: PublicKey,
+        multisig_group_id: Option<pallas::Base>,
+    ) -> Result<UpdateResult> {
+        let input = UpdateV1CallData::new(owner_secret, owner_pubkey, dao_escrow_bulla);
+        let (proof, public_inputs) = update_v1_proof(
+            &self.set_governance_config_zkbin,
+            &self.set_governance_config_pk,
+            &input,
+        )?;
+
+        let params = UpdateParamsV1 {
+            bulla: DaoEscrowBulla(dao_escrow_bulla),
+            multisig_group_id,
+            owner_pubkey,
+            owner_nullifier: public_inputs.owner_nullifier,
+        };
+        let mut call_data = vec![0x01]; // UpdateV1 — the selector is part of the payload
+        call_data.extend_from_slice(&params.encode());
+
+        Ok(UpdateResult { call_data, proof, public_inputs })
+    }
+}
+
+/// Result of the `UpdateV1` governance setter
+pub struct UpdateResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    /// The five instances the proof was created over. A caller cannot choose them: the nullifier is
+    /// witness-derived and the contract records it, so this is the only place the value is legible.
+    pub public_inputs: UpdateV1PublicInputs,
 }
 
 /// Result of DAO-Escrow withdraw
