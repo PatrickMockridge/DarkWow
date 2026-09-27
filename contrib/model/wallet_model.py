@@ -9455,23 +9455,28 @@ def test_wire_layout_matches_contract_structs():
 
     # box put (PutParams): 11 fields → 1285 bytes. Was 13/1349 before the wire
     # reduction; `box_id` and `old_state_nonce` are off the wire.
+    # **These are the WIRE fields, not the manifest's full parameter list.** A witness-tagged param is
+    # skipped by `encode_params_values`, so it is not in the call data — and the contract's decoder no
+    # longer expects it, which is why the struct dropped it. The four that left on 2026-09-27 are
+    # `Put`'s `new_state_nonce`, `old_contents_commit` and `new_contents_commit` (96 bytes) and `Take`'s
+    # `contents_commit` (32). The earlier totals — 1288 and 1192 — counted them, and they were right for
+    # as long as the fields were plain params.
     box_put = [
-        F("new_state_nonce", "pallas_base"), F("old_contents_commit", "pallas_base"),
-        F("new_contents_commit", "pallas_base"), F("nullifier", "pallas_base", witness=5),
+        F("nullifier", "pallas_base", witness=5),
         F("expected_root", "pallas_base", witness=6), F("new_leaf", "pallas_base", witness=7),
         F("leaf_pos", "u32", witness=9), F("merkle_path", "merkle_path", witness=10),
         F("proof", "proof"), F("tx_binding", "pallas_base", witness=13), F("tx_nonce", "pallas_base"),
     ]
-    assert schema_wire_len(box_put) == 1288, schema_wire_len(box_put)
+    assert schema_wire_len(box_put) == 1192, schema_wire_len(box_put)
 
-    # box take (TakeParams): 8 fields → 1189 bytes. Was 10/1253.
+    # box take (TakeParams): 7 fields → 1160 bytes.
     box_take = [
-        F("contents_commit", "pallas_base"), F("nullifier", "pallas_base", witness=3),
+        F("nullifier", "pallas_base", witness=3),
         F("expected_root", "pallas_base", witness=4), F("leaf_pos", "u32", witness=6),
         F("merkle_path", "merkle_path", witness=7), F("proof", "proof"),
         F("tx_binding", "pallas_base", witness=10), F("tx_nonce", "pallas_base"),
     ]
-    assert schema_wire_len(box_take) == 1192, schema_wire_len(box_take)
+    assert schema_wire_len(box_take) == 1160, schema_wire_len(box_take)
 
     # purse deposit (DepositParams): 16 fields → 1373 bytes. Was 18/1437.
     purse_deposit = [

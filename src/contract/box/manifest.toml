@@ -1,18 +1,22 @@
 # Box contract manifest — capability declarations for type construction.
 # The wallet reads this manifest to construct capability types per wallet.md §2.2.
 # Box is L1: two ZK circuits, Merkle inclusion proofs, nullifier per state transition.
-# The wire carries what a verifier needs and no more: the public inputs, the Merkle
-# path, the proof, the two contents commitments, and `new_state_nonce` — whose
-# successor the *prover* must supply because the circuit constrains it to `old + 1`.
-# `box_id` and `state_nonce` are NOT on the wire; their witness slots read `note:` and
-# the wallet serves them from its own record (`CapRecord.object_id`/`.state_nonce`,
-# `bin/dww/src/lib.rs`), because `privacy.md` §2 promises an observer learns "not which
-# resource was operated on" and §5.5 says `box_id` "is never a public input". `Put`
-# emits the box's AEAD note (`{commitment, state_nonce, box_id}`), which is how the
-# wallet discovers the new leaf (§C.8.1). The contents commitments are the residue,
-# declared in `scripts/check-l1-wire-conformance.sh`; the note does not yet carry what
-# the box holds, and §C.8.2's `nullifier`/`merkle_root`/`leaf_position` are not in the
-# schema yet either. `owner_secret` stays private (wallet.md §6.4.1).
+#
+# **The wire carries the public inputs, the Merkle path, the proof, `tx_binding` and
+# `tx_nonce` — and nothing else.** Everything a verifier does not need is either a
+# witness-tagged param (supplied by the caller, never published) or read from the
+# wallet's own record: `box_id` and `state_nonce` come from `CapRecord.object_id` and
+# `.state_nonce` through the `note:` sources, `new_state_nonce` is `derived:increment:1`
+# of the consumed nonce, and the three contents commitments are witness-tagged. That is
+# the whole of `privacy.md` §2's promise, which says an observer learns "not which
+# resource was operated on", and §5.5's, which says `box_id` "is never a public input".
+#
+# `Put` emits the box's AEAD note (`{commitment, state_nonce, box_id}`), which is how
+# the wallet discovers the new leaf (§C.8.1). **The note does not yet carry what the box
+# holds** — §C.8.2's `contents`/`nullifier`/`merkle_root`/`leaf_position` are not in the
+# schema — so a wallet that put a box learns its contents only from its own record, not
+# by scanning. That gap is recorded rather than implied. `owner_secret` stays private
+# (wallet.md §6.4.1).
 
 [contract]
 name = "box"
@@ -46,7 +50,15 @@ namespace = "Put"
 witness_map = [
     "note:box_id",
     "note:state_nonce",
-    "param:new_state_nonce",
+    # `derived:increment:1` — the successor of slot 1, the consumed nonce. `put.zk:63-64` computes
+    # `computed_nsn = base_add(old_state_nonce, ONE)` and constrains it equal to `new_state_nonce`, so
+    # the value is fully determined by the circuit and needs no caller input. The declared reason for
+    # leaving it on the wire reads *"the prover must supply it (the circuit constrains it to `old + 1`)
+    # and no `note:` field yields a successor, where purse's circuit derives its own"* — **the contrast
+    # is false**: `put.zk` derives it too, and the `increment` rule is the same mechanism `purse` uses,
+    # evaluated at `bin/dww/src/prover_impl.rs:435` for witness slots and
+    # `src/sdk/src/contract_client.rs:304-321` for note fields.
+    "derived:increment:1",
     "param:old_contents_commit",
     "param:new_contents_commit",
     "derived:nullifier:8,0,1",
@@ -82,9 +94,13 @@ witness_map = [
 [[parameters]]
 function = "put"
 fields = [
-    { name = "new_state_nonce", type = "pallas_base" },
-    { name = "old_contents_commit", type = "pallas_base" },
-    { name = "new_contents_commit", type = "pallas_base" },
+    # Tagged, so none of the three is written to call data. A witness-tagged param is skipped by
+    # `encode_params_values` and filled from the prover's bound values, while its `witness_map` source
+    # still reads the caller's params — which is what "off the wire" means here: the caller supplies
+    # them, the chain does not publish them.
+    { name = "new_state_nonce", type = "pallas_base", witness = 2 },
+    { name = "old_contents_commit", type = "pallas_base", witness = 3 },
+    { name = "new_contents_commit", type = "pallas_base", witness = 4 },
     { name = "nullifier", type = "pallas_base", witness = 5 },
     { name = "expected_root", type = "pallas_base", witness = 6 },
     { name = "new_leaf", type = "pallas_base", witness = 7, leaf = true },
@@ -98,7 +114,9 @@ fields = [
 [[parameters]]
 function = "take"
 fields = [
-    { name = "contents_commit", type = "pallas_base" },
+    # Tagged, as the three above: the box's contents are the caller's to name and no verifier needs
+    # them — the circuit folds them into the leaf, whose root is the published value.
+    { name = "contents_commit", type = "pallas_base", witness = 1 },
     { name = "nullifier", type = "pallas_base", witness = 3 },
     { name = "expected_root", type = "pallas_base", witness = 4 },
     { name = "leaf_pos", type = "u32", witness = 6 },

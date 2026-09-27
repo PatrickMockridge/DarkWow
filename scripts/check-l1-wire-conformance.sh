@@ -68,15 +68,22 @@ L1_CONTRACTS = ["promissory_note", "box", "purse"]
 #   * the purse balances — the note's `value` is declared `u64`, `encode_params_values` refuses any
 #     other type (`src/sdk/src/manifest.rs:645-666`), a `witness = N` source yields the circuit's
 #     `Base`, and `NoteFieldValue::as_u64()` matches only `U64`, so a balance that leaves the params
-#     cannot reach the note;
-#   * box's `new_state_nonce` — the *prover* must supply it (the circuit constrains it to `old + 1`)
-#     and no `note:` field yields a successor, where purse's circuit derives its own;
-#   * the contents commitments — what the box holds, which the note does not yet carry.
+#     cannot reach the note. **This is the only reason left**: box's four below were retired on
+#     2026-09-27 and the purse's six are blocked on the note's declared type, whose design is recorded
+#     in `OBL-C176`.
+#
+# **BOX'S FOUR RETIRED (2026-09-27), and one of these reasons was FALSE.** The declaration for
+# `new_state_nonce` read: *"the successor nonce; the prover supplies it and no note field yields it"*,
+# and the comment above it made the contrast explicit — *"where purse's circuit derives its own"*.
+# **`put.zk` derives it too**: `:63-64` computes `computed_nsn = base_add(old_state_nonce, ONE)` and
+# constrains it equal to `new_state_nonce`, so the successor is fully determined by the circuit and the
+# `derived = "increment:1"` rule — the mechanism purse already uses — yields it exactly. The three
+# contents commitments need no note either: they are opaque `pallas::Base` elements the circuit folds
+# into a leaf, "commitment" is a naming convention and nothing in-circuit produces or verifies them, so
+# tagging them `witness = N` moves them off the wire and nothing else in the tree has to change. All
+# four are witness-tagged now and none is published; the note still does not carry what a box holds,
+# which is §C.8.2's separate gap and not a wire requirement.
 DECLARED = {
-    ("box", "Put", 2, "new_state_nonce"): "the successor nonce; the prover supplies it and no note field yields it",
-    ("box", "Put", 3, "old_contents_commit"): "what the box held, published; the note is the transport §C.8.1 names",
-    ("box", "Put", 4, "new_contents_commit"): "what the box will hold, published; same",
-    ("box", "Take", 1, "contents_commit"): "as Put, slot 3",
     ("purse", "Deposit", 1, "old_balance"): "how much, published — blocked on the note's `value` type, see above",
     ("purse", "Deposit", 3, "deposit_amount"): "how much moved, published — the record holds the balance, not the amount",
     ("purse", "Deposit", 5, "new_balance"): "how much, published — same block as slot 1",
@@ -102,16 +109,44 @@ def leaks():
         d = ROOT / "src" / "contract" / contract
         man = tomllib.loads((d / "manifest.toml").read_text())
         host = (d / "src" / "entrypoint" / "mod.rs").read_text()
+        # Which params each function declares **witness-tagged**, keyed by the circuit that proves it.
+        # A witness-tagged param is skipped by `encode_params_values` and filled from the prover's bound
+        # values, so it is *not* in the call data — and `param:<field>` as a witness-map source says only
+        # "the caller supplies this", which is true of a witness-tagged param as much as of a published
+        # one. Without this the rule reports a value as "published for nothing" when nothing publishes
+        # it: measured on 2026-09-27, after box's three contents commitments were tagged, this gate
+        # named all three as leaks that no longer existed.
+        #
+        # **The criterion is CONTINGENT, and `OBL-C179` is why.** It assumes a tag means "off the
+        # wire" — which is what `box` now implements, since its decoder stopped expecting those fields.
+        # `purse` contradicts it: ten of `deposit`'s sixteen params are tagged, *including every public
+        # input*, while `DepositParams::decode` still expects all sixteen. So under this rule purse's
+        # public inputs would be skipped as off-wire when they are read by the decoder — the rule is
+        # blind to exactly the disagreement it should fail on. Settling which meaning holds is the first
+        # item `OBL-C179` owes, and unit 5 is where it has to happen, because purse's six retirements
+        # move the same fields.
+        tagged = {}
+        for fn in man.get("functions", []):
+            circ = fn.get("proof_circuit")
+            if not circ:
+                continue
+            for spec in man.get("parameters", []):
+                if spec.get("function") != fn["name"]:
+                    continue
+                tagged[circ] = {f["name"] for f in spec.get("fields", []) if f.get("witness") is not None}
         for circ in man.get("circuits", []):
             zk_path = d / "proof" / f"{circ['name'].lower()}.zk"
             if not zk_path.exists():
                 continue
             body = circuit_body(zk_path.read_text())
             exposed = set(re.findall(r"constrain_instance\(\s*(\w+)\s*\)", body))
+            off_wire = tagged.get(circ["name"], set())
             for slot, src in enumerate(circ.get("witness_map", [])):
                 if not src.startswith("param:"):
                     continue
                 field = src.split(":", 1)[1]
+                if field in off_wire:
+                    continue                                    # (0) witness-tagged: not on the wire
                 if field in exposed:
                     continue                                    # (a)
                 if re.search(rf"\bp\.{field}\b|\bparams\.{field}\b", host):
@@ -139,6 +174,13 @@ def main():
                 print("FAIL: --self-test could not find box Put's witness_map to plant into")
                 return 1
             m = m.replace(anchor, anchor + '    "param:probe_field",\n', 1)
+            # The probe needs a params entry as well, or the second control below has nothing to tag —
+            # a `param:` source with no field is a third case again, and not the one under test.
+            anchor_p = 'function = "put"\nfields = [\n'
+            if anchor_p not in m:
+                print("FAIL: --self-test could not find box Put's parameters to plant into")
+                return 1
+            m = m.replace(anchor_p, anchor_p + '    { name = "probe_field", type = "pallas_base" },\n', 1)
             (dst / "manifest.toml").write_text(m)
             os.environ["L1_WIRE_ROOT"] = tmp
             ROOT = pathlib.Path(tmp)
@@ -148,6 +190,28 @@ def main():
                 print("FAIL: --self-test planted a leak and the checker did not see it")
                 return 1
             print(f"OK: --self-test — the planted leak is reported ({probe[0][0]}/{probe[0][1]} slot {probe[0][2]})")
+
+            # ── The second control, and it tests the opposite direction. ──
+            # Tag the same probe field as a witness param and require the checker to stop reporting it.
+            # Without this the rule could pass the first control while being unable to tell a published
+            # value from a witness-borne one — which is exactly the defect this pair was written for: a
+            # witness-tagged param is skipped by `encode_params_values`, so nothing publishes it, and
+            # before this the rule named it as "published for nothing".
+            m = (dst / "manifest.toml").read_text()
+            anchor2 = '{ name = "probe_field", type = "pallas_base" },'
+            if anchor2 not in m:
+                print("FAIL: --self-test could not find the probe param to tag")
+                return 1
+            m = m.replace(anchor2, '{ name = "probe_field", type = "pallas_base", witness = 99 },', 1)
+            (dst / "manifest.toml").write_text(m)
+            f = leaks()
+            still = [k for k in f if k[3] == "probe_field"]
+            if still:
+                print("FAIL: --self-test tagged the probe as a witness param and the checker still "
+                      "reports it as published — a `param:` source is not the same as a wire field")
+                return 1
+            print("OK: --self-test — a witness-tagged param is not reported (the source kind is not "
+                  "the wire kind)")
         return 0
 
     found = leaks()
