@@ -419,12 +419,17 @@ The contract's heavyweight integration test is
 `bin/dwowd/src/tests/heavyweight_pipeline.rs::test_heavyweight_dao_escrow`, run through
 `bin/dwowd/src/tests/heavyweight.sh --dao-escrow`.
 
-**The re-wire has not been run through that fixture.** No run of the ten-endpoint contract is recorded
-anywhere. The last recorded green run of this test — `1 passed; 0 failed`, 809.70s — measured the
-contract **before** this change: it still had all seventeen selectors, the capability-requirement
-endpoints, the DrainProtection association and a nineteen-field record, and it is history rather than a
-statement about the code on this page. Everything this page describes about reachability is read from
-the source, not measured.
+**The re-wire is green, measured 2026-09-27**: `1 passed; 0 failed`, **730.94s** — the first green run
+of the ten-endpoint contract. It covers every endpoint below except `PayPremiumV1`, which is deferred on
+a circuit bug, and it drives the claim lifecycle end to end for the first time
+(`ProposeClaimV1_Lifecycle` → `VoteClaimV1_Approved` → `ExecuteClaimV1_Approved`).
+
+Two older numbers on this page are history rather than statements about the code here. A run of
+**809.70s** measured the contract *before* the re-wire — seventeen selectors, the capability-requirement
+endpoints, the DrainProtection association, a nineteen-field record; and the re-wire's first measurement
+was **655.00s**, which predates the lifecycle rows and the two controls they carry. Reachability on this
+page is read from the source; the three properties the run does *not* cover are named in
+[Recorded defects](#recorded-defects) and in the register rows.
 
 The contract crate also carries its own tests in `src/contract/dao_escrow/tests/integration.rs`,
 including a round trip for every parameter and update type, a test that the six surviving selectors

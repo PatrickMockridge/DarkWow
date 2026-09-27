@@ -1,6 +1,21 @@
 //! ContractTestSpec for dao_escrow. Tier: HARVESTABLE.
-//! Ten endpoints: this spec covers `InitializeV1` and rows for seven of the rest. `PayPremiumV1` is
-//! deferred (a circuit bug) and `VoteClaimV1` has no row — a vote needs its own witness fixture.
+//! Ten endpoints: this spec covers all of them except `PayPremiumV1`, which is deferred on a circuit
+//! bug its own header records — the funding path's proof has never been made to verify, so there is no
+//! honest row to write for it and `min_premium` has no reader in this fixture.
+//!
+//! # The lifecycle, which this spec is the first to drive at all
+//!
+//! `ProposeClaimV1_Lifecycle` → `VoteClaimV1_Approved` → `ExecuteClaimV1_Approved` runs the claim
+//! lifecycle end to end, and it is the positive control two fixes owe (`OBL-C159`, `OBL-C160`). Before
+//! them the lifecycle was **unreachable**, and in two independent ways: nothing in the crate wrote
+//! `ProposalState::Approved`, so `verify_proposal_approved` could not pass for any input; and a vote's
+//! approval was over the bare claim id, which every vote on a claim shares, while a MultiSig approval is
+//! spend-once — so a group of *n* at threshold *t* could finalise it `floor(n/t)` times, one for the
+//! usual case. The rows that asserted the old behaviour asserted a refusal (`Custom(38)`) and could not
+//! assert its opposite, because there was no opposite to reach.
+//!
+//! They run on their own claim (`CLAIM_ID_LIFECYCLE`) because the cancellation row above moves the first
+//! claim to `Cancelled`, which is terminal.
 //!
 //! # Governance (`OBL-C151`)
 //!
@@ -45,6 +60,11 @@ use dwow_dao_escrow_contract::model::{
 };
 use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
 use dwow_sdk::crypto::{
+    // `Group` for `pallas::Point::identity()` — the vote's two commitment points are circuit fields the
+    // `VoteClaimV2` circuit never reads, so they are passed as the identity rather than built.
+    // `PrimeField` for `pallas::Base::to_repr()`, which the vote row needs to put the capability secret
+    // in the params as the 32 bytes the contract feeds to `from_repr`.
+    pasta_prelude::{Group, PrimeField},
     poseidon_hash, util::fp_mod_fv, Blind, MerkleNode,
     MerkleTree, Nullifier, PublicKey, SecretKey, MULTISIG_CONTRACT_ID,
     PROMISSORY_NOTE_CONTRACT_ID,
@@ -78,6 +98,21 @@ const PN_VALUE_WITHDRAW_NO_APPROVAL: u64 = 30_000_000;
 /// Equal to the proposal's value, because `verify_proposal_approved` requires the executed call's value
 /// to match the proposal's before it looks at anything else.
 const PN_VALUE_EXECUTE_CLAIM: u64 = 10_000;
+/// Its own note, and deliberately the **same amount** as `PN_VALUE_EXECUTE_CLAIM`: the lifecycle rows
+/// execute a proposal whose value is `PN_VALUE_EXECUTE_CLAIM`, and the first of those notes is spent by
+/// the `_ProposalNotApproved` row before the proposal is ever approved. A note is not reusable, so the
+/// approved execute needs one of its own — and it cannot differ in amount, because the contract checks
+/// the executed call's value against the proposal's.
+const PN_VALUE_EXECUTE_APPROVED: u64 = PN_VALUE_EXECUTE_CLAIM;
+
+/// The claim the **lifecycle rows** run on, which is deliberately not `CLAIM_ID`.
+///
+/// `CancelClaimV1_Approved` moves `CLAIM_ID`'s proposal to `Cancelled`, which is terminal, and the
+/// negative controls after it are written against that state. A vote on a cancelled proposal refuses
+/// with `ClaimAlreadyCancelled`, which is a true statement about the contract and no statement at all
+/// about whether a vote can ever succeed. So the propose → vote → execute rows run on a second claim,
+/// against a second set of approvals.
+const CLAIM_ID_LIFECYCLE: pallas::Base = pallas::Base::from_raw([200, 0, 0, 0]);
 
 /// Build a `promissory_note::transfer_v1` (0x04) child spending an issued note.
 ///
@@ -148,6 +183,17 @@ struct Governance {
     /// The endowment's group on the cancellation action — role 10 over the claim id. The same id the
     /// proposal's approval names, which is exactly why the role tag exists (`OBL-C151`).
     cancel_claim: Vec<Nullifier>,
+    /// The endowment's group on the *second* proposal — role 1 over `CLAIM_ID_LIFECYCLE`. Distinct from
+    /// `propose` because an approval is spend-once and the two name different action ids.
+    propose_2: Vec<Nullifier>,
+    /// The endowment's group on the vote — role 2 over
+    /// `poseidon_hash([claim_id, voter_x, voter_y, direction])`, direction 0 for Yes.
+    ///
+    /// This is the action id `OBL-C160` fixed. It used to be the bare claim id, which every vote on a
+    /// claim shared, and a MultiSig approval is spend-once — so a group of *n* at threshold *t* could
+    /// finalise it `floor(n/t)` times, which for the common *t = n* case is **once**: a claim could
+    /// record at most one counted vote, and the group-authorised vote this row drives was impossible.
+    vote: Vec<Nullifier>,
     /// A second group's id and its approvals of the proposal — valid approvals by the wrong group.
     foreign_group: pallas::Base,
     foreign: Vec<Nullifier>,
@@ -164,6 +210,7 @@ struct Shared {
     withdraw_approved: Option<PnNote>,
     execute_claim: Option<PnNote>,
     withdraw_no_approval: Option<PnNote>,
+    execute_approved: Option<PnNote>,
 }
 
 pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
@@ -230,6 +277,30 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
         poseidon_hash([endowment_bulla, pallas::Base::from(PN_VALUE_WITHDRAW_APPROVED), owner_x]),
     );
     let action_cancel_claim = governance_message(governance_role::CANCEL_CLAIM, claim_id);
+    let msg_propose_2 = governance_message(governance_role::PROPOSE_CLAIM, CLAIM_ID_LIFECYCLE);
+
+    // The voter, and the vote's own action id. `VOTE_CLAIM`'s id is the
+    // `(claim_id, voter_x, voter_y, direction)` quadruple — direction 0 for Yes, matching
+    // `VoteType::Yes = 0` — and all four are load-bearing (`OBL-C160`):
+    //
+    //   * Without the **voter**, every vote on a claim shares one message, and since a member signs a
+    //     given message once and the approval is spend-once, only `floor(n/t)` votes can ever be
+    //     finalised — one, for the usual `t = n`.
+    //   * Without the **direction**, one approval for "somebody votes on claim X" authorises a Yes and
+    //     a No alike.
+    //
+    // This fixture is the first caller of that form, so it is also the first evidence that the form is
+    // *buildable*: the contract computes the same quadruple with its own `poseidon_hash`, and if the two
+    // derivations disagreed the call would refuse `GovernanceApprovalWrongMessage` and this row would be
+    // a listener for exactly that.
+    let voter_secret = pallas::Base::from(555u64);
+    let voter_pub = PublicKey::from_secret(SecretKey::from_base(voter_secret));
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+    let (voter_x, voter_y) = voter_pub.xy().expect("pk not identity");
+    let action_vote = governance_message(
+        governance_role::VOTE_CLAIM,
+        poseidon_hash([CLAIM_ID_LIFECYCLE, voter_x, voter_y, pallas::Base::zero()]),
+    );
 
     let gov: Arc<Mutex<Governance>> = Arc::new(Mutex::new(Governance::default()));
     let notes: Arc<Mutex<Shared>> = Arc::new(Mutex::new(Shared::default()));
@@ -300,6 +371,8 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let endowment_withdraw = sign_for(chain, action_endowment_withdraw)?;
                 let withdraw = sign_for(chain, action_withdraw)?;
                 let cancel_claim = sign_for(chain, action_cancel_claim)?;
+                let propose_2 = sign_for(chain, msg_propose_2)?;
+                let vote = sign_for(chain, action_vote)?;
 
                 // A second group — one member, threshold one — approves the proposal. Its approval is
                 // valid; what is wrong is who gave it.
@@ -323,6 +396,8 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     endowment_withdraw,
                     withdraw,
                     cancel_claim,
+                    propose_2,
+                    vote,
                     foreign_group: foreign.group_id,
                     foreign: vec![f.nullifier],
                 };
@@ -352,6 +427,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     PN_VALUE_WITHDRAW_APPROVED,
                     PN_VALUE_EXECUTE_CLAIM,
                     PN_VALUE_WITHDRAW_NO_APPROVAL,
+                    PN_VALUE_EXECUTE_APPROVED,
                 ]
                 .iter()
                 .enumerate()
@@ -373,6 +449,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     withdraw_approved: n.next(),
                     execute_claim: n.next(),
                     withdraw_no_approval: n.next(),
+                    execute_approved: n.next(),
                 };
 
                 // The Identity fixture lived here — an issuer, one credential, one capability and its
@@ -443,6 +520,33 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                 }
             })),
+            // **The negative control `OBL-C161` owes, and it has to run *here*.** `UpdateV1` with no group
+            // used to write nothing and refuse nothing, while its `apply` recorded the owner's
+            // `owner_nullifier` regardless — and that nullifier is deterministic in
+            // `(owner_secret, dao_escrow_bulla)`, so one no-op update spent the only credential that can
+            // ever install a group and left the endowment **permanently ungovernable**.
+            //
+            // The row must come before the setter, and that is the whole reason it is first: the replay
+            // check sits above the `None` arm, so after a successful update the same proof is refused with
+            // `OwnershipProofReplayed` (`Custom(56)`) and the `None` arm is never reached. `UpdateV1_ReplaysTheProof`
+            // below passes `None` for exactly that reason and asserts `Custom(56)`.
+            //
+            // **The pair is the control.** This row proves the refusal; the `UpdateV1_SetGovernanceGroup`
+            // row immediately after proves the nullifier was *not* spent — before the fix it would have
+            // been, and that row would have failed `Custom(56)`. A value-substitution fix with no control
+            // is a fix nothing distinguishes from a no-op, which is what `OBL-C161` records as owed.
+            EndpointSpec {
+                name: "UpdateV1_NoGroup",
+                is_zk: true,
+                expectation: EndpointExpectation::RejectionNaming(&["ContractError(Custom(57))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new(move || {
+                    let r = h.update(endowment_bulla, owner_secret, owner_pub, None)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                }),
+            },
             // ── THE SETTER. Everything below runs with governance ACTIVE.
             //
             // `UpdateV1` proves ownership: the `SetGovernanceConfigV2` circuit derives `owner_pub` from
@@ -583,6 +687,121 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                         children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] }],
                         call_data: r.call_data, proofs: vec![],
                     })
+                }
+            })),
+            // ── THE LIFECYCLE, END TO END: propose → vote → execute.
+            //
+            // These three rows are the positive control `OBL-C159` owes, and they are the first callers
+            // of two things this contract could not previously do.
+            //
+            // (1) **A vote can succeed at all.** `VoteClaimV1` is now the sole writer of
+            // `ProposalState::Approved`; before it, nothing in the crate wrote that state, so
+            // `verify_proposal_approved` could not pass for any input and `ExecuteClaimV1` was
+            // unreachable — the row above (`ExecuteClaimV1_ProposalNotApproved`) asserted the symptom
+            // (`Custom(38)`) and nothing could assert the opposite. And the vote itself was
+            // unfinalisable: its approval was over the bare claim id, which every vote on a claim shares,
+            // while a MultiSig approval is spend-once (`OBL-C160`).
+            //
+            // (2) **The execute path completes.** `verify_proposal_approved` checks the proposal's state,
+            // its deadline, its bulla, its value and its recipient, and this row matches all five — so it
+            // is also the reader for four checks that had no reader, because no call ever got past the
+            // first one.
+            //
+            // On `CLAIM_ID_LIFECYCLE` rather than `CLAIM_ID` because the cancellation row above moved the
+            // first claim to `Cancelled`, which is terminal; see that constant's note.
+            EndpointSpec {
+                name: "ProposeClaimV1_Lifecycle",
+                is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new({
+                    let gov = gov.clone();
+                    move || {
+                        let approvals = gov.lock().unwrap().propose_2.clone();
+                        let r = h.propose_claim(nullifier_k, endowment_bulla, CLAIM_ID_LIFECYCLE, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_APPROVED, pallas::Base::from(50u64), owner_pub, pallas::Base::from(11u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let f = ms.finalize(DaoEscrowHarness::governance_group(), msg_propose_2, approvals)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult {
+                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] }],
+                            call_data: r.call_data, proofs: vec![r.proof],
+                        })
+                    }
+                }),
+            },
+            // **The vote, and the `OBL-C160` fix's positive control.** The approval is over
+            // `(CLAIM_ID_LIFECYCLE, voter_x, voter_y, 0)` — the quadruple the contract recomputes with its
+            // own `poseidon_hash` — and the parameters carry the *same* secret twice: as the 32 bytes
+            // `CapabilityProof.capability_secret`, which the contract feeds to `from_repr` to derive the
+            // tree key, and as the field element `VoteClaimV2` constrains the published instance to. If
+            // those two disagreed the proof would be rejected; if the message disagreed the approval would
+            // be (`Custom(54)`). Nothing else in the tree couples them, which is why the row is the check.
+            //
+            // `is_zk: true` because `VoteClaimV2` is a real proof — the harness builds it, so this row
+            // also exercises the client's witness assembly against the contract's instance order.
+            EndpointSpec {
+                name: "VoteClaimV1_Approved",
+                is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new({
+                    let gov = gov.clone();
+                    move || {
+                        let approvals = gov.lock().unwrap().vote.clone();
+                        let cap_proof = dwow_dao_escrow_contract::model::CapabilityProof {
+                            capability_id: [1u8; 32],
+                            // The circuit's witness, as bytes. Non-canonical bytes would make the
+                            // contract's `from_repr` fall back to zero — silently, since it uses
+                            // `unwrap_or` — and the tree key would then be a value the proof never
+                            // published. `capability_secret` is a small literal, so it is canonical.
+                            capability_secret: capability_secret.to_repr(),
+                            // Not zero: `IntentNullifier` refuses the all-zero encoding, and the field is
+                            // unread by `vote_claim_v1` (it derives its own key), so any legal value does.
+                            nullifier: dwow_sdk::crypto::IntentNullifier::from_base(pallas::Base::from(4u64)),
+                            issuer_pub: [0u8; 32],
+                            predicate_result: [0u8; 32],
+                            proof: vec![],
+                        };
+                        let r = h.vote_claim(
+                            nullifier_k,
+                            pallas::Point::identity(),
+                            pallas::Point::identity(),
+                            CLAIM_ID_LIFECYCLE,
+                            capability_id,
+                            capability_secret,
+                            voter_secret,
+                            true,
+                            pallas::Base::from(12u64),
+                            endowment_bulla,
+                            CLAIM_ID_LIFECYCLE,
+                            voter_pub,
+                            cap_proof,
+                        ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let f = ms.finalize(DaoEscrowHarness::governance_group(), action_vote, approvals)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult {
+                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] }],
+                            call_data: r.call_data, proofs: vec![r.proof],
+                        })
+                    }
+                }),
+            },
+            // **The lifecycle's terminal step, and the reader for the vote above.** It succeeds only if
+            // the vote moved the proposal to `Approved`, so this row is wrong in exactly the case
+            // `OBL-C159` describes — a terminal state with no writer — and correct only now.
+            //
+            // One child and no approval: `execute_claim_v1` validates a `promissory_note::transfer_v1`
+            // at slot 0 and takes its authority from the *proposal's* state, not from a fresh approval.
+            // That is the difference between this endpoint and `endowment_withdraw_v1`, and the reason
+            // the lifecycle exists at all.
+            mk_ep("ExecuteClaimV1_Approved", false, Box::new({
+                let notes = notes.clone();
+                move || {
+                    let note = notes.lock().unwrap().execute_approved.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_EXECUTE_APPROVED, poseidon_hash([pallas::Base::from(PN_VALUE_EXECUTE_APPROVED), endowment_bulla]))?;
+                    let r = h.execute_claim(endowment_bulla, CLAIM_ID_LIFECYCLE, owner_pub, PN_VALUE_EXECUTE_APPROVED).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                 }
             })),
             // `VerifyMemberCapabilityV1`'s possession row stood here. The endpoint (0x0b), its circuit
