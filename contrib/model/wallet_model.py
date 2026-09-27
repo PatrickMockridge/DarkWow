@@ -8604,9 +8604,17 @@ def wallet_local_positions(leaves: List[object]) -> List[Tuple[int, object]]:
 # of the wire struct, so they are excluded from the comparison.)
 
 CONTRACT_STRUCTS = {
+    # RECONCILED 2026-09-27 with the shipped manifests and the contracts' own
+    # `*Params::decode` structs. This table is the ground truth the manifest must
+    # match, so when the wire was reduced — `box_id`/`old_state_nonce`/`state_nonce`
+    # off box, `purse_id`/`state_nonce` off purse, `asset_id`/`balance` off Balance —
+    # the table had to move with it and did not. The consequence was that the
+    # conformance test below failed on box.put, the first divergence it reached,
+    # and the whole suite went red unreported: `python3 contrib/model/wallet_model.py`
+    # exited 1 with 94 passed, 1 failed. The direction matters and is worth stating:
+    # the model was stale, not the contracts.
     "box": {
         "put": [
-            ("box_id", "pallas_base"), ("old_state_nonce", "pallas_base"),
             ("new_state_nonce", "pallas_base"), ("old_contents_commit", "pallas_base"),
             ("new_contents_commit", "pallas_base"), ("nullifier", "pallas_base"),
             ("expected_root", "pallas_base"), ("new_leaf", "pallas_base"),
@@ -8614,8 +8622,7 @@ CONTRACT_STRUCTS = {
             ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
         ],
         "take": [
-            ("box_id", "pallas_base"), ("contents_commit", "pallas_base"),
-            ("state_nonce", "pallas_base"), ("nullifier", "pallas_base"),
+            ("contents_commit", "pallas_base"), ("nullifier", "pallas_base"),
             ("expected_root", "pallas_base"), ("leaf_pos", "u32"),
             ("merkle_path", "merkle_path"), ("proof", "proof"),
             ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
@@ -8623,8 +8630,8 @@ CONTRACT_STRUCTS = {
     },
     "purse": {
         "deposit": [
-            ("purse_id", "pallas_base"), ("old_balance", "u64"), ("deposit_amount", "u64"),
-            ("new_balance", "u64"), ("state_nonce", "pallas_base"),
+            ("old_balance", "u64"), ("deposit_amount", "u64"),
+            ("new_balance", "u64"),
             ("nullifier", "pallas_base"), ("expected_root", "pallas_base"),
             ("new_leaf", "pallas_base"), ("old_commit_x", "pallas_base"),
             ("old_commit_y", "pallas_base"), ("new_commit_x", "pallas_base"),
@@ -8634,8 +8641,8 @@ CONTRACT_STRUCTS = {
             ("asset_id", "pallas_base"),
         ],
         "withdraw": [
-            ("purse_id", "pallas_base"), ("old_balance", "u64"), ("withdraw_amount", "u64"),
-            ("new_balance", "u64"), ("state_nonce", "pallas_base"),
+            ("old_balance", "u64"), ("withdraw_amount", "u64"),
+            ("new_balance", "u64"),
             ("nullifier", "pallas_base"), ("expected_root", "pallas_base"),
             ("new_leaf", "pallas_base"), ("old_commit_x", "pallas_base"),
             ("old_commit_y", "pallas_base"), ("new_commit_x", "pallas_base"),
@@ -8645,8 +8652,7 @@ CONTRACT_STRUCTS = {
             ("asset_id", "pallas_base"),
         ],
         "balance": [
-            ("purse_id", "pallas_base"), ("asset_id", "pallas_base"), ("balance", "u64"),
-            ("state_nonce", "pallas_base"), ("derived_purse_id", "pallas_base"),
+            ("derived_purse_id", "pallas_base"),
             ("expected_root", "pallas_base"), ("token_commit", "pallas_base"),
             ("balance_commit_x", "pallas_base"), ("balance_commit_y", "pallas_base"),
             ("leaf_pos", "u32"), ("merkle_path", "merkle_path"), ("proof", "proof"),
@@ -9439,31 +9445,30 @@ def test_wire_layout_matches_contract_structs():
     """RC-1: corrected `[[parameters]]` wire widths match contract `*Params::encode`."""
     F = ParameterField
 
-    # box put (PutParams): 13 fields → 1349 bytes.
+    # box put (PutParams): 11 fields → 1285 bytes. Was 13/1349 before the wire
+    # reduction; `box_id` and `old_state_nonce` are off the wire.
     box_put = [
-        F("box_id", "pallas_base"), F("old_state_nonce", "pallas_base"),
         F("new_state_nonce", "pallas_base"), F("old_contents_commit", "pallas_base"),
         F("new_contents_commit", "pallas_base"), F("nullifier", "pallas_base", witness=5),
         F("expected_root", "pallas_base", witness=6), F("new_leaf", "pallas_base", witness=7),
         F("leaf_pos", "u32", witness=9), F("merkle_path", "merkle_path", witness=10),
         F("proof", "proof"), F("tx_binding", "pallas_base", witness=13), F("tx_nonce", "pallas_base"),
     ]
-    assert schema_wire_len(box_put) == 1349, schema_wire_len(box_put)
+    assert schema_wire_len(box_put) == 1285, schema_wire_len(box_put)
 
-    # box take (TakeParams): 10 fields → 1253 bytes.
+    # box take (TakeParams): 8 fields → 1189 bytes. Was 10/1253.
     box_take = [
-        F("box_id", "pallas_base"), F("contents_commit", "pallas_base"),
-        F("state_nonce", "pallas_base"), F("nullifier", "pallas_base", witness=3),
+        F("contents_commit", "pallas_base"), F("nullifier", "pallas_base", witness=3),
         F("expected_root", "pallas_base", witness=4), F("leaf_pos", "u32", witness=6),
         F("merkle_path", "merkle_path", witness=7), F("proof", "proof"),
         F("tx_binding", "pallas_base", witness=10), F("tx_nonce", "pallas_base"),
     ]
-    assert schema_wire_len(box_take) == 1253, schema_wire_len(box_take)
+    assert schema_wire_len(box_take) == 1189, schema_wire_len(box_take)
 
-    # purse deposit (DepositParams): 18 fields → 1437 bytes.
+    # purse deposit (DepositParams): 16 fields → 1373 bytes. Was 18/1437.
     purse_deposit = [
-        F("purse_id", "pallas_base"), F("old_balance", "u64"), F("deposit_amount", "u64"),
-        F("new_balance", "u64"), F("state_nonce", "pallas_base"),
+        F("old_balance", "u64"), F("deposit_amount", "u64"),
+        F("new_balance", "u64"),
         F("nullifier", "pallas_base", witness=8), F("expected_root", "pallas_base", witness=9),
         F("new_leaf", "pallas_base", witness=10), F("old_commit_x", "pallas_base", witness=11),
         F("old_commit_y", "pallas_base", witness=12), F("new_commit_x", "pallas_base", witness=13),
@@ -9472,18 +9477,40 @@ def test_wire_layout_matches_contract_structs():
         F("tx_binding", "pallas_base", witness=21), F("tx_nonce", "pallas_base"),
         F("asset_id", "pallas_base"),
     ]
-    assert schema_wire_len(purse_deposit) == 1437, schema_wire_len(purse_deposit)
+    assert schema_wire_len(purse_deposit) == 1373, schema_wire_len(purse_deposit)
 
-    # purse balance (BalanceParams): 14 fields → 1357 bytes.
+    # purse withdraw (WithdrawParams): 16 fields → 1373 bytes, the same width as
+    # deposit — `WithdrawParams::encode` delegates to `DepositParams` and only the
+    # amount's name differs. Asserted separately rather than assumed from deposit,
+    # because the delegation is exactly the kind of coupling that silently diverges:
+    # the contract's own comment there says "If DepositParams' encoding changes,
+    # verify WithdrawParams round-trip tests."
+    purse_withdraw = [
+        F("old_balance", "u64"), F("withdraw_amount", "u64"),
+        F("new_balance", "u64"),
+        F("nullifier", "pallas_base", witness=8), F("expected_root", "pallas_base", witness=9),
+        F("new_leaf", "pallas_base", witness=10), F("old_commit_x", "pallas_base", witness=11),
+        F("old_commit_y", "pallas_base", witness=12), F("new_commit_x", "pallas_base", witness=13),
+        F("new_commit_y", "pallas_base", witness=14), F("leaf_pos", "u32", witness=17),
+        F("merkle_path", "merkle_path", witness=18), F("proof", "proof"),
+        F("tx_binding", "pallas_base", witness=21), F("tx_nonce", "pallas_base"),
+        F("asset_id", "pallas_base"),
+    ]
+    assert schema_wire_len(purse_withdraw) == 1373, schema_wire_len(purse_withdraw)
+
+    # purse balance (BalanceParams): 10 fields → 1253 bytes. Was 14/1357; `purse_id`,
+    # `asset_id`, `balance` and `state_nonce` are all off the wire, and what identifies
+    # the purse is now `derived_purse_id` — a one-way function of the id, which is the
+    # only form `privacy.md` §5.5 permits to be public.
     purse_balance = [
-        F("purse_id", "pallas_base"), F("asset_id", "pallas_base"), F("balance", "u64"),
-        F("state_nonce", "pallas_base"), F("derived_purse_id", "pallas_base"),
+        F("derived_purse_id", "pallas_base"),
         F("expected_root", "pallas_base"), F("token_commit", "pallas_base"),
         F("balance_commit_x", "pallas_base"), F("balance_commit_y", "pallas_base"),
-        F("leaf_pos", "u32"), F("merkle_path", "merkle_path"), F("proof", "proof"),
+        F("leaf_pos", "u32", witness=13), F("merkle_path", "merkle_path", witness=14),
+        F("proof", "proof"),
         F("tx_binding", "pallas_base"), F("tx_nonce", "pallas_base"),
     ]
-    assert schema_wire_len(purse_balance) == 1357, schema_wire_len(purse_balance)
+    assert schema_wire_len(purse_balance) == 1253, schema_wire_len(purse_balance)
 
     print("PASS: wire layout — [[parameters]] widths match contract *Params::encode")
 
