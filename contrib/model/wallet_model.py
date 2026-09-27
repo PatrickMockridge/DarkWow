@@ -8640,7 +8640,10 @@ CONTRACT_STRUCTS = {
             ("new_commit_y", "pallas_base"), ("leaf_pos", "u32"),
             ("merkle_path", "merkle_path"), ("proof", "proof"),
             ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
-            ("asset_id", "pallas_base"),
+            # `asset_id` left the wire in the same change: it is witness slot 22 now and the note reads
+            # it from there. What replaced it is the purse identity, a one-way function of the id — the
+            # only form `privacy.md` §5.5 permits to be public.
+            ("derived_purse_id", "pallas_base"),
         ],
         "withdraw": [
             ("old_balance", "u64"), ("withdraw_amount", "u64"),
@@ -8651,7 +8654,10 @@ CONTRACT_STRUCTS = {
             ("new_commit_y", "pallas_base"), ("leaf_pos", "u32"),
             ("merkle_path", "merkle_path"), ("proof", "proof"),
             ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
-            ("asset_id", "pallas_base"),
+            # `asset_id` left the wire in the same change: it is witness slot 22 now and the note reads
+            # it from there. What replaced it is the purse identity, a one-way function of the id — the
+            # only form `privacy.md` §5.5 permits to be public.
+            ("derived_purse_id", "pallas_base"),
         ],
         "balance": [
             ("derived_purse_id", "pallas_base"),

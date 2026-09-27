@@ -100,7 +100,7 @@ open Circuits.InstanceDerivation
 
 /-! ===== The circuits, in source order =====
 
-176 circuits, 2662 statements transcribed; **11** satisfy the model's property and **165** do not, the latter named by the
+176 circuits, 2670 statements transcribed; **11** satisfy the model's property and **165** do not, the latter named by the
 first undetermined exposure in each, with the checker's class for that exposure named beneath it.
 -/
 
@@ -5052,9 +5052,9 @@ theorem purse_balance_has_a_free_instance :
   decide
 
 
-/-- `src/contract/purse/proof/deposit.zk` — 9 exposure(s). -/
+/-- `src/contract/purse/proof/deposit.zk` — 10 exposure(s). -/
 
-def purse_deposit_held : List Name := ["VALUE_COMMIT_RANDOM", "VALUE_COMMIT_VALUE", "deposit_amount", "deposit_blind", "expected_root", "leaf_pos", "new_balance", "new_balance_blind", "new_commit_x", "new_commit_y", "new_leaf", "nullifier", "old_balance", "old_balance_blind", "old_commit_x", "old_commit_y", "owner_pub", "owner_secret", "path", "purse_id", "state_nonce", "tx_binding", "tx_commitment", "tx_nonce"]
+def purse_deposit_held : List Name := ["VALUE_COMMIT_RANDOM", "VALUE_COMMIT_VALUE", "asset_id", "deposit_amount", "deposit_blind", "derived_purse_id", "expected_root", "leaf_pos", "new_balance", "new_balance_blind", "new_commit_x", "new_commit_y", "new_leaf", "nullifier", "old_balance", "old_balance_blind", "old_commit_x", "old_commit_y", "owner_pub", "owner_secret", "path", "purse_id", "state_nonce", "tx_binding", "tx_commitment", "tx_nonce"]
 
 
 def purse_deposit_stmts : List Stmt :=
@@ -5102,6 +5102,10 @@ def purse_deposit_stmts : List Stmt :=
   .constrainEq (.var "tb_circuit") (.var "tx_binding"),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
+  .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
+  .assign "dp_circuit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "owner_pub", .var "asset_id", .var "purse_id"]),
+  .constrainEq (.var "dp_circuit") (.var "derived_purse_id"),
+  .constrainInstance (.var "derived_purse_id"),
   .rangeCheck 64 (.var "old_balance"),
   .rangeCheck 64 (.var "deposit_amount"),
   .rangeCheck 64 (.var "new_balance")
@@ -5118,9 +5122,9 @@ theorem purse_deposit_has_a_free_instance :
   decide
 
 
-/-- `src/contract/purse/proof/withdraw.zk` — 9 exposure(s). -/
+/-- `src/contract/purse/proof/withdraw.zk` — 10 exposure(s). -/
 
-def purse_withdraw_held : List Name := ["VALUE_COMMIT_RANDOM", "VALUE_COMMIT_VALUE", "expected_root", "leaf_pos", "new_balance", "new_balance_blind", "new_commit_x", "new_commit_y", "new_leaf", "nullifier", "old_balance", "old_balance_blind", "old_commit_x", "old_commit_y", "owner_pub", "owner_secret", "path", "purse_id", "state_nonce", "tx_binding", "tx_commitment", "tx_nonce", "withdraw_amount", "withdraw_blind"]
+def purse_withdraw_held : List Name := ["VALUE_COMMIT_RANDOM", "VALUE_COMMIT_VALUE", "asset_id", "derived_purse_id", "expected_root", "leaf_pos", "new_balance", "new_balance_blind", "new_commit_x", "new_commit_y", "new_leaf", "nullifier", "old_balance", "old_balance_blind", "old_commit_x", "old_commit_y", "owner_pub", "owner_secret", "path", "purse_id", "state_nonce", "tx_binding", "tx_commitment", "tx_nonce", "withdraw_amount", "withdraw_blind"]
 
 
 def purse_withdraw_stmts : List Stmt :=
@@ -5171,6 +5175,10 @@ def purse_withdraw_stmts : List Stmt :=
   .constrainEq (.var "tb_circuit") (.var "tx_binding"),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
+  .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
+  .assign "dp_circuit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "owner_pub", .var "asset_id", .var "purse_id"]),
+  .constrainEq (.var "dp_circuit") (.var "derived_purse_id"),
+  .constrainInstance (.var "derived_purse_id"),
   .rangeCheck 64 (.var "old_balance"),
   .rangeCheck 64 (.var "withdraw_amount"),
   .rangeCheck 64 (.var "new_balance")

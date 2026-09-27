@@ -46,6 +46,15 @@ impl PurseHarness {
     pub fn deposit(&self, amount: u64) -> Result<PurseDepositResult> {
         let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);let dss=pallas::Base::from(7u64);
         let os=pallas::Base::from(42u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
+        // The purse identity the circuit publishes: `poseidon(4, owner_pub, asset_id, purse_id)` — the
+        // derivation `balance.zk` constrains and `balance()` below computes, so a parent that knows
+        // these three can require this operation to be *this* purse's.
+        let tid=pallas::Base::from(1u64);
+        // **Domain 4** — `DOMAIN_COMMITMENT`, the constant `balance()` below uses and `balance.zk`
+        // constrains. `dml` (5) is the merkle-leaf domain and is one away; a proof built with it is a
+        // valid field element that simply never matches, which is how this read on its first run:
+        // `L2 proof verify … invalid proof: call[0] namespace 'Deposit'`.
+        let dpi=poseidon_hash([pallas::Base::from(4u64),op,tid,pid]);
         let sn=pallas::Base::zero();let ob:u64=0;let nb:u64=amount;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
         let nf=poseidon_hash([dnl,os,pid,sn]);let tb=poseidon_hash([dtb,tc,tn]);
         let nl=poseidon_hash([dml,pid,pallas::Base::from(nb),sn + pallas::Base::from(1u64),op]);let ol=poseidon_hash([dml,pid,pallas::Base::from(ob),sn,op]);
@@ -54,8 +63,8 @@ impl PurseHarness {
         let obl=ScalarBlind::from_u64(1u64);let dbl=ScalarBlind::from_u64(2u64);let nbl=ScalarBlind::from_u64(3u64);
         let oc=pedersen_commitment_u64(ob,obl.clone());let nc=pedersen_commitment_u64(nb,nbl.clone());
         let (ocx,ocy)=Self::coords(oc);let (ncx,ncy)=Self::coords(nc);
-        let w=vec![Witness::Base(Value::known(pid)),Witness::Base(Value::known(pallas::Base::from(ob))),Witness::Scalar(Value::known(obl.inner())),Witness::Base(Value::known(pallas::Base::from(amount))),Witness::Scalar(Value::known(dbl.inner())),Witness::Base(Value::known(pallas::Base::from(nb))),Witness::Scalar(Value::known(nbl.inner())),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(ocx)),Witness::Base(Value::known(ocy)),Witness::Base(Value::known(ncx)),Witness::Base(Value::known(ncy)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb))];
-        let pi=vec![nf,er_base,ocx,ocy,ncx,ncy,nl,tb,tn];let c=ZkCircuit::new(w,&self.deposit_zkbin);
+        let w=vec![Witness::Base(Value::known(pid)),Witness::Base(Value::known(pallas::Base::from(ob))),Witness::Scalar(Value::known(obl.inner())),Witness::Base(Value::known(pallas::Base::from(amount))),Witness::Scalar(Value::known(dbl.inner())),Witness::Base(Value::known(pallas::Base::from(nb))),Witness::Scalar(Value::known(nbl.inner())),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(ocx)),Witness::Base(Value::known(ocy)),Witness::Base(Value::known(ncx)),Witness::Base(Value::known(ncy)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb)),Witness::Base(Value::known(tid)),Witness::Base(Value::known(dpi))];
+        let pi=vec![nf,er_base,ocx,ocy,ncx,ncy,nl,tb,tn,dpi];let c=ZkCircuit::new(w,&self.deposit_zkbin);
         let proof = if dwow_purse_contract::deterministic_zk_enabled() {
             Proof::create(&self.deposit_pk, &[c], &pi, rand::rngs::StdRng::seed_from_u64(0))
         } else {
@@ -66,8 +75,7 @@ impl PurseHarness {
         let amt=dwow_purse_contract::model::Amount::new(amount).map_err(|e| dwow_core::Error::Custom(format!("{e:?}")))?;
         let old_bal = dwow_purse_contract::model::Balance::new(ob);
         let new_bal = dwow_purse_contract::model::Balance::new(nb);
-        let tid=pallas::Base::from(1u64);
-        let pr=dwow_purse_contract::model::DepositParams{old_balance:old_bal,deposit_amount:amt,new_balance:new_bal,nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn,asset_id:tid};
+        let pr=dwow_purse_contract::model::DepositParams{old_balance:old_bal,deposit_amount:amt,new_balance:new_bal,nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn,derived_purse_id:dpi};
         let mut cd=vec![0x01u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         // Self-addressed AEAD note (wallet.md §2.3, §A.8.2): purse_capability note
         // carries {asset_id, value, balance_blind, commitment, purse_id, state_nonce}
@@ -87,6 +95,15 @@ impl PurseHarness {
         // Single owner (os=42). state_nonce=1 is the consumed (deposit's output)
         // nonce; the produced nonce is state_nonce+1, computed in-circuit.
         let os=pallas::Base::from(42u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
+        // The purse identity the circuit publishes: `poseidon(4, owner_pub, asset_id, purse_id)` — the
+        // derivation `balance.zk` constrains and `balance()` below computes, so a parent that knows
+        // these three can require this operation to be *this* purse's.
+        let tid=pallas::Base::from(1u64);
+        // **Domain 4** — `DOMAIN_COMMITMENT`, the constant `balance()` below uses and `balance.zk`
+        // constrains. `dml` (5) is the merkle-leaf domain and is one away; a proof built with it is a
+        // valid field element that simply never matches, which is how this read on its first run:
+        // `L2 proof verify … invalid proof: call[0] namespace 'Deposit'`.
+        let dpi=poseidon_hash([pallas::Base::from(4u64),op,tid,pid]);
         let sn=pallas::Base::from(1u64);let ob:u64=100;let nb:u64=ob-amount;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
         let nf=poseidon_hash([dnl,os,pid,sn]);let tb=poseidon_hash([dtb,tc,tn]);
         let nl=poseidon_hash([dml,pid,pallas::Base::from(nb),sn + pallas::Base::from(1u64),op]);let ol=poseidon_hash([dml,pid,pallas::Base::from(ob),sn,op]);
@@ -96,8 +113,8 @@ impl PurseHarness {
         let obl=ScalarBlind::from_u64(5u64);let wbl=ScalarBlind::from_u64(2u64);let nbl=ScalarBlind::from_u64(3u64);
         let oc=pedersen_commitment_u64(ob,obl.clone());let nc=pedersen_commitment_u64(nb,nbl.clone());
         let (ocx,ocy)=Self::coords(oc);let (ncx,ncy)=Self::coords(nc);
-        let w=vec![Witness::Base(Value::known(pid)),Witness::Base(Value::known(pallas::Base::from(ob))),Witness::Scalar(Value::known(obl.inner())),Witness::Base(Value::known(pallas::Base::from(amount))),Witness::Scalar(Value::known(wbl.inner())),Witness::Base(Value::known(pallas::Base::from(nb))),Witness::Scalar(Value::known(nbl.inner())),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(ocx)),Witness::Base(Value::known(ocy)),Witness::Base(Value::known(ncx)),Witness::Base(Value::known(ncy)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb))];
-        let pi=vec![nf,er_base,ocx,ocy,ncx,ncy,nl,tb,tn];let c=ZkCircuit::new(w,&self.withdraw_zkbin);
+        let w=vec![Witness::Base(Value::known(pid)),Witness::Base(Value::known(pallas::Base::from(ob))),Witness::Scalar(Value::known(obl.inner())),Witness::Base(Value::known(pallas::Base::from(amount))),Witness::Scalar(Value::known(wbl.inner())),Witness::Base(Value::known(pallas::Base::from(nb))),Witness::Scalar(Value::known(nbl.inner())),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(ocx)),Witness::Base(Value::known(ocy)),Witness::Base(Value::known(ncx)),Witness::Base(Value::known(ncy)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb)),Witness::Base(Value::known(tid)),Witness::Base(Value::known(dpi))];
+        let pi=vec![nf,er_base,ocx,ocy,ncx,ncy,nl,tb,tn,dpi];let c=ZkCircuit::new(w,&self.withdraw_zkbin);
         let proof = if dwow_purse_contract::deterministic_zk_enabled() {
             Proof::create(&self.withdraw_pk, &[c], &pi, rand::rngs::StdRng::seed_from_u64(0))
         } else {
@@ -108,8 +125,7 @@ impl PurseHarness {
         let amt=dwow_purse_contract::model::Amount::new(amount).map_err(|e| dwow_core::Error::Custom(format!("{e:?}")))?;
         let old_bal = dwow_purse_contract::model::Balance::new(ob);
         let new_bal = dwow_purse_contract::model::Balance::new(nb);
-        let tid=pallas::Base::from(1u64);
-        let pr=dwow_purse_contract::model::WithdrawParams{old_balance:old_bal,withdraw_amount:amt,new_balance:new_bal,nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn,asset_id:tid};
+        let pr=dwow_purse_contract::model::WithdrawParams{old_balance:old_bal,withdraw_amount:amt,new_balance:new_bal,nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn,derived_purse_id:dpi};
         let mut cd=vec![0x02u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         // Self-addressed AEAD note — same {asset_id, value, balance_blind, commitment,
         // purse_id, state_nonce} schema (matches the manifest note_schema order).
@@ -126,6 +142,11 @@ impl PurseHarness {
     pub fn balance(&self) -> Result<PurseBalanceResult> {
         let dtc=pallas::Base::from(2u64);let dtb=pallas::Base::from(3u64);let dcc=pallas::Base::from(4u64);let dml=pallas::Base::from(5u64);let dss=pallas::Base::from(7u64);
         let os=pallas::Base::from(42u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
+        // The purse identity, with the **commitment** domain (`dcc` = 4) — the derivation
+        // `balance.zk` and the two other circuits publish. A copy of this line using `dml` (5) sat
+        // above it for a moment while this harness was patched, and it was harmless only because the
+        // correct line shadows it; the two constants differ by one and the wrong one produces a valid
+        // field element that simply never matches.
         let tid=pallas::Base::from(1u64);let bal:u64=50;let sn=pallas::Base::from(2u64);let tblind=pallas::Base::from(5u64);
         let tc_=pallas::Base::from(200u64);let tn_=pallas::Base::from(300u64);
         let dpi=poseidon_hash([dcc,op,tid,pid]);let tcom=poseidon_hash([dtc,tid,tblind]);let tb=poseidon_hash([dtb,tc_,tn_]);

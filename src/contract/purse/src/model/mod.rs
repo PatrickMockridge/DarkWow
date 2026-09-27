@@ -139,13 +139,19 @@ type MerklePath = [MerkleNode; 32];
     pub nullifier: Nullifier, pub expected_root: MerkleNode, pub new_leaf: MerkleNode,
     pub old_commit_x: pallas::Base, pub old_commit_y: pallas::Base, pub new_commit_x: pallas::Base, pub new_commit_y: pallas::Base,
     pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>, pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base,
-    /// The one field here that is neither a public input nor host-read, and it stays
-    /// because the *note* needs it: `note_schema`'s `asset_id` is filled from the
-    /// caller's params at emit time (`contract_client.rs`'s `encode_params_values`),
-    /// and the deposit circuit has no `asset_id` witness to source it from instead.
-    /// `scripts/check-l1-wire-conformance.sh` does not see it — its rule covers
-    /// witness-map `param:` slots — and that limitation is recorded in its header.
-    pub asset_id: pallas::Base,
+    /// `poseidon_hash(4, owner_pub, asset_id, purse_id)` — the purse this operation names.
+    ///
+    /// **It replaced `asset_id`, which was on the wire for a reason that no longer holds.** The field
+    /// was there because the *note* needed it and the circuit had no `asset_id` witness to source it
+    /// from; it is slot 22 now, the note reads it from there, and it travels in no call data. What
+    /// takes its place is a one-way function of the purse id — the only form `privacy.md` §5.5 permits
+    /// to be public — and it is what lets a parent require a deposit into a *named* purse: the circuit
+    /// constrains it against the same derivation `balance.zk` publishes.
+    ///
+    /// `scripts/check-l1-wire-conformance.sh` never declared `asset_id`: its rule covers witness-map
+    /// `param:` slots, and a plain params field is invisible to it. So that gate's count of ten was a
+    /// floor, and this change lowers it without the gate's number moving.
+    pub derived_purse_id: pallas::Base,
 }
 
 impl dwow_serial::Encodable for DepositParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
@@ -167,7 +173,7 @@ impl DepositParams {
         // length that does not fit, and its decoder is the exact inverse of its encoder.
         let pl = SerializedLen::try_from_len(self.proof.len())?;
         b.extend_from_slice(&pl.to_le_bytes());
-        b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b.extend_from_slice(&self.asset_id.to_repr()); Ok(b)
+        b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b.extend_from_slice(&self.derived_purse_id.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let hdr=252usize; if data.len()<=hdr+1024usize { return Err(PurseError::DecodeFailure{field:"DepositParams".into()}.into()); }
@@ -190,8 +196,8 @@ impl DepositParams {
         // right offsets whatever follows them.
         if data.len() < p2.saturating_add(96) { return Err(PurseError::DecodeFailure{field:"DepositParams".into()}.into()); }
         let proof=read_slice(data,pe+SerializedLen::ENCODED_SIZE,pl)?.to_vec();
-        let tb=read_base(read_slice(data,p2,32)?)?; let tn=read_base(read_slice(data,p2+32,32)?)?; let aid=read_base(read_slice(data,p2+64,32)?)?;
-        Ok(DepositParams{old_balance:ob,deposit_amount:da,new_balance:nb,nullifier:nf,expected_root:er,new_leaf:nl,old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:lp,merkle_path:mp,proof,tx_binding:tb,tx_nonce:tn,asset_id:aid})
+        let tb=read_base(read_slice(data,p2,32)?)?; let tn=read_base(read_slice(data,p2+32,32)?)?; let dpi=read_base(read_slice(data,p2+64,32)?)?;
+        Ok(DepositParams{old_balance:ob,deposit_amount:da,new_balance:nb,nullifier:nf,expected_root:er,new_leaf:nl,old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:lp,merkle_path:mp,proof,tx_binding:tb,tx_nonce:tn,derived_purse_id:dpi})
     }
 }
 
@@ -209,7 +215,9 @@ impl DepositUpdate { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { le
     pub nullifier: Nullifier, pub expected_root: MerkleNode, pub new_leaf: MerkleNode,
     pub old_commit_x: pallas::Base, pub old_commit_y: pallas::Base, pub new_commit_x: pallas::Base, pub new_commit_y: pallas::Base,
     pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>, pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base,
-    pub asset_id: pallas::Base,
+    /// See `DepositParams::derived_purse_id` — the field is the same in the same position, and
+    /// `asset_id` left the wire in the same change.
+    pub derived_purse_id: pallas::Base,
 }
 
 // WithdrawParams shares DepositParams' wire format (hdr=252, not 236: the header is the eleven fixed
@@ -220,8 +228,8 @@ impl DepositUpdate { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { le
 // deposit_amount. This is intentional — the two operations have identical
 // payload layout. If DepositParams' encoding changes, verify WithdrawParams
 // round-trip tests in tests/integration.rs still pass.
-impl WithdrawParams { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { DepositParams{old_balance:self.old_balance,deposit_amount:self.withdraw_amount,new_balance:self.new_balance,nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_binding:self.tx_binding,tx_nonce:self.tx_nonce,asset_id:self.asset_id}.encode() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { let dp = DepositParams::decode(data)?; Ok(WithdrawParams{old_balance:dp.old_balance,withdraw_amount:dp.deposit_amount,new_balance:dp.new_balance,nullifier:dp.nullifier,expected_root:dp.expected_root,new_leaf:dp.new_leaf,old_commit_x:dp.old_commit_x,old_commit_y:dp.old_commit_y,new_commit_x:dp.new_commit_x,new_commit_y:dp.new_commit_y,leaf_pos:dp.leaf_pos,merkle_path:dp.merkle_path,proof:dp.proof,tx_binding:dp.tx_binding,tx_nonce:dp.tx_nonce,asset_id:dp.asset_id}) } }
-impl dwow_serial::Encodable for WithdrawParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = DepositParams{old_balance:self.old_balance,deposit_amount:self.withdraw_amount,new_balance:self.new_balance,nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_binding:self.tx_binding,tx_nonce:self.tx_nonce,asset_id:self.asset_id}.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
+impl WithdrawParams { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { DepositParams{old_balance:self.old_balance,deposit_amount:self.withdraw_amount,new_balance:self.new_balance,nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_binding:self.tx_binding,tx_nonce:self.tx_nonce,derived_purse_id:self.derived_purse_id}.encode() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { let dp = DepositParams::decode(data)?; Ok(WithdrawParams{old_balance:dp.old_balance,withdraw_amount:dp.deposit_amount,new_balance:dp.new_balance,nullifier:dp.nullifier,expected_root:dp.expected_root,new_leaf:dp.new_leaf,old_commit_x:dp.old_commit_x,old_commit_y:dp.old_commit_y,new_commit_x:dp.new_commit_x,new_commit_y:dp.new_commit_y,leaf_pos:dp.leaf_pos,merkle_path:dp.merkle_path,proof:dp.proof,tx_binding:dp.tx_binding,tx_nonce:dp.tx_nonce,derived_purse_id:dp.derived_purse_id}) } }
+impl dwow_serial::Encodable for WithdrawParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = DepositParams{old_balance:self.old_balance,deposit_amount:self.withdraw_amount,new_balance:self.new_balance,nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_binding:self.tx_binding,tx_nonce:self.tx_nonce,derived_purse_id:self.derived_purse_id}.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for WithdrawParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[derive(Debug, Clone)] pub struct WithdrawUpdate { pub nullifier: Nullifier, pub new_leaf: MerkleNode }

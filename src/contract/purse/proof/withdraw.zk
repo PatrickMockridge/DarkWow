@@ -38,6 +38,11 @@ witness "Withdraw" {
     Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
+    # Appended, not inserted: the twenty-two above are slot indices the manifest's `witness_map`,
+    # `public_inputs` and `note_schema` all name, so a new witness goes at the end where it moves none
+    # of them.
+    Base asset_id,
+    Base derived_purse_id,
 }
 
 circuit "Withdraw" {
@@ -106,6 +111,13 @@ circuit "Withdraw" {
     constrain_equal_base(tb_circuit, tx_binding);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
+
+    # Purse identity — `Deposit`'s twin, and see its note for why it is here: the same derivation
+    # `balance.zk` publishes, so a parent can require a withdrawal from a *named* purse.
+    DOMAIN_COMMITMENT = witness_base(4);
+    dp_circuit = poseidon_hash(DOMAIN_COMMITMENT, owner_pub, asset_id, purse_id);
+    constrain_equal_base(dp_circuit, derived_purse_id);
+    constrain_instance(derived_purse_id);
 
     # Range proofs
     range_check(64, old_balance);

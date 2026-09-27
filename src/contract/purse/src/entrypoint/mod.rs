@@ -74,8 +74,12 @@ fn deposit_metadata(p: DepositParams) -> Result<Vec<u8>, ContractError> {
     let zk_new_commit_y: pallas::Base = p.new_commit_y;
     let zk_tx_binding: pallas::Base = p.tx_binding;
     let zk_tx_nonce: pallas::Base = p.tx_nonce;
+    // **Last**, matching the circuit's instance sequence: the nine above keep their indices, and
+    // `derived_purse_id` is appended where `deposit.zk` and `withdraw.zk` constrain it. A vector in a
+    // different order than the circuit publishes is one the verifier never asks for.
+    let zk_derived_purse_id: pallas::Base = p.derived_purse_id;
 
-    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_DEPOSIT_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_old_commit_x, zk_old_commit_y, zk_new_commit_x, zk_new_commit_y, zk_new_leaf, zk_tx_binding, zk_tx_nonce]));
+    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_DEPOSIT_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_old_commit_x, zk_old_commit_y, zk_new_commit_x, zk_new_commit_y, zk_new_leaf, zk_tx_binding, zk_tx_nonce, zk_derived_purse_id]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 fn withdraw_metadata(p: WithdrawParams) -> Result<Vec<u8>, ContractError> {
@@ -89,8 +93,12 @@ fn withdraw_metadata(p: WithdrawParams) -> Result<Vec<u8>, ContractError> {
     let zk_new_commit_y: pallas::Base = p.new_commit_y;
     let zk_tx_binding: pallas::Base = p.tx_binding;
     let zk_tx_nonce: pallas::Base = p.tx_nonce;
+    // **Last**, matching the circuit's instance sequence: the nine above keep their indices, and
+    // `derived_purse_id` is appended where `deposit.zk` and `withdraw.zk` constrain it. A vector in a
+    // different order than the circuit publishes is one the verifier never asks for.
+    let zk_derived_purse_id: pallas::Base = p.derived_purse_id;
 
-    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_WITHDRAW_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_old_commit_x, zk_old_commit_y, zk_new_commit_x, zk_new_commit_y, zk_new_leaf, zk_tx_binding, zk_tx_nonce]));
+    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_WITHDRAW_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_old_commit_x, zk_old_commit_y, zk_new_commit_x, zk_new_commit_y, zk_new_leaf, zk_tx_binding, zk_tx_nonce, zk_derived_purse_id]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 fn balance_metadata(p: BalanceParams) -> Result<Vec<u8>, ContractError> {

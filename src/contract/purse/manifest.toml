@@ -82,6 +82,11 @@ witness_map = [
     "tx_commitment",
     "param:tx_nonce",
     "derived:tx_binding:19,20",
+    # Slots 22 and 23. `asset_id` comes from the wallet's record, so it leaves the wire; the note reads
+    # it from this slot. `derived_purse_id` is a params field because it is an *instance* the metadata
+    # publishes, and the prover's member must be bound to the same value.
+    "note:asset_id",
+    "param:derived_purse_id",
 ]
 public_inputs = [
     "slot:8",
@@ -93,6 +98,8 @@ public_inputs = [
     "slot:10",
     "slot:21",
     "slot:20",
+    # The purse identity, last in the circuit's instance sequence.
+    "slot:23",
 ]
 [[circuits]]
 name = "Withdraw"
@@ -120,6 +127,11 @@ witness_map = [
     "tx_commitment",
     "param:tx_nonce",
     "derived:tx_binding:19,20",
+    # Slots 22 and 23. `asset_id` comes from the wallet's record, so it leaves the wire; the note reads
+    # it from this slot. `derived_purse_id` is a params field because it is an *instance* the metadata
+    # publishes, and the prover's member must be bound to the same value.
+    "note:asset_id",
+    "param:derived_purse_id",
 ]
 public_inputs = [
     "slot:8",
@@ -131,6 +143,8 @@ public_inputs = [
     "slot:10",
     "slot:21",
     "slot:20",
+    # The purse identity, last in the circuit's instance sequence.
+    "slot:23",
 ]
 [[circuits]]
 name = "Balance"
@@ -174,7 +188,14 @@ fields = [
     { name = "proof", type = "proof" },
     { name = "tx_binding", type = "pallas_base", witness = 21 },
     { name = "tx_nonce", type = "pallas_base" },
-    { name = "asset_id", type = "pallas_base" },
+    # `asset_id` was here, on the wire and undeclared by `scripts/check-l1-wire-conformance.sh` — its
+    # rule covers witness-map `param:` slots, and a plain params field is invisible to it. It is slot 22
+    # in the witness map now and travels in no call data.
+    #
+    # `derived_purse_id` takes its place as the final field: a one-way function of the purse id, which
+    # is the only form `privacy.md` §5.5 permits to be public, and what lets a parent require a deposit
+    # into a named purse.
+    { name = "derived_purse_id", type = "pallas_base" },
 ]
 
 [[parameters]]
@@ -195,7 +216,14 @@ fields = [
     { name = "proof", type = "proof" },
     { name = "tx_binding", type = "pallas_base", witness = 21 },
     { name = "tx_nonce", type = "pallas_base" },
-    { name = "asset_id", type = "pallas_base" },
+    # `asset_id` was here, on the wire and undeclared by `scripts/check-l1-wire-conformance.sh` — its
+    # rule covers witness-map `param:` slots, and a plain params field is invisible to it. It is slot 22
+    # in the witness map now and travels in no call data.
+    #
+    # `derived_purse_id` takes its place as the final field: a one-way function of the purse id, which
+    # is the only form `privacy.md` §5.5 permits to be public, and what lets a parent require a deposit
+    # into a named purse.
+    { name = "derived_purse_id", type = "pallas_base" },
 ]
 
 [[parameters]]
@@ -230,7 +258,7 @@ name = "purse_capability"
 discriminant = 0
 primitives = ["SecretKey", "Commitment", "Nullifier", "MerkleNode", "ContractId", "FuncId", "AssetId"]
 note_schema = [
-    { name = "asset_id", type = "pallas_base" },
+    { name = "asset_id", type = "pallas_base", witness = 22 },
     { name = "value", type = "u64", source = "new_balance" },
     { name = "balance_blind", type = "pallas_scalar", witness = 6 },
     { name = "commitment", type = "pallas_base", witness = 10 },

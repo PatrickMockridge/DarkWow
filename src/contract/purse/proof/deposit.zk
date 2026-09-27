@@ -38,6 +38,11 @@ witness "Deposit" {
     Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
+    # Appended, not inserted: the twenty-two above are slot indices the manifest's `witness_map`,
+    # `public_inputs` and `note_schema` all name, so a new witness goes at the end where it moves none
+    # of them.
+    Base asset_id,
+    Base derived_purse_id,
 }
 
 circuit "Deposit" {
@@ -102,6 +107,19 @@ circuit "Deposit" {
     constrain_equal_base(tb_circuit, tx_binding);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
+
+    # Purse identity — **the circuit binds which purse, not only what balance.**
+    # `derived_purse_id = poseidon_hash(4, owner_pub, asset_id, purse_id)` is the same derivation
+    # `balance.zk` publishes, so a parent (an escrow funding its own purse, say) that knows those three
+    # can require a deposit into *that* purse — which it could not do while `asset_id` and the purse id
+    # were the caller's to choose. It is a one-way function of the id, which is the only form
+    # `privacy.md` §5.5 permits to be public; the id itself stays off the wire.
+    #
+    # Last in the instance sequence, so the nine positions above keep their indices.
+    DOMAIN_COMMITMENT = witness_base(4);
+    dp_circuit = poseidon_hash(DOMAIN_COMMITMENT, owner_pub, asset_id, purse_id);
+    constrain_equal_base(dp_circuit, derived_purse_id);
+    constrain_instance(derived_purse_id);
 
     # Range proofs
     range_check(64, old_balance);
