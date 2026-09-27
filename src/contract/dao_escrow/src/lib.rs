@@ -26,102 +26,68 @@
 
 //! DarkWow DAO-Escrow Contract
 //!
-//! ## Three Operating Modes
+//! One endowment pool, governed by one owner-installed MultiSig group.
 //!
-//! DAO-Escrow supports three configuration modes:
+//! ## The mode, and what it decides
 //!
-//! ### MODE_ESCROW (0x00) - Escrow-Only
-//! - Pure insurance pool
-//! - Members pay premiums → endowment grows
-//! - No treasury (operational funds)
-//! - Endowment pays out claims
+//! A creator chooses one of three modes at `initialize`, and the mode is stored on the endowment:
 //!
-//! ### MODE_TREASURY (0x01) - Treasury-Only
-//! - Same as DarkWow DAO
-//! - Members pay fees → treasury grows
-//! - DAO votes on treasury spending
-//! - No endowment/insurance
+//! - **`Escrow`** (0) — claims are paid from the endowment. `endowment_withdraw` is legal;
+//!   `treasury_spend` is not.
+//! - **`Treasury`** (1) — the pool funds operational spending. `treasury_spend` is legal;
+//!   `endowment_withdraw` is not.
+//! - **`TreasuryEndowment`** (2) — both.
 //!
-//! ### MODE_TREASURY_ENDOWMENT (0x02) - Treasury + Endowment
-//! - Full-featured with insurance backing
-//! - Fee split: treasury_share → Treasury, endowment_share → Endowment
-//! - Treasury for operational costs, Endowment for insurance
+//! **The mode decides which endpoints are legitimate, not which pool holds value**, because this
+//! contract holds no balance of its own: `Purse` does, and every spend path here ends in a
+//! `promissory_note::transfer_v1` child.
 //!
-//! ## Composability with DrainProtection
+//! A **fee split** between a treasury share and an endowment share used to be documented here and in
+//! `FeeConfig`. It is not implemented and never was — nothing in this tree splits an incoming payment
+//! between two pools — so both the config struct and the documentation of it are gone.
 //!
-//! DAO-Escrow can integrate with the DrainProtection contract to provide
-//! governance-level protections against malicious DAO actions or mass exit attacks.
+//! ## Governance
 //!
-//! ### Integration Pattern
+//! The owner installs a MultiSig group with `UpdateV1`, which is one-shot. From then on every spend and
+//! every step of the claim lifecycle is authorised by that group's `multisig::FinalizeV1` over a message
+//! naming the action, and the multisig contract consumes that approval exactly once.
 //!
-//! ```text
-//! ┌─────────────────────────────────────────────────────────────────────────┐
-//! │                    DAO-Escrow + DrainProtection                           │
-//! ├─────────────────────────────────────────────────────────────────────────┤
-//! │                                                                          │
-//! │  ┌──────────────────────┐         ┌──────────────────────┐              │
-//! │  │     DAO-Escrow       │         │  DrainProtection      │              │
-//! │  │                      │         │                       │              │
-//! │  │  ┌────────────────┐  │         │  ┌────────────────┐  │              │
-//! │  │  │ pay_premium()  │──┼───┐     │  │  exit()        │  │              │
-//! │  │  └────────────────┘  │   │     │  │  transfer()    │  │              │
-//! │  │                      │   │     │  │  lock/unlock   │  │              │
-//! │  │  State: Merklized    │   │     │  └───────┬────────┘  │              │
-//! │  │  Membership tree     │   │     │          │            │              │
-//! │  │                      │   │     │  Verifies via:        │              │
-//! │  │                      │   ├────▶│  ┌────────▼────────┐ │              │
-//! │  │                      │   │     │  │ Merkle proof   │ │              │
-//! │  │                      │   │     │  │ from DAO-Escrow│ │              │
-//! │  └──────────────────────┘   │     │  └────────────────┘ │              │
-//! │                             │     │                       │              │
-//! └─────────────────────────────┴─────┴───────────────────────┘              │
-//!                               │                                              │
-//!        Cross-Contract         │                                              │
-//!        Merkle Proof          │                                              │
-//!                               ▼                                              │
-//! ┌─────────────────────────────────────────────────────────────────────────┐
-//! │                    No Direct State Sharing!                              │
-//! │                                                                          │
-//! │  DrainProtection verifies DAO-Escrow membership via Merkle proof.        │
-//! │  DAO-Escrow does NOT read DrainProtection state.                         │
-//! │  Each contract maintains its own nullifier namespace.                   │
-//! └─────────────────────────────────────────────────────────────────────────┘
-//! ```
+//! The model this contract was originally designed around — OCap capabilities verified through the
+//! `Identity` contract, with per-role capability requirements — is **gone**, and the reason is recorded
+//! in `OBL-C151`: nothing ever registered a requirement, so every gate that read one refused every call
+//! even once it was reachable. A check that cannot pass is indistinguishable from a broken one.
 //!
-//! ### DrainProtection Features Enabled
+//! Likewise the **DrainProtection integration** documented here: this contract stored an association
+//! bulla and an info flag that no handler ever read, and never once addressed the DrainProtection
+//! contract. `EnableDrainProtectionV1` retired with them.
 //!
-//! | Feature | Description |
-//! |---------|-------------|
-//! | Rate Limiting | Transfers exceeding base rate require 2/3 vote |
-//! | Vote Thresholds | Large withdrawals need 2/3 approval + 50% quorum |
-//! | Emergency Lock | Lock funds with 2/3 vote (max 7 days) |
-//! | Member Exit | Any member exits with 1/3 haircut |
+//! ## Trust model
 //!
-//! ## Trust Model
+//! - Membership notes are time-locked (block-based expiry), and `pay_premium` enforces `min_premium`.
+//! - Claims against the endowment are decided by the group, never by a tally: the group's own threshold
+//!   **is** the quorum, so one approved vote decides the claim.
+//! - The owner's withdrawal proof is spend-once, via a nullifier the contract records.
 //!
-//! - Membership notes are time-locked (block-based expiry)
-//! - Claims against endowment handled by DAO vote
-//! - Built-in governance (propose/vote/exec)
-//! - No external DAO dependency
+//! ## Use cases
 //!
-//! ## Use Cases
-//!
-//! - **Community Insurance**: Escrow mode - pure insurance pool
-//! - **Protocol Treasury**: Treasury mode - same as DarkWow DAO
-//! - **Full-Featured DAO**: TreasuryEndowment mode - treasury + insurance
+//! - **Community insurance** — `Escrow` mode: a pool that pays claims.
+//! - **Protocol treasury** — `Treasury` mode: a pool that funds operations.
+//! - **Both** — `TreasuryEndowment` mode.
 
 use dwow_sdk::define_contract_function;
 
-/// DAO-Escrow operating modes
-pub mod modes {
-    /// Escrow-only: Pure insurance pool
-    pub const MODE_ESCROW: u8 = 0x00;
-    /// Treasury-only: Same as DarkWow DAO
-    pub const MODE_TREASURY: u8 = 0x01;
-    /// Treasury + Endowment: Full-featured
-    pub const MODE_TREASURY_ENDOWMENT: u8 = 0x02;
-}
+// The `modes` module lived here: `MODE_ESCROW`/`MODE_TREASURY`/`MODE_TREASURY_ENDOWMENT` as bare `u8`
+// constants, a second encoding of a concept `DaoEscrowMode` already encodes. Two encodings of one thing is
+// how they drift, and the mode is now a real init parameter (`DaoEscrowMode`), so the enum is the only one.
 
+// The seven retired selectors — 0x06, 0x0a, 0x0b, 0x0c, 0x0e, 0x0f, 0x10 — are **deliberately absent**, and
+// absent rather than mapped to a no-op arm. A caller sending one now reaches `InvalidFunction`, which is a
+// refusal a caller can read; the two governance functions used to return `Ok(())` while doing nothing, and a
+// silent success on a function whose name promises an action is indistinguishable from the action having
+// happened. `OBL-C151`'s own history is the argument: a gate that reads a field nothing can set is
+// indistinguishable from a broken one, and a no-op that reports success is the same shape in the other
+// direction. The **surviving** selectors keep their original numbers, because they are explicit literals
+// here and nothing renumbers.
 define_contract_function!(DaoEscrowFunction {
     InitializeV1 = 0x00,
     UpdateV1 = 0x01,
@@ -129,17 +95,10 @@ define_contract_function!(DaoEscrowFunction {
     WithdrawV1 = 0x03,
     EndowmentWithdrawV1 = 0x04,
     TreasurySpendV1 = 0x05,
-    EnableDrainProtectionV1 = 0x06,
     ProposeClaimV1 = 0x07,
     VoteClaimV1 = 0x08,
     ExecuteClaimV1 = 0x09,
-    RegisterCapabilityRequirementV1 = 0x0a,
-    VerifyMemberCapabilityV1 = 0x0b,
-    ResolveDisputeV1 = 0x0c,
     CancelClaimV1 = 0x0d,
-    SetGovernanceConfigV1 = 0x0e,
-    SetGovernanceActiveV1 = 0x0f,
-    DeactivateCapabilityRequirementV1 = 0x10,
 });
 
 /// Internal contract errors
@@ -172,48 +131,20 @@ pub const DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE: &str = "membership";
 pub const DAO_ESCROW_CONTRACT_ENDOWMENT_TREE: &str = "endowment";
 /// Proposals tree (governance proposals/claims)
 pub const DAO_ESCROW_CONTRACT_PROPOSALS_TREE: &str = "proposals";
-/// Votes tree (vote records per proposal)
-pub const DAO_ESCROW_CONTRACT_VOTES_TREE: &str = "votes";
-/// Capability requirements tree (required capability IDs per role)
-pub const DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE: &str = "capability_requirements";
-/// Disputes tree (dispute resolution records)
-pub const DAO_ESCROW_CONTRACT_DISPUTES_TREE: &str = "disputes";
-/// Nullifiers tree (prevents double-vote, double-propose)
+/// Nullifiers tree (spent approvals, votes and ownership proofs)
 pub const DAO_ESCROW_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
-/// Governance config tree (separate from endowment for clean separation)
-pub const DAO_ESCROW_CONTRACT_GOVERNANCE_TREE: &str = "governance";
 
-// ============================================================================
-// KEYS
-// ============================================================================
-
-/// DB version key
-pub const DAO_ESCROW_DB_VERSION: &[u8] = b"db_version";
-/// Merkle tree key
-pub const DAO_ESCROW_MERKLE_TREE: &[u8] = b"merkle_tree";
-/// Latest root key
-pub const DAO_ESCROW_LATEST_ROOT: &[u8] = b"last_root";
+// Four trees were declared here and written by nobody, so they are removed rather than wired: `votes`
+// (the tally lives on the `Proposal`, which is the record that is actually read), `capability_requirements`
+// and `disputes` (their endpoints retired with the OCap model), and `governance` (the orphan of
+// `GovernanceConfig`, which `multisig_group_id` replaced). Three keys went with them — `db_version`,
+// `merkle_tree` and `last_root` — each of which had one `db_set` and no reader, and no merkle root was ever
+// written at all.
 
 // ============================================================================
 // ZKAS CIRCUIT NAMESPACES
 // ============================================================================
 
-/// ZKAS namespace for initialization
-pub const DAO_ESCROW_ZKAS_INIT_NS: &str = "Init";
-/// ZKAS namespace for premium payment
-pub const DAO_ESCROW_ZKAS_PREMIUM_NS: &str = "PayPremium";
-/// ZKAS namespace for claim proposal
-pub const DAO_ESCROW_ZKAS_PROPOSE_CLAIM_NS: &str = "ProposeClaim";
-/// ZKAS namespace for claim voting
-pub const DAO_ESCROW_ZKAS_VOTE_CLAIM_NS: &str = "VoteClaim";
-/// ZKAS namespace for member capability verification
-pub const DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_NS: &str = "VerifyMemberCapability";
-/// ZKAS namespace for dispute resolution
-pub const DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS: &str = "ResolveDispute";
-/// ZKAS namespace for governance config
-pub const DAO_ESCROW_ZKAS_SET_GOVERNANCE_CONFIG_NS: &str = "SetGovernanceConfigV1";
-
-// V2 circuit namespaces (HAZOP RC3: domain separation)
 /// ZKAS namespace for initialization V2 (domain-separated)
 pub const DAO_ESCROW_ZKAS_INIT_NS_V2: &str = "InitV2";
 /// ZKAS namespace for premium payment V2 (domain-separated)
@@ -222,12 +153,13 @@ pub const DAO_ESCROW_ZKAS_PREMIUM_NS_V2: &str = "PayPremiumV2";
 pub const DAO_ESCROW_ZKAS_PROPOSE_CLAIM_NS_V2: &str = "ProposeClaimV2";
 /// ZKAS namespace for claim voting V2 (domain-separated)
 pub const DAO_ESCROW_ZKAS_VOTE_CLAIM_NS_V2: &str = "VoteClaimV2";
-/// ZKAS namespace for member capability V2 (domain-separated)
-pub const DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_NS_V2: &str = "VerifyMemberCapabilityV2";
-/// ZKAS namespace for dispute resolution V2 (domain-separated)
-pub const DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS_V2: &str = "ResolveDisputeV2";
-/// ZKAS namespace for governance config V2 (domain-separated)
+/// ZKAS namespace for the ownership proof (`UpdateV1`, and `WithdrawV1`'s owner path)
 pub const DAO_ESCROW_ZKAS_SET_GOVERNANCE_CONFIG_NS_V2: &str = "SetGovernanceConfigV2";
+
+// The seven V1 namespaces were retired here. They named circuits that do not exist on disk — the V1 `.zk`
+// and `.zk.bin` files were deleted in `rc3 Batch 4`, as the note below records — and a live namespace
+// constant naming a deleted circuit is what kept the belief that in-contract ZK verification ran here. Two
+// V2 namespaces went with the circuits they named: `VerifyMemberCapabilityV2` and `ResolveDisputeV2`.
 
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)
@@ -235,32 +167,18 @@ pub const DAO_ESCROW_ZKAS_SET_GOVERNANCE_CONFIG_NS_V2: &str = "SetGovernanceConf
 
 // V1 ZK circuit binaries removed (rc3 Batch 4) — V1 .zk source and .zk.bin files deleted.
 
-// ============================================================================
-// DRAIN PROTECTION INTEGRATION
-// ============================================================================
-
-/// When enabled, the DAO-Escrow endowment/treasury is protected by DrainProtection
-/// - Rate limiting on all fund transfers
-/// - 2/3 vote required for large withdrawals
-/// - Emergency lock/unlock controls
-/// - Member exit with haircut
-///
-/// Integration: DrainProtection verifies membership via DAO-Escrow's Merkle tree.
-/// The bulla is used as the fund identifier in DrainProtection.
-pub const DAO_ESCROW_DRAIN_PROTECTION_KEY: &[u8] = b"drain_protection_enabled";
-
-/// Key storing the associated DrainProtection bulla (if enabled)
-pub const DAO_ESCROW_DRAIN_PROTECTION_BULLA_KEY: &[u8] = b"drain_protection_bulla";
+// The DrainProtection integration section lived here. It declared two info keys — a flag and a bulla —
+// that no handler ever read, plus a doc block describing rate limiting, a 2/3 vote and member-exit haircuts
+// that this contract never implemented: it only ever *stored* an association and never once addressed the
+// DrainProtection contract. `EnableDrainProtectionV1` retired with them.
+//
+// The `identity_cid`, `purse_cid` and `box_cid` keys retired for the same reason: each had one `db_set` at
+// init and zero `db_get`. `identity_cid` in particular was seeded as `[0u8; 32]` and its reader treated
+// zero as "skip the routing check" — fail-open — which `OBL-C152` records. Unit 3 of the re-wire
+// programme will re-introduce a purse id when dao_escrow actually calls the Purse contract; until then a
+// stored key nothing reads is the dead state this programme exists to remove.
 /// Promissory Note contract ID for cross-contract routing validation
 pub const PROMISSORY_NOTE_CONTRACT_ID_KEY: &[u8] = b"promissory_note_cid";
-/// Identity contract ID for cross-contract routing validation (safety.md Lesson 15)
-pub const IDENTITY_CONTRACT_ID_KEY: &[u8] = b"identity_cid";
-/// Purse contract ID (genesis counter 8) — tracks treasury/pool/endowment balances
-/// via Pedersen commitments instead of raw u64 arithmetic.
-pub const PURSE_CONTRACT_ID_KEY: &[u8] = b"purse_cid";
-/// Box contract ID (genesis counter 9) — replaces hand-rolled capability proofs
-/// for governance roles (member_vote, board_treasury, board_endowment, dispute_arbitrator).
-pub const BOX_CONTRACT_ID_KEY: &[u8] = b"box_cid";
 /// MultiSig contract ID — the contract a governance approval child must target. A governance-gated
 /// endpoint validates that its `multisig::FinalizeV1` child is addressed here before reading the
 /// approval, so a child aimed at a different contract cannot stand in for one (`OBL-C151`).

@@ -207,6 +207,6 @@ OR: Worker never delivers by block 50000
 ## See Also
 
 - [Attestation Contract](../attestation/README.md) - Generalized attestation and claims
-- [DAO-Escrow Contract](../dao_escrow/README.md) - Dispute resolution and organization
+- [DAO-Escrow Contract](../../../doc/src/contract/dao_escrow.md) - Endowment governance and the claim lifecycle
 - [Escrow Contract](../escrow/README.md) - HTLC-style payment escrow
 - [Subscription Contract](../subscription/README.md) - Recurring payments

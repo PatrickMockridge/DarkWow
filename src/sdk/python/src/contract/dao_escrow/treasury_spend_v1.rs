@@ -37,20 +37,16 @@ impl FunctionParams for dao_escrow_model::TreasurySpendParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("dao_escrow_bulla", format!("{:?}", self.dao_escrow_bulla))?;
-        dict.set_item("proposal_id", format!("{:?}", self.proposal_id))?;
         dict.set_item("recipient_pubkey", self.recipient_pubkey.to_string())?;
         dict.set_item("value", format!("{:?}", self.value))?;
-        dict.set_item("capability_proof", format!("{:?}", self.capability_proof))?;
         Ok(dict.unbind())
     }
 
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}dao_escrow_bulla: {:?}", self.dao_escrow_bulla).unwrap();
-        writeln!(out, "{prefix}proposal_id: {:?}", self.proposal_id).unwrap();
         writeln!(out, "{prefix}recipient_pubkey: {}", self.recipient_pubkey).unwrap();
         writeln!(out, "{prefix}value: {:?}", self.value).unwrap();
-        writeln!(out, "{prefix}capability_proof: {:?}", self.capability_proof).unwrap();
         Ok(())
     }
 }

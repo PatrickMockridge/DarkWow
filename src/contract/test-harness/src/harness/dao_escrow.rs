@@ -40,21 +40,15 @@ use dwow_dao_escrow_contract::client::{
     init::{init_v1_proof, InitV1CallData, InitV1PublicInputs},
     pay_premium::{pay_premium_v1_proof, PayPremiumV1CallData, PayPremiumV1PublicInputs},
     propose_claim::{propose_claim_v1_proof, ProposeClaimV1CallData, ProposeClaimV1PublicInputs},
-    resolve_dispute::{resolve_dispute_v1_proof, ResolveDisputeV1CallData, ResolveDisputeV1PublicInputs},
     update::{update_v1_proof, UpdateV1CallData, UpdateV1PublicInputs},
-    verify_member_capability::{verify_member_capability_v1_proof, VerifyMemberCapabilityV1CallData, VerifyMemberCapabilityV1PublicInputs},
     vote_claim::{vote_claim_v1_proof, VoteClaimV1CallData, VoteClaimV1PublicInputs},
 };
 use dwow_dao_escrow_contract::model::{
-    CancelClaimParamsV1, CapabilityProof, ClaimId, DaoEscrowBulla, ClaimType,
-    DeactivateCapabilityRequirementParamsV1, EnableDrainProtectionParamsV1, ExecuteClaimParamsV1,
-    InitializeParamsV1, PayPremiumParamsV1, ProposeClaimParamsV1,
-    RegisterCapabilityRequirementParamsV1, ResolveDisputeParamsV1, UpdateParamsV1,
-    VerifyMemberCapabilityParamsV1,
-    VoteClaimParamsV1, WithdrawParamsV1, MembershipNote, ProposalId, EndowmentWithdrawParamsV1,
-    TreasurySpendParamsV1, OracleAttestationRef, VoteType,
+    CancelClaimParamsV1, CapabilityProof, ClaimId, DaoEscrowBulla, DaoEscrowMode,
+    EndowmentWithdrawParamsV1, ExecuteClaimParamsV1, InitializeParamsV1, MembershipNote,
+    PayPremiumParamsV1, ProposalId, ProposeClaimParamsV1, TreasurySpendParamsV1, UpdateParamsV1,
+    VoteClaimParamsV1, WithdrawParamsV1, VoteType,
 };
-use dwow_dao_escrow_contract::model::Membership;
 
 /// DaoEscrow Harness for isolated testing
 pub struct DaoEscrowHarness {
@@ -74,14 +68,6 @@ pub struct DaoEscrowHarness {
     vote_claim_zkbin: ZkBinary,
     /// VoteClaim_V1 ProvingKey
     vote_claim_pk: ProvingKey,
-    /// VerifyMemberCapability_V1 ZkBinary
-    verify_member_capability_zkbin: ZkBinary,
-    /// VerifyMemberCapability_V1 ProvingKey
-    verify_member_capability_pk: ProvingKey,
-    /// ResolveDispute_V1 ZkBinary
-    resolve_dispute_zkbin: ZkBinary,
-    /// ResolveDispute_V1 ProvingKey
-    resolve_dispute_pk: ProvingKey,
     /// SetGovernanceConfig_V1 ZkBinary
     set_governance_config_zkbin: ZkBinary,
     /// SetGovernanceConfig_V1 ProvingKey
@@ -95,16 +81,12 @@ impl DaoEscrowHarness {
         let pay_premium_bin = include_bytes!("../../../dao_escrow/proof/pay_premium.zk.bin");
         let propose_claim_bin = include_bytes!("../../../dao_escrow/proof/propose_claim.zk.bin");
         let vote_claim_bin = include_bytes!("../../../dao_escrow/proof/vote_claim.zk.bin");
-        let verify_member_cap_bin = include_bytes!("../../../dao_escrow/proof/verify_member_capability.zk.bin");
-        let resolve_dispute_bin = include_bytes!("../../../dao_escrow/proof/resolve_dispute.zk.bin");
         let set_governance_config_bin = include_bytes!("../../../dao_escrow/proof/set_governance_config.zk.bin");
 
         let init_zkbin = ZkBinary::decode(init_bin, false).unwrap();
         let pay_premium_zkbin = ZkBinary::decode(pay_premium_bin, false).unwrap();
         let propose_claim_zkbin = ZkBinary::decode(propose_claim_bin, false).unwrap();
         let vote_claim_zkbin = ZkBinary::decode(vote_claim_bin, false).unwrap();
-        let verify_member_capability_zkbin = ZkBinary::decode(verify_member_cap_bin, false).unwrap();
-        let resolve_dispute_zkbin = ZkBinary::decode(resolve_dispute_bin, false).unwrap();
         let set_governance_config_zkbin = ZkBinary::decode(set_governance_config_bin, false).unwrap();
 
         let init_circuit =
@@ -115,10 +97,6 @@ impl DaoEscrowHarness {
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&propose_claim_zkbin).unwrap(), &propose_claim_zkbin);
         let vote_claim_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&vote_claim_zkbin).unwrap(), &vote_claim_zkbin);
-        let verify_member_capability_circuit =
-            ZkCircuit::new(dwow_core::zk::empty_witnesses(&verify_member_capability_zkbin).unwrap(), &verify_member_capability_zkbin);
-        let resolve_dispute_circuit =
-            ZkCircuit::new(dwow_core::zk::empty_witnesses(&resolve_dispute_zkbin).unwrap(), &resolve_dispute_zkbin);
         let set_governance_config_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&set_governance_config_zkbin).unwrap(), &set_governance_config_zkbin);
 
@@ -126,8 +104,6 @@ impl DaoEscrowHarness {
         let pay_premium_pk = ProvingKey::build(pay_premium_zkbin.k, &pay_premium_circuit).expect("ProvingKey::build failed");
         let propose_claim_pk = ProvingKey::build(propose_claim_zkbin.k, &propose_claim_circuit).expect("ProvingKey::build failed");
         let vote_claim_pk = ProvingKey::build(vote_claim_zkbin.k, &vote_claim_circuit).expect("ProvingKey::build failed");
-        let verify_member_capability_pk = ProvingKey::build(verify_member_capability_zkbin.k, &verify_member_capability_circuit).expect("ProvingKey::build failed");
-        let resolve_dispute_pk = ProvingKey::build(resolve_dispute_zkbin.k, &resolve_dispute_circuit).expect("ProvingKey::build failed");
         let set_governance_config_pk = ProvingKey::build(set_governance_config_zkbin.k, &set_governance_config_circuit).expect("ProvingKey::build failed");
 
         Self {
@@ -139,16 +115,19 @@ impl DaoEscrowHarness {
             propose_claim_pk,
             vote_claim_zkbin,
             vote_claim_pk,
-            verify_member_capability_zkbin,
-            verify_member_capability_pk,
-            resolve_dispute_zkbin,
-            resolve_dispute_pk,
             set_governance_config_zkbin,
             set_governance_config_pk,
         }
     }
 
     /// Initialize a new DAO-Escrow
+    ///
+    /// `mode` and `min_premium` are the caller's, because `InitializeParamsV1` carries them and
+    /// `initialize_apply_v1` writes what it is given. They used to be a constant `Escrow` and a zero
+    /// inside the contract, which made the other two `DaoEscrowMode` variants unreachable and
+    /// `treasury_spend_v1`'s mode gate impossible to pass (`OBL-C154`); the fixture now states the
+    /// mode it wants rather than inheriting one.
+    #[allow(clippy::too_many_arguments)]
     pub fn initialize(
         &self,
         nullifier_k: pallas::Scalar,
@@ -156,6 +135,8 @@ impl DaoEscrowHarness {
         owner_secret: pallas::Base,
         endowment_asset_id: pallas::Base,
         bulla_blind: pallas::Base,
+        mode: DaoEscrowMode,
+        min_premium: u64,
     ) -> Result<InitializeResult> {
         let input = InitV1CallData::new(
             nullifier_k,
@@ -176,8 +157,8 @@ impl DaoEscrowHarness {
             owner_pubkey: owner_pub,
             endowment_asset_id: dwow_sdk::crypto::AssetId::from_base(endowment_asset_id),
             bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
-            enable_drain_protection: false,
-            instance_seed: [0u8; 32],
+            mode,
+            min_premium,
         };
 
         // The selector IS part of the call data: the runner submits `call_data` verbatim
@@ -273,14 +254,16 @@ impl DaoEscrowHarness {
         owner_pubkey: PublicKey,
         endowment_asset_id: pallas::Base,
         bulla_blind: pallas::Base,
+        mode: DaoEscrowMode,
+        min_premium: u64,
     ) -> Result<Vec<u8>> {
         let params = InitializeParamsV1 {
             dao_bulla: DaoEscrowBulla(dao_bulla),
             owner_pubkey,
             endowment_asset_id: dwow_sdk::crypto::AssetId::from_base(endowment_asset_id),
             bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
-            enable_drain_protection: false,
-            instance_seed: [0u8; 32],
+            mode,
+            min_premium,
         };
         let mut call_data = vec![0x00]; // InitializeV1
         call_data.extend_from_slice(&params.encode());
@@ -298,59 +281,58 @@ impl DaoEscrowHarness {
             dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
             value,
             recipient_pubkey,
-            capability_proof: None,
         };
         let mut call_data = vec![0x03]; // WithdrawV1
-        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        // `WithdrawParamsV1::encode` is infallible — three fixed-size fields and no length prefix, now
+        // that the optional `capability_proof` is gone.
+        call_data.extend_from_slice(&params.encode());
         Ok(WithdrawResult { call_data })
     }
 
     /// Endowment withdraw (EndowmentWithdrawV1 - 0x04)
     ///
-    /// `capability_proof` is a **path selector and nothing more** in the contract: `endowment_withdraw_v1`
-    /// tests `is_some()` to choose its governance branch and never reads the proof's contents, and a
-    /// `proposal_id` chooses the other branch. Passing `Some(..)` with fabricated contents is therefore
-    /// what the fixture must do to exercise the governance path — stated here because it reads as a
-    /// mistake, and because the field owes its own unit (removing it changes this params type's codec,
-    /// and the Python binding pins the struct).
+    /// The endpoint's authority is the endowment's group and nothing else: the two *path selector*
+    /// fields this took (`capability_proof`, `proposal_id`) are gone from `EndowmentWithdrawParamsV1`,
+    /// because neither was a value the handler read — one carried a single `is_some()` bit and the
+    /// other named a second executor for the lifecycle `ExecuteClaimV1` already executes.
     pub fn endowment_withdraw(
         &self,
         dao_escrow_bulla: pallas::Base,
         claim_id: pallas::Base,
         recipient_pubkey: PublicKey,
         value: u64,
-        capability_proof: Option<CapabilityProof>,
     ) -> Result<EndowmentWithdrawResult> {
         let params = EndowmentWithdrawParamsV1 {
             dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
             claim_id: ClaimId(claim_id),
             recipient_pubkey,
             value,
-            capability_proof,
-            proposal_id: None,
         };
         let mut call_data = vec![0x04]; // EndowmentWithdrawV1
-        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        // `EndowmentWithdrawParamsV1::encode` is infallible now: four fixed-size fields, no `Option` and
+        // no length prefix.
+        call_data.extend_from_slice(&params.encode());
         Ok(EndowmentWithdrawResult { call_data })
     }
 
     /// Treasury spend (TreasurySpendV1 - 0x05)
+    ///
+    /// The same phantoms as `endowment_withdraw` lost their `proposal_id` and `capability_proof` params:
+    /// the group's approval is the only authority, and it names the action rather than a proposal.
     pub fn treasury_spend(
         &self,
         dao_escrow_bulla: pallas::Base,
-        proposal_id: pallas::Base,
         recipient_pubkey: PublicKey,
         value: u64,
     ) -> Result<TreasurySpendResult> {
         let params = TreasurySpendParamsV1 {
             dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
-            proposal_id: proposal_id,
             recipient_pubkey,
             value,
-            capability_proof: None,
         };
         let mut call_data = vec![0x05]; // TreasurySpendV1
-        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        // `TreasurySpendParamsV1::encode` is infallible — three fixed-size fields.
+        call_data.extend_from_slice(&params.encode());
         Ok(TreasurySpendResult { call_data })
     }
 
@@ -359,6 +341,11 @@ impl DaoEscrowHarness {
     // ========================================================================
 
     /// Propose a claim with ZK proof (ProposeClaimV1 - 0x07)
+    ///
+    /// `capability_id` and `capability_secret` are **circuit witnesses**, not call parameters:
+    /// `ProposeClaimParamsV1` carries neither, so they reach the proof and nothing else.
+    /// `description_hash` is passed the same way — the circuit has no witness for it either, and the
+    /// params struct no longer carries a field it could ride on.
     #[allow(clippy::too_many_arguments)]
     pub fn propose_claim(
         &self,
@@ -371,10 +358,7 @@ impl DaoEscrowHarness {
         value: u64,
         description_hash: pallas::Base,
         recipient_pubkey: PublicKey,
-        proposer_pubkey: PublicKey,
-        claim_type: ClaimType,
         proposal_blind: pallas::Base,
-        capability_proof: CapabilityProof,
     ) -> Result<ProposeClaimResult> {
         let input = ProposeClaimV1CallData::new(
             nullifier_k,
@@ -395,19 +379,17 @@ impl DaoEscrowHarness {
             dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
             claim_id: ClaimId(claim_id),
             value,
-            description_hash,
             recipient_pubkey,
-            proposer_pubkey,
             // The same blind the proof was built with (`OBL-C153`): the contract hashes this into
             // `claim_commit` and the circuit's instances carry it, so the two sides agree by
             // construction rather than by coincidence.
             claim_blind: proposal_blind,
-            claim_type,
-            capability_proof,
         };
 
         let mut call_data = vec![0x07]; // ProposeClaimV1
-        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        // `ProposeClaimParamsV1::encode` is infallible now: five fixed-size fields, the `CapabilityProof`
+        // and its length prefix having left the struct.
+        call_data.extend_from_slice(&params.encode());
 
         Ok(ProposeClaimResult { call_data, public_inputs, proof })
     }
@@ -458,91 +440,10 @@ impl DaoEscrowHarness {
         Ok(VoteClaimHarnessResult { call_data, public_inputs, proof })
     }
 
-    /// Verify member capability with ZK proof (VerifyMemberCapabilityV1 - 0x0b)
-    pub fn verify_member_capability(
-        &self,
-        nullifier_k: pallas::Scalar,
-        capability_id: pallas::Base,
-        dao_escrow_bulla: pallas::Base,
-        capability_secret: pallas::Base,
-        holder_secret: pallas::Base,
-        holder_pubkey: PublicKey,
-        capability_proof: CapabilityProof,
-    ) -> Result<VerifyMemberCapabilityResult> {
-        let input = VerifyMemberCapabilityV1CallData::new(
-            nullifier_k,
-            capability_id,
-            dao_escrow_bulla,
-            capability_secret,
-            holder_secret,
-        );
-        let (proof, public_inputs) =
-            verify_member_capability_v1_proof(&self.verify_member_capability_zkbin, &self.verify_member_capability_pk, &input)?;
-
-        let params = VerifyMemberCapabilityParamsV1 {
-            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
-            capability_proof,
-            holder_pubkey,
-        };
-
-        let mut call_data = vec![0x0b]; // VerifyMemberCapabilityV1
-        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
-
-        Ok(VerifyMemberCapabilityResult { call_data, public_inputs, proof })
-    }
-
-    /// Resolve a dispute with ZK proof (ResolveDisputeV1 - 0x0c)
-    #[allow(clippy::too_many_arguments)]
-    pub fn resolve_dispute(
-        &self,
-        nullifier_k: pallas::Scalar,
-        capability_id: pallas::Base,
-        dao_escrow_bulla: pallas::Base,
-        dispute_id: pallas::Base,
-        capability_secret: pallas::Base,
-        arbitrator_secret: pallas::Base,
-        attestations: Vec<OracleAttestationRef>,
-        attestation_root: pallas::Base,
-        resolution_result: bool,
-        payout_amount: u64,
-        payout_recipient: PublicKey,
-        proposal_id: pallas::Base,
-        capability_proof: CapabilityProof,
-    ) -> Result<ResolveDisputeHarnessResult> {
-        let attestation_count = attestations.len() as u64;
-        let threshold = attestation_count; // In tests, threshold = number of attestations provided
-
-        let input = ResolveDisputeV1CallData::new(
-            nullifier_k,
-            capability_id,
-            dao_escrow_bulla,
-            dispute_id,
-            capability_secret,
-            arbitrator_secret,
-            attestation_count,
-            threshold,
-            resolution_result,
-            payout_amount,
-            payout_recipient,
-            attestation_root,
-        );
-        let (proof, public_inputs) =
-            resolve_dispute_v1_proof(&self.resolve_dispute_zkbin, &self.resolve_dispute_pk, &input)?;
-
-        let params = ResolveDisputeParamsV1 {
-            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
-            proposal_id: ProposalId(proposal_id),
-            attestations,
-            capability_proof,
-            payout_amount,
-            payout_recipient,
-        };
-
-        let mut call_data = vec![0x0c]; // ResolveDisputeV1
-        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
-
-        Ok(ResolveDisputeHarnessResult { call_data, public_inputs, proof })
-    }
+    // Two ZK builders were removed here — `verify_member_capability` (0x0b) and `resolve_dispute`
+    // (0x0c) — with their endpoints, their circuits and their `.zk`/`.zk.bin` files. Both belonged to
+    // the OCap/Identity model that MultiSig groups replaced; `CapabilityProof` survives only as a field
+    // of `VoteClaimParamsV1`.
 
     // ========================================================================
     // NON-ZK CALL DATA METHODS
@@ -567,74 +468,24 @@ impl DaoEscrowHarness {
         Ok(ExecuteClaimResult { call_data })
     }
 
-    /// Register a capability requirement (RegisterCapabilityRequirementV1 - 0x0a)
-    pub fn register_capability_requirement(
-        &self,
-        dao_escrow_bulla: pallas::Base,
-        role: Vec<u8>,
-        capability_id: [u8; 32],
-        identity_contract_bulla: pallas::Base,
-    ) -> Result<RegisterCapabilityRequirementResult> {
-        let params = RegisterCapabilityRequirementParamsV1 {
-            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
-            role,
-            capability_id,
-            identity_contract_bulla,
-        };
-        let mut call_data = vec![0x0a]; // RegisterCapabilityRequirementV1
-        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
-        Ok(RegisterCapabilityRequirementResult { call_data })
-    }
-
-    /// Enable drain protection (EnableDrainProtectionV1 - 0x06)
-    ///
-    /// Gated by the endowment's group since `OBL-C152`: the action id binds
-    /// `(bulla, drain_protection_bulla)`, so the caller must supply the approval child.
-    pub fn enable_drain_protection(
-        &self,
-        dao_escrow_bulla: pallas::Base,
-        drain_protection_bulla: pallas::Base,
-    ) -> Result<EnableDrainProtectionResult> {
-        let params = EnableDrainProtectionParamsV1 {
-            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
-            drain_protection_bulla: DaoEscrowBulla(drain_protection_bulla),
-        };
-        let mut call_data = vec![0x06]; // EnableDrainProtectionV1
-        // `EnableDrainProtectionParamsV1::encode` is infallible — two fixed-size fields, no length prefix.
-        call_data.extend_from_slice(&params.encode());
-        Ok(EnableDrainProtectionResult { call_data })
-    }
-
-    /// Deactivate a capability requirement (DeactivateCapabilityRequirementV1 - 0x10)
-    ///
-    /// Gated by the endowment's group since `OBL-C152`. The action id binds the *capability* the stored
-    /// requirement names, not the role key — the endpoint loads the record before checking, so the
-    /// approval covers the requirement rather than merely the call.
-    pub fn deactivate_capability_requirement(
-        &self,
-        dao_escrow_bulla: pallas::Base,
-        role: Vec<u8>,
-    ) -> Result<DeactivateCapabilityRequirementResult> {
-        let params = DeactivateCapabilityRequirementParamsV1 {
-            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
-            role,
-        };
-        let mut call_data = vec![0x10]; // DeactivateCapabilityRequirementV1
-        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
-        Ok(DeactivateCapabilityRequirementResult { call_data })
-    }
+    /// Three call-data builders were removed here — `register_capability_requirement` (0x0a),
+    /// `enable_drain_protection` (0x06) and `deactivate_capability_requirement` (0x10). Their endpoints
+    /// are retired: `lib.rs` leaves the selectors unassigned rather than mapping them to a no-op, so a
+    /// caller sending one reaches `InvalidFunction`.
 
     /// Cancel a pending claim (CancelClaimV1 - 0x0d)
+    ///
+    /// `params.proposer_pubkey` is gone with the check it fed: the comparison it made was between two
+    /// public values, so it admitted anyone who knew the proposer's key (`OBL-C152`). The endowment's
+    /// group authorises the cancellation now, over the claim id.
     pub fn cancel_claim(
         &self,
         dao_escrow_bulla: pallas::Base,
         claim_id: pallas::Base,
-        proposer_pubkey: PublicKey,
     ) -> Result<CancelClaimResult> {
         let params = CancelClaimParamsV1 {
             dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
             claim_id: ClaimId(claim_id),
-            proposer_pubkey,
         };
         let mut call_data = vec![0x0d]; // CancelClaimV1
         call_data.extend_from_slice(&params.encode());
@@ -748,8 +599,6 @@ impl super::ContractHarness for DaoEscrowHarness {
             "PayPremiumV2",
             "ProposeClaimV2",
             "VoteClaimV2",
-            "VerifyMemberCapabilityV2",
-            "ResolveDisputeV2",
             "SetGovernanceConfigV2",
         ]
     }
@@ -760,8 +609,6 @@ impl super::ContractHarness for DaoEscrowHarness {
             "PayPremiumV2" => Some(&self.pay_premium_zkbin),
             "ProposeClaimV2" => Some(&self.propose_claim_zkbin),
             "VoteClaimV2" => Some(&self.vote_claim_zkbin),
-            "VerifyMemberCapabilityV2" => Some(&self.verify_member_capability_zkbin),
-            "ResolveDisputeV2" => Some(&self.resolve_dispute_zkbin),
             "SetGovernanceConfigV2" => Some(&self.set_governance_config_zkbin),
             _ => None,
         }
@@ -773,8 +620,6 @@ impl super::ContractHarness for DaoEscrowHarness {
             "PayPremiumV2" => Some(&self.pay_premium_pk),
             "ProposeClaimV2" => Some(&self.propose_claim_pk),
             "VoteClaimV2" => Some(&self.vote_claim_pk),
-            "VerifyMemberCapabilityV2" => Some(&self.verify_member_capability_pk),
-            "ResolveDisputeV2" => Some(&self.resolve_dispute_pk),
             "SetGovernanceConfigV2" => Some(&self.set_governance_config_pk),
             _ => None,
         }
@@ -817,20 +662,6 @@ pub struct VoteClaimHarnessResult {
     pub proof: dwow_core::zk::Proof,
 }
 
-/// Result of verifying member capability
-pub struct VerifyMemberCapabilityResult {
-    pub call_data: Vec<u8>,
-    pub public_inputs: VerifyMemberCapabilityV1PublicInputs,
-    pub proof: dwow_core::zk::Proof,
-}
-
-/// Result of resolving a dispute
-pub struct ResolveDisputeHarnessResult {
-    pub call_data: Vec<u8>,
-    pub public_inputs: ResolveDisputeV1PublicInputs,
-    pub proof: dwow_core::zk::Proof,
-}
-
 // ============================================================================
 // Non-ZK call data result structs
 // ============================================================================
@@ -840,23 +671,8 @@ pub struct ExecuteClaimResult {
     pub call_data: Vec<u8>,
 }
 
-/// Result of registering a capability requirement
-pub struct RegisterCapabilityRequirementResult {
-    pub call_data: Vec<u8>,
-}
-
 /// Result of cancelling a claim
 pub struct CancelClaimResult {
-    pub call_data: Vec<u8>,
-}
-
-/// Result of enabling drain protection
-pub struct EnableDrainProtectionResult {
-    pub call_data: Vec<u8>,
-}
-
-/// Result of deactivating a capability requirement
-pub struct DeactivateCapabilityRequirementResult {
     pub call_data: Vec<u8>,
 }
 

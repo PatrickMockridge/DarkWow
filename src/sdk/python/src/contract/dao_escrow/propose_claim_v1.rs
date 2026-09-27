@@ -39,11 +39,8 @@ impl FunctionParams for dao_escrow_model::ProposeClaimParamsV1 {
         dict.set_item("dao_escrow_bulla", format!("{:?}", self.dao_escrow_bulla))?;
         dict.set_item("claim_id", format!("{:?}", self.claim_id))?;
         dict.set_item("value", format!("{:?}", self.value))?;
-        dict.set_item("description_hash", format!("{:?}", self.description_hash))?;
         dict.set_item("recipient_pubkey", self.recipient_pubkey.to_string())?;
-        dict.set_item("proposer_pubkey", self.proposer_pubkey.to_string())?;
-        dict.set_item("claim_type", format!("{:?}", self.claim_type))?;
-        dict.set_item("capability_proof", format!("{:?}", self.capability_proof))?;
+        dict.set_item("claim_blind", format!("{:?}", self.claim_blind))?;
         Ok(dict.unbind())
     }
 
@@ -52,11 +49,8 @@ impl FunctionParams for dao_escrow_model::ProposeClaimParamsV1 {
         writeln!(out, "{prefix}dao_escrow_bulla: {:?}", self.dao_escrow_bulla).unwrap();
         writeln!(out, "{prefix}claim_id: {:?}", self.claim_id).unwrap();
         writeln!(out, "{prefix}value: {:?}", self.value).unwrap();
-        writeln!(out, "{prefix}description_hash: {:?}", self.description_hash).unwrap();
         writeln!(out, "{prefix}recipient_pubkey: {}", self.recipient_pubkey).unwrap();
-        writeln!(out, "{prefix}proposer_pubkey: {}", self.proposer_pubkey).unwrap();
-        writeln!(out, "{prefix}claim_type: {:?}", self.claim_type).unwrap();
-        writeln!(out, "{prefix}capability_proof: {:?}", self.capability_proof).unwrap();
+        writeln!(out, "{prefix}claim_blind: {:?}", self.claim_blind).unwrap();
         Ok(())
     }
 }

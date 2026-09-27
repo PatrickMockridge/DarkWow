@@ -287,7 +287,7 @@ Local READMEs exist for each contract in this folder:
 - [attestation/README.md](attestation/README.md) - Generalized attestation and claims
 - [baccarat/README.md](baccarat/README.md) - Privacy-preserving Baccarat casino game
 - [bridge/README.md](bridge/README.md) - Cross-chain asset transfers
-- [dao_escrow/README.md](dao_escrow/README.md) - Three-mode DAO
+- [dao_escrow](../../doc/src/contract/dao_escrow.md) - One-endowment DAO, governed by a MultiSig group
 - [darkbet_exchange/README.md](darkbet_exchange/README.md) - Unified betting exchange (order-book + AMM)
 - [darktoshi_dice/README.md](darktoshi_dice/README.md) - Satoshi Dice clone
 - [dex/README.md](dex/README.md) - Atomic swap DAO

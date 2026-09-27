@@ -1,47 +1,53 @@
 # DAO-Escrow Contract
 
-A DAO-governed endowment. Members pay premiums into an endowment; claims against it are authorised by a
-**MultiSig group** the endowment's owner installs once, through a ZK-proven `UpdateV1`.
+One endowment pool, governed by one owner-installed MultiSig group. Members pay premiums into the pool
+and receive time-locked membership notes. Every spend out of the pool — and every step of the claim
+lifecycle — is authorised by a `multisig::FinalizeV1` approval that the endowment's group has signed.
 
 > **Read this first if you are here from the older revision of this page.** That revision documented an
-> OCap/Identity governance model, a `governance_active` feature toggle, four delegated governance roles
-> exercised through `Box::TakeV1`, and Purse-backed pool balances. **None of those exist in the contract.**
-> The record that supports them was migrated to MultiSig groups and the documentation was not; what
-> follows is the code as it is, and [What is not implemented](#what-is-not-implemented) names each gap.
+> OCap/Identity model, per-role capability requirements verified through the `Identity` contract,
+> four delegated governance roles exercised through `Box::TakeV1`, Purse-backed pool balances, a
+> `drain_protection_enabled` association, a `governance_active` toggle, a vote tally compared against a
+> quorum, and a two-pool fee split. **None of those exist in the contract.** Seven selectors and two
+> circuits have been retired rather than left as no-ops, the record went from nineteen fields to four,
+> and the whole capability registry is gone. What follows is the code as it is; every section states
+> its source, and [What is not implemented](#what-is-not-implemented) names each gap that remains.
 
 ## Composition
 
-The contract composes with genesis primitives through **child calls it validates**, not through storage it
-shares:
+The contract composes with genesis primitives through **child calls it validates**, not through storage
+it shares. Two child compositions exist in the crate and no others:
 
-- **`promissory_note::TransferV1` (0x04)** — every value-moving endpoint requires one as a child and
-  checks the child's target contract id, its function selector, and that one of its outputs commits to
-  `poseidon_hash(value, dao_escrow_bulla)`. The transfer *is* the money movement; this contract's apply
-  only rewrites the endowment record.
-- **`multisig::FinalizeV1` (0x03)** — the governance approval (see
-  [Governance](#governance-the-multisig-group)).
-- **`identity::VerifyCapabilityV1` (`0x06`)** — required by `VerifyMemberCapabilityV1` only, and its routing
-  check is **skipped** while `identity_cid` is the zero placeholder `init_contract` seeds, so the child's
-  contract id is not compared to anything. The selector is the only binding.
-- **DrainProtection** — an association, not a call: `drain_protection_enabled` and
-  `drain_protection_bulla` are two fields on the record. The contract never addresses the DrainProtection
-  contract.
+- **`promissory_note::TransferV1` (0x04)** — every value-moving endpoint requires one as its slot-0 child
+  and checks three things: that the child's target contract id equals the `promissory_note_cid` recorded
+  in the `info` tree, that the child's selector is `0x04`, and that one of its outputs commits to
+  `poseidon_hash(value, dao_escrow_bulla)` (`validate_child_contract_id` and
+  `validate_child_value_commit`). The transfer *is* the money movement; this contract's `apply` only
+  re-stores the endowment record, which is unchanged by a spend.
+- **`multisig::FinalizeV1` (0x03)** — the governance approval. `require_governance_child` decodes the
+  child's `FinalizeParamsV1`, checks the child targets the `multisig_cid` from the `info` tree, that the
+  decoded `group_id` is the endowment's own `multisig_group_id`, and that the decoded `message_hash` is
+  the exact action message (see [Governance](#governance-the-owner-the-group-a-member)).
 
-The `Purse::DepositV1`/`WithdrawV1` and `Box::TakeV1` composition the older revision described is **not
-implemented** — see [What is not implemented](#what-is-not-implemented).
+There is no third. `Purse::DepositV1`/`WithdrawV1`, `Box::TakeV1`, `identity::VerifyCapabilityV1`,
+`attestation` and the DrainProtection contract are **not called anywhere in this crate**. The `info`
+tree holds two keys (`promissory_note_cid`, `multisig_cid`) and both have readers; the `identity_cid`,
+`box_cid` and `purse_cid` keys were retired, because each had one `db_set` at init and zero `db_get`,
+and `identity_cid` was additionally seeded as `[0u8; 32]` with a reader that treated zero as "skip the
+routing check" — fail-open, recorded as `OBL-C152`.
 
-## Governance: the MultiSig group
+## Governance: the owner, the group, a member
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  DAO-Escrow governance                                                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  OFF-CHAIN: the members' group is created in the MultiSig contract           │
-│     CreateGroupV1 (0x01) → group_id                                          │
+│  THE OWNER creates the endowment: InitializeV1 (0x00)                        │
+│     mode, min_premium, owner_pubkey → endowment record, multisig_group_id=0  │
 │              │                                                               │
 │              ▼                                                               │
-│  ONCE, BY THE OWNER: UpdateV1 (0x01)                                         │
+│  THE OWNER installs the group ONCE: UpdateV1 (0x01)                          │
 │     ┌──────────────────────────────────────────────────────────────┐         │
 │     │  ZK: SetGovernanceConfigV2                                   │         │
 │     │    owner_pub = ec_mul_base(owner_secret, NULLIFIER_K)        │         │
@@ -50,242 +56,380 @@ implemented** — see [What is not implemented](#what-is-not-implemented).
 │     │                                   owner_secret, bulla)       │         │
 │     │    constrain_instance(owner_nullifier)                       │         │
 │     └──────────────────────────────────────────────────────────────┘         │
-│     exec compares the proven coordinates to the record's owner,              │
-│     records owner_nullifier (replay is refused), and writes the group id     │
-│     into a field that was zero. A record that already has a group is         │
-│     refused: THERE IS NO ROTATION.                                           │
+│     the proof exposed those coordinates; exec compares them to the           │
+│     record's owner, records owner_nullifier (replay is refused), and         │
+│     writes the group id into a field that was zero. A record that            │
+│     already carries a group is refused: THERE IS NO ROTATION.                │
 │              │                                                               │
 │              ▼                                                               │
-│  PER ACTION: a child multisig::FinalizeV1 (0x03) whose decoded               │
-│     group_id == endowment.multisig_group_id                                  │
-│     message_hash == governance_message(role, action_id)                      │
+│  THE GROUP authorises, per action: a multisig::FinalizeV1 (0x03) child       │
+│     whose decoded group_id == endowment.multisig_group_id                    │
+│     and whose message_hash == governance_message(role, action_id)            │
+│     The multisig contract refuses below the group's threshold, and           │
+│     consumes each member's signature exactly once.                           │
 │              │                                                               │
 │              ▼                                                               │
-│  six gated endpoints (roles 1-6)                                             │
+│  six governance-gated paths — one per role that remains                      │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**The owner is proved, not asserted.** `UpdateV1` carries a ZK proof: the exposed owner coordinates are
-bound to knowledge of `owner_secret`, and `owner_nullifier` is derived deterministically in
-`(owner_secret, dao_escrow_bulla)` so it can only be used once. A plaintext comparison of public keys —
-which is what `WithdrawV1`'s owner path still does — would gate nothing, because a public key is published
-in order to receive funds.
+**What the owner does.** Calls `InitializeV1` once, choosing the `mode` and the `min_premium`;
+those are the creator's and the record is immutable in both afterwards. Calls `UpdateV1` once to
+install the group. While `multisig_group_id` is zero the endowment is owner-controlled: `WithdrawV1`'s
+owner path is the only way out, and every other spend refuses with `GovernanceNotActive`. After the
+group is installed there is no path back to owner-key control and no path to a different group.
 
-**No rotation.** Once a group is installed there is no path back to owner-key control and no path to a
-different group: an `UpdateV1` against a record that already carries a group is refused
-(`GovernanceAlreadyActive`). This is a design decision, and it is the opposite of what the older revision
-claimed.
+**What the group does.** Signs a message naming one action, off-chain, through the MultiSig
+contract's `SignV1`; anyone may then present the collected signatures in a `FinalizeV1` child of the
+action's endpoint. The group's **threshold is the quorum**: `FinalizeV1` refuses below it, a failing
+child fails the parent transaction, and this contract re-counts nothing — a second source of truth
+that could disagree with the first is the argument `OBL-C101` records.
 
-### The approval's message is role-tagged
+**What a member gets.** `PayPremiumV1` stores a `Membership` record under the note id: the member's
+public key, the premium paid, the asset id, an expiry block and the block the membership was created
+at. Membership is time-locked by `expiry`, but **nothing in the contract reads that expiry** — no gate
+consults it, because no endpoint is member-gated. Members do not vote. Paying at least `min_premium`
+is the only requirement, and `min_premium` is the creator's value, carried in the record and compared
+in `pay_premium_v1`.
+
+### The signature: `governance_message(role, action_id)`
 
 ```rust
 governance_message(role: u8, action_id: pallas::Base) -> pallas::Base
     = poseidon_hash([DOMAIN_GOVERNANCE_APPROVAL = 11, role, action_id])
 ```
 
+`DAO_ESCROW_DOMAIN_GOVERNANCE_APPROVAL` is `11`, the next free value after the SDK's registry of
+`1..=10`; it lives in this contract rather than in `src/sdk/src/crypto/constants.rs` so that a change
+to it does not stale all 32 artifacts.
+
 | role | endpoint | action id |
 |------|----------|-----------|
 | 1 | `ProposeClaimV1` (0x07) | `claim_id` |
-| 2 | `VoteClaimV1` (0x08) | `claim_id` |
-| 3 | `ResolveDisputeV1` (0x0c) | the contract's own `dispute_id` derivation |
-| 4 | `EndowmentWithdrawV1` (0x04) | `(bulla, value, recipient_x)` |
-| 5 | `TreasurySpendV1` (0x05) | `(bulla, value, recipient_x)` |
-| 6 | `WithdrawV1` (0x03) | `(bulla, value, recipient_x)` |
-| 7 | `EnableDrainProtectionV1` (0x06) | `(bulla, drain_protection_bulla)` |
-| 8 | `RegisterCapabilityRequirementV1` (0x0a) | `(bulla, capability_id)` |
-| 9 | `DeactivateCapabilityRequirementV1` (0x10) | `(bulla, capability_id)` of the stored record |
+| 2 | `VoteClaimV1` (0x08) | `poseidon_hash(claim_id, voter_x, voter_y, direction)` |
+| 4 | `EndowmentWithdrawV1` (0x04) | `poseidon_hash(bulla, value, recipient_x)` |
+| 5 | `TreasurySpendV1` (0x05) | `poseidon_hash(bulla, value, recipient_x)` |
+| 6 | `WithdrawV1` (0x03) | `poseidon_hash(bulla, value, recipient_x)` |
 | 10 | `CancelClaimV1` (0x0d) | `claim_id` |
 
-Roles 7–10 were added on 2026-09-27: those four endpoints performed **authenticated state changes with no
-authorization check at all** (`OBL-C152`). Two of them bind a value rather than an id, because their
-governance branch is reached with no id to bind — the same reason the money endpoints use a triple.
-
-**One boundary is recorded rather than solved**: roles 8 and 9 bind the *capability* and not the role key,
-because the role is a `Vec<u8>` table key and `pallas::Base::from_repr` takes exactly 32 canonical bytes.
-A group approval for one role's requirement can therefore be presented for another role's — stated in
-`governance_role::REGISTER_CAPABILITY_REQUIREMENT` rather than left to be discovered.
+Roles 3, 7, 8 and 9 — `RESOLVE_DISPUTE`, `ENABLE_DRAIN_PROTECTION`,
+`REGISTER_CAPABILITY_REQUIREMENT` and `DEACTIVATE_CAPABILITY_REQUIREMENT` — retired with their
+endpoints and are **left unassigned**, on the same rule the selectors follow: a number that meant
+something keeps meaning it, so what a recorded approval names cannot change.
 
 Two properties are structural rather than stylistic:
 
-- **The role tag stops approval reuse.** A MultiSig approval is spend-once — its nullifier is
-  `H(1, member_secret, group_id, message_hash)`, consumed by `FinalizeV1`. `propose_claim` and `vote_claim`
-  both key on `claim_id`, so without the role tag a vote's approval would re-use the proposal's.
-- **The three money endpoints use a triple, not an id.** Their governance branch is reached exactly when
-  `proposal_id == 0`, so an id-based message would be zero for every call and one approval of zero would
-  authorise every withdrawal from that endowment forever. The action id is refused if zero.
+- **The role tag stops approval reuse.** A MultiSig approval is spend-once — each member's nullifier is
+  `H(1, member_secret, group_id, message_hash)`, consumed by `FinalizeV1`. `propose_claim` and
+  `vote_claim` both key on the same `claim_id`, so an untagged message would have the vote's approval
+  name nullifiers the proposal had already spent, and the child would fail.
+- **The three money endpoints use a triple, not an id.** Their governance branch is reached exactly
+  when there is no proposal id to bind, so an id-based message would be zero for every call and one
+  approval of zero would authorise every withdrawal from that endowment forever. `require_governance_child`
+  refuses an all-zero action id outright. The triple binds the instance, the amount and the payee;
+  it binds `recipient_x` only, not `recipient_y`.
 
-## Entrypoints
+## Spend paths
 
-| Opcode | Function | ZK circuit | Child calls | Authorization |
-|--------|----------|-----------|-------------|---------------|
-| `0x00` | `InitializeV1` | `InitV2` (4) | none | none; a duplicate bulla is refused |
-| `0x01` | `UpdateV1` | `SetGovernanceConfigV2` (5) | none | **owner, proved**; one-shot `owner_nullifier` |
-| `0x02` | `PayPremiumV1` | `PayPremiumV2` (2) | `TransferV1` at slot 0 | none in-contract |
-| `0x03` | `WithdrawV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 when governance active | owner pubkey, or role 6 |
-| `0x04` | `EndowmentWithdrawV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 when governance active | role 4, or an `Approved` proposal |
-| `0x05` | `TreasurySpendV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 | role 5, behind a mode gate that cannot pass |
-| `0x06` | `EnableDrainProtectionV1` | — | `FinalizeV1` at 0 | role 7 |
-| `0x07` | `ProposeClaimV1` | `ProposeClaimV2` (3) | `FinalizeV1` at 0 | role 1 |
-| `0x08` | `VoteClaimV1` | `VoteClaimV2` (3) | `FinalizeV1` at 0 | role 2 |
-| `0x09` | `ExecuteClaimV1` | — | `TransferV1` at 0 | proposal must be `Approved` |
-| `0x0a` | `RegisterCapabilityRequirementV1` | — | `FinalizeV1` at 0 | role 8 |
-| `0x0b` | `VerifyMemberCapabilityV1` | `VerifyMemberCapabilityV2` (3) | `identity::VerifyCapabilityV1` (`0x06`) | the proof; the routing check is skipped while `identity_cid` is zero |
-| `0x0c` | `ResolveDisputeV1` | `ResolveDisputeV2` (3) | `FinalizeV1` at 0 | role 3 |
-| `0x0d` | `CancelClaimV1` | — | `FinalizeV1` at 0 | role 10 |
-| `0x0e` | `SetGovernanceConfigV1` | — | — | **retired no-op** |
-| `0x0f` | `SetGovernanceActiveV1` | — | — | **retired no-op** |
-| `0x10` | `DeactivateCapabilityRequirementV1` | — | `FinalizeV1` at 0 | role 9 |
+Four ways value leaves the pool. Each ends in a `promissory_note::TransferV1` child; what differs is
+what the parent demands before it will return the update.
 
-`(n)` after a circuit is its `constrain_instance` count, which is what the metadata arm must publish.
+| Path | Endpoint | Requires |
+|------|----------|----------|
+| Owner withdrawal | `WithdrawV1` (0x03) | No group installed, and `endowment.owner_pubkey == params.recipient_pubkey` — **a comparison of two public values, which gates nothing** (`OBL-C152`) |
+| Owner withdrawal, governance active | `WithdrawV1` (0x03) | Role 6 approval over `(bulla, value, recipient_x)` |
+| Claim payout | `EndowmentWithdrawV1` (0x04) | Role 4 approval over `(bulla, value, recipient_x)`; refuses when `mode == Treasury` |
+| Operational spend | `TreasurySpendV1` (0x05) | Role 5 approval over `(bulla, value, recipient_x)`; refuses unless `mode` is `Treasury` or `TreasuryEndowment` |
+| Lifecycle payout | `ExecuteClaimV1` (0x09) | The proposal named must be `Approved` (which only `VoteClaimV1` writes) and inside its execution deadline; no approval child |
 
-Every endpoint whose metadata arm is absent from `get_metadata` must return an **encoded** empty
+**The mode decides which endpoint is legitimate, not which pool holds value** — this contract holds no
+balance of its own. `Purse` does, and `Purse::WithdrawV1` is where a balance check belongs; the guards
+that stood in these handlers were `if false { … }` blocks and are now removed rather than left dead.
+Until this contract actually calls the Purse contract, **nothing in this contract bounds a spend by the
+pool's balance** — see [What is not implemented](#what-is-not-implemented).
+
+## Endpoints
+
+Ten selectors survive, and they keep their original numbers because they are explicit literals and
+nothing renumbers. The seven that retired — 0x06, 0x0a, 0x0b, 0x0c, 0x0e, 0x0f, 0x10 — are
+**deliberately absent from the function enum rather than mapped to no-op arms**: a caller sending one
+now reaches `InvalidFunction`, which is a refusal a caller can read, where the two governance
+functions used to return `Ok(())` while doing nothing.
+
+| Opcode | Function | Proof circuit | Child calls | Authorization | Verdict |
+|--------|----------|---------------|-------------|---------------|---------|
+| `0x00` | `InitializeV1` | `InitV2` (4) | none | none — anyone may create an endowment | reachable; a duplicate **derived** bulla is refused (`OBL-C158`) |
+| `0x01` | `UpdateV1` | `SetGovernanceConfigV2` (5) | none | **owner, proved**; one-shot `owner_nullifier`; no rotation | reachable; see the `None` footgun below |
+| `0x02` | `PayPremiumV1` | `PayPremiumV2` (2) | `TransferV1` at slot 0 (exactly one) | none in-contract; `value >= min_premium`, endowment must exist, note must be new | reachable |
+| `0x03` | `WithdrawV1` | — | `TransferV1` at 0; `FinalizeV1` at 1 when a group is installed (1 or 2 children) | role 6, or the owner public key when no group is installed | reachable; the owner path is vacuous (`OBL-C152`) |
+| `0x04` | `EndowmentWithdrawV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 (1 or 2 children) | role 4; refuses `Treasury` mode | reachable |
+| `0x05` | `TreasurySpendV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 (1 or 2 children) | role 5; refuses unless the mode is a treasury mode | reachable only for an endowment created in `Treasury` or `TreasuryEndowment` mode |
+| `0x07` | `ProposeClaimV1` | `ProposeClaimV2` (3) | `FinalizeV1` at slot 0 (one or more children) | role 1; endowment must carry a group; claim id must be new | reachable |
+| `0x08` | `VoteClaimV1` | `VoteClaimV2` (3) | `FinalizeV1` at slot 0 (one or more children) | role 2; proposal must be `Pending` and inside its voting window | reachable; this is the only writer of `Approved` (`OBL-C159`) |
+| `0x09` | `ExecuteClaimV1` | — | `TransferV1` at slot 0 (exactly one) | the proposal must be `Approved` and inside its execution deadline | reachable; does **not** consult the mode |
+| `0x0d` | `CancelClaimV1` | — | `FinalizeV1` at slot 0 (one or more children) | role 10; proposal must be `Pending` | reachable |
+
+`(n)` after a circuit is its `constrain_instance` count — the number of instances the metadata arm must
+publish. Five endpoints are ZK (`0x00`, `0x01`, `0x02`, `0x07`, `0x08`) and `get_metadata` has an arm
+for each; the other five fall through to a default arm that returns an **encoded** empty
 `zk_public_inputs` — not a bare `vec![]`, which the host decodes as a rejection signal and which made
 every non-ZK function uncallable for a week (`OBL-C77`).
 
-## Claims
+Child counts are worth stating because two of them were wrong in the same way: the three money
+endpoints accept **one or two** children — empty and above two are both refused — with the payment
+pinned to slot 0 because its validation runs before the endowment is loaded, and the approval read
+from slot 1. `endowment_withdraw_v1` and `treasury_spend_v1` each used to require *exactly* one child
+while reading the approval from slot 0, which the same function pinned to selector `0x04` — so the
+governance path could not be built by any caller (`OBL-C154`). `propose_claim`, `vote_claim` and
+`cancel_claim` enforce no child count at all: they require at least one child and read the approval at
+slot 0, so extra children ride along unvalidated.
 
-`ProposeClaimV1` writes a `Proposal` in `ProposalState::Pending`, with a voting window and an execution
-deadline. `VoteClaimV1` increments one tally, refuses a second vote from the same nullifier, and expires
-the proposal automatically when the window has closed. `ExecuteClaimV1` requires a `TransferV1` child and
-checks that the proposal is `Approved` and matches the `(bulla, value, recipient)` of the call.
-
-**Nothing in the contract writes `ProposalState::Approved`.** The only occurrence of that variant outside
-the enum's definition is the read in `verify_proposal_approved`, so `ExecuteClaimV1` and the
-`proposal_id` path of the three money endpoints are unreachable as the contract stands — recorded as
-`OBL-C154`.
-
-`CancelClaimV1` requires `proposal.state == Pending` and compares `proposal.proposer_pubkey` to
-`params.proposer_pubkey`. Both are public values, so the comparison admits any caller who knows the
-proposer's key (`OBL-C152`).
-
-## Dispute resolution
-
-`ResolveDisputeV1` (0x0c) is the arbitrator path:
+## The claim lifecycle
 
 ```
-1. Oracles push values off-chain-sourced (oracle::PushValueV1) and attest (attestation::CreateAttestationV1)
-2. An arbitrator calls ResolveDisputeV1 with a list of attestation ids, a payout and a recipient
-3. The contract:
-   a. requires a FinalizeV1 approval over role 3 and the derived dispute_id
-   b. consumes the named attestation ids in the nullifiers tree
-   c. carries the resolution record to apply
-4. dispute_id = poseidon_hash(proposal_id, attestation_count, payout_recipient_x)
+                 group approval (role 1, claim_id)
+   ┌───────────────────────────┐
+   │                           ▼
+   │                     ┌──────────┐   vote window closes   ┌─────────┐
+   │                     │ Pending  │───────────────────────▶│ Expired │
+   │                     └────┬─────┘                        └─────────┘
+   │        group approval    │            group approval (role 10, claim_id)
+   │        (role 2, vote_id) │                        │
+   │                          ▼                        ▼
+   │            ┌──────────────────────────┐    ┌───────────┐
+   │            │ Approved  /  Rejected    │    │ Cancelled │
+   │            └────────────┬─────────────┘    └───────────┘
+   │                         │ ExecuteClaimV1 (no approval child)
+   │                         ▼
+   │                   ┌──────────┐
+   └───────────────────│ Executed │
+                       └──────────┘
 ```
 
-The `dispute_id` is the contract's own derivation from the call's own contents — not a caller-supplied id —
-so the approval and the anti-replay key cannot be chosen independently of the call. The child count is a
-**minimum**, not an exact match: the contract's apply validates no attestation child itself, so the
-attestation verification this endpoint's comment describes is not, today, performed here.
+1. **Propose** — `ProposeClaimV1` (0x07). Needs the endowment, an installed group, a role-1 approval
+   over `claim_id`, and a claim id that is not already in the `proposals` tree. `apply` stores a
+   `Proposal` in `Pending` with `voting_ends_at = current_block + 1000` and
+   `execution_deadline = voting_ends_at + 1000`. Those two windows are **hardcoded**, though the
+   handler's own comment says windows and claim limits are group configuration rather than contract
+   parameters. The action id is the claim id alone — not the value and not the recipient (see
+   [Recorded defects](#recorded-defects)).
+2. **Vote** — `VoteClaimV1` (0x08). Loads the proposal and refuses a state other than `Pending` with a
+   *specific* error (`ClaimAlreadyApproved`, `ClaimAlreadyRejected`, `ClaimAlreadyExecuted`,
+   `ClaimAlreadyCancelled`, `ClaimExpired`) rather than a generic "not pending". If the block is past
+   `voting_ends_at` the proposal is set to `Expired`, no nullifier is spent, and **no approval is
+   required for that path**. Otherwise it requires a role-2 approval over
+   `poseidon_hash(claim_id, voter_x, voter_y, direction)`, derives
+   `vote_nullifier = poseidon_hash(1, capability_secret, claim_id, voter_x, voter_y)` — term for term
+   what `vote_claim_get_metadata` publishes and `proof/vote_claim.zk` constrains — refuses if that
+   nullifier is already in the `nullifiers` tree, and then writes the decision:
+   `Yes → ProposalState::Approved`, `No → ProposalState::Rejected`.
+   **The approval is the quorum.** There is no tally: a successful `FinalizeV1` means the group, not
+   one member, has decided. That is why `Approved` had a reader and no writer before this
+   (`OBL-C159`), and why the vote's message names the voter and the direction (`OBL-C160`).
+3. **Execute** — `ExecuteClaimV1` (0x09). No approval child: the authority is the `Approved` state the
+   group already wrote. Requires exactly one `TransferV1` child, a proposal that is `Approved` and
+   inside `execution_deadline`, whose `(bulla, value, recipient)` match the call exactly, and an
+   endowment record that exists. `apply` writes `Executed`.
+4. **Cancel** — `CancelClaimV1` (0x0d), alongside. Requires a role-10 approval over `claim_id` and a
+   proposal still in `Pending`; writes `Cancelled`. Cancellation is a **governance action**, not a
+   proposer's exclusive right: the check it replaced compared `proposal.proposer_pubkey` to
+   `params.proposer_pubkey`, two public values, and so admitted any caller who knew the proposer's key
+   (`OBL-C152`). `CancelClaimParamsV1` no longer carries a proposer key at all.
+
+`Rejected` is terminal — nothing re-opens it, and both `vote_claim` and `cancel_claim` refuse it.
 
 ## ZK circuits
 
-| Circuit | `constrain_instance` order |
-|---------|---------------------------|
-| `init.zk` (`InitV2`) | `dao_bulla`, `tx_binding`, `tx_nonce`, `endowment_bulla` |
-| `pay_premium.zk` (`PayPremiumV2`) | `tx_binding`, `tx_nonce` |
-| `propose_claim.zk` (`ProposeClaimV2`) | `tx_binding`, `tx_nonce`, `claim_commit` |
-| `vote_claim.zk` (`VoteClaimV2`) | `tx_binding`, `tx_nonce`, `vote_nullifier` |
-| `verify_member_capability.zk` (`VerifyMemberCapabilityV2`) | `tx_binding`, `tx_nonce`, `capability_commit` |
-| `resolve_dispute.zk` (`ResolveDisputeV2`) | `tx_binding`, `tx_nonce`, `resolution_commit` |
-| `set_governance_config.zk` (`SetGovernanceConfigV2`) | `owner_pub_x`, `owner_pub_y`, `owner_nullifier`, `tx_binding`, `tx_nonce` |
+Five circuits, all compiled, all with `.zk.bin` committed beside their source in
+`src/contract/dao_escrow/proof/`. The column is the order the metadata arm publishes, which the
+client's `to_vec` also commits to; `scripts/check-circuit-metadata-alignment.sh` is the instrument
+that compares the three.
 
-All seven are compiled and their `.zk.bin` files are committed. The order above is the order the metadata
-arm publishes and the order the client's `to_vec` commits to; all three must agree, and
-`scripts/check-circuit-metadata-alignment.sh` is the instrument that compares them.
+| Circuit | `constrain_instance` order | Built by |
+|---------|---------------------------|----------|
+| `init.zk` (`InitV2`) | `dao_bulla`, `tx_binding`, `tx_nonce`, `endowment_bulla` | `client/init.rs` |
+| `pay_premium.zk` (`PayPremiumV2`) | `tx_binding`, `tx_nonce` | `client/pay_premium.rs` |
+| `propose_claim.zk` (`ProposeClaimV2`) | `tx_binding`, `tx_nonce`, `claim_commit` | `client/propose_claim.rs` |
+| `vote_claim.zk` (`VoteClaimV2`) | `tx_binding`, `tx_nonce`, `vote_nullifier` | `client/vote_claim.rs` |
+| `set_governance_config.zk` (`SetGovernanceConfigV2`) | `owner_pub_x`, `owner_pub_y`, `owner_nullifier`, `tx_binding`, `tx_nonce` | `client/update.rs` |
 
-`SetGovernanceConfigV2` is called by **`UpdateV1` (0x01)**. `manifest.toml` declares it there; the retired
-`SetGovernanceConfigV1` (0x0e) declares no proof, because it does nothing.
+`SetGovernanceConfigV2` is called by **`UpdateV1` (0x01)**, and `manifest.toml` declares it there.
+Until 2026-09-27 the manifest declared it on the retired `set_governance_config` (0x0e) — a no-op —
+while `update`, its actual caller, declared no proof at all (`OBL-C155`).
+
+**Two derived values are worth naming, because both have been wrong.**
+
+- `endowment_bulla = poseidon_hash(DRK_POSEIDON_DOMAIN_COMMITMENT, dao_bulla, owner_pub_x, owner_pub_y,
+  endowment_asset_id, bulla_blind)`. Four sites derive it — the circuit, the metadata arm, the client
+  and `DaoEscrow::derive_bulla`, the value the record is actually **stored under** — and the fourth
+  hashed five elements with no domain constant. Prover and host agreed, so every proof verified while
+  the chain stored a different key; a client deriving it as documented computed a value the contract
+  had never written and every call failed `DaoEscrowNotFound` (`OBL-C156`, closed).
+- `tx_binding = poseidon_hash(3, tx_commitment, tx_nonce)` with the constant pair `(0, 0)`. This was
+  a literal `pallas::Base::zero()` labelled a "pass-through placeholder", which is a *different value*
+  — publishing it required `poseidon(3, 0, 0) == 0`, a preimage, so every proof for those circuits was
+  unsatisfiable rather than merely unbound (`OBL-C78`).
+
+`claim_commit = poseidon_hash(4, claim_id, value, claim_blind)`, with the blind carried as a params
+field (`ProposeClaimParamsV1.claim_blind`); the contract used to substitute
+`capability_proof.capability_secret` for a blind its params did not carry, so the proof's instance
+vector and the published one disagreed (`OBL-C153`).
+
+`VoteClaimV2` and `ProposeClaimV2` still take a `capability_id`/`capability_secret` witness pair, and
+`VoteClaimParamsV1` still carries a `CapabilityProof`; only `capability_secret` is read, and it is
+public call data. See [Recorded defects](#recorded-defects).
 
 ## Database trees
 
+Six trees, all initialised in `init_contract`. `votes`, `capability_requirements`, `disputes` and
+`governance` were declared and written by nobody, and are removed rather than re-wired: the tally
+lives on the `Proposal`, which is the record actually read, and the other three belonged to endpoints
+that no longer exist.
+
 | Tree | Written by | Read by |
 |------|-----------|---------|
-| `info` | `init_contract` (version, contract ids) | the child-call routing checks, `UpdateV1` |
+| `info` | `init_contract` — `promissory_note_cid`, `multisig_cid` | every child-call routing check |
 | `bullas` | `initialize_apply_v1` (non-empty marker) | `initialize_v1`'s duplicate guard |
-| `endowment` | every state-writing endpoint | every endpoint that loads the record |
 | `membership` | `pay_premium_apply_v1` | `pay_premium_v1`'s duplicate guard |
-| `proposals` | `propose`/`vote`/`execute`/`cancel` apply | the same endpoints' exec |
-| `votes` | — | — |
-| `capability_requirements` | `register`/`deactivate` apply | `deactivate` exec |
-| `disputes` | `resolve_dispute_apply_v1` | its anti-replay guard |
-| `nullifiers` | `update`/`vote`/`resolve_dispute`/`cancel` apply | `update`'s reuse check, `vote`'s double-vote check |
-| `governance` | — | — |
+| `endowment` | `initialize`, `update`, `pay_premium`, `withdraw`, `endowment_withdraw`, `treasury_spend` apply | every handler that loads the record |
+| `proposals` | `propose`, `vote`, `execute`, `cancel` apply | the same endpoints' exec, plus `verify_proposal_approved` |
+| `nullifiers` | `update_apply_v1` (`owner_nullifier`), `vote_claim_apply_v1` (`vote_nullifier`) | `update_v1`'s replay check, `vote_claim_v1`'s double-vote check |
 
-`votes` and `governance` are declared in `manifest.toml` and in `lib.rs` but are not touched by any code
-path.
+Every `apply` writes a value its `exec` carried in the update rather than reading it back, because
+`db_get` is not admitted to the update section — the rule `OBL-C72` records across 66 sites.
+
+Three keys were removed with the trees: `db_version`, `merkle_tree` and `last_root`, each of which had
+one `db_set` and no reader, and no merkle root was ever written at all.
 
 ## Trust model
 
 | Aspect | What actually protects it |
 |--------|--------------------------|
-| Owner-only state change | A ZK ownership proof, one-shot per `(owner_secret, bulla)` |
-| Governance | A MultiSig group's threshold, enforced by `FinalizeV1` in the child — not re-counted here |
+| Owner-only state change | A ZK ownership proof (`SetGovernanceConfigV2`), one-shot per `(owner_secret, bulla)` |
+| Governance | The MultiSig group's threshold, enforced by `FinalizeV1` in the child — not re-counted here |
 | Approval reuse | Role-tagged message + the approval's own spend-once nullifier |
-| Double vote | `vote_nullifier` recorded in the nullifiers tree, checked in exec |
-| Dispute replay | `dispute_id` derived from the call, recorded in the disputes tree |
+| Claim decision | The group's approval *is* the quorum; the vote writes `Approved`/`Rejected` directly |
+| Double vote | `vote_nullifier` derived in-contract, checked in exec, spent in apply |
 | Value movement | The `promissory_note::TransferV1` child, checked for target, selector and value commitment |
-| Treasury / endowment balances | **Nothing in this contract** — see below |
+| Pool balances | **Nothing in this contract** — there is no balance check and no Purse call |
 | Owner-key withdrawal (`WithdrawV1`) | **A public-key comparison, which gates nothing** (`OBL-C152`) |
-
-## DrainProtection
-
-The contract can record an association with a DrainProtection instance: `EnableDrainProtectionV1` (0x06)
-sets `drain_protection_enabled = true` and `drain_protection_bulla`. It does **not** call the
-DrainProtection contract, and it does **not** check who is calling — the association is unauthenticated
-today.
+| Membership expiry | **Nothing** — `expiry` is stored and read by no gate |
 
 ## What is not implemented
 
-Each item is a gap between what a reader would infer and what the code does. The register carries the
-measured form of each.
+Each item is a gap between what a reader would infer and what the code does. The first four below — the
+fee split, the member roll, attestation-conditioned resolution and DrainProtection enforcement — were
+documented before this contract was re-wired, and **none of the four was ever built**.
 
-- **The three operating modes.** `DaoEscrowMode` has three variants and the record stores one, but
-  `InitializeParamsV1` carries no mode field and `initialize_apply_v1` writes `DaoEscrowMode::Escrow` as a
-  constant. No caller can choose a mode, and `TreasurySpendV1`'s gate on `Treasury`/`TreasuryEndowment`
-  therefore rejects every call (`OBL-C154`).
-- **Pool and purse balances.** `pool_purse_id`, `treasury_purse_id` and `endowment_purse_id` are written
-  zero, never read, and there is no `Purse::DepositV1` or `Purse::WithdrawV1` call anywhere.
-- **Balance checks.** The "insufficient balance" guards in `endowment_withdraw_v1`, `treasury_spend_v1`,
-  `execute_claim_v1`, `withdraw_v1` and `resolve_dispute_v1` are `if false` blocks.
-- **`ProposalState::Approved`.** No code path writes it, so the proposal lifecycle has no successful exit.
-- **The capability-requirement table is dead state.** `0x0a` and `0x10` are gated by the group now
-  (roles 8 and 9), but nothing reads what they write: the governance path that consulted the table was
-  deleted with `verify_capability_for_action`, so `0x10` is the only reader of the records `0x0a`
-  creates. The endpoints are authenticated and inert, which is one step better than authenticated and
-  live, and two steps from useful.
-- **`WithdrawV1`'s owner path still compares two public values** (`OBL-C152`): with governance inactive,
-  `endowment.owner_pubkey != params.recipient_pubkey` admits anyone who knows the owner's address. Every
-  other instance of this class in the contract is repaired; this one needs the same ownership proof
-  `UpdateV1` uses, which means a circuit reference and a codec change for `WithdrawParamsV1`. The fixture
-  asserts the current behaviour so the repair fails that row.
-- **`CancelClaimV1`'s `proposer_pubkey` field is now unread.** Cancellation is authorised by the group
-  (role 10); the field owes removal in the unit that gives a proposer a real proof, if that is wanted.
-- **`member_count`.** `PayPremiumV1` increments the record's count in exec and carries the whole record;
-  the update's own `member_count` field has no reader.
-- **DrainProtection enforcement.** An association only; the contract does not participate in rate limiting
-  or exit queues. The two fields it writes are read nowhere.
+- **The two-pool fee split.** A premium is never split between a treasury share and an endowment share.
+  `FeeConfig` and the record field that held it are gone, and nothing in this tree divides an incoming
+  payment between two pools.
+- **The member roll.** There is no member count, no cap, and no roll. The record's `member_count` was
+  written and never read, and it is removed; `pay_premium_v1` adds a `Membership` record and returns.
+- **Attestation-conditioned resolution.** `ResolveDisputeV1` (0x0c) and its circuit retired with the
+  OCap model; there is no oracle, no attestation consumption and no resolution record. A claim has no
+  path but propose → vote → execute.
+- **DrainProtection enforcement.** The contract does not participate in rate limiting or exit queues,
+  and no longer even records an association: the `drain_protection_enabled` flag, the
+  `drain_protection_bulla` field, the info-tree flag and `EnableDrainProtectionV1` (0x06) are all
+  removed. The contract never once addressed the DrainProtection contract.
+- **Purse and Box composition.** No `Purse::DepositV1`, no `Purse::WithdrawV1`, no `Box::TakeV1`
+  anywhere in the crate. Consequently there is no balance arithmetic and no balance check either: the
+  `if false { … }` guards that stood in the spend handlers were removed with a comment naming where
+  the check belongs, because a refusal no input can reach is not a guard.
+- **The capability model.** The OCap/Identity governance model — per-role capability requirements
+  verified through the `Identity` contract, a member-capability proof as an authorization — is gone.
+  Nothing ever registered a requirement, so every gate that read one refused every call even once it
+  was reachable, which is what `OBL-C151` records; a check that cannot pass is indistinguishable from
+  a broken one. `src/contract/dao_escrow/src/capability.rs` still declares a `CapabilityDescriptor`,
+  and its own header states that **nothing in this tree reads it** — it is a statement of intent, kept
+  accurate, not a check any code performs.
+- **Rotation, and any change to the mode.** Once a group is installed there is no path to a different
+  one, and `mode` is written at `initialize` and immutable thereafter. Both are decisions, and both
+  are the opposite of what a reader might infer from "update".
+- **`manifest.toml` declares `native_token_v1`** in its `dependencies` list. Nothing in the crate or
+  in its `Cargo.toml` references it; the only contract this one calls is `promissory_note` (and
+  `multisig` for the approval child).
+
+## Recorded defects
+
+These are in the code as it stands, and a caller or a reviewer should know each one.
+
+- **`UpdateV1` with `multisig_group_id = None` burned the owner's one-shot proof and installed
+  nothing — FIXED 2026-09-27 (`OBL-C161`).** `update_v1` used to treat `None` as "write nothing" and
+  not refuse; `update_apply_v1` then recorded the `owner_nullifier` in the nullifiers tree regardless.
+  Because that nullifier is deterministic in `(owner_secret, dao_escrow_bulla)`, the owner could never
+  produce a different one — so a single `UpdateV1` carrying `None` made it **impossible to ever install
+  a governance group** on that endowment. The `None` arm now refuses with `NoGovernanceGroup`
+  (`Custom(57)`). The check is in `exec` and the write is in `apply`, which is why the two halves were
+  not read together: `OBL-C72` forces every write in this tree into that split. **A negative control is
+  owed** — the fixture's `update` rows all name a group, so nothing currently distinguishes the fix.
+- **`WithdrawV1`'s owner path compares two public values** (`OBL-C152`): with no group installed,
+  `endowment.owner_pubkey != params.recipient_pubkey` admits anyone who knows the owner's address.
+  Every other instance of this class in the contract is repaired; this one needs the same ownership
+  proof `UpdateV1` uses, which makes `WithdrawV1` a ZK endpoint and changes `WithdrawParamsV1`'s codec.
+- **`ProposeClaimV1`'s approval binds the claim id and nothing else** (`OBL-C165`). The action id is
+  `claim_id`, so one group approval for `(role 1, claim_id)` authorises a proposal carrying **any**
+  value and **any** recipient; whoever presents it first chooses them. This is the class `OBL-C160`
+  names — a message naming the action but not all of what the action decides. `cancel_claim`'s id-only
+  message is exact because the id *is* the whole action; `propose_claim`'s is not. The same row records
+  the other half: `propose_claim_v1`, `vote_claim_v1` and `cancel_claim_v1` validate no child count, so
+  extra calls ride along in a governance-gated transaction unvalidated by this contract, where the
+  vetted endpoints pin theirs.
+- **`EndowmentWithdrawV1` is not tied to the claim lifecycle at all** (`OBL-C166`). It never loads the
+  `proposals` tree, and its `claim_id` appears in no approval message, no lookup and no write:
+  `EndowmentWithdrawParamsV1.claim_id` and `EndowmentWithdrawUpdateV1.claim_id` are inert. The group's
+  approval over `(bulla, value, recipient_x)` is the entire authority, so an "endowment withdrawal" is
+  a group-authorised transfer, not the execution of a claim. The fix is a choice rather than a repair:
+  either bind `claim_id` into the message and require an `Approved` proposal — which reintroduces the
+  second lifecycle executor the re-wire removed — or delete the field.
+- **The vote's anti-double-vote key is derived from public call data.** `capability_proof.capability_secret`
+  is 32 bytes in the params and 32 bytes on the wire, so the "secret" the name promises is published
+  by the struct that carries it (`OBL-C160`, residual). The property holds today through the group
+  approval's one-shot spend and the state check, not through a secret. Retiring the field moves the
+  params codec and `VoteClaimV2`'s instance set together.
+- **`proposal_nullifier` is computed in `propose_claim.zk` and used nowhere** — it is not an instance,
+  not a params field, and not read by the contract. `ProposeClaimV1`'s replay guard is the
+  `proposals`-tree existence check plus the approval's spend-once, not that value.
+- **`ExecuteClaimV1` never consults `mode`.** `EndowmentWithdrawV1` refuses when the mode is `Treasury`,
+  because "`treasury_spend` is legal; `endowment_withdraw` is not" is what that mode means — but the
+  lifecycle's own executor has no such gate, so a claim can be proposed, voted and executed against an
+  endowment in `Treasury` mode. The two payouts out of the same pool are gated inconsistently.
+- **`Expired` needs no approval.** Any caller can flip a `Pending` proposal whose voting window has
+  closed, because the auto-expiry path is checked before the approval. It casts no vote and spends no
+  nullifier, which is why it is written that way — but it is an unauthenticated state transition.
+- **`verify_proposal_approved` refuses a proposal that is not `Approved` with `ProposalNotPending`**
+  (`Custom(38)`), and reports a bulla/value/recipient mismatch as `ProposalNotFound` (`Custom(37)`).
+  A reader debugging `ExecuteClaimV1` is sent to the wrong name: the two states this check can
+  actually see are `Pending` (not yet decided) and `Executed` (already spent), and a caller whose
+  `value` does not match is told the proposal does not exist (`OBL-C163`).
+- **29 of the enum's 55 error variants were constructed nowhere — FIXED 2026-09-27 (`OBL-C162`).**
+  They carried the retired model's vocabulary — `QuorumNotMet`, `ApprovalRatioNotMet`,
+  `OracleThresholdNotMet`, `AttestationAlreadyConsumed`, `DisputeNotFound`,
+  `CapabilityRequirementNotRegistered` — and the enum was an auditable statement of what the contract
+  refuses, two thirds of which it could not reach. All 29 are removed and `NoGovernanceGroup` (57) was
+  appended, so `src/error.rs` now holds one variant per refusal the contract can actually produce.
+  The removal renumbers nothing: every arm maps to an explicit `Custom(N)`, and the retired codes are
+  left unmapped rather than reused.
 
 ## Build and test
 
 The contract's heavyweight integration test is
 `bin/dwowd/src/tests/heavyweight_pipeline.rs::test_heavyweight_dao_escrow`, run through
-`bin/dwowd/src/tests/heavyweight.sh --dao-escrow`. It is green: `1 passed; 0 failed`, 809.70s. The
-contract compiles without warnings.
+`bin/dwowd/src/tests/heavyweight.sh --dao-escrow`.
 
-**Every row builds the children its endpoint demands and names the check it expects.** That is a change of
-kind rather than of coverage, and it is what makes the table above testable. Until 2026-09-27 six rows
-passed `children: vec![]` and asserted a rejection that any earlier failure in the frame satisfied — and
-that is why the colliding child-slot checks in the table survived a green run: no row ever built the call,
-so the checks that read `children_indexes` were never executed.
+**The re-wire has not been run through that fixture.** No run of the ten-endpoint contract is recorded
+anywhere. The last recorded green run of this test — `1 passed; 0 failed`, 809.70s — measured the
+contract **before** this change: it still had all seventeen selectors, the capability-requirement
+endpoints, the DrainProtection association and a nineteen-field record, and it is history rather than a
+statement about the code on this page. Everything this page describes about reachability is read from
+the source, not measured.
 
-Two of the rows asserted **Success over an authorization that was missing or vacuous** — `0x0a` and
-`CancelClaimV1` — deliberately, with the defect named in the row, because a test that asserted the
-*desired* behaviour would have been red and indistinguishable from a broken frame while a test that
-asserted what the contract actually did would fail loudly the moment a gate was added. **That is what
-happened**: both gates arrived on 2026-09-27 (`OBL-C152`), both rows failed, and both are now the
-approval-carrying positives beside a no-approval negative that names `Custom(33)`. The pattern costs two
-edits per repair and buys the guarantee that the repair is a change rather than a claim.
+The contract crate also carries its own tests in `src/contract/dao_escrow/tests/integration.rs`,
+including a round trip for every parameter and update type, a test that the six surviving selectors
+resolve and that the seven retired ones are refused, and a `Proposal` round trip over all six states.
+No run of those against this revision is recorded here either.
 
 Two gates in the tree read this contract specifically:
 
@@ -299,13 +443,14 @@ scripts/check-circuit-metadata-alignment.sh             # circuit order == metad
   [`src/contract/dao_escrow/manifest.toml`](../../../src/contract/dao_escrow/manifest.toml)
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
 - [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
-- [DAO-Escrow Contract README](../../../src/contract/dao_escrow/README.md)
 - [Obligation register](../arch/verification-hazop.md) — `OBL-C151` (the governance setter),
-  `OBL-C152` (vacuous authorization), `OBL-C154` (the endpoints this page marks unreachable)
+  `OBL-C152` (vacuous authorization, one instance open), `OBL-C154` (the child-slot collision and the
+  mode), `OBL-C156` (the endowment bulla, four ways), `OBL-C158` (the duplicate guard's key),
+  `OBL-C159` and `OBL-C160` (the claim lifecycle's terminal state and the approval's message)
 - [MultiSig Contract](multisig.md) — `CreateGroupV1`, `SignV1`, `FinalizeV1`
 - [Promissory Note](promissory_note.md) — the value carrier every money endpoint moves
 - [Composability](composability.md) — the cross-contract child call mechanism
-- [DrainProtection Contract](drain_protection.md)
+- [DrainProtection Contract](drain_protection.md) — **not** composed with by this contract
 - [Purse](purse.md) and [Box](box.md) — genesis primitives this contract does **not** yet compose with
 - [O-Cap Architecture](../arch/ocap.md)
 - [Subscription Contract](subscription.md)

@@ -18,5 +18,13 @@
 # `InitializeParams`, `ExecuteParams`, `TransferParams`) were removed on 2026-09-24 rather than
 # declared, in the same commit that added this gate.
 
-dao_escrow InitializeParams : OBL-C103 — the builder returns a two-field client type beside the model's `InitializeParamsV1` (instance_seed, dao_bulla, endowment_asset_id, bulla_blind, …), so it cannot build a decodable call. Declared rather than fixed because the six files of that client are being rewritten in flight for the V1-vs-V2 client hazard; editing one of them here would collide with that work.
-dao_escrow PayPremiumParams : OBL-C103 — the same shape: four fields (`dao_escrow_bulla`, `value`, `asset_id`, `period`) against the model's `PayPremiumParamsV1`, which also carries the membership note, the Pedersen value commitment and the member's exit fields.
+# The two `dao_escrow` entries that stood here were removed on 2026-09-27, not re-declared. Both were the
+# same defect — a client-side params struct restating the model's under the same name — and both were
+# **retired with the struct**: `dao_escrow/src/client/mod.rs`'s placeholder builder library declared
+# `InitializeParams` and `PayPremiumParams` beside the model's `InitializeParamsV1` and
+# `PayPremiumParamsV1`, so the client and the contract each had their own definition of one wire format
+# and nothing compared them. Nothing consumed the builders either; the harness builds its calls from
+# `crate::model`. The library is gone, so the divergence it created is gone by construction, and this gate
+# is what noticed — a declared exception that outlives its subject is a stale claim, which is why the gate
+# reports one rather than accepting it.
+

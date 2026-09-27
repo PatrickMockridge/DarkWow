@@ -38,7 +38,6 @@ impl FunctionParams for dao_escrow_model::CancelClaimParamsV1 {
         let dict = PyDict::new(py);
         dict.set_item("dao_escrow_bulla", format!("{:?}", self.dao_escrow_bulla))?;
         dict.set_item("claim_id", format!("{:?}", self.claim_id))?;
-        dict.set_item("proposer_pubkey", self.proposer_pubkey.to_string())?;
         Ok(dict.unbind())
     }
 
@@ -46,7 +45,6 @@ impl FunctionParams for dao_escrow_model::CancelClaimParamsV1 {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}dao_escrow_bulla: {:?}", self.dao_escrow_bulla).unwrap();
         writeln!(out, "{prefix}claim_id: {:?}", self.claim_id).unwrap();
-        writeln!(out, "{prefix}proposer_pubkey: {}", self.proposer_pubkey).unwrap();
         Ok(())
     }
 }

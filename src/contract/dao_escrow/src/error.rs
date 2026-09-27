@@ -21,14 +21,33 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+//! DAO-Escrow contract errors.
+//!
+//! **One variant per refusal the contract can actually produce.** The enum used to carry 55 variants for
+//! a contract with 17 endpoints, of which 29 were constructed nowhere — measured, not guessed: a script
+//! that matched every `DaoEscrowError::X` across `src/` against `From<DaoEscrowError>`'s arms found 26
+//! live and 29 dead. The dead half was the vocabulary of the retired models — the OCap registry
+//! (`CapabilityRequirementNotRegistered`, `CapabilityVerificationFailed`, `InvalidCapabilityForAction`,
+//! `CapabilityExpired`), the oracle/dispute path (`DisputeNotFound`, `DisputeAlreadyResolved`,
+//! `OracleThresholdNotMet`, `InvalidAttestationRef`, `AttestationAlreadyConsumed`), and the quorum
+//! arithmetic the group's `FinalizeV1` now performs (`QuorumNotMet`, `InvalidQuorum`,
+//! `ApprovalRatioNotMet`, `InvalidApprovalRatio`) — plus general-purpose ones nothing ever reached
+//! (`DoubleSpend`, `InvalidZkProof`, `InvalidSignature`, `InvalidCommitment`, `InvalidNullifier`).
+//!
+//! **Removing a variant does not renumber anything**: every arm below maps to an explicit
+//! `ContractError::Custom(N)`, so the codes that stay keep their values and the codes that go are left
+//! *unmapped* rather than reused. That is the rule the retirement of `NotClaimProposer` (19) set: a code
+//! that has been recorded keeps meaning what it meant.
+//!
+//! The value of the reduction is that the enum is now an auditable statement of what this contract
+//! refuses — "a rejection names its cause" can be checked by reading it, which it could not when two
+//! thirds of it named causes the contract could not reach.
+
 use dwow_sdk::error::ContractError;
 
 /// DAO-Escrow contract errors
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum DaoEscrowError {
-    #[error("Contract not initialized")]
-    NotInitialized,
-
     #[error("DAO-Escrow not found: {0}")]
     DaoEscrowNotFound(String),
 
@@ -59,39 +78,14 @@ pub enum DaoEscrowError {
     #[error("Claim already cancelled")]
     ClaimAlreadyCancelled,
 
-    #[error("Insufficient endowment balance")]
-    InsufficientEndowment,
-
-    #[error("Insufficient premium balance")]
+    #[error("Premium below the endowment's minimum")]
     InsufficientPremium,
 
-    #[error("Premium payment failed")]
-    PremiumPaymentFailed,
-
-    #[error("Invalid commitment")]
-    InvalidCommitment,
-
-    #[error("Invalid nullifier")]
-    InvalidNullifier,
-
-    #[error("Double-spend attempt")]
-    DoubleSpend,
-
-    #[error("Invalid ZK proof")]
-    InvalidZkProof,
-
-    // `NotClaimProposer` (Custom(19)) was retired here: `cancel_claim_v1` no longer compares the caller's
-    // pubkey to the proposal's proposer, because that comparison admitted anyone who knew a published key
-    // (`OBL-C152`). Cancellation is authorised by the endowment's group instead. The code 19 is left
-    // unmapped rather than reused, so a recorded code keeps its old meaning.
     #[error("Unauthorized: not DAO-Escrow owner")]
     NotOwner,
 
     #[error("Unauthorized: not authorized to withdraw")]
     NotAuthorizedToWithdraw,
-
-    #[error("Vote not authorized")]
-    VoteNotAuthorized,
 
     #[error("Already voted on this claim")]
     AlreadyVoted,
@@ -102,43 +96,11 @@ pub enum DaoEscrowError {
     #[error("Claim execution deadline passed")]
     ClaimExecutionDeadlinePassed,
 
-    #[error("Invalid approval ratio")]
-    InvalidApprovalRatio,
-
-    #[error("Invalid quorum")]
-    InvalidQuorum,
-
-    #[error("Invalid premium rate")]
-    InvalidPremiumRate,
-
-    #[error("Endowment withdrawal not authorized")]
-    EndowmentWithdrawUnauthorized,
-
-    #[error("Maximum claim amount exceeded")]
-    MaxClaimAmountExceeded,
-
-    #[error("Minimum stake not met")]
-    MinimumStakeNotMet,
-
-    #[error("Invalid signature")]
-    InvalidSignature,
-
     #[error("Invalid children indexes: expected promissory_note::transfer_v1 call")]
     InvalidChildrenIndexes,
 
     #[error("Invalid child call: expected promissory_note::transfer_v1")]
     InvalidChildCall,
-
-    #[error("Child call contract ID does not match expected contract")]
-    ChildContractIdMismatch,
-
-    // --- OCap-based governance errors (35-51) ---
-
-    #[error("Capability requirement not registered: {0}")]
-    CapabilityRequirementNotRegistered(String),
-
-    #[error("Capability verification failed")]
-    CapabilityVerificationFailed,
 
     #[error("Proposal not found: {0}")]
     ProposalNotFound(String),
@@ -146,47 +108,14 @@ pub enum DaoEscrowError {
     #[error("Proposal not in pending state")]
     ProposalNotPending,
 
-    #[error("Voting window expired")]
-    VotingWindowExpired,
-
-    #[error("Voting window not yet ended")]
-    VotingWindowNotEnded,
-
-    #[error("Quorum not met: required {required}, got {actual}")]
-    QuorumNotMet { required: u64, actual: u64 },
-
-    #[error("Approval ratio not met")]
-    ApprovalRatioNotMet,
-
     #[error("Governance not active")]
     GovernanceNotActive,
-
-    #[error("Invalid capability for this action")]
-    InvalidCapabilityForAction,
-
-    #[error("Oracle threshold not met: {0}/{1}")]
-    OracleThresholdNotMet(u64, u64),
-
-    #[error("Attestation already consumed")]
-    AttestationAlreadyConsumed,
-
-    #[error("Invalid attestation reference")]
-    InvalidAttestationRef,
-
-    #[error("Dispute not found: {0}")]
-    DisputeNotFound(String),
-
-    #[error("Dispute already resolved")]
-    DisputeAlreadyResolved,
 
     #[error("Proposal already executed")]
     ProposalAlreadyExecuted,
 
-    #[error("Capability expired")]
-    CapabilityExpired,
-
-    // ── `OBL-C151` governance approvals. Appended after `ChildContractIdMismatch` (52) so no
-    // existing `Custom(N)` moves: the register cites `Custom(43)` for `GovernanceNotActive`.
+    // ── Governance approvals (`OBL-C151`). Appended after 52 so no existing `Custom(N)` moves: the
+    // register cites `Custom(43)` for `GovernanceNotActive`.
     #[error("Governance approval names a different group than the endowment's")]
     GovernanceApprovalForeignGroup,
 
@@ -198,12 +127,21 @@ pub enum DaoEscrowError {
 
     #[error("This ownership proof has already been used")]
     OwnershipProofReplayed,
+
+    /// `UpdateV1` (0x01) exists to install the endowment's governance group — the record's mode, owner
+    /// and premium floor are all immutable after `InitializeV1`, so a call naming no group has nothing
+    /// to do. **It must be refused rather than allowed to do nothing**, and the reason is the owner's
+    /// one-shot proof: `owner_nullifier` is deterministic in `(owner_secret, dao_escrow_bulla)`, and
+    /// `update_apply_v1` records it unconditionally. A no-op that reached apply would spend the only
+    /// credential that can ever install a group, so governance would be permanently uninstallable on
+    /// that endowment (`OBL-C161`). A silent success here is the same shape as a gate that cannot fail.
+    #[error("UpdateV1 installs the governance group, and this call names none")]
+    NoGovernanceGroup,
 }
 
 impl From<DaoEscrowError> for ContractError {
     fn from(e: DaoEscrowError) -> Self {
         match e {
-            DaoEscrowError::NotInitialized => Self::Custom(1),
             DaoEscrowError::DaoEscrowNotFound(_) => Self::Custom(2),
             DaoEscrowError::DaoEscrowAlreadyExists(_) => Self::Custom(3),
             DaoEscrowError::InvalidState { .. } => Self::Custom(4),
@@ -214,50 +152,23 @@ impl From<DaoEscrowError> for ContractError {
             DaoEscrowError::ClaimAlreadyRejected => Self::Custom(9),
             DaoEscrowError::ClaimAlreadyExecuted => Self::Custom(10),
             DaoEscrowError::ClaimAlreadyCancelled => Self::Custom(11),
-            DaoEscrowError::InsufficientEndowment => Self::Custom(12),
             DaoEscrowError::InsufficientPremium => Self::Custom(13),
-            DaoEscrowError::PremiumPaymentFailed => Self::Custom(14),
-            DaoEscrowError::InvalidCommitment => Self::Custom(15),
-            DaoEscrowError::InvalidNullifier => Self::Custom(16),
-            DaoEscrowError::DoubleSpend => Self::Custom(17),
-            DaoEscrowError::InvalidZkProof => Self::Custom(18),
             DaoEscrowError::NotOwner => Self::Custom(20),
             DaoEscrowError::NotAuthorizedToWithdraw => Self::Custom(21),
-            DaoEscrowError::VoteNotAuthorized => Self::Custom(22),
             DaoEscrowError::AlreadyVoted => Self::Custom(23),
             DaoEscrowError::ClaimExpired => Self::Custom(24),
             DaoEscrowError::ClaimExecutionDeadlinePassed => Self::Custom(25),
-            DaoEscrowError::InvalidApprovalRatio => Self::Custom(26),
-            DaoEscrowError::InvalidQuorum => Self::Custom(27),
-            DaoEscrowError::InvalidPremiumRate => Self::Custom(28),
-            DaoEscrowError::EndowmentWithdrawUnauthorized => Self::Custom(29),
-            DaoEscrowError::MaxClaimAmountExceeded => Self::Custom(30),
-            DaoEscrowError::MinimumStakeNotMet => Self::Custom(31),
-            DaoEscrowError::InvalidSignature => Self::Custom(32),
             DaoEscrowError::InvalidChildrenIndexes => Self::Custom(33),
             DaoEscrowError::InvalidChildCall => Self::Custom(34),
-            DaoEscrowError::CapabilityRequirementNotRegistered(_) => Self::Custom(35),
-            DaoEscrowError::CapabilityVerificationFailed => Self::Custom(36),
             DaoEscrowError::ProposalNotFound(_) => Self::Custom(37),
             DaoEscrowError::ProposalNotPending => Self::Custom(38),
-            DaoEscrowError::VotingWindowExpired => Self::Custom(39),
-            DaoEscrowError::VotingWindowNotEnded => Self::Custom(40),
-            DaoEscrowError::QuorumNotMet { .. } => Self::Custom(41),
-            DaoEscrowError::ApprovalRatioNotMet => Self::Custom(42),
             DaoEscrowError::GovernanceNotActive => Self::Custom(43),
-            DaoEscrowError::InvalidCapabilityForAction => Self::Custom(44),
-            DaoEscrowError::OracleThresholdNotMet(..) => Self::Custom(45),
-            DaoEscrowError::AttestationAlreadyConsumed => Self::Custom(46),
-            DaoEscrowError::InvalidAttestationRef => Self::Custom(47),
-            DaoEscrowError::DisputeNotFound(_) => Self::Custom(48),
-            DaoEscrowError::DisputeAlreadyResolved => Self::Custom(49),
             DaoEscrowError::ProposalAlreadyExecuted => Self::Custom(50),
-            DaoEscrowError::CapabilityExpired => Self::Custom(51),
-            DaoEscrowError::ChildContractIdMismatch => Self::Custom(52),
             DaoEscrowError::GovernanceApprovalForeignGroup => Self::Custom(53),
             DaoEscrowError::GovernanceApprovalWrongMessage => Self::Custom(54),
             DaoEscrowError::GovernanceAlreadyActive => Self::Custom(55),
             DaoEscrowError::OwnershipProofReplayed => Self::Custom(56),
+            DaoEscrowError::NoGovernanceGroup => Self::Custom(57),
         }
     }
 }

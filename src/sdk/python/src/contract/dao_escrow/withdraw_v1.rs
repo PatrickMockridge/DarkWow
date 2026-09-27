@@ -39,7 +39,6 @@ impl FunctionParams for dao_escrow_model::WithdrawParamsV1 {
         dict.set_item("dao_escrow_bulla", format!("{:?}", self.dao_escrow_bulla))?;
         dict.set_item("value", format!("{:?}", self.value))?;
         dict.set_item("recipient_pubkey", self.recipient_pubkey.to_string())?;
-        dict.set_item("capability_proof", format!("{:?}", self.capability_proof))?;
         Ok(dict.unbind())
     }
 
@@ -48,7 +47,6 @@ impl FunctionParams for dao_escrow_model::WithdrawParamsV1 {
         writeln!(out, "{prefix}dao_escrow_bulla: {:?}", self.dao_escrow_bulla).unwrap();
         writeln!(out, "{prefix}value: {:?}", self.value).unwrap();
         writeln!(out, "{prefix}recipient_pubkey: {}", self.recipient_pubkey).unwrap();
-        writeln!(out, "{prefix}capability_proof: {:?}", self.capability_proof).unwrap();
         Ok(())
     }
 }

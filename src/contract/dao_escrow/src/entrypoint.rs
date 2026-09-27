@@ -21,26 +21,42 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! WASM entrypoint for the DAO-Escrow contract (Simplified MVP)
+//! WASM entrypoint for the DAO-Escrow contract
 //!
-//! ## Simplified MVP: Endowment Pool with DAO Governance
+//! ## One endowment pool, governed by one MultiSig group
 //!
-//! Claims are handled by the DAO's existing treasury management.
-//! This contract only manages:
-//! 1. Endowment initialization (linked to a DAO)
-//! 2. Premium payments (issues membership notes)
-//! 3. Admin withdrawals
+//! The endowment is a pool of promissory notes. Its owner installs a MultiSig group with `UpdateV1`,
+//! and from then on **every spend is authorised by that group's `multisig::FinalizeV1` over a message
+//! naming the action** — a message the group's threshold has signed, which the multisig contract
+//! consumes exactly once (`OBL-C151`). There is no second authority: the capability model this contract
+//! was designed around never had a requirement registered, so every one of its gates refused every call
+//! (`OBL-C151`).
+//!
+//! The ten endpoints fall into four groups:
+//!
+//! 1. **Lifecycle** — `initialize` (create the pool; the mode and the premium floor are the creator's),
+//!    `update` (install the group; one-shot, via the owner's `SetGovernanceConfigV2` proof).
+//! 2. **Funding** — `pay_premium` issues a membership note and enforces `min_premium`.
+//! 3. **Spending**, each ending in a `promissory_note::transfer_v1` child that moves the notes —
+//!    `withdraw` (owner or group), `endowment_withdraw` (escrow modes), `treasury_spend` (treasury
+//!    modes). The `mode` the creator chose decides which of the last two is legal.
+//! 4. **The claim lifecycle** — `propose_claim` → `vote_claim` → `execute_claim`, with `cancel_claim`
+//!    alongside. Each step needs the group's approval; the group's own threshold **is** the vote's
+//!    quorum, so one approved vote decides the claim (`OBL-C159`, `OBL-C160`).
 //!
 //! ```text
-//! Members pay premiums ──> Endowment Pool ──> DAO Treasury (claims)
+//! Members pay premiums ──> Endowment Pool ──> claims, by group decision
 //!                              ▲
 //!                              │
 //!                     Membership notes
-//!                     (annual expiry)
+//!                     (block-based expiry)
 //! ```
+//!
+//! Balances are the Purse contract's to hold and to check: this contract's spend paths publish the
+//! child and depend on it, rather than keeping a second copy of the balance that could disagree.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, BOX_CONTRACT_ID, ContractId, MULTISIG_CONTRACT_ID, PURSE_CONTRACT_ID, AssetId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, MULTISIG_CONTRACT_ID},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas,
@@ -54,22 +70,14 @@ use dwow_serial::{deserialize, Encodable};
 use crate::{
     error::DaoEscrowError,
     model,
-    DaoEscrowFunction, DAO_ESCROW_CONTRACT_BULLAS_TREE, DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE,
-    DAO_ESCROW_CONTRACT_DISPUTES_TREE, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE,
-    DAO_ESCROW_CONTRACT_GOVERNANCE_TREE, DAO_ESCROW_CONTRACT_INFO_TREE,
+    DaoEscrowFunction, DAO_ESCROW_CONTRACT_BULLAS_TREE, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE,
+    DAO_ESCROW_CONTRACT_INFO_TREE,
     DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE,
-    DAO_ESCROW_CONTRACT_PROPOSALS_TREE, DAO_ESCROW_CONTRACT_VOTES_TREE,
-    BOX_CONTRACT_ID_KEY, PROMISSORY_NOTE_CONTRACT_ID_KEY,
-    PURSE_CONTRACT_ID_KEY,
-    IDENTITY_CONTRACT_ID_KEY,
+    DAO_ESCROW_CONTRACT_PROPOSALS_TREE,
+    PROMISSORY_NOTE_CONTRACT_ID_KEY,
     MULTISIG_CONTRACT_ID_KEY,
 };
 
-// ============================================================================
-// DATABASE KEYS
-// ============================================================================
-
-const DAO_ESCROW_DB_VERSION_KEY: &[u8] = b"db_version";
 
 dwow_sdk::define_contract!(
     init: init_contract,
@@ -101,24 +109,19 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&propose_claim_v2_bincode[..])?;
     let vote_claim_v2_bincode = include_bytes!("../proof/vote_claim.zk.bin");
     wasm::db::zkas_db_set(&vote_claim_v2_bincode[..])?;
-    let verify_member_cap_v2_bincode = include_bytes!("../proof/verify_member_capability.zk.bin");
-    wasm::db::zkas_db_set(&verify_member_cap_v2_bincode[..])?;
-    let resolve_dispute_v2_bincode = include_bytes!("../proof/resolve_dispute.zk.bin");
-    wasm::db::zkas_db_set(&resolve_dispute_v2_bincode[..])?;
     let set_governance_config_v2_bincode = include_bytes!("../proof/set_governance_config.zk.bin");
     wasm::db::zkas_db_set(&set_governance_config_v2_bincode[..])?;
 
-    // Initialize info tree
+    // Initialize info tree. Two entries only, and both are read: the promissory-note id every money
+    // endpoint's child check compares against, and the multisig id every governance gate's child check
+    // compares against. The `db_version`, `identity_cid`, `box_cid` and `purse_cid` entries that were
+    // written here had no reader at all — and `identity_cid` was seeded as `[0u8; 32]`, which its reader
+    // treated as "skip the routing check", i.e. fail-open (`OBL-C152`).
     let info_db = wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
-    wasm::db::db_set(info_db, DAO_ESCROW_DB_VERSION_KEY, &env!("CARGO_PKG_VERSION").as_bytes())?;
     wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes())?;
-    wasm::db::db_set(info_db, IDENTITY_CONTRACT_ID_KEY, &[0u8; 32])?;
-    wasm::db::db_set(info_db, BOX_CONTRACT_ID_KEY, &BOX_CONTRACT_ID.to_bytes())?;
-    wasm::db::db_set(info_db, PURSE_CONTRACT_ID_KEY, &PURSE_CONTRACT_ID.to_bytes())?;
-    // The REAL id, unlike `IDENTITY_CONTRACT_ID_KEY` above: that one is seeded `[0u8; 32]` and its reader
-    // treats zero as "skip the routing check" (fail-open). The governance helper treats zero as "refuse
-    // everything" (HAZOP H-11), so seeding zero here would fail every gate closed forever — `OBL-C151`
-    // again with a different field name (`OBL-C151`).
+    // The **real** id, not a zero placeholder: the governance helper treats zero as "refuse everything"
+    // (HAZOP H-11), so seeding zero would fail every gate closed forever — `OBL-C151` again with a
+    // different field name.
     wasm::db::db_set(info_db, MULTISIG_CONTRACT_ID_KEY, &MULTISIG_CONTRACT_ID.to_bytes())?;
 
     // Initialize bullas tree (endowment instances)
@@ -130,13 +133,12 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize endowment tree
     wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
 
-    // Initialize governance trees (new for OCap-based governance)
+    // The proposals and nullifiers trees are the two the surviving endpoints actually use: proposals holds
+    // the claim lifecycle's records, and nullifiers holds every spend-once value — approvals, votes and
+    // ownership proofs. The `votes`, `capability_requirements`, `disputes` and `governance` trees were
+    // initialised here and written by nobody.
     wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
-    wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_VOTES_TREE)?;
-    wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE)?;
-    wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_DISPUTES_TREE)?;
     wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE)?;
-    wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_GOVERNANCE_TREE)?;
 
     msg!("[dao_escrow::init_contract] DAO-Escrow contract initialized successfully");
     Ok(())
@@ -160,8 +162,6 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         DaoEscrowFunction::PayPremiumV1 => pay_premium_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::ProposeClaimV1 => propose_claim_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::VoteClaimV1 => vote_claim_get_metadata(cid, call_idx, &calls),
-        DaoEscrowFunction::VerifyMemberCapabilityV1 => verify_member_cap_get_metadata(cid, call_idx, &calls),
-        DaoEscrowFunction::ResolveDisputeV1 => resolve_dispute_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::UpdateV1 => update_get_metadata(cid, call_idx, &calls),
         // The non-ZK functions below fall here. They must return an **encoded** empty
         // `zk_public_inputs`, not a bare `vec![]`: the host decodes the metadata as
@@ -196,11 +196,18 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (owner_pub_x, owner_pub_y) = params.owner_pubkey.xy().expect("pk not identity");
 
-    // Compute endowment_bulla using same formula as InitV2 circuit
-    // endowment_bulla = poseidon_hash(DOMAIN_COIN_COMMIT, dao_bulla, owner_pub_x, owner_pub_y,
-    //                                  endowment_asset_id, bulla_blind)
+    // The endowment bulla, using the same formula as the `InitV2` circuit and
+    // `DaoEscrow::derive_bulla`:
+    //     poseidon_hash(DRK_POSEIDON_DOMAIN_COMMITMENT, dao_bulla, owner_pub_x, owner_pub_y,
+    //                   endowment_asset_id, bulla_blind)
+    //
+    // The domain is named rather than written as its literal `4`. That literal is what `OBL-C156` was:
+    // three sites derived this value — the circuit, this metadata arm and `derive_bulla` — and they
+    // disagreed about the domain (one had none) with nothing comparing them. Using the same *name* in
+    // both host sites does not make them agree with the circuit, which is a separate file, but it does
+    // mean a change to the domain cannot move one of the two and leave the other behind.
     let endowment_bulla = dwow_sdk::crypto::poseidon_hash([
-        pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
+        dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_COMMITMENT,
         params.dao_bulla.inner(),
         owner_pub_x,
         owner_pub_y,
@@ -309,10 +316,6 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = model::TreasurySpendParamsV1::decode(&self_.data[1..])?;
             treasury_spend_v1(cid, call_idx, calls, params)
         }
-        DaoEscrowFunction::EnableDrainProtectionV1 => {
-            let params = model::EnableDrainProtectionParamsV1::decode(&self_.data[1..])?;
-            enable_drain_protection_v1(cid, call_idx, calls, params)
-        }
         DaoEscrowFunction::ProposeClaimV1 => {
             let params = model::ProposeClaimParamsV1::decode(&self_.data[1..])?;
             propose_claim_v1(cid, call_idx, calls, params)
@@ -325,29 +328,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = model::ExecuteClaimParamsV1::decode(&self_.data[1..])?;
             execute_claim_v1(cid, call_idx, calls, params)
         }
-        DaoEscrowFunction::RegisterCapabilityRequirementV1 => {
-            let params = model::RegisterCapabilityRequirementParamsV1::decode(&self_.data[1..])?;
-            register_capability_requirement_v1(cid, call_idx, calls, params)
-        }
-        DaoEscrowFunction::VerifyMemberCapabilityV1 => {
-            let params = model::VerifyMemberCapabilityParamsV1::decode(&self_.data[1..])?;
-            verify_member_capability_v1(cid, call_idx, calls, params)
-        }
-        DaoEscrowFunction::ResolveDisputeV1 => {
-            let params = model::ResolveDisputeParamsV1::decode(&self_.data[1..])?;
-            resolve_dispute_v1(cid, call_idx, calls, params)
-        }
         DaoEscrowFunction::CancelClaimV1 => {
             let params = model::CancelClaimParamsV1::decode(&self_.data[1..])?;
             cancel_claim_v1(cid, call_idx, calls, params)
-        }
-        DaoEscrowFunction::SetGovernanceConfigV1 | DaoEscrowFunction::SetGovernanceActiveV1 => {
-            // Removed — MultiSig groups manage governance.
-            Ok(())
-        }
-        DaoEscrowFunction::DeactivateCapabilityRequirementV1 => {
-            let params = model::DeactivateCapabilityRequirementParamsV1::decode(&self_.data[1..])?;
-            deactivate_capability_requirement_v1(cid, call_idx, calls, params)
         }
     }
 }
@@ -385,10 +368,6 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update = model::TreasurySpendUpdateV1::decode(&update_data[1..])?;
             treasury_spend_apply_v1(cid, update)
         }
-        DaoEscrowFunction::EnableDrainProtectionV1 => {
-            let update = model::EnableDrainProtectionUpdateV1::decode(&update_data[1..])?;
-            enable_drain_protection_apply_v1(cid, update)
-        }
         DaoEscrowFunction::ProposeClaimV1 => {
             let update = model::ProposeClaimUpdateV1::decode(&update_data[1..])?;
             propose_claim_apply_v1(cid, update)
@@ -401,26 +380,9 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update = model::ExecuteClaimUpdateV1::decode(&update_data[1..])?;
             execute_claim_apply_v1(cid, update)
         }
-        DaoEscrowFunction::RegisterCapabilityRequirementV1 => {
-            let update = model::RegisterCapabilityRequirementUpdateV1::decode(&update_data[1..])?;
-            register_capability_requirement_apply_v1(cid, update)
-        }
-        DaoEscrowFunction::VerifyMemberCapabilityV1 => {
-            let update = model::VerifyMemberCapabilityUpdateV1::decode(&update_data[1..])?;
-            verify_member_capability_apply_v1(cid, update)
-        }
-        DaoEscrowFunction::ResolveDisputeV1 => {
-            let update = model::ResolveDisputeUpdateV1::decode(&update_data[1..])?;
-            resolve_dispute_apply_v1(cid, update)
-        }
         DaoEscrowFunction::CancelClaimV1 => {
             let update = model::CancelClaimUpdateV1::decode(&update_data[1..])?;
             cancel_claim_apply_v1(cid, update)
-        }
-        DaoEscrowFunction::SetGovernanceConfigV1 | DaoEscrowFunction::SetGovernanceActiveV1 => Ok(()),
-        DaoEscrowFunction::DeactivateCapabilityRequirementV1 => {
-            let update = model::DeactivateCapabilityRequirementUpdateV1::decode(&update_data[1..])?;
-            deactivate_capability_requirement_apply_v1(cid, update)
         }
     }
 }
@@ -433,16 +395,6 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 fn initialize_v1(cid: ContractId, params: model::InitializeParamsV1) -> ContractResult {
     msg!("[dao_escrow::initialize_v1] Initializing DAO-Escrow endowment");
 
-    // Verify endowment doesn't already exist
-    let bullas_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_BULLAS_TREE)?;
-    if wasm::db::db_contains_key(bullas_db, &params.dao_bulla.to_bytes())? {
-        msg!("[dao_escrow::initialize_v1] ERROR: DAO-Escrow already exists");
-        return Err(DaoEscrowError::DaoEscrowAlreadyExists("DAO bulla already exists".to_string()).into())
-    }
-
-    // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::DAO_ESCROW_ZKAS_INIT_NS)?;
-
     // Derive endowment bulla (formula must match init.zk circuit)
     let endowment_bulla = model::DaoEscrow::derive_bulla(
         params.dao_bulla,
@@ -451,14 +403,23 @@ fn initialize_v1(cid: ContractId, params: model::InitializeParamsV1) -> Contract
         params.bulla_blind.clone(),
     );
 
-    // Create update
+    // The duplicate check is on the **derived** bulla — the key the record is stored under — and it used
+    // to test `params.dao_bulla`, which is the DAO's own bulla and not a key anything is written to. So
+    // the check could never fire: two `initialize` calls with the same DAO bulla and different owners
+    // derive different endowment bullas and are two legitimate endowments, while two calls with the same
+    // DAO bulla *and* the same owner derive the same one — and that second case is the one the check was
+    // for. Testing the value that is actually written is what makes it a guard.
+    let bullas_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_BULLAS_TREE)?;
+    if wasm::db::db_contains_key(bullas_db, &endowment_bulla.to_bytes())? {
+        msg!("[dao_escrow::initialize_v1] ERROR: this endowment already exists");
+        return Err(DaoEscrowError::DaoEscrowAlreadyExists("Endowment already exists".to_string()).into())
+    }
+
     let update = model::InitializeUpdateV1 {
-        instance_seed: params.instance_seed,
         bulla: endowment_bulla,
         owner_pubkey: params.owner_pubkey,
-        bulla_blind: params.bulla_blind,
-        // Read here — apply may not (register OBL-C72).
-        created_at: wasm::util::get_verifying_block_height()?.get(),
+        mode: params.mode,
+        min_premium: params.min_premium,
     };
 
     msg!("[dao_escrow::initialize_v1] Endowment initialized: {:?}", endowment_bulla);
@@ -474,27 +435,14 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
     // invisible to db_contains_key per §9.1, which breaks the duplicate check)
     wasm::db::db_set(bullas_db, &update.bulla.to_bytes(), &[1])?;
 
-    // Initialize endowment state
+    // Four fields, and the mode is the caller's rather than a constant. `multisig_group_id` starts at zero,
+    // which every governance gate reads as "no group installed" and refuses on, so the endowment is
+    // owner-controlled until the owner installs a group through `update_v1`.
     let endowment = model::DaoEscrow {
-        version: 1,
-        instance_seed: update.instance_seed,
-        bulla: update.bulla,
-        mode: model::DaoEscrowMode::Escrow,
+        mode: update.mode,
         owner_pubkey: update.owner_pubkey,
-        pool_asset_id: AssetId::DRKW,
         multisig_group_id: pallas::Base::zero(),
-        pool_purse_id: pallas::Base::zero(),
-        treasury_purse_id: pallas::Base::zero(),
-        endowment_purse_id: pallas::Base::zero(),
-        member_count: 0,
-        fee_config: None,
-        min_premium: 0,
-        max_members: u64::MAX,
-        created_at: update.created_at,
-        bulla_blind: update.bulla_blind,
-        paused: false,
-        drain_protection_enabled: false,
-        drain_protection_bulla: None,
+        min_premium: update.min_premium,
     };
 
     wasm::db::db_set(endowments_db, &update.bulla.to_bytes(), &endowment.encode())?;
@@ -543,7 +491,17 @@ fn update_v1(cid: ContractId, params: model::UpdateParamsV1) -> ContractResult {
     }
 
     match params.multisig_group_id {
-        None => {}
+        // **A call naming no group is refused, and it must be.** The record's mode, owner and premium
+        // floor are immutable after `InitializeV1`, so a group-less `UpdateV1` has nothing to do —
+        // and `update_apply_v1` below records `owner_nullifier` unconditionally. Because that nullifier
+        // is deterministic in `(owner_secret, dao_escrow_bulla)`, letting a no-op through would spend
+        // the owner's one-shot proof and make governance **permanently uninstallable** on this
+        // endowment: every later `UpdateV1` would fail `OwnershipProofReplayed` (`OBL-C161`). A silent
+        // success on a call that does nothing is the same defect as a gate that cannot fail.
+        None => {
+            msg!("[dao_escrow::update_v1] ERROR: no governance group named, and nothing else to update");
+            return Err(DaoEscrowError::NoGovernanceGroup.into())
+        }
         Some(gid) => {
             if gid == pallas::Base::zero() {
                 msg!("[dao_escrow::update_v1] ERROR: a zero group id does not activate governance");
@@ -640,21 +598,23 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // wasm::zk::verify_zk_proof(cid, crate::DAO_ESCROW_ZKAS_PREMIUM_NS)?;
 
-    // Calculate fee split based on mode (simplified - all to endowment)
-    // The endowment is re-read and carried, and the membership timestamp is read here: apply may
-    // not read either (register OBL-C72).
-    let mut endowment = model::DaoEscrow::decode(
+    // **The premium floor is enforced here, and this is the only thing that makes `min_premium` a
+    // reader rather than a field.** It was previously set to `0` by `initialize_apply_v1` for every
+    // endowment and never compared to anything, so a caller could pay `0` and still be issued a
+    // membership note. The floor is the creator's, carried in the record.
+    let endowment = model::DaoEscrow::decode(
         &endowment_data.ok_or(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?,
     )?;
-    // The apply used to perform this increment after re-reading the record; it happens here now.
-    endowment.member_count += 1;
+    if params.value < endowment.min_premium {
+        msg!("[dao_escrow::pay_premium_v1] ERROR: Premium {} is below the floor {}", params.value, endowment.min_premium);
+        return Err(DaoEscrowError::InsufficientPremium.into())
+    }
 
-    // Create update — Purse::DepositV1 child call handles balance
+    // The membership timestamp is read here because apply may not (register OBL-C72).
     let update = model::PayPremiumUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
         membership_note: params.membership_note,
         amount: params.value,
-        member_count: 1,
         member_pubkey: params.member_pubkey,
         asset_id: params.asset_id,
         expiry: params.expiry,
@@ -784,12 +744,7 @@ fn withdraw_v1(
         return Err(DaoEscrowError::NotAuthorizedToWithdraw.into())
     }
 
-    // Verify sufficient balance
-    // Purse::WithdrawV1 verifies balance >= amount
-if false {
-        msg!("[dao_escrow::withdraw_v1] ERROR: Insufficient endowment balance");
-        return Err(DaoEscrowError::InsufficientEndowment.into())
-    }
+    // The balance is `Purse::WithdrawV1`'s to check; the guard that stood here was `if false { … }`.
 
     // Create update
     let update = model::WithdrawUpdateV1 {
@@ -813,71 +768,6 @@ fn withdraw_apply_v1(cid: ContractId, update: model::WithdrawUpdateV1) -> Contra
     wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &update.endowment_bytes)?;
 
     msg!("[dao_escrow::withdraw_apply_v1] Endowment updated: new total = {}", update.amount);
-    Ok(())
-}
-
-/// EnableDrainProtectionV1 instruction
-fn enable_drain_protection_v1(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
-    params: model::EnableDrainProtectionParamsV1,
-) -> ContractResult {
-    msg!("[dao_escrow::enable_drain_protection_v1] Enabling drain protection");
-
-    // Verify endowment exists
-    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
-    if endowment_data.is_none() {
-        msg!("[dao_escrow::enable_drain_protection_v1] ERROR: Endowment not found");
-        return Err(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()).into())
-    }
-
-    // Apply the association here and carry the record — apply may not read it (OBL-C72).
-    let mut endowment = model::DaoEscrow::decode(
-        &endowment_data.ok_or(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?,
-    )?;
-
-    // **This endpoint had no authorization at all** (`OBL-C152`): any caller could associate an
-    // arbitrary drain-protection bulla with any endowment, and the fixture's row asserted the
-    // resulting `Success` so that adding a check would fail it. The action id binds the bulla being
-    // associated, so the approval names what it authorises rather than merely the endpoint.
-    require_governance_child(
-        cid,
-        call_idx,
-        &calls,
-        &endowment,
-        0,
-        model::governance_message(
-            model::governance_role::ENABLE_DRAIN_PROTECTION,
-            poseidon_hash([params.dao_escrow_bulla.inner(), params.drain_protection_bulla.inner()]),
-        ),
-    )?;
-
-    endowment.drain_protection_bulla = Some(params.drain_protection_bulla);
-    endowment.drain_protection_enabled = true;
-
-    let update = model::EnableDrainProtectionUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla,
-        drain_protection_bulla: params.drain_protection_bulla,
-        endowment_bytes: endowment.encode(),
-    };
-
-    msg!("[dao_escrow::enable_drain_protection_v1] Drain protection update prepared");
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::EnableDrainProtectionV1 as u8], &update.encode()?[..]].concat())
-}
-
-/// EnableDrainProtectionV1 apply
-fn enable_drain_protection_apply_v1(
-    cid: ContractId,
-    update: model::EnableDrainProtectionUpdateV1,
-) -> ContractResult {
-    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-
-    // Blind write — exec applied both flag changes and carried the record (OBL-C72).
-    wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &update.endowment_bytes)?;
-
-    msg!("[dao_escrow::enable_drain_protection_apply_v1] Drain protection enabled");
     Ok(())
 }
 
@@ -949,42 +839,40 @@ fn endowment_withdraw_v1(
         }
     };
 
-    // Verify authorization:
-    // - If proposal_id is provided, verify proposal is approved by vote
-    // - If capability_proof is provided, verify board_endowment capability
-    // - Otherwise, reject (this function requires governance authorization)
-    if let Some(proposal_id) = params.proposal_id {
-        verify_proposal_approved(cid, proposal_id, params.dao_escrow_bulla.inner(), params.value, &params.recipient_pubkey)?;
-    } else if params.capability_proof.is_some() {
-        // The governance-approval path (`OBL-C151`). `capability_proof` is now only a *path selector* —
-        // nothing reads its contents, and a bare `is_some()` standing in for "the caller chose the
-        // governance path" is a phantom the field's name no longer describes. Removing it is its own
-        // unit: it changes `EndowmentWithdrawParamsV1`'s codec and the Python binding pins that struct.
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
-        let (rx, _ry) = params.recipient_pubkey.xy().expect("pk not identity");
-        let action = model::governance_message(
-            model::governance_role::ENDOWMENT_WITHDRAW,
-            poseidon_hash([
-                params.dao_escrow_bulla.inner(),
-                pallas::Base::from(params.value),
-                rx,
-            ]),
-        );
-        require_governance_child(cid, call_idx, &calls, &endowment, 1, action)?;
-    } else {
-        msg!("[dao_escrow::endowment_withdraw_v1] ERROR: No authorization provided");
-        return Err(DaoEscrowError::EndowmentWithdrawUnauthorized.into())
+    // Authorisation: the endowment's group, and nothing else.
+    //
+    // There used to be two other paths and both were phantoms. `params.proposal_id` named a proposal
+    // this endpoint loaded and checked with `verify_proposal_approved` — a *second* executor for the
+    // lifecycle `ExecuteClaimV1` already executes, and one that could never pass, because nothing in the
+    // crate writes `ProposalState::Approved` (`OBL-C159`). `params.capability_proof` was three lines
+    // long and read nothing: a bare `Option::is_some()` standing in for "the caller chose the governance
+    // path", with a field named for a capability proof carrying one bit of routing (`OBL-C152`).
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+    let (rx, _ry) = params.recipient_pubkey.xy().expect("pk not identity");
+    let action = model::governance_message(
+        model::governance_role::ENDOWMENT_WITHDRAW,
+        poseidon_hash([
+            params.dao_escrow_bulla.inner(),
+            pallas::Base::from(params.value),
+            rx,
+        ]),
+    );
+    require_governance_child(cid, call_idx, &calls, &endowment, 1, action)?;
+
+    // The mode gate, which `treasury_spend_v1` already had and this endpoint did not: `escrow` mode pays
+    // claims from the endowment, `treasury` mode spends operational funds, and `TreasuryEndowment` does
+    // both. Without it this endpoint was reachable in every mode, which made the `mode` field's first
+    // two variants indistinguishable here (`OBL-C154`).
+    if endowment.mode == model::DaoEscrowMode::Treasury {
+        msg!("[dao_escrow::endowment_withdraw_v1] ERROR: Not an endowment mode DAO-Escrow");
+        return Err(DaoEscrowError::InvalidState { expected: "Escrow mode".to_string(), actual: "Treasury mode".to_string() }.into())
     }
 
-    // Verify sufficient endowment balance
-    // Purse::WithdrawV1 verifies balance >= amount
-if false {
-        msg!("[dao_escrow::endowment_withdraw_v1] ERROR: Insufficient endowment balance");
-        return Err(DaoEscrowError::InsufficientEndowment.into())
-    }
-
-    // Calculate new total
-    // Purse::WithdrawV1 verifies balance and computes new commitment
+    // The endowment's balance is `Purse::WithdrawV1`'s to check — it refuses a withdrawal larger than
+    // the balance, and a child that fails fails this transaction. The guard that stood here was
+    // `if false { … }`: a refusal no input could reach, left in place while the balance moved to Purse.
+    // Removing it rather than deleting the block keeps the fact that a balance guard belongs here, one
+    // contract over, rather than leaving a reader to wonder where it went.
 
     // Create update
     let update = model::EndowmentWithdrawUpdateV1 {
@@ -1095,48 +983,31 @@ fn treasury_spend_v1(
         return Err(DaoEscrowError::InvalidState { expected: "Treasury mode".to_string(), actual: "Escrow mode".to_string() }.into())
     }
 
-    // Verify authorization:
-    // - If proposal_id is provided, verify proposal is approved by vote
-    // - If capability_proof is provided, verify board_treasury capability
-    // - Otherwise, reject (this function requires governance authorization)
-    if params.proposal_id != pallas::Base::zero() {
-        verify_proposal_approved(cid, params.proposal_id, params.dao_escrow_bulla.inner(), params.value, &params.recipient_pubkey)?;
-    } else if params.capability_proof.is_some() {
-        // The governance-approval path (`OBL-C151`); see the sibling note in `endowment_withdraw_v1`
-        // about the path-selector phantom. The action id is a `(bulla, value, recipient_x)` triple and
-        // not `params.proposal_id`: this branch is reached exactly when `proposal_id == 0`, so an
-        // id-based message would be zero for every call here and one approval of zero would authorise
-        // every treasury spend forever.
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
-        let (rx, _ry) = params.recipient_pubkey.xy().expect("pk not identity");
-        let action = model::governance_message(
-            model::governance_role::TREASURY_SPEND,
-            poseidon_hash([
-                params.dao_escrow_bulla.inner(),
-                pallas::Base::from(params.value),
-                rx,
-            ]),
-        );
-        require_governance_child(cid, call_idx, &calls, &endowment, 1, action)?;
-    } else {
-        msg!("[dao_escrow::treasury_spend_v1] ERROR: No authorization provided");
-        return Err(DaoEscrowError::EndowmentWithdrawUnauthorized.into())
-    }
+    // Authorisation: the endowment's group, and nothing else — the same two phantoms as
+    // `endowment_withdraw_v1` (`OBL-C159` for the proposal path, `OBL-C152` for the path selector).
+    //
+    // The action id is a `(bulla, value, recipient_x)` triple. It must not be `proposal_id`-shaped:
+    // this endpoint's gate is reached exactly when a proposal id is absent, so an id-based message
+    // would be zero for every call and one approval of zero would authorise every spend of this
+    // endowment forever.
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+    let (rx, _ry) = params.recipient_pubkey.xy().expect("pk not identity");
+    let action = model::governance_message(
+        model::governance_role::TREASURY_SPEND,
+        poseidon_hash([
+            params.dao_escrow_bulla.inner(),
+            pallas::Base::from(params.value),
+            rx,
+        ]),
+    );
+    require_governance_child(cid, call_idx, &calls, &endowment, 1, action)?;
 
-    // Verify sufficient treasury balance
-    // Purse::WithdrawV1 verifies balance >= amount
-if false {
-        msg!("[dao_escrow::treasury_spend_v1] ERROR: Insufficient treasury balance");
-        return Err(DaoEscrowError::InsufficientEndowment.into())
-    }
-
-    // Calculate new total
-    // Purse::WithdrawV1 handles balance update
+    // The balance is `Purse::WithdrawV1`'s to check; the guard that stood here was `if false { … }`.
+    // See the sibling note in `endowment_withdraw_v1`.
 
     // Create update
     let update = model::TreasurySpendUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
-        proposal_id: params.proposal_id,
         value: params.value,
         amount: params.value, // Purse verifies balance
         endowment_bytes: endowment.encode(),
@@ -1416,122 +1287,13 @@ fn vote_claim_get_metadata(
     Ok(metadata)
 }
 
-/// Metadata for VerifyMemberCapabilityV1 (0x0b) — VerifyMemberCapabilityV2 circuit
-/// Circuit constrain_instance order: [tx_binding, tx_nonce, capability_commit]
-fn verify_member_cap_get_metadata(
-    _cid: ContractId,
-    call_idx: usize,
-    calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params = match model::VerifyMemberCapabilityParamsV1::decode(&self_.data[1..]) {
-        Ok(p) => p,
-        Err(_) => return Ok(vec![]),
-    };
+// Two metadata arms were removed here — `VerifyMemberCapabilityV1`'s and `ResolveDisputeV1`'s — together
+// with the two doc lines the retired setter had left above `update_get_metadata`. Both belonged to
+// endpoints retired with the OCap model, and both published a `resolution_commit`/`capability_commit`
+// built from a param the contract itself called a placeholder ("resolution_blind placeholder (needs
+// dedicated field in params)") — the same shape as `OBL-C153`, where a commitment's preimage was
+// substituted because the params carried no field for it.
 
-    let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id).into_option()
-        .unwrap_or(pallas::Base::zero());
-    let cap_secret_fp = pallas::Base::from_repr(params.capability_proof.capability_secret)
-        .into_option()
-        .unwrap_or(pallas::Base::zero());
-
-    // capability_commit = poseidon_hash(DOMAIN_COIN_COMMIT, capability_id, capability_secret,
-    //                                    dao_escrow_bulla)
-    let capability_commit = poseidon_hash([
-        pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
-        cap_id_fp,
-        cap_secret_fp,
-        params.dao_escrow_bulla.inner(),
-    ]);
-
-    // `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` with
-    // `DOMAIN_TX_BINDING = 3` (`src/sdk/src/crypto/constants.rs:57`). This contract's tx pair is
-    // the constant `(0, 0)` — the convention `attestation` and `identity` use, and one of the 21
-    // constant bindings the register already records.
-    //
-    // It was `pallas::Base::zero()`, labelled "Pattern A: pass-through placeholder", which is NOT
-    // that hash. The circuit constrains `tx_binding == poseidon(3, tx_commitment, tx_nonce)`, so
-    // publishing a literal zero required `poseidon(3, 0, 0) == 0` — a preimage. Every proof for
-    // this circuit was unsatisfiable, not merely unbound, and a count check cannot see it because
-    // the vector had the right length (register OBL-C78).
-    let tx_binding = poseidon_hash([
-        pallas::Base::from(3u64),
-        pallas::Base::zero(),
-        pallas::Base::zero(),
-    ]);
-    let tx_nonce_val = pallas::Base::zero();
-
-    let zk_public_inputs = vec![(
-        crate::DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_NS_V2.to_string(),
-        vec![tx_binding, tx_nonce_val, capability_commit],
-    )];
-
-    let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata)?;
-    Ok(metadata)
-}
-
-/// Metadata for ResolveDisputeV1 (0x0c) — ResolveDisputeV2 circuit
-/// Circuit constrain_instance order: [tx_binding, tx_nonce, resolution_commit]
-fn resolve_dispute_get_metadata(
-    _cid: ContractId,
-    call_idx: usize,
-    calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params = match model::ResolveDisputeParamsV1::decode(&self_.data[1..]) {
-        Ok(p) => p,
-        Err(_) => return Ok(vec![]),
-    };
-
-    // Reconstruct capability_secret as Base from capability_proof bytes
-    let cap_secret_fp = pallas::Base::from_repr(params.capability_proof.capability_secret)
-        .into_option()
-        .unwrap_or(pallas::Base::zero());
-
-    // dispute_id = poseidon_hash(DOMAIN_NULLIFIER, capability_secret, proposal_id)
-    // Use proposal_id.inner() as the dispute identifier
-    let _dispute_id = params.proposal_id.inner();
-
-    // resolution_commit = poseidon_hash(DOMAIN_COIN_COMMIT, dispute_id, resolution_type,
-    //                                    resolution_blind)
-    // Reconstruct from available params data
-    let resolution_commit = poseidon_hash([
-        pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
-        _dispute_id,
-        pallas::Base::from(params.payout_amount),
-        cap_secret_fp, // resolution_blind placeholder (needs dedicated field in params)
-    ]);
-
-    // `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` with
-    // `DOMAIN_TX_BINDING = 3` (`src/sdk/src/crypto/constants.rs:57`). This contract's tx pair is
-    // the constant `(0, 0)` — the convention `attestation` and `identity` use, and one of the 21
-    // constant bindings the register already records.
-    //
-    // It was `pallas::Base::zero()`, labelled "Pattern A: pass-through placeholder", which is NOT
-    // that hash. The circuit constrains `tx_binding == poseidon(3, tx_commitment, tx_nonce)`, so
-    // publishing a literal zero required `poseidon(3, 0, 0) == 0` — a preimage. Every proof for
-    // this circuit was unsatisfiable, not merely unbound, and a count check cannot see it because
-    // the vector had the right length (register OBL-C78).
-    let tx_binding = poseidon_hash([
-        pallas::Base::from(3u64),
-        pallas::Base::zero(),
-        pallas::Base::zero(),
-    ]);
-    let tx_nonce_val = pallas::Base::zero();
-
-    let zk_public_inputs = vec![(
-        crate::DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS_V2.to_string(),
-        vec![tx_binding, tx_nonce_val, resolution_commit],
-    )];
-
-    let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata)?;
-    Ok(metadata)
-}
-
-/// Metadata for SetGovernanceConfigV1 (0x0e) — SetGovernanceConfigV2 circuit
-/// Circuit constrain_instance order: [owner_pub_x, owner_pub_y, owner_nullifier, tx_binding, tx_nonce]
 /// Metadata for `UpdateV1` (0x01) — the `SetGovernanceConfigV2` circuit (`OBL-C151`).
 ///
 /// This function used to be `set_governance_config_get_metadata` and publish **five zeros** under the
@@ -1630,10 +1392,7 @@ fn propose_claim_v1(
         value: params.value,
         voting_ends_at,
         execution_deadline,
-        proposer_pubkey: params.proposer_pubkey.clone(),
         recipient_pubkey: params.recipient_pubkey.clone(),
-        claim_type: params.claim_type,
-        description_hash: params.description_hash,
     };
 
     msg!("[dao_escrow::propose_claim_v1] Claim proposed: {:?}", params.claim_id);
@@ -1645,18 +1404,10 @@ fn propose_claim_apply_v1(cid: ContractId, update: model::ProposeClaimUpdateV1) 
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
 
     let proposal = model::Proposal {
-        version: 1,
-        id: model::ProposalId(update.claim_id.inner()),
         dao_escrow_bulla: update.dao_escrow_bulla,
-        proposer_pubkey: update.proposer_pubkey,
-        claim_type: update.claim_type,
         value: update.value,
-        description_hash: update.description_hash,
         recipient_pubkey: update.recipient_pubkey,
-        yes_votes: 0,
-        no_votes: 0,
         state: model::ProposalState::Pending,
-        created_at: 0,
         voting_ends_at: update.voting_ends_at,
         execution_deadline: update.execution_deadline,
     };
@@ -1690,114 +1441,137 @@ fn vote_claim_v1(
         }
     };
 
-    // MultiSig governance: group must be configured
+    // MultiSig governance: group must be configured, and it is the sole authority here.
     if endowment.multisig_group_id == pallas::Base::zero() {
         return Err(DaoEscrowError::GovernanceNotActive.into());
     }
-    // ...and the group must have approved this vote (`OBL-C151`), under its own role tag so it cannot
-    // reuse the proposal's spent approval.
+
+    // Load the proposal before the approval, so a refusal can name the state it actually found rather
+    // than a generic "not pending". `ClaimAlreadyApproved` and `ClaimAlreadyRejected` were declared and
+    // never constructed anywhere in the crate until this became their reader (`OBL-C159`).
+    let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
+    let proposal_data = wasm::db::db_get(proposals_db, &params.claim_id.to_bytes())?
+        .ok_or_else(|| DaoEscrowError::ClaimNotFound("Claim not found".to_string()))?;
+    let mut proposal = model::Proposal::decode(&proposal_data)?;
+
+    match proposal.state {
+        model::ProposalState::Pending => {}
+        model::ProposalState::Approved => return Err(DaoEscrowError::ClaimAlreadyApproved.into()),
+        model::ProposalState::Rejected => return Err(DaoEscrowError::ClaimAlreadyRejected.into()),
+        model::ProposalState::Cancelled => return Err(DaoEscrowError::ClaimAlreadyCancelled.into()),
+        model::ProposalState::Executed => return Err(DaoEscrowError::ClaimAlreadyExecuted.into()),
+        model::ProposalState::Expired => return Err(DaoEscrowError::ClaimExpired.into()),
+    }
+
+    // The voting window. If it has closed the proposal expires rather than being decided.
+    let current_block = wasm::util::get_verifying_block_height()?.get();
+    if current_block > proposal.voting_ends_at {
+        msg!("[dao_escrow::vote_claim_v1] Voting window expired, auto-expiring proposal");
+        proposal.state = model::ProposalState::Expired;
+        let update = model::VoteClaimUpdateV1 {
+            dao_escrow_bulla: params.dao_escrow_bulla,
+            claim_id: params.claim_id,
+            state: model::ProposalState::Expired,
+            // No decision was taken, so no nullifier is spent — `apply` gates on the state, and this
+            // path is the only one that carries a zero.
+            vote_nullifier: pallas::Base::zero(),
+            // Carried because apply may not read it (OBL-C72).
+            proposal_bytes: proposal.encode(),
+        };
+        wasm::util::set_return_data(&[&[DaoEscrowFunction::VoteClaimV1 as u8], &update.encode()?[..]].concat())?;
+        return Ok(())
+    }
+
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+    let (voter_x, voter_y) = params.voter_pubkey.xy().expect("pk not identity");
+
+    // The approval: the group authorises *this voter* to cast *this direction* on *this claim*.
+    //
+    // **All three components are load-bearing (`OBL-C160`).** The message used to be
+    // `governance_message(VOTE_CLAIM, claim_id)` — the claim and nothing else — while a MultiSig approval
+    // is spend-once, each signature's nullifier being `H(1, member_secret, group_id, message_hash)`. Every
+    // vote on a claim therefore presented the same message, so a group of `n` at threshold `t` could
+    // finalise it `floor(n/t)` times: **at most one counted vote per claim**, since `t = n` is the common
+    // case. And the direction was not in the message either, so one approval for "somebody votes on claim
+    // X" authorised a Yes and a No alike.
+    let direction = match params.vote {
+        model::VoteType::Yes => pallas::Base::from(0u64),
+        model::VoteType::No => pallas::Base::from(1u64),
+    };
+    let vote_id = poseidon_hash([params.claim_id.inner(), voter_x, voter_y, direction]);
     require_governance_child(
         cid,
         call_idx,
         &calls,
         &endowment,
         0,
-        model::governance_message(model::governance_role::VOTE_CLAIM, params.claim_id.inner()),
+        model::governance_message(model::governance_role::VOTE_CLAIM, vote_id),
     )?;
 
-    // Load proposal
-    let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
-    let proposal_data = wasm::db::db_get(proposals_db, &params.claim_id.to_bytes())?
-        .ok_or_else(|| DaoEscrowError::ClaimNotFound("Claim not found".to_string()))?;
-    let mut proposal = model::Proposal::decode(&proposal_data)?;
-
-    // Verify proposal is pending
-    if proposal.state != model::ProposalState::Pending {
-        msg!("[dao_escrow::vote_claim_v1] ERROR: Proposal not pending");
-        return Err(DaoEscrowError::ClaimNotPending.into());
-    }
-
-    // Verify voting window has not expired; if it has, auto-expire the proposal
-    let current_block = wasm::util::get_verifying_block_height()?.get();
-    if current_block > proposal.voting_ends_at {
-        msg!("[dao_escrow::vote_claim_v1] Voting window expired, auto-expiring proposal");
-        let update = model::VoteClaimUpdateV1 {
-            dao_escrow_bulla: params.dao_escrow_bulla,
-            claim_id: params.claim_id,
-            yes_votes: proposal.yes_votes,
-            no_votes: proposal.no_votes,
-            passed: false,
-            expired: true,
-            // No vote is recorded on this path (the early return is above the double-vote check),
-            // so `apply` must not spend the nullifier here — it gates on `expired`.
-            vote_nullifier: params.capability_proof.nullifier.inner(),
-            // Still carried: apply may not read it (OBL-C72). The apply sets `Expired` on this
-            // path, so exec applies that here too.
-            proposal_bytes: {
-                let mut p = proposal;
-                p.state = model::ProposalState::Expired;
-                p.encode()
-            },
-        };
-        wasm::util::set_return_data(&[&[DaoEscrowFunction::VoteClaimV1 as u8], &update.encode()?[..]].concat())?;
-        return Ok(())
-    }
-
-    // Check for double-vote via nullifier. The read stays here — `↓nullify` is an `exec` barb
-    // (contract-wasm-type-system.md §A.2.1) — but the *write* moves to apply, carried in the update.
+    // The voter's nullifier, derived here so that it **is** the value the `VoteClaimV2` proof publishes.
+    //
+    // It used to be `params.capability_proof.nullifier` taken verbatim — a caller-chosen value that the
+    // proof never bound, so the tree's double-vote guard keyed on whatever the caller wrote, and
+    // `capability_proof.capability_secret`, its only claimed secret, is public call data
+    // (`OBL-C160`). The derivation matches `vote_claim_get_metadata` and `proof/vote_claim.zk:37-43`
+    // term for term, so the key this writes is the one the proof constrains.
+    let cap_secret_fp = pallas::Base::from_repr(params.capability_proof.capability_secret)
+        .into_option()
+        .unwrap_or(pallas::Base::zero());
+    let vote_nullifier = poseidon_hash([
+        pallas::Base::from(1u64), // DOMAIN_NULLIFIER
+        cap_secret_fp,
+        params.claim_id.inner(),
+        voter_x,
+        voter_y,
+    ]);
+    // The read stays in exec — `↓nullify` is an `exec` barb (contract-wasm-type-system.md §A.2.1) — and
+    // the *write* moves to apply, carried in the update.
     let nullifiers_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE)?;
-    let vote_nullifier = params.capability_proof.nullifier.inner();
     if wasm::db::db_contains_key(nullifiers_db, &vote_nullifier.to_repr())? {
         msg!("[dao_escrow::vote_claim_v1] ERROR: Already voted");
         return Err(DaoEscrowError::AlreadyVoted.into());
     }
 
-    // Count vote — MultiSig delegation: each SignV1 = one vote
-    let (yes_votes, no_votes) = match params.vote {
-        model::VoteType::Yes => (proposal.yes_votes + 1, proposal.no_votes),
-        model::VoteType::No => (proposal.yes_votes, proposal.no_votes + 1),
+    // The decision. The group's `FinalizeV1` **is** the quorum: it refuses below the group's threshold,
+    // and a child that fails fails this transaction, so a successful approval here means the group — not
+    // one member — has decided. There is therefore no tally to count, which is why
+    // `ProposalState::Approved` had a reader and no writer before this (`OBL-C159`).
+    proposal.state = match params.vote {
+        model::VoteType::Yes => model::ProposalState::Approved,
+        model::VoteType::No => model::ProposalState::Rejected,
     };
-
-    // MultiSig: threshold verification via FinalizeV1 child call
-
-    // Apply the tally to the proposal here and carry it — apply may not read it (OBL-C72).
-    proposal.yes_votes = yes_votes;
-    proposal.no_votes = no_votes;
-    let proposal_bytes = proposal.encode();
 
     let update = model::VoteClaimUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
         claim_id: params.claim_id,
-        yes_votes,
-        no_votes,
-        passed: false,
-        expired: false,
+        state: proposal.state,
         vote_nullifier,
-        proposal_bytes,
+        proposal_bytes: proposal.encode(),
     };
 
     msg!("[dao_escrow::vote_claim_v1] Vote recorded: {:?}", params.claim_id);
     wasm::util::set_return_data(&[&[DaoEscrowFunction::VoteClaimV1 as u8], &update.encode()?[..]].concat())
 }
 
-/// VoteClaimV1 apply - update vote tally and proposal state
+/// VoteClaimV1 apply - record the decision and spend the voter's nullifier
 fn vote_claim_apply_v1(cid: ContractId, update: model::VoteClaimUpdateV1) -> ContractResult {
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
 
-    // Spend the voter's nullifier here, not in exec. Gated on `expired`: the auto-expiry path
-    // returns before the double-vote check, so no vote was recorded and nothing should be spent.
-    if !update.expired {
+    // Spend the voter's nullifier here, not in exec. Gated on the state: the auto-expiry path takes no
+    // decision and casts no vote, so nothing should be spent.
+    if update.state != model::ProposalState::Expired {
         let nullifiers_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE)?;
         wasm::db::db_mark_spent(nullifiers_db, &update.vote_nullifier.to_repr())?;
     } else {
         msg!("[dao_escrow::vote_claim_apply_v1] Expired path: nullifier not spent");
     }
 
-    // Blind write — the tally and the expired state were applied in exec and carried here
-    // (OBL-C72), so the record is no longer read back.
+    // Blind write — the state was applied in exec and carried here (OBL-C72), so the record is no
+    // longer read back.
     wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &update.proposal_bytes)?;
 
-    msg!("[dao_escrow::vote_claim_apply_v1] Vote tally updated");
+    msg!("[dao_escrow::vote_claim_apply_v1] Proposal state updated");
     Ok(())
 }
 
@@ -1858,18 +1632,16 @@ fn execute_claim_v1(
         return Err(DaoEscrowError::ProposalAlreadyExecuted.into());
     }
 
-    // Verify endowment has sufficient balance
+    // The endowment the claim names must exist. This load is also what the `if false { … }` balance
+    // guard below it used to be attached to; the guard is gone — `Purse::WithdrawV1` checks the balance
+    // and a failing child fails this transaction — but the existence check is its own reason to stay: a
+    // claim whose proposal names a bulla with no endowment record is a claim against nothing.
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
     let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
     let _endowment: model::DaoEscrow = endowment_data
         .map(|d| model::DaoEscrow::decode(&d))
         .transpose()?
         .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
-
-    // Purse::WithdrawV1 verifies balance >= amount
-if false {
-        return Err(DaoEscrowError::InsufficientEndowment.into());
-    }
 
     let update = model::ExecuteClaimUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
@@ -1895,255 +1667,6 @@ fn execute_claim_apply_v1(cid: ContractId, update: model::ExecuteClaimUpdateV1) 
     wasm::db::db_set(proposals_db, &update.proposal_id.inner().to_repr(), &update.proposal_bytes)?;
 
     msg!("[dao_escrow::execute_claim_apply_v1] Proposal marked as executed");
-    Ok(())
-}
-
-// ============================================================================
-// REGISTER CAPABILITY REQUIREMENT V1 (0x0a)
-// ============================================================================
-
-/// RegisterCapabilityRequirementV1 instruction - registers a required capability for a DAO role
-fn register_capability_requirement_v1(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
-    params: model::RegisterCapabilityRequirementParamsV1,
-) -> ContractResult {
-    msg!("[dao_escrow::register_capability_requirement_v1] Registering capability requirement");
-
-    // Verify endowment exists
-    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
-    let endowment: model::DaoEscrow = endowment_data
-        .map(|d| model::DaoEscrow::decode(&d))
-        .transpose()?
-        .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
-
-    // **This endpoint had no authorization at all** (`OBL-C152`), and until `OBL-C150`'s second instance
-    // was fixed it could not be called either — its decoder refused every payload its own encoder wrote,
-    // so the fixture row was recording a codec failure as a refusal. With the payload decodable the call
-    // succeeded for any caller, which is what the row asserted so that this check would fail it.
-    let cap_id_fp = pallas::Base::from_repr(params.capability_id).into_option().unwrap_or(pallas::Base::zero());
-    require_governance_child(
-        cid,
-        call_idx,
-        &calls,
-        &endowment,
-        0,
-        model::governance_message(
-            model::governance_role::REGISTER_CAPABILITY_REQUIREMENT,
-            poseidon_hash([params.dao_escrow_bulla.inner(), cap_id_fp]),
-        ),
-    )?;
-
-    let requirement = model::CapabilityRequirement {
-        version: 1,
-        role: params.role.clone(),
-        capability_id: params.capability_id,
-        identity_contract_bulla: params.identity_contract_bulla,
-        active: true,
-    };
-
-    let update = model::RegisterCapabilityRequirementUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla,
-        role: params.role,
-        requirement,
-    };
-
-    msg!("[dao_escrow::register_capability_requirement_v1] Requirement registered");
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::RegisterCapabilityRequirementV1 as u8], &update.encode()?[..]].concat())
-}
-
-/// RegisterCapabilityRequirementV1 apply - store capability requirement
-fn register_capability_requirement_apply_v1(
-    cid: ContractId,
-    update: model::RegisterCapabilityRequirementUpdateV1,
-) -> ContractResult {
-    let caps_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE)?;
-    wasm::db::db_set(caps_db, &update.role, &update.requirement.encode()?)?;
-    msg!("[dao_escrow::register_capability_requirement_apply_v1] Capability requirement stored");
-    Ok(())
-}
-
-// ============================================================================
-// VERIFY MEMBER CAPABILITY V1 (0x0b)
-// ============================================================================
-
-/// VerifyMemberCapabilityV1 instruction - verifies a member holds a valid capability for this DAO
-fn verify_member_capability_v1(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
-    params: model::VerifyMemberCapabilityParamsV1,
-) -> ContractResult {
-    msg!("[dao_escrow::verify_member_capability_v1] Verifying member capability");
-
-    // Validate child call to Identity::VerifyCapabilityV1 (0x06) for on-chain capability verification.
-    // The selector is `IdentityFunction::VerifyCapabilityV1` = 0x06 (`identity/src/lib.rs:144`); the check
-    // below demands exactly that. This comment said 0x0b, which is THIS contract's own
-    // `VerifyMemberCapabilityV1` — a wrong constant pointing the next reader at the wrong contract
-    // (`OBL-C148`'s class: a citation that does not resolve).
-    let self_ = &calls[call_idx];
-    if self_.children_indexes.len() != 1 {
-        msg!("[verify_member_capability_v1] Error: Expected 1 child call (Identity::VerifyCapabilityV1), got {}",
-             self_.children_indexes.len());
-        return Err(DaoEscrowError::InvalidChildrenIndexes.into());
-    }
-    let child_idx = self_.children_indexes[0];
-    if child_idx >= calls.len() {
-        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
-    }
-    let child_call = &calls[child_idx].data;
-    if child_call.data[0] != 0x06 {
-        msg!("[verify_member_capability_v1] Error: Expected Identity::VerifyCapabilityV1 (0x06), got 0x{:02x}",
-             child_call.data[0]);
-        return Err(DaoEscrowError::InvalidChildCall.into());
-    }
-
-    // Validate child call targets the Identity contract (safety.md Lesson 15)
-    let info_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
-    let identity_cid_bytes = wasm::db::db_get(info_db, IDENTITY_CONTRACT_ID_KEY)?;
-    if let Some(bytes) = identity_cid_bytes {
-        if bytes.len() == 32 {
-            let mut arr = [0u8; 32];
-            arr.copy_from_slice(&bytes);
-            #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
-            let identity_cid = ContractId::from_bytes(arr).unwrap();
-            if identity_cid != ContractId::ZERO {
-                if child_call.contract_id != identity_cid {
-                    msg!("[verify_member_capability_v1] Error: Child call contract_id does not match stored Identity contract ID");
-                    return Err(DaoEscrowError::ChildContractIdMismatch.into());
-                }
-            }
-        }
-    }
-
-    // Verify endowment exists
-    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
-    let _endowment: model::DaoEscrow = endowment_data
-        .map(|d| model::DaoEscrow::decode(&d))
-        .transpose()?
-        .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
-
-    // Verify the capability proof
-    if params.capability_proof.proof.is_empty() && params.capability_proof.nullifier.inner() == pallas::Base::zero() {
-        return Err(DaoEscrowError::CapabilityVerificationFailed.into());
-    }
-
-    let update = model::VerifyMemberCapabilityUpdateV1 {
-        capability_id: params.capability_proof.capability_id,
-        verified: true,
-    };
-
-    msg!("[dao_escrow::verify_member_capability_v1] Capability verified");
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::VerifyMemberCapabilityV1 as u8], &update.encode()[..]].concat())
-}
-
-/// VerifyMemberCapabilityV1 apply - record verification (currently no-op, logs only)
-fn verify_member_capability_apply_v1(_cid: ContractId, _update: model::VerifyMemberCapabilityUpdateV1) -> ContractResult {
-    msg!("[dao_escrow::verify_member_capability_apply_v1] Verification recorded");
-    Ok(())
-}
-
-// ============================================================================
-// RESOLVE DISPUTE V1 (0x0c)
-// ============================================================================
-
-/// ResolveDisputeV1 instruction - resolves a dispute via oracle attestations
-fn resolve_dispute_v1(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
-    params: model::ResolveDisputeParamsV1,
-) -> ContractResult {
-    msg!("[dao_escrow::resolve_dispute_v1] Resolving dispute");
-
-    // Validate child call setup: expect attestation verification calls + promissory_note transfer
-    let self_ = &calls[call_idx];
-    if self_.children_indexes.is_empty() {
-        msg!("[resolve_dispute_v1] ERROR: No child calls for attestation verification");
-        return Err(DaoEscrowError::InvalidChildrenIndexes.into());
-    }
-
-    // Verify endowment exists
-    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
-    let endowment: model::DaoEscrow = endowment_data
-        .map(|d| model::DaoEscrow::decode(&d))
-        .transpose()?
-        .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
-
-    // MultiSig governance: group must be configured
-    if endowment.multisig_group_id == pallas::Base::zero() {
-        return Err(DaoEscrowError::GovernanceNotActive.into());
-    }
-
-    // The action id is derived HERE rather than below, because the approval is over it and the check has
-    // to precede the work it authorises (`OBL-C151`). `dispute_id` =
-    // `poseidon_hash(proposal_id, attestation_count, payout_recipient_x)` — the contract's own
-    // derivation, not a caller-supplied id, so the fixture must compute it the same way.
-    let attestation_count = params.attestations.len() as u64;
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-    let payout_recipient_x = params.payout_recipient.xy().expect("pk not identity").0;
-    let dispute_id = dwow_sdk::crypto::poseidon_hash([
-        params.proposal_id.inner(),
-        pallas::Base::from(attestation_count),
-        payout_recipient_x,
-    ]);
-    // The count stays a *minimum*: today's `is_empty()` check is not narrowed to exactly one, because a
-    // minimum causes no false rejection and narrowing would remove an acceptance the contract's own
-    // comment ("attestation verification calls + promissory_note transfer") says it intends.
-    require_governance_child(
-        cid,
-        call_idx,
-        &calls,
-        &endowment,
-        0,
-        model::governance_message(model::governance_role::RESOLVE_DISPUTE, dispute_id),
-    )?;
-
-    // Verify sufficient endowment balance for payout
-    // Purse::WithdrawV1 verifies balance >= payout_amount
-if false {
-        return Err(DaoEscrowError::InsufficientEndowment.into());
-    }
-
-    let consumed_ids: Vec<pallas::Base> = params.attestations.iter()
-        .map(|a| a.attestation_id)
-        .collect();
-
-    // Prevent double-resolution here, in exec: apply may not read (§B.2.2 forbids validation in
-    // apply, and the ACL denies `db_contains_key` in `Update` — register OBL-C72), so the check it
-    // used to perform could never have run.
-    let disputes_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_DISPUTES_TREE)?;
-    if wasm::db::db_contains_key(disputes_db, &dispute_id.to_repr())? {
-        msg!("[dao_escrow::resolve_dispute_v1] ERROR: Dispute already resolved");
-        return Err(DaoEscrowError::InvalidNullifier.into());
-    }
-
-    let update = model::ResolveDisputeUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla,
-        dispute_id,
-        proposal_id: params.proposal_id,
-        approved: true,
-        payout_amount: params.payout_amount,
-        consumed_attestation_ids: consumed_ids,
-    };
-
-    msg!("[dao_escrow::resolve_dispute_v1] Dispute resolved");
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::ResolveDisputeV1 as u8], &update.encode()?[..]].concat())
-}
-
-/// ResolveDisputeV1 apply - store dispute resolution record
-fn resolve_dispute_apply_v1(cid: ContractId, update: model::ResolveDisputeUpdateV1) -> ContractResult {
-    let disputes_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_DISPUTES_TREE)?;
-
-    // The double-resolution check now runs in exec, where validation belongs and where a read is
-    // permitted (§B.2.2, OBL-C72). Apply stores and nothing else.
-    let resolution_data = update.encode()?;
-    wasm::db::db_set(disputes_db, &update.dispute_id.to_repr(), &resolution_data)?;
-    msg!("[dao_escrow::resolve_dispute_apply_v1] Dispute resolution stored");
     Ok(())
 }
 
@@ -2231,92 +1754,8 @@ fn cancel_claim_apply_v1(cid: ContractId, update: model::CancelClaimUpdateV1) ->
     Ok(())
 }
 
-// ============================================================================
-// SET GOVERNANCE CONFIG V1 (0x0e)
-// ============================================================================
-// SET GOVERNANCE CONFIG / SET GOVERNANCE ACTIVE — removed, replaced by MultiSig
-// Governance is now managed via MultiSig groups created during init. Group
-// membership and threshold are configured via MultiSig::CreateGroupV1.
-// Activation is implicit — a group with threshold ≥ 1 is active.
-// ============================================================================
-
-// ============================================================================
-// DEACTIVATE CAPABILITY REQUIREMENT V1 (0x10)
-// ============================================================================
-
-/// DeactivateCapabilityRequirementV1 instruction - sets a capability requirement to inactive
-fn deactivate_capability_requirement_v1(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
-    params: model::DeactivateCapabilityRequirementParamsV1,
-) -> ContractResult {
-    msg!("[dao_escrow::deactivate_capability_requirement_v1] Deactivating capability requirement");
-
-    // Verify endowment exists
-    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
-    let endowment: model::DaoEscrow = endowment_data
-        .map(|d| model::DaoEscrow::decode(&d))
-        .transpose()?
-        .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
-
-    // Verify capability requirement exists
-    let caps_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE)?;
-    let req_data = wasm::db::db_get(caps_db, &params.role)?
-        .ok_or_else(|| DaoEscrowError::CapabilityRequirementNotRegistered(
-            String::from_utf8_lossy(&params.role).to_string()
-        ))?;
-    let requirement = model::CapabilityRequirement::decode(&req_data)?;
-    // Validate that the requirement exists and is active — the actual
-    // deactivation write happens in apply (two-phase exec/apply separation).
-    if !requirement.active {
-        msg!("[dao_escrow::deactivate_capability_requirement_v1] Requirement already deactivated");
-        return Err(DaoEscrowError::CapabilityExpired.into());
-    }
-
-    // **This endpoint had no authorization at all** (`OBL-C152`): any caller could deactivate any
-    // registered requirement. The action id binds the *capability* the record names, not the role key,
-    // so the approval covers the requirement rather than merely the endpoint — and the role key is
-    // deliberately not in the id because it is a `Vec<u8>` rather than a field
-    // (`governance_role::REGISTER_CAPABILITY_REQUIREMENT` records that boundary in full).
-    let cap_id_fp = pallas::Base::from_repr(requirement.capability_id).into_option().unwrap_or(pallas::Base::zero());
-    require_governance_child(
-        cid,
-        call_idx,
-        &calls,
-        &endowment,
-        0,
-        model::governance_message(
-            model::governance_role::DEACTIVATE_CAPABILITY_REQUIREMENT,
-            poseidon_hash([params.dao_escrow_bulla.inner(), cap_id_fp]),
-        ),
-    )?;
-
-    // Apply the deactivation here and carry the record: apply may not read it back (OBL-C72).
-    let mut requirement = requirement;
-    requirement.active = false;
-
-    let update = model::DeactivateCapabilityRequirementUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla,
-        role: params.role.clone(),
-        requirement_bytes: requirement.encode()?,
-    };
-
-    msg!("[dao_escrow::deactivate_capability_requirement_v1] Capability requirement deactivation computed");
-    wasm::util::set_return_data(&[&[DaoEscrowFunction::DeactivateCapabilityRequirementV1 as u8], &update.encode()?[..]].concat())
-}
-
-/// DeactivateCapabilityRequirementV1 apply — writes the deactivation to state
-fn deactivate_capability_requirement_apply_v1(
-    cid: ContractId,
-    update: model::DeactivateCapabilityRequirementUpdateV1,
-) -> ContractResult {
-    let caps_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE)?;
-    // Blind write — the requirement was read and deactivated in exec and carried here (OBL-C72).
-    wasm::db::db_set(caps_db, &update.role, &update.requirement_bytes)?;
-    msg!("[dao_escrow::deactivate_capability_requirement_apply_v1] Capability requirement deactivation written");
-    Ok(())
-}
-
-// Helper imports are handled at the top of the file via crate:: imports
+// The `SET GOVERNANCE CONFIG V1 (0x0e)` section and a `DeactivateCapabilityRequirementV1 (0x10)` section
+// were removed here. The first had already been reduced to a comment block by an earlier migration — a
+// block that described a function whose selector is no longer in `DaoEscrowFunction` at all; the second
+// retired with the capability registry. That leaves ten endpoints, and `cancel_claim_v1` is the last of
+// them in this file.

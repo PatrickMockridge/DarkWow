@@ -40,8 +40,6 @@ impl FunctionParams for dao_escrow_model::EndowmentWithdrawParamsV1 {
         dict.set_item("claim_id", format!("{:?}", self.claim_id))?;
         dict.set_item("recipient_pubkey", self.recipient_pubkey.to_string())?;
         dict.set_item("value", format!("{:?}", self.value))?;
-        dict.set_item("capability_proof", format!("{:?}", self.capability_proof))?;
-        dict.set_item("proposal_id", format!("{:?}", self.proposal_id))?;
         Ok(dict.unbind())
     }
 
@@ -51,8 +49,6 @@ impl FunctionParams for dao_escrow_model::EndowmentWithdrawParamsV1 {
         writeln!(out, "{prefix}claim_id: {:?}", self.claim_id).unwrap();
         writeln!(out, "{prefix}recipient_pubkey: {}", self.recipient_pubkey).unwrap();
         writeln!(out, "{prefix}value: {:?}", self.value).unwrap();
-        writeln!(out, "{prefix}capability_proof: {:?}", self.capability_proof).unwrap();
-        writeln!(out, "{prefix}proposal_id: {:?}", self.proposal_id).unwrap();
         Ok(())
     }
 }

@@ -53,9 +53,12 @@ pub use endowment_withdraw_v1::DaoEscrowEndowmentWithdrawParamsV1;
 pub mod treasury_spend_v1;
 pub use treasury_spend_v1::DaoEscrowTreasurySpendParamsV1;
 
-/// [`DaoEscrowFunction::EnableDrainProtectionV1`] function call parameter's python bindings.
-pub mod enable_drain_protection_v1;
-pub use enable_drain_protection_v1::DaoEscrowEnableDrainProtectionParamsV1;
+// Five binding modules were removed here, one per retired selector:
+// `enable_drain_protection_v1` (0x06), `register_capability_requirement_v1` (0x0a),
+// `verify_member_capability_v1` (0x0b), `resolve_dispute_v1` (0x0c) and
+// `deactivate_capability_requirement_v1` (0x10). Their Rust param structs are gone, so a binding for
+// them could not decode anything; each kept a `pub use` and an `add_class` naming a type that no longer
+// existed.
 
 /// [`DaoEscrowFunction::ProposeClaimV1`] function call parameter's python bindings.
 pub mod propose_claim_v1;
@@ -69,25 +72,9 @@ pub use vote_claim_v1::DaoEscrowVoteClaimParamsV1;
 pub mod execute_claim_v1;
 pub use execute_claim_v1::DaoEscrowExecuteClaimParamsV1;
 
-/// [`DaoEscrowFunction::RegisterCapabilityRequirementV1`] function call parameter's python bindings.
-pub mod register_capability_requirement_v1;
-pub use register_capability_requirement_v1::DaoEscrowRegisterCapabilityRequirementParamsV1;
-
-/// [`DaoEscrowFunction::VerifyMemberCapabilityV1`] function call parameter's python bindings.
-pub mod verify_member_capability_v1;
-pub use verify_member_capability_v1::DaoEscrowVerifyMemberCapabilityParamsV1;
-
-/// [`DaoEscrowFunction::ResolveDisputeV1`] function call parameter's python bindings.
-pub mod resolve_dispute_v1;
-pub use resolve_dispute_v1::DaoEscrowResolveDisputeParamsV1;
-
 /// [`DaoEscrowFunction::CancelClaimV1`] function call parameter's python bindings.
 pub mod cancel_claim_v1;
 pub use cancel_claim_v1::DaoEscrowCancelClaimParamsV1;
-
-/// [`DaoEscrowFunction::DeactivateCapabilityRequirementV1`] function call parameter's python bindings.
-pub mod deactivate_capability_requirement_v1;
-pub use deactivate_capability_requirement_v1::DaoEscrowDeactivateCapabilityRequirementParamsV1;
 
 /// Decodes the parameters of a DAO-Escrow contract function call.
 pub fn decode_dao_escrow_function_params(
@@ -119,10 +106,6 @@ pub fn decode_dao_escrow_function_params(
             let params = dao_escrow_model::TreasurySpendParamsV1::decode(&data[1..])?;
             Box::new(params)
         }
-        DaoEscrowFunction::EnableDrainProtectionV1 => {
-            let params = dao_escrow_model::EnableDrainProtectionParamsV1::decode(&data[1..])?;
-            Box::new(params)
-        }
         DaoEscrowFunction::ProposeClaimV1 => {
             let params = dao_escrow_model::ProposeClaimParamsV1::decode(&data[1..])?;
             Box::new(params)
@@ -135,24 +118,8 @@ pub fn decode_dao_escrow_function_params(
             let params = dao_escrow_model::ExecuteClaimParamsV1::decode(&data[1..])?;
             Box::new(params)
         }
-        DaoEscrowFunction::RegisterCapabilityRequirementV1 => {
-            let params = dao_escrow_model::RegisterCapabilityRequirementParamsV1::decode(&data[1..])?;
-            Box::new(params)
-        }
-        DaoEscrowFunction::VerifyMemberCapabilityV1 => {
-            let params = dao_escrow_model::VerifyMemberCapabilityParamsV1::decode(&data[1..])?;
-            Box::new(params)
-        }
-        DaoEscrowFunction::ResolveDisputeV1 => {
-            let params = dao_escrow_model::ResolveDisputeParamsV1::decode(&data[1..])?;
-            Box::new(params)
-        }
         DaoEscrowFunction::CancelClaimV1 => {
             let params = dao_escrow_model::CancelClaimParamsV1::decode(&data[1..])?;
-            Box::new(params)
-        }
-        DaoEscrowFunction::DeactivateCapabilityRequirementV1 => {
-            let params = dao_escrow_model::DeactivateCapabilityRequirementParamsV1::decode(&data[1..])?;
             Box::new(params)
         }
         _ => return Err(dwow_core::Error::ParseFailed("unsupported DAO-Escrow function")),
@@ -171,15 +138,10 @@ pub fn create_module(py: Python) -> PyResult<Bound<PyModule>> {
     submod.add_class::<DaoEscrowWithdrawParamsV1>()?;
     submod.add_class::<DaoEscrowEndowmentWithdrawParamsV1>()?;
     submod.add_class::<DaoEscrowTreasurySpendParamsV1>()?;
-    submod.add_class::<DaoEscrowEnableDrainProtectionParamsV1>()?;
     submod.add_class::<DaoEscrowProposeClaimParamsV1>()?;
     submod.add_class::<DaoEscrowVoteClaimParamsV1>()?;
     submod.add_class::<DaoEscrowExecuteClaimParamsV1>()?;
-    submod.add_class::<DaoEscrowRegisterCapabilityRequirementParamsV1>()?;
-    submod.add_class::<DaoEscrowVerifyMemberCapabilityParamsV1>()?;
-    submod.add_class::<DaoEscrowResolveDisputeParamsV1>()?;
     submod.add_class::<DaoEscrowCancelClaimParamsV1>()?;
-    submod.add_class::<DaoEscrowDeactivateCapabilityRequirementParamsV1>()?;
 
     py.import("sys")?.getattr("modules")?.set_item("dwow_sdk.contract.dao_escrow", &submod)?;
 

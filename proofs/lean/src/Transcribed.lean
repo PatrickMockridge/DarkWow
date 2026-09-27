@@ -14,10 +14,10 @@ by the gate as `lake build DarkFi Transcribed`, and is not reachable from `lake 
 that place in the `DarkFi` library until 2026-09-24, when a `LEAN_NUM_THREADS=4` build of that library
 exhausted this host's memory and froze the machine: a thread cap bounds how many `lean` processes run,
 not how much memory one of them uses, and kernel `decide` evaluations at this scale is where in this
-tree that difference bites — 181 of them the day it froze, 178 now. The gate builds it under
+tree that difference bites — 181 of them the day it froze, 176 now. The gate builds it under
 `scripts/lean-build.sh`, which adds the cgroup memory
 ceiling the thread cap never was. **A `lake build DarkFi` therefore does not type-check this file; the
-gate does.** `CheckAxioms.lean` imports it directly, so the axiom walk still covers all 178
+gate does.** `CheckAxioms.lean` imports it directly, so the axiom walk still covers all 176
 theorems.
 
 What is here is one `List Stmt` per circuit in `InstanceDerivation`'s vocabulary, the names the
@@ -27,28 +27,28 @@ asks whether every exposed value is *determined* by what precedes it, while the 
 accepts an exposed value that the circuit pins elsewhere (`redundant`) or that a host-side
 justification declares free (`script/circuit_free_instances.txt`).
 
-Measured: **167** of 178 circuits expose at least one value the model does not
+Measured: **165** of 176 circuits expose at least one value the model does not
 find determined in-circuit, and **11** hold. Each refuted circuit names the first such
 exposure **and the checker's class for that exposure**.
 
-**The 167 are decomposed rather than asserted, and the decomposition is the finding.** For each
+**The 165 are decomposed rather than asserted, and the decomposition is the finding.** For each
 refuted circuit the generator asks the *checker* — `classify`, the gate's own classifier — what it
 made of the exposure the model refused, and the answer is that the two rules disagree by design
 almost everywhere:
 
-* **154** of the 167 — The checker resolves it as `redundant` — pinned by another exposed
+* **152** of the 165 — The checker resolves it as `redundant` — pinned by another exposed
   determination, which the model's sequential rule does not follow.
-* **12** of the 167 — The checker resolves it as `declared-free`, from a host-side justification
+* **12** of the 165 — The checker resolves it as `declared-free`, from a host-side justification
   in `script/circuit_free_instances.txt`.
-* **1** of the 167 — The checker resolves it as `bound`, through a `constrain_equal_base` whose
+* **1** of the 165 — The checker resolves it as `bound`, through a `constrain_equal_base` whose
   determining side is a declared constant.
 
-So the model does not contradict the checker; it **refines** it, and every one of the 167 is the
+So the model does not contradict the checker; it **refines** it, and every one of the 165 is the
 checker's weaker rule or the single boundary the model note names. Two consequences a reader should
 take from this file rather than infer:
 
-* `Axioms.NoFreeInstances`' *name* is a **strict** reading this tree mostly does not meet — 167 of
-  178 circuits are refuted under it — while the property the tree actually enforces is the checker's
+* `Axioms.NoFreeInstances`' *name* is a **strict** reading this tree mostly does not meet — 165 of
+  176 circuits are refuted under it — while the property the tree actually enforces is the checker's
   four-verdict rule, whose failures are the instances `OBL-Z16` names (11 when this sentence was
   written on 2026-09-24, and re-run `scripts/check-circuit-instance-derivation.sh` for the count now —
   it is 4 as of that evening, because one site was repaired and one circuit deleted).
@@ -68,7 +68,7 @@ reason the generator is allowed to predict at all.
 One boundary in the *other* direction stays untested, stated because it would show up as a false
 positive the day a circuit meets it: a bare `constant` exposed by `constrain_instance` would fail the
 model's property, where the checker accepts a constant by declaration. No circuit in this tree exposes
-one — measured, every undetermined exposure across the 167 refutations is a witness and none is a
+one — measured, every undetermined exposure across the 165 refutations is a witness and none is a
 constant — so that direction is untested rather than settled, while the direction above is met.
 
 Not transcribed, and counted rather than dropped silently: 21 bare opcode-call statements
@@ -84,7 +84,7 @@ needs without supplying the bridge. See `OBL-T7` in `doc/src/arch/verification-h
 2026-09-24 this module exceeded 24 GiB in a single `lean` process and was OOM-killed at both a 16 GiB
 and a 24 GiB ceiling, so no `.olean` had ever been produced and the kernel had closed none of the
 verdicts below. Extracting `boundWalk`'s `assign` arm into `bindAssign` removed it: the whole
-transcription — all 178 verdicts as it now stands, 181 when that was measured — builds in
+transcription — all 176 verdicts as it now stands, 181 when that was measured — builds in
 **~71 s and 743 MB** as one module. **Which circuits were
 expensive, and why, is not established** — see `bindAssign`'s docstring, which carries the controlled
 comparison that justifies the change and the rival explanations it does not settle, and retracts the
@@ -100,7 +100,7 @@ open Circuits.InstanceDerivation
 
 /-! ===== The circuits, in source order =====
 
-178 circuits, 2686 statements transcribed; **11** satisfy the model's property and **167** do not, the latter named by the
+176 circuits, 2662 statements transcribed; **11** satisfy the model's property and **165** do not, the latter named by the
 first undetermined exposure in each, with the checker's class for that exposure named beneath it.
 -/
 
@@ -1655,39 +1655,6 @@ theorem dao_escrow_propose_claim_has_a_free_instance :
   decide
 
 
-/-- `src/contract/dao_escrow/proof/resolve_dispute.zk` — 3 exposure(s). -/
-
-def dao_escrow_resolve_dispute_held : List Name := ["NULLIFIER_K", "arbitrator_pub_x", "arbitrator_pub_y", "arbitrator_secret", "capability_id", "capability_secret", "dao_escrow_bulla", "dispute_id", "resolution_blind", "resolution_type", "tx_binding", "tx_commitment", "tx_nonce"]
-
-
-def dao_escrow_resolve_dispute_stmts : List Stmt :=
-[
-  .assign "DOMAIN_NULLIFIER" (.op "witness_base" [.lit 1]),
-  .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
-  .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
-  .assign "arbitrator_pub" (.op "ec_mul_base" [.var "arbitrator_secret", .var "NULLIFIER_K"]),
-  .constrainEq (.op "ec_get_x" [.var "arbitrator_pub"]) (.var "arbitrator_pub_x"),
-  .constrainEq (.op "ec_get_y" [.var "arbitrator_pub"]) (.var "arbitrator_pub_y"),
-  .assign "capability_commit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "capability_id", .var "capability_secret", .var "dao_escrow_bulla"]),
-  .assign "dispute_nullifier" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "capability_secret", .var "dispute_id"]),
-  .assign "resolution_commit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "dispute_id", .var "resolution_type", .var "resolution_blind"]),
-  .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
-  .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "resolution_commit")
-]
-
-
-/-- **The property fails** for `src/contract/dao_escrow/proof/resolve_dispute.zk`: its first undetermined exposure is
-    `.var "tx_nonce"`, which the circuit does not bind before exposing.
-    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
-@[axiom_budget 0]
-theorem dao_escrow_resolve_dispute_has_a_free_instance :
-    ¬ NoFreeInstance dao_escrow_resolve_dispute_held dao_escrow_resolve_dispute_stmts := by
-  unfold NoFreeInstance
-  decide
-
-
 /-- `src/contract/dao_escrow/proof/set_governance_config.zk` — 5 exposure(s). -/
 
 def dao_escrow_set_governance_config_held : List Name := ["NULLIFIER_K", "dao_escrow_bulla", "owner_nullifier", "owner_pub_x", "owner_pub_y", "owner_secret", "tx_binding", "tx_commitment", "tx_nonce"]
@@ -1717,37 +1684,6 @@ def dao_escrow_set_governance_config_stmts : List Stmt :=
 @[axiom_budget 0]
 theorem dao_escrow_set_governance_config_has_a_free_instance :
     ¬ NoFreeInstance dao_escrow_set_governance_config_held dao_escrow_set_governance_config_stmts := by
-  unfold NoFreeInstance
-  decide
-
-
-/-- `src/contract/dao_escrow/proof/verify_member_capability.zk` — 3 exposure(s). -/
-
-def dao_escrow_verify_member_capability_held : List Name := ["NULLIFIER_K", "capability_id", "capability_secret", "dao_escrow_bulla", "holder_pub_x", "holder_pub_y", "holder_secret", "tx_binding", "tx_commitment", "tx_nonce"]
-
-
-def dao_escrow_verify_member_capability_stmts : List Stmt :=
-[
-  .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
-  .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
-  .assign "holder_pub" (.op "ec_mul_base" [.var "holder_secret", .var "NULLIFIER_K"]),
-  .constrainEq (.op "ec_get_x" [.var "holder_pub"]) (.var "holder_pub_x"),
-  .constrainEq (.op "ec_get_y" [.var "holder_pub"]) (.var "holder_pub_y"),
-  .assign "capability_commit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "capability_id", .var "capability_secret", .var "dao_escrow_bulla"]),
-  .assign "holder_commit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "holder_pub_x", .var "holder_pub_y", .var "capability_secret"]),
-  .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
-  .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "capability_commit")
-]
-
-
-/-- **The property fails** for `src/contract/dao_escrow/proof/verify_member_capability.zk`: its first undetermined exposure is
-    `.var "tx_nonce"`, which the circuit does not bind before exposing.
-    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
-@[axiom_budget 0]
-theorem dao_escrow_verify_member_capability_has_a_free_instance :
-    ¬ NoFreeInstance dao_escrow_verify_member_capability_held dao_escrow_verify_member_capability_stmts := by
   unfold NoFreeInstance
   decide
 

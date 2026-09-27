@@ -1,7 +1,7 @@
 [contract]
 name = "dao_escrow"
 category = "DAO"
-description = "DAO-governed endowment with DrainProtection. Supports proposal lifecycle, voting, execution, and governance configuration."
+description = "One endowment pool governed by one MultiSig group. Premiums fund it, the group authorises every spend, and a complete claim lifecycle decides payouts."
 version = "2.0.0"
 dependencies = ["promissory_note", "native_token_v1"]
 
@@ -35,9 +35,11 @@ code = 4
 name = "treasury_spend"
 code = 5
 
-[[functions]]
-name = "enable_drain_protection"
-code = 6
+# Retired: `enable_drain_protection` (0x06). It set an info flag and a bulla that no handler ever read, and
+# the contract never once addressed the DrainProtection contract — the association was stored and nothing
+# consumed it. The selector is now absent from `DaoEscrowFunction` rather than mapped to a no-op, so a caller
+# sending 0x06 reaches `InvalidFunction` (OBL-C151's shape: a field nothing can read is indistinguishable
+# from a broken one, and a no-op reporting success is the same shape in the other direction).
 
 [[functions]]
 name = "propose_claim"
@@ -55,56 +57,40 @@ proof_circuit = "VoteClaimV2"
 name = "execute_claim"
 code = 9
 
-[[functions]]
-name = "register_capability_requirement"
-code = 10
-
-[[functions]]
-name = "verify_member_capability"
-code = 11
-requires_proof = true
-proof_circuit = "VerifyMemberCapabilityV2"
-
-[[functions]]
-name = "resolve_dispute"
-code = 12
-requires_proof = true
-proof_circuit = "ResolveDisputeV2"
+# Retired: `register_capability_requirement` (0x0a), `verify_member_capability` (0x0b) and
+# `resolve_dispute` (0x0c) — the three endpoints of the OCap/Identity model that MultiSig groups replaced.
+# `register` wrote a requirement record no remaining endpoint consulted; `verify` was an Identity
+# `VerifyCapabilityV1` (0x06) composition whose OCap half also retired; `dispute` resolved through an oracle
+# threshold this contract never evaluated. Their two circuits (`VerifyMemberCapabilityV2`,
+# `ResolveDisputeV2`) and their ZKAS namespaces went with them. Selectors 0x0a/0x0b/0x0c are unassigned.
 
 [[functions]]
 name = "cancel_claim"
 code = 13
 
-# Retired: a deliberate no-op (entrypoint.rs `SetGovernanceConfigV1` arm). It publishes no circuit
-# instances and has no metadata arm, so declaring a proof requirement here told a wallet to build a
-# proof for a call that does nothing — while `update` (0x01), which *is* the `SetGovernanceConfigV2`
-# caller, declared none. Both halves are corrected above (OBL-C154).
-[[functions]]
-name = "set_governance_config"
-code = 14
-
-[[functions]]
-name = "set_governance_active"
-code = 15
-
-[[functions]]
-name = "deactivate_capability_requirement"
-code = 16
+# Retired: `set_governance_config` (0x0e), `set_governance_active` (0x0f) and
+# `deactivate_capability_requirement` (0x10). `set_governance_config` was a deliberate no-op with no
+# metadata arm, so declaring a proof requirement here told a wallet to build a proof for a call that did
+# nothing — while `update` (0x01), which *is* the `SetGovernanceConfigV2` caller, declared none. Both
+# halves of that are now moot: `set_governance_config` is removed rather than left as a no-op, and `update`
+# declares the circuit above (`OBL-C154`). `set_governance_active` gated on the retired `GovernanceConfig`;
+# `deactivate_capability_requirement` was the inverse of the retired `register`. Selectors 0x0e/0x0f/0x10
+# are unassigned.
 
 [[capabilities]]
 discriminant = 0
 name = "creator"
-description = "Endowment creator"
+description = "Creates the endowment, and is its owner until a governance group is installed"
 
 [[capabilities]]
 discriminant = 1
-name = "treasury_governor"
-description = "Can propose and vote on fund allocation"
+name = "governance_group"
+description = "The MultiSig group the owner installs with `update`; authorises every spend and every step of the claim lifecycle"
 
 [[capabilities]]
 discriminant = 2
 name = "member"
-description = "DAO member with voting rights"
+description = "Pays premiums and holds a membership note. Members do not vote: the group decides claims, and its own threshold is the quorum"
 
 [[trees]]
 name = "info"
@@ -122,19 +108,13 @@ name = "endowment"
 name = "proposals"
 
 [[trees]]
-name = "votes"
-
-[[trees]]
-name = "capability_requirements"
-
-[[trees]]
-name = "disputes"
-
-[[trees]]
 name = "nullifiers"
 
-[[trees]]
-name = "governance"
+# Four trees were declared here and written by nobody, so they are removed rather than wired: `votes` (the
+# tally lives on the `Proposal`, which is the record actually read), `capability_requirements` and `disputes`
+# (their endpoints retired with the OCap model), and `governance` (the orphan of `GovernanceConfig`, which
+# `multisig_group_id` replaced). Declaring a tree is a claim that state lives under that name; four claims
+# that no `db_set` honoured is the dead-state class this re-wire exists to remove.
 
 # V2 circuits (HAZOP RC3: domain separation)
 [[circuits]]
@@ -153,13 +133,9 @@ namespace = "dao_escrow"
 name = "VoteClaimV2"
 namespace = "dao_escrow"
 
-[[circuits]]
-name = "VerifyMemberCapabilityV2"
-namespace = "dao_escrow"
-
-[[circuits]]
-name = "ResolveDisputeV2"
-namespace = "dao_escrow"
+# `VerifyMemberCapabilityV2` and `ResolveDisputeV2` retired here with their endpoints (`0x0b`, `0x0c`), their
+# `.zk` sources, their `.zk.bin` and their ZKAS namespace constants. A circuit entry naming a proof that no
+# function can request is the same dead claim as a tree entry naming a store nobody writes.
 
 [[circuits]]
 name = "SetGovernanceConfigV2"

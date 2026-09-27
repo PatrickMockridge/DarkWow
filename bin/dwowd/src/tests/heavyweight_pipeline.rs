@@ -916,6 +916,11 @@ fn test_recruitment_pipeline_call_data() -> std::result::Result<(), Box<dyn std:
             owner_secret,
             endowment_asset_id,
             bulla_blind,
+            // `EscrowEndowment` would exercise the most endpoints, but this pipeline deploys the contract
+            // and never spends from it, so the mode only has to be a real choice rather than a constant —
+            // which is what `OBL-C154` was about. `Escrow` is the mode the rest of the fixture assumes.
+            dwow_dao_escrow_contract::model::DaoEscrowMode::Escrow,
+            0, // min_premium: no premium is paid in this pipeline
         )?;
         assert!(!init_result.call_data.is_empty());
         println!("  DAO-Escrow initialized: call_data={}B", init_result.call_data.len());
@@ -1055,54 +1060,33 @@ fn test_recruitment_pipeline_call_data() -> std::result::Result<(), Box<dyn std:
         println!("  refund: call_data={}B", refund.call_data.len());
 
         // ------------------------------------------------------------------
-        // Step 10: DAO Escrow verify member capability
+        // Step 10 was "DAO Escrow verify member capability":
         //   DAO Escrow::VerifyMemberCapabilityV1 (0x0b)
         //     └── Identity::VerifyCapabilityV1 (0x06) — child call
-        // ------------------------------------------------------------------
-        println!("\n--- Step 10: DAO-Escrow verify member (→Identity) ---");
-        let capability_secret = pallas::Base::from(42u64);
-        let holder_secret = pallas::Base::from(20u64);
-        let holder_pubkey = PublicKey::from_secret(
-            SecretKey::from_base(holder_secret),
-        );
-        let cap_proof = dwow_dao_escrow_contract::model::CapabilityProof {
-            capability_id: [1u8; 32],
-            capability_secret: [2u8; 32],
-            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes([3u8; 32]).unwrap(),
-            issuer_pub: [4u8; 32],
-            predicate_result: [1u8; 32],
-            proof: vec![5, 6, 7],
-        };
-
-        let verify_result = dao_harness.verify_member_capability(
-            pallas::Scalar::from(1u64),   // nullifier_k
-            pallas::Base::from(42u64),    // capability_id
-            dao_bulla,
-            capability_secret,
-            holder_secret,
-            holder_pubkey,
-            cap_proof,
-        )?;
-        assert!(!verify_result.call_data.is_empty());
-        println!("  verify_member_capability: call_data={}B", verify_result.call_data.len());
+        //
+        // Both halves retired. `dao_escrow`'s capability-requirement model never had a requirement
+        // registered, so `verify_member_capability_v1` refused every call with
+        // `CapabilityRequirementNotRegistered` even once its gates were reachable (`OBL-C151`), and the
+        // endpoint went with the model. `Identity::VerifyCapabilityV1` survives for its other callers,
+        // but this step's composition — a DAO gating membership on an Identity capability — is what
+        // MultiSig groups replaced, so there is nothing left here to exercise. Deleting the step rather
+        // than re-pointing it keeps the pipeline's nine steps honest about what the stack does now.
 
         // ------------------------------------------------------------------
         // Verify all key cross-contract child call function codes
         // ------------------------------------------------------------------
         println!("\n--- Cross-Contract Function Code Verification ---");
-        // 0x06, not 0x0b: `IdentityFunction::VerifyCapabilityV1` is 0x06 (`identity/src/lib.rs:144`) and
-        // 0x0b is this contract's own `VerifyMemberCapabilityV1`, printed correctly on the next line.
+        // 0x06, not 0x0b: `IdentityFunction::VerifyCapabilityV1` is 0x06 (`identity/src/lib.rs:144`).
         // The wrong value here was repeated in `dao_escrow`'s entrypoint comment and in its design doc.
         println!("  Identity::VerifyCapabilityV1       = 0x06");
         println!("  DAO-Escrow::ProposeClaimV1         = 0x07");
         println!("  Attestation::VerifyClaimV1         = 0x04");
-        println!("  DAO-Escrow::VerifyMemberCapability = 0x0b");
         println!("  LaborMarket::AcceptJobWithCapability = 0x0d");
         println!("  LaborMarket::SubmitDeliverable     = 0x02");
         println!("  LaborMarket::Dispute               = 0x05");
         println!("  promissory_note::TransferV1               = 0x04");
 
-        println!("\n=== Recruitment Pipeline: All 10 steps validated ===");
+        println!("\n=== Recruitment Pipeline: All 9 steps validated ===");
         Ok(())
     })
 }

@@ -115,6 +115,11 @@ INSTRUMENTS = [
     ("l1_wire_conformance",        "bash scripts/check-l1-wire-conformance.sh"),
     ("zk_bins",                    "bash scripts/validate_zk_bins.sh"),
     ("genesis_model_conformance",  "bash contrib/genesis_model_conformance.sh"),
+    # The model gate was wired into `scripts/run-all-tests.sh:525` and was RED, unreported, for as long as
+    # its `CONTRACT_STRUCTS` disagreed with the shipped manifests — which is `OBL-C157`, and the reason
+    # this entry exists. It runs no build (pure Python, `stdlib` only) and takes about a second, so it
+    # satisfies constraint 1 exactly as the other model conformance entry does.
+    ("wallet_model",               "python3 contrib/model/wallet_model.py"),
     ("wasm_artifact_genesis",      "bash contrib/wasm_artifact_check.sh --genesis"),
     ("barb_alphabet",              "bash contrib/barb_alphabet_diff.sh"),
     ("primitive_barbs",            "bash contrib/primitive_barbs_diff.sh"),

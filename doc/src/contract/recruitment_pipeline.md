@@ -315,5 +315,5 @@ against `accept_block`.
 - [Composability](composability.md) — how DarkForest/DarkTree child calls work at the technical level
 - [Identity Contract README](../../../src/contract/identity/README.md) — full O-Cap specification
 - [Labor Market Contract README](../../../src/contract/labor_market/README.md) — job lifecycle and ZK circuits
-- [DAO-Escrow Contract README](../../../src/contract/dao_escrow/README.md) — governance modes and capabilities
+- [DAO-Escrow Contract](dao_escrow.md) — one endowment pool governed by one MultiSig group
 - [Attestation Contract README](../../../src/contract/attestation/README.md) — claim verification patterns
