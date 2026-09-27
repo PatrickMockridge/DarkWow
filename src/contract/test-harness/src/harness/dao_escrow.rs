@@ -46,7 +46,8 @@ use dwow_dao_escrow_contract::client::{
     vote_claim::{vote_claim_v1_proof, VoteClaimV1CallData, VoteClaimV1PublicInputs},
 };
 use dwow_dao_escrow_contract::model::{
-    CancelClaimParamsV1, CapabilityProof, ClaimId, DaoEscrowBulla, ClaimType, ExecuteClaimParamsV1,
+    CancelClaimParamsV1, CapabilityProof, ClaimId, DaoEscrowBulla, ClaimType,
+    DeactivateCapabilityRequirementParamsV1, EnableDrainProtectionParamsV1, ExecuteClaimParamsV1,
     InitializeParamsV1, PayPremiumParamsV1, ProposeClaimParamsV1,
     RegisterCapabilityRequirementParamsV1, ResolveDisputeParamsV1, UpdateParamsV1,
     VerifyMemberCapabilityParamsV1,
@@ -585,6 +586,44 @@ impl DaoEscrowHarness {
         Ok(RegisterCapabilityRequirementResult { call_data })
     }
 
+    /// Enable drain protection (EnableDrainProtectionV1 - 0x06)
+    ///
+    /// Gated by the endowment's group since `OBL-C152`: the action id binds
+    /// `(bulla, drain_protection_bulla)`, so the caller must supply the approval child.
+    pub fn enable_drain_protection(
+        &self,
+        dao_escrow_bulla: pallas::Base,
+        drain_protection_bulla: pallas::Base,
+    ) -> Result<EnableDrainProtectionResult> {
+        let params = EnableDrainProtectionParamsV1 {
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
+            drain_protection_bulla: DaoEscrowBulla(drain_protection_bulla),
+        };
+        let mut call_data = vec![0x06]; // EnableDrainProtectionV1
+        // `EnableDrainProtectionParamsV1::encode` is infallible — two fixed-size fields, no length prefix.
+        call_data.extend_from_slice(&params.encode());
+        Ok(EnableDrainProtectionResult { call_data })
+    }
+
+    /// Deactivate a capability requirement (DeactivateCapabilityRequirementV1 - 0x10)
+    ///
+    /// Gated by the endowment's group since `OBL-C152`. The action id binds the *capability* the stored
+    /// requirement names, not the role key — the endpoint loads the record before checking, so the
+    /// approval covers the requirement rather than merely the call.
+    pub fn deactivate_capability_requirement(
+        &self,
+        dao_escrow_bulla: pallas::Base,
+        role: Vec<u8>,
+    ) -> Result<DeactivateCapabilityRequirementResult> {
+        let params = DeactivateCapabilityRequirementParamsV1 {
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
+            role,
+        };
+        let mut call_data = vec![0x10]; // DeactivateCapabilityRequirementV1
+        call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        Ok(DeactivateCapabilityRequirementResult { call_data })
+    }
+
     /// Cancel a pending claim (CancelClaimV1 - 0x0d)
     pub fn cancel_claim(
         &self,
@@ -808,6 +847,16 @@ pub struct RegisterCapabilityRequirementResult {
 
 /// Result of cancelling a claim
 pub struct CancelClaimResult {
+    pub call_data: Vec<u8>,
+}
+
+/// Result of enabling drain protection
+pub struct EnableDrainProtectionResult {
+    pub call_data: Vec<u8>,
+}
+
+/// Result of deactivating a capability requirement
+pub struct DeactivateCapabilityRequirementResult {
     pub call_data: Vec<u8>,
 }
 

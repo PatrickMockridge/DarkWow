@@ -303,6 +303,20 @@ pub mod governance_role {
     pub const TREASURY_SPEND: u8 = 5;
     /// `WithdrawV1` — the action id is `(bulla, value, recipient_x)`.
     pub const WITHDRAW: u8 = 6;
+    /// `EnableDrainProtectionV1` — the action id is `(bulla, drain_protection_bulla)`.
+    pub const ENABLE_DRAIN_PROTECTION: u8 = 7;
+    /// `RegisterCapabilityRequirementV1` — the action id is `(bulla, capability_id)`. **The role is not
+    /// in the id**, and the reason is a type boundary rather than a preference: the role is a `Vec<u8>`
+    /// table key, `pallas::Base::from_repr` needs exactly 32 canonical bytes, and the tree's
+    /// bytes-to-field helper (`dwow_sdk::crypto::util::hash_to_base`) takes a 16-byte BLAKE2b persona it
+    /// would have to be given, which no contract in this tree calls. Recorded rather than papered over:
+    /// a group approval for one role can be presented for another role's requirement.
+    pub const REGISTER_CAPABILITY_REQUIREMENT: u8 = 8;
+    /// `DeactivateCapabilityRequirementV1` — the action id is `(bulla, capability_id)` of the record
+    /// being deactivated, so the approval names the requirement and not merely the role.
+    pub const DEACTIVATE_CAPABILITY_REQUIREMENT: u8 = 9;
+    /// `CancelClaimV1` — the action id is the claim id.
+    pub const CANCEL_CLAIM: u8 = 10;
 }
 
 /// What a governance group signs to authorise one action: `H(domain, role, action_id)`.

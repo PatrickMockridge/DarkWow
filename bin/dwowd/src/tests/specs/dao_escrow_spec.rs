@@ -79,6 +79,17 @@ const PN_VALUE_WITHDRAW_NO_APPROVAL: u64 = 30_000_000;
 /// to match the proposal's before it looks at anything else.
 const PN_VALUE_EXECUTE_CLAIM: u64 = 10_000;
 
+/// The drain-protection instance the `0x06` row associates. Its value is arbitrary — the contract
+/// neither contacts the DrainProtection contract nor checks that this bulla names anything — but it is a
+/// *field*, and the action id binds it, so the approval is over the association rather than over the
+/// endpoint.
+const DRAIN_PROTECTION_BULLA: pallas::Base = pallas::Base::from_raw([4242, 0, 0, 0]);
+
+/// The capability id the `0x0a` row registers. Zero is a legal field element and a legal capability id
+/// here — nothing in this contract validates it against the Identity contract — and the fixture picks it
+/// because the field is otherwise opaque to this contract.
+const REGISTERED_CAPABILITY_ID: [u8; 32] = [0u8; 32];
+
 /// The identity fixture's parts, matching `insurance_market_spec.rs`'s in shape and nothing else.
 const EXPIRES_AT: u64 = 1_000_000;
 const ATTR_BLIND: u64 = 300;
@@ -156,6 +167,13 @@ struct Governance {
     endowment_withdraw: Vec<Nullifier>,
     /// The endowment's group on the withdraw action — role 6.
     withdraw: Vec<Nullifier>,
+    /// The four endpoints `OBL-C152` records as having no authorization at all, one approval set each.
+    /// Four and not one: an approval is spend-once and each of these is a distinct role tag over a
+    /// distinct action id, so a single set could not authorise two of them even if the roles matched.
+    enable_drain_protection: Vec<Nullifier>,
+    register_capability: Vec<Nullifier>,
+    deactivate_capability: Vec<Nullifier>,
+    cancel_claim: Vec<Nullifier>,
     /// A second group's id and its approvals of the proposal — valid approvals by the wrong group.
     foreign_group: pallas::Base,
     foreign: Vec<Nullifier>,
@@ -251,6 +269,25 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
         governance_role::WITHDRAW,
         poseidon_hash([endowment_bulla, pallas::Base::from(PN_VALUE_WITHDRAW_APPROVED), owner_x]),
     );
+    // The four actions `OBL-C152`'s repair gates. Each with the contract's own `governance_message` and
+    // the contract's own action derivation, so the signed message and the checked one cannot drift.
+    let action_enable_dp = governance_message(
+        governance_role::ENABLE_DRAIN_PROTECTION,
+        poseidon_hash([endowment_bulla, DRAIN_PROTECTION_BULLA]),
+    );
+    // `0x0a` binds the capability id it registers and `0x10` the capability id of the record it
+    // deactivates; the fixture registers `[0u8; 32]`, whose field conversion is zero, so both action ids
+    // are `poseidon_hash([bulla, 0])` — and they are still distinct *messages*, which is the role tag
+    // doing its work rather than the id.
+    let registered_cap_action_id =
+        poseidon_hash([endowment_bulla, pallas::Base::from_repr(REGISTERED_CAPABILITY_ID).into_option().unwrap_or(pallas::Base::zero())]);
+    let action_register_cap = governance_message(
+        governance_role::REGISTER_CAPABILITY_REQUIREMENT, registered_cap_action_id,
+    );
+    let action_deactivate_cap = governance_message(
+        governance_role::DEACTIVATE_CAPABILITY_REQUIREMENT, registered_cap_action_id,
+    );
+    let action_cancel_claim = governance_message(governance_role::CANCEL_CLAIM, claim_id);
 
     let gov: Arc<Mutex<Governance>> = Arc::new(Mutex::new(Governance::default()));
     let notes: Arc<Mutex<Shared>> = Arc::new(Mutex::new(Shared::default()));
@@ -312,6 +349,10 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let wrong_message = sign_for(chain, msg_wrong)?;
                 let endowment_withdraw = sign_for(chain, action_endowment_withdraw)?;
                 let withdraw = sign_for(chain, action_withdraw)?;
+                let enable_drain_protection = sign_for(chain, action_enable_dp)?;
+                let register_capability = sign_for(chain, action_register_cap)?;
+                let deactivate_capability = sign_for(chain, action_deactivate_cap)?;
+                let cancel_claim = sign_for(chain, action_cancel_claim)?;
 
                 // A second group — one member, threshold one — approves the proposal. Its approval is
                 // valid; what is wrong is who gave it.
@@ -334,6 +375,10 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     wrong_message,
                     endowment_withdraw,
                     withdraw,
+                    enable_drain_protection,
+                    register_capability,
+                    deactivate_capability,
+                    cancel_claim,
                     foreign_group: foreign.group_id,
                     foreign: vec![f.nullifier],
                 };
@@ -497,19 +542,13 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                 }
             })),
-            // **Success over a missing authorization, deliberately (`OBL-C152`).** `0x0a` has no
-            // authorization check of any kind: it loads the endowment, requires it to exist, and writes
-            // the capability requirement. Any caller may register one. This row asserted a rejection
-            // before — and could not have been right, because `RegisterCapabilityRequirementParamsV1`'s
-            // decoder demanded `role_len + 68` bytes of an encoder that writes `role_len + 100`, so the
-            // endpoint was uncallable and the row was recording a codec failure as a refusal
-            // (`OBL-C150`'s class, second instance). With the codec fixed the call succeeds, and that is
-            // what the row now says.
-            mk_ep("RegisterCapabilityRequirementV1", false, Box::new({
-                move || {
-                    let r = h.register_capability_requirement(endowment_bulla, b"member_vote".to_vec(), [0u8; 32], identity_contract_bulla).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
-                }
+            // While the group id is zero, `OBL-C152`'s four repaired endpoints refuse for that reason and
+            // no other — `require_governance_child` fails closed on a zero group. One row states it,
+            // because a *later* row per endpoint would read as four findings rather than one, and because
+            // the row that matters is the one after the setter that shows the gate opening.
+            mk_ep_rejecting("EnableDrainProtectionV1_NoGroup", false, &["ContractError(Custom(43))"], Box::new(move || {
+                let r = h.enable_drain_protection(endowment_bulla, DRAIN_PROTECTION_BULLA).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
             })),
             // ── THE SETTER. Everything below runs with governance ACTIVE.
             //
@@ -548,6 +587,58 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     }
                 }),
             },
+            // ── `OBL-C152`'s repair: four endpoints that had no authorization at all, now gated by the
+            //    endowment's group. Each approval is over the action the call performs, not over the
+            //    endpoint, and each row would fail if the gate were removed again.
+            //
+            // `0x06` was the worst of the four in one respect: it wrote two fields **no code path reads**,
+            // so it was inert as well as unauthenticated. Gated now, and the inertness is `OBL-C154`'s
+            // neighbourhood rather than this row's subject.
+            mk_ep("EnableDrainProtectionV1", false, Box::new({
+                let gov = gov.clone();
+                move || {
+                    let approvals = gov.lock().unwrap().enable_drain_protection.clone();
+                    let r = h.enable_drain_protection(endowment_bulla, DRAIN_PROTECTION_BULLA).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let f = ms.finalize(DaoEscrowHarness::governance_group(), action_enable_dp, approvals)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult {
+                        children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] }],
+                        call_data: r.call_data, proofs: vec![],
+                    })
+                }
+            })),
+            // The row that was `Success` over a missing authorization until this unit, and that is exactly
+            // how the repair was detected: the row asserted the defect so that adding a gate would fail it.
+            // It runs *after* the setter now, because before it the endpoint has no group to check against.
+            mk_ep("RegisterCapabilityRequirementV1", false, Box::new({
+                let gov = gov.clone();
+                move || {
+                    let approvals = gov.lock().unwrap().register_capability.clone();
+                    let r = h.register_capability_requirement(endowment_bulla, b"member_vote".to_vec(), REGISTERED_CAPABILITY_ID, identity_contract_bulla).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let f = ms.finalize(DaoEscrowHarness::governance_group(), action_register_cap, approvals)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult {
+                        children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] }],
+                        call_data: r.call_data, proofs: vec![],
+                    })
+                }
+            })),
+            // Deactivation needs the record the row above just registered — which makes this pair an
+            // ordered test of `0x0a` as well: if registration had not landed, this row would fail
+            // `CapabilityRequirementNotRegistered` (`Custom(35)`) before reaching its gate.
+            mk_ep("DeactivateCapabilityRequirementV1", false, Box::new({
+                let gov = gov.clone();
+                move || {
+                    let approvals = gov.lock().unwrap().deactivate_capability.clone();
+                    let r = h.deactivate_capability_requirement(endowment_bulla, b"member_vote".to_vec()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let f = ms.finalize(DaoEscrowHarness::governance_group(), action_deactivate_cap, approvals)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult {
+                        children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] }],
+                        call_data: r.call_data, proofs: vec![],
+                    })
+                }
+            })),
             // **The row that proves the `OBL-C154` fix.** Two children: the payment at slot 0, which the
             // endpoint's own check pins to selector `0x04`, and the group's approval at slot 1. Before the
             // fix the approval was read from slot 0 — the same slot the payment must occupy — so no caller
@@ -615,14 +706,24 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                 }
             })),
-            // **Success over a vacuous authorization, deliberately (`OBL-C152`).** `cancel_claim_v1`
-            // refuses a cancellation when `proposal.proposer_pubkey != params.proposer_pubkey`. Both are
-            // public values — the proposer's key is written into the proposal record at propose time and
-            // is published to receive funds — so a stranger who knows it owns this call. Passing the
-            // proposer's key here is exactly what that stranger does.
-            mk_ep("CancelClaimV1_WithTheProposersKey", false, Box::new(move || {
-                let r = h.cancel_claim(endowment_bulla, claim_id, proposer_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+            // **`OBL-C152`'s most consequential instance, now repaired.** `cancel_claim_v1` used to refuse
+            // a cancellation when `proposal.proposer_pubkey != params.proposer_pubkey` — two public values,
+            // so any caller who knew the proposer's key cancelled any pending claim. The row that asserted
+            // the resulting `Success` (while passing exactly that key) is what caught the repair. The
+            // approval is over the claim id; `params.proposer_pubkey` is now unread by the contract and
+            // owes removal in the unit that gives the proposer a real proof.
+            mk_ep("CancelClaimV1_Approved", false, Box::new({
+                let gov = gov.clone();
+                move || {
+                    let approvals = gov.lock().unwrap().cancel_claim.clone();
+                    let r = h.cancel_claim(endowment_bulla, claim_id, proposer_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let f = ms.finalize(DaoEscrowHarness::governance_group(), action_cancel_claim, approvals)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult {
+                        children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] }],
+                        call_data: r.call_data, proofs: vec![],
+                    })
+                }
             })),
             // The possession fixture (`OBL-C154` owed). The parent demands a child whose first byte is
             // `0x06`; the child is a real `identity::VerifyCapabilityV1` over the capability `setup`
@@ -743,6 +844,33 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                             call_data: r.call_data, proofs: vec![r.proof],
                         })
                     }
+                }),
+            },
+            // ── The reader for `OBL-C152`'s repair: a real call to a repaired endpoint carrying no
+            //    approval child at all. Without these rows the four new gates would be asserted only by
+            //    their positive paths, and a gate that silently admitted everyone would still pass them.
+            EndpointSpec {
+                name: "EnableDrainProtectionV1_NoApproval",
+                is_zk: false,
+                expectation: EndpointExpectation::RejectionNaming(&["ContractError(Custom(33))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new(move || {
+                    let r = h.enable_drain_protection(endowment_bulla, DRAIN_PROTECTION_BULLA).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+                }),
+            },
+            EndpointSpec {
+                name: "CancelClaimV1_NoApproval",
+                is_zk: false,
+                expectation: EndpointExpectation::RejectionNaming(&["ContractError(Custom(33))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new(move || {
+                    // The proposer's own key, which used to be the whole authorization. It is not one now,
+                    // and that is the point of the row.
+                    let r = h.cancel_claim(endowment_bulla, claim_id, proposer_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                 }),
             },
             EndpointSpec {

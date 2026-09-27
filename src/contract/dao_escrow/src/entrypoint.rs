@@ -311,7 +311,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         DaoEscrowFunction::EnableDrainProtectionV1 => {
             let params = model::EnableDrainProtectionParamsV1::decode(&self_.data[1..])?;
-            enable_drain_protection_v1(cid, params)
+            enable_drain_protection_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::ProposeClaimV1 => {
             let params = model::ProposeClaimParamsV1::decode(&self_.data[1..])?;
@@ -327,7 +327,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         DaoEscrowFunction::RegisterCapabilityRequirementV1 => {
             let params = model::RegisterCapabilityRequirementParamsV1::decode(&self_.data[1..])?;
-            register_capability_requirement_v1(cid, params)
+            register_capability_requirement_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::VerifyMemberCapabilityV1 => {
             let params = model::VerifyMemberCapabilityParamsV1::decode(&self_.data[1..])?;
@@ -339,7 +339,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         DaoEscrowFunction::CancelClaimV1 => {
             let params = model::CancelClaimParamsV1::decode(&self_.data[1..])?;
-            cancel_claim_v1(cid, params)
+            cancel_claim_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::SetGovernanceConfigV1 | DaoEscrowFunction::SetGovernanceActiveV1 => {
             // Removed — MultiSig groups manage governance.
@@ -347,7 +347,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         DaoEscrowFunction::DeactivateCapabilityRequirementV1 => {
             let params = model::DeactivateCapabilityRequirementParamsV1::decode(&self_.data[1..])?;
-            deactivate_capability_requirement_v1(cid, params)
+            deactivate_capability_requirement_v1(cid, call_idx, calls, params)
         }
     }
 }
@@ -819,6 +819,8 @@ fn withdraw_apply_v1(cid: ContractId, update: model::WithdrawUpdateV1) -> Contra
 /// EnableDrainProtectionV1 instruction
 fn enable_drain_protection_v1(
     cid: ContractId,
+    call_idx: usize,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
     params: model::EnableDrainProtectionParamsV1,
 ) -> ContractResult {
     msg!("[dao_escrow::enable_drain_protection_v1] Enabling drain protection");
@@ -835,6 +837,23 @@ fn enable_drain_protection_v1(
     let mut endowment = model::DaoEscrow::decode(
         &endowment_data.ok_or(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?,
     )?;
+
+    // **This endpoint had no authorization at all** (`OBL-C152`): any caller could associate an
+    // arbitrary drain-protection bulla with any endowment, and the fixture's row asserted the
+    // resulting `Success` so that adding a check would fail it. The action id binds the bulla being
+    // associated, so the approval names what it authorises rather than merely the endpoint.
+    require_governance_child(
+        cid,
+        call_idx,
+        &calls,
+        &endowment,
+        0,
+        model::governance_message(
+            model::governance_role::ENABLE_DRAIN_PROTECTION,
+            poseidon_hash([params.dao_escrow_bulla.inner(), params.drain_protection_bulla.inner()]),
+        ),
+    )?;
+
     endowment.drain_protection_bulla = Some(params.drain_protection_bulla);
     endowment.drain_protection_enabled = true;
 
@@ -1886,6 +1905,8 @@ fn execute_claim_apply_v1(cid: ContractId, update: model::ExecuteClaimUpdateV1) 
 /// RegisterCapabilityRequirementV1 instruction - registers a required capability for a DAO role
 fn register_capability_requirement_v1(
     cid: ContractId,
+    call_idx: usize,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
     params: model::RegisterCapabilityRequirementParamsV1,
 ) -> ContractResult {
     msg!("[dao_escrow::register_capability_requirement_v1] Registering capability requirement");
@@ -1893,10 +1914,27 @@ fn register_capability_requirement_v1(
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
     let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
-    let _endowment: model::DaoEscrow = endowment_data
+    let endowment: model::DaoEscrow = endowment_data
         .map(|d| model::DaoEscrow::decode(&d))
         .transpose()?
         .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
+
+    // **This endpoint had no authorization at all** (`OBL-C152`), and until `OBL-C150`'s second instance
+    // was fixed it could not be called either — its decoder refused every payload its own encoder wrote,
+    // so the fixture row was recording a codec failure as a refusal. With the payload decodable the call
+    // succeeded for any caller, which is what the row asserted so that this check would fail it.
+    let cap_id_fp = pallas::Base::from_repr(params.capability_id).into_option().unwrap_or(pallas::Base::zero());
+    require_governance_child(
+        cid,
+        call_idx,
+        &calls,
+        &endowment,
+        0,
+        model::governance_message(
+            model::governance_role::REGISTER_CAPABILITY_REQUIREMENT,
+            poseidon_hash([params.dao_escrow_bulla.inner(), cap_id_fp]),
+        ),
+    )?;
 
     let requirement = model::CapabilityRequirement {
         version: 1,
@@ -2113,24 +2151,53 @@ fn resolve_dispute_apply_v1(cid: ContractId, update: model::ResolveDisputeUpdate
 // CANCEL CLAIM V1 (0x0d)
 // ============================================================================
 
-/// CancelClaimV1 instruction - cancels a pending proposal (proposer only)
+/// CancelClaimV1 instruction - cancels a pending proposal, authorised by the endowment's group
+///
+/// **The check this replaces gated nothing** (`OBL-C152`): it refused a cancellation when
+/// `proposal.proposer_pubkey != params.proposer_pubkey`, and both operands are public values — the
+/// proposer's key is written into the proposal record at propose time and published to receive funds — so
+/// any caller who knew it could cancel any pending claim. The fixture's row now asserts the resulting
+/// `Success` deliberately, so that this check fails it.
+///
+/// **What the old check protected, and what covers it now** (R3): it was meant to be "only the proposer
+/// may withdraw their own proposal". That obligation is now carried by `require_governance_child` below —
+/// the endowment's group authorises the cancellation, bound to the claim id. That is a *design*
+/// consequence and is stated plainly: cancellation is a governance action rather than a proposer's
+/// exclusive right, because a check that admits everyone who knows a public key is not one, and building
+/// a real proposer proof means a new circuit and a codec change for this params type (its own unit).
+/// `params.proposer_pubkey` is now unused by the contract and owes removal in that unit.
 fn cancel_claim_v1(
     cid: ContractId,
+    call_idx: usize,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
     params: model::CancelClaimParamsV1,
 ) -> ContractResult {
     msg!("[dao_escrow::cancel_claim_v1] Cancelling claim");
 
-    // Load proposal
+    // Load the endowment, which the approval check needs, and the proposal.
+    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
+    let endowment: model::DaoEscrow = endowment_data
+        .map(|d| model::DaoEscrow::decode(&d))
+        .transpose()?
+        .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
+
+    require_governance_child(
+        cid,
+        call_idx,
+        &calls,
+        &endowment,
+        0,
+        model::governance_message(
+            model::governance_role::CANCEL_CLAIM,
+            params.claim_id.inner(),
+        ),
+    )?;
+
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
     let proposal_data = wasm::db::db_get(proposals_db, &params.claim_id.to_bytes())?
         .ok_or_else(|| DaoEscrowError::ClaimNotFound("Claim not found".to_string()))?;
     let proposal = model::Proposal::decode(&proposal_data)?;
-
-    // Verify caller is the proposer
-    if proposal.proposer_pubkey != params.proposer_pubkey {
-        msg!("[dao_escrow::cancel_claim_v1] ERROR: Not claim proposer");
-        return Err(DaoEscrowError::NotClaimProposer.into());
-    }
 
     // Verify proposal is still pending
     if proposal.state != model::ProposalState::Pending {
@@ -2180,6 +2247,8 @@ fn cancel_claim_apply_v1(cid: ContractId, update: model::CancelClaimUpdateV1) ->
 /// DeactivateCapabilityRequirementV1 instruction - sets a capability requirement to inactive
 fn deactivate_capability_requirement_v1(
     cid: ContractId,
+    call_idx: usize,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
     params: model::DeactivateCapabilityRequirementParamsV1,
 ) -> ContractResult {
     msg!("[dao_escrow::deactivate_capability_requirement_v1] Deactivating capability requirement");
@@ -2187,9 +2256,10 @@ fn deactivate_capability_requirement_v1(
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
     let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
-    if endowment_data.is_none() {
-        return Err(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()).into())
-    }
+    let endowment: model::DaoEscrow = endowment_data
+        .map(|d| model::DaoEscrow::decode(&d))
+        .transpose()?
+        .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
 
     // Verify capability requirement exists
     let caps_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE)?;
@@ -2204,6 +2274,24 @@ fn deactivate_capability_requirement_v1(
         msg!("[dao_escrow::deactivate_capability_requirement_v1] Requirement already deactivated");
         return Err(DaoEscrowError::CapabilityExpired.into());
     }
+
+    // **This endpoint had no authorization at all** (`OBL-C152`): any caller could deactivate any
+    // registered requirement. The action id binds the *capability* the record names, not the role key,
+    // so the approval covers the requirement rather than merely the endpoint — and the role key is
+    // deliberately not in the id because it is a `Vec<u8>` rather than a field
+    // (`governance_role::REGISTER_CAPABILITY_REQUIREMENT` records that boundary in full).
+    let cap_id_fp = pallas::Base::from_repr(requirement.capability_id).into_option().unwrap_or(pallas::Base::zero());
+    require_governance_child(
+        cid,
+        call_idx,
+        &calls,
+        &endowment,
+        0,
+        model::governance_message(
+            model::governance_role::DEACTIVATE_CAPABILITY_REQUIREMENT,
+            poseidon_hash([params.dao_escrow_bulla.inner(), cap_id_fp]),
+        ),
+    )?;
 
     // Apply the deactivation here and carry the record: apply may not read it back (OBL-C72).
     let mut requirement = requirement;

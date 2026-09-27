@@ -92,6 +92,19 @@ governance_message(role: u8, action_id: pallas::Base) -> pallas::Base
 | 4 | `EndowmentWithdrawV1` (0x04) | `(bulla, value, recipient_x)` |
 | 5 | `TreasurySpendV1` (0x05) | `(bulla, value, recipient_x)` |
 | 6 | `WithdrawV1` (0x03) | `(bulla, value, recipient_x)` |
+| 7 | `EnableDrainProtectionV1` (0x06) | `(bulla, drain_protection_bulla)` |
+| 8 | `RegisterCapabilityRequirementV1` (0x0a) | `(bulla, capability_id)` |
+| 9 | `DeactivateCapabilityRequirementV1` (0x10) | `(bulla, capability_id)` of the stored record |
+| 10 | `CancelClaimV1` (0x0d) | `claim_id` |
+
+Roles 7–10 were added on 2026-09-27: those four endpoints performed **authenticated state changes with no
+authorization check at all** (`OBL-C152`). Two of them bind a value rather than an id, because their
+governance branch is reached with no id to bind — the same reason the money endpoints use a triple.
+
+**One boundary is recorded rather than solved**: roles 8 and 9 bind the *capability* and not the role key,
+because the role is a `Vec<u8>` table key and `pallas::Base::from_repr` takes exactly 32 canonical bytes.
+A group approval for one role's requirement can therefore be presented for another role's — stated in
+`governance_role::REGISTER_CAPABILITY_REQUIREMENT` rather than left to be discovered.
 
 Two properties are structural rather than stylistic:
 
@@ -112,17 +125,17 @@ Two properties are structural rather than stylistic:
 | `0x03` | `WithdrawV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 when governance active | owner pubkey, or role 6 |
 | `0x04` | `EndowmentWithdrawV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 when governance active | role 4, or an `Approved` proposal |
 | `0x05` | `TreasurySpendV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 | role 5, behind a mode gate that cannot pass |
-| `0x06` | `EnableDrainProtectionV1` | — | none | **none — any caller may set the association** |
+| `0x06` | `EnableDrainProtectionV1` | — | `FinalizeV1` at 0 | role 7 |
 | `0x07` | `ProposeClaimV1` | `ProposeClaimV2` (3) | `FinalizeV1` at 0 | role 1 |
 | `0x08` | `VoteClaimV1` | `VoteClaimV2` (3) | `FinalizeV1` at 0 | role 2 |
 | `0x09` | `ExecuteClaimV1` | — | `TransferV1` at 0 | proposal must be `Approved` |
-| `0x0a` | `RegisterCapabilityRequirementV1` | — | none | **none — any caller** (asserted by a row) |
+| `0x0a` | `RegisterCapabilityRequirementV1` | — | `FinalizeV1` at 0 | role 8 |
 | `0x0b` | `VerifyMemberCapabilityV1` | `VerifyMemberCapabilityV2` (3) | `identity::VerifyCapabilityV1` (`0x06`) | the proof; the routing check is skipped while `identity_cid` is zero |
 | `0x0c` | `ResolveDisputeV1` | `ResolveDisputeV2` (3) | `FinalizeV1` at 0 | role 3 |
-| `0x0d` | `CancelClaimV1` | — | none | proposer pubkey equality |
+| `0x0d` | `CancelClaimV1` | — | `FinalizeV1` at 0 | role 10 |
 | `0x0e` | `SetGovernanceConfigV1` | — | — | **retired no-op** |
 | `0x0f` | `SetGovernanceActiveV1` | — | — | **retired no-op** |
-| `0x10` | `DeactivateCapabilityRequirementV1` | — | none | **none — any caller** |
+| `0x10` | `DeactivateCapabilityRequirementV1` | — | `FinalizeV1` at 0 | role 9 |
 
 `(n)` after a circuit is its `constrain_instance` count, which is what the metadata arm must publish.
 
@@ -236,18 +249,28 @@ measured form of each.
 - **Balance checks.** The "insufficient balance" guards in `endowment_withdraw_v1`, `treasury_spend_v1`,
   `execute_claim_v1`, `withdraw_v1` and `resolve_dispute_v1` are `if false` blocks.
 - **`ProposalState::Approved`.** No code path writes it, so the proposal lifecycle has no successful exit.
-- **OCap / Identity governance.** Capability requirements can be registered (`0x0a`) and deactivated
-  (`0x10`) by anyone, in a table that no governance path reads.
+- **The capability-requirement table is dead state.** `0x0a` and `0x10` are gated by the group now
+  (roles 8 and 9), but nothing reads what they write: the governance path that consulted the table was
+  deleted with `verify_capability_for_action`, so `0x10` is the only reader of the records `0x0a`
+  creates. The endpoints are authenticated and inert, which is one step better than authenticated and
+  live, and two steps from useful.
+- **`WithdrawV1`'s owner path still compares two public values** (`OBL-C152`): with governance inactive,
+  `endowment.owner_pubkey != params.recipient_pubkey` admits anyone who knows the owner's address. Every
+  other instance of this class in the contract is repaired; this one needs the same ownership proof
+  `UpdateV1` uses, which means a circuit reference and a codec change for `WithdrawParamsV1`. The fixture
+  asserts the current behaviour so the repair fails that row.
+- **`CancelClaimV1`'s `proposer_pubkey` field is now unread.** Cancellation is authorised by the group
+  (role 10); the field owes removal in the unit that gives a proposer a real proof, if that is wanted.
 - **`member_count`.** `PayPremiumV1` increments the record's count in exec and carries the whole record;
   the update's own `member_count` field has no reader.
 - **DrainProtection enforcement.** An association only; the contract does not participate in rate limiting
-  or exit queues.
+  or exit queues. The two fields it writes are read nowhere.
 
 ## Build and test
 
 The contract's heavyweight integration test is
 `bin/dwowd/src/tests/heavyweight_pipeline.rs::test_heavyweight_dao_escrow`, run through
-`bin/dwowd/src/tests/heavyweight.sh --dao-escrow`. It is green: `1 passed; 0 failed`, 655.00s. The
+`bin/dwowd/src/tests/heavyweight.sh --dao-escrow`. It is green: `1 passed; 0 failed`, 809.70s. The
 contract compiles without warnings.
 
 **Every row builds the children its endpoint demands and names the check it expects.** That is a change of
@@ -256,11 +279,13 @@ passed `children: vec![]` and asserted a rejection that any earlier failure in t
 that is why the colliding child-slot checks in the table survived a green run: no row ever built the call,
 so the checks that read `children_indexes` were never executed.
 
-Two of the rows assert **Success over an authorization that is missing or vacuous** — `0x0a` and
-`CancelClaimV1` — and they do so deliberately, with the defect named in the row. A test that asserted the
-*desired* behaviour would be red now and indistinguishable from a broken frame; a test that asserts what
-the contract actually does turns green now and fails loudly the moment the gate is added. That is the
-`finality-widget` campaign's rule, applied here.
+Two of the rows asserted **Success over an authorization that was missing or vacuous** — `0x0a` and
+`CancelClaimV1` — deliberately, with the defect named in the row, because a test that asserted the
+*desired* behaviour would have been red and indistinguishable from a broken frame while a test that
+asserted what the contract actually did would fail loudly the moment a gate was added. **That is what
+happened**: both gates arrived on 2026-09-27 (`OBL-C152`), both rows failed, and both are now the
+approval-carrying positives beside a no-approval negative that names `Custom(33)`. The pattern costs two
+edits per repair and buys the guarantee that the repair is a change rather than a claim.
 
 Two gates in the tree read this contract specifically:
 
