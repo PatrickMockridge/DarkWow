@@ -271,22 +271,35 @@ impl DaoEscrowHarness {
     }
 
     /// Withdraw from endowment (WithdrawV1 - 0x03)
+    /// The **owner's** withdrawal, carrying the `SetGovernanceConfigV2` ownership proof.
+    ///
+    /// `owner_secret` is the endowment's owner secret; the proof binds `recipient_pubkey`'s coordinates
+    /// to knowledge of it, which is the endpoint's whole authorisation (`OBL-C152`'s last instance).
+    /// The proof's `owner_nullifier` instance must ride in the params, so it is computed here with the
+    /// same `UpdateV1CallData` the setter uses — one derivation, two callers, which is what keeps the
+    /// contract's metadata arm and the prover's instance vector from disagreeing (`OBL-C156`'s class).
     pub fn withdraw(
         &self,
         dao_escrow_bulla: pallas::Base,
         recipient_pubkey: PublicKey,
         value: u64,
+        owner_secret: pallas::Base,
     ) -> Result<WithdrawResult> {
+        let input = UpdateV1CallData::new(owner_secret, recipient_pubkey, dao_escrow_bulla);
+        let (proof, _public_inputs) =
+            update_v1_proof(&self.set_governance_config_zkbin, &self.set_governance_config_pk, &input)?;
+        let owner_nullifier = input.compute_public_inputs().owner_nullifier;
+
         let params = WithdrawParamsV1 {
             dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
             value,
             recipient_pubkey,
+            owner_nullifier,
         };
         let mut call_data = vec![0x03]; // WithdrawV1
-        // `WithdrawParamsV1::encode` is infallible — three fixed-size fields and no length prefix, now
-        // that the optional `capability_proof` is gone.
+        // `WithdrawParamsV1::encode` is infallible — four fixed-size fields and no length prefix.
         call_data.extend_from_slice(&params.encode());
-        Ok(WithdrawResult { call_data })
+        Ok(WithdrawResult { call_data, proof })
     }
 
     /// Endowment withdraw (EndowmentWithdrawV1 - 0x04)
@@ -576,6 +589,8 @@ pub struct UpdateResult {
 /// Result of DAO-Escrow withdraw
 pub struct WithdrawResult {
     pub call_data: Vec<u8>,
+    /// The `SetGovernanceConfigV2` ownership proof, which the endpoint now requires.
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of DAO-Escrow endowment withdraw

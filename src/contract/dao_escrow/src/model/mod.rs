@@ -267,8 +267,9 @@ pub mod governance_role {
     pub const ENDOWMENT_WITHDRAW: u8 = 4;
     /// `TreasurySpendV1` — the action id is `(bulla, value, recipient_x)`.
     pub const TREASURY_SPEND: u8 = 5;
-    /// `WithdrawV1` — the action id is `(bulla, value, recipient_x)`.
-    pub const WITHDRAW: u8 = 6;
+    // `WITHDRAW` (6) retired here with `WithdrawV1`'s group branch. The endpoint's authority is now the
+    // owner's `SetGovernanceConfigV2` proof alone, so there is no governance action for a group to
+    // approve; the number is left unassigned rather than reused.
     /// `CancelClaimV1` — the action id is the claim id.
     pub const CANCEL_CLAIM: u8 = 10;
 }
@@ -459,15 +460,46 @@ pub struct PayPremiumUpdateV1 {
     pub endowment_bytes: Vec<u8>,
 }
 
-/// Parameters for `DaoEscrow::WithdrawV1`
+/// Parameters for `DaoEscrow::WithdrawV1` — the **owner's** withdrawal, and now only the owner's.
+///
+/// **What made this an authorisation rather than a comparison.** The handler requires
+/// `recipient_pubkey` to be the endoment's owner, and that comparison is between two public values —
+/// satisfiable by anyone who knows the owner's address, which is the last open instance of `OBL-C152`.
+/// What closes it is the `SetGovernanceConfigV2` proof this endpoint now carries: the circuit derives
+/// `owner_pub = ec_mul_base(owner_secret, NULLIFIER_K)` and constrains the exposed `owner_pub_x/y` to
+/// it, so the caller has *demonstrated knowledge of the owner's secret* for the very key the
+/// comparison tests. The comparison stays; the proof is what makes it mean something.
+///
+/// **The group path is gone.** `WithdrawV1` used to branch on `multisig_group_id`: with a group
+/// installed the group authorised, without one the owner did. A single `requires_proof` declaration
+/// cannot describe that — the group path must carry no proof and the owner path must carry one, and the
+/// manifest has one flag for both, so whatever it said would be wrong for one of them and a client
+/// reading it would build the wrong call. The group's spend has two better homes already:
+/// `EndowmentWithdrawV1` (escrow modes) and `TreasurySpendV1` (treasury modes), both of which state
+/// which mode makes them legal. Role 6 retired with the branch.
 #[derive(Debug, Clone, )]
 pub struct WithdrawParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
     /// Amount to withdraw
     pub value: u64,
-    /// Recipient
+    /// Recipient — and required to be the endowment's owner
     pub recipient_pubkey: PublicKey,
+    /// `poseidon_hash(DOMAIN_NULLIFIER, owner_pub_x, owner_pub_y, owner_secret, dao_escrow_bulla)`,
+    /// the value the circuit derives and publishes.
+    ///
+    /// **Carried for the proof, and deliberately not recorded.** `set_governance_config.zk:24-26`
+    /// publishes it as an instance, so the metadata arm must be able to state it, and only a caller who
+    /// knows `owner_secret` can compute it — which is exactly why it cannot be derived here.
+    ///
+    /// It is *not* written to the nullifiers tree, and that is a departure from the plan's letter worth
+    /// stating. The plan says to reuse `UpdateV1`'s one-shot `owner_nullifier`. But that value is
+    /// deterministic in `(owner_secret, dao_escrow_bulla)` and `UpdateV1` records it under its raw bytes,
+    /// so recording it here too would mean **a single owner withdrawal permanently prevented a
+    /// governance group from ever being installed** — `OBL-C161`'s shape exactly: a legitimate call
+    /// consuming the only credential. A withdrawal needs no replay guard anyway: repeating it is another
+    /// withdrawal, and the balance is `Purse`'s to check.
+    pub owner_nullifier: pallas::Base,
 }
 
 /// State update for `DaoEscrow::WithdrawV1`
@@ -931,7 +963,7 @@ impl PayPremiumParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::wit
 impl dwow_serial::Encodable for WithdrawParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for WithdrawParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
-impl WithdrawParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(72); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 72 { return Err(ContractError::IoError(format!("WithdrawParamsV1: expected 72 got {}", data.len()))); } Ok(WithdrawParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawParamsV1: invalid dao_escrow_bulla".into()))?), value: u64::from_le_bytes(data[32..40].try_into().unwrap()), recipient_pubkey: PublicKey::from_bytes(data[40..72].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("WithdrawParamsV1: invalid recipient_pubkey: {}", e)))? }) } }
+impl WithdrawParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(104); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b.extend_from_slice(&self.owner_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 104 { return Err(ContractError::IoError(format!("WithdrawParamsV1: expected 104 got {}", data.len()))); } Ok(WithdrawParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawParamsV1: invalid dao_escrow_bulla".into()))?), value: u64::from_le_bytes(data[32..40].try_into().unwrap()), recipient_pubkey: PublicKey::from_bytes(data[40..72].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("WithdrawParamsV1: invalid recipient_pubkey: {}", e)))?, owner_nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[72..104].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawParamsV1: invalid owner_nullifier".into()))? }) } }
 
 #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
 impl ProposeClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(136); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b.extend_from_slice(&self.claim_blind.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 136 { return Err(ContractError::IoError(format!("ProposeClaimParamsV1: expected 136 got {}", data.len()))); } Ok(ProposeClaimParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimParamsV1: invalid dao_escrow_bulla".into()))?), claim_id: ClaimId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimParamsV1: invalid claim_id".into()))?), value: u64::from_le_bytes(data[64..72].try_into().unwrap()), recipient_pubkey: PublicKey::from_bytes(data[72..104].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ProposeClaimParamsV1: invalid recipient_pubkey: {}", e)))?, claim_blind: Option::<pallas::Base>::from(pallas::Base::from_repr(data[104..136].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimParamsV1: invalid claim_blind".into()))? }) } }

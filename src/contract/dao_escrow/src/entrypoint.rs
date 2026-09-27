@@ -163,6 +163,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         DaoEscrowFunction::ProposeClaimV1 => propose_claim_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::VoteClaimV1 => vote_claim_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::UpdateV1 => update_get_metadata(cid, call_idx, &calls),
+        DaoEscrowFunction::WithdrawV1 => withdraw_get_metadata(cid, call_idx, &calls),
         // The non-ZK functions below fall here. They must return an **encoded** empty
         // `zk_public_inputs`, not a bare `vec![]`: the host decodes the metadata as
         // `Vec<(String, Vec<Base>)>` (`execution.rs:423`), so a 0-byte buffer fails that decode and
@@ -658,6 +659,32 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
 ///
 /// Money Integration: This function REQUIRES promissory_note::transfer_v1 child calls to be
 /// bundled for the actual token transfer to the recipient.
+/// WithdrawV1 instruction — the owner's withdrawal, authorised by the ownership proof
+///
+/// **What was wrong, stated precisely.** The check was
+/// `endowment.owner_pubkey != params.recipient_pubkey` — two public values, so *anyone* who knew the
+/// owner's address could call it (`OBL-C152`, its last instance). The **effect** was narrower than the
+/// defect reads: the payee had to be the owner, so the funds could only ever reach the owner and no
+/// attacker could redirect them. What an attacker could do is trigger the transfer — force the owner's
+/// funds out of the endowment and into the owner's own hands — which is an unauthorised state change,
+/// not theft.
+///
+/// **What fixes it.** The `recipient_pubkey == record.owner_pubkey` comparison stays, and the
+/// `SetGovernanceConfigV2` proof (see `withdraw_get_metadata`) turns it into an authorisation: the
+/// circuit constrains the exposed coordinates of *that key* to
+/// `ec_mul_base(owner_secret, NULLIFIER_K)`, so a caller who passes the comparison has demonstrated
+/// knowledge of the owner's secret. No one else can produce that proof, which is the whole difference.
+///
+/// **The group branch is removed rather than repaired.** It read a `multisig::FinalizeV1` child at slot
+/// 1 while the payment occupies slot 0 — the shape `OBL-C154` fixed for its siblings — but the deeper
+/// problem was structural: one `requires_proof` declaration has to describe both a path that carries a
+/// proof and one that must not, and whichever way it is set a client reading it builds the wrong call
+/// for one of them. The group's spend has two better homes, `EndowmentWithdrawV1` and `TreasurySpendV1`,
+/// each of which states the mode that makes it legal. `withdraw` is the owner's, and now only the
+/// owner's.
+///
+/// **The proof is the only gate, and there is no balance guard here** — `Purse::WithdrawV1` refuses a
+/// withdrawal larger than the balance, and a failing child fails this transaction.
 fn withdraw_v1(
     cid: ContractId,
     call_idx: usize,
@@ -668,12 +695,11 @@ fn withdraw_v1(
 
     // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled
     let self_ = &calls[call_idx];
-    // One child — the payment — plus, when governance is active, a second: the MultiSig approval at slot
-    // 1 (`OBL-C151`). The approval is appended rather than prepended because the payment's validation
-    // below runs *before* the endowment is loaded, so it must keep slot 0.
-    if self_.children_indexes.is_empty() || self_.children_indexes.len() > 2 {
+    // Exactly one child, the payment: this endpoint's authority is its own proof, not a governance
+    // approval, so there is no slot 1 to reserve. The count was `<= 2` while the group branch existed.
+    if self_.children_indexes.len() != 1 {
         msg!(
-            "[WithdrawV1] Error: Expected 1 child call (promissory_note::transfer_v1), plus a MultiSig approval when governance is active; got {}",
+            "[WithdrawV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             self_.children_indexes.len()
         );
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
@@ -721,30 +747,18 @@ fn withdraw_v1(
         }
     };
 
-    // Verify authorization: governance-active uses capability proof,
-    // otherwise fall back to owner pubkey check (backward compat)
-    if endowment.multisig_group_id != pallas::Base::zero() {
-        // The endowment's group authorises (`OBL-C151`). **This branch used to be an empty body with a
-        // comment** — so setting a group id removed the owner check below and left nothing, which is
-        // fail-open. Recording a group and leaving the branch unread is the R8 case: a check with no
-        // reader is not a check.
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
-        let (rx, _ry) = params.recipient_pubkey.xy().expect("pk not identity");
-        let action = model::governance_message(
-            model::governance_role::WITHDRAW,
-            poseidon_hash([
-                params.dao_escrow_bulla.inner(),
-                pallas::Base::from(params.value),
-                rx,
-            ]),
-        );
-        require_governance_child(cid, call_idx, &calls, &endowment, 1, action)?;
-    } else if endowment.owner_pubkey != params.recipient_pubkey {
+    // The authority: the payee must be the endowment's owner, and the `SetGovernanceConfigV2` proof
+    // that rides with this call is what makes that comparison mean something — see this function's
+    // header and `withdraw_get_metadata`. An endowment whose owner has been changed by no one (there is
+    // no path to change it) can only be withdrawn from by a caller who knows the owner's secret.
+    if endowment.owner_pubkey != params.recipient_pubkey {
         msg!("[dao_escrow::withdraw_v1] ERROR: Not authorized to withdraw");
         return Err(DaoEscrowError::NotAuthorizedToWithdraw.into())
     }
 
-    // The balance is `Purse::WithdrawV1`'s to check; the guard that stood here was `if false { … }`.
+    // `params.owner_nullifier` is deliberately **not** written to the nullifiers tree: it is the value
+    // `update_v1` records one-shot to install the group, and recording it here would let a single
+    // withdrawal prevent governance from ever being installed. See `WithdrawParamsV1`'s field note.
 
     // Create update
     let update = model::WithdrawUpdateV1 {
@@ -1316,6 +1330,45 @@ fn update_get_metadata(
     // Constant `(0, 0)`, the convention this contract and its siblings use; the circuit constrains
     // `tx_binding == poseidon_hash(3, tx_commitment, tx_nonce)`, so a literal zero here would require a
     // preimage and make every proof unsatisfiable (the defect `OBL-C78` records for this contract).
+    let tx_binding = poseidon_hash([
+        pallas::Base::from(3u64),
+        pallas::Base::zero(),
+        pallas::Base::zero(),
+    ]);
+
+    // The circuit's `constrain_instance` order: owner_pub_x, owner_pub_y, owner_nullifier, tx_binding,
+    // tx_nonce.
+    let zk_public_inputs = vec![(
+        crate::DAO_ESCROW_ZKAS_SET_GOVERNANCE_CONFIG_NS_V2.to_string(),
+        vec![owner_pub_x, owner_pub_y, params.owner_nullifier, tx_binding, pallas::Base::zero()],
+    )];
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+/// Metadata for `WithdrawV1` (0x03) — `SetGovernanceConfigV2`, the ownership circuit.
+///
+/// The same five instances `update_get_metadata` publishes, and the same circuit: this endpoint's
+/// authority is the owner's proof, which is what turns its `recipient_pubkey == owner` comparison from a
+/// public value checked against a public value into a check the caller had to *prove* they could pass
+/// (`OBL-C152`'s last instance).
+///
+/// The published coordinates are the **payee's**, not a separate owner field. On this endpoint the two
+/// are the same by construction — `withdraw_v1` refuses a payee that is not the owner — so publishing
+/// the payee's coordinates is publishing the owner's, and the circuit's
+/// `constrain_equal_base(ec_get_x(owner_pub), owner_pub_x)` then binds them to knowledge of the secret.
+fn withdraw_get_metadata(
+    _cid: ContractId,
+    call_idx: usize,
+    calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
+) -> Result<Vec<u8>, ContractError> {
+    let self_ = &calls[call_idx].data;
+    let params = model::WithdrawParamsV1::decode(&self_.data[1..])?;
+
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+    let (owner_pub_x, owner_pub_y) = params.recipient_pubkey.xy().expect("pk not identity");
     let tx_binding = poseidon_hash([
         pallas::Base::from(3u64),
         pallas::Base::zero(),

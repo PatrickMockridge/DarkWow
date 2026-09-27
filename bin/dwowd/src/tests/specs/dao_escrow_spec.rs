@@ -91,7 +91,8 @@ const PN_VALUE_WITHDRAW_OWNER: u64 = 50_000_000;
 const PN_VALUE_ENDOWMENT_NO_AUTH: u64 = 25_000_000;
 const PN_VALUE_TREASURY_SPEND: u64 = 10_000_000;
 const PN_VALUE_ENDOWMENT_APPROVED: u64 = 20_000_000;
-const PN_VALUE_WITHDRAW_APPROVED: u64 = 40_000_000;
+// No `PN_VALUE_WITHDRAW_APPROVED`: the row that spent it exercised `withdraw_v1`'s group branch, and
+// that branch retired with `WITHDRAW` role 6. `withdraw` now has one path — the owner's — and one row.
 /// Its own note as well: the `_NoAuthorization` row spends the endowment-withdraw note, so lending it
 /// here would surface as a PN double-spend instead of as the missing approval.
 const PN_VALUE_WITHDRAW_NO_APPROVAL: u64 = 30_000_000;
@@ -178,8 +179,6 @@ struct Governance {
     /// `(bulla, value, recipient_x)` triple its row uses. Distinct from every other message, including
     /// the other money endpoints' triples: the role tag is what keeps them apart.
     endowment_withdraw: Vec<Nullifier>,
-    /// The endowment's group on the withdraw action — role 6.
-    withdraw: Vec<Nullifier>,
     /// The endowment's group on the cancellation action — role 10 over the claim id. The same id the
     /// proposal's approval names, which is exactly why the role tag exists (`OBL-C151`).
     cancel_claim: Vec<Nullifier>,
@@ -207,7 +206,6 @@ struct Shared {
     endowment_no_auth: Option<PnNote>,
     treasury_spend: Option<PnNote>,
     endowment_approved: Option<PnNote>,
-    withdraw_approved: Option<PnNote>,
     execute_claim: Option<PnNote>,
     withdraw_no_approval: Option<PnNote>,
     execute_approved: Option<PnNote>,
@@ -272,10 +270,8 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
             owner_x,
         ]),
     );
-    let action_withdraw = governance_message(
-        governance_role::WITHDRAW,
-        poseidon_hash([endowment_bulla, pallas::Base::from(PN_VALUE_WITHDRAW_APPROVED), owner_x]),
-    );
+    // There is no `action_withdraw`: `withdraw_v1` has no group branch and therefore no governed action.
+    // Its authority is the ownership proof, which is not a message a group signs.
     let action_cancel_claim = governance_message(governance_role::CANCEL_CLAIM, claim_id);
     let msg_propose_2 = governance_message(governance_role::PROPOSE_CLAIM, CLAIM_ID_LIFECYCLE);
 
@@ -369,7 +365,6 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let propose = sign_for(chain, msg_propose)?;
                 let wrong_message = sign_for(chain, msg_wrong)?;
                 let endowment_withdraw = sign_for(chain, action_endowment_withdraw)?;
-                let withdraw = sign_for(chain, action_withdraw)?;
                 let cancel_claim = sign_for(chain, action_cancel_claim)?;
                 let propose_2 = sign_for(chain, msg_propose_2)?;
                 let vote = sign_for(chain, action_vote)?;
@@ -394,7 +389,6 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     propose,
                     wrong_message,
                     endowment_withdraw,
-                    withdraw,
                     cancel_claim,
                     propose_2,
                     vote,
@@ -424,7 +418,6 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     PN_VALUE_ENDOWMENT_NO_AUTH,
                     PN_VALUE_TREASURY_SPEND,
                     PN_VALUE_ENDOWMENT_APPROVED,
-                    PN_VALUE_WITHDRAW_APPROVED,
                     PN_VALUE_EXECUTE_CLAIM,
                     PN_VALUE_WITHDRAW_NO_APPROVAL,
                     PN_VALUE_EXECUTE_APPROVED,
@@ -446,7 +439,6 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     endowment_no_auth: n.next(),
                     treasury_spend: n.next(),
                     endowment_approved: n.next(),
-                    withdraw_approved: n.next(),
                     execute_claim: n.next(),
                     withdraw_no_approval: n.next(),
                     execute_approved: n.next(),
@@ -468,20 +460,43 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
             // ── Governance INACTIVE. These run first: the group id is still zero, so they exercise the
             //    paths that existed before `OBL-C151` and the setter below changes their meaning.
             //
-            // `withdraw_v1` therefore takes its owner path: `endowment.owner_pubkey !=
-            // params.recipient_pubkey` is false for the owner. Success here is what proves the child
-            // validation passed — the check that used to be the only thing any row reached.
+            // **`OBL-C152`'s last instance, now repaired.** `withdraw_v1` takes its owner path, and the
+            // check that decides it — `record.owner_pubkey == params.recipient_pubkey` — is between two
+            // public values, so on its own it admitted anyone who knew the owner's address. What makes it
+            // an authorisation is the `SetGovernanceConfigV2` proof this call now carries: the circuit
+            // constrains the *payee's* coordinates to `ec_mul_base(owner_secret, NULLIFIER_K)`, so a
+            // caller who passes the comparison has demonstrated knowledge of the owner's secret.
             //
-            // That comparison is itself vacuous (`OBL-C152`): a public key is public, so this path admits
-            // anyone who knows the owner's address. Left as it is and asserted here so the fix, when it
-            // comes, fails this row.
-            mk_ep("WithdrawV1_OwnerPath", false, Box::new({
+            // `is_zk: true` because it is one: the runner verifies the proof against the metadata arm
+            // `withdraw_get_metadata` publishes, which is the pair that must agree or every withdrawal
+            // fails as an invalid proof (`OBL-C156`'s class, one endpoint over).
+            mk_ep("WithdrawV1_OwnerPath", true, Box::new({
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().withdraw_owner.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
                     let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, poseidon_hash([pallas::Base::from(PN_VALUE_WITHDRAW_OWNER), endowment_bulla]))?;
-                    let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_OWNER).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
+                    let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_OWNER, owner_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                }
+            })),
+            // **The refusal that the old check could not make.** A caller who is not the owner can still
+            // build a perfectly valid ownership proof — for *their own* key — and the endpoint refuses
+            // because the payee it names is not this endowment's owner. `Custom(21)`,
+            // `NotAuthorizedToWithdraw`.
+            //
+            // The row is the reader for the comparison: an endpoint whose authority had been reduced to
+            // the group approval again would refuse here with a different code, and one whose proof had
+            // been dropped would *accept* the stranger — because `owner_secret` is what the proof is
+            // built from, and this row's caller passes their own.
+            mk_ep_rejecting("WithdrawV1_PayeeIsNotTheOwner", true, &["ContractError(Custom(21))"], Box::new({
+                let notes = notes.clone();
+                move || {
+                    let stranger_secret = pallas::Base::from(4321u64);
+                    let stranger_pub = PublicKey::from_secret(SecretKey::from_base(stranger_secret));
+                    let note = notes.lock().unwrap().withdraw_no_approval.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_NO_APPROVAL, poseidon_hash([pallas::Base::from(PN_VALUE_WITHDRAW_NO_APPROVAL), endowment_bulla]))?;
+                    let r = h.withdraw(endowment_bulla, stranger_pub, PN_VALUE_WITHDRAW_NO_APPROVAL, stranger_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
             // **The no-group refusal, stated once** — and the row that carries it is this one, because
@@ -621,30 +636,12 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     })
                 }
             })),
-            // The same fix on the third of the money endpoints, under its own role tag (6) and its own
-            // action triple — so it also proves the role tag is doing work: this approval and the one
-            // above are over different messages and neither can authorise the other's endpoint. The mode
-            // gate is passed too: this endowment is `Escrow`, which admits `endowment_withdraw` and is
-            // exactly why the treasury row above refuses.
-            mk_ep("WithdrawV1_Approved", false, Box::new({
-                let gov = gov.clone();
-                let notes = notes.clone();
-                move || {
-                    let approvals = gov.lock().unwrap().withdraw.clone();
-                    let note = notes.lock().unwrap().withdraw_approved.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_APPROVED, poseidon_hash([pallas::Base::from(PN_VALUE_WITHDRAW_APPROVED), endowment_bulla]))?;
-                    let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_APPROVED).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let f = ms.finalize(DaoEscrowHarness::governance_group(), action_withdraw, approvals)
-                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult {
-                        children: vec![
-                            child,
-                            ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] },
-                        ],
-                        call_data: r.call_data, proofs: vec![],
-                    })
-                }
-            })),
+            // `WithdrawV1_Approved` stood here, under role 6. The endpoint's group branch — and role 6
+            // with it — is removed: one `requires_proof` declaration cannot describe both a path that
+            // carries a proof and one that must not, and the group's spend is `EndowmentWithdrawV1`
+            // (escrow modes) and `TreasurySpendV1` (treasury modes), each of which says which mode makes
+            // it legal. `withdraw` is the owner's, and its row is `WithdrawV1_OwnerPath` above.
+            //
             // **The reader for `OBL-C159`/`OBL-C160`, and it is a rejection.** The call is complete and
             // well-formed — the proposal below is found by id, its value and recipient match — and it
             // refuses at the state check with `ProposalNotPending` (`Custom(38)`) because the proposal is
@@ -915,28 +912,6 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     // not even a field of the params any more — and that is the point of the row.
                     let r = h.cancel_claim(endowment_bulla, claim_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
-                }),
-            },
-            EndpointSpec {
-                name: "WithdrawV1_GovernanceActiveWithoutApproval",
-                is_zk: false,
-                // The reader that `withdraw_v1`'s governance branch never had: before this it was an
-                // empty body, so activating governance removed the owner check and left nothing. With the
-                // payment child present and no approval beside it, the slot-1 check is what refuses.
-                expectation: EndpointExpectation::RejectionNaming(&["ContractError(Custom(33))"]),
-                generate_with_coinbase: None,
-                verify_state: None,
-                generate: Box::new({
-                    let notes = notes.clone();
-                    move || {
-                        // Its own note: the `_NoAuthorization` row spends the endowment-withdraw one, and
-                        // lending it here would surface as a PN double-spend rather than as the missing
-                        // approval this row is about.
-                        let note = notes.lock().unwrap().withdraw_no_approval.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                        let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_NO_APPROVAL, poseidon_hash([pallas::Base::from(PN_VALUE_WITHDRAW_NO_APPROVAL), endowment_bulla]))?;
-                        let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_NO_APPROVAL).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
-                    }
                 }),
             },
         ],

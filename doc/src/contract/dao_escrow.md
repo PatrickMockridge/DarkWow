@@ -110,13 +110,14 @@ to it does not stale all 32 artifacts.
 | 2 | `VoteClaimV1` (0x08) | `poseidon_hash(claim_id, voter_x, voter_y, direction)` |
 | 4 | `EndowmentWithdrawV1` (0x04) | `poseidon_hash(bulla, value, recipient_x)` |
 | 5 | `TreasurySpendV1` (0x05) | `poseidon_hash(bulla, value, recipient_x)` |
-| 6 | `WithdrawV1` (0x03) | `poseidon_hash(bulla, value, recipient_x)` |
 | 10 | `CancelClaimV1` (0x0d) | `claim_id` |
 
-Roles 3, 7, 8 and 9 — `RESOLVE_DISPUTE`, `ENABLE_DRAIN_PROTECTION`,
+Roles 3, 6, 7, 8 and 9 — `RESOLVE_DISPUTE`, `WITHDRAW`, `ENABLE_DRAIN_PROTECTION`,
 `REGISTER_CAPABILITY_REQUIREMENT` and `DEACTIVATE_CAPABILITY_REQUIREMENT` — retired with their
 endpoints and are **left unassigned**, on the same rule the selectors follow: a number that meant
-something keeps meaning it, so what a recorded approval names cannot change.
+something keeps meaning it, so what a recorded approval names cannot change. `WITHDRAW` (6) went with
+`withdraw_v1`'s group branch: that endpoint's authority is the owner's proof, which is not a message any
+group signs (`OBL-C168`).
 
 Two properties are structural rather than stylistic:
 
@@ -137,8 +138,7 @@ what the parent demands before it will return the update.
 
 | Path | Endpoint | Requires |
 |------|----------|----------|
-| Owner withdrawal | `WithdrawV1` (0x03) | No group installed, and `endowment.owner_pubkey == params.recipient_pubkey` — **a comparison of two public values, which gates nothing** (`OBL-C152`) |
-| Owner withdrawal, governance active | `WithdrawV1` (0x03) | Role 6 approval over `(bulla, value, recipient_x)` |
+| Owner withdrawal | `WithdrawV1` (0x03) | The `SetGovernanceConfigV2` ownership proof, and `endowment.owner_pubkey == params.recipient_pubkey` — which the proof is what makes meaningful (`OBL-C152`, repaired) |
 | Claim payout | `EndowmentWithdrawV1` (0x04) | Role 4 approval over `(bulla, value, recipient_x)`; refuses when `mode == Treasury` |
 | Operational spend | `TreasurySpendV1` (0x05) | Role 5 approval over `(bulla, value, recipient_x)`; refuses unless `mode` is `Treasury` or `TreasuryEndowment` |
 | Lifecycle payout | `ExecuteClaimV1` (0x09) | The proposal named must be `Approved` (which only `VoteClaimV1` writes) and inside its execution deadline; no approval child |
@@ -162,7 +162,7 @@ functions used to return `Ok(())` while doing nothing.
 | `0x00` | `InitializeV1` | `InitV2` (4) | none | none — anyone may create an endowment | reachable; a duplicate **derived** bulla is refused (`OBL-C158`) |
 | `0x01` | `UpdateV1` | `SetGovernanceConfigV2` (5) | none | **owner, proved**; one-shot `owner_nullifier`; no rotation | reachable; see the `None` footgun below |
 | `0x02` | `PayPremiumV1` | `PayPremiumV2` (2) | `TransferV1` at slot 0 (exactly one) | none in-contract; `value >= min_premium`, endowment must exist, note must be new | reachable |
-| `0x03` | `WithdrawV1` | — | `TransferV1` at 0; `FinalizeV1` at 1 when a group is installed (1 or 2 children) | role 6, or the owner public key when no group is installed | reachable; the owner path is vacuous (`OBL-C152`) |
+| `0x03` | `WithdrawV1` | `SetGovernanceConfigV2` (5) | `TransferV1` only, exactly 1 child | the ownership proof; the payee must be the owner | reachable. The group branch and role 6 retired (`OBL-C168`) — a single `requires_proof` flag cannot describe a path that carries a proof and one that must not |
 | `0x04` | `EndowmentWithdrawV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 (1 or 2 children) | role 4; refuses `Treasury` mode | reachable |
 | `0x05` | `TreasurySpendV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 (1 or 2 children) | role 5; refuses unless the mode is a treasury mode | reachable only for an endowment created in `Treasury` or `TreasuryEndowment` mode |
 | `0x07` | `ProposeClaimV1` | `ProposeClaimV2` (3) | `FinalizeV1` at slot 0 (one or more children) | role 1; endowment must carry a group; claim id must be new | reachable |
@@ -176,14 +176,15 @@ for each; the other five fall through to a default arm that returns an **encoded
 `zk_public_inputs` — not a bare `vec![]`, which the host decodes as a rejection signal and which made
 every non-ZK function uncallable for a week (`OBL-C77`).
 
-Child counts are worth stating because two of them were wrong in the same way: the three money
-endpoints accept **one or two** children — empty and above two are both refused — with the payment
-pinned to slot 0 because its validation runs before the endowment is loaded, and the approval read
-from slot 1. `endowment_withdraw_v1` and `treasury_spend_v1` each used to require *exactly* one child
-while reading the approval from slot 0, which the same function pinned to selector `0x04` — so the
-governance path could not be built by any caller (`OBL-C154`). `propose_claim`, `vote_claim` and
+Child counts are worth stating because two of them were wrong in the same way. `endowment_withdraw_v1`
+and `treasury_spend_v1` accept **one or two** children — empty and above two are both refused — with
+the payment pinned to slot 0 because its validation runs before the endowment is loaded, and the
+approval read from slot 1. Each used to require *exactly* one child while reading the approval from
+slot 0, which the same function pinned to selector `0x04`, so the governance path could not be built by
+any caller (`OBL-C154`). `withdraw_v1` now takes **exactly one** child — the payment — because its
+authority is its own proof rather than an approval child (`OBL-C168`). `propose_claim`, `vote_claim` and
 `cancel_claim` enforce no child count at all: they require at least one child and read the approval at
-slot 0, so extra children ride along unvalidated.
+slot 0, so extra children ride along unvalidated (`OBL-C165`).
 
 ## The claim lifecycle
 
@@ -313,7 +314,7 @@ one `db_set` and no reader, and no merkle root was ever written at all.
 | Double vote | `vote_nullifier` derived in-contract, checked in exec, spent in apply |
 | Value movement | The `promissory_note::TransferV1` child, checked for target, selector and value commitment |
 | Pool balances | **Nothing in this contract** — there is no balance check and no Purse call |
-| Owner-key withdrawal (`WithdrawV1`) | **A public-key comparison, which gates nothing** (`OBL-C152`) |
+| Owner-key withdrawal (`WithdrawV1`) | The `SetGovernanceConfigV2` ownership proof, which binds the payee to knowledge of `owner_secret` (`OBL-C152`, repaired) |
 | Membership expiry | **Nothing** — `expiry` is stored and read by no gate |
 
 ## What is not implemented
@@ -365,10 +366,19 @@ These are in the code as it stands, and a caller or a reviewer should know each 
   (`Custom(57)`). The check is in `exec` and the write is in `apply`, which is why the two halves were
   not read together: `OBL-C72` forces every write in this tree into that split. **A negative control is
   owed** — the fixture's `update` rows all name a group, so nothing currently distinguishes the fix.
-- **`WithdrawV1`'s owner path compares two public values** (`OBL-C152`): with no group installed,
-  `endowment.owner_pubkey != params.recipient_pubkey` admits anyone who knows the owner's address.
-  Every other instance of this class in the contract is repaired; this one needs the same ownership
-  proof `UpdateV1` uses, which makes `WithdrawV1` a ZK endpoint and changes `WithdrawParamsV1`'s codec.
+- **`WithdrawV1`'s owner path — repaired 2026-09-27 (`OBL-C152`).** It compared two public values, so
+  anyone who knew the owner's address could call it. The payee restriction meant the funds could only
+  ever reach the owner — the effect was narrower than the defect reads, and what a stranger could do was
+  *trigger* the transfer, not redirect it. The endpoint now carries the `SetGovernanceConfigV2`
+  ownership proof, which binds the payee's coordinates to knowledge of `owner_secret`.
+  **Its group branch was removed rather than kept** (`OBL-C168`): one `requires_proof` declaration
+  cannot describe a path that carries a proof and one that must not, and the group's spend has two
+  better homes in `EndowmentWithdrawV1` and `TreasurySpendV1`. Role 6 retired with it.
+  **And the plan's "reuse the one-shot `owner_nullifier`" was deliberately not followed**: that value is
+  deterministic in `(owner_secret, dao_escrow_bulla)` and `UpdateV1` records it under its raw bytes, so
+  recording it here would have meant a single withdrawal permanently preventing a group from ever being
+  installed — `OBL-C161`'s shape one call later. The field is carried because the circuit publishes it
+  as an instance, and not written.
 - **`ProposeClaimV1`'s approval binds the claim id and nothing else** (`OBL-C165`). The action id is
   `claim_id`, so one group approval for `(role 1, claim_id)` authorises a proposal carrying **any**
   value and **any** recipient; whoever presents it first chooses them. This is the class `OBL-C160`
@@ -449,9 +459,12 @@ scripts/check-circuit-metadata-alignment.sh             # circuit order == metad
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
 - [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
 - [Obligation register](../arch/verification-hazop.md) — `OBL-C151` (the governance setter),
-  `OBL-C152` (vacuous authorization, one instance open), `OBL-C154` (the child-slot collision and the
-  mode), `OBL-C156` (the endowment bulla, four ways), `OBL-C158` (the duplicate guard's key),
-  `OBL-C159` and `OBL-C160` (the claim lifecycle's terminal state and the approval's message)
+  `OBL-C152` (vacuous authorization, all five instances repaired), `OBL-C154` (the child-slot collision
+  and the mode), `OBL-C156` (the endowment bulla, four ways), `OBL-C158` (the duplicate guard's key),
+  `OBL-C159` and `OBL-C160` (the claim lifecycle's terminal state and the approval's message),
+  `OBL-C161` (a no-op that spent the owner's only proof), `OBL-C162` (29 error variants nothing
+  constructed), `OBL-C163`–`OBL-C167` (the refusals, gates and inert fields the removal exposed),
+  `OBL-C168` (the one-shot credential two actions would have shared)
 - [MultiSig Contract](multisig.md) — `CreateGroupV1`, `SignV1`, `FinalizeV1`
 - [Promissory Note](promissory_note.md) — the value carrier every money endpoint moves
 - [Composability](composability.md) — the cross-contract child call mechanism

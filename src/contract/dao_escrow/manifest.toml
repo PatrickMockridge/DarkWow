@@ -23,9 +23,15 @@ code = 2
 requires_proof = true
 proof_circuit = "PayPremiumV2"
 
+# `withdraw` is the **owner's** path and carries the ownership proof. It declares the circuit for the
+# same reason `update` does: the owner's authorisation *is* the `SetGovernanceConfigV2` proof, so a
+# wallet that built this call without one would build a call the contract refuses. The group's spend is
+# `endowment_withdraw`/`treasury_spend`, not this — those are the endpoints with an approval child.
 [[functions]]
 name = "withdraw"
 code = 3
+requires_proof = true
+proof_circuit = "SetGovernanceConfigV2"
 
 [[functions]]
 name = "endowment_withdraw"

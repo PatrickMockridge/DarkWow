@@ -379,22 +379,30 @@ fn test_pay_premium_update_round_trip() {
     assert_eq!(decoded.endowment_bytes, update.endowment_bytes);
 }
 
-/// `WithdrawV1` carries the owner's amount and payee and nothing else. `capability_proof` used to ride
-/// here as a path selector nothing read.
+/// `WithdrawV1` carries the owner's amount, the payee and the proof's nullifier. The payee is required
+/// to be the owner, so the published coordinates the circuit binds are the owner's.
 #[test]
 fn test_withdraw_params_round_trip() {
     let params = WithdrawParamsV1 {
         dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(1)),
         value: 500,
         recipient_pubkey: make_pubkey(1),
+        owner_nullifier: pallas::Base::from(4242u64),
     };
 
     let encoded = params.encode();
-    assert_eq!(encoded.len(), 72);
+    assert_eq!(encoded.len(), 104, "32 + 8 + 32 + 32");
     let decoded = WithdrawParamsV1::decode(&encoded).unwrap();
     assert_eq!(decoded.dao_escrow_bulla, params.dao_escrow_bulla);
     assert_eq!(decoded.value, params.value);
     assert_eq!(decoded.recipient_pubkey, params.recipient_pubkey);
+    // The nullifier is the value the metadata arm publishes as the circuit's third instance, so a
+    // codec that dropped it would make every withdrawal proof unsatisfiable.
+    assert_eq!(decoded.owner_nullifier, params.owner_nullifier);
+
+    let mut longer = encoded.clone();
+    longer.push(0u8);
+    assert!(WithdrawParamsV1::decode(&longer).is_err());
 }
 
 #[test]
