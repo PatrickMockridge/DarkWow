@@ -246,9 +246,15 @@ measured form of each.
 
 The contract's heavyweight integration test is
 `bin/dwowd/src/tests/heavyweight_pipeline.rs::test_heavyweight_dao_escrow`, run through
-`bin/dwowd/src/tests/heavyweight.sh --dao-escrow`. It is green as of commit `3530120dab`:
-`1 passed; 0 failed`, 397.63s. It exercises the owner setter, the six governance-gated endpoints covered
-by the fixture, and eight negative controls.
+`bin/dwowd/src/tests/heavyweight.sh --dao-escrow`. It is green, re-measured on the current tree:
+`1 passed; 0 failed`, 412.71s. It exercises the owner setter, the governance-gated endpoints the fixture
+covers, and eight negative controls. The contract compiles without warnings.
+
+**Six endpoints are still asserted only as "rejected"** — the fixture carries a bare `Rejection` for
+`EndowmentWithdrawV1`, `TreasurySpendV1`, `ExecuteClaimV1`, `RegisterCapabilityRequirementV1`,
+`CancelClaimV1` and `VerifyMemberCapabilityV1`, with a comment saying the expected failure is not
+established. That gap is why the two colliding child-slot checks below survived a green run: no row ever
+built the call. Building those rows is the largest outstanding verification gap in this contract.
 
 Two gates in the tree read this contract specifically:
 
