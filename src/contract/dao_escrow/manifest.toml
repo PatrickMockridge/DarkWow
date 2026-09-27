@@ -14,6 +14,8 @@ proof_circuit = "InitV2"
 [[functions]]
 name = "update"
 code = 1
+requires_proof = true
+proof_circuit = "SetGovernanceConfigV2"
 
 [[functions]]
 name = "pay_premium"
@@ -73,11 +75,13 @@ proof_circuit = "ResolveDisputeV2"
 name = "cancel_claim"
 code = 13
 
+# Retired: a deliberate no-op (entrypoint.rs `SetGovernanceConfigV1` arm). It publishes no circuit
+# instances and has no metadata arm, so declaring a proof requirement here told a wallet to build a
+# proof for a call that does nothing — while `update` (0x01), which *is* the `SetGovernanceConfigV2`
+# caller, declared none. Both halves are corrected above (OBL-C154).
 [[functions]]
 name = "set_governance_config"
 code = 14
-requires_proof = true
-proof_circuit = "SetGovernanceConfigV2"
 
 [[functions]]
 name = "set_governance_active"

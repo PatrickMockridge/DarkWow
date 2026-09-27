@@ -1,624 +1,274 @@
 # DAO-Escrow Contract
 
-A flexible contract supporting three operating modes: **Escrow-Only**, **Treasury-Only**, and **Treasury+Endowment**, with **OCap-based governance** for proposal, voting, execution, and multi-oracle dispute resolution.
+A DAO-governed endowment. Members pay premiums into an endowment; claims against it are authorised by a
+**MultiSig group** the endowment's owner installs once, through a ZK-proven `UpdateV1`.
 
-## Box + Purse Composition
+> **Read this first if you are here from the older revision of this page.** That revision documented an
+> OCap/Identity governance model, a `governance_active` feature toggle, four delegated governance roles
+> exercised through `Box::TakeV1`, and Purse-backed pool balances. **None of those exist in the contract.**
+> The record that supports them was migrated to MultiSig groups and the documentation was not; what
+> follows is the code as it is, and [What is not implemented](#what-is-not-implemented) names each gap.
 
-DAO-Escrow composes with both genesis O-Cap primitives:
+## Composition
 
-- **Purse**: The DAO's treasury, pool, and endowment balances (`total_pool`,
-  `total_treasury`, `total_endowment`) are tracked in Purses rather than raw `u64`
-  fields. Premium payments call `Purse::DepositV1`. Treasury spending and endowment
-  withdrawals call `Purse::WithdrawV1`. The Purse contract handles balance integrity
-  via Pedersen commitments.
+The contract composes with genesis primitives through **child calls it validates**, not through storage it
+shares:
 
-- **Box**: Four governance roles — member_vote, board_treasury, board_endowment,
-  and dispute_arbitrator — are delegated via Boxes. The DAO creates a Box per role
-  per member. Exercising a role calls `Box::TakeV1` to consume the capability.
-  The Box contract handles nullifier replay internally.
+- **`promissory_note::TransferV1` (0x04)** — every value-moving endpoint requires one as a child and
+  checks the child's target contract id, its function selector, and that one of its outputs commits to
+  `poseidon_hash(value, dao_escrow_bulla)`. The transfer *is* the money movement; this contract's apply
+  only rewrites the endowment record.
+- **`multisig::FinalizeV1` (0x03)** — the governance approval (see
+  [Governance](#governance-the-multisig-group)).
+- **`identity::VerifyCapabilityV1` (0x0b)** — required by `VerifyMemberCapabilityV1` only, and its routing
+  check is **skipped** while `identity_cid` is the zero placeholder `init_contract` seeds.
+- **DrainProtection** — an association, not a call: `drain_protection_enabled` and
+  `drain_protection_bulla` are two fields on the record. The contract never addresses the DrainProtection
+  contract.
 
-See [Purse](purse.md) and [Box](box.md) for the genesis primitives.
+The `Purse::DepositV1`/`WithdrawV1` and `Box::TakeV1` composition the older revision described is **not
+implemented** — see [What is not implemented](#what-is-not-implemented).
 
-## Three Operating Modes
+## Governance: the MultiSig group
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              DAO-Escrow Modes                                 │
+│  DAO-Escrow governance                                                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  MODE_ESCROW (0x00) ────────────────────────────────────────────────────── │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  Escrow-Only (Pure Insurance Pool)                                   │    │
-│  │                                                                       │    │
-│  │  Members ──pay premiums──► Endowment Pool                             │    │
-│  │                                    │                                 │    │
-│  │                                    │ DAO votes                      │    │
-│  │                                    ▼                                 │    │
-│  │                            Claims paid out                           │    │
-│  │                                                                       │    │
-│  │  No treasury. No operational costs. Pure mutual insurance.          │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                              │
-│  MODE_TREASURY (0x01) ───────────────────────────────────────────────────── │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  Treasury-Only (Same as DarkWow DAO)                                  │    │
-│  │                                                                       │    │
-│  │  Members ──pay fees──► Treasury Pool                                 │    │
-│  │                                  │                                   │    │
-│  │                    ┌─────────────┼─────────────┐                    │    │
-│  │                    │   Propose   │   Vote     │   Exec              │    │
-│  │                    └─────────────┴─────────────┘                    │    │
-│  │                                  │                                   │    │
-│  │                                  ▼                                   │    │
-│  │                          Treasury spent                              │    │
-│  │                                                                       │    │
-│  │  Grants, development, operational costs. No insurance.               │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                              │
-│  MODE_TREASURY_ENDOWMENT (0x02) ────────────────────────────────────────── │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  Treasury + Endowment (Full-Featured)                                │    │
-│  │                                                                       │    │
-│  │  Members ──pay premiums──► ┌──────────┬──────────┐                 │    │
-│  │                            │          │          │                     │    │
-│  │              treasury_share %          % endowment_share                 │    │
-│  │                            │          │          │                     │    │
-│  │                            ▼          ▼          │                     │    │
-│  │                      Treasury      Endowment      │                     │    │
-│  │                         │             │          │                     │    │
-│  │                         │             │ DAO vote │                     │    │
-│  │                         ▼             ▼          │                     │    │
-│  │                    Operational    Claims/          │                     │    │
-│  │                    (grants etc)  Refunds          │                     │    │
-│  │                                                                       │    │
-│  │  Best of both: DAO-funded operations + insurance backing.           │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
+│  OFF-CHAIN: the members' group is created in the MultiSig contract           │
+│     CreateGroupV1 (0x01) → group_id                                          │
+│              │                                                               │
+│              ▼                                                               │
+│  ONCE, BY THE OWNER: UpdateV1 (0x01)                                         │
+│     ┌──────────────────────────────────────────────────────────────┐         │
+│     │  ZK: SetGovernanceConfigV2                                   │         │
+│     │    owner_pub = ec_mul_base(owner_secret, NULLIFIER_K)        │         │
+│     │    constrain_instance(owner_pub_x, owner_pub_y)              │         │
+│     │    owner_nullifier = poseidon_hash(1, ox, oy,                │         │
+│     │                                   owner_secret, bulla)       │         │
+│     │    constrain_instance(owner_nullifier)                       │         │
+│     └──────────────────────────────────────────────────────────────┘         │
+│     exec compares the proven coordinates to the record's owner,              │
+│     records owner_nullifier (replay is refused), and writes the group id     │
+│     into a field that was zero. A record that already has a group is         │
+│     refused: THERE IS NO ROTATION.                                           │
+│              │                                                               │
+│              ▼                                                               │
+│  PER ACTION: a child multisig::FinalizeV1 (0x03) whose decoded               │
+│     group_id == endowment.multisig_group_id                                  │
+│     message_hash == governance_message(role, action_id)                      │
+│              │                                                               │
+│              ▼                                                               │
+│  six gated endpoints (roles 1-6)                                             │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Mode Comparison
+**The owner is proved, not asserted.** `UpdateV1` carries a ZK proof: the exposed owner coordinates are
+bound to knowledge of `owner_secret`, and `owner_nullifier` is derived deterministically in
+`(owner_secret, dao_escrow_bulla)` so it can only be used once. A plaintext comparison of public keys —
+which is what `WithdrawV1`'s owner path still does — would gate nothing, because a public key is published
+in order to receive funds.
 
-| Feature | MODE_ESCROW | MODE_TREASURY | MODE_TREASURY_ENDOWMENT |
-|---------|-------------|---------------|------------------------|
-| Membership notes | ✅ | ❌ | ✅ |
-| Endowment pool | ✅ | ❌ | ✅ |
-| Treasury pool | ❌ | ✅ | ✅ |
-| DAO governance | ✅ | ✅ | ✅ |
-| OCap governance | ✅ | ✅ | ✅ |
-| Insurance payouts | ✅ | ❌ | ✅ |
-| Operational funding | ❌ | ✅ | ✅ |
-| Fee split | N/A | N/A | ✅ (configurable) |
+**No rotation.** Once a group is installed there is no path back to owner-key control and no path to a
+different group: an `UpdateV1` against a record that already carries a group is refused
+(`GovernanceAlreadyActive`). This is a design decision, and it is the opposite of what the older revision
+claimed.
+
+### The approval's message is role-tagged
+
+```rust
+governance_message(role: u8, action_id: pallas::Base) -> pallas::Base
+    = poseidon_hash([DOMAIN_GOVERNANCE_APPROVAL = 11, role, action_id])
+```
+
+| role | endpoint | action id |
+|------|----------|-----------|
+| 1 | `ProposeClaimV1` (0x07) | `claim_id` |
+| 2 | `VoteClaimV1` (0x08) | `claim_id` |
+| 3 | `ResolveDisputeV1` (0x0c) | the contract's own `dispute_id` derivation |
+| 4 | `EndowmentWithdrawV1` (0x04) | `(bulla, value, recipient_x)` |
+| 5 | `TreasurySpendV1` (0x05) | `(bulla, value, recipient_x)` |
+| 6 | `WithdrawV1` (0x03) | `(bulla, value, recipient_x)` |
+
+Two properties are structural rather than stylistic:
+
+- **The role tag stops approval reuse.** A MultiSig approval is spend-once — its nullifier is
+  `H(1, member_secret, group_id, message_hash)`, consumed by `FinalizeV1`. `propose_claim` and `vote_claim`
+  both key on `claim_id`, so without the role tag a vote's approval would re-use the proposal's.
+- **The three money endpoints use a triple, not an id.** Their governance branch is reached exactly when
+  `proposal_id == 0`, so an id-based message would be zero for every call and one approval of zero would
+  authorise every withdrawal from that endowment forever. The action id is refused if zero.
 
 ## Entrypoints
 
-### Core Functions (0x00-0x06)
+| Opcode | Function | ZK circuit | Child calls | Authorization |
+|--------|----------|-----------|-------------|---------------|
+| `0x00` | `InitializeV1` | `InitV2` (4) | none | none; a duplicate bulla is refused |
+| `0x01` | `UpdateV1` | `SetGovernanceConfigV2` (5) | none | **owner, proved**; one-shot `owner_nullifier` |
+| `0x02` | `PayPremiumV1` | `PayPremiumV2` (2) | `TransferV1` at slot 0 | none in-contract |
+| `0x03` | `WithdrawV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 when governance active | owner pubkey, or role 6 |
+| `0x04` | `EndowmentWithdrawV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 when governance active | role 4, or an `Approved` proposal |
+| `0x05` | `TreasurySpendV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 | role 5, behind a mode gate that cannot pass |
+| `0x06` | `EnableDrainProtectionV1` | — | none | **none — any caller may set the association** |
+| `0x07` | `ProposeClaimV1` | `ProposeClaimV2` (3) | `FinalizeV1` at 0 | role 1 |
+| `0x08` | `VoteClaimV1` | `VoteClaimV2` (3) | `FinalizeV1` at 0 | role 2 |
+| `0x09` | `ExecuteClaimV1` | — | `TransferV1` at 0 | proposal must be `Approved` |
+| `0x0a` | `RegisterCapabilityRequirementV1` | — | none | **none — any caller** |
+| `0x0b` | `VerifyMemberCapabilityV1` | `VerifyMemberCapabilityV2` (3) | `VerifyCapabilityV1` (0x0b) | the proof; the routing check is skipped while `identity_cid` is zero |
+| `0x0c` | `ResolveDisputeV1` | `ResolveDisputeV2` (3) | `FinalizeV1` at 0 | role 3 |
+| `0x0d` | `CancelClaimV1` | — | none | proposer pubkey equality |
+| `0x0e` | `SetGovernanceConfigV1` | — | — | **retired no-op** |
+| `0x0f` | `SetGovernanceActiveV1` | — | — | **retired no-op** |
+| `0x10` | `DeactivateCapabilityRequirementV1` | — | none | **none — any caller** |
 
-| Function | Opcode | Description |
-|----------|--------|-------------|
-| `InitializeV1` | `0x00` | Create new DAO-Escrow (mode selected) |
-| `UpdateV1` | `0x01` | Update parameters |
-| `PayPremiumV1` | `0x02` | Pay premium, get membership note |
-| `WithdrawV1` | `0x03` | Withdraw with capability-gated authorization |
-| `EndowmentWithdrawV1` | `0x04` | Endowment withdrawal (capability or proposal) |
-| `TreasurySpendV1` | `0x05` | Treasury spending (capability or proposal) |
-| `EnableDrainProtectionV1` | `0x06` | Enable DrainProtection on existing DAO-Escrow |
+`(n)` after a circuit is its `constrain_instance` count, which is what the metadata arm must publish.
 
-### OCap Governance Functions (0x07-0x10)
+Every endpoint whose metadata arm is absent from `get_metadata` must return an **encoded** empty
+`zk_public_inputs` — not a bare `vec![]`, which the host decodes as a rejection signal and which made
+every non-ZK function uncallable for a week (`OBL-C77`).
 
-| Function | Opcode | Capability Required | Description |
-|----------|--------|--------------------|-------------|
-| `ProposeClaimV1` | `0x07` | `member_vote` | Propose claim (endowment/treasury/dispute) |
-| `VoteClaimV1` | `0x08` | `member_vote` | Vote on pending proposal |
-| `ExecuteClaimV1` | `0x09` | None (quorum is authority) | Execute approved proposal |
-| `RegisterCapabilityRequirementV1` | `0x0a` | `board_treasury` | Map role to Identity contract capability |
-| `VerifyMemberCapabilityV1` | `0x0b` | None (this IS verification) | Verify holder possesses a capability |
-| `ResolveDisputeV1` | `0x0c` | `dispute_arbitrator` | Multi-oracle dispute resolution |
-| `CancelClaimV1` | `0x0d` | Proposer identity match | Cancel pending claim |
-| `SetGovernanceConfigV1` | `0x0e` | `board_treasury` | Update governance configuration |
-| `SetGovernanceActiveV1` | `0x0f` | `board_treasury` | Activate or deactivate governance |
-| `DeactivateCapabilityRequirementV1` | `0x10` | `board_treasury` | Remove a capability requirement |
+## Claims
 
-## OCap Governance Model
+`ProposeClaimV1` writes a `Proposal` in `ProposalState::Pending`, with a voting window and an execution
+deadline. `VoteClaimV1` increments one tally, refuses a second vote from the same nullifier, and expires
+the proposal automatically when the window has closed. `ExecuteClaimV1` requires a `TransferV1` child and
+checks that the proposal is `Approved` and matches the `(bulla, value, recipient)` of the call.
 
-DAO-Escrow uses **capability-based governance** via cross-contract verification with the [Identity contract](../../../src/contract/identity/README.md). Authority is proven ("I hold capability X") rather than asserted ("I am user Y").
+**Nothing in the contract writes `ProposalState::Approved`.** The only occurrence of that variant outside
+the enum's definition is the read in `verify_proposal_approved`, so `ExecuteClaimV1` and the
+`proposal_id` path of the three money endpoints are unreachable as the contract stands — recorded as
+`OBL-C154`.
 
-### Capability Types
+`CancelClaimV1` requires `proposal.state == Pending` and compares `proposal.proposer_pubkey` to
+`params.proposer_pubkey`. Both are public values, so the comparison admits any caller who knows the
+proposer's key (`OBL-C152`).
 
-| Capability | Issued By | Purpose |
-|-----------|-----------|---------|
-| `member_vote` | Identity contract | Basic voting on proposals |
-| `board_treasury` | Identity contract | Treasury release control |
-| `board_endowment` | Identity contract | Endowment release control |
-| `dispute_arbitrator` | Identity contract | Dispute resolution via oracle attestation |
+## Dispute resolution
 
-### Governance Lifecycle
-
-```
-1. Identity contract issues capabilities to holders
-2. dao_escrow registers capability requirements (0x0a)
-3. Member proposes claim with member_vote capability proof (0x07)
-4. Members vote with member_vote capability proof (0x08)
-5. When quorum + approval ratio met → execute claim (0x09)
-6. Disputes resolved by arbitrator with multi-oracle attestation (0x0c)
-```
-
-### Backward Compatibility
-
-A `governance_active: bool` flag acts as a feature toggle:
-- **`false`** (default): Capability checks bypassed, existing owner-pubkey behavior preserved
-- **`true`**: Capability proofs mandatory for all protected operations
-
-### Access Control Comparison
-
-| Action | Governance Inactive | Governance Active |
-|--------|--------------------|--------------------|
-| Withdraw | Owner pubkey | `board_treasury` capability |
-| Endowment withdraw | Open (any caller) | `board_endowment` capability or approved proposal |
-| Treasury spend | Open (any caller) | `board_treasury` capability or approved proposal |
-| Propose claim | Open | `member_vote` capability + ZK proof |
-| Vote | Open | `member_vote` capability + ZK proof |
-| Dispute resolution | N/A | `dispute_arbitrator` capability + multi-oracle attestation |
-
-## Dispute Resolution Flow
-
-Disputes are resolved via multi-oracle attestation with an arbitrator. Labor Market disputes escalate here via a child call to `ProposeClaimV1 (0x07)`:
+`ResolveDisputeV1` (0x0c) is the arbitrator path:
 
 ```
-1. Off-chain event → Oracle(s) push values (Oracle::PushValueV1)
-2. Oracle(s) create attestations (Attestation::CreateAttestationV1)
-3. Labor Market escalates dispute:
-   labor_market::DisputeV1 (0x05) → dao_escrow::ProposeClaimV1 (0x07) [child call]
-4. DAO members vote: ProposeClaimV1 (0x07) + VoteClaimV1 (0x08)
-5. Arbitrator calls ResolveDisputeV1 (0x0c) with:
-   - Multiple oracle attestation references
-   - dispute_arbitrator capability proof (ZK)
-   - Payout amount + recipient
-6. Contract verifies:
-   a. Multi-oracle threshold met (e.g., 3/5 oracles attested)
-   b. Each oracle attestation validated via Attestation::VerifyClaimV1 (0x04) [child call]
-   c. Consumes attestations to prevent replay
-   d. Transfers funds via promissory_note::TransferV1 (0x04) [child call]
-7. Anti-replay: db_contains_key(disputes_db, dispute_id) check prevents double-resolution
+1. Oracles push values off-chain-sourced (oracle::PushValueV1) and attest (attestation::CreateAttestationV1)
+2. An arbitrator calls ResolveDisputeV1 with a list of attestation ids, a payout and a recipient
+3. The contract:
+   a. requires a FinalizeV1 approval over role 3 and the derived dispute_id
+   b. consumes the named attestation ids in the nullifiers tree
+   c. carries the resolution record to apply
+4. dispute_id = poseidon_hash(proposal_id, attestation_count, payout_recipient_x)
 ```
 
-### ResolveDisputeV1 Anti-Replay Protection
+The `dispute_id` is the contract's own derivation from the call's own contents — not a caller-supplied id —
+so the approval and the anti-replay key cannot be chosen independently of the call. The child count is a
+**minimum**, not an exact match: the contract's apply validates no attestation child itself, so the
+attestation verification this endpoint's comment describes is not, today, performed here.
 
-`resolve_dispute_apply_v1` checks `db_contains_key(disputes_db, dispute_id)` before storing a resolution record. The `dispute_id` is derived as `poseidon_hash(proposal_id, attestation_count, payout_recipient)` — unique per resolution attempt. This prevents the same dispute from being resolved twice, even if multiple arbitrators attempt to process it.
+## ZK circuits
 
-### Cross-Contract Child Calls
+| Circuit | `constrain_instance` order |
+|---------|---------------------------|
+| `init.zk` (`InitV2`) | `dao_bulla`, `tx_binding`, `tx_nonce`, `endowment_bulla` |
+| `pay_premium.zk` (`PayPremiumV2`) | `tx_binding`, `tx_nonce` |
+| `propose_claim.zk` (`ProposeClaimV2`) | `tx_binding`, `tx_nonce`, `claim_commit` |
+| `vote_claim.zk` (`VoteClaimV2`) | `tx_binding`, `tx_nonce`, `vote_nullifier` |
+| `verify_member_capability.zk` (`VerifyMemberCapabilityV2`) | `tx_binding`, `tx_nonce`, `capability_commit` |
+| `resolve_dispute.zk` (`ResolveDisputeV2`) | `tx_binding`, `tx_nonce`, `resolution_commit` |
+| `set_governance_config.zk` (`SetGovernanceConfigV2`) | `owner_pub_x`, `owner_pub_y`, `owner_nullifier`, `tx_binding`, `tx_nonce` |
 
-DAO-Escrow uses cross-contract child calls for capability verification, payment, and attestation validation. For the complete mechanism, see [Composability](composability.md).
+All seven are compiled and their `.zk.bin` files are committed. The order above is the order the metadata
+arm publishes and the order the client's `to_vec` commits to; all three must agree, and
+`scripts/check-circuit-metadata-alignment.sh` is the instrument that compares them.
 
-**VerifyMemberCapabilityV1 (0x0b → Identity 0x0b):**
+`SetGovernanceConfigV2` is called by **`UpdateV1` (0x01)**. `manifest.toml` declares it there; the retired
+`SetGovernanceConfigV1` (0x0e) declares no proof, because it does nothing.
 
-`VerifyMemberCapabilityV1` validates a child call to `Identity::VerifyCapabilityV1 (0x0b)`. This is a double-check pattern: the ZK proof in params proves the capability, and the child call provides on-chain verification that the Identity contract recognizes the capability as non-revoked. The child call must be the first child in the DarkTree; if absent or using the wrong function code, the call fails with `InvalidChildCall`.
+## Database trees
 
-**PayPremiumV1 (0x02 → promissory_note 0x04):**
+| Tree | Written by | Read by |
+|------|-----------|---------|
+| `info` | `init_contract` (version, contract ids) | the child-call routing checks, `UpdateV1` |
+| `bullas` | `initialize_apply_v1` (non-empty marker) | `initialize_v1`'s duplicate guard |
+| `endowment` | every state-writing endpoint | every endpoint that loads the record |
+| `membership` | `pay_premium_apply_v1` | `pay_premium_v1`'s duplicate guard |
+| `proposals` | `propose`/`vote`/`execute`/`cancel` apply | the same endpoints' exec |
+| `votes` | — | — |
+| `capability_requirements` | `register`/`deactivate` apply | `deactivate` exec |
+| `disputes` | `resolve_dispute_apply_v1` | its anti-replay guard |
+| `nullifiers` | `update`/`vote`/`resolve_dispute`/`cancel` apply | `update`'s reuse check, `vote`'s double-vote check |
+| `governance` | — | — |
 
-`PayPremiumV1` validates a child call to `promissory_note::TransferV1 (0x04)` for the premium payment.
+`votes` and `governance` are declared in `manifest.toml` and in `lib.rs` but are not touched by any code
+path.
 
-**ResolveDisputeV1 (0x0c → Attestation + promissory_note):**
+## Trust model
 
-`ResolveDisputeV1` expects multiple child calls: one or more `Attestation::VerifyClaimV1 (0x04)` calls for oracle attestations, plus a `promissory_note::TransferV1 (0x04)` for the payout. It validates `!children_indexes.is_empty()` rather than checking for a specific count, since the number of oracle attestations varies per dispute.
+| Aspect | What actually protects it |
+|--------|--------------------------|
+| Owner-only state change | A ZK ownership proof, one-shot per `(owner_secret, bulla)` |
+| Governance | A MultiSig group's threshold, enforced by `FinalizeV1` in the child — not re-counted here |
+| Approval reuse | Role-tagged message + the approval's own spend-once nullifier |
+| Double vote | `vote_nullifier` recorded in the nullifiers tree, checked in exec |
+| Dispute replay | `dispute_id` derived from the call, recorded in the disputes tree |
+| Value movement | The `promissory_note::TransferV1` child, checked for target, selector and value commitment |
+| Treasury / endowment balances | **Nothing in this contract** — see below |
+| Owner-key withdrawal (`WithdrawV1`) | **A public-key comparison, which gates nothing** (`OBL-C152`) |
 
-## Case Study: Community Insurance Fund
+## DrainProtection
 
-A walkthrough of setting up and operating a community insurance fund using dao_escrow in `MODE_TREASURY_ENDOWMENT` — the full-featured mode that demonstrates the complete governance lifecycle.
+The contract can record an association with a DrainProtection instance: `EnableDrainProtectionV1` (0x06)
+sets `drain_protection_enabled = true` and `drain_protection_bulla`. It does **not** call the
+DrainProtection contract, and it does **not** check who is calling — the association is unauthenticated
+today.
 
-### Setup Phase
+## What is not implemented
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    SETUP: Identity + DAO-Escrow Initialization                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  1. IDENTITY CONTRACT DEPLOYMENT                                             │
-│     │                                                                        │
-│     │  RegisterCapabilityV1("member_vote")                                  │
-│     │  RegisterCapabilityV1("board_treasury")                               │
-│     │  RegisterCapabilityV1("board_endowment")                              │
-│     │  RegisterCapabilityV1("dispute_arbitrator")                           │
-│     │                                                                        │
-│     │  IssueCapabilityV1(bob, "board_treasury")                             │
-│     │    bob proves: credential.trustee, stake >= threshold                 │
-│     │  IssueCapabilityV1(alice, "member_vote")                              │
-│     │    alice proves: credential.member, premium paid                      │
-│     │  ... repeat for all members ...                                       │
-│     │                                                                        │
-│     ▼                                                                        │
-│  2. DAO-ESCROW INITIALIZATION                                                │
-│     │                                                                        │
-│     │  InitializeV1({                                                       │
-│     │    mode: MODE_TREASURY_ENDOWMENT,                                     │
-│     │    treasury_share: 70,                                                │
-│     │    endowment_share: 30,                                               │
-│     │    governance_config: Some(GovernanceConfig {                        │
-│     │      quorum_pct: 50,                                                  │
-│     │      approval_ratio_pct: 60,                                         │
-│     │      voting_window_blocks: 10080,   // ~7 days                       │
-│     │      execution_window_blocks: 1440,  // ~1 day                       │
-│     │      max_claim_ratio_pct: 80,                                        │
-│     │      oracle_threshold: (3, 5),       // 3 of 5 oracles               │
-│     │      governance_active: true,                                         │
-│     │    }),                                                                │
-│     │  })                                                                   │
-│     │                                                                        │
-│     │  SetGovernanceConfigV1({                                              │
-│     │    capability_proof: ZK(VerifyCapability("board_treasury")),         │
-│     │    // registers capability-to-role mappings                           │
-│     │  })                                                                   │
-│     │                                                                        │
-│     ▼                                                                        │
-│  RESULT: DAO-Escrow active with OCap governance. Members hold capabilities, │
-│          treasury and endowment pools are empty, waiting for premiums.       │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+Each item is a gap between what a reader would infer and what the code does. The register carries the
+measured form of each.
 
-### Premium Payment Phase
+- **The three operating modes.** `DaoEscrowMode` has three variants and the record stores one, but
+  `InitializeParamsV1` carries no mode field and `initialize_apply_v1` writes `DaoEscrowMode::Escrow` as a
+  constant. No caller can choose a mode, and `TreasurySpendV1`'s gate on `Treasury`/`TreasuryEndowment`
+  therefore rejects every call (`OBL-C154`).
+- **Pool and purse balances.** `pool_purse_id`, `treasury_purse_id` and `endowment_purse_id` are written
+  zero, never read, and there is no `Purse::DepositV1` or `Purse::WithdrawV1` call anywhere.
+- **Balance checks.** The "insufficient balance" guards in `endowment_withdraw_v1`, `treasury_spend_v1`,
+  `execute_claim_v1`, `withdraw_v1` and `resolve_dispute_v1` are `if false` blocks.
+- **`ProposalState::Approved`.** No code path writes it, so the proposal lifecycle has no successful exit.
+- **OCap / Identity governance.** Capability requirements can be registered (`0x0a`) and deactivated
+  (`0x10`) by anyone, in a table that no governance path reads.
+- **`member_count`.** `PayPremiumV1` increments the record's count in exec and carries the whole record;
+  the update's own `member_count` field has no reader.
+- **DrainProtection enforcement.** An association only; the contract does not participate in rate limiting
+  or exit queues.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    PHASE 1: Members Pay Premiums                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  MEMBER (alice)                                                              │
-│     │                                                                        │
-│     │  PayPremiumV1({                                                        │
-│     │    dao_escrow_bulla,                                                  │
-│     │    value: 1000,                                                        │
-│     │    asset_id: DRK,                                                     │
-│     │    membership_blind,                                                   │
-│     │  })                                                                    │
-│     │                                                                        │
-│     │  ZK proof verifies: member knows secret key, commitment valid        │
-│     │                                                                        │
-│     ▼                                                                        │
-│  ┌──────────────────────────────────────────────────────────────┐           │
-│  │                        Premium Payment (1000)                  │           │
-│  └──────────────────────────────────────────────────────────────┘           │
-│                              │                                               │
-│              ┌───────────────┴───────────────┐                              │
-│              │                               │                               │
-│    treasury_share (70% = 700)     endowment_share (30% = 300)               │
-│              │                               │                               │
-│              ▼                               ▼                               │
-│    ┌─────────────────┐             ┌─────────────────┐                      │
-│    │    Treasury     │             │   Endowment     │                      │
-│    │  (operational)  │             │  (insurance)    │                      │
-│    └─────────────────┘             └─────────────────┘                      │
-│                                                                              │
-│  RESULT: Alice receives membership note (time-locked, stored in              │
-│          membership Merkle tree). Treasury: 700, Endowment: 300.             │
-│          Membership note proves Alice is a member WITHOUT revealing          │
-│          her identity, contribution amount, or membership tier.              │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+## Build and test
 
-### Governance: Propose → Vote → Execute
+The contract's heavyweight integration test is
+`bin/dwowd/src/tests/heavyweight_pipeline.rs::test_heavyweight_dao_escrow`, run through
+`bin/dwowd/src/tests/heavyweight.sh --dao-escrow`. It is green as of commit `3530120dab`:
+`1 passed; 0 failed`, 397.63s. It exercises the owner setter, the six governance-gated endpoints covered
+by the fixture, and eight negative controls.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    PHASE 2: Propose, Vote, Execute a Claim                    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  MEMBER (alice)                                                              │
-│     │                                                                        │
-│     │  ProposeClaimV1({                                                      │
-│     │    dao_escrow_bulla,                                                  │
-│     │    claim_type: ClaimType::Endowment,                                  │
-│     │    recipient: flood_victim_pubkey,                                    │
-│     │    value: 200,                                                         │
-│     │    capability_proof: ZK(VerifyCapability("member_vote")),             │
-│     │  })                                                                    │
-│     │                                                                        │
-│     │  ZK proof verifies:                                                   │
-│     │    ✓ Alice holds valid member_vote capability                         │
-│     │    ✓ Capability was issued by trusted Identity contract               │
-│     │    ✓ Capability has not expired                                       │
-│     │    ✓ Proposal nullifier = H(capability_secret, proposal_id)           │
-│     │      → prevents double-propose                                        │
-│     │    ✗ Alice's identity NEVER revealed                                  │
-│     │                                                                        │
-│     ▼                                                                        │
-│  ┌──────────────────────────────────────────────────────────────┐           │
-│  │  Proposal #7: "Flood relief payout 200 DRK"                   │           │
-│  │  State: Pending    │  Proposer: <hidden>                      │           │
-│  │  Voting window: blocks 50000-60080                           │           │
-│  └──────────────────────────────────────────────────────────────┘           │
-│                              │                                               │
-│                              ▼                                               │
-│  MEMBERS (bob, carol, dave, ...)                                             │
-│     │                                                                        │
-│     │  VoteClaimV1({                                                         │
-│     │    proposal_id: 7,                                                     │
-│     │    vote_type: VoteType::Approve,                                      │
-│     │    capability_proof: ZK(VerifyCapability("member_vote")),             │
-│     │  })                                                                    │
-│     │                                                                        │
-│     │  ZK proof verifies:                                                   │
-│     │    ✓ Voter holds member_vote capability                               │
-│     │    ✓ Vote nullifier = H(capability_secret, proposal_id)               │
-│     │      → prevents double-vote on same proposal                          │
-│     │    ✗ Vote direction hidden from other voters (only final tally)       │
-│     │                                                                        │
-│     ▼                                                                        │
-│  ┌──────────────────────────────────────────────────────────────┐           │
-│  │  Votes: 42 Approve / 12 Reject / 6 Abstain                    │           │
-│  │  Quorum: 60% ✓ (50% required)                                 │           │
-│  │  Approval: 78% ✓ (60% required)                               │           │
-│  │  → Proposal APPROVED                                           │           │
-│  └──────────────────────────────────────────────────────────────┘           │
-│                              │                                               │
-│                              ▼                                               │
-│  ANY MEMBER                                                                  │
-│     │                                                                        │
-│     │  ExecuteClaimV1({                                                      │
-│     │    proposal_id: 7,                                                     │
-│     │  })                                                                    │
-│     │                                                                        │
-│     │  Contract verifies:                                                    │
-│     │    ✓ Proposal state is Approved                                       │
-│     │    ✓ Execution window has not expired                                  │
-│     │    ✓ Claim value (200) ≤ max_claim_ratio (80% of 300 = 240)          │
-│     │                                                                        │
-│     │  → promissory_note::transfer_v1(endowment → flood_victim, 200)              │
-│     │                                                                        │
-│     ▼                                                                        │
-│  RESULT: 200 DRK transferred from endowment to flood victim.                 │
-│          Proposal #7 marked Executed. Endowment balance: 100.                │
-│          No identity revealed at any step.                                    │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+Two gates in the tree read this contract specifically:
 
-### Dispute Resolution
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    PHASE 3: Multi-Oracle Dispute Resolution                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  OFF-CHAIN EVENT: Flood victim disputes claim denial.                        │
-│                                                                              │
-│  ORACLES (5 independent weather/data providers)                              │
-│     │                                                                        │
-│     │  Oracle::PushValueV1(flood_depth_cm: 145)       // oracle_1           │
-│     │  Oracle::PushValueV1(flood_depth_cm: 152)       // oracle_2           │
-│     │  Oracle::PushValueV1(flood_depth_cm: 140)       // oracle_3           │
-│     │  Oracle::PushValueV1(flood_depth_cm: 0)         // oracle_4 (offline) │
-│     │  Oracle::PushValueV1(flood_depth_cm: 0)         // oracle_5 (offline) │
-│     │                                                                        │
-│     │  Attestation::CreateAttestationV1(flood_data)                          │
-│     │                                                                        │
-│     ▼                                                                        │
-│  ARBITRATOR (holds dispute_arbitrator capability)                            │
-│     │                                                                        │
-│     │  ResolveDisputeV1({                                                    │
-│     │    dao_escrow_bulla,                                                   │
-│     │    dispute_id,                                                         │
-│     │    attestations: [oracle_1_ref, oracle_2_ref, oracle_3_ref],          │
-│     │    capability_proof: ZK(VerifyCapability("dispute_arbitrator")),     │
-│     │    payout: 200,                                                        │
-│     │    recipient: flood_victim_pubkey,                                    │
-│     │  })                                                                    │
-│     │                                                                        │
-│     │  Contract verifies (in order):                                        │
-│     │    a. Identity::VerifyCapabilityV1("dispute_arbitrator") → VALID     │
-│     │    b. Attestation::VerifyClaimV1(oracle_1_ref) → VALID               │
-│     │    c. Attestation::VerifyClaimV1(oracle_2_ref) → VALID               │
-│     │    d. Attestation::VerifyClaimV1(oracle_3_ref) → VALID               │
-│     │    e. 3 valid attestations ≥ 3/5 threshold ✓                         │
-│     │    f. Consumes all 3 attestations (prevents replay)                    │
-│     │    g. promissory_note::transfer_v1(endowment → victim, 200)                 │
-│     │                                                                        │
-│     ▼                                                                        │
-│  RESULT: Dispute resolved. 3 of 5 oracles confirmed flood.                   │
-│          Attestations consumed (cannot be reused).                           │
-│          Funds transferred atomically in same transaction.                   │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Key Insights from the Case Study
-
-1. **Identity never revealed**: At every step — premium payment, proposal, voting, execution, dispute — members prove capabilities, not identity. The verifier learns "a valid member proposed this" not "Alice proposed this."
-
-2. **Authority is bounded**: Alice's `member_vote` capability lets her propose and vote — nothing more. She cannot withdraw treasury funds directly. Bob's `board_treasury` capability is separate, issued based on different credentials.
-
-3. **Nullifiers prevent every replay**: Proposal nullifier (`H(capability_secret, proposal_id)`), vote nullifier (`H(capability_secret, proposal_id)`), dispute nullifier (`H(capability_secret, dispute_id)`) — each action is exactly-once.
-
-4. **Composability is simple**: dao_escrow doesn't implement its own capability verification. It calls `Identity::VerifyCapabilityV1` as a child call. The Identity contract is the single source of truth for all authorization.
-
-5. **Multi-oracle trust model**: No single oracle can force a payout. The 3/5 threshold means the arbitrator needs attestations from a majority of independent oracles, each of whom pushed their own on-chain data.
-
-## Standard Governance Setup
-
-The dao_escrow contract ships with a **standard governance configuration** that works out-of-the-box for most use cases. Every parameter is adjustable per-deployment and gated behind specific OCap capabilities.
-
-### Default Parameters
-
-| Parameter | Default | Controlled By | Description |
-|-----------|---------|---------------|-------------|
-| `governance_active` | `false` | `board_treasury` | Feature toggle — set `true` to enable OCap governance |
-| `quorum_pct` | 50% | `board_treasury` | % of members who must vote for proposal to be valid |
-| `approval_ratio_pct` | 60% | `board_treasury` | % of votes that must be "approve" for proposal to pass |
-| `voting_window_blocks` | 10080 (~7 days) | `board_treasury` | Blocks from proposal creation to vote deadline |
-| `execution_window_blocks` | 1440 (~1 day) | `board_treasury` | Blocks after approval to execute before expiry |
-| `treasury_share` | 70% | `board_treasury` | % of premium directed to treasury pool |
-| `endowment_share` | 30% | `board_endowment` | % of premium directed to endowment pool |
-| `max_claim_ratio_pct` | 80% | `board_endowment` | Max single claim as % of endowment balance |
-| `oracle_threshold` | 3 of 5 | `board_treasury` | Min oracle attestations for dispute resolution |
-
-### Modifying Governance Parameters
-
-Parameters are modified via `SetGovernanceConfigV1`, which requires a `board_treasury` capability proof:
-
-```rust
-let (params, _) = SetGovernanceConfigV1Builder::new(dao_escrow_bulla)
-    .quorum_pct(66)                    // Require 66% quorum instead of 50%
-    .approval_ratio_pct(75)            // Require 75% approval instead of 60%
-    .voting_window_blocks(20160)       // Extend to ~14 days
-    .capability_proof(board_proof)     // ZK proof of board_treasury capability
-    .build()?;
-```
-
-### Capability Control Matrix
-
-| Action | Required Capability | Who Typically Holds It |
-|--------|--------------------|-----------------------|
-| Propose claim | `member_vote` | All premium-paying members |
-| Vote on proposal | `member_vote` | All premium-paying members |
-| Execute approved proposal | None (quorum result is authority) | Any caller |
-| Modify governance config | `board_treasury` | Elected trustees / core team |
-| Withdraw from treasury | `board_treasury` | Elected trustees |
-| Withdraw from endowment | `board_endowment` | Separate threshold (separation of powers) |
-| Resolve dispute | `dispute_arbitrator` | Independent arbitrators |
-| Change fee split | `board_endowment` | Endowment trustees |
-| Register capability requirement | `board_treasury` | Treasury trustees |
-| Cancel own proposal | Proposer identity match | Original proposer |
-
-### Migration Path: Owner-Key → OCap Governance
-
-The `governance_active` flag enables gradual migration without breaking existing deployments:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Migration Path                                 │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  PHASE 1: Deploy (governance_active = false)                     │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ Owner pubkey controls all operations.                       │ │
-│  │ Existing behavior preserved. Zero changes.                  │ │
-│  │ Members pay premiums, receive membership notes.             │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                           │                                        │
-│                           ▼                                        │
-│  PHASE 2: Bootstrap capabilities (governance_active = false)      │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ Identity contract deploys.                                  │ │
-│  │ Capabilities issued to members (member_vote).               │ │
-│  │ Capabilities issued to trustees (board_treasury,            │ │
-│  │   board_endowment).                                          │ │
-│  │ Arbitrators receive dispute_arbitrator capability.          │ │
-│  │ Capability requirements registered in dao_escrow.           │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                           │                                        │
-│                           ▼                                        │
-│  PHASE 3: Activate (governance_active = true)                     │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ SetGovernanceConfigV1 called by board_treasury holder.     │ │
-│  │ All capability checks become mandatory.                     │ │
-│  │ Owner pubkey bypass disabled.                               │ │
-│  │ DAO is now fully OCap-governed.                             │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                                                                   │
-│  KEY PROPERTY: Each phase is reversible. If governance_active    │
-│  is set back to false, the contract falls back to owner-key      │
-│  behavior. No funds are locked. No state is lost.               │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Customizing OCap Requirements
-
-Each dao_escrow instance can require different capabilities than the defaults via `RegisterCapabilityRequirementV1`:
-
-```rust
-// Example: Require a custom "senior_member" capability for voting
-// instead of the default "member_vote"
-let (params, _) = RegisterCapabilityRequirementV1Builder::new()
-    .role("vote")                          // The action being gated
-    .capability_id(senior_member_cap_id)   // Custom capability from Identity
-    .identity_contract_bulla(identity_bulla)
-    .capability_proof(board_treasury_proof)
-    .build()?;
-```
-
-This composability means a single Identity contract can serve multiple dao_escrow instances, each with different capability requirements — some requiring basic membership, others requiring elevated stake or domain-specific credentials.
-
-## Fee Split (TreasuryEndowment Mode)
-
-Fee split follows the same flow shown in [Premium Payment Phase](#premium-payment-phase) above. The `treasury_share` and `endowment_share` parameters control the split ratio, configured per DAO instance.
-
-## ZK Circuits
-
-| Circuit | Public Inputs | Status |
-|---------|--------------|--------|
-| `init.zk` | `dao_bulla`, `endowment_bulla` | Compiled |
-| `pay_premium.zk` | `dao_escrow_bulla`, `membership_note`, `value_commit.x`, `value_commit.y` | Compiled |
-| `propose_claim.zk` | `dao_escrow_bulla`, `claim_id`, `capability_id`, `proposal_nullifier`, `claim_commit` | Source complete |
-| `vote_claim.zk` | `proposal_id`, `capability_id`, `vote_nullifier`, `vote_commit.x`, `vote_commit.y` | Source complete |
-| `verify_member_capability.zk` | `capability_id`, `dao_escrow_bulla`, `holder_commit` | Source complete |
-| `resolve_dispute.zk` | `capability_id`, `dao_escrow_bulla`, `dispute_id`, `attestation_root`, `resolution_commit`, `dispute_nullifier` | Source complete |
-
-## Database Trees
-
-| Tree | Purpose |
-|------|---------|
-| `info` | Contract version and configuration |
-| `bullas` | Endowment instances |
-| `membership` | Time-limited membership notes |
-| `endowment` | Endowment pool funds |
-| `proposals` | Governance proposals/claims |
-| `votes` | Vote records per proposal |
-| `capability_requirements` | Required capability IDs per role |
-| `disputes` | Dispute resolution records |
-| `nullifiers` | Prevents double-vote, double-propose |
-| `governance` | Governance configuration |
-
-## Trust Model
-
-| Aspect | How It's Protected |
-|--------|-------------------|
-| Treasury funds | OCap governance (propose/vote/exec) or DrainProtection |
-| Endowment | Capability-gated withdrawal or approved proposal required |
-| Membership notes | Block-based expiry enforced in circuit |
-| Double-spend | Nullifiers prevent redemption twice |
-| Double-vote | Vote nullifier = H(capability_secret, proposal_id) |
-| Dispute replay | Dispute nullifier = H(capability_secret, dispute_id) |
-| Mass exit / drain | Optional DrainProtection with rate limiting and exit queue |
-
-## DrainProtection Integration
-
-DAO-Escrow can integrate with the [DrainProtection contract](drain_protection.md) for governance-level fund protections.
-
-```rust
-// During initialization
-let dao_escrow = InitializeBuilder::new()
-    .mode(DaoEscrowMode::TreasuryEndowment)
-    .enable_drain_protection(true)
-    .build()?;
-
-// Or enable later via governance
-let enable_dp = EnableDrainProtectionBuilder::new()
-    .dao_escrow_bulla(dao_escrow.bulla)
-    .drain_protection_bulla(dp_instance.bulla)
-    .build()?;
-```
-
-## Build & Test Status
-
-```
-Build:    ✅ Clean (zero warnings)
-Tests:    ✅ 20/20 integration tests passing
-Circuits: 2 compiled, 4 source complete (needs zkas compilation)
+```sh
+scripts/check-artifact-freshness.sh                     # the wasm matches its sources
+scripts/check-circuit-metadata-alignment.sh             # circuit order == metadata order == client order
 ```
 
 ## See Also
-- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Manifest](../arch/manifest.md) — the TOML manifest format; this contract's own manifest is
+  [`src/contract/dao_escrow/manifest.toml`](../../../src/contract/dao_escrow/manifest.toml)
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
 - [Contract Safety](../dev/contracts/safety.md) — Capability safety analysis
-
-
 - [DAO-Escrow Contract README](../../../src/contract/dao_escrow/README.md)
-- [Identity Contract README](../../../src/contract/identity/README.md)
-- [O-Cap Architecture](../arch/ocap.md)
-- [Identity Architecture](../arch/identity.md)
-- [Composability](composability.md) — cross-contract child call mechanism
-- [Recruitment Pipeline Case Study](recruitment_pipeline.md) — end-to-end DAO hiring walkthrough
-- [Subscription Contract](subscription.md)
+- [Obligation register](../arch/verification-hazop.md) — `OBL-C151` (the governance setter),
+  `OBL-C152` (vacuous authorization), `OBL-C154` (the endpoints this page marks unreachable)
+- [MultiSig Contract](multisig.md) — `CreateGroupV1`, `SignV1`, `FinalizeV1`
+- [Promissory Note](promissory_note.md) — the value carrier every money endpoint moves
+- [Composability](composability.md) — the cross-contract child call mechanism
 - [DrainProtection Contract](drain_protection.md)
+- [Purse](purse.md) and [Box](box.md) — genesis primitives this contract does **not** yet compose with
+- [O-Cap Architecture](../arch/ocap.md)
+- [Subscription Contract](subscription.md)

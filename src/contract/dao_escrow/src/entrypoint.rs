@@ -876,9 +876,13 @@ fn endowment_withdraw_v1(
 
     // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled
     let self_ = &calls[call_idx];
-    if self_.children_indexes.len() != 1 {
+    // One child — the payment — plus, when governance is active, a second: the MultiSig approval at slot
+    // 1, exactly as `withdraw_v1` has it. The count was `!= 1` and the approval was read from slot 0,
+    // which is unsatisfiable together: the check below pins slot 0 to selector 0x04, and the approval
+    // child carries 0x03, so the governance path could never be built by any caller (`OBL-C154`).
+    if self_.children_indexes.is_empty() || self_.children_indexes.len() > 2 {
         msg!(
-            "[EndowmentWithdrawV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
+            "[EndowmentWithdrawV1] Error: Expected 1 child call (promissory_note::transfer_v1), plus a MultiSig approval when governance is active; got {}",
             self_.children_indexes.len()
         );
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
@@ -947,7 +951,7 @@ fn endowment_withdraw_v1(
                 rx,
             ]),
         );
-        require_governance_child(cid, call_idx, &calls, &endowment, 0, action)?;
+        require_governance_child(cid, call_idx, &calls, &endowment, 1, action)?;
     } else {
         msg!("[dao_escrow::endowment_withdraw_v1] ERROR: No authorization provided");
         return Err(DaoEscrowError::EndowmentWithdrawUnauthorized.into())
@@ -1011,9 +1015,12 @@ fn treasury_spend_v1(
 
     // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled
     let self_ = &calls[call_idx];
-    if self_.children_indexes.len() != 1 {
+    // One child — the payment — plus, when governance is active, a second: the MultiSig approval at slot
+    // 1. Same defect as `endowment_withdraw_v1` and the same fix (`OBL-C154`): the count was `!= 1` and
+    // the approval was read from slot 0, which this check pins to selector 0x04.
+    if self_.children_indexes.is_empty() || self_.children_indexes.len() > 2 {
         msg!(
-            "[TreasurySpendV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
+            "[TreasurySpendV1] Error: Expected 1 child call (promissory_note::transfer_v1), plus a MultiSig approval when governance is active; got {}",
             self_.children_indexes.len()
         );
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
@@ -1091,7 +1098,7 @@ fn treasury_spend_v1(
                 rx,
             ]),
         );
-        require_governance_child(cid, call_idx, &calls, &endowment, 0, action)?;
+        require_governance_child(cid, call_idx, &calls, &endowment, 1, action)?;
     } else {
         msg!("[dao_escrow::treasury_spend_v1] ERROR: No authorization provided");
         return Err(DaoEscrowError::EndowmentWithdrawUnauthorized.into())
@@ -2059,9 +2066,6 @@ fn resolve_dispute_v1(
 if false {
         return Err(DaoEscrowError::InsufficientEndowment.into());
     }
-
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-    let payout_recipient_x = params.payout_recipient.xy().expect("pk not identity").0;
 
     let consumed_ids: Vec<pallas::Base> = params.attestations.iter()
         .map(|a| a.attestation_id)
