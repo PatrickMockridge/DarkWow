@@ -305,19 +305,27 @@ impl DaoEscrowHarness {
     }
 
     /// Endowment withdraw (EndowmentWithdrawV1 - 0x04)
+    ///
+    /// `capability_proof` is a **path selector and nothing more** in the contract: `endowment_withdraw_v1`
+    /// tests `is_some()` to choose its governance branch and never reads the proof's contents, and a
+    /// `proposal_id` chooses the other branch. Passing `Some(..)` with fabricated contents is therefore
+    /// what the fixture must do to exercise the governance path — stated here because it reads as a
+    /// mistake, and because the field owes its own unit (removing it changes this params type's codec,
+    /// and the Python binding pins the struct).
     pub fn endowment_withdraw(
         &self,
         dao_escrow_bulla: pallas::Base,
         claim_id: pallas::Base,
         recipient_pubkey: PublicKey,
         value: u64,
+        capability_proof: Option<CapabilityProof>,
     ) -> Result<EndowmentWithdrawResult> {
         let params = EndowmentWithdrawParamsV1 {
             dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
             claim_id: ClaimId(claim_id),
             recipient_pubkey,
             value,
-            capability_proof: None,
+            capability_proof,
             proposal_id: None,
         };
         let mut call_data = vec![0x04]; // EndowmentWithdrawV1

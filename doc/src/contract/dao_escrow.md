@@ -20,8 +20,9 @@ shares:
   only rewrites the endowment record.
 - **`multisig::FinalizeV1` (0x03)** — the governance approval (see
   [Governance](#governance-the-multisig-group)).
-- **`identity::VerifyCapabilityV1` (0x0b)** — required by `VerifyMemberCapabilityV1` only, and its routing
-  check is **skipped** while `identity_cid` is the zero placeholder `init_contract` seeds.
+- **`identity::VerifyCapabilityV1` (`0x06`)** — required by `VerifyMemberCapabilityV1` only, and its routing
+  check is **skipped** while `identity_cid` is the zero placeholder `init_contract` seeds, so the child's
+  contract id is not compared to anything. The selector is the only binding.
 - **DrainProtection** — an association, not a call: `drain_protection_enabled` and
   `drain_protection_bulla` are two fields on the record. The contract never addresses the DrainProtection
   contract.
@@ -115,8 +116,8 @@ Two properties are structural rather than stylistic:
 | `0x07` | `ProposeClaimV1` | `ProposeClaimV2` (3) | `FinalizeV1` at 0 | role 1 |
 | `0x08` | `VoteClaimV1` | `VoteClaimV2` (3) | `FinalizeV1` at 0 | role 2 |
 | `0x09` | `ExecuteClaimV1` | — | `TransferV1` at 0 | proposal must be `Approved` |
-| `0x0a` | `RegisterCapabilityRequirementV1` | — | none | **none — any caller** |
-| `0x0b` | `VerifyMemberCapabilityV1` | `VerifyMemberCapabilityV2` (3) | `VerifyCapabilityV1` (0x0b) | the proof; the routing check is skipped while `identity_cid` is zero |
+| `0x0a` | `RegisterCapabilityRequirementV1` | — | none | **none — any caller** (asserted by a row) |
+| `0x0b` | `VerifyMemberCapabilityV1` | `VerifyMemberCapabilityV2` (3) | `identity::VerifyCapabilityV1` (`0x06`) | the proof; the routing check is skipped while `identity_cid` is zero |
 | `0x0c` | `ResolveDisputeV1` | `ResolveDisputeV2` (3) | `FinalizeV1` at 0 | role 3 |
 | `0x0d` | `CancelClaimV1` | — | none | proposer pubkey equality |
 | `0x0e` | `SetGovernanceConfigV1` | — | — | **retired no-op** |
@@ -246,15 +247,20 @@ measured form of each.
 
 The contract's heavyweight integration test is
 `bin/dwowd/src/tests/heavyweight_pipeline.rs::test_heavyweight_dao_escrow`, run through
-`bin/dwowd/src/tests/heavyweight.sh --dao-escrow`. It is green, re-measured on the current tree:
-`1 passed; 0 failed`, 412.71s. It exercises the owner setter, the governance-gated endpoints the fixture
-covers, and eight negative controls. The contract compiles without warnings.
+`bin/dwowd/src/tests/heavyweight.sh --dao-escrow`. It is green: `1 passed; 0 failed`, 655.00s. The
+contract compiles without warnings.
 
-**Six endpoints are still asserted only as "rejected"** — the fixture carries a bare `Rejection` for
-`EndowmentWithdrawV1`, `TreasurySpendV1`, `ExecuteClaimV1`, `RegisterCapabilityRequirementV1`,
-`CancelClaimV1` and `VerifyMemberCapabilityV1`, with a comment saying the expected failure is not
-established. That gap is why the two colliding child-slot checks below survived a green run: no row ever
-built the call. Building those rows is the largest outstanding verification gap in this contract.
+**Every row builds the children its endpoint demands and names the check it expects.** That is a change of
+kind rather than of coverage, and it is what makes the table above testable. Until 2026-09-27 six rows
+passed `children: vec![]` and asserted a rejection that any earlier failure in the frame satisfied — and
+that is why the colliding child-slot checks in the table survived a green run: no row ever built the call,
+so the checks that read `children_indexes` were never executed.
+
+Two of the rows assert **Success over an authorization that is missing or vacuous** — `0x0a` and
+`CancelClaimV1` — and they do so deliberately, with the defect named in the row. A test that asserted the
+*desired* behaviour would be red now and indistinguishable from a broken frame; a test that asserts what
+the contract actually does turns green now and fails loudly the moment the gate is added. That is the
+`finality-widget` campaign's rule, applied here.
 
 Two gates in the tree read this contract specifically:
 

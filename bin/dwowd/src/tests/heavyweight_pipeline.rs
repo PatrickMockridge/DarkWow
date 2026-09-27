@@ -828,6 +828,10 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
     dwow_native_token_contract::enable_deterministic_zk();
     dwow_promissory_note_contract::enable_deterministic_zk();
     dwow_dao_escrow_contract::enable_deterministic_zk();
+    // Required now that this spec builds an Identity capability proof: `verify_capability.rs` branches
+    // on `deterministic_zk_enabled()`, so without this the two chain runs produce different proofs and
+    // the PI-7 determinism replay fails on the last block hash.
+    dwow_identity_contract::enable_deterministic_zk();
     use crate::tests::specs::dao_escrow_spec::dao_escrow_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&dao_escrow_test_spec()))?)
@@ -1053,7 +1057,7 @@ fn test_recruitment_pipeline_call_data() -> std::result::Result<(), Box<dyn std:
         // ------------------------------------------------------------------
         // Step 10: DAO Escrow verify member capability
         //   DAO Escrow::VerifyMemberCapabilityV1 (0x0b)
-        //     └── Identity::VerifyCapabilityV1 (0x0b) — child call
+        //     └── Identity::VerifyCapabilityV1 (0x06) — child call
         // ------------------------------------------------------------------
         println!("\n--- Step 10: DAO-Escrow verify member (→Identity) ---");
         let capability_secret = pallas::Base::from(42u64);
@@ -1086,7 +1090,10 @@ fn test_recruitment_pipeline_call_data() -> std::result::Result<(), Box<dyn std:
         // Verify all key cross-contract child call function codes
         // ------------------------------------------------------------------
         println!("\n--- Cross-Contract Function Code Verification ---");
-        println!("  Identity::VerifyCapabilityV1       = 0x0b");
+        // 0x06, not 0x0b: `IdentityFunction::VerifyCapabilityV1` is 0x06 (`identity/src/lib.rs:144`) and
+        // 0x0b is this contract's own `VerifyMemberCapabilityV1`, printed correctly on the next line.
+        // The wrong value here was repeated in `dao_escrow`'s entrypoint comment and in its design doc.
+        println!("  Identity::VerifyCapabilityV1       = 0x06");
         println!("  DAO-Escrow::ProposeClaimV1         = 0x07");
         println!("  Attestation::VerifyClaimV1         = 0x04");
         println!("  DAO-Escrow::VerifyMemberCapability = 0x0b");

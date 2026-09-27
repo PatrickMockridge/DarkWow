@@ -1940,7 +1940,11 @@ fn verify_member_capability_v1(
 ) -> ContractResult {
     msg!("[dao_escrow::verify_member_capability_v1] Verifying member capability");
 
-    // Validate child call to Identity::VerifyCapabilityV1 (0x0b) for on-chain capability verification
+    // Validate child call to Identity::VerifyCapabilityV1 (0x06) for on-chain capability verification.
+    // The selector is `IdentityFunction::VerifyCapabilityV1` = 0x06 (`identity/src/lib.rs:144`); the check
+    // below demands exactly that. This comment said 0x0b, which is THIS contract's own
+    // `VerifyMemberCapabilityV1` — a wrong constant pointing the next reader at the wrong contract
+    // (`OBL-C148`'s class: a citation that does not resolve).
     let self_ = &calls[call_idx];
     if self_.children_indexes.len() != 1 {
         msg!("[verify_member_capability_v1] Error: Expected 1 child call (Identity::VerifyCapabilityV1), got {}",

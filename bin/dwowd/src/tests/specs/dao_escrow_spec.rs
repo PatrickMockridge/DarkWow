@@ -20,18 +20,127 @@
 //! in a fabricated `CapabilityProof`, which the type refuses — so `ProposeClaimParamsV1::decode` failed
 //! and the contract's metadata arm returned the bare `vec![]` the host reports as "rejected by design",
 //! which is why this contract's red read only `metadata-decode-zkp … EMPTY metadata` for a week.
-use dwow_contract_test_harness::harness::{ContractHarness, DaoEscrowHarness, MultiSigHarness};
+//!
+//! # Children, and why every row here builds them (`OBL-C154`)
+//!
+//! Every row used to pass `children: vec![]` and assert either a bare `Rejection` or a rejection that
+//! named a *child-count* error — because no child was ever built. A child-count error is the first check
+//! every one of these endpoints performs, so the checks behind it were never executed, and that is how
+//! `endowment_withdraw_v1` and `treasury_spend_v1` came to read the MultiSig approval from **slot 0**
+//! while the check two lines above pinned slot 0 to the payment's selector `0x04`: a child cannot carry
+//! both, so their governance paths could not be built by any caller and a green run said nothing.
+//!
+//! So each row below now supplies the children its endpoint demands and names the check it expects to
+//! fire. Two of them assert **Success over a missing authorization** — `RegisterCapabilityRequirementV1`
+//! and `CancelClaimV1` — and that is deliberate: they pin what the contract does today, with the defect
+//! and its register row named in the comment, so that adding a gate later fails these rows loudly
+//! instead of silently changing what they mean. The `finality-widget` campaign's rule.
+use dwow_contract_test_harness::harness::{
+    DaoEscrowHarness, IdentityHarness, MultiSigHarness, PromissoryNoteHarness,
+};
 use dwow_dao_escrow_contract::model::{
     governance_message, governance_role, CapabilityProof, ClaimType,
 };
+use dwow_identity_contract::model::CredentialRequirement;
+use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
 use dwow_sdk::crypto::{
-    pasta_prelude::PrimeField, IntentNullifier, Nullifier, PublicKey, SecretKey,
-    MULTISIG_CONTRACT_ID,
+    pasta_prelude::PrimeField, poseidon_hash, util::fp_mod_fv, Blind, IntentNullifier, MerkleNode,
+    MerkleTree, Nullifier, PublicKey, SecretKey, IDENTITY_CONTRACT_ID, MULTISIG_CONTRACT_ID,
+    PROMISSORY_NOTE_CONTRACT_ID,
 };
 use dwow_sdk::pasta::pallas;
 use std::sync::{Arc, Mutex};
 use crate::tests::uniform_runner::*;
 use super::helpers::{mk_ep, mk_ep_rejecting};
+
+/// `(commitment, leaf position, merkle path, asset id, commitment blind)`. Copied shape
+/// (`escrow_spec.rs`, `insurance_market_spec.rs`).
+type PnNote = (pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base);
+
+/// The secret every note is issued under, and the secret `pn_transfer_child` spends with. They must be
+/// the same value: the transfer proof rebuilds the spent leaf as `poseidon_hash([7, secret])`, so any
+/// other secret yields a leaf the tree does not hold. Every working spec in this tree keeps
+/// `issue_secret == 100` for exactly this reason.
+const PN_ISSUE_SECRET: pallas::Base = pallas::Base::from_raw([100, 0, 0, 0]);
+
+/// One value per spending row, because a note is not reusable: `pn_transfer_child` spends the note it is
+/// given, and the note's own amount must equal the input's. Insurance_market's spec states the rule this
+/// obeys — a shared note would make the second row fail on a PN double-spend and bury the diagnostic.
+const PN_VALUE_WRONG_SELECTOR: u64 = 1_000;
+const PN_VALUE_WITHDRAW_OWNER: u64 = 50_000_000;
+const PN_VALUE_ENDOWMENT_NO_AUTH: u64 = 25_000_000;
+const PN_VALUE_TREASURY_SPEND: u64 = 10_000_000;
+const PN_VALUE_ENDOWMENT_APPROVED: u64 = 20_000_000;
+const PN_VALUE_WITHDRAW_APPROVED: u64 = 40_000_000;
+/// Its own note as well: the `_NoAuthorization` row spends the endowment-withdraw note, so lending it
+/// here would surface as a PN double-spend instead of as the missing approval.
+const PN_VALUE_WITHDRAW_NO_APPROVAL: u64 = 30_000_000;
+/// Equal to the proposal's value, because `verify_proposal_approved` requires the executed call's value
+/// to match the proposal's before it looks at anything else.
+const PN_VALUE_EXECUTE_CLAIM: u64 = 10_000;
+
+/// The identity fixture's parts, matching `insurance_market_spec.rs`'s in shape and nothing else.
+const EXPIRES_AT: u64 = 1_000_000;
+const ATTR_BLIND: u64 = 300;
+const CAPABILITY_SECRET: u64 = 777;
+const CREDENTIAL_SECRET: u64 = 20;
+const ISSUER_SECRET: u64 = 10;
+const SCHEMA_HASH: u64 = 30;
+const THRESHOLD: u64 = 50;
+const ATTR_ROLE: u64 = 100;
+const ATTR_TENURE: u64 = 200;
+
+/// Build a `promissory_note::transfer_v1` (0x04) child spending an issued note.
+///
+/// Copied from `escrow_spec.rs:21-59` — the working example — with one deliberate change: the PN harness
+/// is **passed in** rather than spawned per call. Every `spawn` rebuilds proving keys, this spec spends a
+/// note in seven rows across two chains, and that wall clock is the same reason the multisig harness
+/// below is leaked once.
+///
+/// `blind_seed` must be exactly the parent's own derivation: `dao_escrow` computes
+/// `poseidon_hash([Base::from(value), dao_escrow_bulla])` and checks the child's *output* commitment
+/// against `pedersen_commitment_u64(value, value_blind)`
+/// (`promissory_note/src/validation.rs:46-72` scans outputs, never inputs). The helper applies
+/// `fp_mod_fv` once, matching the parent.
+fn pn_transfer_child(
+    pn: &PromissoryNoteHarness,
+    note: &PnNote,
+    value: u64,
+    blind_seed: pallas::Base,
+) -> dwow_core::Result<ChildCall> {
+    let (_, pos, path, asset_id, commitment_blind) = note;
+    let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
+    let input = TransferCallInput {
+        value,
+        asset_id: *asset_id,
+        spend_hook: pallas::Base::zero(),
+        user_data: pallas::Base::zero(),
+        commitment_blind: *commitment_blind,
+        leaf_position: *pos,
+        merkle_path: path.clone(),
+        secret: PN_ISSUE_SECRET,
+        ephemeral_signature_secret: pallas::Base::from(9u64),
+        tx_commitment: pallas::Base::zero(),
+        tx_nonce: pallas::Base::zero(),
+    };
+    let output = TransferCallOutput {
+        recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
+        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
+        value,
+        asset_id: *asset_id,
+        spend_hook: pallas::Base::zero(),
+        user_data: pallas::Base::zero(),
+        commitment_blind: blind_seed,
+    };
+    let child = pn
+        .transfer_with_value_blinds(vec![input], vec![output], Some(vec![value_blind]))
+        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+    Ok(ChildCall {
+        contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
+        call_data: child.call_data,
+        proofs: child.proofs,
+    })
+}
 
 /// The approvals the governance group cast in `setup`, per case. Each is a set of signature nullifiers,
 /// captured from the `sign` calls that produced them because the finalize child *names* them.
@@ -39,16 +148,37 @@ use super::helpers::{mk_ep, mk_ep_rejecting};
 struct Governance {
     /// The endowment's group on the proposal message — the approvals that must be accepted.
     propose: Vec<Nullifier>,
-    /// The endowment's group on the vote message. A distinct message, not the proposal's: the approval
-    /// is spend-once and both endpoints key on the same `claim_id`.
-    vote: Vec<Nullifier>,
-    /// The endowment's group on the dispute message.
-    resolve: Vec<Nullifier>,
     /// The endowment's group on a *different* message — valid approvals of the wrong thing.
     wrong_message: Vec<Nullifier>,
+    /// The endowment's group on the endowment-withdraw action — role 4 over the
+    /// `(bulla, value, recipient_x)` triple its row uses. Distinct from every other message, including
+    /// the other two money endpoints' triples: the role tag is what keeps them apart.
+    endowment_withdraw: Vec<Nullifier>,
+    /// The endowment's group on the withdraw action — role 6.
+    withdraw: Vec<Nullifier>,
     /// A second group's id and its approvals of the proposal — valid approvals by the wrong group.
     foreign_group: pallas::Base,
     foreign: Vec<Nullifier>,
+}
+
+/// What `setup` publishes to the rows: one note per spending row, plus the capability id the identity
+/// registration produced. `setup` runs twice, once per chain, so this is written behind a mutex and read
+/// by the row closures. The capability id cannot be known when the spec is built — it is derived on
+/// chain from the registered requirement — which is the same reason `insurance_market` publishes its
+/// `market_id` this way.
+#[derive(Default, Clone)]
+struct Shared {
+    wrong_selector: Option<PnNote>,
+    withdraw_owner: Option<PnNote>,
+    endowment_no_auth: Option<PnNote>,
+    treasury_spend: Option<PnNote>,
+    endowment_approved: Option<PnNote>,
+    withdraw_approved: Option<PnNote>,
+    execute_claim: Option<PnNote>,
+    withdraw_no_approval: Option<PnNote>,
+    /// The identity capability `setup` registered. The possession row proves this one; passing any
+    /// other id would produce a proof about a capability the Identity contract has no requirement for.
+    identity_capability_id: Option<pallas::Base>,
 }
 
 pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
@@ -58,6 +188,9 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
     // `spawn` rebuilds the multisig contract's proving keys, and this spec calls `create_group`, `sign`
     // and `finalize` from a setup that runs twice plus several endpoints.
     let ms: &'static MultiSigHarness = Box::leak(Box::new(MultiSigHarness::spawn()));
+    // Same reason, and now a bigger share of it: seven rows spend a note, each on both chains.
+    let pn: &'static PromissoryNoteHarness = Box::leak(Box::new(PromissoryNoteHarness::spawn()));
+    let id: &'static IdentityHarness = Box::leak(Box::new(IdentityHarness::spawn()));
     let wasm = include_bytes!("../../../../../src/contract/dao_escrow/dwow_dao_escrow_contract.wasm");
     let owner_secret = pallas::Base::from(12345u64);
     let owner_pub = PublicKey::from_secret(SecretKey::from_base(owner_secret));
@@ -69,16 +202,11 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
     let nullifier_k = pallas::Scalar::from(1u64);
     let endowment_asset_id = pallas::Base::from(42u64);
     let bulla_blind = pallas::Base::from(9999u64);
-    let voter_secret = pallas::Base::from(333u64);
-    let voter_pub = PublicKey::from_secret(SecretKey::from_base(voter_secret));
     let proposer_secret = pallas::Base::from(777u64);
     let proposer_pub = PublicKey::from_secret(SecretKey::from_base(proposer_secret));
     let holder_secret = pallas::Base::from(111u64);
     let holder_pub = PublicKey::from_secret(SecretKey::from_base(holder_secret));
-    let arbitrator_secret = pallas::Base::from(600u64);
-    let arbitrator_pub = PublicKey::from_secret(SecretKey::from_base(arbitrator_secret));
     let capability_secret = pallas::Base::from(888u64);
-    let dispute_id = pallas::Base::from(500u64);
     let cp_id = capability_id.to_repr();
     let cp_secret = capability_secret.to_repr();
 
@@ -97,18 +225,35 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
     // The messages, computed with the CONTRACT'S OWN derivation so that the message the group signs and
     // the message the contract checks cannot drift — the reason `MultiSigHarness::group_id` delegates to
     // the multisig contract's `derive_group_id` rather than re-implementing it.
+    //
+    // Two approval sets this fixture used to cast are gone, and the reason is the rule rather than
+    // tidiness: `vote_claim_v1` (role 2) and `resolve_dispute_v1` (role 3) have **no row here**, so the
+    // signatures were submitted and dropped — twelve chain submissions per run that nothing read. When
+    // either endpoint gets a row, its message must be a *distinct* one: an approval is spend-once, and
+    // `propose_claim` and `vote_claim` both key on the same `claim_id`, which is exactly why the message
+    // carries a role tag in the first place.
     let msg_propose = governance_message(governance_role::PROPOSE_CLAIM, claim_id);
-    let msg_vote = governance_message(governance_role::VOTE_CLAIM, claim_id);
-    // `resolve_dispute_v1` derives its own `dispute_id` from `(proposal_id, attestation_count,
-    // payout_recipient_x)`; the spec passes no attestations, so the count is zero.
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
-    let payout_recipient_x = arbitrator_pub.xy().expect("pk not identity").0;
-    let contract_dispute_id =
-        dwow_sdk::crypto::poseidon_hash([proposal_id, pallas::Base::zero(), payout_recipient_x]);
-    let msg_resolve = governance_message(governance_role::RESOLVE_DISPUTE, contract_dispute_id);
     let msg_wrong = governance_message(governance_role::PROPOSE_CLAIM, pallas::Base::from(9999u64));
+    // The two money endpoints' action ids: the contract's own `(bulla, value, recipient_x)` triple, not
+    // the claim/proposal id — and not each other's, because the role tag separates them. Computed here
+    // with the contract's own functions so the signed message and the checked one cannot disagree.
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+    let owner_x = owner_pub.xy().expect("pk not identity").0;
+    let action_endowment_withdraw = governance_message(
+        governance_role::ENDOWMENT_WITHDRAW,
+        poseidon_hash([
+            endowment_bulla,
+            pallas::Base::from(PN_VALUE_ENDOWMENT_APPROVED),
+            owner_x,
+        ]),
+    );
+    let action_withdraw = governance_message(
+        governance_role::WITHDRAW,
+        poseidon_hash([endowment_bulla, pallas::Base::from(PN_VALUE_WITHDRAW_APPROVED), owner_x]),
+    );
 
     let gov: Arc<Mutex<Governance>> = Arc::new(Mutex::new(Governance::default()));
+    let notes: Arc<Mutex<Shared>> = Arc::new(Mutex::new(Shared::default()));
 
     ContractTestSpec {
         name: "dao_escrow", is_genesis: false,
@@ -122,6 +267,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
         needs_coinbase_coordination: false,
         setup: Some(Box::new({
             let gov = gov.clone();
+            let notes = notes.clone();
             move |chain| {
                 let ms_cid = *MULTISIG_CONTRACT_ID;
                 let group_id = DaoEscrowHarness::governance_group();
@@ -144,7 +290,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
 
                 // One approval set per message, each by `GOVERNANCE_THRESHOLD` of the three members —
                 // real signatures, because the multisig contract counts the threshold itself.
-                let mut sign_for = |chain: &crate::tests::blockchain::HeavyweightPipeline,
+                let sign_for = |chain: &crate::tests::blockchain::HeavyweightPipeline,
                                     message: pallas::Base|
                  -> dwow_core::Result<Vec<Nullifier>> {
                     let mut out = Vec::new();
@@ -163,9 +309,9 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     Ok(out)
                 };
                 let propose = sign_for(chain, msg_propose)?;
-                let vote = sign_for(chain, msg_vote)?;
-                let resolve = sign_for(chain, msg_resolve)?;
                 let wrong_message = sign_for(chain, msg_wrong)?;
+                let endowment_withdraw = sign_for(chain, action_endowment_withdraw)?;
+                let withdraw = sign_for(chain, action_withdraw)?;
 
                 // A second group — one member, threshold one — approves the proposal. Its approval is
                 // valid; what is wrong is who gave it.
@@ -185,12 +331,107 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
 
                 *gov.lock().unwrap() = Governance {
                     propose,
-                    vote,
-                    resolve,
                     wrong_message,
+                    endowment_withdraw,
+                    withdraw,
                     foreign_group: foreign.group_id,
                     foreign: vec![f.nullifier],
                 };
+
+                // ── Promissory note: one type, seven notes, one per spending row ──
+                let pn_cid = *PROMISSORY_NOTE_CONTRACT_ID;
+                let owner_addr = poseidon_hash([pallas::Base::from(7u64), PN_ISSUE_SECRET]);
+                // The type's own amount is arbitrary; only the issued notes' amounts matter.
+                let token0 = pn
+                    .register_type(PN_ISSUE_SECRET, pallas::Base::from(2u64), pallas::Base::from(3u64), owner_addr, PN_VALUE_WITHDRAW_OWNER, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                smol::block_on(chain.block()?.with_call(pn_cid, pn, &token0.call_data, token0.token_proofs.clone())?.submit())?;
+                let tid = token0.asset_id;
+
+                // The guard leaf at 0 and the asset leaf at 1 are what `issue`'s own proof assumes; the
+                // issued notes append above them, and each note's merkle path is taken from the tree
+                // *after* its own append.
+                let mut issued: Vec<PnNote> = Vec::new();
+                let mut tree = MerkleTree::new(1);
+                tree.append(MerkleNode::from_base(pallas::Base::zero()));
+                tree.append(MerkleNode::from_base(token0.commitment.inner()));
+                for (idx, value) in [
+                    PN_VALUE_WRONG_SELECTOR,
+                    PN_VALUE_WITHDRAW_OWNER,
+                    PN_VALUE_ENDOWMENT_NO_AUTH,
+                    PN_VALUE_TREASURY_SPEND,
+                    PN_VALUE_ENDOWMENT_APPROVED,
+                    PN_VALUE_WITHDRAW_APPROVED,
+                    PN_VALUE_EXECUTE_CLAIM,
+                    PN_VALUE_WITHDRAW_NO_APPROVAL,
+                ]
+                .iter()
+                .enumerate()
+                {
+                    let n = pn
+                        .issue(PN_ISSUE_SECRET, tid, owner_addr, *value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(8u64 + idx as u64))
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    smol::block_on(chain.block()?.with_call(pn_cid, pn, &n.call_data, n.proofs.clone())?.submit())?;
+                    tree.append(MerkleNode::from_base(n.commitment.inner()));
+                    let mark = tree.mark().unwrap();
+                    issued.push((n.commitment.inner(), u64::from(mark), tree.witness(mark, 0).expect("note witness"), tid, pallas::Base::from(8u64 + idx as u64)));
+                }
+                let mut n = issued.into_iter();
+                let mut shared = Shared {
+                    wrong_selector: n.next(),
+                    withdraw_owner: n.next(),
+                    endowment_no_auth: n.next(),
+                    treasury_spend: n.next(),
+                    endowment_approved: n.next(),
+                    withdraw_approved: n.next(),
+                    execute_claim: n.next(),
+                    withdraw_no_approval: n.next(),
+                    identity_capability_id: None,
+                };
+
+                // ── Identity: an issuer, one credential, one capability ──
+                // The possession fixture `OBL-C154` owed, ported from `insurance_market_spec.rs`. Only
+                // the capability *registration* is a precondition — `verify_capability` loads the
+                // capability definition rather than the issuance record — and it is done here rather
+                // than in the row because a row runs twice, once per chain.
+                let id_cid = *IDENTITY_CONTRACT_ID;
+                let issuer_pub = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(ISSUER_SECRET)));
+                let issuer = id
+                    .register_issuer(issuer_pub, b"dao_escrow_members".to_vec(), vec![])
+                    .map_err(|e| dwow_core::Error::Custom(format!("register_issuer: {e}")))?;
+                smol::block_on(chain.block()?.with_call(id_cid, id, &issuer.call_data, vec![])?.submit())?;
+
+                let cred = id
+                    .issue_credential(
+                        pallas::Base::from(ISSUER_SECRET), pallas::Base::from(CREDENTIAL_SECRET),
+                        b"role", pallas::Base::from(ATTR_ROLE),
+                        b"tenure", pallas::Base::from(ATTR_TENURE),
+                        pallas::Base::from(ATTR_BLIND), pallas::Base::from(SCHEMA_HASH), 0, EXPIRES_AT)
+                    .map_err(|e| dwow_core::Error::Custom(format!("issue_credential: {e}")))?;
+                smol::block_on(chain.block()?.with_call(id_cid, id, &cred.call_data, vec![cred.proof.clone()])?.submit())?;
+
+                let reg = id
+                    .register_capability(b"member_vote".to_vec(),
+                        CredentialRequirement {
+                            schema_hash: pallas::Base::from(SCHEMA_HASH).to_repr(), issuer_pub,
+                            min_threshold: 1, attribute_name: b"role".to_vec(),
+                        }, None)
+                    .map_err(|e| dwow_core::Error::Custom(format!("register_capability: {e}")))?;
+                let identity_capability_id = reg.capability_id;
+                smol::block_on(chain.block()?.with_call(id_cid, id, &reg.call_data, vec![])?.submit())?;
+
+                let nf = IntentNullifier::from_base(poseidon_hash([
+                    pallas::Base::from(1u64),
+                    pallas::Base::from(CREDENTIAL_SECRET),
+                    cred.public_inputs.commitment,
+                ]));
+                let iss = id.issue_capability(identity_capability_id, issuer_pub, nf)
+                    .map_err(|e| dwow_core::Error::Custom(format!("issue_capability: {e}")))?;
+                smol::block_on(chain.block()?.with_call(id_cid, id, &iss.call_data, vec![])?.submit())?;
+
+                shared.identity_capability_id = Some(identity_capability_id.inner());
+                *notes.lock().unwrap() = shared;
+
                 Ok(())
             }
         })),
@@ -198,49 +439,77 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
         endpoints: vec![
             // ── Governance INACTIVE. These run first: the group id is still zero, so they exercise the
             //    paths that existed before `OBL-C151` and the setter below changes their meaning.
-            // Requires an Identity `VerifyCapabilityV1` (0x06) child — the possession fixture
-            // `insurance_market`'s spec now has, not yet ported here — so it is rejected for the missing
-            // child. Named, because the missing child is the reason and `Custom(33)` is what says so.
-            mk_ep_rejecting("VerifyMemberCapabilityV1", true, &["ContractError(Custom(33))"], Box::new(move || {
-                let r = h.verify_member_capability(nullifier_k, capability_id, endowment_bulla, capability_secret, holder_secret, holder_pub, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+            //
+            // A *valid* child that happens to carry the wrong selector: the PN transfer executes
+            // successfully as a child, so the only thing that can refuse this transaction is the
+            // parent's own selector check. `Identity::VerifyCapabilityV1` is 0x06 — not 0x0b, which is
+            // this contract's own `VerifyMemberCapabilityV1`; the entrypoint comment and the design doc
+            // that said 0x0b were wrong.
+            mk_ep_rejecting("VerifyMemberCapabilityV1_WrongSelector", true, &["ContractError(Custom(34))"], Box::new({
+                let notes = notes.clone();
+                move || {
+                    let note = notes.lock().unwrap().wrong_selector.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_WRONG_SELECTOR, poseidon_hash([pallas::Base::from(PN_VALUE_WRONG_SELECTOR), endowment_bulla]))?;
+                    let r = h.verify_member_capability(nullifier_k, capability_id, endowment_bulla, capability_secret, holder_secret, holder_pub, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                }
             })),
-            // Requires its `promissory_note::transfer_v1` payment child, which the fixture does not
-            // build yet: the endpoint withdraws by moving value through the child, so without one there
-            // is nothing to withdraw.
-            mk_ep_rejecting("WithdrawV1", false, &["ContractError(Custom(33))"], Box::new(move || {
-                let r = h.withdraw(endowment_bulla, owner_pub, 50_000_000).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+            // Governance inactive, so `withdraw_v1` takes its owner path: `endowment.owner_pubkey !=
+            // params.recipient_pubkey` is false for the owner. Success here is what proves the child
+            // validation passed — the check that used to be the only thing any row reached.
+            //
+            // That comparison is itself vacuous (`OBL-C152`): a public key is public, so this path admits
+            // anyone who knows the owner's address. Left as it is and asserted here so the fix, when it
+            // comes, fails this row.
+            mk_ep("WithdrawV1_OwnerPath", false, Box::new({
+                let notes = notes.clone();
+                move || {
+                    let note = notes.lock().unwrap().withdraw_owner.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, poseidon_hash([pallas::Base::from(PN_VALUE_WITHDRAW_OWNER), endowment_bulla]))?;
+                    let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_OWNER).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
+                }
             })),
-            // No needle: the expected failure here is NOT established — this row's children and its
-            // authorisation branch have never been exercised, so the row asserts only that the call does
-            // not succeed. That is weaker than a named rejection and is recorded as owed.
-            mk_ep_rejecting("EndowmentWithdrawV1", false, &[], Box::new(move || {
-                let r = h.endowment_withdraw(endowment_bulla, claim_id, owner_pub, 25_000_000).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+            // The child is valid and the auth branch is reached: neither `proposal_id` nor
+            // `capability_proof` is set, so the endpoint refuses for that reason and no other. Named,
+            // because a bare `Rejection` here was satisfied by the child-count check instead.
+            mk_ep_rejecting("EndowmentWithdrawV1_NoAuthorization", false, &["ContractError(Custom(29))"], Box::new({
+                let notes = notes.clone();
+                move || {
+                    let note = notes.lock().unwrap().endowment_no_auth.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_ENDOWMENT_NO_AUTH, poseidon_hash([pallas::Base::from(PN_VALUE_ENDOWMENT_NO_AUTH), endowment_bulla]))?;
+                    let r = h.endowment_withdraw(endowment_bulla, claim_id, owner_pub, PN_VALUE_ENDOWMENT_NO_AUTH, None).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
+                }
             })),
-            // No needle: see the sibling note above — the expected failure is not established.
-            mk_ep_rejecting("TreasurySpendV1", false, &[], Box::new(move || {
-                let r = h.treasury_spend(endowment_bulla, proposal_id, owner_pub, 10_000_000).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+            // `OBL-C154` instance 2, pinned. The child is valid, so the call reaches the mode gate — and
+            // refuses, because `initialize_apply_v1` writes `mode: DaoEscrowMode::Escrow` as a constant
+            // while `InitializeParamsV1` carries no mode field at all. Every endowment is an Escrow-mode
+            // endowment, so this gate can never pass and `TreasurySpendV1` is unreachable by
+            // construction. Making `mode` settable is a decision, not a repair; until it is taken, this
+            // row states the fact rather than a bare rejection.
+            mk_ep_rejecting("TreasurySpendV1_ModeGate", false, &["ContractError(Custom(4))"], Box::new({
+                let notes = notes.clone();
+                move || {
+                    let note = notes.lock().unwrap().treasury_spend.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_TREASURY_SPEND, poseidon_hash([pallas::Base::from(PN_VALUE_TREASURY_SPEND), endowment_bulla]))?;
+                    let r = h.treasury_spend(endowment_bulla, proposal_id, owner_pub, PN_VALUE_TREASURY_SPEND).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
+                }
             })),
-            // No needle: see the sibling note above — the expected failure is not established.
-            mk_ep_rejecting("ExecuteClaimV1", false, &[], Box::new(move || {
-                let r = h.execute_claim(endowment_bulla, proposal_id, owner_pub, 75_000_000).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
-            })),
-            // No needle, and the reason is the contract's own: this row's decoder error arrives as an
-            // `IoError` carrying the contract's last `msg!` instead of the decode failure, so the cause
-            // is not legible from the run. Masked-refusal is the class `OBL-C151` records against this
-            // contract's metadata arms; here it is an exec arm.
-            mk_ep_rejecting("RegisterCapabilityRequirementV1", false, &[], Box::new(move || {
-                let r = h.register_capability_requirement(endowment_bulla, b"member_vote".to_vec(), [0u8; 32], identity_contract_bulla).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
-            })),
-            // No needle: not established. See the sibling note above.
-            mk_ep_rejecting("CancelClaimV1", false, &[], Box::new(move || {
-                let r = h.cancel_claim(endowment_bulla, claim_id, owner_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+            // **Success over a missing authorization, deliberately (`OBL-C152`).** `0x0a` has no
+            // authorization check of any kind: it loads the endowment, requires it to exist, and writes
+            // the capability requirement. Any caller may register one. This row asserted a rejection
+            // before — and could not have been right, because `RegisterCapabilityRequirementParamsV1`'s
+            // decoder demanded `role_len + 68` bytes of an encoder that writes `role_len + 100`, so the
+            // endpoint was uncallable and the row was recording a codec failure as a refusal
+            // (`OBL-C150`'s class, second instance). With the codec fixed the call succeeds, and that is
+            // what the row now says.
+            mk_ep("RegisterCapabilityRequirementV1", false, Box::new({
+                move || {
+                    let r = h.register_capability_requirement(endowment_bulla, b"member_vote".to_vec(), [0u8; 32], identity_contract_bulla).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+                }
             })),
             // ── THE SETTER. Everything below runs with governance ACTIVE.
             //
@@ -259,7 +528,6 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
-            // ── Governance ACTIVE. The gates now require the group's approval as a child.
             EndpointSpec {
                 name: "ProposeClaimV1_Approved",
                 is_zk: true,
@@ -270,7 +538,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let gov = gov.clone();
                     move || {
                         let approvals = gov.lock().unwrap().propose.clone();
-                        let r = h.propose_claim(nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, 10_000, pallas::Base::from(50u64), owner_pub, proposer_pub, ClaimType::Endowment, pallas::Base::from(10u64), CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.propose_claim(nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_CLAIM, pallas::Base::from(50u64), owner_pub, proposer_pub, ClaimType::Endowment, pallas::Base::from(10u64), CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let f = ms.finalize(DaoEscrowHarness::governance_group(), msg_propose, approvals)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
@@ -280,6 +548,115 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     }
                 }),
             },
+            // **The row that proves the `OBL-C154` fix.** Two children: the payment at slot 0, which the
+            // endpoint's own check pins to selector `0x04`, and the group's approval at slot 1. Before the
+            // fix the approval was read from slot 0 — the same slot the payment must occupy — so no caller
+            // could build a call this endpoint would accept, and a green run could not tell.
+            //
+            // `capability_proof` is `Some(..)` with fabricated contents: it is a *path selector* here, and
+            // the contract tests `is_some()` without reading it. That is its own defect and its own unit.
+            mk_ep("EndowmentWithdrawV1_Approved", false, Box::new({
+                let gov = gov.clone();
+                let notes = notes.clone();
+                move || {
+                    let approvals = gov.lock().unwrap().endowment_withdraw.clone();
+                    let note = notes.lock().unwrap().endowment_approved.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_ENDOWMENT_APPROVED, poseidon_hash([pallas::Base::from(PN_VALUE_ENDOWMENT_APPROVED), endowment_bulla]))?;
+                    let r = h.endowment_withdraw(endowment_bulla, claim_id, owner_pub, PN_VALUE_ENDOWMENT_APPROVED, Some(CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}))
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let f = ms.finalize(DaoEscrowHarness::governance_group(), action_endowment_withdraw, approvals)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult {
+                        children: vec![
+                            child,
+                            ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] },
+                        ],
+                        call_data: r.call_data, proofs: vec![],
+                    })
+                }
+            })),
+            // The same fix on the third of the money endpoints, under its own role tag (6) and its own
+            // action triple — so it also proves the role tag is doing work: this approval and the one
+            // above are over different messages and neither can authorise the other's endpoint.
+            mk_ep("WithdrawV1_Approved", false, Box::new({
+                let gov = gov.clone();
+                let notes = notes.clone();
+                move || {
+                    let approvals = gov.lock().unwrap().withdraw.clone();
+                    let note = notes.lock().unwrap().withdraw_approved.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_APPROVED, poseidon_hash([pallas::Base::from(PN_VALUE_WITHDRAW_APPROVED), endowment_bulla]))?;
+                    let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_APPROVED).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let f = ms.finalize(DaoEscrowHarness::governance_group(), action_withdraw, approvals)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult {
+                        children: vec![
+                            child,
+                            ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] },
+                        ],
+                        call_data: r.call_data, proofs: vec![],
+                    })
+                }
+            })),
+            // `OBL-C154` instance 3, pinned. The call is complete and well-formed — the proposal below is
+            // found by id, its value and recipient match — and it refuses at the state check, because
+            // NOTHING IN THE CONTRACT WRITES `ProposalState::Approved`. Its only occurrence outside the
+            // enum's definition is the read in `verify_proposal_approved`. So the proposal lifecycle has
+            // no successful exit, and this row is what says so in a way a later fix will break.
+            mk_ep_rejecting("ExecuteClaimV1_ProposalNotApproved", false, &["ContractError(Custom(38))"], Box::new({
+                let notes = notes.clone();
+                move || {
+                    let note = notes.lock().unwrap().execute_claim.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_EXECUTE_CLAIM, poseidon_hash([pallas::Base::from(PN_VALUE_EXECUTE_CLAIM), endowment_bulla]))?;
+                    // `proposal_id` is the claim's own id: `propose_claim_v1` files the proposal under
+                    // `claim_id` and `execute_claim_v1` looks it up by `proposal_id`, so a fixture that
+                    // passed the distinct `proposal_id` above would record `ProposalNotFound` and prove
+                    // nothing about the state check.
+                    let r = h.execute_claim(endowment_bulla, claim_id, owner_pub, PN_VALUE_EXECUTE_CLAIM).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
+                }
+            })),
+            // **Success over a vacuous authorization, deliberately (`OBL-C152`).** `cancel_claim_v1`
+            // refuses a cancellation when `proposal.proposer_pubkey != params.proposer_pubkey`. Both are
+            // public values — the proposer's key is written into the proposal record at propose time and
+            // is published to receive funds — so a stranger who knows it owns this call. Passing the
+            // proposer's key here is exactly what that stranger does.
+            mk_ep("CancelClaimV1_WithTheProposersKey", false, Box::new(move || {
+                let r = h.cancel_claim(endowment_bulla, claim_id, proposer_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+            })),
+            // The possession fixture (`OBL-C154` owed). The parent demands a child whose first byte is
+            // `0x06`; the child is a real `identity::VerifyCapabilityV1` over the capability `setup`
+            // registered, with its own ZK proof. Note what the parent does *not* do: the child's contract
+            // id is compared against `identity_cid`, which `init_contract` seeds as `[0u8; 32]` and whose
+            // reader treats zero as "skip the check" — fail-open — so the selector byte is the only
+            // binding. That is `OBL-C152`'s neighbourhood and is stated rather than implied.
+            mk_ep("VerifyMemberCapabilityV1", true, Box::new({
+                let notes = notes.clone();
+                move || {
+                let identity_capability_id = notes.lock().unwrap().identity_capability_id
+                    .ok_or_else(|| dwow_core::Error::Custom("setup did not register the identity capability".into()))?;
+                let holder = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(CREDENTIAL_SECRET)));
+                let v = id.verify_capability(
+                    pallas::Base::from(CREDENTIAL_SECRET),
+                    identity_capability_id,
+                    pallas::Base::from(THRESHOLD),
+                    b"role", pallas::Base::from(ATTR_ROLE),
+                    b"tenure", pallas::Base::from(ATTR_TENURE),
+                    pallas::Base::from(ATTR_BLIND),
+                    pallas::Base::from(CAPABILITY_SECRET),
+                    PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(ISSUER_SECRET))),
+                    holder,
+                    pallas::Base::from(SCHEMA_HASH), 0, EXPIRES_AT, true,
+                ).map_err(|e| dwow_core::Error::Custom(format!("verify_capability: {e}")))?;
+                let child = ChildCall {
+                    contract_id: *IDENTITY_CONTRACT_ID,
+                    call_data: v.call_data,
+                    proofs: vec![v.proof],
+                };
+                let r = h.verify_member_capability(nullifier_k, capability_id, endowment_bulla, capability_secret, holder_secret, holder_pub, CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                }
+            })),
             // ── Negative controls, each naming the check it exercises rather than accepting any
             //    rejection. A bare `Rejection` is satisfied by an earlier failure in the frame, which is
             //    how a control that cannot fail gets written.
@@ -324,7 +701,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.propose_claim(nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, 10_000, pallas::Base::from(50u64), owner_pub, proposer_pub, ClaimType::Endowment, pallas::Base::from(10u64), CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.propose_claim(nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_CLAIM, pallas::Base::from(50u64), owner_pub, proposer_pub, ClaimType::Endowment, pallas::Base::from(10u64), CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
@@ -338,7 +715,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let gov = gov.clone();
                     move || {
                         let g = gov.lock().unwrap().clone();
-                        let r = h.propose_claim(nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, 10_000, pallas::Base::from(50u64), owner_pub, proposer_pub, ClaimType::Endowment, pallas::Base::from(10u64), CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.propose_claim(nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_CLAIM, pallas::Base::from(50u64), owner_pub, proposer_pub, ClaimType::Endowment, pallas::Base::from(10u64), CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let f = ms.finalize(g.foreign_group, msg_propose, g.foreign)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
@@ -358,7 +735,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let gov = gov.clone();
                     move || {
                         let approvals = gov.lock().unwrap().wrong_message.clone();
-                        let r = h.propose_claim(nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, 10_000, pallas::Base::from(50u64), owner_pub, proposer_pub, ClaimType::Endowment, pallas::Base::from(10u64), CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.propose_claim(nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_CLAIM, pallas::Base::from(50u64), owner_pub, proposer_pub, ClaimType::Endowment, pallas::Base::from(10u64), CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_base(pallas::Base::from(42u64)),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let f = ms.finalize(DaoEscrowHarness::governance_group(), msg_wrong, approvals)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
@@ -372,13 +749,22 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 name: "WithdrawV1_GovernanceActiveWithoutApproval",
                 is_zk: false,
                 // The reader that `withdraw_v1`'s governance branch never had: before this it was an
-                // empty body, so activating governance removed the owner check and left nothing.
+                // empty body, so activating governance removed the owner check and left nothing. With the
+                // payment child present and no approval beside it, the slot-1 check is what refuses.
                 expectation: EndpointExpectation::RejectionNaming(&["ContractError(Custom(33))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
-                generate: Box::new(move || {
-                    let r = h.withdraw(endowment_bulla, owner_pub, 50_000_000).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+                generate: Box::new({
+                    let notes = notes.clone();
+                    move || {
+                        // Its own note: the `_NoAuthorization` row spends the endowment-withdraw one, and
+                        // lending it here would surface as a PN double-spend rather than as the missing
+                        // approval this row is about.
+                        let note = notes.lock().unwrap().withdraw_no_approval.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
+                        let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_NO_APPROVAL, poseidon_hash([pallas::Base::from(PN_VALUE_WITHDRAW_NO_APPROVAL), endowment_bulla]))?;
+                        let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_NO_APPROVAL).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
+                    }
                 }),
             },
         ],
