@@ -304,10 +304,11 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 name: "UpdateV1_ReplaysTheProof",
                 is_zk: true,
                 // The same ownership proof twice: `owner_nullifier` is deterministic in
-                // `(owner_secret, bulla)`, so the second call must be refused rather than replayed.
-                // `GovernanceAlreadyActive` fires first if the group is already set, so this names the
-                // replay only when the setter left the record without a group; the row records which.
-                expectation: EndpointExpectation::Rejection,
+                // `(owner_secret, bulla)`, so the second call must be refused rather than replayed. This
+                // row passes `None` for the group — no rotation is attempted — so the only check it can
+                // reach is the one-shot nullifier, and `OwnershipProofReplayed` (`Custom(56)`) is
+                // therefore the code that must appear.
+                expectation: EndpointExpectation::RejectionNaming(&["ContractError(Custom(56))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {

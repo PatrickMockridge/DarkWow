@@ -389,6 +389,10 @@ impl DaoEscrowHarness {
             description_hash,
             recipient_pubkey,
             proposer_pubkey,
+            // The same blind the proof was built with (`OBL-C153`): the contract hashes this into
+            // `claim_commit` and the circuit's instances carry it, so the two sides agree by
+            // construction rather than by coincidence.
+            claim_blind: proposal_blind,
             claim_type,
             capability_proof,
         };

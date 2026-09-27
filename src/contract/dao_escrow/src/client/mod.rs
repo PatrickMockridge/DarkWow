@@ -205,6 +205,7 @@ pub struct ProposeClaimBuilder {
     description_hash: pallas::Base,
     recipient_pubkey: PublicKey,
     proposer_pubkey: PublicKey,
+    claim_blind: pallas::Base,
     claim_type: ClaimType,
     capability_proof: CapabilityProof,
 }
@@ -218,6 +219,10 @@ impl ProposeClaimBuilder {
             description_hash: pallas::Base::zero(),
             recipient_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
             proposer_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            // Must be set by the caller (`OBL-C153`): the contract hashes this into `claim_commit`, so a
+            // builder left at zero produces a call whose proof the contract cannot verify. Zeroed here
+            // only because every other field of this builder is.
+            claim_blind: pallas::Base::zero(),
             claim_type: ClaimType::Endowment,
             capability_proof: CapabilityProof {
                 capability_id: [0u8; 32],
@@ -260,6 +265,14 @@ impl ProposeClaimBuilder {
         self
     }
 
+    /// The blind of the claim commitment the proof carries (`OBL-C153`). The contract hashes it into
+    /// `claim_commit` and the circuit's instances carry it, so a builder that left it at the default
+    /// would produce a call whose proof the contract cannot verify.
+    pub fn claim_blind(mut self, blind: pallas::Base) -> Self {
+        self.claim_blind = blind;
+        self
+    }
+
     pub fn claim_type(mut self, ct: ClaimType) -> Self {
         self.claim_type = ct;
         self
@@ -278,6 +291,7 @@ impl ProposeClaimBuilder {
             description_hash: self.description_hash,
             recipient_pubkey: self.recipient_pubkey,
             proposer_pubkey: self.proposer_pubkey,
+            claim_blind: self.claim_blind,
             claim_type: self.claim_type,
             capability_proof: self.capability_proof.clone(),
         })

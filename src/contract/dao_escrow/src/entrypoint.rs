@@ -557,8 +557,11 @@ fn update_v1(cid: ContractId, params: model::UpdateParamsV1) -> ContractResult {
         }
     }
 
-    let update =
-        model::UpdateUpdateV1 { bulla: params.bulla, endowment_bytes: endowment.encode() };
+    let update = model::UpdateUpdateV1 {
+        bulla: params.bulla,
+        owner_nullifier: params.owner_nullifier,
+        endowment_bytes: endowment.encode(),
+    };
 
     msg!("[dao_escrow::update_v1] Endowment update prepared: {:?}", params.bulla);
     wasm::util::set_return_data(&[&[DaoEscrowFunction::UpdateV1 as u8], &update.encode()?[..]].concat())
@@ -571,6 +574,11 @@ fn update_v1(cid: ContractId, params: model::UpdateParamsV1) -> ContractResult {
 fn update_apply_v1(cid: ContractId, update: model::UpdateUpdateV1) -> ContractResult {
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
     wasm::db::db_set(endowments_db, &update.bulla.to_bytes(), &update.endowment_bytes)?;
+    // The other half of the one-shot guard (`OBL-C151`): exec *checks* this nullifier, and apply has to
+    // *record* it, or the check has nothing to find. This is the write the check's absence proved
+    // necessary — `UpdateV1_ReplaysTheProof` passed a second time until it was here.
+    let nullifiers_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &update.owner_nullifier.to_repr(), &[1])?;
     msg!("[dao_escrow::update_apply_v1] Endowment updated: {:?}", update.bulla);
     Ok(())
 }
@@ -1285,17 +1293,17 @@ fn propose_claim_get_metadata(
         }
     };
 
-    // Reconstruct capability_secret as Base from capability_proof bytes
-    let cap_secret_fp = pallas::Base::from_repr(params.capability_proof.capability_secret)
-        .into_option()
-        .unwrap_or(pallas::Base::zero());
-
     // claim_commit = poseidon_hash(DOMAIN_COIN_COMMIT, claim_id, claim_amount, claim_blind)
+    //
+    // The blind is the params' own (`OBL-C153`). This used to substitute
+    // `capability_proof.capability_secret`, under a comment calling it a "claim_blind placeholder (needs
+    // dedicated field in params)" — so the contract hashed a different preimage from the one the
+    // proposer's proof was built over, and the proof could never verify.
     let claim_commit = poseidon_hash([
         pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
         params.claim_id.inner(),
         pallas::Base::from(params.value),
-        cap_secret_fp, // claim_blind placeholder (needs dedicated field in params)
+        params.claim_blind,
     ]);
 
     // `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` with
