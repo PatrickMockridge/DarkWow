@@ -96,9 +96,23 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_set(info_db, b"db_version", &env!("CARGO_PKG_VERSION").as_bytes())?;
 
     // Deserialize init params: attestation_contract_id.
-    // Empty ix means deploy_contract() path — default to ContractId::ZERO.
+    //
+    // **The deploy path seeds the canonical constant, not `ContractId::ZERO`, and the zero default
+    // made `create_job_v1` uncallable.** `create_job_v1` reads this key and refuses a zero id as
+    // "not configured" — fail-closed, which is right (`OBL-C16`) — so on every deployment that passes
+    // no init params, which is what `deploy_contract()` does, the endpoint could never succeed.
+    // Measured on `test_heavyweight_labor_market`: `Block 5 rejected … exec … ContractError(IoError(…))`
+    // with the contract's own log carrying only its opening line, because the refusal happens before
+    // any of its own checks.
+    //
+    // **Attestation is genesis with a canonical id**, so it is seeded from the sdk constant — exactly
+    // as `promissory_note` is one line below and as `identity` is four lines below, where the comment
+    // records the same repair for the same reason: *"Identity … previously took `[0u8; 32]`, which the
+    // guard read as 'unconfigured' and skipped."* **That repair was applied to Identity and to
+    // promissory_note and missed Attestation**, which is the third time in this programme that a fix
+    // landed on the members of a set that shared a line and missed the sibling beside them.
     let attestation_cid: ContractId = if _ix.is_empty() {
-        ContractId::ZERO
+        *dwow_sdk::crypto::ATTESTATION_CONTRACT_ID
     } else {
         deserialize(_ix).map_err(|_| ContractError::IoError("Invalid init params".to_string()))?
     };
