@@ -10258,14 +10258,66 @@ def _derive_address(public: PublicKey) -> str:
     return public.to_string()
 
 def _bs58_encode_secret(secret) -> str:
-    """Model bs58 encoding of a 32-byte secret."""
+    """Model bs58 encoding of a 32-byte secret.
+
+    Rust: `bs58::encode(secret).into_string()`.
+
+    **Leading zero bytes are encoded as `1`, never dropped.** Corrected 2026-09-28
+    (`OBL-C182`): the body emitted digits while `val > 0`, which silently dropped them,
+    while the importer decodes with the reference `base58.b58decode` — so this encoder
+    was not the inverse of the model's own importer, and **68 of 20 000 round trips
+    (0.34%) decoded to the wrong length** (67 x 31 bytes, 1 x 30), failing the import
+    gate's `len(raw) != 32` check with `invalid secret length`. A base58 decoder has no
+    other way to recover them: the integer is the same whether or not they were there.
+    """
     chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-    val = int.from_bytes(secret if isinstance(secret, bytes) else bytes(secret), 'big')
+    raw = secret if isinstance(secret, bytes) else bytes(secret)
+    pad = 0
+    for b in raw:
+        if b != 0:
+            break
+        pad += 1
+    val = int.from_bytes(raw, 'big')
     result = []
     while val > 0:
         val, rem = divmod(val, 58)
         result.append(chars[rem])
-    return ''.join(reversed(result))
+    return ('1' * pad) + ''.join(reversed(result))
+
+
+def test_bs58_secret_roundtrip_with_leading_zeros():
+    """OBL-C182: the model's base58 encoder is the inverse of the model's importer.
+
+    **A constructed case, not a sampled one, and that is the point.** A random 32-byte
+    secret has a leading zero byte 1 time in 256, so the test that caught this by
+    accident — `test_dispatch_import_secrets_succeeds` — passed 255 runs in 256 and
+    reported nothing the other one. Every zero-padded width is exercised here, so the
+    rule is pinned rather than sampled.
+    """
+    import base58
+    trials = 0
+    for pad in range(4):
+        body = bytes([0x9F]) * (32 - pad)
+        raw = (b'\x00' * pad) + body
+        assert len(raw) == 32, (pad, len(raw))
+        encoded = _bs58_encode_secret(raw)
+        decoded = base58.b58decode(encoded)
+        assert len(decoded) == 32, (
+            f"pad={pad}: {encoded!r} decoded to {len(decoded)} bytes, not 32")
+        assert decoded == raw, f"pad={pad}: round trip changed the value"
+        trials += 1
+    # The exact shape that failed: a leading zero followed by a full-width tail.
+    raw = b'\x00' + bytes([0xFF]) * 31
+    assert len(base58.b58decode(_bs58_encode_secret(raw))) == 32
+    trials += 1
+    # And a seeded sweep, so the rule is not only checked at the boundaries.
+    import random as _random
+    rng = _random.Random(0xB58)
+    for _ in range(2000):
+        raw = bytes(rng.randrange(256) for _ in range(32))
+        assert base58.b58decode(_bs58_encode_secret(raw)) == raw
+        trials += 1
+    print(f"PASS: base58 secret round trip over {trials} cases (incl. 0-3 leading zero bytes)")
 
 class WalletImportSecrets:
     """Rust: WalletCommand::ImportSecrets. Stdin reader command."""
@@ -11102,6 +11154,9 @@ def run_all_tests():
         run_typed_manifest_tests,
         # Capability pipeline end-to-end (1 test)
         test_capability_pipeline_e2e,
+        # Codec round trips (1 test) — OBL-C182: a codec in the spec that could not
+        # decode its own output, and reported PASS 255 runs in 256.
+        test_bs58_secret_roundtrip_with_leading_zeros,
         # Seed error messages — visibility diagnostics (8 tests)
         # Emission schedule + cumulative supply chain + block execution (20 tests)
     ]
