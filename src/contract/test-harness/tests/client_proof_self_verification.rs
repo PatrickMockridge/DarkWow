@@ -57,11 +57,18 @@ use dwow_tender_contract::client::create_tender::{
 use dwow_tender_contract::client::submit_bid::{
     submit_bid_v1_proof, SubmitBidV1CallData,
 };
+use dwow_tender_contract::client::submit_bid_with_capability::{
+    submit_bid_with_capability_v1_proof, SubmitBidWithCapabilityV1CallData,
+};
 
 const ZKBIN_BYTES: &[u8] = include_bytes!("../../tender/proof/create_tender.zk.bin");
 
 /// `submit_bid`'s circuit binary — the one `manifest.toml:20` names for function code 1.
 const SUBMIT_BID_ZKBIN_BYTES: &[u8] = include_bytes!("../../tender/proof/submit_bid.zk.bin");
+
+/// And the capability endpoint's, which `manifest.toml` names `SubmitBidWithCapabilityV2`.
+const SUBMIT_BID_WITH_CAP_ZKBIN_BYTES: &[u8] =
+    include_bytes!("../../tender/proof/submit_bid_with_capability.zk.bin");
 
 fn create_tender_zkbin() -> ZkBinary {
     ZkBinary::decode(ZKBIN_BYTES, false).expect("create_tender.zk.bin decodes")
@@ -148,6 +155,50 @@ fn submit_bid_proof_verifies_against_its_own_circuit() {
             "the client's submit_bid proof does not verify against its own circuit with its own \
              public inputs ({other:?}). The defect is in the client, the witnesses or the zkbin — \
              not in the contract's metadata, which this test never touches."
+        ),
+    }
+}
+
+/// **And the capability endpoint's, which could not build a proof at all.** `test_heavyweight_tender`
+/// reported `harness generate failed — halo2 plonk error: General synthesis error` for this client:
+/// its `to_witnesses` supplied **twelve** witnesses to a circuit that declares **eleven**, in a
+/// different order, `bid_id` among them — and `submit_bid_with_capability.zk:119` *computes* `bid_id`,
+/// so it is an intermediate and not a witness. The vector is now the circuit's declaration verbatim.
+///
+/// This case exists so the next disagreement of this kind is a one-minute failure rather than a
+/// heavyweight run that stops one row early: a witness-arity mismatch is not visible to any gate in
+/// the tree, and the only thing that caught it was building it.
+#[test]
+fn submit_bid_with_capability_proof_verifies_against_its_own_circuit() {
+    let zkbin = ZkBinary::decode(SUBMIT_BID_WITH_CAP_ZKBIN_BYTES, false)
+        .expect("submit_bid_with_capability.zk.bin decodes");
+    let pk = proving_key(&zkbin);
+
+    let secret = pallas::Base::from(20u64);
+    let public = PublicKey::from_secret(SecretKey::from_base(secret));
+    let call_data = SubmitBidWithCapabilityV1CallData::new(
+        pallas::Base::from(1u64),
+        secret,
+        pallas::Base::from(5000u64),
+        pallas::Base::from(3u64),
+        pallas::Base::from(7u64),
+        // `submit_bid_with_capability.zk:108` constrains this witness equal to the constant `ONE`, so
+        // anything else fails synthesis — which is the tautology the host check relied on, and is not
+        // what this test is about.
+        pallas::Base::one(),
+        public,
+    );
+
+    let (proof, public_inputs) = submit_bid_with_capability_v1_proof(&zkbin, &pk, &call_data)
+        .expect("the client must build a proof");
+    let inputs = public_inputs.to_vec();
+
+    match verify_zkp(&proof, SUBMIT_BID_WITH_CAP_ZKBIN_BYTES, &inputs) {
+        ZkVerifyResult::Ok => {}
+        other => panic!(
+            "the client's submit_bid_with_capability proof does not verify against its own circuit \
+             with its own public inputs ({other:?}). The defect is in the client, the witnesses or \
+             the zkbin — not in the contract's metadata, which this test never touches."
         ),
     }
 }

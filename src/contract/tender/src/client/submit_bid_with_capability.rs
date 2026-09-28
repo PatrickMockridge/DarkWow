@@ -125,28 +125,41 @@ impl SubmitBidWithCapabilityV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
         let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
+        // **The order is the circuit's witness block, in its order, and it was neither.**
+        //
+        // This vector carried **twelve** witnesses against a circuit that declares **eleven**, and in
+        // a different order — it supplied `bid_id` (which `submit_bid_with_capability.zk:119`
+        // *computes*, so it is an intermediate and not a witness at all) and put the bidder's public
+        // coordinates and the capability fields before the private ones. `ZkCircuit::new` was handed
+        // twelve values for an eleven-slot circuit, which is the
+        // `harness generate failed — halo2 plonk error: General synthesis error` that
+        // `test_heavyweight_tender` reported, and it failed before any submission, so nothing
+        // downstream ever saw it.
+        //
+        // The order below is `witness "SubmitBidWithCapabilityV2"`'s declaration verbatim:
+        // `tender_id`, `bidder_secret`, `bidder_pub_x`, `bidder_pub_y`, `amount`, `bid_nonce`,
+        // `required_capability_id`, `capability_predicate_result`, `tx_commitment`, `tx_nonce`,
+        // `tx_binding`. The **public-input** vector was already right — `compute_public_inputs`
+        // publishes `bidder_pub_x, bidder_pub_y, tender_id, bid_id, required_capability_id,
+        // capability_predicate_result, tx_binding, tx_nonce`, which is `constrain_instance`'s order —
+        // so the two sides disagreed in exactly one of the two places they can.
         vec![
-            // Public inputs as witnesses
             Witness::Base(Value::known(self.tender_id)),
-            Witness::Base(Value::known(self.compute_bid_id())),
+            Witness::Base(Value::known(self.bidder_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            Witness::Base(Value::known(self.required_capability_id)),
-            // Capability proof data (witnesses)
-            Witness::Base(Value::known(self.capability_predicate_result)),
-            // Private inputs
-            Witness::Base(Value::known(self.bidder_secret)),
             Witness::Base(Value::known(self.amount)),
             Witness::Base(Value::known(self.bid_nonce)),
-            // tx_commitment, tx_nonce, tx_binding
+            Witness::Base(Value::known(self.required_capability_id)),
+            Witness::Base(Value::known(self.capability_predicate_result)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             // OBL-C78: the circuit *assigns* `tx_binding` —
             // `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` — and an
-            // assignment to a declared witness constrains it rather than shadowing it, so the zero
-            // that stood here was a constraint no proof could satisfy. `select_winner.rs` carries the
-            // same note with the full reasoning; this is the value `compute_public_inputs` publishes.
-            Witness::Base(Value::known(super::tx_binding_of(&self.tx_commitment, &self.tx_nonce))), // tx_binding
+            // assignment to a declared witness constrains it rather than shadowing it, so a zero here
+            // was a constraint no proof could satisfy. `select_winner.rs` carries the same note with
+            // the full reasoning; this is the value `compute_public_inputs` publishes.
+            Witness::Base(Value::known(super::tx_binding_of(&self.tx_commitment, &self.tx_nonce))),
         ]
     }
 }
