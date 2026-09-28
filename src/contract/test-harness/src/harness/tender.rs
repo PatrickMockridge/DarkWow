@@ -77,6 +77,10 @@ pub struct TenderHarness {
 impl TenderHarness {
     /// Spawn a new Tender harness with pre-loaded circuits
     pub fn spawn() -> Self {
+        // Deterministic proofs for this harness's callers, so a spec replayed on two chains produces
+        // the same blocks. Same call, same place, as the other contracts' harnesses
+        // (`harness/darkbet_exchange.rs:99`, `harness/multisig.rs:47`, …).
+        dwow_tender_contract::enable_deterministic_zk();
         let create_bin = include_bytes!("../../../tender/proof/create_tender.zk.bin");
         let submit_bin = include_bytes!("../../../tender/proof/submit_bid.zk.bin");
         let reveal_bin = include_bytes!("../../../tender/proof/reveal_bid.zk.bin");

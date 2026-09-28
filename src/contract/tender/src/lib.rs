@@ -103,3 +103,39 @@ pub const TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V2: &str = "RevealBidV2";
 pub const TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V2: &str = "SubmitBidV2";
 pub const TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V2: &str = "SubmitBidWithCapabilityV2";
 pub const TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V2: &str = "SelectWinnerV2";
+
+// ── Deterministic ZK mode — TEST-ONLY, and tender had none until 2026-09-28 ──────────────────────
+//
+// Every proof this contract's clients build went through `OsRng`, unconditionally, so two runs of the
+// same call produced different proofs — and therefore different transactions and different block
+// hashes. The runner replays each spec on two chains and requires the hashes to agree, which is
+// `INFRA-FAIL [determinism]: PI-7 block hashes must match`. It never fired for tender before because
+// the fixture never reached a block that could differ; the day it did, this was the whole cause.
+//
+// The feature, the flag and both functions are copied from the contracts that already carry them
+// (`purse`, `darkbet_exchange`, `multisig`, `oracle`, `attestation`, `bridge`, `labor_market`,
+// `identity`, `promissory_note`) — same names, same shape, same gating.
+#[cfg(feature = "deterministic-zk")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "deterministic-zk")]
+static DETERMINISTIC_ZK: AtomicBool = AtomicBool::new(false);
+
+/// Enable deterministic ZK proof generation for testing.
+/// Replaces `OsRng` with `StdRng::seed_from_u64(0)`.
+#[cfg(feature = "deterministic-zk")]
+pub fn enable_deterministic_zk() {
+    DETERMINISTIC_ZK.store(true, Ordering::SeqCst);
+}
+
+/// Returns true if deterministic ZK mode is enabled. Always `false` unless the
+/// `deterministic-zk` feature is enabled (test builds only — heavyweight-spec.md §7.4 DZ-4).
+pub fn deterministic_zk_enabled() -> bool {
+    #[cfg(feature = "deterministic-zk")]
+    {
+        DETERMINISTIC_ZK.load(Ordering::SeqCst)
+    }
+    #[cfg(not(feature = "deterministic-zk"))]
+    {
+        false
+    }
+}

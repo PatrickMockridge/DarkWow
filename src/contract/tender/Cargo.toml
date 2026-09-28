@@ -38,6 +38,12 @@ dwow-sdk = { path = "../../sdk", features = ["wasm"] }
 [features]
 default = []
 no-entrypoint = []
+# Test builds only: swaps `OsRng` for `StdRng::seed_from_u64(0)` in proof generation, so two runs of
+# the same call produce the same proof and therefore the same block hash. The runner replays a spec on
+# two chains and requires the hashes to match (`INFRA-FAIL [determinism]: PI-7`), which `OsRng` cannot
+# satisfy. The same feature name and the same shape that `purse`, `darkbet_exchange`, `multisig`,
+# `oracle`, `attestation`, `bridge`, `labor_market`, `identity` and `promissory_note` already carry.
+deterministic-zk = []
 client = [
     "dwow_core",
     "dwow-serial/async",

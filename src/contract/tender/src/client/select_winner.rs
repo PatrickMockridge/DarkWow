@@ -32,7 +32,7 @@ use dwow_sdk::{
     crypto::PublicKey,
     pasta::pallas,
 };
-use rand::rngs::OsRng;
+use rand::{rngs::OsRng, SeedableRng};
 
 /// SelectWinnerV1 circuit public inputs
 #[derive(Debug, Clone)]
@@ -128,7 +128,13 @@ pub fn select_winner_v1_proof(
     let witnesses = input.to_witnesses();
 
     let circuit = ZkCircuit::new(witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    // As `create_tender.rs`: `OsRng` unless deterministic mode is on.
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
 
     Ok((proof, public_inputs))
 }
