@@ -54,8 +54,14 @@ use dwow_sdk::pasta::pallas;
 use dwow_tender_contract::client::create_tender::{
     create_tender_v1_proof, CreateTenderV1CallData,
 };
+use dwow_tender_contract::client::submit_bid::{
+    submit_bid_v1_proof, SubmitBidV1CallData,
+};
 
 const ZKBIN_BYTES: &[u8] = include_bytes!("../../tender/proof/create_tender.zk.bin");
+
+/// `submit_bid`'s circuit binary — the one `manifest.toml:20` names for function code 1.
+const SUBMIT_BID_ZKBIN_BYTES: &[u8] = include_bytes!("../../tender/proof/submit_bid.zk.bin");
 
 fn create_tender_zkbin() -> ZkBinary {
     ZkBinary::decode(ZKBIN_BYTES, false).expect("create_tender.zk.bin decodes")
@@ -96,6 +102,52 @@ fn create_tender_proof_verifies_against_its_own_circuit() {
             "OBL-C78: the client's create_tender proof does not verify against its own circuit with \
              its own public inputs ({other:?}). The defect is in the client, the witnesses or the \
              zkbin — not in the contract's metadata, which this test never touches."
+        ),
+    }
+}
+
+/// **The same question for `submit_bid`, added because it is where the fixture now fails and nothing
+/// localised it.** `create_tender`'s two tests above pass and `test_heavyweight_tender` commits
+/// block 2 — so the defect the register recorded against `create_tender` has since been fixed, and
+/// the fixture's rejection has moved to block 3, `invalid proof: call[0] namespace 'SubmitBidV2'`.
+///
+/// **Why this case and not a guess about causes**: a failure here says the defect is *below* the
+/// metadata — the client's witnesses, its instance vector, or the circuit — and a pass says the proof
+/// is sound and the contract's metadata is what disagrees with it. Those are the two halves of the
+/// same investigation, and this test picks the half without touching the host.
+///
+/// A note on the pairing, because it looks like a mismatch and is not: the client type is
+/// `SubmitBidV1CallData` while the manifest names `SubmitBidV2`, and that is the shape the register
+/// carries for several contracts. The **V1 names the client**; the zkbin is whatever the contract
+/// deploys for the namespace, and this test takes the same `.zk.bin` the contract embeds.
+#[test]
+fn submit_bid_proof_verifies_against_its_own_circuit() {
+    let zkbin = ZkBinary::decode(SUBMIT_BID_ZKBIN_BYTES, false)
+        .expect("submit_bid.zk.bin decodes");
+    let pk = proving_key(&zkbin);
+
+    let secret = pallas::Base::from(20u64);
+    let public = PublicKey::from_secret(SecretKey::from_base(secret));
+    let call_data = SubmitBidV1CallData::new(
+        // The circuit instances `tender_id`, so a canonical value keeps this test about the proof
+        // rather than about which tender the fixture happened to create.
+        pallas::Base::from(1u64),
+        secret,
+        pallas::Base::from(5000u64),
+        pallas::Base::from(3u64),
+        public,
+    );
+
+    let (proof, public_inputs) = submit_bid_v1_proof(&zkbin, &pk, &call_data)
+        .expect("the client must build a proof");
+    let inputs = public_inputs.to_vec();
+
+    match verify_zkp(&proof, SUBMIT_BID_ZKBIN_BYTES, &inputs) {
+        ZkVerifyResult::Ok => {}
+        other => panic!(
+            "the client's submit_bid proof does not verify against its own circuit with its own \
+             public inputs ({other:?}). The defect is in the client, the witnesses or the zkbin — \
+             not in the contract's metadata, which this test never touches."
         ),
     }
 }
