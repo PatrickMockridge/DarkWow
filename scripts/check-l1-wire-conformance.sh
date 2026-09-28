@@ -29,10 +29,12 @@
 #
 # Neither, and the value is published for no reason a verifier needs. That is the leak this gate names.
 #
-# THE DECLARED LIST EXPIRES, deliberately. The 22 slots found on 2026-09-26 are declared below with the
-# reason each is still there, and the gate fails if one of them *stops* appearing — the declaration is a
-# debt, and removing a field from the wire is what pays it. An allowlist that never expires is the
-# "instrument that cannot report its own failure" defect with a longer half-life; this one expires.
+# THE DECLARED LIST EXPIRES, deliberately. Every slot this rule finds is declared below with the reason
+# it is still there, and the gate fails if one of them *stops* appearing — the declaration is a debt, and
+# removing a field from the wire is what pays it. An allowlist that never expires is the "instrument that
+# cannot report its own failure" defect with a longer half-life; this one expires. The count is not
+# written here: it was 22 on 2026-09-26, 10 on 2026-09-27 and 9 on 2026-09-28, and a number in prose is
+# what goes stale first.
 #
 # WHAT IT DOES NOT CHECK. Whether the AEAD note actually carries what §C.8.2 requires (that is a separate
 # reading, and today both schemas are missing `merkle_root` and `leaf_position`), whether a `param:` value
@@ -68,21 +70,18 @@ L1_CONTRACTS = ["promissory_note", "box", "purse"]
 #   * the purse balances — the note's `value` is declared `u64`, `encode_params_values` refuses any
 #     other type (`src/sdk/src/manifest.rs:645-666`), a `witness = N` source yields the circuit's
 #     `Base`, and `NoteFieldValue::as_u64()` matches only `U64`, so a balance that leaves the params
-#     cannot reach the note. **This is the only reason left**: box's four below were retired on
-#     2026-09-27 and the purse's six are blocked on the note's declared type, whose design is recorded
-#     in `OBL-C176`.
+#     cannot reach the note. **This is the only reason left** for the six; the design that removes it is
+#     recorded in `OBL-C176`.
 #
-# **BOX'S FOUR RETIRED (2026-09-27), and one of these reasons was FALSE.** The declaration for
-# `new_state_nonce` read: *"the successor nonce; the prover supplies it and no note field yields it"*,
-# and the comment above it made the contrast explicit — *"where purse's circuit derives its own"*.
-# **`put.zk` derives it too**: `:63-64` computes `computed_nsn = base_add(old_state_nonce, ONE)` and
-# constrains it equal to `new_state_nonce`, so the successor is fully determined by the circuit and the
-# `derived = "increment:1"` rule — the mechanism purse already uses — yields it exactly. The three
-# contents commitments need no note either: they are opaque `pallas::Base` elements the circuit folds
-# into a leaf, "commitment" is a naming convention and nothing in-circuit produces or verifies them, so
-# tagging them `witness = N` moves them off the wire and nothing else in the tree has to change. All
-# four are witness-tagged now and none is published; the note still does not carry what a box holds,
-# which is §C.8.2's separate gap and not a wire requirement.
+# **BOX'S THREE ARE DECLARED AGAIN, 2026-09-28, because 2026-09-27 retired them on a false rule.**
+# That day's comment said tagging "moves them off the wire and nothing else in the tree has to change."
+# Nothing in the tree moved them: `encode_params_values` writes every field in the schema. The tag only
+# stopped the caller's JSON from having to carry them. `new_state_nonce` was never among the three —
+# its slot is `derived:increment:1`, not `param:`, so this rule never flagged it, and the day's count of
+# "four" included a field that was never here. What IS true of the day's change, and worth keeping: the
+# declaration's *reason* for `new_state_nonce` was false (`put.zk:63-64` derives the successor, as
+# `purse` does), and `box`'s decoder stopped expecting the three — which is a manifest/decoder
+# *disagreement*, the class the owed agreement rule under `OBL-C179` covers, not a retirement.
 DECLARED = {
     ("purse", "Deposit", 1, "old_balance"): "how much, published — blocked on the note's `value` type, see above",
     ("purse", "Deposit", 3, "deposit_amount"): "how much moved, published — the record holds the balance, not the amount",
@@ -90,6 +89,16 @@ DECLARED = {
     ("purse", "Withdraw", 1, "old_balance"): "as Deposit, slot 1",
     ("purse", "Withdraw", 3, "withdraw_amount"): "as Deposit, slot 3",
     ("purse", "Withdraw", 5, "new_balance"): "as Deposit, slot 5",
+    # Box's three, back until `box/manifest.toml` stops listing them in `[[parameters]]`. Each is an
+    # opaque `pallas::Base` the circuit folds into a leaf; nothing in-circuit computes or verifies a
+    # preimage, so no observer needs them and the caller-chosen ones have nowhere else to go yet — the
+    # fourth quadrant of "caller supplies it and it is not published" does not exist until unit 5 builds
+    # it. The two that are *consumed* state (`old_contents_commit`, `contents_commit`) can already read
+    # `note:` from `CapRecord.user_data`; the one that is *chosen* (`new_contents_commit`) is what needs
+    # the new annotation.
+    ("box", "Put", 3, "old_contents_commit"): "consumed state — can read `note:user_data` now; blocked on the wallet record being written",
+    ("box", "Put", 4, "new_contents_commit"): "caller-chosen, nothing checks it — blocked on the fourth quadrant",
+    ("box", "Take", 1, "contents_commit"): "consumed state — as `old_contents_commit`",
 }
 
 def circuit_body(text):
@@ -109,44 +118,31 @@ def leaks():
         d = ROOT / "src" / "contract" / contract
         man = tomllib.loads((d / "manifest.toml").read_text())
         host = (d / "src" / "entrypoint" / "mod.rs").read_text()
-        # Which params each function declares **witness-tagged**, keyed by the circuit that proves it.
-        # A witness-tagged param is skipped by `encode_params_values` and filled from the prover's bound
-        # values, so it is *not* in the call data — and `param:<field>` as a witness-map source says only
-        # "the caller supplies this", which is true of a witness-tagged param as much as of a published
-        # one. Without this the rule reports a value as "published for nothing" when nothing publishes
-        # it: measured on 2026-09-27, after box's three contents commitments were tagged, this gate
-        # named all three as leaks that no longer existed.
+        # **A `witness = N` tag is NOT consulted here, and the reason is measured.** Between 2026-09-27
+        # and 2026-09-28 this rule carried a skip for witness-tagged params, on the belief that a tag
+        # means "off the wire". It does not: `encode_params_values` (`src/sdk/src/manifest.rs:630-680`)
+        # walks the whole schema and special-cases only `param_type == "proof"`, and `contract_client.rs`
+        # `:474` encodes that full schema after `:456-464` has pushed the tagged fields in from the
+        # prover's bound values. Three consumers read the tag three ways — `decode_params_from_json`
+        # (`manifest.rs:551-557`) skips it, the assembly loop fills it, the encoder writes it — so the
+        # tag decides *who supplies* a value and never *whether it is published*. A field in
+        # `[[parameters]]` is in the call data.
         #
-        # **The criterion is CONTINGENT, and `OBL-C179` is why.** It assumes a tag means "off the
-        # wire" — which is what `box` now implements, since its decoder stopped expecting those fields.
-        # `purse` contradicts it: ten of `deposit`'s sixteen params are tagged, *including every public
-        # input*, while `DepositParams::decode` still expects all sixteen. So under this rule purse's
-        # public inputs would be skipped as off-wire when they are read by the decoder — the rule is
-        # blind to exactly the disagreement it should fail on. Settling which meaning holds is the first
-        # item `OBL-C179` owes, and unit 5 is where it has to happen, because purse's six retirements
-        # move the same fields.
-        tagged = {}
-        for fn in man.get("functions", []):
-            circ = fn.get("proof_circuit")
-            if not circ:
-                continue
-            for spec in man.get("parameters", []):
-                if spec.get("function") != fn["name"]:
-                    continue
-                tagged[circ] = {f["name"] for f in spec.get("fields", []) if f.get("witness") is not None}
+        # The skip made this gate blind in exactly the case it exists to catch: `purse` tags ten of
+        # `deposit`'s sixteen params, *including every public input*, while `DepositParams::decode`
+        # expects all sixteen — so under the old rule purse's published inputs were skipped as off-wire.
+        # Whether a manifest's `[[parameters]]` agrees with its contract's decoder is a *different*
+        # question from this one, and it belongs to the agreement rule owed under `OBL-C179`.
         for circ in man.get("circuits", []):
             zk_path = d / "proof" / f"{circ['name'].lower()}.zk"
             if not zk_path.exists():
                 continue
             body = circuit_body(zk_path.read_text())
             exposed = set(re.findall(r"constrain_instance\(\s*(\w+)\s*\)", body))
-            off_wire = tagged.get(circ["name"], set())
             for slot, src in enumerate(circ.get("witness_map", [])):
                 if not src.startswith("param:"):
                     continue
                 field = src.split(":", 1)[1]
-                if field in off_wire:
-                    continue                                    # (0) witness-tagged: not on the wire
                 if field in exposed:
                     continue                                    # (a)
                 if re.search(rf"\bp\.{field}\b|\bparams\.{field}\b", host):
@@ -191,12 +187,12 @@ def main():
                 return 1
             print(f"OK: --self-test — the planted leak is reported ({probe[0][0]}/{probe[0][1]} slot {probe[0][2]})")
 
-            # ── The second control, and it tests the opposite direction. ──
-            # Tag the same probe field as a witness param and require the checker to stop reporting it.
-            # Without this the rule could pass the first control while being unable to tell a published
-            # value from a witness-borne one — which is exactly the defect this pair was written for: a
-            # witness-tagged param is skipped by `encode_params_values`, so nothing publishes it, and
-            # before this the rule named it as "published for nothing".
+            # ── The second control, and it pins the correction made on 2026-09-28. ──
+            # Tag the same probe field as a witness param and require the checker to **still** report it.
+            # The rule this replaces did the opposite: it skipped witness-tagged params on the belief
+            # that a tag means "off the wire", which made the gate blind to `purse`'s ten tagged public
+            # inputs. A control that requires the report to *stop* would re-introduce that blindness and
+            # pass; this one fails if the skip ever comes back.
             m = (dst / "manifest.toml").read_text()
             anchor2 = '{ name = "probe_field", type = "pallas_base" },'
             if anchor2 not in m:
@@ -206,12 +202,12 @@ def main():
             (dst / "manifest.toml").write_text(m)
             f = leaks()
             still = [k for k in f if k[3] == "probe_field"]
-            if still:
-                print("FAIL: --self-test tagged the probe as a witness param and the checker still "
-                      "reports it as published — a `param:` source is not the same as a wire field")
+            if not still:
+                print("FAIL: --self-test tagged the probe as a witness param and the checker stopped "
+                      "reporting it — a `witness = N` tag does not remove a field from the call data")
                 return 1
-            print("OK: --self-test — a witness-tagged param is not reported (the source kind is not "
-                  "the wire kind)")
+            print("OK: --self-test — a witness-tagged param is still reported (the tag decides who "
+                  "supplies a value, not whether it is published)")
         return 0
 
     found = leaks()
