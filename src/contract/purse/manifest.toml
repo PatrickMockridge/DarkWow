@@ -82,11 +82,25 @@ witness_map = [
     "tx_commitment",
     "param:tx_nonce",
     "derived:tx_binding:19,20",
-    # Slots 22 and 23. `asset_id` comes from the wallet's record, so it leaves the wire; the note reads
-    # it from this slot. `derived_purse_id` is a params field because it is an *instance* the metadata
-    # publishes, and the prover's member must be bound to the same value.
+    # Slots 22 and 23. `asset_id` comes from the wallet's record, so it leaves the wire.
+    #
+    # `derived_purse_id` is an *instance* the metadata publishes, so it must be in the call data —
+    # but **the caller cannot compute it**, and that is `OBL-C180`: as a plain untagged param it was
+    # required from the caller's JSON, and the only test that builds a purse deposit the way a wallet
+    # does failed `missing required parameter 'derived_purse_id'`. The circuit computes it —
+    # `poseidon(DOMAIN_COMMITMENT, owner_pub, asset_id, purse_id)` — and constrains it equal to the
+    # instance (`deposit.zk:120-122`), so the prover binds it from the same three values:
+    # slot 16 (`derived:owner_pub:15`), slot 22 (`note:asset_id`) and slot 0 (`note:purse_id`), all
+    # earlier in the order, so the rule's DAG holds. The `[[parameters]]` entry keeps `witness = 23`:
+    # the caller's JSON need not supply it, the client fills it from the bound value, and
+    # `encode_params_values` writes it — which is what an instance requires (`OBL-C179`).
+    #
+    # **`balance` cannot do this and is left as a required caller param.** Its `derived_purse_id` is
+    # witness slot 5 while its `owner_pub` is slot 11, so the rule would be a forward reference —
+    # `prover.rs`, write-path invariant 5, refuses it. Reordering the witness section would move the
+    # VK; that is a circuit change for a separate unit, not a manifest edit.
     "note:asset_id",
-    "param:derived_purse_id",
+    "derived:purse_id:16,22,0",
 ]
 public_inputs = [
     "slot:8",
@@ -127,11 +141,10 @@ witness_map = [
     "tx_commitment",
     "param:tx_nonce",
     "derived:tx_binding:19,20",
-    # Slots 22 and 23. `asset_id` comes from the wallet's record, so it leaves the wire; the note reads
-    # it from this slot. `derived_purse_id` is a params field because it is an *instance* the metadata
-    # publishes, and the prover's member must be bound to the same value.
+    # Slots 22 and 23. As `Deposit` above — the same rule from the same three operands, and
+    # `OBL-C180` applies identically. `withdraw.zk:118-120` is the counterpart of `deposit.zk:120-122`.
     "note:asset_id",
-    "param:derived_purse_id",
+    "derived:purse_id:16,22,0",
 ]
 public_inputs = [
     "slot:8",
@@ -194,8 +207,10 @@ fields = [
     #
     # `derived_purse_id` takes its place as the final field: a one-way function of the purse id, which
     # is the only form `privacy.md` §5.5 permits to be public, and what lets a parent require a deposit
-    # into a named purse.
-    { name = "derived_purse_id", type = "pallas_base" },
+    # into a named purse. **`witness = 23`** — it is an instance and must be published, but the caller
+    # cannot compute it; the client fills it from the prover's slot 23 and the encoder writes it. See
+    # the `witness_map` note for why that slot is `derived:purse_id:16,22,0` and not `param:`.
+    { name = "derived_purse_id", type = "pallas_base", witness = 23 },
 ]
 
 [[parameters]]
@@ -222,8 +237,8 @@ fields = [
     #
     # `derived_purse_id` takes its place as the final field: a one-way function of the purse id, which
     # is the only form `privacy.md` §5.5 permits to be public, and what lets a parent require a deposit
-    # into a named purse.
-    { name = "derived_purse_id", type = "pallas_base" },
+    # into a named purse. **`witness = 23`**, as `deposit`'s — see that entry's note.
+    { name = "derived_purse_id", type = "pallas_base", witness = 23 },
 ]
 
 [[parameters]]

@@ -835,10 +835,16 @@ fn test_purse_deposit_withdraw_wallet_driven_generic_prover() {
         );
 
         // Deposit: consume nonce 1 (seed's output, balance 100), produce nonce 2 (150).
+        //
+        // The JSON carries only what a caller can know. `asset_id` left the parameter list in unit 3
+        // (it is witness slot 22, `note:asset_id`, served from the wallet's record), and
+        // `derived_purse_id` is **not** supplied here — it is `witness = 23`, so the client fills it
+        // from the circuit's own `derived:purse_id` and writes it, which is `OBL-C180`'s repair.
+        // Before that repair this call could not be built: the only test that builds a purse call the
+        // way a wallet does failed `missing required parameter 'derived_purse_id'`.
         let deposit_params_json = format!(
-            r#"{{"old_balance":100,"deposit_amount":50,"new_balance":150,"tx_nonce":"{}","asset_id":"{}"}}"#,
+            r#"{{"old_balance":100,"deposit_amount":50,"new_balance":150,"tx_nonce":"{}"}}"#,
             base_hex(&pallas::Base::zero()),
-            base_hex(&pallas::Base::from(1u64)),
         );
         let (call_body, proof_bytes) = client
             .build("deposit", &deposit_params_json, &dww)
@@ -865,10 +871,10 @@ fn test_purse_deposit_withdraw_wallet_driven_generic_prover() {
         assert_eq!(dep_result.capabilities.len(), 1, "discover the deposit's purse capability");
 
         // Withdraw: consume nonce 2 (balance 150), produce nonce 3 (100).
+        // Same JSON shape as `deposit` above, and for the same reason.
         let withdraw_params_json = format!(
-            r#"{{"old_balance":150,"withdraw_amount":50,"new_balance":100,"tx_nonce":"{}","asset_id":"{}"}}"#,
+            r#"{{"old_balance":150,"withdraw_amount":50,"new_balance":100,"tx_nonce":"{}"}}"#,
             base_hex(&pallas::Base::zero()),
-            base_hex(&pallas::Base::from(1u64)),
         );
         let (wcall_body, wproof_bytes) = client
             .build("withdraw", &withdraw_params_json, &dww)
