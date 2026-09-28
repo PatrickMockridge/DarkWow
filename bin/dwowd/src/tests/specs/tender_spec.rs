@@ -39,24 +39,14 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
         deploy_ix: None,
         endpoints: vec![
             mk_ep("CreateTenderV1", true, Box::new({ let cell = tender_id.clone(); move || {
-                let r = h.create_tender(r_pk, r_sk, "Test Tender".to_string(), pallas::Base::from(1u64), pallas::Base::from(2u64), 100, 10000, 500, 1000, 2000)
+                // **The deadlines are small because the fixture is.** They were 500/1000/2000 while
+                // the runner submits one row per block from height 2 upwards, so `bid_deadline` at
+                // 500 was unreachable and every later row was refused *"Tender not in reveal state"* —
+                // the state simply never advanced. These are chosen against the block each row is
+                // verified at: create at 2, the capability control at 3, the bid at 4, the close at 5.
+                let r = h.create_tender(r_pk, r_sk, "Test Tender".to_string(), pallas::Base::from(1u64), pallas::Base::from(2u64), 100, 10000, 5, 6, 8)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 *cell.borrow_mut() = Some(r.tender_id);
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            }})),
-            mk_ep("SubmitBidV1", true, Box::new({ let cell = tender_id.clone(); move || {
-                let r = h.submit_bid(read_id(&cell), b_pk, b_sk, 5000, pallas::Base::from(3u64), pallas::Base::from(4u64), b"encrypted".to_vec())
-                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            }})),
-            mk_ep("RevealBidV1", true, Box::new({ let cell = tender_id.clone(); move || {
-                let r = h.reveal_bid(read_id(&cell), pallas::Base::from(1u64), b_pk, b_sk, 5000)
-                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
-            }})),
-            mk_ep("SelectWinnerV1", true, Box::new({ let cell = tender_id.clone(); move || {
-                let r = h.select_winner(read_id(&cell), pallas::Base::from(1u64), r_pk, r_sk, b_pk, 5000)
-                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             }})),
             // **The negative control for the capability binding, and it is red against the code that
@@ -71,6 +61,11 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
             // is `Custom(28)`. The needle is the error code rather than a bare `Rejection`, because a
             // row asserting only `Rejection` is satisfied by any earlier failure in the frame
             // (`OBL-C163`).
+            //
+            // **It is declared here, before `SubmitBidV1`, because it needs a tender that is still
+            // accepting bids.** The handler refuses with a state error before it reaches the child
+            // checks, so a row declared after `CloseTenderV1` would be rejected for the wrong reason
+            // and the needle would fail — which is how the ordering was found.
             //
             // **What it does not cover, stated rather than implied**: the
             // `capability_id == required_capability` comparison below it. `Tender.required_capability`
@@ -92,6 +87,41 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                     ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }})),
+            mk_ep("SubmitBidV1", true, Box::new({ let cell = tender_id.clone(); move || {
+                let r = h.submit_bid(read_id(&cell), b_pk, b_sk, 5000, pallas::Base::from(3u64), pallas::Base::from(4u64), b"encrypted".to_vec())
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+            }})),
+            // **`CloseTenderV1` was missing, and without it nothing past this point was reachable.**
+            // It is the only transition to `TenderState::Revealed` (`entrypoint.rs:748`), and
+            // `reveal_bid` and `select_winner` both refuse unless the tender is `Revealed`
+            // (`:364`, `:452`). So before this row the fixture could never present a tender in that
+            // state, and its last two rows were unreachable for a reason the fixture could not
+            // express. **No proof is needed**: the manifest gives `close_tender` no
+            // `requires_proof` and no `proof_circuit`, and `client/` has no `close_tender.rs` — which
+            // is why it looked unreachable and is not: the endpoint takes params and nothing else, so
+            // a caller builds the call data directly, and so does this row.
+            mk_ep("CloseTenderV1", false, Box::new({ let cell = tender_id.clone(); move || {
+                let (rx, ry) = r_pk.xy().expect("requester pk is not identity");
+                let params = dwow_tender_contract::model::CloseTenderParamsV1 {
+                    tender_id: read_id(&cell),
+                    requester_pub_x: rx,
+                    requester_pub_y: ry,
+                };
+                let mut call_data = vec![0x03u8];
+                call_data.extend_from_slice(&params.encode());
+                Ok(EndpointResult { children: vec![], call_data, proofs: vec![] })
+            }})),
+            mk_ep("RevealBidV1", true, Box::new({ let cell = tender_id.clone(); move || {
+                let r = h.reveal_bid(read_id(&cell), pallas::Base::from(1u64), b_pk, b_sk, 5000)
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+            }})),
+            mk_ep("SelectWinnerV1", true, Box::new({ let cell = tender_id.clone(); move || {
+                let r = h.select_winner(read_id(&cell), pallas::Base::from(1u64), r_pk, r_sk, b_pk, 5000)
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+            }})),
         ],
     }
 }
