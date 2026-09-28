@@ -27,6 +27,17 @@ dwow_promissory_note_contract = { version = "0.1.0", path = "../promissory_note"
 # the job's `attestation_id` names a real, active attestation (`OBL-Z16`). Same shape as the
 # promissory_note dependency above: no entrypoint, model and call types only.
 dwow_attestation_contract = { version = "0.1.0", path = "../attestation", features = ["no-entrypoint"] }
+# Typed access to `VerifyCapabilityParams`, which `accept_job_with_capability_v1` decodes to bind the
+# credential the child proved to the capability the job requires (`OBL-C186`). The same
+# `no-entrypoint` shape as the two above.
+#
+# **This line was missing, and the omission was invisible to `cargo check`.** The handler referenced
+# `dwow_identity_contract::model::VerifyCapabilityParams` while the crate declared no such dependency,
+# and `cargo check -p dwow_labor_market_contract` passed anyway — the host-target check resolved it
+# through workspace feature unification, while `make … all` (the wasm target, which is what actually
+# ships) failed `error[E0433]: cannot find module or crate dwow_identity_contract`. A check that is not
+# the build is not evidence the build works.
+dwow_identity_contract = { version = "0.1.0", path = "../identity", features = ["no-entrypoint"] }
 
 [dev-dependencies]
 smol = "2.0.2"

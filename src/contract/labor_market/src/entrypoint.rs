@@ -1718,6 +1718,33 @@ fn accept_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<Da
         ContractError::from(LaborMarketError::CapabilityRequired)
     })?;
 
+    // **The second half, and it was the missing one.** Identity reads `capability_id` from the
+    // *child's own params* and checks the caller's credential against that capability — it never
+    // learns what this job requires, because the parent's requirement is not in the child's frame.
+    // So requiring the child's *shape* (one call, selector `0x06`, the right contract id — the three
+    // checks above) establishes that the caller verified *some* capability, and `required_cap` below
+    // was used **only in the log line**: a job requiring capability X was accepted by a proof for any
+    // capability Y. This is the shape `insurance_market` is the tree's only other example of; its own
+    // porting comment says so (`underwrite_with_capability.rs:105-111`), and it names this function
+    // as the pattern it goes further than.
+    //
+    // **It is dormant, as tender's identical binding is, and for the same structural reason.**
+    // `job.required_capability_id` is written only by `CreateJobWithCapabilityV1` (`lib.rs:65`,
+    // `0x0c`), and that endpoint has **no proof path**: `client/` carries `create_job.rs` but no
+    // `create_job_with_capability.rs`, so no `create_job_with_capability_v1_proof` exists and no
+    // caller can build the call. Every job therefore carries `None`, the `ok_or_else` above refuses,
+    // and this comparison never runs. Recorded rather than deleted: the alternative is a capability
+    // requirement that reads as enforced and cannot be reached — which is the state the endpoint was
+    // already in. Two contracts, one shape (`OBL-C186`).
+    let identity_params =
+        dwow_identity_contract::model::VerifyCapabilityParams::decode(&child_call.data[1..])
+            .map_err(|_| ContractError::from(LaborMarketError::CapabilityNotMet))?;
+    if identity_params.capability_proof.capability_id.to_bytes() != required_cap {
+        msg!("[labor_market::accept_job_with_capability_v1] ERROR: the child verified a different \
+              capability than this job requires");
+        return Err(ContractError::from(LaborMarketError::CapabilityNotMet).into())
+    }
+
     job.worker_pubkey = Some([params.worker_pub_x, params.worker_pub_y]);
     job.state = JobState::InProgress;
 

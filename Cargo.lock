@@ -2844,6 +2844,7 @@ dependencies = [
  "dwow-serial",
  "dwow_attestation_contract",
  "dwow_core",
+ "dwow_identity_contract",
  "dwow_promissory_note_contract",
  "getrandom 0.2.17",
  "halo2_proofs",
