@@ -2,12 +2,22 @@
 # The wallet reads this manifest to construct capability types per wallet.md §2.2.
 # Box is L1: two ZK circuits, Merkle inclusion proofs, nullifier per state transition.
 #
-# **The wire carries the public inputs, the Merkle path, the proof, `tx_binding` and
-# `tx_nonce` — and nothing else.** `box_id`, `state_nonce` and the consumed box's contents come
-# from the wallet's own record through the `note:` sources, `new_state_nonce` is
-# `derived:increment:1` of the consumed nonce, and the produced contents is a parameter carrying
-# `off_wire`. That is `privacy.md` §2's promise, which says an observer learns "not which
+# **The wire carries the public inputs, the Merkle path, the proof, `tx_binding`, `tx_nonce` and
+# — on `Take` only — `contents_commit`.** `box_id`, `state_nonce` and `Put`'s consumed contents
+# come from the wallet's own record through the `note:` sources, `new_state_nonce` is
+# `derived:increment:1` of the consumed nonce, and `Put`'s produced contents is a parameter
+# carrying `off_wire`. That is `privacy.md` §2's promise, which says an observer learns "not which
 # resource was operated on", and §5.5's, which says `box_id` "is never a public input".
+#
+# **`Take`'s `contents_commit` is the exception, and it is a parent's requirement rather than this
+# contract's.** `escrow::ClaimV1` decodes the box child's call and compares this field against
+# `claim_box_contents` on its own record, so that a claim is of *that* escrow's box and not of a
+# box-shaped formality. A parent has no key to the child's AEAD note, so the value must be on the
+# wire for the check to exist — and `scripts/check-l1-wire-conformance.sh` declares it, because
+# that gate looks for a reader in *this* contract's entrypoint and box's host reads none of the
+# contents fields. **The tension is real and is `OBL-C184`, not resolved here**: a parent binding
+# to a specific object needs something public about it, and an L1 object exists to publish
+# nothing.
 #
 # **Corrected 2026-09-28, twice, and the second correction is why the first did not fix it.**
 # The passages that stood here said the contents commitments were "witness-tagged" and so "not
@@ -90,8 +100,12 @@ name = "Take"
 namespace = "Take"
 witness_map = [
     "note:box_id",
-    # As `Put`'s slot 3: the box being consumed, from the wallet's record of it.
-    "note:user_data",
+    # **Back on the wire, and for a reason box's own host cannot supply: a parent reads it.**
+    # `escrow::ClaimV1` decodes this child call and compares this field against
+    # `claim_box_contents` on its own record — that comparison is what makes the child call a claim
+    # of *this* escrow's box. `note:user_data` was right for the circuit and wrong for the parent,
+    # and a parent has no key to the child's note.
+    "param:contents_commit",
     "note:state_nonce",
     "derived:nullifier:5,0,2",
     "merkle_root",
@@ -131,8 +145,12 @@ fields = [
 [[parameters]]
 function = "take"
 fields = [
-    # `contents_commit` is gone from this list: it is slot 1, sourced `note:user_data` from the
-    # wallet's record of the box being taken.
+    # **Published, and read by a host — a parent's, not this contract's.** `escrow::ClaimV1` decodes
+    # this call to check the box taken is the one the escrow named. `scripts/check-l1-wire-conformance.sh`
+    # declares it, because that gate looks for a reader in *this* contract's entrypoint and box's host
+    # reads none of the contents fields; the reader is one contract over, which is a blind spot the
+    # gate's comment now names.
+    { name = "contents_commit", type = "pallas_base" },
     { name = "nullifier", type = "pallas_base", witness = 3 },
     { name = "expected_root", type = "pallas_base", witness = 4 },
     { name = "leaf_pos", type = "u32", witness = 6 },

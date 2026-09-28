@@ -168,8 +168,10 @@ fn test_put_update_rejects_wrong_length() {
 
 #[test]
 fn test_take_params_encode_decode_roundtrip() {
-    // `contents_commit` is not a field of this struct either; see the note above `PutParams`.
+    // `contents_commit` is a field again — a parent contract reads it — while the two `Put` fields
+    // above remain off both this struct and the wire.
     let params = TakeParams {
+        contents_commit: pallas::Base::from(3u64),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         leaf_pos: MerklePosition::new(0),
@@ -183,6 +185,7 @@ fn test_take_params_encode_decode_roundtrip() {
     assert!(!encoded.is_empty());
 
     let decoded = TakeParams::decode(&encoded).expect("round-trip must succeed");
+    assert_eq!(decoded.contents_commit, params.contents_commit);
     assert_eq!(decoded.expected_root.to_bytes(), params.expected_root.to_bytes());
     assert_eq!(decoded.proof, params.proof);
 

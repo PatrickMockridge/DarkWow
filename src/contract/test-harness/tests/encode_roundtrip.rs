@@ -133,6 +133,7 @@ fn test_box_encode_roundtrip() {
     assert_roundtrip!(PutUpdate, put_update);
 
     let take = TakeParams {
+        contents_commit: pallas::Base::from(3u64),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         leaf_pos: MerklePosition::new(0),

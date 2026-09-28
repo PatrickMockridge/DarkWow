@@ -76,11 +76,18 @@ params are the public inputs and nothing else, and this table is the contract of
 | Call | Carries | Does **not** carry | Header |
 |---|---|---|---|
 | `Put` | `nullifier`, `expected_root`, `new_leaf`, the four commitment coordinates, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `box_id`, `old_state_nonce`, `new_state_nonce`, `old_contents_commit`, **`new_contents_commit`** | 100 bytes |
-| `Take` | `nullifier`, `expected_root`, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `box_id`, `state_nonce`, **`contents_commit`** | 68 bytes |
+| `Take` | **`contents_commit`**, `nullifier`, `expected_root`, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `box_id`, `state_nonce` | 100 bytes |
 
-**Nothing is declared as still on the wire for either call** — this contract's entries in
-`scripts/check-l1-wire-conformance.sh` are gone, and that gate fails if a declaration goes stale, so
-the count is the measure rather than the claim.
+**`Take`'s `contents_commit` is published, and it is the one entry this contract declares in
+`scripts/check-l1-wire-conformance.sh`.** The reason is not box's: `escrow::ClaimV1` decodes the box
+child's call and compares this field against `claim_box_contents` on its own record, which is what
+makes a claim a claim of *that* escrow's box. A parent has no key to the child's AEAD note, so the
+value has to be readable by the parent or the check cannot exist. The gate's rule (b) — "does this
+contract's entrypoint read it" — cannot see a reader one contract over, which is why the declaration
+carries the reason rather than the gate deriving it. **`OBL-C184` is the tension this exposes and does
+not resolve**: a parent binding to a specific object needs something public about it, and an L1 object
+exists to publish nothing. `purse`'s `derived_purse_id` is the shape of an answer for *identity*; box
+has no equivalent for *contents*.
 
 **How the removed values reach the circuit.** Three routes:
 

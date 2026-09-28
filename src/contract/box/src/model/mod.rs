@@ -103,7 +103,9 @@ fn read_merkle_node(data: &[u8]) -> Result<MerkleNode, ContractError> {
 /// not remove a field from the call data: `encode_params_values` writes every field in the schema
 /// (`OBL-C179`, corrected 2026-09-28). So the manifest and this decoder **disagree**: the manifest still
 /// describes a put of 196 bytes and this struct decodes 100. The three are declared as the wire debt they
-/// are in `scripts/check-l1-wire-conformance.sh`, and unit 7 removes them from `[[parameters]]`.
+/// are in `scripts/check-l1-wire-conformance.sh`; the manifest was corrected the same day, so the two
+/// now describe one wire — `new_state_nonce` and `old_contents_commit` are gone from `[[parameters]]`
+/// entirely, and `new_contents_commit` carries `off_wire`.
 /// The circuit needed them as *witnesses* all along — `put.zk:46` folds `old_contents_commit` into the
 /// old leaf, `:67` folds `new_contents_commit` into the new one, and `:63-64` computes `new_state_nonce`
 /// as `base_add(old_state_nonce, ONE)` and constrains it — and a witness does not have to be published
@@ -120,11 +122,11 @@ impl dwow_serial::Decodable for PutParams { fn decode<D: std::io::Read>(d: &mut 
 impl PutParams {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let path_bytes: Vec<u8> = self.merkle_path.iter().flat_map(|n| n.to_bytes()).collect();
-        // hdr = 100 (was 196, and 260 before that): `box_id` and `old_state_nonce` are off the wire —
-        // both read from the wallet's record. `new_state_nonce` and the two contents commitments are
-        // **not** off it yet: they are still listed in the manifest's `[[parameters]]`, which is the
-        // document that describes this wire, so the manifest and this decoder disagree until unit 7
-        // removes them there. See the struct's note and `OBL-C179`.
+        // hdr = 100 (was 196, and 260 before that): `box_id`, `old_state_nonce`, `new_state_nonce`,
+        // `old_contents_commit` and `new_contents_commit` are all off the wire — the first two read
+        // from the wallet's record, the nonce derived, `old_contents_commit` from the record too, and
+        // `new_contents_commit` a parameter carrying `off_wire`. The manifest says the same, which for
+        // one commit it did not (`OBL-C179`).
         let hdr = 100usize;
         let mut b = Vec::with_capacity(hdr + path_bytes.len() + 1usize + self.proof.len() + 64usize);
         b.extend_from_slice(&self.nullifier.to_bytes());
@@ -177,18 +179,29 @@ impl PutUpdate {
 // plaintext, committed to byte-for-byte by the transaction hash. Measured before
 // removal: no host read either, and the wallet's prover takes both from its own
 // record (`CapRecord.object_id`, `.state_nonce`) through `note:` witness sources.
-// **Residue, declared in `scripts/check-l1-wire-conformance.sh`**: the two contents
-// commitments. The reason once given for `new_state_nonce` — that the *prover* must
-// supply it, "where purse's circuit derives its own" — **is false**: `put.zk:63-64`
-// derives the successor too, and its witness slot reads `derived:increment:1`. It was
-// never in the gate's scope, its slot being `derived:` rather than `param:`. The
-// contents commitments leave `[[parameters]]` in unit 7; the consumed ones can read
-// `note:user_data` from the wallet's record, and the produced one needs the
-// "caller supplies it, not published" annotation that does not exist yet.
+// **`contents_commit` is back, and the reason is a parent contract rather than a preference.**
+// It left this struct in the 2026-09-28 pass, on the correct reading that box's own host never reads
+// it and its witness slot could take `note:user_data` from the wallet's record. **That reading was
+// half the pair.** `escrow`'s `ClaimV1` decodes the child call —
+// `dwow_box_contract::model::TakeParams::decode(&box_call.data[1..])` — and compares this field
+// against the `claim_box_contents` on its own record, which is what makes the child call a claim of
+// *this* escrow's box rather than a box-shaped formality. With the field off the wire the parent had
+// no operand and `escrow` stopped compiling.
+//
+// **So the wire question and the composability question are the same question, and this field is
+// where they meet**: a parent that must bind to a specific child object needs *something* public
+// about that object, and an L1 object's whole purpose is to publish nothing. `purse` resolved its
+// half of this with `derived_purse_id` — a one-way function of the id, which `privacy.md` §5.5
+// permits precisely because it is not the id. What box needs is the analogous thing for *contents*,
+// and this is not it: `contents_commit` is the app's preimage-commitment, and for a guessable
+// preimage it is the "which box" leak §2.4 forbids. That design step is recorded rather than taken.
 // ============================================================================
 
 #[derive(Debug, Clone)]
 pub struct TakeParams {
+    /// **Fold into the leaf, and read by a parent.** See the note above: `escrow::ClaimV1` compares
+    /// this against its own record, so it is the child's pointer back to the object its parent named.
+    pub contents_commit: pallas::Base,
     pub nullifier: Nullifier, pub expected_root: MerkleNode,
     pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>,
     pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base,
@@ -199,9 +212,11 @@ impl dwow_serial::Decodable for TakeParams { fn decode<D: std::io::Read>(d: &mut
 impl TakeParams {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let path_bytes: Vec<u8> = self.merkle_path.iter().flat_map(|n| n.to_bytes()).collect();
-        // hdr = 68 (was 100, and 164 before that): `box_id`, `state_nonce` and the contents commitment
-        // are off the wire.
-        let hdr = 68usize; let mut b = Vec::with_capacity(hdr + path_bytes.len() + 1usize + self.proof.len() + 64usize);
+        // hdr = 100 (was 68 for one commit, and 164 before that): `box_id` and `state_nonce` are off
+        // the wire; `contents_commit` is back on it because a parent reads it. The 32 bytes it costs
+        // are the price of `escrow::ClaimV1` being able to name the box it is claiming.
+        let hdr = 100usize; let mut b = Vec::with_capacity(hdr + path_bytes.len() + 1usize + self.proof.len() + 64usize);
+        b.extend_from_slice(&self.contents_commit.to_repr());
         b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.expected_root.to_bytes()); b.extend_from_slice(&self.leaf_pos.to_le_bytes());
         b.extend_from_slice(&path_bytes);
@@ -215,10 +230,11 @@ impl TakeParams {
         b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let hdr = 68usize; if data.len() <= hdr + 1024usize { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
-        let nullifier = read_nullifier(read_slice(data, 0, 32)?)?;
-        let expected_root = read_merkle_node(read_slice(data, 32, 32)?)?;
-        let leaf_pos = MerklePosition::from_le_bytes(read_field::<4>(data, 64)?);
+        let hdr = 100usize; if data.len() <= hdr + 1024usize { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
+        let contents_commit = read_base(read_slice(data, 0, 32)?)?;
+        let nullifier = read_nullifier(read_slice(data, 32, 32)?)?;
+        let expected_root = read_merkle_node(read_slice(data, 64, 32)?)?;
+        let leaf_pos = MerklePosition::from_le_bytes(read_field::<4>(data, 96)?);
         let mut merkle_path = [MerkleNode::from_base(pallas::Base::zero()); 32];
         for (i, slot) in merkle_path.iter_mut().enumerate() { *slot = read_merkle_node(read_slice(data, hdr.saturating_add(i.saturating_mul(32)), 32)?)?; }
         let path_end = hdr + 1024usize;
@@ -230,7 +246,7 @@ impl TakeParams {
         if data.len() < pos2.saturating_add(64) { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
         let proof = read_slice(data, path_end+dwow_sdk::blockchain::SerializedLen::ENCODED_SIZE, proof_len)?.to_vec();
         let tx_binding = read_base(read_slice(data, pos2, 32)?)?; let tx_nonce = read_base(read_slice(data, pos2+32, 32)?)?;
-        Ok(TakeParams { nullifier, expected_root, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
+        Ok(TakeParams { contents_commit, nullifier, expected_root, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
     }
 }
 

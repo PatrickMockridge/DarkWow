@@ -8660,6 +8660,10 @@ CONTRACT_STRUCTS = {
             ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
         ],
         "take": [
+            # `contents_commit` is published, and read by a *parent* — `escrow::ClaimV1` decodes the
+            # child call to check the box taken is the one the escrow named. Box's own host reads
+            # none of the contents fields, which is why this one is back and `Put`'s are not.
+            ("contents_commit", "pallas_base"),
             ("nullifier", "pallas_base"),
             ("expected_root", "pallas_base"), ("leaf_pos", "u32"),
             ("merkle_path", "merkle_path"), ("proof", "proof"),
@@ -9526,14 +9530,16 @@ def test_wire_layout_matches_contract_structs():
         + [F("new_contents_commit", "pallas_base")]
     ) == 1224, "the off_wire field must be the difference between 1192 and 1224"
 
-    # box take (TakeParams): 7 fields → 1160 bytes.
+    # box take (TakeParams): 8 fields → 1192 bytes. `contents_commit` is published — a parent reads
+    # it through the child call to check the box taken is the one it named — so 1160 + 32.
     box_take = [
+        F("contents_commit", "pallas_base"),
         F("nullifier", "pallas_base", witness=3),
         F("expected_root", "pallas_base", witness=4), F("leaf_pos", "u32", witness=6),
         F("merkle_path", "merkle_path", witness=7), F("proof", "proof"),
         F("tx_binding", "pallas_base", witness=10), F("tx_nonce", "pallas_base"),
     ]
-    assert schema_wire_len(box_take) == 1160, schema_wire_len(box_take)
+    assert schema_wire_len(box_take) == 1192, schema_wire_len(box_take)
 
     # purse deposit: **14 declared, 13 published → 1352 bytes.** The three balances left the wire on
     # 2026-09-28 — `old_balance` and `new_balance` are not parameters at all, and `deposit_amount`

@@ -125,9 +125,9 @@ impl BoxHarness {
         let proof=Proof::create(&self.take_pk,&[c],&pi,rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=dwow_sdk::crypto::Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
-        // `contents_commit` is absent from this struct for the same reason, and still published by the
-        // manifest for the same reason. As above.
-        let params=dwow_box_contract::model::TakeParams{nullifier:nf_val,expected_root:root,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
+        // `contents_commit` is a field again, and on the wire: a parent contract reads it through the
+        // child call to check the box taken is the one it named. See the note in box's model.
+        let params=dwow_box_contract::model::TakeParams{contents_commit:cc,nullifier:nf_val,expected_root:root,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
         let mut cd=vec![0x02u8];cd.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);Ok(BoxTakeResult{call_data:cd,proof})
     }
 }

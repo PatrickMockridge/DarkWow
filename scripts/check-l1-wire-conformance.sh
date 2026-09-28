@@ -88,18 +88,24 @@ L1_CONTRACTS = ["promissory_note", "box", "purse"]
 # a parameter and carries `off_wire`, the tag this gate does skip because the encoders honour it.
 # So purse declares nothing here, and the six entries that used to sit in this dict would now be
 # reported as stale — which is what the declaration expiring is for.
-# **BOX'S THREE ARE GONE TOO (2026-09-28): this list is empty, and the count is 0.** `Put`'s
-# `old_contents_commit` and `Take`'s `contents_commit` are `note:user_data`, served from the wallet's
-# own record; `Put`'s `new_contents_commit` carries `off_wire`. So nothing in the three L1 contracts
-# this gate covers is published for a reason no verifier needs.
+# **ONE IS BACK, AND IT IS THE INTERESTING ONE (2026-09-28).** `Take`'s `contents_commit` was retired
+# the same day as `Put`'s pair, and the retirement broke `escrow`: `ClaimV1` decodes the child call
+# and compares this field against `claim_box_contents` on its own record, which is what makes the
+# child call a claim of *this* escrow's box. A parent has no key to the child's AEAD note, so moving
+# the value there left it with no operand and the contract stopped compiling.
 #
-# **An empty declaration list is the state this gate was built to reach, and it is not the state
-# where the gate stops being useful** — it still fails on a *new* `param:` slot, and still fails if a
-# field it used to see stops appearing, which is what would say a contract started publishing one
-# again. But its reach has a floor this comment should carry rather than leave implied: the rule
-# reads witness-map `param:` slots, so a wire field in no witness map is invisible to it, and
-# `asset_id` sat published and undeclared on purse for exactly that reason until unit 6 removed it.
-DECLARED = {}
+# **This gate could not have seen it, and the reason is a blind spot worth naming rather than
+# patching.** Rule (b) asks whether `p.<field>`/`params.<field>` appears in *this contract's*
+# entrypoint. The reader here is one contract over, so the rule reads as "published for nothing" when
+# something does read it — the half-a-pair shape this register has paid for more than once. Widening
+# the rule to a repo-wide grep for the child's params type would fix this instance and not the
+# question underneath it, which is that **a parent binding to a child object needs something public
+# about that object, and an L1 object exists to publish nothing.** `purse` answered its half with
+# `derived_purse_id`, a one-way function of the id. Box's answer is not this field — for a guessable
+# preimage `contents_commit` *is* the "which box" leak §2.4 forbids — and it is not taken here.
+DECLARED = {
+    ("box", "Take", 1, "contents_commit"): "read by `escrow::ClaimV1` through the child call, not by box's own host — the gate's rule (b) only looks at the owning contract",
+}
 
 def circuit_body(text):
     """The `circuit "..." { ... }` block, with `#` comments stripped."""

@@ -68,6 +68,7 @@ fn make_escrow() -> Escrow {
         spent_nullifier: pallas::Base::from(50),
         created_at: 50,
         funded_at: Some(55),
+        claim_box_contents: pallas::Base::from(7),
         instance_seed: [0u8; 32],
     }
 }
@@ -321,6 +322,10 @@ fn test_escrow_encoding() {
         spent_nullifier: pallas::Base::from(50),
         created_at: 50,
         funded_at: Some(55),
+        // Unit 2 added this field and did not update this file, so it did not compile until
+        // 2026-09-28. It is `Escrow::derive_claim_box_contents`'s output on the record; the
+        // parent-side check compares the box child's `TakeParams.contents_commit` against it.
+        claim_box_contents: pallas::Base::from(7),
         instance_seed: [1u8; 32],
     };
 
@@ -371,6 +376,7 @@ fn test_escrow_compute_nullifier() {
         spent_nullifier: pallas::Base::from(50),
         created_at: 50,
         funded_at: Some(55),
+        claim_box_contents: pallas::Base::from(7),
         instance_seed: [0u8; 32],
     };
 
