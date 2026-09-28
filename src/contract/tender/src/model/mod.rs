@@ -1647,16 +1647,58 @@ pub struct CreateTenderWithCapabilityParamsV1 {
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CreateTenderWithCapabilityParamsV1 {
+    /// **This struct had a `decode` and no `encode`** — and it alone among tender's params types read
+    /// its lengths as a bare **one byte** where every sibling reads `SerializedLen`
+    /// (`CreateTenderParamsV1` at `:617`/`:633`, `SubmitBidParamsV1` at `:822`/`:832`,
+    /// `RevealBidParamsV1` at `:997`/`:1006`). The two omissions are one omission: the `SerializedLen`
+    /// campaign converted the sibling and left this one, and a params type with no encoder is a call
+    /// no client, harness or test can build.
+    ///
+    /// **That is why `CreateTenderWithCapabilityV1` was uncallable** — not merely untested. It is a
+    /// proof-less endpoint (`manifest.toml:47-48`), so a caller must build the call data itself, and
+    /// the only type describing that data could not be serialised. `Tender.required_capability` is
+    /// written by this endpoint alone, so the capability gate in `submit_bid_with_capability_v1` had
+    /// no reachable operand (`tender_spec.rs`).
+    ///
+    /// Both halves are corrected together, and the format is now `SerializedLen` as its siblings' is.
+    /// Nothing that worked is changed: the endpoint has no working client to break.
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let tb = self.title.as_bytes();
+        let pl = SerializedLen::try_from_len(self.proof.len())?;
+        let tn = SerializedLen::try_from_len(tb.len())?;
+        let mut b = Vec::with_capacity(4 + self.proof.len() + 4 + tb.len() + 266);
+        b.extend_from_slice(&pl.to_le_bytes());
+        b.extend_from_slice(&self.proof);
+        b.extend_from_slice(&self.tender_id.to_repr());
+        b.extend_from_slice(&self.requester_pub_x.to_repr());
+        b.extend_from_slice(&self.requester_pub_y.to_repr());
+        b.extend_from_slice(&tn.to_le_bytes());
+        b.extend_from_slice(tb);
+        b.extend_from_slice(&self.specification.to_repr());
+        b.extend_from_slice(&self.attestation_id.to_repr());
+        b.extend_from_slice(&self.min_bid.to_le_bytes());
+        b.extend_from_slice(&self.max_bid.to_le_bytes());
+        b.extend_from_slice(&self.bid_deadline.to_le_bytes());
+        b.extend_from_slice(&self.reveal_deadline.to_le_bytes());
+        b.extend_from_slice(&self.delivery_deadline.to_le_bytes());
+        b.push(self.required_capability.is_some() as u8);
+        if let Some(v) = self.required_capability { b.extend_from_slice(&v); }
+        b.push(self.required_dag_id.is_some() as u8);
+        if let Some(v) = self.required_dag_id { b.extend_from_slice(&v); }
+        Ok(b)
+    }
+
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // Minimum: like CreateTenderParamsV1 but with 2 option tags = 201 + 2 = 203
-        if data.len() < 203 {
+        // Minimum: 4(proof_len)+32(tender_id)+32+32+4(title_len)+32+32+8+8+8+8+8 = 210, plus the 2
+        // option tags = 212.
+        if data.len() < 212 {
             return Err(ContractError::IoError(format!(
-                "CreateTenderWithCapabilityParamsV1: expected at least 203 bytes, got {}",
+                "CreateTenderWithCapabilityParamsV1: expected at least 212 bytes, got {}",
                 data.len()
             )));
         }
-        let proof_len = data[0] as usize;
-        let mut pos = 1usize;
+        let proof_len = SerializedLen::from_le_bytes(data[0..4].try_into().unwrap()).to_usize();
+        let mut pos = 4usize;
         if pos + proof_len > data.len() {
             return Err(ContractError::IoError("CreateTenderWithCapabilityParamsV1: truncated proof".into()));
         }
@@ -1680,11 +1722,11 @@ impl CreateTenderWithCapabilityParamsV1 {
             .into_option()
             .ok_or_else(|| ContractError::IoError("CreateTenderWithCapabilityParamsV1: invalid requester_pub_y".into()))?;
         pos += 32;
-        if pos + 1 > data.len() {
+        if pos + 4 > data.len() {
             return Err(ContractError::IoError("CreateTenderWithCapabilityParamsV1: truncated title_len".into()));
         }
-        let title_len = data[pos] as usize;
-        pos += 1;
+        let title_len = SerializedLen::from_le_bytes(data[pos..pos+4].try_into().unwrap()).to_usize();
+        pos += 4;
         if pos + title_len > data.len() {
             return Err(ContractError::IoError("CreateTenderWithCapabilityParamsV1: truncated title".into()));
         }
