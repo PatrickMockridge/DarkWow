@@ -7705,10 +7705,20 @@ class ParameterField:
     name: str
     type: str                          # ParamType value
     optional: bool = False
-    # witness: the witness slot (0-based) whose circuit-computed value fills
-    # this wire field (nullifier, expected_root, new_leaf, tx_binding, Pedersen
-    # coords). None = user-supplied (JSON). Mirrors Rust manifest.rs:291.
+    # witness: the witness slot (0-based) whose value fills this field
+    # (nullifier, expected_root, new_leaf, tx_binding, Pedersen coords).
+    # None = the caller's JSON supplies it. Mirrors Rust manifest.rs:301.
+    #
+    # **Not "not published".** It decides who supplies the value; both encoders
+    # still write it, because both walk the whole schema. Read as the opposite
+    # for a day and the L1 wire gate was built on that reading (OBL-C179).
     witness: Optional[int] = None
+    # off_wire: **not published** — the caller supplies it and the prover binds
+    # it, but it is not written to the call data and the contract's decoder must
+    # not expect it. This is the fourth quadrant of "who supplies a value, and
+    # is it published"; without it a caller-supplied value had nowhere to go but
+    # the wire. Mirrors Rust manifest.rs:323.
+    off_wire: bool = False
     # source: the [[parameters]] field name whose *raw* value fills a
     # produce-side note field when the names differ (note `value` ← param
     # `new_balance`). None = the note field's own name. Mirrors manifest.rs:298.
@@ -7979,6 +7989,7 @@ def parse_manifest(toml_str: str) -> ContractManifest:
             type=f["type"],
             optional=f.get("optional", False),
             witness=f.get("witness"),
+            off_wire=f.get("off_wire", False),
             source=f.get("source"),
             leaf=f.get("leaf", False),
         ) for f in p.get("fields", [])]
@@ -8569,8 +8580,14 @@ def field_wire_len(field: ParameterField) -> int:
 
 
 def schema_wire_len(schema: List[ParameterField]) -> int:
-    """Total fixed wire byte width of a `[[parameters]]` schema."""
-    return sum(field_wire_len(f) for f in schema)
+    """Total fixed wire byte width of a `[[parameters]]` schema.
+
+    **`off_wire` fields contribute nothing**, which is what that flag means (`OBL-C179`'s fourth
+    quadrant): they are parameters of the call — the caller supplies them, the prover binds them,
+    a note field may source them — and they are not written to the call data. `witness` is *not*
+    consulted here, and must not be: it decides who supplies a value, not whether it is published.
+    """
+    return sum(field_wire_len(f) for f in schema if not f.off_wire)
 
 
 # ==============================================================================
@@ -8685,17 +8702,19 @@ CONTRACT_STRUCTS = {
 
 def check_manifest_conformance(manifest: ContractManifest, contract_name: str) -> None:
     """T1 (wire congruence): assert every function's manifest `[[parameters]]`
-    equals `CONTRACT_STRUCTS`' entry for it, field-for-field (order, name, type).
+    **published subset** equals `CONTRACT_STRUCTS`' entry for it, field-for-field
+    (order, name, type).
 
-    Raises ValueError on the first divergence.
+    Raises ValueError on the first divergence. `off_wire` fields are excluded from the subset —
+    the contract's decoder does not read them, so a contract could not move a value off the wire
+    without failing this check otherwise.
 
-    **CORRECTED 2026-09-28: this does NOT compare against the contract struct.** It compares the
-    manifest against a table in this file, so it detects a manifest that drifted from the table —
-    not one that drifted from the contract's own `*Params::decode`, which is the property this
-    check exists to protect. For `box` today the two differ and this passes anyway: the table
-    carries 11 fields for `put` and the struct has 8. Rebuilding the table from the Rust structs is
-    the agreement rule owed under `OBL-C179`; it is the prerequisite for the annotation that lets a
-    caller-supplied field leave `[[parameters]]`, because this check would fail on that otherwise.
+    **CORRECTED 2026-09-28 twice, and the second correction is the interesting one.** First: this
+    compares against `CONTRACT_STRUCTS`, a table in this file, not against the Rust `*Params`
+    structs — for `box` today the two differ and this passes anyway, the table carrying 11 fields
+    for `put` against the struct's 8. Second: it now excludes `off_wire` fields, which is what
+    makes the table able to describe a real `*Params::decode` at all. Rebuilding the table from
+    the Rust structs is the agreement rule owed under `OBL-C179`.
     """
     structs = CONTRACT_STRUCTS.get(contract_name)
     if structs is None:
@@ -8704,11 +8723,15 @@ def check_manifest_conformance(manifest: ContractManifest, contract_name: str) -
         expected = structs.get(p.function)
         if expected is None:
             continue  # e.g. `initialize` — no params struct
-        actual = [(f.name, f.type) for f in p.fields]
+        # The **published** subset: `off_wire` fields are parameters the caller supplies and the
+        # prover binds, and the contract's decoder does not read them, so the struct is the right
+        # thing to compare them against — provided they are excluded here. Without the exclusion a
+        # contract could never move a value off the wire without failing this check.
+        actual = [(f.name, f.type) for f in p.fields if not f.off_wire]
         if actual != expected:
             raise ValueError(
-                f"{contract_name}.{p.function}: manifest [[parameters]] "
-                f"{actual} does not match contract wire struct {expected}")
+                f"{contract_name}.{p.function}: manifest [[parameters]] (published subset, "
+                f"off_wire excluded) {actual} does not match contract wire struct {expected}")
 
 
 class ManifestContractClient:
@@ -9559,6 +9582,55 @@ def test_wire_layout_matches_contract_structs():
 
     print("PASS: wire layout — the widths below are self-consistent (this file's arithmetic, "
           "not wire congruence — see the docstring)")
+
+
+def test_off_wire_annotation_is_honoured():
+    """OBL-C179: a caller-supplied field can leave the wire, and the model agrees with the SDK.
+
+    The fourth quadrant of "who supplies a value, and is it published". Three values in the tree
+    needed it — purse's `deposit_amount`/`withdraw_amount` and box's `new_contents_commit` — and
+    there was no way to express it, so they were published for nothing.
+    """
+    F = ParameterField
+    head = [F("nullifier", "pallas_base"), F("expected_root", "pallas_base")]
+
+    plain = head + [F("deposit_amount", "u64")]
+    hidden = head + [F("deposit_amount", "u64", off_wire=True)]
+    assert schema_wire_len(plain) == 72, schema_wire_len(plain)
+    assert schema_wire_len(hidden) == 64, schema_wire_len(hidden)
+    assert schema_wire_len(hidden) == schema_wire_len(head)
+
+    # **`witness` must not be read as "off the wire", and this is the assertion that pins it.**
+    # That misreading is the whole of `OBL-C179`: the tag decides who supplies the value, both
+    # encoders walk the full schema, and the L1 wire gate was built on the opposite belief.
+    tagged = head + [F("deposit_amount", "u64", witness=3)]
+    assert schema_wire_len(tagged) == 72, (
+        "a witness-tagged field is still written to the call data — only `off_wire` removes it")
+
+    # The conformance check compares the **published subset**, exercised through the real check so
+    # the exclusion is tested where it is used rather than as an expression.
+    def probe(off):
+        pf = [F("a", "pallas_base"), F("secret_amount", "u64", off_wire=off), F("b", "pallas_base")]
+        return ContractManifest(
+            name="probe", category="Probe", description="",
+            parameters=[ManifestParameter(function="go", fields=pf)],
+        )
+
+    CONTRACT_STRUCTS["probe"] = {"go": [("a", "pallas_base"), ("b", "pallas_base")]}
+    try:
+        check_manifest_conformance(probe(True), "probe")       # off_wire excluded → matches
+        try:
+            check_manifest_conformance(probe(False), "probe")  # published → must fail
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(
+                "a field that IS published but absent from the struct must fail conformance — "
+                "the exclusion has to be `off_wire`, not 'anything the table does not list'")
+    finally:
+        del CONTRACT_STRUCTS["probe"]
+
+    print("PASS: off_wire — not written, not compared, and `witness` is still not a wire tag")
 
 
 def test_manifest_conformance_matches_model_table():
@@ -11157,6 +11229,9 @@ def run_all_tests():
         # Codec round trips (1 test) — OBL-C182: a codec in the spec that could not
         # decode its own output, and reported PASS 255 runs in 256.
         test_bs58_secret_roundtrip_with_leading_zeros,
+        # The fourth quadrant (1 test) — OBL-C179: a caller-supplied field that
+        # can leave the wire, and the `witness` tag that could never do it.
+        test_off_wire_annotation_is_honoured,
         # Seed error messages — visibility diagnostics (8 tests)
         # Emission schedule + cumulative supply chain + block execution (20 tests)
     ]

@@ -295,11 +295,36 @@ pub struct ParameterField {
     pub param_type: String,
     #[serde(default)]
     pub optional: bool,
-    /// For params-based L1 contracts, the witness slot (0-based) whose
-    /// circuit-computed value fills this wire field (nullifier, expected_root,
-    /// new_leaf, tx_binding, Pedersen coords). `None` = user-supplied (JSON).
+    /// The witness slot (0-based) whose value fills this field (nullifier, expected_root,
+    /// new_leaf, tx_binding, Pedersen coords). `None` = the caller's JSON supplies it.
+    ///
+    /// **This does NOT mean "not published".** It decides *who supplies* the value — the
+    /// caller's JSON is not asked for it, and `decode_params_from_json` skips it — and the
+    /// client then fills it from the prover's bound value. Both encoders still write it,
+    /// because both walk this whole list. A `witness`-tagged field is on the wire, always;
+    /// the tag that keeps one off it is `off_wire` below. Read as the opposite for a day and
+    /// the wire gate was built on it (`OBL-C179`).
     #[serde(default)]
     pub witness: Option<usize>,
+    /// **Not published.** The field is a parameter of the call — the caller's JSON supplies it,
+    /// the prover binds it via a `param:` witness source, and a `note_schema` field may source
+    /// it — but it is **not written to the call data**, and the contract's own decoder must not
+    /// expect it.
+    ///
+    /// This is the fourth quadrant of "who supplies a value, and is it published". Without it a
+    /// caller-supplied value had nowhere to go but the wire, which is why three values in the
+    /// tree were published for no reason: purse's `deposit_amount`/`withdraw_amount` and box's
+    /// `new_contents_commit`. The other three quadrants are covered by composition —
+    /// `witness` alone is *circuit-computes × published*, `witness` + `off_wire` is
+    /// *circuit-computes × unpublished*, and a `note_schema` entry with `derived:` or `witness`
+    /// is *circuit-computes × unpublished* without being a parameter at all.
+    ///
+    /// Honoured by `encode_params_values`, `encode_params_by_schema`, `leaf_field_offset` and
+    /// `field_offset_by_name`. **Not** honoured by `decode_params_from_json`, which must still
+    /// supply the value to the prover, nor by the params-assembly loop, which must still fill a
+    /// `witness`-tagged one.
+    #[serde(default)]
+    pub off_wire: bool,
     /// For the produce-side note: the `[[parameters]]` field name whose *raw*
     /// (uncoerced) value fills this note field, when the note field's name differs
     /// from the parameter name (e.g. note `value` ← param `new_balance`). `None`
@@ -436,6 +461,12 @@ pub fn encode_params_by_schema(
 
     let mut buf = Vec::new();
     for field in schema {
+        // Same rule as `encode_params_values`: the only tag that removes a field from the call data
+        // is `off_wire`. This encoder is the FFI/JS route (`bin/dww/src/ffi.rs`), so it has to agree
+        // with the Rust one or a JS client builds a different wire than a Rust client.
+        if field.off_wire {
+            continue
+        }
         let raw = param_map.get(&field.name);
         if field.optional {
             let present = raw.as_ref().is_some_and(|v| !v.is_null());
@@ -641,6 +672,11 @@ pub fn encode_params_values(
             buf.extend_from_slice(&0u32.to_le_bytes());
             continue
         }
+        // The one tag this function honours. A `witness`-tagged field is deliberately NOT skipped
+        // here: the tag decides who supplies the value, not whether it is published (`OBL-C179`).
+        if field.off_wire {
+            continue
+        }
         let val = lookup(&field.name);
         if field.optional {
             let present = val.is_some_and(|v| !matches!(v, NoteFieldValue::Absent));
@@ -708,6 +744,9 @@ pub fn leaf_field_offset(schema: &[ParameterField]) -> Result<usize, String> {
         if f.leaf {
             return Ok(off)
         }
+        if f.off_wire {
+            continue                        // not written, so it moves nothing
+        }
         off += field_wire_len(&f.param_type)?;
     }
     Err("leaf_field_offset: no leaf-marked field in schema".into())
@@ -721,7 +760,18 @@ pub fn field_offset_by_name(schema: &[ParameterField], name: &str) -> Result<usi
     let mut off = 0usize;
     for f in schema {
         if f.name == name {
+            // An `off_wire` field at a wire offset would send the scan to read a neighbouring
+            // field's bytes as this one's, which is the defect `OBL-C179`'s agreement rule exists
+            // to prevent. Refusing is the only answer that cannot be misread as a value.
+            if f.off_wire {
+                return Err(format!(
+                    "field_offset_by_name: '{name}' is declared off_wire — it has no offset in the \
+                     call data; reading one would return another field's bytes"))
+            }
             return Ok(off)
+        }
+        if f.off_wire {
+            continue
         }
         off += field_wire_len(&f.param_type)?;
     }

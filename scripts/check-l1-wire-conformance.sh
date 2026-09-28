@@ -133,6 +133,16 @@ def leaks():
         # expects all sixteen — so under the old rule purse's published inputs were skipped as off-wire.
         # Whether a manifest's `[[parameters]]` agrees with its contract's decoder is a *different*
         # question from this one, and it belongs to the agreement rule owed under `OBL-C179`.
+        #
+        # **`off_wire` IS skipped, and that skip is sound where the old one was not.** The old rule
+        # keyed on `witness`, which both encoders ignore, so it hid fields that were published. This
+        # keys on `off_wire`, which `encode_params_values`, `encode_params_by_schema`,
+        # `leaf_field_offset` and `field_offset_by_name` all honour — so a field carrying it is
+        # genuinely not in the call data and this rule has nothing to report. The two are one word
+        # apart and opposite in effect, which is why the `--self-test` carries a control for each.
+        off_wire = set()
+        for spec in man.get("parameters", []):
+            off_wire |= {f["name"] for f in spec.get("fields", []) if f.get("off_wire")}
         for circ in man.get("circuits", []):
             zk_path = d / "proof" / f"{circ['name'].lower()}.zk"
             if not zk_path.exists():
@@ -143,6 +153,8 @@ def leaks():
                 if not src.startswith("param:"):
                     continue
                 field = src.split(":", 1)[1]
+                if field in off_wire:
+                    continue                                    # (0) declared off_wire: not on the wire
                 if field in exposed:
                     continue                                    # (a)
                 if re.search(rf"\bp\.{field}\b|\bparams\.{field}\b", host):
@@ -208,6 +220,26 @@ def main():
                 return 1
             print("OK: --self-test — a witness-tagged param is still reported (the tag decides who "
                   "supplies a value, not whether it is published)")
+
+            # ── The third control, and it is the other half of the same distinction. ──
+            # Replace the tag with `off_wire` — one word apart, opposite in effect — and require the
+            # checker to STOP reporting it. Two controls one word apart is what makes the pair mean
+            # something: a rule that keys on the wrong one passes the first and fails this.
+            m = (dst / "manifest.toml").read_text()
+            anchor3 = '{ name = "probe_field", type = "pallas_base", witness = 99 },'
+            if anchor3 not in m:
+                print("FAIL: --self-test could not find the tagged probe param")
+                return 1
+            m = m.replace(anchor3, '{ name = "probe_field", type = "pallas_base", off_wire = true },', 1)
+            (dst / "manifest.toml").write_text(m)
+            f = leaks()
+            still = [k for k in f if k[3] == "probe_field"]
+            if still:
+                print("FAIL: --self-test declared the probe off_wire and the checker still reports "
+                      "it — `off_wire` is the tag the encoders honour, so nothing publishes it")
+                return 1
+            print("OK: --self-test — an off_wire param is not reported (that tag IS honoured by "
+                  "both encoders, unlike `witness` one word away)")
         return 0
 
     found = leaks()
