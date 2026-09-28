@@ -30,6 +30,13 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
     let read_id = |cell: &Rc<RefCell<Option<pallas::Base>>>| -> pallas::Base {
         cell.borrow().expect("CreateTenderV1 is declared first and runs first")
     };
+    // **And the bid id, for the same reason and by the same route.** `RevealBidV1` and
+    // `SelectWinnerV1` were both passed a hardcoded `pallas::Base::from(1u64)` as the bid id while the
+    // bid `SubmitBidV1` submits is a Poseidon commitment over the tender, the bidder's key, the amount
+    // and a nonce — so the reveal asked for a bid that does not exist. Measured on the fixture's log:
+    // `[tender::reveal_bid_get_metadata_v1] ERROR: Bid not found`. The bid id is the harness's
+    // `SubmitBidResult::public_inputs.bid_id`, which the submitting row now carries forward.
+    let bid_id: Rc<RefCell<Option<pallas::Base>>> = Rc::new(RefCell::new(None));
 
     ContractTestSpec { name: "tender", is_genesis: false,
         contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
@@ -44,7 +51,7 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                 // 500 was unreachable and every later row was refused *"Tender not in reveal state"* —
                 // the state simply never advanced. These are chosen against the block each row is
                 // verified at: create at 2, the capability control at 3, the bid at 4, the close at 5.
-                let r = h.create_tender(r_pk, r_sk, "Test Tender".to_string(), pallas::Base::from(1u64), pallas::Base::from(2u64), 100, 10000, 5, 6, 8)
+                let r = h.create_tender(r_pk, r_sk, "Test Tender".to_string(), pallas::Base::from(1u64), pallas::Base::from(2u64), 100, 10000, 4, 6, 8)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 *cell.borrow_mut() = Some(r.tender_id);
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
@@ -87,9 +94,10 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                     ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }})),
-            mk_ep("SubmitBidV1", true, Box::new({ let cell = tender_id.clone(); move || {
+            mk_ep("SubmitBidV1", true, Box::new({ let cell = tender_id.clone(); let bids = bid_id.clone(); move || {
                 let r = h.submit_bid(read_id(&cell), b_pk, b_sk, 5000, pallas::Base::from(3u64), pallas::Base::from(4u64), b"encrypted".to_vec())
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                *bids.borrow_mut() = Some(r.public_inputs.bid_id);
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             }})),
             // **`CloseTenderV1` was missing, and without it nothing past this point was reachable.**
@@ -112,13 +120,13 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                 call_data.extend_from_slice(&params.encode());
                 Ok(EndpointResult { children: vec![], call_data, proofs: vec![] })
             }})),
-            mk_ep("RevealBidV1", true, Box::new({ let cell = tender_id.clone(); move || {
-                let r = h.reveal_bid(read_id(&cell), pallas::Base::from(1u64), b_pk, b_sk, 5000)
+            mk_ep("RevealBidV1", true, Box::new({ let cell = tender_id.clone(); let bids = bid_id.clone(); move || {
+                let r = h.reveal_bid(read_id(&cell), read_id(&bids), b_pk, b_sk, 5000)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             }})),
-            mk_ep("SelectWinnerV1", true, Box::new({ let cell = tender_id.clone(); move || {
-                let r = h.select_winner(read_id(&cell), pallas::Base::from(1u64), r_pk, r_sk, b_pk, 5000)
+            mk_ep("SelectWinnerV1", true, Box::new({ let cell = tender_id.clone(); let bids = bid_id.clone(); move || {
+                let r = h.select_winner(read_id(&cell), read_id(&bids), r_pk, r_sk, b_pk, 5000)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             }})),

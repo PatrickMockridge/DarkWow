@@ -427,8 +427,26 @@ fn close_tender_get_metadata_v1(
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // No ZK proof for close_tender — empty metadata
-    Ok(vec![])
+    // **No ZK proof for `close_tender` — but an *encoded* empty vector, not a bare `vec![]`.**
+    //
+    // This arm returned `Ok(vec![])` — a 0-byte buffer — and the host decodes metadata as
+    // `Vec<(String, Vec<Base>)>` (`execution.rs:423`), so it failed that decode and was reported as
+    // *"contract signalled EMPTY metadata, which is the documented rejection signal"*. Measured on
+    // `test_heavyweight_tender`: `Block 4 rejected … metadata-decode-zkp`. **The contract's own
+    // comment and the protocol's refusal were the same bytes.**
+    //
+    // The other three proof-less functions here (`cancel_tender`, `reject_bid`,
+    // `create_tender_with_capability`) were fixed for this on an earlier pass — the dispatch arms
+    // below carry the `OBL-C77` note and encode an empty `zk_public_inputs`. **`close_tender` was
+    // left out because it has its own metadata arm**, so it never reaches that fallback; the fix
+    // landed for the functions that shared a match arm and missed the one that did not. It is the
+    // only transition to `TenderState::Revealed` (`:748`), so while this stood, `reveal_bid` and
+    // `select_winner` — which require that state (`:364`, `:452`) — could not be reached by any
+    // caller: a tender could accept bids and never reveal or award them.
+    let zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 fn select_winner_get_metadata_v1(
