@@ -79,8 +79,12 @@ impl BoxHarness {
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=dwow_sdk::crypto::Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
         let nl_node = dwow_sdk::crypto::MerkleNode::from_base(nl);
-        // The nonce and both contents commitments are witness-tagged params now, so they are not in the
-        // wire struct and not in the call data; the witnesses above still carry them.
+        // The nonce and both contents commitments are not in this struct — but that is a property of
+        // this struct, not of the wire. They are still listed in `box/manifest.toml`'s `[[parameters]]`,
+        // and a `witness = N` tag does not keep a field out of the call data (`OBL-C179`, corrected
+        // 2026-09-28): a client that builds this call from the manifest encodes them. This harness builds
+        // it from `params.encode()` below, which is why they are absent *here*. Unit 7 removes them from
+        // the manifest; until then the manifest and this decoder disagree.
         let params=dwow_box_contract::model::PutParams{nullifier:nf_val,expected_root:root,new_leaf:nl_node,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
         let mut cd=vec![0x01u8];cd.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         // Self-addressed AEAD note (wallet.md §2.3, contract-wasm-type-system.md
@@ -118,7 +122,8 @@ impl BoxHarness {
         let proof=Proof::create(&self.take_pk,&[c],&pi,rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=dwow_sdk::crypto::Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
-        // `contents_commit` is witness-tagged, as above.
+        // `contents_commit` is absent from this struct for the same reason, and still published by the
+        // manifest for the same reason. As above.
         let params=dwow_box_contract::model::TakeParams{nullifier:nf_val,expected_root:root,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
         let mut cd=vec![0x02u8];cd.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);Ok(BoxTakeResult{call_data:cd,proof})
     }

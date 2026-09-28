@@ -75,7 +75,10 @@ fn test_deposit_params_encode_decode_roundtrip() {
         proof: vec![1u8, 2, 3],
         tx_binding: pallas::Base::from(200u64),
         tx_nonce: pallas::Base::from(300u64),
-        asset_id: pallas::Base::from(1u64),
+        // `asset_id` was here and left the wire in `e6a4df553c` (unit 3). It is witness slot 22,
+        // sourced `note:asset_id`, and what replaced it as the final wire field is the purse
+        // identity — a one-way function of the id, the only form `privacy.md` §5.5 permits public.
+        derived_purse_id: pallas::Base::from(1u64),
     };
 
     let encoded = params.encode().expect("encode must succeed");
@@ -85,7 +88,7 @@ fn test_deposit_params_encode_decode_roundtrip() {
     assert_eq!(decoded.old_balance.inner(), params.old_balance.inner());
     assert_eq!(decoded.deposit_amount.inner(), params.deposit_amount.inner());
     assert_eq!(decoded.new_balance.inner(), params.new_balance.inner());
-    assert_eq!(decoded.asset_id, params.asset_id);
+    assert_eq!(decoded.derived_purse_id, params.derived_purse_id);
     assert_eq!(decoded.proof, params.proof);
 
     let re_encoded = params.encode().expect("re-encode must succeed");
@@ -110,7 +113,8 @@ fn test_withdraw_params_encode_decode_roundtrip() {
         proof: vec![4u8, 5, 6],
         tx_binding: pallas::Base::from(200u64),
         tx_nonce: pallas::Base::from(300u64),
-        asset_id: pallas::Base::from(1u64),
+        // `asset_id` was here and left the wire in `e6a4df553c` (unit 3); see the note above.
+        derived_purse_id: pallas::Base::from(1u64),
     };
 
     let encoded = params.encode().expect("encode must succeed");
@@ -120,6 +124,7 @@ fn test_withdraw_params_encode_decode_roundtrip() {
     assert_eq!(decoded.old_balance.inner(), params.old_balance.inner());
     assert_eq!(decoded.withdraw_amount.inner(), params.withdraw_amount.inner());
     assert_eq!(decoded.new_balance.inner(), params.new_balance.inner());
+    assert_eq!(decoded.derived_purse_id, params.derived_purse_id);
     assert_eq!(decoded.proof, params.proof);
 
     let re_encoded = params.encode().expect("re-encode must succeed");

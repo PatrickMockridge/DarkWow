@@ -97,13 +97,17 @@ fn read_merkle_node(data: &[u8]) -> Result<MerkleNode, ContractError> {
 
 /// Parameters for `PutV1`.
 ///
-/// **Three fields left this struct, and the wire with them.** `new_state_nonce`,
-/// `old_contents_commit` and `new_contents_commit` were plain params, so every put published them; all
-/// three are witness-tagged now and travel in no call data. The circuit needed them as *witnesses* all
-/// along — `put.zk:46` folds `old_contents_commit` into the old leaf, `:67` folds `new_contents_commit`
-/// into the new one, and `:63-64` computes `new_state_nonce` as `base_add(old_state_nonce, ONE)` and
-/// constrains it — and a witness does not have to be published for a verifier, which is the whole of
-/// `privacy.md` §2's promise.
+/// **Three fields left this struct. They did not leave the wire, and the note that said they did was
+/// wrong.** `new_state_nonce`, `old_contents_commit` and `new_contents_commit` were removed from this
+/// struct and left `[[parameters]]` witness-tagged in `box/manifest.toml` — and a `witness = N` tag does
+/// not remove a field from the call data: `encode_params_values` writes every field in the schema
+/// (`OBL-C179`, corrected 2026-09-28). So the manifest and this decoder **disagree**: the manifest still
+/// describes a put of 196 bytes and this struct decodes 100. The three are declared as the wire debt they
+/// are in `scripts/check-l1-wire-conformance.sh`, and unit 7 removes them from `[[parameters]]`.
+/// The circuit needed them as *witnesses* all along — `put.zk:46` folds `old_contents_commit` into the
+/// old leaf, `:67` folds `new_contents_commit` into the new one, and `:63-64` computes `new_state_nonce`
+/// as `base_add(old_state_nonce, ONE)` and constrains it — and a witness does not have to be published
+/// for a verifier, which is the whole of `privacy.md` §2's promise. **That is the goal, not the state.**
 #[derive(Debug, Clone)]
 pub struct PutParams {
     pub nullifier: Nullifier, pub expected_root: MerkleNode, pub new_leaf: MerkleNode,
@@ -116,9 +120,11 @@ impl dwow_serial::Decodable for PutParams { fn decode<D: std::io::Read>(d: &mut 
 impl PutParams {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let path_bytes: Vec<u8> = self.merkle_path.iter().flat_map(|n| n.to_bytes()).collect();
-        // hdr = 100 (was 196, and 260 before that): `box_id`, `old_state_nonce`, `new_state_nonce` and
-        // both contents commitments are off the wire — the first two read from the wallet's record, the
-        // nonce derived, the comments folded into leaves. See the struct's note.
+        // hdr = 100 (was 196, and 260 before that): `box_id` and `old_state_nonce` are off the wire —
+        // both read from the wallet's record. `new_state_nonce` and the two contents commitments are
+        // **not** off it yet: they are still listed in the manifest's `[[parameters]]`, which is the
+        // document that describes this wire, so the manifest and this decoder disagree until unit 7
+        // removes them there. See the struct's note and `OBL-C179`.
         let hdr = 100usize;
         let mut b = Vec::with_capacity(hdr + path_bytes.len() + 1usize + self.proof.len() + 64usize);
         b.extend_from_slice(&self.nullifier.to_bytes());
@@ -172,9 +178,13 @@ impl PutUpdate {
 // removal: no host read either, and the wallet's prover takes both from its own
 // record (`CapRecord.object_id`, `.state_nonce`) through `note:` witness sources.
 // **Residue, declared in `scripts/check-l1-wire-conformance.sh`**: the two contents
-// commitments and `new_state_nonce`, whose slot the *prover* must supply (the
-// circuit constrains it to `old + 1`) and which no `note:` field can yield — purse's
-// circuit derives its successor internally, so it has no such witness.
+// commitments. The reason once given for `new_state_nonce` — that the *prover* must
+// supply it, "where purse's circuit derives its own" — **is false**: `put.zk:63-64`
+// derives the successor too, and its witness slot reads `derived:increment:1`. It was
+// never in the gate's scope, its slot being `derived:` rather than `param:`. The
+// contents commitments leave `[[parameters]]` in unit 7; the consumed ones can read
+// `note:user_data` from the wallet's record, and the produced one needs the
+// "caller supplies it, not published" annotation that does not exist yet.
 // ============================================================================
 
 #[derive(Debug, Clone)]

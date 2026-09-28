@@ -3,19 +3,29 @@
 # Box is L1: two ZK circuits, Merkle inclusion proofs, nullifier per state transition.
 #
 # **The wire carries the public inputs, the Merkle path, the proof, `tx_binding` and
-# `tx_nonce` — and nothing else.** Everything a verifier does not need is either a
-# witness-tagged param (supplied by the caller, never published) or read from the
-# wallet's own record: `box_id` and `state_nonce` come from `CapRecord.object_id` and
-# `.state_nonce` through the `note:` sources, `new_state_nonce` is `derived:increment:1`
-# of the consumed nonce, and the three contents commitments are witness-tagged. That is
-# the whole of `privacy.md` §2's promise, which says an observer learns "not which
-# resource was operated on", and §5.5's, which says `box_id` "is never a public input".
+# `tx_nonce` — and, until unit 7 of the knowledge programme lands, three more fields that
+# this manifest still declares in `[[parameters]]` below.** `box_id` and `state_nonce` come
+# from `CapRecord.object_id` and `.state_nonce` through the `note:` sources, and
+# `new_state_nonce` is `derived:increment:1` of the consumed nonce. That is `privacy.md`
+# §2's promise, which says an observer learns "not which resource was operated on", and
+# §5.5's, which says `box_id` "is never a public input".
 #
-# `Put` emits the box's AEAD note (`{commitment, state_nonce, box_id}`), which is how
-# the wallet discovers the new leaf (§C.8.1). **The note does not yet carry what the box
-# holds** — §C.8.2's `contents`/`nullifier`/`merkle_root`/`leaf_position` are not in the
-# schema — so a wallet that put a box learns its contents only from its own record, not
-# by scanning. That gap is recorded rather than implied. `owner_secret` stays private
+# **Corrected 2026-09-28: a `witness = N` tag does not keep a field off the wire.** The
+# passages that stood here said the contents commitments were "witness-tagged" and therefore
+# "not published". Measured: `encode_params_values` (`src/sdk/src/manifest.rs:630-680`) walks
+# the whole schema and special-cases only `proof`, so **every field in `[[parameters]]` is
+# written to call data** — the tag decides *who supplies* a value (the caller's JSON need not,
+# and `decode_params_from_json` skips it), never *whether it is published*. `OBL-C179` records
+# the correction and `scripts/check-l1-wire-conformance.sh` declares the three as the debt
+# they are. They leave `[[parameters]]` in unit 7, and the declaration retires with them.
+#
+# `Put` emits the box's AEAD note (`{commitment, state_nonce, box_id}`), which is how the
+# wallet discovers the new leaf (§C.8.1). **The note does not yet carry what the box holds**,
+# and the sentence that stood here named the wrong reason: this is not §C.8.2, whose required
+# fields are `nullifier`, `merkle_root` and `leaf_position` and do not include the contents —
+# it is that `CapRecord` has no slot the contents are written to, so a wallet that put a box
+# cannot recover them by scanning *or* from its own record. `OBL-C181` records the §C.8.2 gap
+# separately, and neither is closed by the other. `owner_secret` stays private
 # (wallet.md §6.4.1).
 
 [contract]
@@ -94,11 +104,18 @@ witness_map = [
 [[parameters]]
 function = "put"
 fields = [
-    # Tagged, so none of the three is written to call data. A witness-tagged param is skipped by
-    # `encode_params_values` and filled from the prover's bound values, while its `witness_map` source
-    # still reads the caller's params — which is what "off the wire" means here: the caller supplies
-    # them, the chain does not publish them.
+    # The tag means "the caller's JSON need not supply this; the client fills it from the prover's
+    # bound value at that slot". **It does not mean "off the wire"** — `encode_params_values` writes
+    # every field in this list (`OBL-C179`). `new_state_nonce` is at slot 2, whose source is
+    # `derived:increment:1`, so the value the client fills is the circuit's own successor and it is
+    # published like the rest, which no verifier needs.
     { name = "new_state_nonce", type = "pallas_base", witness = 2 },
+    # The consumed and the produced contents commitment. Both are opaque `pallas::Base` elements the
+    # circuit folds into a leaf and never interprets, so no observer needs them — and both are
+    # published today anyway, declared in `scripts/check-l1-wire-conformance.sh`. The consumed one can
+    # read `note:user_data` from the wallet's record as soon as the scan writes it; the produced one is
+    # caller-chosen and has nowhere else to go until the "caller supplies it, not published" annotation
+    # exists (`OBL-C179`, `OBL-C145`).
     { name = "old_contents_commit", type = "pallas_base", witness = 3 },
     { name = "new_contents_commit", type = "pallas_base", witness = 4 },
     { name = "nullifier", type = "pallas_base", witness = 5 },
@@ -114,8 +131,9 @@ fields = [
 [[parameters]]
 function = "take"
 fields = [
-    # Tagged, as the three above: the box's contents are the caller's to name and no verifier needs
-    # them — the circuit folds them into the leaf, whose root is the published value.
+    # Tagged, as the two above — same meaning, same correction. The box's contents are the caller's to
+    # name and no verifier needs them; the circuit folds them into the leaf, whose root is the published
+    # value. Published anyway, and declared.
     { name = "contents_commit", type = "pallas_base", witness = 1 },
     { name = "nullifier", type = "pallas_base", witness = 3 },
     { name = "expected_root", type = "pallas_base", witness = 4 },

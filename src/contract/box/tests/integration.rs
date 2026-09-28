@@ -101,10 +101,10 @@ fn test_state_nonce_roundtrip() {
 
 #[test]
 fn test_put_params_encode_decode_roundtrip() {
+    // `new_state_nonce`, `old_contents_commit` and `new_contents_commit` are not fields of this
+    // struct — they left with `d670b522ef`. They are still in `box/manifest.toml`'s `[[parameters]]`,
+    // which is the manifest/decoder disagreement `OBL-C179` records; this test models the struct.
     let params = PutParams {
-        new_state_nonce: StateNonce::new(pallas::Base::from(2u64)),
-        old_contents_commit: pallas::Base::from(3u64),
-        new_contents_commit: pallas::Base::from(4u64),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         new_leaf: dummy_merkle_node(),
@@ -119,11 +119,8 @@ fn test_put_params_encode_decode_roundtrip() {
     assert!(!encoded.is_empty());
 
     let decoded = PutParams::decode(&encoded).expect("round-trip must succeed");
-    assert_eq!(decoded.new_state_nonce.inner(), params.new_state_nonce.inner());
-    assert_eq!(
-        decoded.old_contents_commit, params.old_contents_commit,
-        "old_contents_commit must survive round-trip"
-    );
+    assert_eq!(decoded.expected_root.to_bytes(), params.expected_root.to_bytes());
+    assert_eq!(decoded.new_leaf.to_bytes(), params.new_leaf.to_bytes());
     assert_eq!(decoded.proof, params.proof);
 
     let re_encoded = params.encode().expect("re-encode must succeed");
@@ -132,8 +129,9 @@ fn test_put_params_encode_decode_roundtrip() {
 
 #[test]
 fn test_put_params_rejects_truncated() {
-    // PutParams header is 196 bytes + 1024 bytes merkle_path + 1 byte proof_len
-    // min: 196 + 1024 + 1 + 0 + 64 = 1285 bytes (min proof is 0 bytes)
+    // PutParams header is 100 bytes (nullifier 32 + expected_root 32 + new_leaf 32 + leaf_pos 4),
+    // then the 1024-byte merkle_path and a 4-byte `SerializedLen` proof prefix. `decode` refuses
+    // anything at or below header + merkle_path, so this test's 500 bytes are far short.
     let short = vec![0u8; 500]; // well below minimum
     assert!(
         PutParams::decode(&short).is_err(),
@@ -170,8 +168,8 @@ fn test_put_update_rejects_wrong_length() {
 
 #[test]
 fn test_take_params_encode_decode_roundtrip() {
+    // `contents_commit` is not a field of this struct either; see the note above `PutParams`.
     let params = TakeParams {
-        contents_commit: pallas::Base::from(3u64),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         leaf_pos: MerklePosition::new(0),
@@ -185,7 +183,7 @@ fn test_take_params_encode_decode_roundtrip() {
     assert!(!encoded.is_empty());
 
     let decoded = TakeParams::decode(&encoded).expect("round-trip must succeed");
-    assert_eq!(decoded.contents_commit, params.contents_commit);
+    assert_eq!(decoded.expected_root.to_bytes(), params.expected_root.to_bytes());
     assert_eq!(decoded.proof, params.proof);
 
     let re_encoded = params.encode().expect("re-encode must succeed");
@@ -194,7 +192,8 @@ fn test_take_params_encode_decode_roundtrip() {
 
 #[test]
 fn test_take_params_rejects_truncated() {
-    // TakeParams header is 164 bytes + 1024 merkle_path + 1 proof_len
+    // TakeParams header is 68 bytes (nullifier 32 + expected_root 32 + leaf_pos 4), then the
+    // 1024-byte merkle_path and a 4-byte `SerializedLen` proof prefix.
     let short = vec![0u8; 500];
     assert!(
         TakeParams::decode(&short).is_err(),

@@ -8606,15 +8606,28 @@ def wallet_local_positions(leaves: List[object]) -> List[Tuple[int, object]]:
 # of the wire struct, so they are excluded from the comparison.)
 
 CONTRACT_STRUCTS = {
-    # RECONCILED 2026-09-27 with the shipped manifests and the contracts' own
-    # `*Params::decode` structs. This table is the ground truth the manifest must
-    # match, so when the wire was reduced — `box_id`/`old_state_nonce`/`state_nonce`
-    # off box, `purse_id`/`state_nonce` off purse, `asset_id`/`balance` off Balance —
-    # the table had to move with it and did not. The consequence was that the
-    # conformance test below failed on box.put, the first divergence it reached,
-    # and the whole suite went red unreported: `python3 contrib/model/wallet_model.py`
-    # exited 1 with 94 passed, 1 failed. The direction matters and is worth stating:
-    # the model was stale, not the contracts.
+    # RECONCILED 2026-09-27 with the shipped manifests. This table is the ground truth the
+    # manifest must match, so when the wire was reduced — `box_id`/`old_state_nonce` off box,
+    # `purse_id`/`state_nonce` off purse, `asset_id`/`balance` off Balance — the table had to move
+    # with it and did not. The consequence was that the conformance test below failed on box.put,
+    # the first divergence it reached, and the whole suite went red unreported:
+    # `python3 contrib/model/wallet_model.py` exited 1 with 94 passed, 1 failed. The direction
+    # matters and is worth stating: the model was stale, not the contracts.
+    #
+    # **CORRECTED 2026-09-28: this table describes the MANIFESTS, not the contracts' structs.**
+    # `OBL-C157` closed by stating that the manifests and the `*Params::decode` structs "agree
+    # field-for-field — verified by extracting all five structs and all five manifest parameter
+    # blocks and comparing them element by element." Measured on 2026-09-28, **they do not agree**:
+    # `box`'s `PutParams` has **8** fields and its manifest `[[parameters]]` has **11**; `TakeParams`
+    # has **7** and its manifest **8**. The three extra are `new_state_nonce`,
+    # `old_contents_commit` and `new_contents_commit` — removed from the struct by
+    # `d670b522ef` (unit 4) while left witness-tagged in `[[parameters]]`, because a `witness = N`
+    # tag does not keep a field off the wire (`OBL-C179`, corrected 2026-09-28). That commit also
+    # renumbered this file's box fixtures from the param-list widths (1288, 1192) to the struct
+    # widths (1192, 1160) — so the table below and `test_wire_layout_matches_contract_structs`
+    # now describe **different wires**, and both pass. Unit 7 removes the three from the manifest
+    # and the two tables converge; until then this table is manifest-shaped and the claim that it
+    # equals the contract struct is false.
     "box": {
         "put": [
             ("new_state_nonce", "pallas_base"), ("old_contents_commit", "pallas_base"),
@@ -8672,12 +8685,17 @@ CONTRACT_STRUCTS = {
 
 def check_manifest_conformance(manifest: ContractManifest, contract_name: str) -> None:
     """T1 (wire congruence): assert every function's manifest `[[parameters]]`
-    equals the contract's wire struct, field-for-field (order, name, type).
+    equals `CONTRACT_STRUCTS`' entry for it, field-for-field (order, name, type).
 
-    Raises ValueError on the first divergence. This is the machine-checked link
-    between the manifest (the wallet's spec) and the contract struct (the
-    on-chain decoder) — the property that was previously left to integration
-    tests to discover.
+    Raises ValueError on the first divergence.
+
+    **CORRECTED 2026-09-28: this does NOT compare against the contract struct.** It compares the
+    manifest against a table in this file, so it detects a manifest that drifted from the table —
+    not one that drifted from the contract's own `*Params::decode`, which is the property this
+    check exists to protect. For `box` today the two differ and this passes anyway: the table
+    carries 11 fields for `put` and the struct has 8. Rebuilding the table from the Rust structs is
+    the agreement rule owed under `OBL-C179`; it is the prerequisite for the annotation that lets a
+    caller-supplied field leave `[[parameters]]`, because this check would fail on that otherwise.
     """
     structs = CONTRACT_STRUCTS.get(contract_name)
     if structs is None:
@@ -9450,17 +9468,26 @@ fields = [
 
 
 def test_wire_layout_matches_contract_structs():
-    """RC-1: corrected `[[parameters]]` wire widths match contract `*Params::encode`."""
+    """RC-1: the widths of the lists below, computed with this file's `schema_wire_len`.
+
+    **Corrected 2026-09-28: this asserts neither `[[parameters]]` nor `*Params::encode`.** It builds a
+    list here, computes its width with `schema_wire_len`, and compares that against a literal — so it
+    pins the *arithmetic* (that `field_wire_len` sums to what it did yesterday), not that any manifest
+    or decoder agrees with it. It is a useful regression pin and it is not wire congruence; the name
+    and the PASS line said otherwise and are corrected below.
+    """
     F = ParameterField
 
-    # box put (PutParams): 11 fields → 1285 bytes. Was 13/1349 before the wire
-    # reduction; `box_id` and `old_state_nonce` are off the wire.
-    # **These are the WIRE fields, not the manifest's full parameter list.** A witness-tagged param is
-    # skipped by `encode_params_values`, so it is not in the call data — and the contract's decoder no
-    # longer expects it, which is why the struct dropped it. The four that left on 2026-09-27 are
-    # `Put`'s `new_state_nonce`, `old_contents_commit` and `new_contents_commit` (96 bytes) and `Take`'s
-    # `contents_commit` (32). The earlier totals — 1288 and 1192 — counted them, and they were right for
-    # as long as the fields were plain params.
+    # box put (PutParams, the CONTRACT's struct): 8 fields → 1192 bytes. `box_id` and
+    # `old_state_nonce` left with `dd25ccfb5b`; `new_state_nonce`, `old_contents_commit` and
+    # `new_contents_commit` left the struct with `d670b522ef` (unit 4, 96 bytes).
+    # **They did not leave the manifest, so the list below is the struct's wire and NOT the
+    # call data a manifest-driven client builds.** Since unit 4 the two disagree — 8 fields here,
+    # 11 in `box/manifest.toml` — because a `witness = N` tag does not keep a field off the wire
+    # (`OBL-C179`, corrected 2026-09-28). The 2026-09-27 note that stood here said a tagged param "is
+    # skipped by `encode_params_values`, so it is not in the call data"; that is false. The earlier
+    # totals — 1288 and 1192 — were the param-list widths, and they are still the manifest's widths
+    # today.
     box_put = [
         F("nullifier", "pallas_base", witness=5),
         F("expected_root", "pallas_base", witness=6), F("new_leaf", "pallas_base", witness=7),
@@ -9478,7 +9505,11 @@ def test_wire_layout_matches_contract_structs():
     ]
     assert schema_wire_len(box_take) == 1160, schema_wire_len(box_take)
 
-    # purse deposit (DepositParams): 16 fields → 1373 bytes. Was 18/1437.
+    # purse deposit (DepositParams): 16 fields → 1376 bytes.
+    # **Corrected 2026-09-28**: the last field was `asset_id` and is `derived_purse_id` — unit 3
+    # (`e6a4df553c`) replaced it, and both are `pallas_base`, so the width did not move and this
+    # assertion passed while describing a field that is no longer in the manifest. The comment also
+    # said 1373 against an assertion of 1376.
     purse_deposit = [
         F("old_balance", "u64"), F("deposit_amount", "u64"),
         F("new_balance", "u64"),
@@ -9488,16 +9519,17 @@ def test_wire_layout_matches_contract_structs():
         F("new_commit_y", "pallas_base", witness=14), F("leaf_pos", "u32", witness=17),
         F("merkle_path", "merkle_path", witness=18), F("proof", "proof"),
         F("tx_binding", "pallas_base", witness=21), F("tx_nonce", "pallas_base"),
-        F("asset_id", "pallas_base"),
+        F("derived_purse_id", "pallas_base"),
     ]
     assert schema_wire_len(purse_deposit) == 1376, schema_wire_len(purse_deposit)
 
-    # purse withdraw (WithdrawParams): 16 fields → 1373 bytes, the same width as
+    # purse withdraw (WithdrawParams): 16 fields → 1376 bytes, the same width as
     # deposit — `WithdrawParams::encode` delegates to `DepositParams` and only the
     # amount's name differs. Asserted separately rather than assumed from deposit,
     # because the delegation is exactly the kind of coupling that silently diverges:
     # the contract's own comment there says "If DepositParams' encoding changes,
     # verify WithdrawParams round-trip tests."
+    # Last field corrected as above (`asset_id` → `derived_purse_id`).
     purse_withdraw = [
         F("old_balance", "u64"), F("withdraw_amount", "u64"),
         F("new_balance", "u64"),
@@ -9507,14 +9539,14 @@ def test_wire_layout_matches_contract_structs():
         F("new_commit_y", "pallas_base", witness=14), F("leaf_pos", "u32", witness=17),
         F("merkle_path", "merkle_path", witness=18), F("proof", "proof"),
         F("tx_binding", "pallas_base", witness=21), F("tx_nonce", "pallas_base"),
-        F("asset_id", "pallas_base"),
+        F("derived_purse_id", "pallas_base"),
     ]
     assert schema_wire_len(purse_withdraw) == 1376, schema_wire_len(purse_withdraw)
 
-    # purse balance (BalanceParams): 10 fields → 1253 bytes. Was 14/1357; `purse_id`,
-    # `asset_id`, `balance` and `state_nonce` are all off the wire, and what identifies
-    # the purse is now `derived_purse_id` — a one-way function of the id, which is the
-    # only form `privacy.md` §5.5 permits to be public.
+    # purse balance (BalanceParams): 10 fields → 1256 bytes; the comment said 1253 against an
+    # assertion of 1256. `purse_id`, `asset_id`, `balance` and `state_nonce` are all off the wire, and
+    # what identifies the purse is now `derived_purse_id` — a one-way function of the id, which is
+    # the only form `privacy.md` §5.5 permits to be public.
     purse_balance = [
         F("derived_purse_id", "pallas_base"),
         F("expected_root", "pallas_base"), F("token_commit", "pallas_base"),
@@ -9525,12 +9557,20 @@ def test_wire_layout_matches_contract_structs():
     ]
     assert schema_wire_len(purse_balance) == 1256, schema_wire_len(purse_balance)
 
-    print("PASS: wire layout — [[parameters]] widths match contract *Params::encode")
+    print("PASS: wire layout — the widths below are self-consistent (this file's arithmetic, "
+          "not wire congruence — see the docstring)")
 
 
-def test_manifest_conformance_matches_contract_structs():
+def test_manifest_conformance_matches_model_table():
     """T1 (wire congruence): the actual box/purse manifests' `[[parameters]]`
-    equal the contract wire structs, field-for-field (order, name, type)."""
+    equal `CONTRACT_STRUCTS` in this file, field-for-field (order, name, type).
+
+    **Renamed 2026-09-28: it was `..._matches_contract_structs`, and that was false.** The name
+    and the PASS line both said "contract struct"; the comparison is against a table in this file.
+    For `box` the two now differ — the table has 11 `put` fields, `PutParams` has 8 — and this
+    passes. The name is what a reader trusts, so the name is what had to change until the table is
+    rebuilt from the Rust structs (owed under `OBL-C179`).
+    """
     import os
     checked = []
     for name in ("box", "purse"):
@@ -9542,7 +9582,8 @@ def test_manifest_conformance_matches_contract_structs():
         check_manifest_conformance(manifest, name)
         checked.append(name)
     assert checked, "no manifests checked"
-    print(f"PASS: T1 manifest conformance — {checked} [[parameters]] == contract struct")
+    print(f"PASS: T1 manifest conformance — {checked} [[parameters]] == CONTRACT_STRUCTS "
+          f"(this file's table; NOT the contract's decoder — see the function's docstring)")
 
 
 def test_merkle_triple_one_tree():
@@ -9571,7 +9612,7 @@ def run_typed_manifest_tests():
     test_generic_prover_derived_rules()
     test_generic_prover_note_emission()
     test_wire_layout_matches_contract_structs()
-    test_manifest_conformance_matches_contract_structs()
+    test_manifest_conformance_matches_model_table()
     test_merkle_triple_one_tree()
     print("Typed manifest: all specification checks passed")
 
