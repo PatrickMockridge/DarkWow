@@ -46,12 +46,27 @@ pub struct SubmitBidV1PublicInputs {
 }
 
 impl SubmitBidV1PublicInputs {
+    /// **The order is the circuit's, and it was not.**
+    ///
+    /// `submit_bid.zk` constrains six values and the order it constrains them in is
+    /// `bidder_pub_x`, `bidder_pub_y`, `tender_id`, `bid_id`, `tx_binding`, `tx_nonce`
+    /// (`:76`, `:77`, `:100`, `:101`, `:115`, `:116`) — which is also the order the contract's
+    /// metadata arm pushes, and its own comment says so. This vector emitted `tender_id` and
+    /// `bid_id` **first** and the two key coordinates after — the same six values, permuted — so
+    /// the proof was verified against a different instance vector than the one it was built for and
+    /// every `submit_bid` failed `InvalidProof`.
+    ///
+    /// Localised by `test-harness/tests/client_proof_self_verification.rs`'s
+    /// `submit_bid_proof_verifies_against_its_own_circuit`, which builds this client's proof and
+    /// verifies it against the same `.zk.bin` the contract embeds, with this vector's instances and
+    /// no host involved — `create_tender`'s and `slot`'s cases passing in the same run is what
+    /// showed the defect was here rather than in a test that could never pass.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
-            self.tender_id,
-            self.bid_id,
             self.bidder_pub_x,
             self.bidder_pub_y,
+            self.tender_id,
+            self.bid_id,
             self.tx_binding,
             self.tx_nonce,
         ]
