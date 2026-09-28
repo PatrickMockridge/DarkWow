@@ -75,6 +75,25 @@ fn attestation_child(attestation_id: pallas::Base) -> ChildCall {
     ChildCall { contract_id: *ATTESTATION_CONTRACT_ID, call_data, proofs: vec![] }
 }
 
+/// The `attestation::VerifyClaimV1` child `submit_deliverable_v1` requires — and this one **does**
+/// need a proof, so it cannot be hand-encoded the way `attestation_child` is.
+///
+/// Ported from `attestation_spec.rs:99`, which is the working example and passes the same placeholder
+/// witnesses; the parent checks only the selector and the contract id, so the child's own meaning is
+/// the attestation contract's business.
+fn verify_claim_child(claim_id: pallas::Base, attestation_id: pallas::Base) -> dwow_core::Result<ChildCall> {
+    let att = AttestationHarness::spawn();
+    let r = att.verify_claim(
+        claim_id, attestation_id,
+        pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64),
+        pallas::Base::from(4u64), pallas::Base::from(5u64), [pallas::Base::from(0u64); 255],
+        pallas::Base::from(6u64),
+    ).map_err(|e| dwow_core::Error::Custom(format!("verify_claim: {e}")))?;
+    Ok(ChildCall {
+        contract_id: *ATTESTATION_CONTRACT_ID, call_data: r.call_data, proofs: vec![r.proof],
+    })
+}
+
 pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(LaborMarketHarness::spawn()));
     let h: &LaborMarketHarness = harness;
@@ -85,6 +104,8 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
     let worker_pub = PublicKey::from_secret(SecretKey::from_base(worker_secret));
     let job_id = pallas::Base::from(100u64);
     let claim_id = pallas::Base::from(200u64);
+    // `SubmitGitDeliverableV1` needs its own claim — see the setup's note.
+    let claim_id_git = pallas::Base::from(201u64);
     let attestation_id = pallas::Base::from(1u64);
     let dao_escrow_bulla = pallas::Base::from(60u64);
     let cap_proof = vec![0u8; 32];
@@ -124,6 +145,31 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 vec![pallas::Base::from(50u64)], b"labor".to_vec(), None, attestation_id,
             ).map_err(|e| oh(format!("create_attestation: {e}")))?;
             smol::block_on(chain.block()?.with_call(att_cid, &att, &a.call_data, vec![a.proof.clone()])?.submit())?;
+
+            // ── The claim `submit_deliverable_v1`'s child verifies. Its row requires an
+            // `attestation::VerifyClaimV1` child, and a verify needs a claim to verify, so the claim
+            // is created here rather than in the row — the row's job is to present the child, not to
+            // build the state behind it. `claim_id` is the spec's own constant (200). ──
+            let claimant_secret = pallas::Base::from(40u64);
+            let claimant_pub = PublicKey::from_secret(SecretKey::from_base(claimant_secret));
+            let cl = att.create_claim(
+                attestation_id, claimant_secret, claimant_pub,
+                dwow_attestation_contract::model::Predicate::GreaterOrEqual,
+                pallas::Base::from(2u64).to_repr().to_vec(), b"result".to_vec(), claim_id,
+            ).map_err(|e| oh(format!("create_claim: {e}")))?;
+            smol::block_on(chain.block()?.with_call(att_cid, &att, &cl.call_data, vec![cl.proof.clone()])?.submit())?;
+
+            // **A second claim, because a claim can be verified once.** `SubmitDeliverableV1` and
+            // `SubmitGitDeliverableV1` each require an `attestation::VerifyClaimV1` child, and sharing
+            // one claim makes the second child fail `verify_claim_v1 ERROR: Claim not pending` — the
+            // first row's verification moved it out of `Pending`. Measured on the fixture's own log,
+            // and it is why the two rows take different ids.
+            let cl2 = att.create_claim(
+                attestation_id, claimant_secret, claimant_pub,
+                dwow_attestation_contract::model::Predicate::GreaterOrEqual,
+                pallas::Base::from(2u64).to_repr().to_vec(), b"result".to_vec(), claim_id_git,
+            ).map_err(|e| oh(format!("create_claim (git): {e}")))?;
+            smol::block_on(chain.block()?.with_call(att_cid, &att, &cl2.call_data, vec![cl2.proof.clone()])?.submit())?;
 
             // ── The promissory note, worth exactly the job's payment, issued under the secret the
             // transfer child spends with. ──
@@ -177,11 +223,15 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             })),
             mk_ep("SubmitDeliverableV1", true, Box::new(move || {
                 let r = h.submit_deliverable(worker_secret, worker_pub, job_id, claim_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                Ok(EndpointResult {
+                    children: vec![verify_claim_child(claim_id, attestation_id)?],
+                    call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("SubmitGitDeliverableV1", true, Box::new(move || {
-                let r = h.submit_git_deliverable(worker_secret, worker_pub, job_id, claim_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                let r = h.submit_git_deliverable(worker_secret, worker_pub, job_id, claim_id_git).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult {
+                    children: vec![verify_claim_child(claim_id_git, attestation_id)?],
+                    call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("ConfirmDeliveryV1", true, Box::new(move || {
                 let r = h.confirm_delivery(employer_secret, employer_pub, job_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
