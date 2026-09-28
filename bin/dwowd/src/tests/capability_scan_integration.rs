@@ -286,6 +286,15 @@ fn test_box_send_receive() {
         // carries { commitment = poseidon(dml, bid, ncc, nsn, op), state_nonce = nsn },
         // where op = poseidon(dss=7, os=42) is the owner-binding argument the leaf
         // gained on 2026-09-25.
+        //
+        // **The struct below was two fields while the schema had three, and this test was red
+        // because of it.** `decode_note_by_schema` requires the schema to describe the *entire*
+        // plaintext, so a note missing `box_id` decoded to nothing and the scan discovered zero
+        // capabilities — `left: 0, right: 1` on the assertion below, in 0.18s. It drifted when
+        // `box_id` joined the schema and nothing ran it: this test is in the heavyweight set, which
+        // only a named run reaches. It now mirrors the four-field schema, and `user_data` is the box
+        // contents — the value that makes the note tell its *recipient* what it received, which is
+        // the thing this test's name promises.
         let dml = pallas::Base::from(5u64);
         let bid = pallas::Base::from(1u64);
         let ncc = poseidon_hash([pallas::Base::from(100u64)]);
@@ -294,8 +303,9 @@ fn test_box_send_receive() {
         let nl = poseidon_hash([dml, bid, ncc, nsn, op]);
 
         #[derive(dwow_serial::SerialEncodable)]
-        struct BoxNote { commitment: pallas::Base, state_nonce: pallas::Base }
-        let note = BoxNote { commitment: nl, state_nonce: nsn };
+        struct BoxNote { commitment: pallas::Base, state_nonce: pallas::Base,
+                         box_id: pallas::Base, user_data: pallas::Base }
+        let note = BoxNote { commitment: nl, state_nonce: nsn, box_id: bid, user_data: ncc };
         let encrypted = AeadEncryptedNote::encrypt(&note, &recipient_pk, &mut rand::rngs::OsRng)
             .expect("encrypt Box note to recipient");
 
@@ -358,6 +368,13 @@ fn test_box_send_receive() {
             "box_capability discriminant from the manifest");
         assert_eq!(rec.commitment, Commitment::from_base(nl),
             "commitment (box new leaf) read from the note");
+        // **What the box holds, which the note did not carry until 2026-09-28.** A box was hidden
+        // from observers — right — and from its own holder — wrong: nothing wrote the contents into
+        // `CapRecord`, so a wallet that received a box could not learn what it had. This is the
+        // assertion that makes the difference visible, and it fails against an absent `user_data`
+        // (which reads as `None`, not as a zero) as well as against a wrong one.
+        assert_eq!(rec.user_data, Some(ncc.to_repr()),
+            "the received box's contents commitment, read from the note into CapRecord.user_data");
 
         // Cleanup
         let _ = std::fs::remove_file(&keys_path);

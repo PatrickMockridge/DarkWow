@@ -88,16 +88,18 @@ L1_CONTRACTS = ["promissory_note", "box", "purse"]
 # a parameter and carries `off_wire`, the tag this gate does skip because the encoders honour it.
 # So purse declares nothing here, and the six entries that used to sit in this dict would now be
 # reported as stale — which is what the declaration expiring is for.
-DECLARED = {
-    # Box's three, back until `box/manifest.toml` stops listing them in `[[parameters]]`. Each is an
-    # opaque `pallas::Base` the circuit folds into a leaf; nothing in-circuit computes or verifies a
-    # preimage, so no observer needs them. The two that are *consumed* state (`old_contents_commit`,
-    # `contents_commit`) can read `note:` from `CapRecord.user_data`; the one that is *chosen*
-    # (`new_contents_commit`) needs `off_wire`, which now exists.
-    ("box", "Put", 3, "old_contents_commit"): "consumed state — can read `note:user_data` now; blocked on the wallet record being written",
-    ("box", "Put", 4, "new_contents_commit"): "caller-chosen, nothing checks it — blocked on the wallet record and the manifest edit, not on a missing tag",
-    ("box", "Take", 1, "contents_commit"): "consumed state — as `old_contents_commit`",
-}
+# **BOX'S THREE ARE GONE TOO (2026-09-28): this list is empty, and the count is 0.** `Put`'s
+# `old_contents_commit` and `Take`'s `contents_commit` are `note:user_data`, served from the wallet's
+# own record; `Put`'s `new_contents_commit` carries `off_wire`. So nothing in the three L1 contracts
+# this gate covers is published for a reason no verifier needs.
+#
+# **An empty declaration list is the state this gate was built to reach, and it is not the state
+# where the gate stops being useful** — it still fails on a *new* `param:` slot, and still fails if a
+# field it used to see stops appearing, which is what would say a contract started publishing one
+# again. But its reach has a floor this comment should carry rather than leave implied: the rule
+# reads witness-map `param:` slots, so a wire field in no witness map is invisible to it, and
+# `asset_id` sat published and undeclared on purse for exactly that reason until unit 6 removed it.
+DECLARED = {}
 
 def circuit_body(text):
     """The `circuit "..." { ... }` block, with `#` comments stripped."""

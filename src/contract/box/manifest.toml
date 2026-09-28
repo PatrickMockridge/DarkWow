@@ -3,30 +3,28 @@
 # Box is L1: two ZK circuits, Merkle inclusion proofs, nullifier per state transition.
 #
 # **The wire carries the public inputs, the Merkle path, the proof, `tx_binding` and
-# `tx_nonce` — and, until unit 7 of the knowledge programme lands, three more fields that
-# this manifest still declares in `[[parameters]]` below.** `box_id` and `state_nonce` come
-# from `CapRecord.object_id` and `.state_nonce` through the `note:` sources, and
-# `new_state_nonce` is `derived:increment:1` of the consumed nonce. That is `privacy.md`
-# §2's promise, which says an observer learns "not which resource was operated on", and
-# §5.5's, which says `box_id` "is never a public input".
+# `tx_nonce` — and nothing else.** `box_id`, `state_nonce` and the consumed box's contents come
+# from the wallet's own record through the `note:` sources, `new_state_nonce` is
+# `derived:increment:1` of the consumed nonce, and the produced contents is a parameter carrying
+# `off_wire`. That is `privacy.md` §2's promise, which says an observer learns "not which
+# resource was operated on", and §5.5's, which says `box_id` "is never a public input".
 #
-# **Corrected 2026-09-28: a `witness = N` tag does not keep a field off the wire.** The
-# passages that stood here said the contents commitments were "witness-tagged" and therefore
-# "not published". Measured: `encode_params_values` (`src/sdk/src/manifest.rs:630-680`) walks
-# the whole schema and special-cases only `proof`, so **every field in `[[parameters]]` is
-# written to call data** — the tag decides *who supplies* a value (the caller's JSON need not,
-# and `decode_params_from_json` skips it), never *whether it is published*. `OBL-C179` records
-# the correction and `scripts/check-l1-wire-conformance.sh` declares the three as the debt
-# they are. They leave `[[parameters]]` in unit 7, and the declaration retires with them.
+# **Corrected 2026-09-28, twice, and the second correction is why the first did not fix it.**
+# The passages that stood here said the contents commitments were "witness-tagged" and so "not
+# published". They were not: `encode_params_values` (`src/sdk/src/manifest.rs`) walks the whole
+# schema and special-cases only `proof`, so **every field in `[[parameters]]` is written to call
+# data** — a `witness` tag decides *who supplies* a value, never *whether it is published*
+# (`OBL-C179`). Tagging the three therefore changed nothing, and it broke the call besides: the
+# tag also made `decode_params_from_json` skip the field, so the prover's `param:` source had
+# nothing to resolve. The tag that does what the old comment claimed is **`off_wire`**, and it
+# is on `new_contents_commit` alone.
 #
-# `Put` emits the box's AEAD note (`{commitment, state_nonce, box_id}`), which is how the
-# wallet discovers the new leaf (§C.8.1). **The note does not yet carry what the box holds**,
-# and the sentence that stood here named the wrong reason: this is not §C.8.2, whose required
-# fields are `nullifier`, `merkle_root` and `leaf_position` and do not include the contents —
-# it is that `CapRecord` has no slot the contents are written to, so a wallet that put a box
-# cannot recover them by scanning *or* from its own record. `OBL-C181` records the §C.8.2 gap
-# separately, and neither is closed by the other. `owner_secret` stays private
-# (wallet.md §6.4.1).
+# `Put` emits the box's AEAD note, which is how the wallet discovers the new leaf (§C.8.1).
+# **It carries what the box holds now** — as the *commitment*, never a preimage: the contents
+# fields are opaque `pallas::Base` elements the circuit folds into a leaf and never interprets,
+# so the box layer never receives a preimage and cannot leak one. The note still does not carry
+# §C.8.2's `nullifier`, `merkle_root` or `leaf_position`; that is `OBL-C181`, a different gap,
+# and closing one does not close the other. `owner_secret` stays private (wallet.md §6.4.1).
 
 [contract]
 name = "box"
@@ -69,7 +67,11 @@ witness_map = [
     # evaluated at `bin/dww/src/prover_impl.rs:435` for witness slots and
     # `src/sdk/src/contract_client.rs:304-321` for note fields.
     "derived:increment:1",
-    "param:old_contents_commit",
+    # The consumed box's contents, from the wallet's own record of it — the note this contract
+    # emitted when that box was produced or received, read back by the scan into
+    # `CapRecord.user_data`. A box with no predecessor takes the record's zero, which is what a
+    # fresh box's old leaf commits to.
+    "note:user_data",
     "param:new_contents_commit",
     "derived:nullifier:8,0,1",
     "merkle_root",
@@ -88,7 +90,8 @@ name = "Take"
 namespace = "Take"
 witness_map = [
     "note:box_id",
-    "param:contents_commit",
+    # As `Put`'s slot 3: the box being consumed, from the wallet's record of it.
+    "note:user_data",
     "note:state_nonce",
     "derived:nullifier:5,0,2",
     "merkle_root",
@@ -104,20 +107,17 @@ witness_map = [
 [[parameters]]
 function = "put"
 fields = [
-    # The tag means "the caller's JSON need not supply this; the client fills it from the prover's
-    # bound value at that slot". **It does not mean "off the wire"** — `encode_params_values` writes
-    # every field in this list (`OBL-C179`). `new_state_nonce` is at slot 2, whose source is
-    # `derived:increment:1`, so the value the client fills is the circuit's own successor and it is
-    # published like the rest, which no verifier needs.
-    { name = "new_state_nonce", type = "pallas_base", witness = 2 },
-    # The consumed and the produced contents commitment. Both are opaque `pallas::Base` elements the
-    # circuit folds into a leaf and never interprets, so no observer needs them — and both are
-    # published today anyway, declared in `scripts/check-l1-wire-conformance.sh`. The consumed one can
-    # read `note:user_data` from the wallet's record as soon as the scan writes it; the produced one is
-    # caller-chosen and has nowhere else to go until the "caller supplies it, not published" annotation
-    # exists (`OBL-C179`, `OBL-C145`).
-    { name = "old_contents_commit", type = "pallas_base", witness = 3 },
-    { name = "new_contents_commit", type = "pallas_base", witness = 4 },
+    # **`new_state_nonce` and `old_contents_commit` are gone from this list, and the wire with them.**
+    # Neither needed a parameter: the nonce is slot 2, whose source is `derived:increment:1`, and the
+    # consumed contents is slot 3, whose source is now `note:user_data`. A parameter that nothing
+    # reads and no encoder should write is a wire field.
+    #
+    # `new_contents_commit` stays, `off_wire`: the caller chooses it, the prover binds it, and
+    # `encode_params_values` does not write it. This is the fourth quadrant `OBL-C179` names — and
+    # note that it carries `off_wire` and **not** `witness = 4`, which is what it carried before and
+    # what made the call unbuildable: `witness` makes `decode_params_from_json` skip the field, so the
+    # prover's `param:new_contents_commit` had nothing to look up while the encoder still wrote it.
+    { name = "new_contents_commit", type = "pallas_base", off_wire = true },
     { name = "nullifier", type = "pallas_base", witness = 5 },
     { name = "expected_root", type = "pallas_base", witness = 6 },
     { name = "new_leaf", type = "pallas_base", witness = 7, leaf = true },
@@ -131,10 +131,8 @@ fields = [
 [[parameters]]
 function = "take"
 fields = [
-    # Tagged, as the two above — same meaning, same correction. The box's contents are the caller's to
-    # name and no verifier needs them; the circuit folds them into the leaf, whose root is the published
-    # value. Published anyway, and declared.
-    { name = "contents_commit", type = "pallas_base", witness = 1 },
+    # `contents_commit` is gone from this list: it is slot 1, sourced `note:user_data` from the
+    # wallet's record of the box being taken.
     { name = "nullifier", type = "pallas_base", witness = 3 },
     { name = "expected_root", type = "pallas_base", witness = 4 },
     { name = "leaf_pos", type = "u32", witness = 6 },
@@ -162,8 +160,23 @@ discriminant = 0
 primitives = ["SecretKey", "Commitment", "Nullifier", "MerkleNode", "ContractId", "FuncId"]
 note_schema = [
     { name = "commitment", type = "pallas_base", witness = 7 },
-    { name = "state_nonce", type = "pallas_base", source = "new_state_nonce" },
+    # `source = "new_state_nonce"` was a *param* lookup, and the param is gone: the nonce is the
+    # circuit's own slot 2 (`derived:increment:1`), so the note reads it there.
+    { name = "state_nonce", type = "pallas_base", witness = 2 },
     { name = "box_id", type = "pallas_base", witness = 0 },
+    # **What the box holds, in the note — and it is the commitment, never a preimage.** The three
+    # contents fields are opaque `pallas::Base` elements the circuit folds into a leaf
+    # (`put.zk:46,67`, `take.zk:42`) and never interprets; the box layer never receives a preimage, so
+    # this cannot leak one. Until now the note carried `{commitment, state_nonce, box_id}` and **not
+    # the contents**, so a box was opaque to observers (right) *and to its own holder* (wrong): a
+    # wallet that put or received a box could not learn what it held, and `CapRecord` had no slot for
+    # it either. The name is `user_data` because `CapRecord.user_data` is the field that already
+    # exists, is already persisted, and is already mapped in `cap_record_note_fields`.
+    #
+    # `witness = 4` is the produced contents — `put`'s slot 4. `take` produces nothing
+    # (`[[actions]]` gives it `consumes` and no `produces`), so `note_schema_for_function(2)` returns
+    # `None` and this schema is never applied in Take's witness frame, where slot 4 is `merkle_root`.
+    { name = "user_data", type = "pallas_base", witness = 4 },
 ]
 
 [[actions]]

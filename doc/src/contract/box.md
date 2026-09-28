@@ -75,22 +75,39 @@ params are the public inputs and nothing else, and this table is the contract of
 
 | Call | Carries | Does **not** carry | Header |
 |---|---|---|---|
-| `Put` | `nullifier`, `expected_root`, `new_leaf`, the four `new`/`old` commitment coordinates, `tx_binding`, `tx_nonce`, `new_state_nonce`, the contents commitments, `leaf_pos`, `merkle_path`, `proof` | `box_id`, `old_state_nonce` | 196 bytes |
-| `Take` | `nullifier`, `expected_root`, `tx_binding`, `tx_nonce`, `contents_commit`, `leaf_pos`, `merkle_path`, `proof` | `box_id`, `state_nonce` | 100 bytes |
+| `Put` | `nullifier`, `expected_root`, `new_leaf`, the four commitment coordinates, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `box_id`, `old_state_nonce`, `new_state_nonce`, `old_contents_commit`, **`new_contents_commit`** | 100 bytes |
+| `Take` | `nullifier`, `expected_root`, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `box_id`, `state_nonce`, **`contents_commit`** | 68 bytes |
 
-**How the removed values reach the circuit.** They are `note:` witness sources: the wallet serves them
-from its own record of the box (`CapRecord.object_id`, `.state_nonce`, mapped in
-`bin/dww/src/lib.rs`'s `cap_record_note_fields`), not from the call. `Put` emits the box's AEAD note —
-`{commitment, state_nonce, box_id}` encrypted to the holder — which is how the wallet discovers the new
-leaf and learns both values for the next operation (`contract-wasm-type-system.md` §C.8.1).
+**Nothing is declared as still on the wire for either call** — this contract's entries in
+`scripts/check-l1-wire-conformance.sh` are gone, and that gate fails if a declaration goes stale, so
+the count is the measure rather than the claim.
 
-**What is still on the wire, each for a measured reason** (declared, with an expiry, in
-`scripts/check-l1-wire-conformance.sh`): `new_state_nonce`, because the *prover* must supply the
-successor — the circuit constrains it to `old + 1` and no `note:` field yields a successor, where
-Purse's circuit derives its own; and the two contents commitments, because the note does not yet carry
-what the box holds. **And one gap this page cannot paper over**: §C.8.2 requires an L1 note to carry
-`nullifier`, `merkle_root` and `leaf_position` for trajectory identification, and Box's schema carries
-none of them yet.
+**How the removed values reach the circuit.** Three routes:
+
+* `box_id`, `state_nonce` and the *consumed* box's contents (`Put`'s `old_contents_commit`, `Take`'s
+  `contents_commit`) are `note:` witness sources served from the wallet's own record —
+  `CapRecord.object_id`, `.state_nonce`, `.user_data`, mapped in `bin/dww/src/lib.rs`'s
+  `cap_record_note_fields` and read out of the note by `bin/dww/src/scan.rs`.
+* `new_state_nonce` is `derived:increment:1` — `put.zk:63-64` computes `base_add(old_state_nonce, ONE)`
+  and constrains it, so the successor is the circuit's own value and needs no caller input. The reason
+  this page used to give for publishing it — *"the prover must supply it … where Purse's circuit
+  derives its own"* — was false, and `Purse` was the contract that showed it.
+* **`new_contents_commit` is a parameter that is `off_wire`** — the caller chooses what the box will
+  hold, the prover binds it, and `encode_params_values` does not write it. Before that tag existed the
+  only way to publish it was the only way to supply it, which is why it was on the wire.
+
+**The note now carries what the box holds** — as the **commitment**, never a preimage. `Put` emits
+`{commitment, state_nonce, box_id, user_data}` encrypted to the holder, where `user_data` is the
+contents commitment the circuit folded into the leaf; `cap_record_note_fields` and `scan.rs` map it to
+`CapRecord.user_data`, which is the existing, persisted slot. **This is what makes a box legible to its
+own holder**, and it is a separate thing from the wire: a box's contents were never published after
+unit 4, and were never *available* either — opaque to observers, which is right, and to their holder,
+which is not. The box layer never receives a preimage, so it cannot leak one; the preimage of an
+application's commitment belongs to that application.
+
+**And one gap this page cannot paper over**: §C.8.2 requires an L1 note to carry `nullifier`,
+`merkle_root` and `leaf_position` for trajectory identification, and Box's schema carries none of them.
+That is `OBL-C181`, it is a different gap from the one above, and closing one does not close the other.
 
 ## Database Trees
 

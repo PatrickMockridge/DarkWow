@@ -1085,6 +1085,13 @@ fn cap_record_note_fields(
             "spend_hook" => NoteFieldValue::Base(
                 cap.spend_hook.map(|h| h.inner()).unwrap_or_else(|| pallas::Base::zero()),
             ),
+            // **Zero for absent, unlike `object_id` above, and this asymmetry is deliberate.**
+            // `user_data` is box's contents, and a box with no predecessor has *no* contents — the
+            // put that creates one folds `Base::zero()` into the old leaf (`harness/box.rs:71` sets
+            // `occ` to zero for exactly that reason), so a wallet putting a fresh box has no record
+            // to read and zero is the value the circuit expects. An absent `object_id` is a different
+            // thing: it means the record is missing, and binding a zero there produces a wrong
+            // nullifier that fails only at verification.
             "user_data" => NoteFieldValue::Base(match cap.user_data {
                 Some(b) => Option::<pallas::Base>::from(pallas::Base::from_repr(b))
                     .unwrap_or_else(|| pallas::Base::zero()),

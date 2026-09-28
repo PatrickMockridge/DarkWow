@@ -1071,7 +1071,15 @@ fn scan_block(
                             value,
                             asset_id,
                             spend_hook: None,
-                            user_data: None,
+                            // **What the container holds, read from the note.** For box that is the
+                            // contents commitment the circuit folded into the leaf — a `pallas::Base`
+                            // an application chose, never a preimage, so recording it tells the holder
+                            // what it received and an observer nothing, which is what a container is
+                            // for. Absent for capabilities whose schema has no such field (purse,
+                            // promissory_note), where `None` is correct and not a zero.
+                            user_data: dwow_sdk::manifest::note_field(&fields, "user_data")
+                                .and_then(|v| v.as_base())
+                                .map(|b| b.to_repr()),
                             leaf_position: leaf_pos,
                             commitment: Commitment::from_base(leaf),
                             contract_id: call.contract_id,  // foreign — balance gate excludes it

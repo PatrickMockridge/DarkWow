@@ -93,8 +93,11 @@ impl BoxHarness {
         // new leaf by trial-decryption. Appended to the call data — the scan
         // byte-slides over call.data looking for AeadEncryptedNote structures.
         #[derive(dwow_serial::SerialEncodable)]
-        struct BoxNote { commitment: pallas::Base, state_nonce: pallas::Base, box_id: pallas::Base }
-        let note = BoxNote { commitment: nl, state_nonce: nsn, box_id: bid };
+        struct BoxNote { commitment: pallas::Base, state_nonce: pallas::Base, box_id: pallas::Base, user_data: pallas::Base }
+        // `user_data` is the produced contents — the *commitment*, which is all the box layer ever
+        // holds — and the field order matches the manifest's `note_schema`, which the scan decodes
+        // against. Without it a wallet that put or received a box could not learn what it held.
+        let note = BoxNote { commitment: nl, state_nonce: nsn, box_id: bid, user_data: ncc };
         let owner_pk = dwow_sdk::crypto::keypair::PublicKey::from_secret(dwow_sdk::crypto::keypair::SecretKey::from_base(os));
         let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
         let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;

@@ -8646,15 +8646,21 @@ CONTRACT_STRUCTS = {
     # and the two tables converge; until then this table is manifest-shaped and the claim that it
     # equals the contract struct is false.
     "box": {
+        # **The structs' own 8 and 7 fields (2026-09-28).** The manifest now declares 9 for `put`
+        # and 7 for `take`: `new_contents_commit` is the one carrying `off_wire`, so it is excluded
+        # here, and `new_state_nonce`, `old_contents_commit` and `contents_commit` are not declared
+        # at all — they are `derived:increment:1` and `note:user_data`. Before this the table
+        # carried 11 and 8 while the structs had 8 and 7, and `check_manifest_conformance` passed
+        # because it compared the manifest's declared list against this table rather than against
+        # the decoder — `OBL-C157`'s finding.
         "put": [
-            ("new_state_nonce", "pallas_base"), ("old_contents_commit", "pallas_base"),
-            ("new_contents_commit", "pallas_base"), ("nullifier", "pallas_base"),
+            ("nullifier", "pallas_base"),
             ("expected_root", "pallas_base"), ("new_leaf", "pallas_base"),
             ("leaf_pos", "u32"), ("merkle_path", "merkle_path"), ("proof", "proof"),
             ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
         ],
         "take": [
-            ("contents_commit", "pallas_base"), ("nullifier", "pallas_base"),
+            ("nullifier", "pallas_base"),
             ("expected_root", "pallas_base"), ("leaf_pos", "u32"),
             ("merkle_path", "merkle_path"), ("proof", "proof"),
             ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
@@ -9502,23 +9508,23 @@ def test_wire_layout_matches_contract_structs():
     """
     F = ParameterField
 
-    # box put (PutParams, the CONTRACT's struct): 8 fields → 1192 bytes. `box_id` and
-    # `old_state_nonce` left with `dd25ccfb5b`; `new_state_nonce`, `old_contents_commit` and
-    # `new_contents_commit` left the struct with `d670b522ef` (unit 4, 96 bytes).
-    # **They did not leave the manifest, so the list below is the struct's wire and NOT the
-    # call data a manifest-driven client builds.** Since unit 4 the two disagree — 8 fields here,
-    # 11 in `box/manifest.toml` — because a `witness = N` tag does not keep a field off the wire
-    # (`OBL-C179`, corrected 2026-09-28). The 2026-09-27 note that stood here said a tagged param "is
-    # skipped by `encode_params_values`, so it is not in the call data"; that is false. The earlier
-    # totals — 1288 and 1192 — were the param-list widths, and they are still the manifest's widths
-    # today.
+    # box put: **9 declared, 8 published → 1192 bytes**, and the manifest and the struct agree again
+    # as of 2026-09-28. `box_id` and `old_state_nonce` left with `dd25ccfb5b`; `new_state_nonce`,
+    # `old_contents_commit` and `new_contents_commit` left the *struct* with `d670b522ef` (unit 4)
+    # and the *manifest* only now — the tagged-but-still-listed state in between is what made this
+    # file's box fixtures describe a wire that did not exist.
     box_put = [
+        F("new_contents_commit", "pallas_base", off_wire=True),
         F("nullifier", "pallas_base", witness=5),
         F("expected_root", "pallas_base", witness=6), F("new_leaf", "pallas_base", witness=7),
         F("leaf_pos", "u32", witness=9), F("merkle_path", "merkle_path", witness=10),
         F("proof", "proof"), F("tx_binding", "pallas_base", witness=13), F("tx_nonce", "pallas_base"),
     ]
     assert schema_wire_len(box_put) == 1192, schema_wire_len(box_put)
+    assert schema_wire_len(
+        [f for f in box_put if f.name != "new_contents_commit"]
+        + [F("new_contents_commit", "pallas_base")]
+    ) == 1224, "the off_wire field must be the difference between 1192 and 1224"
 
     # box take (TakeParams): 7 fields → 1160 bytes.
     box_take = [
