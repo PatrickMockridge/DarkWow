@@ -993,10 +993,39 @@ fn scan_block(
                         // declared fields, never hardcoded to DRKW/0 (wallet.md
                         // §2.3): a promissory note's real value/asset_id come from
                         // its note, not from a native-token assumption.
-                        let value = dwow_sdk::manifest::note_field(&fields, "value")
+                        //
+                        // **A declared-but-unreadable value refuses; an absent one is zero.** The
+                        // `unwrap_or(0)` that stood here turned a type the wallet could not read
+                        // into a *silent* zero — a purse recorded with a balance of 0, which the
+                        // holder and every gate would see as a real reading (`OBL-C176`). Absent
+                        // genuinely does mean zero: box's note carries no `value` and its
+                        // capabilities are not balances. Present-and-unreadable does not, and
+                        // `purse` is the case that matters — its note now carries the balance as a
+                        // `pallas_base` the circuit computed, so the conversion must be checked.
+                        let value = match dwow_sdk::manifest::note_field(&fields, "value")
                             .or_else(|| dwow_sdk::manifest::note_field(&fields, "amount"))
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
+                        {
+                            None => 0,
+                            Some(dwow_sdk::manifest::NoteFieldValue::U64(u)) => *u,
+                            Some(dwow_sdk::manifest::NoteFieldValue::Base(b)) => {
+                                match crate::prover_impl::base_to_u64(*b) {
+                                    Ok(v) => v,
+                                    Err(e) => {
+                                        tracing::warn!(target: "dww::scan",
+                                            "Path2: note declares `value` as a Base that is not a \
+                                             u64 balance; refusing the note rather than recording \
+                                             a wrong balance — {e}");
+                                        break;
+                                    }
+                                }
+                            }
+                            Some(other) => {
+                                tracing::warn!(target: "dww::scan",
+                                    "Path2: note declares `value` as {other:?}, which is not a \
+                                     readable balance; refusing the note rather than defaulting");
+                                break;
+                            }
+                        };
                         let asset_id = dwow_sdk::manifest::note_field(&fields, "asset_id")
                             .and_then(|v| v.as_base())
                             .map(AssetId::from_base)

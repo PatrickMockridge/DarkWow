@@ -8661,9 +8661,12 @@ CONTRACT_STRUCTS = {
         ],
     },
     "purse": {
+        # **The three balances left the wire on 2026-09-28**, so this is the struct's 13 fields and
+        # not the manifest's 14. `deposit_amount`/`withdraw_amount` are still declared in
+        # `[[parameters]]` and carry `off_wire`, which is why `check_manifest_conformance` compares
+        # the *published subset* rather than the declared list. `old_balance` and `new_balance` are
+        # not declared at all any more — witness slots 1 and 5, `note:value` and `base_add`/`base_sub`.
         "deposit": [
-            ("old_balance", "u64"), ("deposit_amount", "u64"),
-            ("new_balance", "u64"),
             ("nullifier", "pallas_base"), ("expected_root", "pallas_base"),
             ("new_leaf", "pallas_base"), ("old_commit_x", "pallas_base"),
             ("old_commit_y", "pallas_base"), ("new_commit_x", "pallas_base"),
@@ -8676,8 +8679,6 @@ CONTRACT_STRUCTS = {
             ("derived_purse_id", "pallas_base"),
         ],
         "withdraw": [
-            ("old_balance", "u64"), ("withdraw_amount", "u64"),
-            ("new_balance", "u64"),
             ("nullifier", "pallas_base"), ("expected_root", "pallas_base"),
             ("new_leaf", "pallas_base"), ("old_commit_x", "pallas_base"),
             ("old_commit_y", "pallas_base"), ("new_commit_x", "pallas_base"),
@@ -9528,14 +9529,14 @@ def test_wire_layout_matches_contract_structs():
     ]
     assert schema_wire_len(box_take) == 1160, schema_wire_len(box_take)
 
-    # purse deposit (DepositParams): 16 fields → 1376 bytes.
-    # **Corrected 2026-09-28**: the last field was `asset_id` and is `derived_purse_id` — unit 3
-    # (`e6a4df553c`) replaced it, and both are `pallas_base`, so the width did not move and this
-    # assertion passed while describing a field that is no longer in the manifest. The comment also
-    # said 1373 against an assertion of 1376.
+    # purse deposit: **14 declared, 13 published → 1352 bytes.** The three balances left the wire on
+    # 2026-09-28 — `old_balance` and `new_balance` are not parameters at all, and `deposit_amount`
+    # carries `off_wire`, so it is listed here (this is the manifest's declared list) and contributes
+    # nothing to the width. 1376 minus 8+8+8.
     purse_deposit = [
-        F("old_balance", "u64"), F("deposit_amount", "u64"),
-        F("new_balance", "u64"),
+        # Declared and NOT published — the fourth quadrant, and the one entry below that
+        # `schema_wire_len` must skip for this number to be right.
+        F("deposit_amount", "u64", off_wire=True),
         F("nullifier", "pallas_base", witness=8), F("expected_root", "pallas_base", witness=9),
         F("new_leaf", "pallas_base", witness=10), F("old_commit_x", "pallas_base", witness=11),
         F("old_commit_y", "pallas_base", witness=12), F("new_commit_x", "pallas_base", witness=13),
@@ -9544,7 +9545,13 @@ def test_wire_layout_matches_contract_structs():
         F("tx_binding", "pallas_base", witness=21), F("tx_nonce", "pallas_base"),
         F("derived_purse_id", "pallas_base"),
     ]
-    assert schema_wire_len(purse_deposit) == 1376, schema_wire_len(purse_deposit)
+    assert schema_wire_len(purse_deposit) == 1352, schema_wire_len(purse_deposit)
+    # The control for the skip: declare the same field published and the width must move by its 8
+    # bytes. Without this, `schema_wire_len` could skip anything and still pass the line above.
+    assert schema_wire_len(
+        [f for f in purse_deposit if f.name != "deposit_amount"]
+        + [F("deposit_amount", "u64")]
+    ) == 1360, "the off_wire field must be the difference between 1352 and 1360"
 
     # purse withdraw (WithdrawParams): 16 fields → 1376 bytes, the same width as
     # deposit — `WithdrawParams::encode` delegates to `DepositParams` and only the
@@ -9554,8 +9561,7 @@ def test_wire_layout_matches_contract_structs():
     # verify WithdrawParams round-trip tests."
     # Last field corrected as above (`asset_id` → `derived_purse_id`).
     purse_withdraw = [
-        F("old_balance", "u64"), F("withdraw_amount", "u64"),
-        F("new_balance", "u64"),
+        F("withdraw_amount", "u64", off_wire=True),
         F("nullifier", "pallas_base", witness=8), F("expected_root", "pallas_base", witness=9),
         F("new_leaf", "pallas_base", witness=10), F("old_commit_x", "pallas_base", witness=11),
         F("old_commit_y", "pallas_base", witness=12), F("new_commit_x", "pallas_base", witness=13),
@@ -9564,7 +9570,7 @@ def test_wire_layout_matches_contract_structs():
         F("tx_binding", "pallas_base", witness=21), F("tx_nonce", "pallas_base"),
         F("derived_purse_id", "pallas_base"),
     ]
-    assert schema_wire_len(purse_withdraw) == 1376, schema_wire_len(purse_withdraw)
+    assert schema_wire_len(purse_withdraw) == 1352, schema_wire_len(purse_withdraw)
 
     # purse balance (BalanceParams): 10 fields → 1256 bytes; the comment said 1253 against an
     # assertion of 1256. `purse_id`, `asset_id`, `balance` and `state_nonce` are all off the wire, and

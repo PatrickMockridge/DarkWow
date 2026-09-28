@@ -1,7 +1,6 @@
 //! Integration tests for the Purse contract — data model encode/decode round-trips.
-//! Updated for L1 type system (Part C §C.3.2): Amount, Balance, SDK Nullifier.
 
-use dwow_purse_contract::model::{Amount, Balance, BalanceParams, DepositParams, MerklePosition, WithdrawParams};
+use dwow_purse_contract::model::{BalanceParams, DepositParams, MerklePosition, WithdrawParams};
 use dwow_sdk::crypto::{pasta_prelude::PrimeField, MerkleNode, Nullifier};
 use dwow_sdk::pasta::pallas;
 
@@ -19,38 +18,15 @@ fn dummy_merkle_path() -> [MerkleNode; 32] {
     [MerkleNode::from_base(pallas::Base::from(1u64)); 32]
 }
 
-#[test]
-fn test_amount_rejects_zero() {
-    assert!(Amount::new(0).is_err(), "Amount must reject zero");
-}
-
-#[test]
-fn test_amount_accepts_positive() {
-    let a = Amount::new(1000).expect("positive amount");
-    assert_eq!(a.inner(), 1000);
-}
-
-#[test]
-fn test_amount_roundtrip() {
-    let a = Amount::new(500).expect("positive amount");
-    let bytes = a.to_le_bytes();
-    let b = Amount::from_le_bytes(bytes).expect("round-trip");
-    assert_eq!(a.inner(), b.inner());
-}
-
-#[test]
-fn test_balance_accepts_zero() {
-    let b = Balance::new(0);
-    assert_eq!(b.inner(), 0);
-}
-
-#[test]
-fn test_balance_roundtrip() {
-    let b = Balance::new(100);
-    let bytes = b.to_le_bytes();
-    let c = Balance::from_le_bytes(bytes);
-    assert_eq!(b.inner(), c.inner());
-}
+// `Amount`'s and `Balance`'s five tests stood here — the newtypes are removed, because nothing
+// outside their own definitions used them once the balances left the call data. **The rule they
+// pinned did not go with them.** `test_amount_rejects_zero` asserted `Amount::new(0).is_err()`, i.e.
+// that a zero deposit is invalid; that check lived in the contract's *decoder*, which cannot see the
+// amount any more, and `deposit.zk` now carries `less_than_strict(ZERO, deposit_amount)` beside
+// `withdraw.zk:61`'s. **The test for it belongs at the circuit, and it is not here yet** — building a
+// zero-amount deposit and requiring the proof to fail is a heavyweight-harness test, and unit 6's
+// verification runs `test_heavyweight_purse` but does not add one. Recorded rather than replaced by
+// nothing.
 
 // `test_purse_encode_decode_roundtrip` — the `Purse` record's 129-byte round-trip — stood here. The
 // record is removed: it was a "future schema" that no entrypoint read, and the host-level owner check it
@@ -59,10 +35,9 @@ fn test_balance_roundtrip() {
 
 #[test]
 fn test_deposit_params_encode_decode_roundtrip() {
+    // The three balances are not fields of this struct any more (2026-09-28): two are witness slots
+    // the wallet's record and the circuit supply, and the amount is `off_wire` in the manifest.
     let params = DepositParams {
-        old_balance: Balance::new(0),
-        deposit_amount: Amount::new(1000).expect("positive amount"),
-        new_balance: Balance::new(1000),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         new_leaf: dummy_merkle_node(),
@@ -85,9 +60,7 @@ fn test_deposit_params_encode_decode_roundtrip() {
     assert!(!encoded.is_empty());
 
     let decoded = DepositParams::decode(&encoded).expect("round-trip must succeed");
-    assert_eq!(decoded.old_balance.inner(), params.old_balance.inner());
-    assert_eq!(decoded.deposit_amount.inner(), params.deposit_amount.inner());
-    assert_eq!(decoded.new_balance.inner(), params.new_balance.inner());
+    assert_eq!(decoded.expected_root.to_bytes(), params.expected_root.to_bytes());
     assert_eq!(decoded.derived_purse_id, params.derived_purse_id);
     assert_eq!(decoded.proof, params.proof);
 
@@ -98,9 +71,6 @@ fn test_deposit_params_encode_decode_roundtrip() {
 #[test]
 fn test_withdraw_params_encode_decode_roundtrip() {
     let params = WithdrawParams {
-        old_balance: Balance::new(1000),
-        withdraw_amount: Amount::new(500).expect("positive amount"),
-        new_balance: Balance::new(500),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         new_leaf: dummy_merkle_node(),
@@ -121,9 +91,7 @@ fn test_withdraw_params_encode_decode_roundtrip() {
     assert!(!encoded.is_empty());
 
     let decoded = WithdrawParams::decode(&encoded).expect("round-trip must succeed");
-    assert_eq!(decoded.old_balance.inner(), params.old_balance.inner());
-    assert_eq!(decoded.withdraw_amount.inner(), params.withdraw_amount.inner());
-    assert_eq!(decoded.new_balance.inner(), params.new_balance.inner());
+    assert_eq!(decoded.expected_root.to_bytes(), params.expected_root.to_bytes());
     assert_eq!(decoded.derived_purse_id, params.derived_purse_id);
     assert_eq!(decoded.proof, params.proof);
 

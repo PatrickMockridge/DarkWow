@@ -842,8 +842,12 @@ fn test_purse_deposit_withdraw_wallet_driven_generic_prover() {
         // from the circuit's own `derived:purse_id` and writes it, which is `OBL-C180`'s repair.
         // Before that repair this call could not be built: the only test that builds a purse call the
         // way a wallet does failed `missing required parameter 'derived_purse_id'`.
+        // `old_balance` and `new_balance` are not parameters any more, so they are not here either:
+        // the first is witness slot 1 (`note:value`, the wallet's own record) and the second is slot
+        // 5, the circuit's `base_add`. An unknown key would be ignored rather than rejected, which is
+        // exactly why a JSON that no longer matches the schema is worth removing rather than leaving.
         let deposit_params_json = format!(
-            r#"{{"old_balance":100,"deposit_amount":50,"new_balance":150,"tx_nonce":"{}"}}"#,
+            r#"{{"deposit_amount":50,"tx_nonce":"{}"}}"#,
             base_hex(&pallas::Base::zero()),
         );
         let (call_body, proof_bytes) = client
@@ -869,11 +873,20 @@ fn test_purse_deposit_withdraw_wallet_driven_generic_prover() {
         dww.insert_synced_block(&dep_scan_block).expect("insert deposit block");
         let dep_result = dww.scan_block_linear(&mut cap_tree, &dep_scan_block).expect("scan deposit");
         assert_eq!(dep_result.capabilities.len(), 1, "discover the deposit's purse capability");
+        // **The value, not just the count.** No purse test asserted the *balance* the scan recovered
+        // until 2026-09-28, which is why `scan.rs` could read the note's `value` through
+        // `.unwrap_or(0)` and record a silent zero with nothing to catch it (`OBL-C176`): every
+        // assertion here was about how many capabilities appeared, never what they said. The note now
+        // carries the balance as a `pallas_base` the circuit computed (slot 5, `base_add(1,3)`), so
+        // this line is what proves the checked conversion on the scan side is right — and a default
+        // of 0 would fail it.
+        assert_eq!(dep_result.capabilities[0].cap_record.value, 150,
+            "the scanned balance must be the produced balance (100 + 50), never a default");
 
         // Withdraw: consume nonce 2 (balance 150), produce nonce 3 (100).
         // Same JSON shape as `deposit` above, and for the same reason.
         let withdraw_params_json = format!(
-            r#"{{"old_balance":150,"withdraw_amount":50,"new_balance":100,"tx_nonce":"{}"}}"#,
+            r#"{{"withdraw_amount":50,"tx_nonce":"{}"}}"#,
             base_hex(&pallas::Base::zero()),
         );
         let (wcall_body, wproof_bytes) = client
@@ -907,6 +920,17 @@ fn test_purse_deposit_withdraw_wallet_driven_generic_prover() {
         let in_nf_withdraw = chain.query_contract_state(*PURSE_CONTRACT_ID, "nullifiers", &nf_withdraw.to_repr().to_vec())
             .expect("query withdraw nullifier");
         assert!(in_nf_withdraw.is_some(), "withdraw nullifier spent on-chain");
+
+        // And the produced balance on the withdraw side, through the same scan path: 150 - 50 = 100.
+        let wd_block = chain.chain_state.get_block(withdraw_height).expect("block");
+        let wd_scan_block = dwow_chain::Block {
+            header: wd_block.header.clone(), transactions: wd_block.transactions.clone(),
+        };
+        dww.insert_synced_block(&wd_scan_block).expect("insert withdraw block");
+        let wd_result = dww.scan_block_linear(&mut cap_tree, &wd_scan_block).expect("scan withdraw");
+        assert_eq!(wd_result.capabilities.len(), 1, "discover the withdraw's purse capability");
+        assert_eq!(wd_result.capabilities[0].cap_record.value, 100,
+            "the scanned balance after the withdrawal must be 150 - 50");
 
         // Cleanup
         let _ = std::fs::remove_file(&keys_path);

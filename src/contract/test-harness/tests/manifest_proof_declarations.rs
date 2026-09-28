@@ -455,9 +455,20 @@ fn every_contract_manifest_agrees_with_its_own_circuits() {
          different count means either the enumeration above changed or a contract moved — and the \
          contract list is printed above, so the reader can tell which"
     );
+    // **Re-measured 2026-09-28: 673 → 666, and the movement is the `dao_escrow` re-wire, measured
+    // rather than assumed.** The guard fired and was right — the tree had moved. Between the
+    // 2026-09-24 baseline and now, `2ff23d06d9^` counts A=169 B=169 C=166 (673, the constant that
+    // stood here) and HEAD counts A=168 B=167 C=164 (666), so the drift is A −1, B −2, D −2 and
+    // C −2 — exactly the five circuits and seven endpoints that commit retired, and nothing else.
+    //
+    // **It sat red across units 1–4 of that programme and nobody saw it**, which is the class
+    // `OBL-C157` is about: this file's tests are compiled by a workspace test run, and the per-crate
+    // checks the campaign ran were `--lib` or named single tests. A `cargo check --tests` over every
+    // crate is what would have caught it, and is worth having.
     assert_eq!(
-        sites, 673,
-        "the four checks walk 673 sites over those manifests (measured 2026-09-24); a different \
-         count means a parser stopped seeing them, or the tree moved"
+        sites, 666,
+        "the four checks walk 666 sites over those manifests (re-measured 2026-09-28; 673 on \
+         2026-09-24, before the dao_escrow re-wire retired five circuits and seven endpoints); a \
+         different count means a parser stopped seeing them, or the tree moved"
     );
 }

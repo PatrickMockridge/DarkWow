@@ -82,22 +82,20 @@ L1_CONTRACTS = ["promissory_note", "box", "purse"]
 # declaration's *reason* for `new_state_nonce` was false (`put.zk:63-64` derives the successor, as
 # `purse` does), and `box`'s decoder stopped expecting the three — which is a manifest/decoder
 # *disagreement*, the class the owed agreement rule under `OBL-C179` covers, not a retirement.
+# **PURSE'S SIX ARE GONE (2026-09-28), and the block that held them was a type, not a preference.**
+# `old_balance` and `new_balance` are no longer parameters at all — witness slots 1 and 5, reading
+# `note:value` from the wallet's record and the circuit's own `base_add`/`base_sub`. The amount stays
+# a parameter and carries `off_wire`, the tag this gate does skip because the encoders honour it.
+# So purse declares nothing here, and the six entries that used to sit in this dict would now be
+# reported as stale — which is what the declaration expiring is for.
 DECLARED = {
-    ("purse", "Deposit", 1, "old_balance"): "how much, published — blocked on the note's `value` type, see above",
-    ("purse", "Deposit", 3, "deposit_amount"): "how much moved, published — the record holds the balance, not the amount",
-    ("purse", "Deposit", 5, "new_balance"): "how much, published — same block as slot 1",
-    ("purse", "Withdraw", 1, "old_balance"): "as Deposit, slot 1",
-    ("purse", "Withdraw", 3, "withdraw_amount"): "as Deposit, slot 3",
-    ("purse", "Withdraw", 5, "new_balance"): "as Deposit, slot 5",
     # Box's three, back until `box/manifest.toml` stops listing them in `[[parameters]]`. Each is an
     # opaque `pallas::Base` the circuit folds into a leaf; nothing in-circuit computes or verifies a
-    # preimage, so no observer needs them and the caller-chosen ones have nowhere else to go yet — the
-    # fourth quadrant of "caller supplies it and it is not published" does not exist until unit 5 builds
-    # it. The two that are *consumed* state (`old_contents_commit`, `contents_commit`) can already read
-    # `note:` from `CapRecord.user_data`; the one that is *chosen* (`new_contents_commit`) is what needs
-    # the new annotation.
+    # preimage, so no observer needs them. The two that are *consumed* state (`old_contents_commit`,
+    # `contents_commit`) can read `note:` from `CapRecord.user_data`; the one that is *chosen*
+    # (`new_contents_commit`) needs `off_wire`, which now exists.
     ("box", "Put", 3, "old_contents_commit"): "consumed state — can read `note:user_data` now; blocked on the wallet record being written",
-    ("box", "Put", 4, "new_contents_commit"): "caller-chosen, nothing checks it — blocked on the fourth quadrant",
+    ("box", "Put", 4, "new_contents_commit"): "caller-chosen, nothing checks it — blocked on the wallet record and the manifest edit, not on a missing tag",
     ("box", "Take", 1, "contents_commit"): "consumed state — as `old_contents_commit`",
 }
 

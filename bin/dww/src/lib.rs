@@ -1057,7 +1057,13 @@ fn cap_record_note_fields(
     use dwow_sdk::manifest::NoteFieldValue;
     note_schema.iter().filter_map(|f| {
         let v = match f.name.as_str() {
-            "value" => NoteFieldValue::U64(cap.value),
+            // `Base`, not `U64`. The note's `value` is declared `pallas_base` and filled from the
+            // circuit's slot 5 (`purse/manifest.toml`), so the outgoing note must carry a `Base` or
+            // `encode_params_values` refuses it with a type mismatch — which is exactly the wall
+            // `OBL-C176` recorded from the other side. `CapRecord.value` stays `u64`: the note is
+            // `pallas_base` end to end and the wallet's record is the denomination boundary, with a
+            // checked conversion where it is read (`scan.rs`).
+            "value" => NoteFieldValue::Base(pallas::Base::from(cap.value)),
             "asset_id" => NoteFieldValue::Base(cap.asset_id.inner()),
             // The 4-arg L1 nullifier's operands (`poseidon(1, secret, object_id, nonce)`):
             // the record holds both, and they are what the purse's and box's circuits need

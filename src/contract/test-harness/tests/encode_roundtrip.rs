@@ -54,14 +54,19 @@ fn test_purse_encode_roundtrip() {
     // The `Purse` record's round-trip stood here; the struct is removed. It was a "future schema" that
     // no entrypoint read, and the owner check it would have made possible has no operand — see the note
     // in `purse/src/model/mod.rs` where it lived.
+    // **This test is the reason the hand-written offsets are worth trusting, and it was broken for
+    // two commits.** `asset_id` left the struct in `e6a4df553c` (unit 3) and the three balances in
+    // the 2026-09-28 pass; neither was noticed here because the only thing that runs this file is a
+    // workspace test run, and `cargo check -p dwow-contract-test-harness` without `--tests` compiles
+    // the library only. A `--tests` check on every crate is what would have caught it.
     use dwow_purse_contract::model::{DepositParams, WithdrawParams,
-        Balance, Amount, StateNonce, MerklePosition};
+        StateNonce, MerklePosition};
 
     let path = [dummy_merkle_node(); 32];
+    // The three balances are not fields: `old_balance` and `new_balance` are witness slots 1 and 5
+    // and `deposit_amount` is `off_wire` — so the struct is the *wire*, and the round-trip below is
+    // over exactly what a call carries.
     let deposit = DepositParams {
-        old_balance: Balance::new(0),
-        deposit_amount: Amount::new(1000).unwrap(),
-        new_balance: Balance::new(1000),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         new_leaf: dummy_merkle_node(),
@@ -74,14 +79,11 @@ fn test_purse_encode_roundtrip() {
         proof: vec![1, 2, 3],
         tx_binding: pallas::Base::from(200u64),
         tx_nonce: pallas::Base::from(300u64),
-        asset_id: pallas::Base::from(1u64),
+        derived_purse_id: pallas::Base::from(1u64),
     };
     assert_roundtrip!(DepositParams, deposit);
 
     let withdraw = WithdrawParams {
-        old_balance: Balance::new(1000),
-        withdraw_amount: Amount::new(500).unwrap(),
-        new_balance: Balance::new(500),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         new_leaf: dummy_merkle_node(),
@@ -94,7 +96,7 @@ fn test_purse_encode_roundtrip() {
         proof: vec![4, 5, 6],
         tx_binding: pallas::Base::from(200u64),
         tx_nonce: pallas::Base::from(300u64),
-        asset_id: pallas::Base::from(1u64),
+        derived_purse_id: pallas::Base::from(1u64),
     };
     assert_roundtrip!(WithdrawParams, withdraw);
 }
@@ -108,10 +110,11 @@ fn test_box_encode_roundtrip() {
     assert_roundtrip!(BoxId, id);
 
     let path = [dummy_merkle_node(); 32];
+    // `new_state_nonce`, `old_contents_commit` and `new_contents_commit` left the struct in
+    // `d670b522ef` (unit 4) and were not removed from here. They are still in the manifest's
+    // `[[parameters]]` — the manifest/decoder disagreement `OBL-C179` records — but this struct is
+    // the decoder, so this is what a put carries.
     let put = PutParams {
-        new_state_nonce: StateNonce::new(pallas::Base::from(2u64)),
-        old_contents_commit: pallas::Base::from(3u64),
-        new_contents_commit: pallas::Base::from(4u64),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         new_leaf: dummy_merkle_node(),
@@ -130,7 +133,6 @@ fn test_box_encode_roundtrip() {
     assert_roundtrip!(PutUpdate, put_update);
 
     let take = TakeParams {
-        contents_commit: pallas::Base::from(3u64),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         leaf_pos: MerklePosition::new(0),

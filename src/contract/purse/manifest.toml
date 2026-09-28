@@ -7,9 +7,13 @@
 # witness slots read `note:` and the wallet serves them from its own record
 # (`CapRecord.object_id`/`.state_nonce`, `bin/dww/src/lib.rs`), because `privacy.md`
 # §2 promises an observer learns "not which resource was operated on" and §5.5 says
-# the object id "is never a public input". The balances are the residue, blocked on
-# the note's `value` type rather than on a choice: see `src/contract/purse/src/model/mod.rs`
-# and `scripts/check-l1-wire-conformance.sh`, which declares each remaining slot.
+# the object id "is never a public input". **The balances left the wire on 2026-09-28**, which was
+# the last of this contract's declared leaks: `old_balance` and `new_balance` are witness slots 1
+# and 5 — `note:value` from the wallet's record and the circuit's own `base_add`/`base_sub` — and
+# the amount is a parameter that is `off_wire`. §2 promises "not how much" as well, and until that
+# change all three were plaintext 8-byte LE at the front of every deposit and withdraw.
+# `scripts/check-l1-wire-conformance.sh` declares nothing for purse now, and it fails if a
+# declaration goes stale, so the count is the measure rather than the claim.
 # owner_secret and the Pedersen blinds stay private (wallet.md §6.4.1).
 # **`Deposit` and `Withdraw` declare `public_inputs`, and they must.** Measured 2026-09-26: with
 # the lists removed, `test_purse_deposit_withdraw_wallet_driven_generic_prover` fails with
@@ -60,12 +64,17 @@ proof_circuit = "Balance"
 name = "Deposit"
 namespace = "Deposit"
 witness_map = [
+    # Slot 1 reads the wallet's own record of the purse it is spending, and slot 5 is the circuit's
+    # own arithmetic on slots 1 and 3 — so neither balance is a parameter and neither is published.
+    # Slot 3 is a parameter and is `off_wire`: the caller chooses the amount, the prover binds it,
+    # and nothing writes it to the call data. That is the fourth quadrant `OBL-C179` names, and it
+    # is the only one of the three the caller knows and the network must not.
     "note:purse_id",
-    "param:old_balance",
+    "note:value",
     "note:balance_blind",
     "param:deposit_amount",
     "blind:deposit",
-    "param:new_balance",
+    "derived:base_add:1,3",
     "derived:blind_sum:2,4",
     "note:state_nonce",
     "derived:nullifier:15,0,7",
@@ -119,12 +128,14 @@ public_inputs = [
 name = "Withdraw"
 namespace = "Withdraw"
 witness_map = [
+    # As `Deposit` above, with the subtraction: `withdraw.zk:100-101` constrains
+    # `base_sub(old_balance, withdraw_amount) == new_balance`, which is the rule slot 5 evaluates.
     "note:purse_id",
-    "param:old_balance",
+    "note:value",
     "note:balance_blind",
     "param:withdraw_amount",
     "blind:withdraw",
-    "param:new_balance",
+    "derived:base_sub:1,3",
     "derived:blind_sub:2,4",
     "note:state_nonce",
     "derived:nullifier:15,0,7",
@@ -186,9 +197,15 @@ witness_map = [
 [[parameters]]
 function = "deposit"
 fields = [
-    { name = "old_balance", type = "u64" },
-    { name = "deposit_amount", type = "u64" },
-    { name = "new_balance", type = "u64" },
+    # **The three balances left the wire**, and `privacy.md` §2's "not how much" is why. Two of them
+    # are not parameters at all any more — `old_balance` is witness slot 1 (`note:value`, the wallet's
+    # record) and `new_balance` is slot 5 (`derived:base_add:1,3`, the circuit's own arithmetic).
+    #
+    # `deposit_amount` stays, `off_wire`: the caller supplies it in the params JSON and the prover
+    # binds it, and `encode_params_values` does not write it. It is the fourth quadrant `OBL-C179`
+    # names, and until that tag existed it had nowhere to go but the call data. The caller-facing type
+    # is still `u64` — the circuit's witness is a `Base`, and the prover's `coerce_note` converts.
+    { name = "deposit_amount", type = "u64", off_wire = true },
     { name = "nullifier", type = "pallas_base", witness = 8 },
     { name = "expected_root", type = "pallas_base", witness = 9 },
     { name = "new_leaf", type = "pallas_base", witness = 10, leaf = true },
@@ -216,9 +233,9 @@ fields = [
 [[parameters]]
 function = "withdraw"
 fields = [
-    { name = "old_balance", type = "u64" },
-    { name = "withdraw_amount", type = "u64" },
-    { name = "new_balance", type = "u64" },
+    # As `deposit` above: `old_balance` and `new_balance` are witness slots 1 and 5, and only the
+    # amount stays — `off_wire`.
+    { name = "withdraw_amount", type = "u64", off_wire = true },
     { name = "nullifier", type = "pallas_base", witness = 8 },
     { name = "expected_root", type = "pallas_base", witness = 9 },
     { name = "new_leaf", type = "pallas_base", witness = 10, leaf = true },
@@ -274,7 +291,13 @@ discriminant = 0
 primitives = ["SecretKey", "Commitment", "Nullifier", "MerkleNode", "ContractId", "FuncId", "AssetId"]
 note_schema = [
     { name = "asset_id", type = "pallas_base", witness = 22 },
-    { name = "value", type = "u64", source = "new_balance" },
+    # **`pallas_base`, filled from the circuit's own slot 5.** It was `u64` with
+    # `source = "new_balance"` — a *wire* param — which made the note downstream of the leak and was
+    # the single reason the three balances could not leave the call data (`OBL-C176`). Now the note
+    # carries the produced balance as the circuit computed it, and the wallet converts once, on the
+    # scan side, with a check. `balance.zk`'s slot 2 is `Base balance` and reads `note:value`, so the
+    # note's type and the circuit's witness type agree — they had to, and did not before.
+    { name = "value", type = "pallas_base", witness = 5 },
     { name = "balance_blind", type = "pallas_scalar", witness = 6 },
     { name = "commitment", type = "pallas_base", witness = 10 },
     { name = "purse_id", type = "pallas_base", witness = 0 },

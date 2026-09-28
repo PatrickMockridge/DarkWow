@@ -76,7 +76,7 @@ impl SlotValue {
     fn as_u64(&self) -> Result<u64, String> {
         match self {
             SlotValue::U64(u) => Ok(*u),
-            SlotValue::Base(b) => Ok(base_to_u64(*b)),
+            SlotValue::Base(b) => base_to_u64(*b),
             other => Err(format!("derived operand is not a u64: {other:?}")),
         }
     }
@@ -602,11 +602,21 @@ fn base_to_scalar(b: pallas::Base) -> Result<pallas::Scalar, String> {
         .ok_or_else(|| "blind: non-canonical scalar".to_string())
 }
 
-fn base_to_u64(b: pallas::Base) -> u64 {
+/// **Checked, and it was not.** The body copied the low eight bytes and discarded the rest, which
+/// for a range-checked circuit value is exact and for anything else is a silent truncation — the
+/// class `A.3.4` names, and the same shape as the scan's `unwrap_or(0)` (`OBL-C176`). It matters
+/// that the caller is now the wallet's *scan*: a note field is written by a contract, so "the
+/// circuit proved this is 64 bits" is an assumption about a third party's circuit, and `purse`'s is
+/// the only one in the tree that makes it. Refusing is what makes this safe to call on anything.
+pub(crate) fn base_to_u64(b: pallas::Base) -> Result<u64, String> {
     let repr = b.to_repr();
+    if repr[8..].iter().any(|byte| *byte != 0) {
+        return Err(format!(
+            "base_to_u64: value does not fit a u64 — bytes 8..32 are not all zero ({b:?})"))
+    }
     let mut arr = [0u8; 8];
     arr.copy_from_slice(&repr[..8]);
-    u64::from_le_bytes(arr)
+    Ok(u64::from_le_bytes(arr))
 }
 
 fn pedersen_coord(pt: pallas::Point, x: bool) -> Result<pallas::Base, String> {

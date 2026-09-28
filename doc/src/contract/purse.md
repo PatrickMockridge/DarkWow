@@ -82,27 +82,33 @@ params are the public inputs and the values a *note* is built from — and nothi
 
 | Call | Carries | Does **not** carry | Header |
 |---|---|---|---|
-| `Deposit` | `old_balance`, `deposit_amount`, `new_balance` (the note's `value` field is filled from it), `asset_id`, `nullifier`, `expected_root`, `new_leaf`, the four commitment coordinates, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `purse_id`, `state_nonce` | 252 bytes |
-| `Withdraw` | as `Deposit`, with `withdraw_amount` | `purse_id`, `state_nonce` | 252 bytes |
+| `Deposit` | `nullifier`, `expected_root`, `new_leaf`, the four commitment coordinates, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof`, `derived_purse_id` | `purse_id`, `state_nonce`, `old_balance`, `new_balance`, `asset_id`, **`deposit_amount`** | 228 bytes |
+| `Withdraw` | as `Deposit` | `purse_id`, `state_nonce`, `old_balance`, `new_balance`, `asset_id`, **`withdraw_amount`** | 228 bytes |
 | `Balance` | `derived_purse_id`, `expected_root`, `token_commit`, the balance commitment coordinates, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `purse_id`, `asset_id`, `balance`, `state_nonce` | 164 bytes |
 
-**How the removed values reach the circuit.** They are `note:` witness sources served from the wallet's
-own record — `CapRecord.object_id`, `.state_nonce`, `.value`, `.asset_id`, mapped in
-`bin/dww/src/lib.rs`'s `cap_record_note_fields`, and read out of the note by `bin/dww/src/scan.rs`.
-The loop closes because both operations already emit an AEAD note
-(`{asset_id, value, balance_blind, commitment, purse_id, state_nonce}`, the `state_nonce` derived
-in-circuit as `increment:7`) and the scan already wrote both values into the record
-(`contract-wasm-type-system.md` §C.8.1).
+**Nothing is declared as still on the wire for `Deposit` or `Withdraw`** — this contract's entries in
+`scripts/check-l1-wire-conformance.sh` are gone, and that gate fails if a declaration goes stale, so the
+count is the measure rather than the claim.
 
-**What is still on the wire, and why it is a type rather than a preference** (declared, with an expiry,
-in `scripts/check-l1-wire-conformance.sh`): the balances and the amount. The note's `value` field is
-declared `u64`, and `encode_params_values` (`src/sdk/src/manifest.rs:645-666`) refuses a value of any
-other type — while a `witness = N` note source yields the circuit's `Base`, and `NoteFieldValue::as_u64()`
-matches only `U64`. So a balance that leaves the params can no longer reach the note, and the note is
-how the wallet learns the produced state's balance. Removing it needs a `pallas_base` note field with a
-conversion on the scan side, or a typed note as PromissoryNote's `Output.note` is. **And the §C.8.2 gap
-is open here too**: an L1 note SHALL carry `nullifier`, `merkle_root` and `leaf_position`, and this
-schema carries none of them.
+**How each value reaches the circuit.** Three routes, and the difference between them is the point:
+
+* `purse_id`, `state_nonce`, `asset_id`, `old_balance` are `note:` witness sources served from the
+  wallet's own record — `CapRecord.object_id`, `.state_nonce`, `.asset_id`, `.value`, mapped in
+  `bin/dww/src/lib.rs`'s `cap_record_note_fields` and read out of the note by `bin/dww/src/scan.rs`.
+  The note carries `value` as a `pallas_base` the circuit computed, and the scan converts it to the
+  record's `u64` **with a check** — an absent field is zero, an unreadable one refuses the note.
+* `new_balance` is `derived:base_add:1,3` (deposit) / `derived:base_sub:1,3` (withdraw): the circuit's
+  own arithmetic applied to `old_balance` and the amount, so the generic prover computes what
+  `deposit.zk:94-95` constrains.
+* **`deposit_amount`/`withdraw_amount` are parameters that are `off_wire`** — the caller supplies them,
+  the prover binds them, and `encode_params_values` does not write them. There was no way to say this
+  before 2026-09-28, which is the single reason the balances were published for so long: the value that
+  had to leave the wire was the one the *caller* chooses, and `witness = N` means "the caller need not
+  supply it", not "do not publish it" (`OBL-C179`).
+
+**And the §C.8.2 gap is open here too**: an L1 note SHALL carry `nullifier`, `merkle_root` and
+`leaf_position`, and this schema carries none of them. That is `OBL-C181`, it is a *different* gap from
+the one this section closes, and closing one does not close the other.
 
 ## Database Trees
 
