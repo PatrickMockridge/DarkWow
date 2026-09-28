@@ -78,6 +78,18 @@ pub const TENDER_CONTRACT_INFO_TREE: &str = "info";
 // These are keys inside the info tree
 pub const TENDER_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 
+/// The Identity contract the capability child must address, seeded at `init_contract`.
+///
+/// **This key did not exist, and its absence is why the capability path had no check.** Tender's
+/// `submit_bid_with_capability_v1` required a `capability_predicate_result` of 1 and compared
+/// `params.required_capability_id` against its own config — the first is a value the circuit pins to
+/// a constant and the host therefore verifies *against* 1, and the second compares a caller-supplied
+/// param with a stored one, which says nothing about whether any credential was ever proved. Nothing
+/// read a child call at all. The id is seeded rather than compared against the SDK constant directly
+/// so it is the same idiom `labor_market` and `insurance_market` use, and so a tender deployed
+/// against a different identity would say so instead of silently comparing against the canonical one.
+pub const TENDER_CONTRACT_IDENTITY_CONTRACT_ID: &[u8] = b"identity_cid";
+
 // zkas circuit namespaces
 pub const TENDER_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateTender";
 pub const TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V1: &str = "SubmitBid";

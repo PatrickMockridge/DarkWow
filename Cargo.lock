@@ -3111,6 +3111,7 @@ dependencies = [
  "dwow-sdk",
  "dwow-serial",
  "dwow_core",
+ "dwow_identity_contract",
  "getrandom 0.2.17",
  "halo2_proofs",
  "lazy_static",

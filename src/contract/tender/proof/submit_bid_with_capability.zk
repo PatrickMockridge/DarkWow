@@ -11,20 +11,36 @@ field = "pallas";
 # - Bidder knows their secret key
 # - Bidder public key is correctly derived and matches the provided coordinates
 # - Bid is valid for this tender
-# - Bidder has required capability (verified via Identity contract)
+#
+# **It does NOT prove the bidder has a capability, and the three lines that said it did were
+# false.** This header read *"Bidder has required capability (verified via Identity contract)"*,
+# described `capability_predicate_result` as *"Result from Identity contract verification"*, and the
+# semantic block below called it *"capability satisfied"*. What the circuit actually does is pin that
+# witness to the constant one (`ONE = witness_base(1); constrain_equal_base(...)`) and expose it — so
+# the value carries no information from any credential, and a host that requires it to equal 1 is
+# requiring the proof to match a constant the circuit sets. `required_capability_id` is likewise a
+# **witness the caller supplies**, exposed as an instance: it asserts which capability the caller
+# *names*, not which one they hold.
+#
+# The capability check is therefore a host-side child-call binding, and it lives in
+# `submit_bid_with_capability_v1` (`src/contract/tender/src/entrypoint.rs`): exactly one child, the
+# Identity contract, selector `VerifyCapabilityV1`, whose decoded params must name the capability
+# this tender requires. The circuit's job here is the bid — its key derivation and its commitment.
 #
 # Public Inputs (constrain_instance):
 #   - tender_id: The tender this bid is for
 #   - bid_id: Poseidon hash commitment of bid
 #   - bidder_pub_x: Bidder's public key x coordinate
 #   - bidder_pub_y: Bidder's public key y coordinate
-#   - required_capability_id: The capability this tender requires
+#   - required_capability_id: the capability id the *bidder names* — a witness, not a proof of
+#     possession
 #
 # Witnesses:
 #   - bidder_secret: Bidder's secret key
 #   - amount: Bid amount (hidden)
 #   - bid_nonce: Random nonce for bid commitment
-#   - capability_predicate_result: Result from Identity contract verification
+#   - capability_predicate_result: pinned to the constant one by this circuit; carries no
+#     information about any credential
 
 constant "SubmitBidWithCapabilityV2" {
     EcFixedPointBase NULLIFIER_K,
@@ -124,12 +140,13 @@ circuit "SubmitBidWithCapabilityV2" {
     # The prover proves that:
     # 1. They know the bidder's secret key
     # 2. Their public key is correctly derived
-    # 3. The capability_predicate_result is 1 (capability satisfied)
+    # 3. **Nothing about capabilities.** `capability_predicate_result` is pinned to the constant
+    #    one by this circuit, so proving it equals one is proving an assignment. The capability is
+    #    established by the host's child-call binding, not here — see the header.
     #
     # What this enables:
-    # - Bidder can submit bids in tenders requiring specific capabilities
-    # - The capability verification is done via Identity contract
-    # - Bidder identity is hidden, only capability is proven
+    # - A bid whose amount is hidden until reveal, bound to the bidder's key and to this tender
+    # - And, with the host-side child binding, a bid that also presents the required capability
     #
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);

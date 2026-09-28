@@ -55,6 +55,12 @@ use crate::{
     TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V2,
 };
 
+// Named errors for the capability checks below, rather than a bare `InvalidFunction`: a refusal that
+// names the check that refused is testable by name (`mk_ep_rejecting`'s needles match
+// `ContractError(Custom(N))`), and a row that asserts only `Rejection` is satisfied by any earlier
+// failure in the frame — `OBL-C163`.
+use crate::error::TenderError;
+
 use crate::{
     model::{
         Bid, BidState, CancelTenderParamsV1, CancelTenderUpdateV1, CloseTenderParamsV1,
@@ -87,6 +93,12 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, TENDER_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, b"db_version", &env!("CARGO_PKG_VERSION").as_bytes())?;
+    // `Identity` is genesis with a canonical id, so the real constant is seeded and the comparison
+    // in `submit_bid_with_capability_v1` therefore **enforces** — the same change `labor_market` and
+    // `insurance_market` made for the same reason (`OBL-C16`: a guard that reads a zero sentinel as
+    // "unconfigured" and skips is a check disabled by default).
+    wasm::db::db_set(info_db, crate::TENDER_CONTRACT_IDENTITY_CONTRACT_ID,
+        &dwow_sdk::crypto::IDENTITY_CONTRACT_ID.to_bytes())?;
 
     // Initialize tenders tree
     wasm::db::db_init(cid, TENDER_CONTRACT_TENDERS_TREE)?;
@@ -512,7 +524,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         TenderFunction::SubmitBidWithCapabilityV1 => {
             let params = SubmitBidWithCapabilityParamsV1::decode(&self_.data[1..])?;
-            submit_bid_with_capability_v1(cid, params)?
+            // `calls` is passed so the handler can read the capability child — the whole endpoint is
+            // named for a capability and, until this, never looked at one.
+            submit_bid_with_capability_v1(cid, call_idx, calls, params)?
         }
     };
 
@@ -962,6 +976,8 @@ fn create_tender_with_capability_v1(
 
 fn submit_bid_with_capability_v1(
     cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
     params: SubmitBidWithCapabilityParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::submit_bid_with_capability_v1] Submitting bid with capability: {:?}", params.bid_id);
@@ -1005,18 +1021,77 @@ fn submit_bid_with_capability_v1(
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Verify capability matches tender's requirement
-    if let Some(required_cap) = tender.required_capability {
-        if params.required_capability_id != required_cap {
-            msg!("[tender::submit_bid_with_capability_v1] ERROR: Capability mismatch");
-            return Err(ContractError::InvalidFunction.into())
-        }
+    // **The capability is checked here, and it was not before.** Two checks stood in this place and
+    // neither could establish anything.
+    //
+    // `params.capability_predicate_result != ONE` verified the proof *against* 1 — but
+    // `submit_bid_with_capability.zk:91-92` computes that value from `witness_base(1)`, the constant
+    // `ONE`, and `:118` exposes it, so the host was requiring the proof to equal a constant the
+    // circuit pins it to. That is the construct this register already diagnoses elsewhere: *a
+    // witness pinned to a constant, so the circuit asserts a predicate it never computes*. The check
+    // could not fail and is deleted rather than repaired.
+    //
+    // `params.required_capability_id != required_cap` compared a **caller-supplied param** against
+    // tender's own config — satisfied by naming the right id, and silent about whether any credential
+    // was ever proved.
+    //
+    // And **nothing read a child call at all**, so a bidder needed no capability of any kind. This is
+    // the shape `labor_market` has and `insurance_market` is the one site in the tree that repairs
+    // (`underwrite_with_capability.rs:158-166`): require the identity child, then bind what it proved
+    // to what this tender requires.
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[tender::submit_bid_with_capability_v1] ERROR: Expected 1 child call \
+              (Identity::VerifyCapabilityV1), got {}", this_call.children_indexes.len());
+        return Err(TenderError::CapabilityRequired.into())
     }
-
-    // Verify capability predicate result is 1 (satisfied)
-    if params.capability_predicate_result != pasta::pallas::Base::one() {
-        msg!("[tender::submit_bid_with_capability_v1] ERROR: Capability requirement not met");
-        return Err(ContractError::InvalidFunction.into())
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x06 {
+        msg!("[tender::submit_bid_with_capability_v1] ERROR: Expected \
+              Identity::VerifyCapabilityV1 (0x06), got 0x{:02x}", child_call.data[0]);
+        return Err(TenderError::CapabilityRequired.into())
+    }
+    // Fail-closed, per `OBL-C16`: a guard that reads a zero sentinel as "unconfigured" and skips is a
+    // check disabled by default. `init_contract` seeds the real constant, so this enforces.
+    let info_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_INFO_TREE)?;
+    let identity_bytes = wasm::db::db_get(info_db, crate::TENDER_CONTRACT_IDENTITY_CONTRACT_ID)?
+        .ok_or(TenderError::CapabilityRequired)?;
+    let identity_cid: ContractId = deserialize(&identity_bytes)?;
+    if identity_cid == ContractId::ZERO {
+        msg!("[tender::submit_bid_with_capability_v1] ERROR: Identity contract ID not configured");
+        return Err(TenderError::CapabilityRequired.into())
+    }
+    if child_call.contract_id != identity_cid {
+        msg!("[tender::submit_bid_with_capability_v1] ERROR: the capability child does not target \
+              the configured Identity contract");
+        return Err(TenderError::CapabilityRequired.into())
+    }
+    // **The second half — and it is dormant, which is a finding rather than a caveat.** Identity
+    // reads `capability_id` from the *child's own params* and checks the caller's credential against
+    // that capability; it never learns what this tender requires. So without this comparison a
+    // bidder holding any valid, unrelated capability is accepted and `Tender.required_capability` is
+    // decoration.
+    //
+    // **But no tender can have one.** `Tender.required_capability` is written only by
+    // `create_tender_with_capability_v1`, and that endpoint has **no proof path**: `TenderFunction`
+    // dispatches to it (`entrypoint.rs:517`), the handler exists (`:925`), but `client/` carries
+    // `create_tender.rs`, `reveal_bid.rs`, `select_winner.rs`, `submit_bid.rs` and
+    // `submit_bid_with_capability.rs` — and **no `create_tender_with_capability.rs`**, so no
+    // `create_tender_with_capability_v1_proof` exists and no caller can build the call. The field is
+    // therefore always `None`, this branch never runs, and the checks above are the whole of what the
+    // endpoint currently enforces. Recorded here rather than deleted, because the alternative is a
+    // capability requirement that looks enforced and is unreachable — which is the state this
+    // endpoint was already in.
+    if let Some(required) = tender.required_capability {
+        let identity_params =
+            dwow_identity_contract::model::VerifyCapabilityParams::decode(&child_call.data[1..])
+                .map_err(|_| TenderError::InvalidCapability)?;
+        if identity_params.capability_proof.capability_id.to_bytes() != required {
+            msg!("[tender::submit_bid_with_capability_v1] ERROR: the child verified a different \
+                  capability than this tender requires");
+            return Err(TenderError::InvalidCapability.into())
+        }
     }
 
     // Create bid

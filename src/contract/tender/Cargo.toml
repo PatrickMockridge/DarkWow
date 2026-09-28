@@ -14,6 +14,10 @@ blake3 = "1.8.2"
 dwow-sdk = { path = "../../sdk", features = ["wasm"] }
 dwow-serial = { path = "../../serial", features = ["derive", "crypto"] }
 thiserror = "2.0.17"
+# The capability endpoint decodes the identity child's params to bind the credential it proved to
+# the capability this tender requires. Declared the same way `insurance_market` declares it: a
+# `no-entrypoint` dependency, so the child's *model* is available and its entrypoint is not linked.
+dwow_identity_contract = { version = "0.1.0", path = "../identity", features = ["no-entrypoint"] }
 
 dwow_core = { path = "../../../", features = ["zk"], optional = true }
 chacha20poly1305 = { version = "0.10.1", optional = true }

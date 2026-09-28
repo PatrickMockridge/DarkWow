@@ -37,6 +37,26 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
+            // **No row here for `SubmitBidWithCapabilityV1`, and this frame cannot carry one yet.**
+            // The endpoint gained a real capability child binding on 2026-09-28 (`TenderError::
+            // CapabilityRequired`, `Custom(28)`), and its negative control — a call with
+            // `children: vec![]` that must now be refused — needs the handler to be *reached*.
+            //
+            // It is not, for a reason that predates the change and is why the fixture has been red:
+            // **every row in this spec passes `pallas::Base::from(1u64)` as the tender id, while
+            // `TenderHarness::create_tender` derives a real one** (`Tender::derive_id(...)`, returned
+            // as `CreateTenderResult::tender_id`). Measured on the fixture's own log: block 2 creates
+            // the tender as `0x225ff829…` and block 3's `SubmitBidV1` asks for `0x134f374c…`, so the
+            // handler answers `Tender not found` and the block is rejected. `test_heavyweight_tender`
+            // has therefore never exercised a row past `CreateTenderV1`, and the register already
+            // records it red (`verification-hazop.md`, `test_heavyweight_tender` → *"reports `invalid
+            // proof: call[0] namespace 'CreateTenderV2'` before and after"*).
+            //
+            // The repair is the frame, not this row: a `setup` that creates the tender once and a
+            // shared cell the rows read the derived id from — the shape `insurance_market_spec.rs:156`
+            // uses. Until that lands, a row here would be unreachable and would pin nothing, which is
+            // the defect this register exists not to add. The control is owed and this comment is the
+            // record of what blocks it.
         ],
     }
 }
