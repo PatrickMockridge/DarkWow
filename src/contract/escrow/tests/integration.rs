@@ -212,7 +212,6 @@ fn test_fund_escrow_update_encoding() {
 fn test_claim_escrow_params_encoding() {
     let params = ClaimEscrowParamsV1 {
         escrow_id: EscrowId(pallas::Base::from(1)),
-        seller_secret: pallas::Base::from(42),
         spent_nullifier: pallas::Base::from(50),
         recipient_pubkey: make_pubkey(3),
     };
@@ -221,9 +220,35 @@ fn test_claim_escrow_params_encoding() {
     let decoded: ClaimEscrowParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.escrow_id, params.escrow_id);
-    assert_eq!(decoded.seller_secret, params.seller_secret);
     assert_eq!(decoded.spent_nullifier, params.spent_nullifier);
     assert_eq!(decoded.recipient_pubkey, params.recipient_pubkey);
+}
+
+/// **The negative control for a leak that was real.** `ClaimV1` carried `seller_secret` among its
+/// params and `encode` wrote it into call data, so every node reading a claim learned the key the
+/// endpoint authorizes with — and the endpoint pays to a **caller-chosen `recipient_pubkey`**, so an
+/// observer could front-run the claim and take the funds. `RefundV1` did the same with
+/// `buyer_secret`. Both circuits derive the nullifier from the secret as a *witness* and expose it
+/// (`claim.zk:83,96`; `refund.zk:92-93`), which is why the field was never needed.
+///
+/// **The control is a width pin, because the width is what the defect moved.** A secret is 32 bytes;
+/// the claim's params were 128 and are 96, the refund's were 144 and are 112. Re-adding either field
+/// changes a constant and this fails. It is deliberately a constant and not a scan for "a value that
+/// looks like a secret": the encoding is positional and tag-free, so a scan could not tell a secret
+/// from any other 32-byte field — and a control that cannot fail is the thing this register exists
+/// not to be.
+#[test]
+fn test_escrow_params_publish_no_secret() {
+    assert_eq!(
+        ClaimEscrowParamsV1::ENCODED_SIZE, 96,
+        "ClaimV1's params are three fields (escrow_id, spent_nullifier, recipient_pubkey) = 96 \
+         bytes. 128 means `seller_secret` is back on the wire."
+    );
+    assert_eq!(
+        RefundEscrowParamsV1::ENCODED_SIZE, 112,
+        "RefundV1's params are five fields = 112 bytes. 144 means `buyer_secret` is back on the \
+         wire."
+    );
 }
 
 #[test]
@@ -245,7 +270,6 @@ fn test_claim_escrow_update_encoding() {
 fn test_refund_escrow_params_encoding() {
     let params = RefundEscrowParamsV1 {
         escrow_id: EscrowId(pallas::Base::from(1)),
-        buyer_secret: pallas::Base::from(42),
         spent_nullifier: pallas::Base::from(50),
         current_block: 150,
         timeout: 100,
@@ -256,7 +280,6 @@ fn test_refund_escrow_params_encoding() {
     let decoded: RefundEscrowParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.escrow_id, params.escrow_id);
-    assert_eq!(decoded.buyer_secret, params.buyer_secret);
     assert_eq!(decoded.current_block, params.current_block);
     assert_eq!(decoded.recipient_pubkey, params.recipient_pubkey);
 }

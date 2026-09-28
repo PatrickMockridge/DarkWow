@@ -389,13 +389,22 @@ impl FundEscrowUpdateV1 {
 }
 
 /// Parameters for `Escrow::ClaimV1`
+///
+/// **`seller_secret` was a field here, documented "proves ownership", and it was published.** The
+/// endpoint's host check recomputed `expected_nullifier = poseidon_hash([1, escrow.id, seller_secret])`
+/// and compared it to `spent_nullifier` — but `claim.zk:83` computes that same value from the secret
+/// as a **witness** and exposes it at `:96`, and the host's expectation was derived from the very
+/// param it checked, so the comparison could only ever agree with itself. The cost of keeping it was
+/// the secret itself, in plaintext call data, in a transaction hash preimage that every node reads —
+/// and both this endpoint and `RefundV1` pay to a **caller-chosen `recipient_pubkey`**, so an observer
+/// could submit their own claim with their own recipient and take the funds. The circuit's own
+/// `claim.zk:72-79` says it is built to *"prove knowledge of `seller_secret` without"* revealing it.
+/// The field is gone; what remains is what the proof already publishes, which is all a host needs.
 #[derive(Debug, Clone,)]
 pub struct ClaimEscrowParamsV1 {
     /// Escrow ID
     pub escrow_id: EscrowId,
-    /// Seller's secret (proves ownership)
-    pub seller_secret: pallas::Base,
-    /// Nullifier revealing the escrow is spent
+    /// Nullifier revealing the escrow is spent — the circuit's own `constrain_instance` output
     pub spent_nullifier: pallas::Base,
     /// Recipient public key for the funds
     pub recipient_pubkey: PublicKey,
@@ -404,7 +413,7 @@ pub struct ClaimEscrowParamsV1 {
 impl dwow_serial::Encodable for ClaimEscrowParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ClaimEscrowParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl ClaimEscrowParamsV1 { pub const ENCODED_SIZE: usize = 128; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(128); b.extend_from_slice(&self.escrow_id.encode()); b.extend_from_slice(&self.seller_secret.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 128 { return Err(ContractError::IoError(format!("ClaimEscrowParamsV1: expected 128 bytes, got {}", data.len()))); } Ok(ClaimEscrowParamsV1 { escrow_id: EscrowId::decode(&data[0..32])?, seller_secret: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ClaimEscrowParamsV1: invalid seller_secret".into()))?, spent_nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ClaimEscrowParamsV1: invalid spent_nullifier".into()))?, recipient_pubkey: PublicKey::from_bytes(data[96..128].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ClaimEscrowParamsV1: invalid recipient_pubkey: {}", e)))? }) } }
+impl ClaimEscrowParamsV1 { pub const ENCODED_SIZE: usize = 96; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(96); b.extend_from_slice(&self.escrow_id.encode()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 96 { return Err(ContractError::IoError(format!("ClaimEscrowParamsV1: expected 96 bytes, got {}", data.len()))); } Ok(ClaimEscrowParamsV1 { escrow_id: EscrowId::decode(&data[0..32])?, spent_nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ClaimEscrowParamsV1: invalid spent_nullifier".into()))?, recipient_pubkey: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ClaimEscrowParamsV1: invalid recipient_pubkey: {}", e)))? }) } }
 
 /// State update for `Escrow::ClaimEscrowV1`
 #[derive(Debug, Clone)]
@@ -437,13 +446,16 @@ impl ClaimEscrowUpdateV1 {
 }
 
 /// Parameters for `Escrow::RefundV1`
+///
+/// `buyer_secret` was a field here for the same reason and with the same consequence as
+/// `ClaimEscrowParamsV1`'s `seller_secret` — see that struct's note. `refund.zk:92-93` computes the
+/// nullifier from the secret as a witness and exposes it; the host's recomputation was derived from
+/// the param it checked. The field is gone.
 #[derive(Debug, Clone,)]
 pub struct RefundEscrowParamsV1 {
     /// Escrow ID
     pub escrow_id: EscrowId,
-    /// Buyer's secret (proves ownership)
-    pub buyer_secret: pallas::Base,
-    /// Nullifier revealing the escrow is spent
+    /// Nullifier revealing the escrow is spent — the circuit's own `constrain_instance` output
     pub spent_nullifier: pallas::Base,
     /// Current block height (proves timeout reached)
     pub current_block: u64,
@@ -456,7 +468,7 @@ pub struct RefundEscrowParamsV1 {
 impl dwow_serial::Encodable for RefundEscrowParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RefundEscrowParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl RefundEscrowParamsV1 { pub const ENCODED_SIZE: usize = 144; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(144); b.extend_from_slice(&self.escrow_id.encode()); b.extend_from_slice(&self.buyer_secret.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.current_block.to_le_bytes()); b.extend_from_slice(&self.timeout.to_le_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 144 { return Err(ContractError::IoError(format!("RefundEscrowParamsV1: expected 144 bytes, got {}", data.len()))); } Ok(RefundEscrowParamsV1 { escrow_id: EscrowId::decode(&data[0..32])?, buyer_secret: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RefundEscrowParamsV1: invalid buyer_secret".into()))?, spent_nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RefundEscrowParamsV1: invalid spent_nullifier".into()))?, current_block: u64::from_le_bytes(data[96..104].try_into().unwrap()), timeout: u64::from_le_bytes(data[104..112].try_into().unwrap()), recipient_pubkey: PublicKey::from_bytes(data[112..144].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RefundEscrowParamsV1: invalid recipient_pubkey: {}", e)))? }) } }
+impl RefundEscrowParamsV1 { pub const ENCODED_SIZE: usize = 112; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(112); b.extend_from_slice(&self.escrow_id.encode()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.current_block.to_le_bytes()); b.extend_from_slice(&self.timeout.to_le_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 112 { return Err(ContractError::IoError(format!("RefundEscrowParamsV1: expected 112 bytes, got {}", data.len()))); } Ok(RefundEscrowParamsV1 { escrow_id: EscrowId::decode(&data[0..32])?, spent_nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RefundEscrowParamsV1: invalid spent_nullifier".into()))?, current_block: u64::from_le_bytes(data[64..72].try_into().unwrap()), timeout: u64::from_le_bytes(data[72..80].try_into().unwrap()), recipient_pubkey: PublicKey::from_bytes(data[80..112].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RefundEscrowParamsV1: invalid recipient_pubkey: {}", e)))? }) } }
 
 /// State update for `Escrow::RefundEscrowV1`
 #[derive(Debug, Clone)]

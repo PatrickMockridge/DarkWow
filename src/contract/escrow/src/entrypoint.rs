@@ -589,12 +589,15 @@ fn escrow_claim_process_instruction_v1(
         return Err(EscrowError::AlreadySpent.into())
     }
 
-    // Verify the nullifier matches what we expect
-    let expected_nullifier = poseidon_hash([pallas::Base::from(1u64), escrow.id.0, params.seller_secret]);
-    if expected_nullifier != params.spent_nullifier {
-        msg!("[ClaimV1] Error: Nullifier mismatch");
-        return Err(EscrowError::InvalidNullifier.into())
-    }
+    // **A nullifier recomputation stood here, and it is gone — not because the property is
+    // unwanted but because the proof already carries it and this version published the secret to
+    // get it.** It read `poseidon_hash([1, escrow.id.0, params.seller_secret])` and compared the
+    // result to `params.spent_nullifier`: both sides came from the params, so it could only agree
+    // with itself, while `claim.zk:83` computes that same nullifier from `seller_secret` as a
+    // **witness** and exposes it at `:96`, and the metadata arm publishes it as a public input. The
+    // VM already requires the proof's instances and the echoed params to match, so the property is
+    // enforced where it can be enforced and the secret no longer travels. `spent_nullifier` is still
+    // checked against the spent-flags tree above, which is the check that has a reader.
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -680,12 +683,9 @@ fn escrow_refund_process_instruction_v1(
         return Err(EscrowError::TimelockNotExpired.into())
     }
 
-    // Verify the nullifier matches what we expect
-    let expected_nullifier = poseidon_hash([pallas::Base::from(1u64), escrow.id.0, params.buyer_secret]);
-    if expected_nullifier != params.spent_nullifier {
-        msg!("[RefundV1] Error: Nullifier mismatch");
-        return Err(EscrowError::InvalidNullifier.into())
-    }
+    // As `ClaimV1` above: the recomputation is gone and `refund.zk:92-93` is where the nullifier is
+    // derived and exposed, so `buyer_secret` no longer has to be published for the host to check a
+    // value the proof already establishes.
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([

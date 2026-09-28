@@ -240,10 +240,10 @@ impl EscrowHarness {
             &input,
         )?;
 
-        // Build ClaimEscrowParamsV1
+        // Build ClaimEscrowParamsV1 — no `seller_secret`: the circuit proves it as a witness and
+        // exposes the nullifier, so the params carry only what a host reads.
         let params = ClaimEscrowParamsV1 {
             escrow_id: EscrowId(escrow_id),
-            seller_secret,
             spent_nullifier: public_inputs.spent_nullifier,
             recipient_pubkey,
         };
@@ -282,10 +282,9 @@ impl EscrowHarness {
             &input,
         )?;
 
-        // Build RefundEscrowParamsV1
+        // Build RefundEscrowParamsV1 — no `buyer_secret`, as `claim` above.
         let params = RefundEscrowParamsV1 {
             escrow_id: EscrowId(escrow_id),
-            buyer_secret,
             spent_nullifier: public_inputs.spent_nullifier,
             current_block,
             timeout,
