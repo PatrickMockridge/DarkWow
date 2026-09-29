@@ -730,9 +730,44 @@ fn withdraw_v1(
         return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // **The seed is a function of the *call*, and what one withdrawal of an amount has that another
+    // does not is the note it spends.** Until 2026-09-29 this was
+    // `poseidon_hash([params.value, params.dao_escrow_bulla.inner()])` — keyed by the record and the
+    // amount — and the child's required output is `pedersen_commitment_u64(value, fp_mod_fv(seed))`,
+    // which carries the value and the blind and **not the recipient**. So the second withdrawal of an
+    // amount demanded the commitment the first had already put on the note tree, and
+    // `promissory_note` refused it as a duplicate: **an endowment could not withdraw the same amount
+    // twice, ever** (`OBL-C191`, measured — `[transfer_v1] Error: Duplicate commitment in output 0`,
+    // `ContractError(Custom(14))`).
+    //
+    // **Nothing else bounds this endpoint, which is why the seed had to.** It records no nullifier,
+    // it changes no state any reader consults, and its authority — the ownership proof — is fresh for
+    // every call. The collision was the only bound there was.
+    //
+    // **The input nullifier is the value to key on, and reading it from the child's own params is
+    // sound.** It is an instance of the transfer's revoke circuit — `promissory_note`'s metadata arm
+    // publishes `input.nullifier.inner()` for each input (`entrypoint/mod.rs:389`) — so the host has
+    // already checked the proof against this very value, and a note is spent once, so one nullifier
+    // cannot appear in two accepted calls. Keying on the *record* was the defect; keying on the
+    // *spend* is the repair, and it is the shape `labor_market`'s three payout seeds already use
+    // (`params.spent_nullifier`), one contract over.
+    //
+    // The params had nothing to key on: `owner_nullifier` is deterministic in
+    // `(owner_secret, dao_escrow_bulla)` (`model/mod.rs:488-501`), so it is *identical* for two
+    // withdrawals by one owner, and `withdraw_get_metadata` publishes the zero-pair `tx_binding`
+    // (`:1372-1376`), a constant.
+    //
+    // The decode below reads another contract's params, deliberately and in two lines rather than as
+    // a new helper in `promissory_note::validation` — that contract is **genesis**, so a helper there
+    // would move the pin for one non-genesis endpoint's benefit.
+    let transfer_params =
+        dwow_promissory_note_contract::model::TransferParamsV1::decode(&child_call.data[1..])
+            .map_err(|_| DaoEscrowError::InvalidChildCall)?;
+    let spent_note = transfer_params.inputs.first().ok_or(DaoEscrowError::InvalidChildCall)?;
     let value_blind = poseidon_hash([
         pallas::Base::from(params.value),
         params.dao_escrow_bulla.inner(),
+        spent_note.nullifier.inner(),
     ]);
     validate_child_value_commit(&child_call.data, params.value, value_blind)?;
 

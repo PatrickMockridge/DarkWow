@@ -168,6 +168,28 @@ fn pn_transfer_child(
     })
 }
 
+/// The blind `withdraw_v1` derives for its child, given the note that child spends.
+///
+/// **The spent note's nullifier is the seed's third term since 2026-09-29, and computing it is the
+/// caller's job.** `withdraw_v1` keys the seed on it (`OBL-C191`) — that is what makes two
+/// withdrawals of one amount distinguishable, where keying on `(value, endowment)` made the second
+/// impossible. The value is `Nullifier::new(SecretKey::from_base(secret), commitment)`, which is
+/// verbatim the call the transfer client makes when it builds the same child
+/// (`promissory_note/src/client/transfer.rs:366`) — so this is a call and not a re-derivation.
+///
+/// **This is the whole caller contract, and it is a real cost of the repair.** `WithdrawV1` has no
+/// client, so a wallet building the call by hand must compute the note's nullifier *before* it can
+/// derive the blind. Written here because the cost is invisible from the contract side, which is the
+/// side the repair is on.
+fn withdraw_blind(note: &PnNote, value: u64, endowment_bulla: pallas::Base) -> pallas::Base {
+    let nullifier = Nullifier::new(SecretKey::from_base(PN_ISSUE_SECRET), note.0);
+    poseidon_hash([
+        pallas::Base::from(value),
+        endowment_bulla,
+        nullifier.inner(),
+    ])
+}
+
 /// The approvals the governance group cast in `setup`, per case. Each is a set of signature nullifiers,
 /// captured from the `sign` calls that produced them because the finalize child *names* them.
 #[derive(Default, Clone)]
@@ -429,8 +451,11 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     PN_VALUE_WITHDRAW_NO_APPROVAL,
                     PN_VALUE_EXECUTE_APPROVED,
                     // The eighth, for `WithdrawV1_OwnerPath_SameAmount` below. Deliberately the **same
-                    // amount** as the first and a different blind: the row exists to make the two
-                    // withdrawals of one amount meet, and the amount is half of what makes them collide.
+                    // amount** as the first, and a note of its own — that is the whole point, because
+                    // two withdrawals of one amount is the case `OBL-C191` was about and the second
+                    // withdrawal is now legal only because this note's nullifier differs from that
+                    // one's. The blind is the array's next free value (15) for the reason every other
+                    // note here has its own.
                     PN_VALUE_WITHDRAW_OWNER,
                 ]
                 .iter()
@@ -486,41 +511,40 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().withdraw_owner.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, poseidon_hash([pallas::Base::from(PN_VALUE_WITHDRAW_OWNER), endowment_bulla]))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, withdraw_blind(&note, PN_VALUE_WITHDRAW_OWNER, endowment_bulla))?;
                     let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_OWNER, owner_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
-            // **This row pins a defect rather than asserting the desired behaviour, and that is the
-            // `finality-widget` pattern on purpose** (`OBL-C152`'s row carries the same argument): a row
-            // asserting that the second withdrawal *succeeds* would be red from the day it was written
-            // and indistinguishable from a broken frame, while a row asserting what the code does today
-            // turns green now and becomes the instrument that catches the repair.
+            // **This row was the pin for `OBL-C191` and is now the repair's positive control.** It was
+            // written to *assert* the collision — `mk_ep_rejecting(… Custom(14))` — because a row
+            // asserting the second withdrawal succeeded would have been red from the day it was written
+            // and indistinguishable from a broken frame, while a row asserting what the code did then
+            // went green and became the instrument that caught this change. Its own measurement is
+            // quoted in `OBL-C191`: `[transfer_v1] Error: Duplicate commitment in output 0` and
+            // `ContractError(Custom(14))`, once per chain.
             //
-            // **What it pins is `OBL-C191`'s collision, in its sharpest form: the same endpoint, twice,
-            // for the same amount.** `withdraw_v1` derives
-            // `poseidon_hash([params.value, params.dao_escrow_bulla.inner()])` (`entrypoint.rs:733-737`)
-            // — a function of the *record and the amount*, not of the call — and the child it validates
-            // is a `promissory_note::transfer_v1` whose **output** commitment is
-            // `pedersen_commitment_u64(value, fp_mod_fv(that seed))`. A Pedersen commitment carries the
-            // value and the blind and **not the recipient**, so the second withdrawal of the same
-            // amount, to the same owner, must emit the commitment the first one already inserted — and
-            // `promissory_note` refuses a repeat.
+            // **What it now asserts is the opposite, on the same frame**: the same endpoint, the same
+            // amount **50_000_000**, a second time, and it must be **accepted**. The seed's third term
+            // is the spent note's nullifier (`withdraw_blind`), and this note is not the one
+            // `WithdrawV1_OwnerPath` spent, so the two withdrawals derive *different* output
+            // commitments and the note tree takes both.
             //
-            // **Nothing else stops it**, which is why this is the endpoint the sweep found first:
-            // `withdraw_v1` records no nullifier (the comment at `:759-761` says so and says why),
-            // changes no state a reader consults, and its authority — the ownership proof — is fresh for
-            // every call. Nothing in the contract bounds how many withdrawals an endowment may make, so
-            // the collision is the *only* thing that does.
+            // **The pair is two-sided, which is what makes it a control rather than a row that
+            // happens to run** (`R8`): `WithdrawV1_OwnerPath` above proves the first withdrawal of an
+            // amount still works, so a repair that broke the seed outright — deriving something no
+            // caller can reproduce — fails there rather than passing here.
             //
-            // The needle is `ContractError(Custom(14))`, the code `OBL-C189` measured for a repeated
-            // commitment (`[transfer_v1] Error: Duplicate commitment in output 0`). A rejection for a
-            // different reason fails this row.
-            mk_ep_rejecting("WithdrawV1_OwnerPath_SameAmount", true, &["ContractError(Custom(14))"], Box::new({
+            // **What would make this row pass for the wrong reason, named so the next reader can
+            // check it**: if the seed ignored the nullifier *and* the note's blind differed, this row
+            // would still be refused — which is why the note carries the array's next free blind (15)
+            // and the row is a `Success` expectation, so the refusal this row used to assert is now a
+            // hard failure rather than a silent pass.
+            mk_ep("WithdrawV1_OwnerPath_SameAmount", true, Box::new({
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().withdraw_owner_again.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, poseidon_hash([pallas::Base::from(PN_VALUE_WITHDRAW_OWNER), endowment_bulla]))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, withdraw_blind(&note, PN_VALUE_WITHDRAW_OWNER, endowment_bulla))?;
                     let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_OWNER, owner_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
@@ -540,7 +564,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let stranger_secret = pallas::Base::from(4321u64);
                     let stranger_pub = PublicKey::from_secret(SecretKey::from_base(stranger_secret));
                     let note = notes.lock().unwrap().withdraw_no_approval.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_NO_APPROVAL, poseidon_hash([pallas::Base::from(PN_VALUE_WITHDRAW_NO_APPROVAL), endowment_bulla]))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_NO_APPROVAL, withdraw_blind(&note, PN_VALUE_WITHDRAW_NO_APPROVAL, endowment_bulla))?;
                     let r = h.withdraw(endowment_bulla, stranger_pub, PN_VALUE_WITHDRAW_NO_APPROVAL, stranger_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
