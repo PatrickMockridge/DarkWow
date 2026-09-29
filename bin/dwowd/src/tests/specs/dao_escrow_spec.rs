@@ -210,6 +210,12 @@ struct Shared {
     execute_claim: Option<PnNote>,
     withdraw_no_approval: Option<PnNote>,
     execute_approved: Option<PnNote>,
+    /// A **second** note worth `PN_VALUE_WITHDRAW_OWNER`, for the row that withdraws that amount
+    /// twice. Its own note, like every other spending row's, because the transfer child spends what it
+    /// is given — and its own *blind* (15, the array's next free one), because a note is
+    /// `pedersen(value, blind)` and a shared blind would make this note's own commitment a duplicate
+    /// of the first one's before the row even ran.
+    withdraw_owner_again: Option<PnNote>,
 }
 
 pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
@@ -422,6 +428,10 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     PN_VALUE_EXECUTE_CLAIM,
                     PN_VALUE_WITHDRAW_NO_APPROVAL,
                     PN_VALUE_EXECUTE_APPROVED,
+                    // The eighth, for `WithdrawV1_OwnerPath_SameAmount` below. Deliberately the **same
+                    // amount** as the first and a different blind: the row exists to make the two
+                    // withdrawals of one amount meet, and the amount is half of what makes them collide.
+                    PN_VALUE_WITHDRAW_OWNER,
                 ]
                 .iter()
                 .enumerate()
@@ -443,6 +453,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     execute_claim: n.next(),
                     withdraw_no_approval: n.next(),
                     execute_approved: n.next(),
+                    withdraw_owner_again: n.next(),
                 };
 
                 // The Identity fixture lived here — an issuer, one credential, one capability and its
@@ -475,6 +486,40 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().withdraw_owner.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, poseidon_hash([pallas::Base::from(PN_VALUE_WITHDRAW_OWNER), endowment_bulla]))?;
+                    let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_OWNER, owner_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                }
+            })),
+            // **This row pins a defect rather than asserting the desired behaviour, and that is the
+            // `finality-widget` pattern on purpose** (`OBL-C152`'s row carries the same argument): a row
+            // asserting that the second withdrawal *succeeds* would be red from the day it was written
+            // and indistinguishable from a broken frame, while a row asserting what the code does today
+            // turns green now and becomes the instrument that catches the repair.
+            //
+            // **What it pins is `OBL-C191`'s collision, in its sharpest form: the same endpoint, twice,
+            // for the same amount.** `withdraw_v1` derives
+            // `poseidon_hash([params.value, params.dao_escrow_bulla.inner()])` (`entrypoint.rs:733-737`)
+            // — a function of the *record and the amount*, not of the call — and the child it validates
+            // is a `promissory_note::transfer_v1` whose **output** commitment is
+            // `pedersen_commitment_u64(value, fp_mod_fv(that seed))`. A Pedersen commitment carries the
+            // value and the blind and **not the recipient**, so the second withdrawal of the same
+            // amount, to the same owner, must emit the commitment the first one already inserted — and
+            // `promissory_note` refuses a repeat.
+            //
+            // **Nothing else stops it**, which is why this is the endpoint the sweep found first:
+            // `withdraw_v1` records no nullifier (the comment at `:759-761` says so and says why),
+            // changes no state a reader consults, and its authority — the ownership proof — is fresh for
+            // every call. Nothing in the contract bounds how many withdrawals an endowment may make, so
+            // the collision is the *only* thing that does.
+            //
+            // The needle is `ContractError(Custom(14))`, the code `OBL-C189` measured for a repeated
+            // commitment (`[transfer_v1] Error: Duplicate commitment in output 0`). A rejection for a
+            // different reason fails this row.
+            mk_ep_rejecting("WithdrawV1_OwnerPath_SameAmount", true, &["ContractError(Custom(14))"], Box::new({
+                let notes = notes.clone();
+                move || {
+                    let note = notes.lock().unwrap().withdraw_owner_again.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
                     let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, poseidon_hash([pallas::Base::from(PN_VALUE_WITHDRAW_OWNER), endowment_bulla]))?;
                     let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_OWNER, owner_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
