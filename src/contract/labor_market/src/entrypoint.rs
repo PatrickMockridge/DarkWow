@@ -936,9 +936,27 @@ fn confirm_delivery_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
             return Err(LaborMarketError::JobNotFound.into())
         }
     };
+    // **The blind seed is derived from the *call*, not from the job — and that difference is a defect
+    // the fixture found rather than a style.** `create_job_v1` requires its deposit child to emit
+    // `pedersen_commitment_u64(payment_amount, poseidon_hash([payment_amount, job_id]))` (`:630`).
+    // Deriving this endpoint's seed the same way makes the commitment it requires **the one the
+    // deposit already put on the note tree**, so `promissory_note` refuses the child with
+    // `[transfer_v1] Error: Duplicate commitment in output 0` — measured, `Custom(14)` at block 25, the
+    // first time anything drove this endpoint. A job created by `create_job_v1` could therefore never
+    // be confirmed, on any chain.
+    //
+    // The repair is the one its two siblings in this same file already use: `refund_v1` (`:1107`) and
+    // `confirm_milestone_v1` (`:1515`) derive from `params.spent_nullifier`, which is unique per call
+    // *and* published by the circuit as instance 0 — so the caller can compute it and the parent can
+    // predict it, while two different calls can never require the same commitment. Uniqueness is
+    // enforced rather than assumed: the `spent_flags` check above refuses a reused nullifier.
+    //
+    // `cancel_job_v1` (`:1220`) carries the same derivation and the same defect for jobs created by
+    // `create_job_v1`; its repair needs a decision this change does not make, and the register row
+    // records both why and the two routes.
     let value_blind = poseidon_hash([
         pallas::Base::from(job.payment_amount),
-        params.job_id,
+        params.spent_nullifier,
     ]);
     if let Err(e) = validate_child_value_commit(
         &child_call.data, job.payment_amount, value_blind,
@@ -1862,7 +1880,12 @@ fn create_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<Da
         spent_nullifier: None,
         spent_flag: None,
     };
-    msg!("[labor_market::create_job_with_capability_v1] ZK proof verified, job with capability built");
+    // The "ZK proof verified" claim that stood here was false, and one contract over it was already
+    // corrected. This endpoint's metadata arm publishes an *encoded empty* `zk_public_inputs`
+    // ("No circuit exists yet — deferred to v1.1"), so no circuit is consulted and the host requires
+    // no proof. The manifest still declares `requires_proof` and names `CreateJobWithCapabilityV2`,
+    // which has no `.zk` behind it — that half is `OBL-C91` (b)'s, and its ratchet tracks it.
+    msg!("[labor_market::create_job_with_capability_v1] Job with capability built");
     let payload = [&[LaborMarketFunction::CreateJobWithCapabilityV1 as u8], &update.encode()?[..]].concat();
     wasm::util::set_return_data(&payload)?;
     Ok(())
@@ -1916,7 +1939,9 @@ fn create_job_with_milestones_and_capability_v1(cid: ContractId, params: CreateJ
         spent_nullifier: None,
         spent_flag: None,
     };
-    msg!("[labor_market::create_job_with_milestones_and_capability_v1] ZK proof verified, milestone job with capability built");
+    // False for the same reason as its sibling above: this arm also publishes an encoded empty
+    // `zk_public_inputs`, so no proof is verified on this path (`OBL-C91` (b) for the manifest half).
+    msg!("[labor_market::create_job_with_milestones_and_capability_v1] Milestone job with capability built");
     let payload = [&[LaborMarketFunction::CreateJobWithMilestonesAndCapabilityV1 as u8], &update.encode()?[..]].concat();
     wasm::util::set_return_data(&payload)?;
     Ok(())
