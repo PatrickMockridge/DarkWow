@@ -24,6 +24,41 @@ type PnNote = (pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base);
 /// The job's payment, and therefore the value the promissory-note child must move.
 const PAYMENT: u64 = 5000;
 
+/// The secret every note is issued under and every transfer child spends with — **one constant,
+/// because two callers have to agree on it and the disagreement is silent**.
+///
+/// The transfer proof rebuilds the spent leaf as `poseidon_hash([7, secret])`
+/// (`promissory_note/src/client/transfer.rs:353`), so a note issued under any other secret
+/// recomputes a root no recorded root contains and the child is refused `Custom(13)` before the
+/// parent's guard is reached. Until 2026-09-29 this value was written out three times — in
+/// `pn_transfer_child`, in `setup`'s issuance, and (from `OBL-C191`'s unit 2) in `child_blind`, which
+/// needs it to derive the note's nullifier. Three literals that must be equal is three chances for
+/// one of them to drift.
+const PN_SECRET: pallas::Base = pallas::Base::from_raw([100, 0, 0, 0]);
+
+/// The blind every **escrow-bearing** path in this contract derives for its child — the fixture's
+/// copy of the contract's own `child_value_blind`.
+///
+/// **The spent note's nullifier is the seed's third term since 2026-09-29** (`OBL-C191`'s unit 2),
+/// and computing it is the caller's job: `labor_market` has clients for the parent calls but none
+/// builds the child, so a wallet assembling the transaction derives this itself. That is the cost of
+/// the route, and it is the same sentence the four `dao_escrow` endpoints owe.
+///
+/// The value is `Nullifier::new(SecretKey::from_base(secret), commitment)` — verbatim the call the
+/// transfer client makes when it builds the same child
+/// (`promissory_note/src/client/transfer.rs:366`), so this is a call and not a re-derivation.
+///
+/// The three **payout** rows do not use it: their endpoints key on `params.spent_nullifier`, a
+/// per-call value their own proofs supply — the same rule reached from the other side.
+fn child_blind(note: &PnNote, value: u64, job_id: pallas::Base) -> pallas::Base {
+    let nullifier = Nullifier::new(SecretKey::from_base(PN_SECRET), note.0);
+    poseidon_hash([
+        pallas::Base::from(value),
+        job_id,
+        nullifier.inner(),
+    ])
+}
+
 /// What one milestone releases, and the value `ConfirmMilestoneV1` moves.
 ///
 /// It reaches the harness twice — `confirm_milestone`'s `milestone_payment_amount` is the circuit's
@@ -142,9 +177,9 @@ fn pn_transfer_child(note: &PnNote, value: u64, blind_seed: pallas::Base) -> dwo
         // **100, and it must be**: the transfer proof rebuilds the leaf as
         // `poseidon_hash([7, secret])` (`promissory_note/src/client/transfer.rs:353`), so a note
         // issued under any other secret recomputes a root that no recorded root contains and the
-        // child is rejected with `Custom(13)` before the parent's guard is reached. The setup below
-        // issues with the same value for the same reason.
-        secret: pallas::Base::from(100u64),
+        // child is rejected with `Custom(13)` before the parent's guard is reached. `PN_SECRET` is
+        // the same constant `setup` issues under and `child_blind` derives the note's nullifier from.
+        secret: PN_SECRET,
         ephemeral_signature_secret: pallas::Base::from(9u64),
         tx_commitment: pallas::Base::zero(),
         tx_nonce: pallas::Base::zero(),
@@ -414,7 +449,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             // ── The promissory note, worth exactly the job's payment, issued under the secret the
             // transfer child spends with. ──
             let pn = PromissoryNoteHarness::spawn();
-            let pn_secret = pallas::Base::from(100u64);
+            let pn_secret = PN_SECRET;
             let owner_addr = poseidon_hash([pallas::Base::from(7u64), pn_secret]);
             let token = pn.register_type(
                 pn_secret, pallas::Base::from(2u64), pallas::Base::from(3u64), owner_addr,
@@ -640,7 +675,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 let note = cell.lock().ok().and_then(|g| g.clone())
                     .ok_or_else(|| dwow_core::Error::Custom("setup did not run".into()))?;
                 // The blind the parent re-derives: `poseidon_hash([payment_amount, job_id])`.
-                let blind = poseidon_hash([pallas::Base::from(PAYMENT), job_id]);
+                let blind = child_blind(&note, PAYMENT, job_id);
                 let r = h.create_job(employer_secret, employer_pub, attestation_id, job_id, 0, PAYMENT, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult {
                     children: vec![pn_transfer_child(&note, PAYMENT, blind)?, attestation_child(attestation_id)],
@@ -657,7 +692,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     // The git job funds from the fifth extra note; the first job keeps the original.
                     let note = more.lock().ok().and_then(|g| g.get(4).cloned())
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
-                    let blind = poseidon_hash([pallas::Base::from(PAYMENT), job_id_git]);
+                    let blind = child_blind(&note, PAYMENT, job_id_git);
                     // **`delivery_type: 1` is Git, and it is not decoration**: `submit_git_deliverable_v1`
                     // refuses a job created with `0` — `InvalidDeliveryType` (`Custom(17)`), measured on
                     // this fixture's block 24 — while its sibling `submit_deliverable_v1` accepts only
@@ -688,7 +723,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 move || {
                     let note = more.lock().ok().and_then(|g| g.get(5).cloned())
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
-                    let blind = poseidon_hash([pallas::Base::from(PAYMENT), cancel_job_id]);
+                    let blind = child_blind(&note, PAYMENT, cancel_job_id);
                     let r = h.create_job(employer_secret, employer_pub, attestation_id, cancel_job_id, 0, PAYMENT, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult {
                         children: vec![pn_transfer_child(&note, PAYMENT, blind)?, attestation_child(attestation_id)],
@@ -696,15 +731,25 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 }
             })),
             // **This row would fail against the code as it stood**, and that is what makes it a control
-            // rather than a row that happens to run: the seed below is the *repaired* derivation, and
+            // rather than a row that happens to run: the seed is the *repaired* derivation, and
             // deriving it from `(payment_amount, job_id)` alone — what the contract did before — makes
-            // the child's output commitment the one `CreateJobV1_Cancel` already deposited, which
+            // the child's output commitment the one `CreateJobV1_Cancel` had already deposited, which
             // `promissory_note` refuses as a duplicate (`Custom(14)`).
             //
-            // The blind is written out here rather than read from the client because the endpoint has
-            // no client; the constant is the parent's own (`LABOR_MARKET_DOMAIN_CANCEL`), and the row
-            // states it so that a change to the contract's seed breaks this row rather than silently
+            // The blind comes from `child_blind` rather than from a client because the endpoint has no
+            // client, and it is the contract's own derivation stated once for all seven rows — so a
+            // change to the contract's seed breaks every row that builds a child rather than silently
             // tracking it.
+            //
+            // **This row is the control for `OBL-C191`'s unit 2, and what it catches that the six
+            // create rows do not is precise.** Every row that builds a child catches a *contract-only*
+            // revert: the fixture derives through `child_blind` and a contract back on
+            // `(payment_amount, job_id)` would compute a different seed and refuse it. What no create
+            // row can catch is a **consistent** revert — the realistic one, `git revert` of the whole
+            // change — because a create and the contract move together and agree under either rule.
+            // This row is the pair that separates them: the cancel's child spends a note the create's
+            // deposit never touched, so under the old rule the cancel demands the commitment
+            // `CreateJobV1_Cancel` already put on the tree, and `promissory_note` refuses it.
             mk_ep("CancelJobV1", false, Box::new({
                 let more = more_notes.clone();
                 move || {
@@ -720,10 +765,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     let mut call_data = vec![0x07u8];
                     call_data.extend_from_slice(&params.encode()
                         .map_err(|e| dwow_core::Error::Custom(format!("encode: {e}")))?);
-                    let blind = poseidon_hash([
-                        dwow_labor_market_contract::model::LABOR_MARKET_DOMAIN_CANCEL,
-                        pallas::Base::from(PAYMENT), cancel_job_id,
-                    ]);
+                    let blind = child_blind(&note, PAYMENT, cancel_job_id);
                     Ok(EndpointResult {
                         children: vec![pn_transfer_child(&note, PAYMENT, blind)?],
                         call_data, proofs: vec![] })
@@ -835,7 +877,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     let mut call_data = vec![0x0cu8];
                     call_data.extend_from_slice(&params.encode()
                         .map_err(|e| dwow_core::Error::Custom(format!("encode: {e}")))?);
-                    let blind = poseidon_hash([pallas::Base::from(PAYMENT), cap_job_id]);
+                    let blind = child_blind(&note, PAYMENT, cap_job_id);
                     Ok(EndpointResult {
                         children: vec![pn_transfer_child(&note, PAYMENT, blind)?],
                         call_data, proofs: vec![] })
@@ -916,7 +958,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         h, employer_secret, employer_pub, attestation_id, ms_job_id,
                         MS_JOB_PAYMENT, milestones_of(2),
                     )?;
-                    let blind = poseidon_hash([pallas::Base::from(MS_JOB_PAYMENT), ms_job_id]);
+                    let blind = child_blind(&note, MS_JOB_PAYMENT, ms_job_id);
                     Ok(EndpointResult {
                         children: vec![pn_transfer_child(&note, MS_JOB_PAYMENT, blind)?],
                         call_data, proofs: vec![proof] })
@@ -1022,7 +1064,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     let mut call_data = vec![0x0eu8];
                     call_data.extend_from_slice(&params.encode()
                         .map_err(|e| dwow_core::Error::Custom(format!("encode: {e}")))?);
-                    let blind = poseidon_hash([pallas::Base::from(MILESTONE_PAYMENT), ms_cap_job_id]);
+                    let blind = child_blind(&note, MILESTONE_PAYMENT, ms_cap_job_id);
                     Ok(EndpointResult {
                         children: vec![pn_transfer_child(&note, MILESTONE_PAYMENT, blind)?],
                         call_data, proofs: vec![] })

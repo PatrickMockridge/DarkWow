@@ -574,6 +574,58 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     }
 }
 
+/// The value-commit seed every **escrow-bearing** path in this contract derives for its
+/// `promissory_note::transfer_v1` child: **the amount, the job, and the note the child spends.**
+///
+/// **One function, because five sites shared one derivation and the same reasoning.** The four
+/// create paths and `cancel_job_v1` each seeded `poseidon_hash([payment_amount, job_id])` — a
+/// function of the *record* — and the child's required output is
+/// `pedersen_commitment_u64(value, fp_mod_fv(seed))`, which carries the value and the blind and
+/// **not the recipient**. So any two of them that moved the same amount for the same job demanded
+/// the same commitment twice, and `promissory_note` refuses a repeat (`OBL-C191`, measured twice on
+/// `dao_escrow` and once here: `[transfer_v1] Error: Duplicate commitment in output 0`,
+/// `ContractError(Custom(14))`).
+///
+/// **Why the four create sites are repaired although none of them is today reachable.** A create is
+/// guarded by `JobAlreadyExists` on the same `job_id`, so two creates cannot both run — but that is
+/// a guard *two hundred lines away* doing work this seed is supposed to do, and it is the shape this
+/// repository has been bitten by three times: a property that holds because of a sibling, not
+/// because of the thing that states it. Keying on the spent note makes the seed a function of the
+/// call by construction, and the property no longer depends on a guard that could be relaxed.
+///
+/// **The third term** is the note the child spends, and it is **proof-bound**: the transfer's revoke
+/// circuit takes the nullifier as an instance (`promissory_note/src/entrypoint/mod.rs:389`,
+/// `input.nullifier.inner()`), so the host has already checked the proof against the value read
+/// here, and a note is spent once. The first two terms stay — they bind the amount and the job,
+/// which is this contract's own statement about which child it accepts.
+///
+/// **What this replaces.** `cancel_job_v1` carried `model::LABOR_MARKET_DOMAIN_CANCEL` — a domain
+/// tag, the route `OBL-C189` took when this contract was the first of the class. A tag separates two
+/// *different* endpoints and does nothing for one endpoint against itself, so it was the narrower
+/// scheme and the constant is retired with it. The three **payout** seeds are unchanged: they key on
+/// `params.spent_nullifier`, which is a per-call value the endpoints' own proofs supply and which
+/// satisfies the same rule from the other side — the two patterns split by whether the endpoint has
+/// a per-call value of its own, not by which is correct.
+///
+/// `config/params-alignment`: the decode reads another contract's params, in two lines rather than
+/// as a helper in `promissory_note::validation`, because that contract is **genesis** — a helper
+/// there would move the genesis pin for one non-genesis contract's benefit.
+fn child_value_blind(
+    child_call_data: &[u8],
+    value: u64,
+    job_id: pallas::Base,
+) -> Result<pallas::Base, ContractError> {
+    let transfer_params =
+        dwow_promissory_note_contract::model::TransferParamsV1::decode(&child_call_data[1..])
+            .map_err(|_| LaborMarketError::InvalidChildCall)?;
+    let spent_note = transfer_params.inputs.first().ok_or(LaborMarketError::InvalidChildCall)?;
+    Ok(poseidon_hash([
+        pallas::Base::from(value),
+        job_id,
+        spent_note.nullifier.inner(),
+    ]))
+}
+
 /// CreateJobV1 instruction
 fn create_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobParamsV1) -> ContractResult {
     msg!("[labor_market::create_job_v1] Creating job: {:?}", params.job_id);
@@ -639,10 +691,13 @@ fn create_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     }
 
     // Validate child transfer amount using value_commit comparison
-    let value_blind = poseidon_hash([
-        pallas::Base::from(params.payment_amount),
-        params.job_id,
-    ]);
+    let value_blind = match child_value_blind(&child_call.data, params.payment_amount, params.job_id) {
+        Ok(b) => b,
+        Err(e) => {
+            msg!("[labor_market] Error: Child transfer params undecodable: {:?}", e);
+            return Err(LaborMarketError::InvalidChildCall.into())
+        }
+    };
     if let Err(e) = validate_child_value_commit(
         &child_call.data, params.payment_amount, value_blind,
     ) {
@@ -1259,13 +1314,17 @@ fn cancel_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     // per-call. This endpoint cannot copy them: `CancelJobParamsV1` carries no nullifier and the
     // update writes `spent_flag: None`, because its one-shot property is `Created` → `Cancelled`
     // being terminal. Adding a field nothing binds would be a second guard beside a working one
-    // (R2), so the seed is made call-specific by the domain tag instead. See
-    // `model::LABOR_MARKET_DOMAIN_CANCEL` for why the constant is where it is and why its value.
-    let value_blind = poseidon_hash([
-        crate::model::LABOR_MARKET_DOMAIN_CANCEL,
-        pallas::Base::from(job.payment_amount),
-        params.job_id,
-    ]);
+    // (R2), so the seed is made call-specific — now by the note this child spends, through
+    // `child_value_blind`, rather than by the domain tag this site carried first (`OBL-C191`'s
+    // unit 2). A tag separates two *different* endpoints; the note separates one endpoint from
+    // itself as well, so the tag was the narrower scheme and its constant is retired.
+    let value_blind = match child_value_blind(&child_call.data, job.payment_amount, params.job_id) {
+        Ok(b) => b,
+        Err(e) => {
+            msg!("[cancel_job_v1] Error: Child transfer params undecodable: {:?}", e);
+            return Err(LaborMarketError::InvalidChildCall.into())
+        }
+    };
     if let Err(e) = validate_child_value_commit(
         &child_call.data, job.payment_amount, value_blind,
     ) {
@@ -1446,10 +1505,13 @@ fn create_job_with_milestones_v1(cid: ContractId, call_idx: usize, calls: Vec<Da
 
     // The same seed `create_job_v1` derives, because this is the same deposit: a milestone job's
     // `payment_amount` is what its milestones sum to, and the child must commit to it.
-    let value_blind = poseidon_hash([
-        pallas::Base::from(params.payment_amount),
-        params.job_id,
-    ]);
+    let value_blind = match child_value_blind(&child_call.data, params.payment_amount, params.job_id) {
+        Ok(b) => b,
+        Err(e) => {
+            msg!("[labor_market] Error: Child transfer params undecodable: {:?}", e);
+            return Err(LaborMarketError::InvalidChildCall.into())
+        }
+    };
     if let Err(e) = validate_child_value_commit(
         &child_call.data, params.payment_amount, value_blind,
     ) {
@@ -1899,10 +1961,13 @@ fn create_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<Da
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Validate child transfer amount using value_commit comparison
-    let value_blind = poseidon_hash([
-        pallas::Base::from(params.payment_amount),
-        params.job_id,
-    ]);
+    let value_blind = match child_value_blind(&child_call.data, params.payment_amount, params.job_id) {
+        Ok(b) => b,
+        Err(e) => {
+            msg!("[labor_market] Error: Child transfer params undecodable: {:?}", e);
+            return Err(LaborMarketError::InvalidChildCall.into())
+        }
+    };
     if let Err(e) = validate_child_value_commit(
         &child_call.data, params.payment_amount, value_blind,
     ) {
@@ -1992,10 +2057,13 @@ fn create_job_with_milestones_and_capability_v1(cid: ContractId, call_idx: usize
     }
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
-    let value_blind = poseidon_hash([
-        pallas::Base::from(params.payment_amount),
-        params.job_id,
-    ]);
+    let value_blind = match child_value_blind(&child_call.data, params.payment_amount, params.job_id) {
+        Ok(b) => b,
+        Err(e) => {
+            msg!("[labor_market] Error: Child transfer params undecodable: {:?}", e);
+            return Err(LaborMarketError::InvalidChildCall.into())
+        }
+    };
     if let Err(e) = validate_child_value_commit(
         &child_call.data, params.payment_amount, value_blind,
     ) {
