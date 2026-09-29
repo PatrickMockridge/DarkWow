@@ -10,6 +10,12 @@
 //! CommitBet → RevealRoll → SettleBet (the main path), and assert HouseCloseV1 is REJECTED (the bet
 //! is already `SettledHouse`). `target = 1` maximizes the house-win probability (the settle path
 //! requires `roll >= target`, i.e. a player loss).
+//!
+//! The HouseCloseV1 row now *names* that reason and the contract that gives it
+//! (`RejectionByEndpoint` with `Custom(3)`), which it could not say before: until `OBL-C192`'s unit A
+//! the child reused the value seed as its leaf blind, so the block was refused at `call_idx=0` by
+//! `promissory_note` and this endpoint's own state check was never reached — the row was green, and
+//! green for a reason it did not name.
 
 use dwow_contract_test_harness::harness::{DarkToshiDiceHarness, PromissoryNoteHarness};
 use dwow_sdk::crypto::{
@@ -161,7 +167,11 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "HouseCloseV1",
                 is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                // The row names the check it is about, and it names the *contract* it comes from:
+                // before `OBL-C192`'s unit A this block was refused at `call_idx=0` by the child's
+                // `Duplicate commitment in output 0` and the endpoint never executed — a bare
+                // `Rejection` was satisfied either way. `Custom(3)` is `DiceError::InvalidStateTransition`.
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(3))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new({

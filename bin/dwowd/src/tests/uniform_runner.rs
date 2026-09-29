@@ -86,13 +86,37 @@ pub enum EndpointExpectation {
     /// to test one specific check and asserts only `Rejection` is a control that cannot fail. This
     /// variant is how such a row names the check it is about. Use it wherever the rejection's
     /// *reason* is the thing under test.
+    ///
+    /// **A needle alone still cannot say *which contract* refused.** Every per-call failure carries
+    /// the same shape — `… (contract <id>): ContractError(Custom(N))` — and `N` is a per-contract
+    /// enum index, so `Custom(14)` is `DuplicateCommitment` in `promissory_note`,
+    /// `GovernanceNotActive` in `dao_escrow` and `UnauthorizedCaller` in `darktoshi_dice`. Use the
+    /// blamed variants below when it matters who refused.
     RejectionNaming(&'static [&'static str]),
+    /// Expect a rejection **the endpoint itself** produced.
+    ///
+    /// The refusal's text must name the endpoint's own resolved contract id, as well as containing
+    /// each needle. This is what separates "rejected, for the reason under test" from "rejected a
+    /// step earlier by a child": the calls in a tx are ordered DFS post-order, so children occupy
+    /// the low indices and the endpoint is last — a child that refuses means the endpoint never
+    /// executed at all, and its own checks were never reached. `OBL-C192`'s `HouseCloseV1` row was
+    /// green that way for a whole run: the block was refused at `call_idx=0` by the child's
+    /// `Duplicate commitment in output 0` and the endpoint's `exec` never appeared.
+    RejectionByEndpoint(&'static [&'static str]),
 }
 
 impl EndpointExpectation {
-    /// Both reject arms mean "expect a rejection"; the payload only narrows *which* one.
+    /// All non-`Success` arms mean "expect a rejection"; the payload only narrows *which* one.
     fn is_rejection(&self) -> bool {
         !matches!(self, Self::Success)
+    }
+
+    /// The needles this row requires the run's own error text to contain, if any.
+    fn needles(&self) -> &'static [&'static str] {
+        match self {
+            Self::Success | Self::Rejection => &[],
+            Self::RejectionNaming(n) | Self::RejectionByEndpoint(n) => n,
+        }
     }
 }
 
@@ -161,10 +185,21 @@ impl<'a> ContractTestSpec<'a> {
 
 
     /// Index of the first ZK endpoint (for nullifier replay testing).
+    /// Index of the first ZK endpoint the nullifier-replay control can be built on.
+    ///
+    /// **The `expectation` filter is not incidental.** The control asserts that a *second* submission
+    /// is refused, and `nullifier_replay`'s own contract says "First submission must have already
+    /// succeeded (caller's responsibility)" — a responsibility nothing checked. A row that is
+    /// expected to be rejected anyway was never accepted, so its "replay" is refused for whatever
+    /// refused the original, and the control proves nothing about replay at all. Four specs were in
+    /// exactly that state and were selected by this function: `bridge`, `drain_protection`,
+    /// `insurance_market`, `dao_escrow` (`OBL-C193`).
     pub fn first_zk_index(&self) -> Option<usize> {
         // Skip endpoints that need coinbase params — they can't be generated
         // standalone for nullifier replay (HAZOP H-UR-013).
-        self.endpoints.iter().position(|e| e.is_zk && e.generate_with_coinbase.is_none())
+        self.endpoints.iter().position(|e| {
+            e.is_zk && e.generate_with_coinbase.is_none() && !e.expectation.is_rejection()
+        })
     }
 }
 
@@ -309,14 +344,27 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             ));
             // When the row names the check it tests, require the run's own error text to say so.
             // This is what separates "rejected, for the reason under test" from "rejected, earlier".
-            if let EndpointExpectation::RejectionNaming(needles) = endpoint.expectation {
-                let text = format!("{err}");
-                for needle in needles {
-                    assert!(text.contains(needle),
-                        "TEST-FAIL [{}::{}]: rejection did not name {:?} — it was rejected for \
-                         some other reason. Full error: {}",
-                        spec.name, endpoint.name, needle, text);
-                }
+            let text = format!("{err}");
+            // Every per-call failure is formatted `… (contract <id>): …`, so the contract id is the
+            // only attribution the text carries. Note `fn_code` in that same line is the call-tree
+            // *length prefix*, not a function selector — never assert on it.
+            let blamed = match endpoint.expectation {
+                EndpointExpectation::RejectionByEndpoint(_) => Some(cid),
+                _ => None,
+            };
+            if let Some(id) = blamed {
+                let who = format!("(contract {id})");
+                assert!(text.contains(&who),
+                    "TEST-FAIL [{}::{}]: expected the rejection to come from {} — it was refused by \
+                     some other call in the frame, so the endpoint's own checks were never reached. \
+                     Full error: {}",
+                    spec.name, endpoint.name, who, text);
+            }
+            for needle in endpoint.expectation.needles() {
+                assert!(text.contains(needle),
+                    "TEST-FAIL [{}::{}]: rejection did not name {:?} — it was rejected for \
+                     some other reason. Full error: {}",
+                    spec.name, endpoint.name, needle, text);
             }
         } else if endpoint.generate_with_coinbase.is_some() {
             // Coinbase-dependent endpoints use submit_with_coinbase
@@ -355,10 +403,26 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
         // invalid proof and the replay assertion would then hold for a reason it does not name.
         spec.harness.set_next_block_height(height_before.succ());
         let result = (endpoint.generate)()?;
+        // The children execute before the endpoint (DFS post-order), so a replay is refused by the
+        // first child when there is one and by the endpoint otherwise. State which, rather than
+        // accepting any refusal at all: accepting any refusal is what made this control vacuous for
+        // the twelve specs whose first ZK endpoint requires a child (`OBL-C193`).
+        let blamed = result.children.first().map(|c| c.contract_id).unwrap_or(cid);
         modules::nullifier_replay::verify_nullifier_replay(
             &chain_a, cid, spec.harness,
-            &result.call_data, result.proofs, endpoint.is_zk,
+            &result.call_data, result.proofs, endpoint.is_zk, result.children, blamed,
         ).await?;
+    } else if spec.endpoints.iter().any(|e| e.is_zk) {
+        // Loud, not silent: §3.6 requires this control for every contract with a ZK-gated function,
+        // and a spec that cannot host it has an *unverified* replay rejection rather than a passing
+        // one. The alternative — picking a row that is expected to be rejected anyway — is the
+        // vacuity `OBL-C193` records.
+        eprintln!(
+            "WARN [{}]: §3.6 nullifier-replay control SKIPPED — no ZK endpoint is both \
+             standalone-generatable and expected to succeed, so there is nothing whose replay could \
+             be refused. This contract's replay rejection is UNVERIFIED (OBL-C193).",
+            spec.name
+        );
     }
 
     // ── Post-test integrity checks (spec §5.3) ─────────────────────

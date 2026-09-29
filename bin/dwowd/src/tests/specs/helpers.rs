@@ -24,6 +24,14 @@ pub fn mk_ep(
 /// that exists to pin one check and asserts only `Rejection` is a control that cannot fail. Pass the
 /// needles when the expected failure is known; pass `&[]` only when it genuinely is not, and say so in
 /// the row's comment.
+///
+/// **Prefer `EndpointExpectation::RejectionByEndpoint` when the row's subject is one of the
+/// endpoint's own checks.** A needle cannot say *which contract* refused — every per-call failure
+/// carries the same `(contract <id>): ContractError(Custom(N))` shape and `N` is a per-contract enum
+/// index — so a row whose endpoint carries a child can be satisfied by the child refusing first, with
+/// the endpoint never executing at all.
+/// `darktoshi_dice_spec.rs`'s `HouseCloseV1` row is the worked example: it was green for a whole run
+/// because its `promissory_note` child was refused at `call_idx=0`.
 pub fn mk_ep_rejecting(
     name: &'static str,
     is_zk: bool,
