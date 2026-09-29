@@ -202,6 +202,15 @@ struct Governance {
     /// `(bulla, value, recipient_x)` triple its row uses. Distinct from every other message, including
     /// the other money endpoints' triples: the role tag is what keeps them apart.
     endowment_withdraw: Vec<Nullifier>,
+    /// The endowment's group on the **same** `(bulla, value)` paid to a **different recipient** — role 4
+    /// again, over `poseidon_hash([bulla, value, second_recipient_x])`.
+    ///
+    /// It exists because the recipient is the one term the action id has and the value-commit seed does
+    /// not: `endowment_withdraw_v1`'s seed is `poseidon_hash([value, bulla])` (`entrypoint.rs:839-843`),
+    /// so paying two different people the same amount from one endowment requires the *same* child
+    /// output commitment twice — while the *approval* differs, which is what makes the second call
+    /// reachable rather than masked by the approval being spend-once (`OBL-C191`'s append).
+    endowment_withdraw_2: Vec<Nullifier>,
     /// The endowment's group on the cancellation action — role 10 over the claim id. The same id the
     /// proposal's approval names, which is exactly why the role tag exists (`OBL-C151`).
     cancel_claim: Vec<Nullifier>,
@@ -238,6 +247,9 @@ struct Shared {
     /// `pedersen(value, blind)` and a shared blind would make this note's own commitment a duplicate
     /// of the first one's before the row even ran.
     withdraw_owner_again: Option<PnNote>,
+    /// A **second** note worth `PN_VALUE_ENDOWMENT_APPROVED`, for the row that pays that amount to a
+    /// different recipient. Own note and own blind (16) for the same two reasons as the line above.
+    endowment_approved_again: Option<PnNote>,
 }
 
 pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
@@ -297,6 +309,22 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
             endowment_bulla,
             pallas::Base::from(PN_VALUE_ENDOWMENT_APPROVED),
             owner_x,
+        ]),
+    );
+    // The **same** `(bulla, value)` as the line above and a different recipient, which is the whole of
+    // the difference: role 4's action id carries the recipient's x and the value-commit seed does not,
+    // so this is an approval no other row could have cast and a child output no other row could have
+    // produced. See `Governance::endowment_withdraw_2`.
+    let second_recipient_secret = pallas::Base::from(5150u64);
+    let second_recipient_pub = PublicKey::from_secret(SecretKey::from_base(second_recipient_secret));
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+    let second_recipient_x = second_recipient_pub.xy().expect("pk not identity").0;
+    let action_endowment_withdraw_2 = governance_message(
+        governance_role::ENDOWMENT_WITHDRAW,
+        poseidon_hash([
+            endowment_bulla,
+            pallas::Base::from(PN_VALUE_ENDOWMENT_APPROVED),
+            second_recipient_x,
         ]),
     );
     // There is no `action_withdraw`: `withdraw_v1` has no group branch and therefore no governed action.
@@ -394,6 +422,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let propose = sign_for(chain, msg_propose)?;
                 let wrong_message = sign_for(chain, msg_wrong)?;
                 let endowment_withdraw = sign_for(chain, action_endowment_withdraw)?;
+                let endowment_withdraw_2 = sign_for(chain, action_endowment_withdraw_2)?;
                 let cancel_claim = sign_for(chain, action_cancel_claim)?;
                 let propose_2 = sign_for(chain, msg_propose_2)?;
                 let vote = sign_for(chain, action_vote)?;
@@ -418,6 +447,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     propose,
                     wrong_message,
                     endowment_withdraw,
+                    endowment_withdraw_2,
                     cancel_claim,
                     propose_2,
                     vote,
@@ -457,6 +487,10 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     // one's. The blind is the array's next free value (15) for the reason every other
                     // note here has its own.
                     PN_VALUE_WITHDRAW_OWNER,
+                    // The ninth, for the row that pays `PN_VALUE_ENDOWMENT_APPROVED` to a **different
+                    // recipient**. Same amount as index 3 on purpose — that is what makes the two
+                    // children collide — and blind 16, the next free one.
+                    PN_VALUE_ENDOWMENT_APPROVED,
                 ]
                 .iter()
                 .enumerate()
@@ -479,6 +513,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     withdraw_no_approval: n.next(),
                     execute_approved: n.next(),
                     withdraw_owner_again: n.next(),
+                    endowment_approved_again: n.next(),
                 };
 
                 // The Identity fixture lived here — an issuer, one credential, one capability and its
@@ -696,6 +731,47 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let r = h.endowment_withdraw(endowment_bulla, claim_id, owner_pub, PN_VALUE_ENDOWMENT_APPROVED)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let f = ms.finalize(DaoEscrowHarness::governance_group(), action_endowment_withdraw, approvals)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult {
+                        children: vec![
+                            child,
+                            ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] },
+                        ],
+                        call_data: r.call_data, proofs: vec![],
+                    })
+                }
+            })),
+            // **The same amount to a different recipient, and it is the recipient that makes this
+            // reachable.** `endowment_withdraw_v1`'s action id is role 4 over
+            // `poseidon_hash([bulla, value, recipient_x])` (`entrypoint.rs:901-908`), so this call needs
+            // an approval the row above could not have cast — a MultiSig approval is spend-once, and the
+            // message differs — while the **value-commit seed** it must satisfy is
+            // `poseidon_hash([value, bulla])` (`:839-843`), which does not see the recipient at all. The
+            // child's output commitment is `pedersen_commitment_u64(value, fp_mod_fv(seed))`: value and
+            // blind, **no recipient**. So this call demands exactly the commitment the row above already
+            // put on the note tree.
+            //
+            // **The pair is what makes the reading a measurement**: the two rows differ in the recipient
+            // and the approval and in nothing else, so a refusal here cannot be attributed to the
+            // approval, the mode gate, or the endowment record — all three of which the row above passes
+            // with the same values.
+            //
+            // The needle is `ContractError(Custom(14))`, the code `OBL-C189` measured for a repeated
+            // commitment, and it is a **pin** in the sense `OBL-C152`'s row argues for: it asserts what
+            // the code does today, so it is green now and becomes the instrument that catches the
+            // repair. `OBL-C191` carries it as the second measured instance of that row's class.
+            mk_ep_rejecting("EndowmentWithdrawV1_Approved_DifferentRecipient", false, &["ContractError(Custom(14))"], Box::new({
+                let gov = gov.clone();
+                let notes = notes.clone();
+                move || {
+                    let approvals = gov.lock().unwrap().endowment_withdraw_2.clone();
+                    let note = notes.lock().unwrap().endowment_approved_again.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
+                    // The seed the *endpoint still uses* — two terms, no nullifier. Unlike `withdraw_v1`
+                    // this site was not repaired, so the row states the seed the contract derives.
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_ENDOWMENT_APPROVED, poseidon_hash([pallas::Base::from(PN_VALUE_ENDOWMENT_APPROVED), endowment_bulla]))?;
+                    let r = h.endowment_withdraw(endowment_bulla, claim_id, second_recipient_pub, PN_VALUE_ENDOWMENT_APPROVED)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let f = ms.finalize(DaoEscrowHarness::governance_group(), action_endowment_withdraw_2, approvals)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult {
                         children: vec![
