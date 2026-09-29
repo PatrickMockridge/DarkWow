@@ -98,6 +98,7 @@ pub fn pn_transfer_child(
         contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
         call_data: child.call_data,
         proofs: child.proofs,
+        children: vec![],
     })
 }
 
@@ -177,5 +178,6 @@ pub fn pn_transfer_payout_child(
         contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
         call_data: child.call_data,
         proofs: child.proofs,
+        children: vec![],
     })
 }

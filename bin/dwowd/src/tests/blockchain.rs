@@ -60,6 +60,8 @@ use dwow_contract_test_harness::harness::ContractHarness;
 use dwow_sdk::test_support::{TestError, TestResult};
 use dwow_sdk::{ensure, ensure_eq, infra_context};
 
+use super::uniform_runner::ChildCall;
+
 // INFRA-FAIL attribution for this module: `.infra("stage")?` names the module and the stage
 // that failed, rather than whichever test happened to reach it.
 infra_context!("tests::blockchain");
@@ -634,25 +636,21 @@ impl<'c> HeavyweightBlock<'c> {
         Ok(self)
     }
 
-    /// Add a parent contract call with bundled child calls (children listed before the
-    /// parent, DFS post-order). `children` is `(contract_id, call_data, proofs)` per child.
+    /// Add a parent contract call with bundled child calls, each of which may carry children of its
+    /// own (`ChildCall::children`). The witness and the chain tx's call list are both produced by
+    /// `build_witness_tree`, in that function's post-order, so the two cannot disagree about order.
     pub fn with_call_tree(
         &mut self,
         parent_contract_id: ContractId,
         parent_call_data: &[u8],
         parent_proofs: Vec<Proof>,
-        children: Vec<(ContractId, Vec<u8>, Vec<Proof>)>,
+        children: Vec<ChildCall>,
     ) -> Result<&mut Self> {
-        let mut tx = super::harness::build_contract_tx_tree(
-            children
-                .iter()
-                .map(|(cid, data, _)| (*cid, data.clone()))
-                .chain(std::iter::once((parent_contract_id, parent_call_data.to_vec())))
-                .collect(),
+        let (witness, flat_calls) = super::heavyweight_pipeline::build_witness_tree(
+            parent_contract_id, parent_call_data, parent_proofs, children,
         );
-        tx.witness = super::heavyweight_pipeline::build_witness_tree(
-            parent_contract_id, parent_call_data, parent_proofs, &children,
-        );
+        let mut tx = super::harness::build_contract_tx_tree(flat_calls);
+        tx.witness = witness;
 
         self.contract_txs.push(tx);
         Ok(self)

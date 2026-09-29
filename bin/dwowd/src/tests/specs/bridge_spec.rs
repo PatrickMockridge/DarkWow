@@ -62,6 +62,7 @@ fn pn_issue_child(
         contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
         call_data: child.call_data,
         proofs: child.proofs,
+        children: vec![],
     })
 }
 
@@ -90,6 +91,7 @@ fn pn_redeem_child(
         contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
         call_data: child.call_data,
         proofs: child.proofs,
+        children: vec![],
     })
 }
 

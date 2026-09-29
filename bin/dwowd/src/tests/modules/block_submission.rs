@@ -60,13 +60,8 @@ pub async fn submit_multi_call_block(
         )));
     }
 
-    let child_tuples: Vec<(ContractId, Vec<u8>, Vec<Proof>)> = children
-        .into_iter()
-        .map(|c| (c.contract_id, c.call_data, c.proofs))
-        .collect();
-
     chain.block()?
-        .with_call_tree(cid, call_data, proofs, child_tuples)?
+        .with_call_tree(cid, call_data, proofs, children)?
         .with_fee_collect()?
         .submit().await
 }

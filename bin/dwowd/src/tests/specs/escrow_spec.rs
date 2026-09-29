@@ -55,6 +55,7 @@ fn pn_transfer_child(
         contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
         call_data: child.call_data,
         proofs: child.proofs,
+        children: vec![],
     })
 }
 
@@ -74,7 +75,7 @@ fn pn_transfer_child(
 fn purse_deposit_child(amount: u64) -> dwow_core::Result<ChildCall> {
     let purse = PurseHarness::spawn();
     let r = purse.deposit(amount).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall { contract_id: *PURSE_CONTRACT_ID, call_data: r.call_data, proofs: vec![r.proof] })
+    Ok(ChildCall { contract_id: *PURSE_CONTRACT_ID, call_data: r.call_data, proofs: vec![r.proof], children: vec![] })
 }
 
 /// A `Box::PutV1` child writing a box whose `contents_commit` is `contents`.
@@ -85,7 +86,7 @@ fn purse_deposit_child(amount: u64) -> dwow_core::Result<ChildCall> {
 fn box_put_child(contents: pallas::Base) -> dwow_core::Result<ChildCall> {
     let bx = BoxHarness::spawn();
     let r = bx.put_contents(contents).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall { contract_id: *BOX_CONTRACT_ID, call_data: r.call_data, proofs: vec![r.proof] })
+    Ok(ChildCall { contract_id: *BOX_CONTRACT_ID, call_data: r.call_data, proofs: vec![r.proof], children: vec![] })
 }
 
 /// A `Box::TakeV1` child taking the box whose `contents_commit` is `contents`.
@@ -97,7 +98,7 @@ fn box_put_child(contents: pallas::Base) -> dwow_core::Result<ChildCall> {
 fn box_take_child(contents: pallas::Base) -> dwow_core::Result<ChildCall> {
     let bx = BoxHarness::spawn();
     let r = bx.take_contents(contents).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall { contract_id: *BOX_CONTRACT_ID, call_data: r.call_data, proofs: vec![r.proof] })
+    Ok(ChildCall { contract_id: *BOX_CONTRACT_ID, call_data: r.call_data, proofs: vec![r.proof], children: vec![] })
 }
 
 pub fn escrow_test_spec() -> ContractTestSpec<'static> {

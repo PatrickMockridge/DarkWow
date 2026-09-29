@@ -107,6 +107,7 @@ fn pn_transfer_child(note: &PnNote, value: u64, blind_seed: pallas::Base) -> dwo
         contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
         call_data: child.call_data,
         proofs: child.proofs,
+        children: vec![],
     })
 }
 
@@ -421,6 +422,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                             contract_id: *IDENTITY_CONTRACT_ID,
                             call_data: v.call_data,
                             proofs: vec![v.proof],
+                            children: vec![],
                         };
                         let params = UnderwriteWithCapabilityParamsV1 {
                             market_id: s.market_id,
@@ -502,6 +504,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                             contract_id: *IDENTITY_CONTRACT_ID,
                             call_data: v.call_data,
                             proofs: vec![v.proof],
+                            children: vec![],
                         };
                         let params = UnderwriteWithCapabilityParamsV1 {
                             market_id: s.market_id,

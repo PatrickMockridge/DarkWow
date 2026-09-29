@@ -52,10 +52,24 @@ pub struct EndpointResult {
 }
 
 /// A child contract call bundled under a parent call in a single transaction.
+///
+/// **`children` is what makes a call tree more than two levels deep**, and its absence was a bound
+/// nobody had recorded: a cross-contract child that itself validates a child — `dao_escrow`'s
+/// `propose_claim_v1` does, `require_governance_child` reads `calls[call_idx].children_indexes[0]`
+/// (`dao_escrow/src/entrypoint.rs:1094-1098`) — could not be expressed at all, so an endpoint that
+/// needed one could not be driven from any fixture. `labor_market`'s `DisputeV1` is that endpoint
+/// (`OBL-C170`'s bound, on the frame side rather than the call-builder side).
+///
+/// The tree is emitted **DFS post-order** — a node's children precede it, and the parent is last
+/// (`build_witness_tree`, `heavyweight_pipeline.rs:102`), which is the order `with_call_tree` already
+/// used for one level and the order the verifier reconciles against the transaction's call list.
 pub struct ChildCall {
     pub contract_id: ContractId,
     pub call_data: Vec<u8>,
     pub proofs: Vec<Proof>,
+    /// This child's own children, in the same shape and the same post-order. Empty for a leaf, which
+    /// is every child that existed before 2026-09-29.
+    pub children: Vec<ChildCall>,
 }
 
 /// Whether an endpoint expects accept_block to succeed or reject.

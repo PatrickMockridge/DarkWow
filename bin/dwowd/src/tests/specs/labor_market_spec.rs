@@ -1,13 +1,15 @@
 //! ContractTestSpec for labor_market. Tier: HARVESTABLE — 9 harness methods, all ZK.
 use dwow_contract_test_harness::harness::{
-    AttestationHarness, ContractHarness, IdentityHarness, LaborMarketHarness, PromissoryNoteHarness,
+    AttestationHarness, ContractHarness, DaoEscrowHarness, IdentityHarness, LaborMarketHarness,
+    MultiSigHarness, PromissoryNoteHarness,
 };
+use dwow_dao_escrow_contract::model::{governance_message, governance_role, DaoEscrowMode};
 use dwow_identity_contract::model::{CapabilityId, CredentialRequirement};
 use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
 use dwow_sdk::crypto::{
-    pasta_prelude::PrimeField, poseidon_hash, util::fp_mod_fv, Blind, IntentNullifier, MerkleNode,
-    MerkleTree, PublicKey, SecretKey, ATTESTATION_CONTRACT_ID, IDENTITY_CONTRACT_ID,
-    PROMISSORY_NOTE_CONTRACT_ID,
+    pasta_prelude::PrimeField, poseidon_hash, util::fp_mod_fv, AssetId, Blind, IntentNullifier,
+    MerkleNode, MerkleTree, Nullifier, PublicKey, SecretKey, ATTESTATION_CONTRACT_ID,
+    IDENTITY_CONTRACT_ID, MULTISIG_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID,
 };
 use dwow_sdk::pasta::pallas;
 use std::sync::{Arc, Mutex};
@@ -21,6 +23,84 @@ type PnNote = (pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base);
 
 /// The job's payment, and therefore the value the promissory-note child must move.
 const PAYMENT: u64 = 5000;
+
+/// What one milestone releases, and the value `ConfirmMilestoneV1` moves.
+///
+/// It reaches the harness twice — `confirm_milestone`'s `milestone_payment_amount` is the circuit's
+/// instance 5 witness and its `payment_release` is the value the metadata arm publishes in that slot —
+/// and the two must be equal or the proof is rejected before the contract sees the call. Naming them
+/// as one constant is what keeps them equal.
+const MILESTONE_PAYMENT: u64 = 1000;
+
+/// The milestones job's total, which the create's escrow child must commit. Two milestones, because
+/// `confirm_milestone_v1` is driven at index 1 and needs `milestone_index < milestone_count`.
+const MS_JOB_PAYMENT: u64 = MILESTONE_PAYMENT * 2;
+
+/// Far future, for the milestone deadlines. Nothing in this fixture reads a milestone deadline —
+/// `MilestoneDeadlineNotReached` has no live caller — so it is written as a value that cannot be
+/// reached rather than as a block this run will cross.
+const MILESTONE_DEADLINE: u64 = 1_000_000;
+
+/// The hand-encoded `CreateJobWithMilestonesV1` (0x08) call: selector plus
+/// `CreateJobWithMilestonesParamsV1::encode()`.
+///
+/// **Hand-encoded because no client can build it, and the proof is borrowed rather than invented.**
+/// `client/` carries `create_job.rs` and no `create_job_with_milestones.rs`, which is `OBL-C170`'s
+/// recorded cell — but that cell says "a proof no client can build", and the endpoint *dispatches to
+/// the `CreateJobV2` circuit* (`entrypoint.rs:362-380` publishes that circuit's five instances), so
+/// `create_job_v1_proof` is exactly the proof this endpoint verifies. The five values therefore come
+/// from that proof's own public inputs; writing them by hand would be five constants the host
+/// compares against the proof and rejects the row for, which reads as a contract failure.
+///
+/// Returned with the proof because the runner submits both: `is_zk` is true for this endpoint.
+fn milestones_create_call(
+    h: &LaborMarketHarness,
+    employer_secret: pallas::Base,
+    employer_pub: PublicKey,
+    attestation_id: pallas::Base,
+    job_id: pallas::Base,
+    payment_amount: u64,
+    milestones: Vec<dwow_labor_market_contract::model::Milestone>,
+) -> dwow_core::Result<(Vec<u8>, dwow_core::zk::Proof)> {
+    let r = h.create_job(
+        employer_secret, employer_pub, attestation_id, job_id, 0, payment_amount,
+        pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64),
+    ).map_err(|e| dwow_core::Error::Custom(format!("create_job (milestones proof): {e}")))?;
+    let milestone_count = u32::try_from(milestones.len())
+        .map_err(|_| dwow_core::Error::Custom("too many milestones for a u32 count".into()))?;
+    let params = dwow_labor_market_contract::model::CreateJobWithMilestonesParamsV1 {
+        proof: r.proof.as_ref().to_vec(),
+        job_id,
+        employer_pub_x: r.public_inputs.employer_pub_x,
+        employer_pub_y: r.public_inputs.employer_pub_y,
+        attestation_id: r.public_inputs.attestation_id,
+        delivery_type: 0,
+        payment_amount,
+        payment_token: pallas::Base::from(1u64),
+        payment_commit_x: pallas::Base::from(2u64),
+        payment_commit_y: pallas::Base::from(3u64),
+        deadline_block: MILESTONE_DEADLINE,
+        milestone_count,
+        milestones,
+        tx_binding: r.public_inputs.tx_binding,
+        tx_nonce: r.public_inputs.tx_nonce,
+    };
+    let mut call_data = vec![0x08u8];
+    call_data.extend_from_slice(&params.encode()
+        .map_err(|e| dwow_core::Error::Custom(format!("encode: {e}")))?);
+    Ok((call_data, r.proof))
+}
+
+/// The milestone list both milestone creates use: `count` milestones of `MILESTONE_PAYMENT`.
+fn milestones_of(count: u32) -> Vec<dwow_labor_market_contract::model::Milestone> {
+    (0..count).map(|i| dwow_labor_market_contract::model::Milestone {
+        index: i,
+        payment_amount: MILESTONE_PAYMENT,
+        deadline_block: MILESTONE_DEADLINE,
+        completed: false,
+        completed_at_block: None,
+    }).collect()
+}
 
 /// Far future, as `insurance_market_spec.rs:139` has it: an expiry the fixture never reaches.
 const EXPIRES_AT: u64 = 1_000_000;
@@ -82,7 +162,7 @@ fn pn_transfer_child(note: &PnNote, value: u64, blind_seed: pallas::Base) -> dwo
     let child = pn
         .transfer_with_value_blinds(vec![input], vec![output], Some(vec![value_blind]))
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child.call_data, proofs: child.proofs })
+    Ok(ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child.call_data, proofs: child.proofs, children: vec![] })
 }
 
 /// The `attestation::CheckAttestationV1` child `create_job_v1` requires — **and this one needs no
@@ -93,7 +173,7 @@ fn pn_transfer_child(note: &PnNote, value: u64, blind_seed: pallas::Base) -> dwo
 fn attestation_child(attestation_id: pallas::Base) -> ChildCall {
     let mut call_data = vec![0x0du8];
     call_data.extend_from_slice(attestation_id.to_repr().as_ref());
-    ChildCall { contract_id: *ATTESTATION_CONTRACT_ID, call_data, proofs: vec![] }
+    ChildCall { contract_id: *ATTESTATION_CONTRACT_ID, call_data, proofs: vec![], children: vec![] }
 }
 
 /// The `attestation::VerifyClaimV1` child `submit_deliverable_v1` requires — and this one **does**
@@ -112,6 +192,7 @@ fn verify_claim_child(claim_id: pallas::Base, attestation_id: pallas::Base) -> d
     ).map_err(|e| dwow_core::Error::Custom(format!("verify_claim: {e}")))?;
     Ok(ChildCall {
         contract_id: *ATTESTATION_CONTRACT_ID, call_data: r.call_data, proofs: vec![r.proof],
+        children: vec![],
     })
 }
 
@@ -138,17 +219,55 @@ fn capability_child(
         PublicKey::from_secret(SecretKey::from_base(s.issuer_secret)),
         holder, schema, 0, EXPIRES_AT, true)
         .map_err(|e| dwow_core::Error::Custom(format!("verify_capability: {e}")))?;
-    Ok(ChildCall { contract_id: *IDENTITY_CONTRACT_ID, call_data: v.call_data, proofs: vec![v.proof] })
+    Ok(ChildCall { contract_id: *IDENTITY_CONTRACT_ID, call_data: v.call_data, proofs: vec![v.proof], children: vec![] })
 }
 
 pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(LaborMarketHarness::spawn()));
     let h: &LaborMarketHarness = harness;
+    // Leaked, and for the reason `dao_escrow_spec.rs:217-221` gives: `spawn` rebuilds proving keys, and
+    // this fixture's `setup` runs twice — once per chain — while the rows build children from both.
+    // The DAO-Escrow harness is here because this fixture deploys and drives a second contract (see the
+    // `DisputeV1` rows), which no other fixture in the tree does.
+    let dao: &'static DaoEscrowHarness = Box::leak(Box::new(DaoEscrowHarness::spawn()));
+    let ms: &'static MultiSigHarness = Box::leak(Box::new(MultiSigHarness::spawn()));
     let wasm = include_bytes!("../../../../../src/contract/labor_market/dwow_labor_market_contract.wasm");
     let employer_secret = pallas::Base::from(10u64);
     let employer_pub = PublicKey::from_secret(SecretKey::from_base(employer_secret));
     let worker_secret = pallas::Base::from(20u64);
     let worker_pub = PublicKey::from_secret(SecretKey::from_base(worker_secret));
+    // ── The `dao_escrow` endowment `DisputeV1` rides on (`OBL-C170`'s second bound) ──
+    //
+    // **Every constant here is `dao_escrow_spec.rs`'s, copied rather than invented**, because the
+    // governance messages are derived by the *contract's own* functions and any value that drifted
+    // would present as a governance refusal rather than as a fixture typo. The endowment's bulla is
+    // the derived one — `initialize_v1` derives it from the DAO's own bulla, the owner, the asset and
+    // the blind, while every endpoint that touches the endowment looks it up by its own
+    // `dao_escrow_bulla` field, so the value that has to be passed is the derived one.
+    let owner_secret = pallas::Base::from(12345u64);
+    let owner_pub = PublicKey::from_secret(SecretKey::from_base(owner_secret));
+    let dao_bulla = pallas::Base::from(1u64);
+    let endowment_asset_id = pallas::Base::from(42u64);
+    let bulla_blind = pallas::Base::from(9999u64);
+    let nullifier_k = pallas::Scalar::from(1u64);
+    let dao_capability_id = pallas::Base::from(999u64);
+    let dao_capability_secret = pallas::Base::from(888u64);
+    let dao_proposer_secret = pallas::Base::from(777u64);
+    let endowment_bulla = dwow_dao_escrow_contract::model::DaoEscrow::derive_bulla(
+        dwow_dao_escrow_contract::model::DaoEscrowBulla(dao_bulla),
+        &owner_pub,
+        AssetId::from_base(endowment_asset_id),
+        Blind(bulla_blind),
+    ).inner();
+    // The claim `DisputeV1`'s child proposes, and the message its group approves. Its own id, because a
+    // proposal is one-shot (`ClaimAlreadyExists`) and this fixture runs twice — once per chain — with
+    // the same ids.
+    let dispute_claim_id = pallas::Base::from(205u64);
+    let dispute_proposal_blind = pallas::Base::from(10u64);
+    // The one message the endowment's group signs. Computed with the contract's own derivation so the
+    // message signed and the message checked cannot disagree.
+    let msg_propose = governance_message(governance_role::PROPOSE_CLAIM, dispute_claim_id);
+
     let job_id = pallas::Base::from(100u64);
     // **A second job, because the capability row cannot take the first one.** A job that
     // `AcceptJobV1` has already accepted has a worker and is `InProgress`, and
@@ -162,11 +281,30 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
     // It is the second-claim lesson again, one object over: **a one-shot transition needs an object of
     // its own**, and a fixture that shares one is testing less than it reads as testing.
     let job_id_git = pallas::Base::from(202u64);
+    // **A fourth job, because `CancelJobV1` needs one that is still `Created`.** `cancel_job_v1`
+    // refuses every state but `Created` (`entrypoint.rs:1287`), and each of the three jobs above is
+    // moved out of it by a row that has to run for a different reason: `job_id` is accepted, delivered
+    // and confirmed; `job_id_git` is delivered and refunded; `cap_job_id` is accepted with its
+    // capability. A cancel row sharing any of them would be refused `InvalidStateTransition`
+    // (`Custom(2)`) for a reason that says nothing about the seed this row exists to exercise.
+    let cancel_job_id = pallas::Base::from(203u64);
+    // **The milestones job, and its own accept and deliverable rows.** `ConfirmMilestoneV1` needs a
+    // job that *has* milestones (`entrypoint.rs:1628-1631`, `job.milestones.is_empty()`), that is
+    // `Delivered` (`:1632`), and whose milestone index is in range — and the only endpoint that can
+    // give a job milestones is `create_job_with_milestones_v1`, so the job has to be built by this
+    // fixture rather than borrowed. Two milestones of `MILESTONE_PAYMENT` each, so the job's
+    // `payment_amount` is their sum and `confirm_milestone_v1` at index 1 is the last one.
+    let ms_job_id = pallas::Base::from(102u64);
+    // The capability twin's job, for `OBL-C190`'s other repaired endpoint. One milestone, because
+    // nothing in this fixture confirms it — the row exists to drive the create's child check.
+    let ms_cap_job_id = pallas::Base::from(103u64);
+    // `SubmitDeliverableV1_Milestones`'s claim. A third claim, because a claim can be verified once:
+    // the two above are each consumed by a deliverable row on another job.
+    let claim_id_ms = pallas::Base::from(204u64);
     let claim_id = pallas::Base::from(200u64);
     // `SubmitGitDeliverableV1` needs its own claim — see the setup's note.
     let claim_id_git = pallas::Base::from(201u64);
     let attestation_id = pallas::Base::from(1u64);
-    let dao_escrow_bulla = pallas::Base::from(60u64);
     let cap_proof = vec![0u8; 32];
     let cap_secret = [0u8; 32];
 
@@ -193,13 +331,33 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
     // `CreateJobWithCapabilityV1` and `AcceptJobWithCapabilityV1`.
     let caps: Arc<Mutex<Option<CapSetup>>> = Arc::new(Mutex::new(None));
 
+    // The endowment's group's approval of the proposal `DisputeV1`'s child makes. A `Vec` rather than an
+    // `Option` because a set of approvals is what the finalize child *names*; empty means `setup` did
+    // not run, and the row says so rather than building a child that would be refused for a different
+    // reason.
+    let dao_approvals: Arc<Mutex<Vec<Nullifier>>> = Arc::new(Mutex::new(Vec::new()));
+
+    // **The deploy payload, and it is load-bearing twice over.** `init_contract` takes its two
+    // cross-contract ids from here when the payload is non-empty (`entrypoint.rs:114-131`), and the
+    // DAO-Escrow id has no other source: the contract is not genesis, so there is no constant to default
+    // to, and this fixture deploys it (`setup`, below) at exactly the id this derivation produces.
+    //
+    // Passing a payload also moves `init_contract` off its empty-ix branch, which is where Attestation's
+    // id would otherwise have been seeded — so the payload carries it too. That is the trap the register
+    // names: a `create_job` row failing `IoError` is how an attestation regression presents, because the
+    // two ids are decoded as one tuple and a payload carrying only the second would shift them.
+    let deploy_ix = dwow_serial::serialize(&(
+        *ATTESTATION_CONTRACT_ID,
+        crate::tests::blockchain::derive_contract_id_from_name("dao_escrow"),
+    ));
+
     ContractTestSpec {
         name: "labor_market", is_genesis: false,
         contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
-        setup: Some(Box::new({ let cell = note_cell.clone(); let more = more_notes.clone(); let caps = caps.clone(); move |chain| {
+        setup: Some(Box::new({ let cell = note_cell.clone(); let more = more_notes.clone(); let caps = caps.clone(); let dao_approvals = dao_approvals.clone(); move |chain| {
             let oh = |e: String| dwow_core::Error::Custom(e);
             let att_cid = *ATTESTATION_CONTRACT_ID;
             let pn_cid = *PROMISSORY_NOTE_CONTRACT_ID;
@@ -241,6 +399,17 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 pallas::Base::from(2u64).to_repr().to_vec(), b"result".to_vec(), claim_id_git,
             ).map_err(|e| oh(format!("create_claim (git): {e}")))?;
             smol::block_on(chain.block()?.with_call(att_cid, &att, &cl2.call_data, vec![cl2.proof.clone()])?.submit())?;
+
+            // **A third claim, and the same lesson a third time.** The milestones job's deliverable row
+            // requires a `VerifyClaimV1` child of its own, and both claims above are already spent by
+            // the two deliverable rows — a verified claim is no longer `Pending`, so sharing one makes
+            // this child fail on the attestation contract rather than the row testing what it says.
+            let cl3 = att.create_claim(
+                attestation_id, claimant_secret, claimant_pub,
+                dwow_attestation_contract::model::Predicate::GreaterOrEqual,
+                pallas::Base::from(2u64).to_repr().to_vec(), b"result".to_vec(), claim_id_ms,
+            ).map_err(|e| oh(format!("create_claim (milestones): {e}")))?;
+            smol::block_on(chain.block()?.with_call(att_cid, &att, &cl3.call_data, vec![cl3.proof.clone()])?.submit())?;
 
             // ── The promissory note, worth exactly the job's payment, issued under the secret the
             // transfer child spends with. ──
@@ -286,6 +455,15 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             for (amount, blind_seed) in [
                 (PAYMENT, 11u64), (2500u64, 12u64), (1000u64, 13u64),
                 (PAYMENT, 14u64), (PAYMENT, 15u64),
+                // Indices 5 and 6, for `CancelJobV1`'s pair: the note its *create* row escrows with,
+                // and the note its *cancel* row refunds into. Two, because a note is spent once — the
+                // create's deposit and the cancel's payout are the two halves of the collision this
+                // row exists to prove is gone, so they cannot share one.
+                (PAYMENT, 16u64), (PAYMENT, 17u64),
+                // Index 7 escrows the milestones job — a note worth the *sum* of its milestones, which
+                // is what `create_job_with_milestones_v1` makes its child commit. Index 8 does the same
+                // for the capability twin.
+                (MS_JOB_PAYMENT, 18u64), (MILESTONE_PAYMENT, 19u64),
             ] {
                 let blind = pallas::Base::from(blind_seed);
                 let n = pn.issue(
@@ -393,9 +571,70 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 credential_secret_a, credential_secret_b,
                 capability_secret, attribute_blind, issuer_secret,
             });
+
+            // ── DAO-Escrow: deployed here, endowed here, governed here ──
+            //
+            // **`dispute_v1` cannot be reached without a deployed DAO-Escrow, and DAO-Escrow is not
+            // genesis.** The handler refuses a zero stored id before it looks at its child
+            // (`entrypoint.rs:1059-1062`), and the only writer of that key is `init_contract` decoding
+            // the deploy payload — so this fixture is the first to deploy a *second* contract to drive
+            // another contract's endpoint. `dao_escrow_spec.rs` is the working example; what is ported
+            // is the sequence the dispute needs and nothing else: the group, one approval set over the
+            // proposal's message, the endowment, and the governance setter.
+            //
+            // Order is load-bearing in one place: the setter needs the endowment to exist, because
+            // `update_v1` looks it up by the derived bulla.
+            let dao_cid = crate::tests::blockchain::derive_contract_id_from_name("dao_escrow");
+            smol::block_on(chain.deploy(
+                dao, "dao_escrow",
+                include_bytes!("../../../../../src/contract/dao_escrow/dwow_dao_escrow_contract.wasm"),
+            )).map_err(|e| oh(format!("deploy dao_escrow: {e}")))?;
+
+            let ms_cid = *MULTISIG_CONTRACT_ID;
+            let group_id = DaoEscrowHarness::governance_group();
+            let created = ms.create_group(
+                DaoEscrowHarness::GOVERNANCE_THRESHOLD,
+                DaoEscrowHarness::governance_member_commitments(),
+            ).map_err(|e| oh(format!("create_group: {e}")))?;
+            // The harness derives the id and the contract derives it again; if they disagreed the
+            // endowment would store a group no signature could satisfy, and it would present as a
+            // governance refusal rather than as a fixture bug.
+            assert_eq!(
+                created.group_id, group_id,
+                "the created group's id must be the one the endowment will register",
+            );
+            smol::block_on(chain.block()?.with_call(ms_cid, ms, &created.call_data, vec![created.proof])?.submit())?;
+
+            // One approval set, by `GOVERNANCE_THRESHOLD` of the members — real signatures, because the
+            // multisig contract counts the threshold itself. **One set, because a MultiSig approval is
+            // spend-once and this fixture makes one proposal**: a second set over the same message would
+            // be spent by whichever finalize ran first.
+            let mut approvals = Vec::new();
+            for secret in DaoEscrowHarness::GOVERNANCE_MEMBERS
+                .iter()
+                .take(DaoEscrowHarness::GOVERNANCE_THRESHOLD as usize)
+            {
+                let s = ms.sign(group_id, msg_propose, *secret)
+                    .map_err(|e| oh(format!("ms.sign: {e}")))?;
+                smol::block_on(chain.block()?.with_call(ms_cid, ms, &s.call_data, vec![s.proof])?.submit())?;
+                approvals.push(s.nullifier);
+            }
+
+            let dao_init = dao.initialize(
+                nullifier_k, dao_bulla, owner_secret, endowment_asset_id, bulla_blind,
+                DaoEscrowMode::Escrow, 0,
+            ).map_err(|e| oh(format!("dao initialize: {e}")))?;
+            smol::block_on(chain.block()?.with_call(dao_cid, dao, &dao_init.call_data, vec![dao_init.proof])?.submit())?;
+
+            let set_group = dao.update(endowment_bulla, owner_secret, owner_pub, Some(group_id))
+                .map_err(|e| oh(format!("dao update (governance setter): {e}")))?;
+            smol::block_on(chain.block()?.with_call(dao_cid, dao, &set_group.call_data, vec![set_group.proof])?.submit())?;
+
+            *dao_approvals.lock().map_err(|_| oh("dao approvals cell poisoned".into()))? = approvals;
+
             Ok(())
         }})),
-        deploy_ix: None,
+        deploy_ix: Some(deploy_ix),
         endpoints: vec![
             mk_ep("CreateJobV1", true, Box::new({ let cell = note_cell.clone(); move || {
                 let note = cell.lock().ok().and_then(|g| g.clone())
@@ -428,6 +667,66 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult {
                         children: vec![pn_transfer_child(&note, PAYMENT, blind)?, attestation_child(attestation_id)],
                         call_data: r.call_data, proofs: vec![r.proof] })
+                }
+            })),
+            // ── `CancelJobV1`'s pair: the job, and the cancel (`OBL-C189`) ──
+            //
+            // **Both rows exist because the defect is invisible without them.** `cancel_job_v1` had no
+            // client, no harness method, no spec row and no circuit, so the seed it derived for its
+            // refund child — the *same* seed `create_job_v1` requires of its deposit child — had never
+            // been compared against anything. A job created by `create_job_v1` could not be cancelled
+            // on any chain, because the commitment the cancel demanded was already on the note tree.
+            //
+            // The create is `CreateJobV1`'s own path, which is what makes the pair a collision: the
+            // deposit child below commits exactly what the cancel row's child used to commit. The
+            // cancel is hand-encoded — selector `0x07` plus `CancelJobParamsV1::encode()` — because the
+            // endpoint is proof-less (its metadata arm publishes an encoded empty vector, so the host
+            // requires no proof) and has no client (`OBL-C186`'s rule for the three endpoints before
+            // it).
+            mk_ep("CreateJobV1_Cancel", true, Box::new({
+                let more = more_notes.clone();
+                move || {
+                    let note = more.lock().ok().and_then(|g| g.get(5).cloned())
+                        .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
+                    let blind = poseidon_hash([pallas::Base::from(PAYMENT), cancel_job_id]);
+                    let r = h.create_job(employer_secret, employer_pub, attestation_id, cancel_job_id, 0, PAYMENT, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult {
+                        children: vec![pn_transfer_child(&note, PAYMENT, blind)?, attestation_child(attestation_id)],
+                        call_data: r.call_data, proofs: vec![r.proof] })
+                }
+            })),
+            // **This row would fail against the code as it stood**, and that is what makes it a control
+            // rather than a row that happens to run: the seed below is the *repaired* derivation, and
+            // deriving it from `(payment_amount, job_id)` alone — what the contract did before — makes
+            // the child's output commitment the one `CreateJobV1_Cancel` already deposited, which
+            // `promissory_note` refuses as a duplicate (`Custom(14)`).
+            //
+            // The blind is written out here rather than read from the client because the endpoint has
+            // no client; the constant is the parent's own (`LABOR_MARKET_DOMAIN_CANCEL`), and the row
+            // states it so that a change to the contract's seed breaks this row rather than silently
+            // tracking it.
+            mk_ep("CancelJobV1", false, Box::new({
+                let more = more_notes.clone();
+                move || {
+                    let note = more.lock().ok().and_then(|g| g.get(6).cloned())
+                        .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
+                    let (ex, ey) = employer_pub.xy().ok_or_else(|| dwow_core::Error::Custom("employer pk is identity".into()))?;
+                    let params = dwow_labor_market_contract::model::CancelJobParamsV1 {
+                        proof: vec![],
+                        job_id: cancel_job_id,
+                        employer_pub_x: ex,
+                        employer_pub_y: ey,
+                    };
+                    let mut call_data = vec![0x07u8];
+                    call_data.extend_from_slice(&params.encode()
+                        .map_err(|e| dwow_core::Error::Custom(format!("encode: {e}")))?);
+                    let blind = poseidon_hash([
+                        dwow_labor_market_contract::model::LABOR_MARKET_DOMAIN_CANCEL,
+                        pallas::Base::from(PAYMENT), cancel_job_id,
+                    ]);
+                    Ok(EndpointResult {
+                        children: vec![pn_transfer_child(&note, PAYMENT, blind)?],
+                        call_data, proofs: vec![] })
                 }
             })),
             mk_ep("AcceptJobV1", true, Box::new(move || {
@@ -594,43 +893,221 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
-            // **This row is declared and cannot pass, and saying so is the point (`OBL-C170`).** It
-            // acts on `job_id`, which `create_job_v1` made and which has **no milestones**; the
-            // handler refuses exactly that with `JobDoesNotHaveMilestones`
-            // (`entrypoint.rs:1540-1543`, `job.milestones.is_empty()`) *before* it reaches the state
-            // check. A job that has milestones comes only from `create_job_with_milestones_v1`, whose
-            // metadata arm publishes `CreateJobV2`'s five instances (`:346-359`) — so it requires a
-            // proof in that namespace, and `client/` carries `create_job.rs` and no
-            // `create_job_with_milestones.rs`. That is `OBL-C187`'s class from the other side: not a
-            // params type that cannot be encoded, but a proof no client can build.
+            // ── The milestones job, and the repair `OBL-C190` owed (`create_job_with_milestones_v1`
+            // had no escrow child check at all) ──
             //
-            // The note child below is real and correctly derived — the row is wired for everything
-            // except the job — so it costs nothing to leave in place for the client that unblocks it.
+            // **This row could not be built until 2026-09-29, and what blocked it was not what the
+            // register said.** `OBL-C170`'s cell claimed "a proof no client can build"; the endpoint
+            // dispatches to the `CreateJobV2` circuit, so `create_job_v1_proof` is its proof, and the
+            // only missing piece was a builder for its params — the hand-encoded call this program has
+            // used three times now (`close_tender`, `CreateJobWithCapabilityV1`, `CancelJobV1`). What
+            // *did* block it is the create's own escrow check, which `OBL-C190` repaired: without it
+            // the row would pass while validating nothing, which is not a test.
+            //
+            // Its child is the deposit every other create in this file makes, with the seed
+            // `create_job_with_milestones_v1` derives — `poseidon_hash([payment_amount, job_id])` — and
+            // the amount is the job's total, which is the sum of the milestones below.
+            mk_ep("CreateJobWithMilestonesV1", true, Box::new({
+                let more = more_notes.clone();
+                move || {
+                    let note = more.lock().ok().and_then(|g| g.get(7).cloned())
+                        .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
+                    let (call_data, proof) = milestones_create_call(
+                        h, employer_secret, employer_pub, attestation_id, ms_job_id,
+                        MS_JOB_PAYMENT, milestones_of(2),
+                    )?;
+                    let blind = poseidon_hash([pallas::Base::from(MS_JOB_PAYMENT), ms_job_id]);
+                    Ok(EndpointResult {
+                        children: vec![pn_transfer_child(&note, MS_JOB_PAYMENT, blind)?],
+                        call_data, proofs: vec![proof] })
+                }
+            })),
+            // **`OBL-C190`'s negative control, and the same frame with exactly one thing changed: the
+            // child list is empty.** The check this row exists to prove is reachable is the one the
+            // repair added, so the needle is its own error code — `InvalidChildrenIndexes` is
+            // `Custom(31)`, and `InvalidChildCall` (32) and `InvalidChildContractId` (33) are the two
+            // neighbour codes a bare `Rejection` would not have distinguished it from.
+            //
+            // It is declared *after* its positive sibling so the pair reads as the row and its control;
+            // the order costs nothing either way, because a rejected call leaves no state behind and the
+            // child check is reached before the job-exists check.
+            mk_ep_rejecting("CreateJobWithMilestonesV1_NoChild", true, &["ContractError(Custom(31))"],
+                Box::new(move || {
+                    let (call_data, proof) = milestones_create_call(
+                        h, employer_secret, employer_pub, attestation_id, ms_job_id,
+                        MS_JOB_PAYMENT, milestones_of(2),
+                    )?;
+                    Ok(EndpointResult { children: vec![], call_data, proofs: vec![proof] })
+                })),
+            mk_ep("AcceptJobV1_Milestones", true, Box::new(move || {
+                let r = h.accept_job(worker_secret, worker_pub, ms_job_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+            })),
+            // **`SubmitDeliverableV1`, not `SubmitMilestoneV1`, and that is a measurement rather than a
+            // preference.** `confirm_milestone_v1` requires the job to be `Delivered` (`:1632`), and the
+            // two endpoints that set `Delivered` are `submit_deliverable_v1` and `submit_git_deliverable_v1`
+            // — `submit_milestone_v1` also sets it, but its metadata arm publishes `SubmitDeliverableV2`'s
+            // six instances, so it needs a proof this file has no way to build, which is `OBL-C190`'s
+            // neighbour `OBL-C170` one endpoint over. `submit_deliverable_v1` needs the job to be
+            // `InProgress`, `Generic` and to carry a `VerifyClaimV1` child — all three of which this job
+            // and `claim_id_ms` supply.
+            mk_ep("SubmitDeliverableV1_Milestones", true, Box::new(move || {
+                let r = h.submit_deliverable(worker_secret, worker_pub, ms_job_id, claim_id_ms).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult {
+                    children: vec![verify_claim_child(claim_id_ms, attestation_id)?],
+                    call_data: r.call_data, proofs: vec![r.proof] })
+            })),
+            // **The two rows that could not pass now can, and this is the first of them (`OBL-C170`).**
+            // It acts on `ms_job_id`, whose two milestones `CreateJobWithMilestonesV1` made; the handler
+            // refuses a job with no milestones with `JobDoesNotHaveMilestones` (`Custom(25)`) *before*
+            // its state check (`:1628-1635`), which is what made the old row — pointed at `job_id` —
+            // unable to pass for any reason but its own subject.
+            //
+            // Index 1 of 2 is the last milestone, so the handler takes the `Confirmed` arm. Nothing
+            // confirms index 0 first: `confirm_milestone_v1` checks the index is in range and not
+            // already completed, and deliberately does not require it to equal `current_milestone`
+            // (`:1640-1647`), so a milestone can be confirmed without its predecessor.
+            //
+            // `MILESTONE_PAYMENT` reaches the harness as both `milestone_payment_amount` — the
+            // circuit's instance 5 witness — and `payment_release` — the value the metadata arm
+            // publishes in that slot — and the two must agree or the proof fails.
             mk_ep("ConfirmMilestoneV1", true, Box::new({
                 let more = more_notes.clone();
                 move || {
                     let note = more.lock().ok().and_then(|g| g.get(2).cloned())
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
-                    let r = h.confirm_milestone(employer_secret, employer_pub, job_id, 1, 1000, 1000).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.confirm_milestone(employer_secret, employer_pub, ms_job_id, 1, MILESTONE_PAYMENT, MILESTONE_PAYMENT).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let blind = poseidon_hash([
-                        pallas::Base::from(1000u64), r.public_inputs.spent_nullifier,
+                        pallas::Base::from(MILESTONE_PAYMENT), r.public_inputs.spent_nullifier,
                     ]);
                     Ok(EndpointResult {
-                        children: vec![pn_transfer_child(&note, 1000, blind)?],
+                        children: vec![pn_transfer_child(&note, MILESTONE_PAYMENT, blind)?],
                         call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
-            // **`DisputeV1` is declared last, and it is the second of the two rows that cannot pass
-            // yet** — the other is `ConfirmMilestoneV1`, above. It requires a
-            // `dao_escrow::ProposeClaimV1` child (`0x07`), and unlike the rows before it that is not
-            // a builder this fixture can borrow: it needs a real `dao_escrow` endowment with its
-            // governance configured, which no spec in this tree demonstrates yet. Declaring the two
-            // blocked rows last does not make them pass — it makes the rows that *can* be measured
-            // measured, because the runner submits in declaration order and stops at the first
-            // failure. Stated here rather than left to read as coverage (`OBL-C170`).
-            mk_ep("DisputeV1", true, Box::new(move || {
-                let r = h.dispute(job_id, worker_secret, pallas::Base::from(99u64), dao_escrow_bulla, worker_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+            // ── `OBL-C190`'s other repaired endpoint, and the note on the one above carries the
+            // reasoning for every line here ──
+            //
+            // It is proof-less — its metadata arm publishes an encoded empty `zk_public_inputs`
+            // (`entrypoint.rs:484-493`) — so the call is the selector plus the params' `encode()`, no
+            // proof and no client, the same hand-encoded shape `CreateJobWithCapabilityV1` uses. One
+            // milestone, because nothing in this fixture confirms this job; the row exists to drive the
+            // create's child check and to give that check a positive case beside its control.
+            mk_ep("CreateJobWithMilestonesAndCapabilityV1", false, Box::new({
+                let more = more_notes.clone();
+                let caps = caps.clone();
+                move || {
+                    let note = more.lock().ok().and_then(|g| g.get(8).cloned())
+                        .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
+                    let s = caps.lock().ok().and_then(|g| g.clone())
+                        .ok_or_else(|| dwow_core::Error::Custom("setup did not run (caps)".into()))?;
+                    let (ex, ey) = employer_pub.xy().ok_or_else(|| dwow_core::Error::Custom("employer pk is identity".into()))?;
+                    let params = dwow_labor_market_contract::model::CreateJobWithMilestonesAndCapabilityParamsV1 {
+                        proof: vec![],
+                        job_id: ms_cap_job_id,
+                        employer_pub_x: ex,
+                        employer_pub_y: ey,
+                        attestation_id,
+                        delivery_type: 0,
+                        payment_amount: MILESTONE_PAYMENT,
+                        payment_token: pallas::Base::from(1u64),
+                        payment_commit_x: pallas::Base::from(2u64),
+                        payment_commit_y: pallas::Base::from(3u64),
+                        deadline_block: MILESTONE_DEADLINE,
+                        milestone_count: 1,
+                        milestones: milestones_of(1),
+                        required_capability_id: s.cap_a.to_bytes(),
+                        required_dag_id: None,
+                    };
+                    let mut call_data = vec![0x0eu8];
+                    call_data.extend_from_slice(&params.encode()
+                        .map_err(|e| dwow_core::Error::Custom(format!("encode: {e}")))?);
+                    let blind = poseidon_hash([pallas::Base::from(MILESTONE_PAYMENT), ms_cap_job_id]);
+                    Ok(EndpointResult {
+                        children: vec![pn_transfer_child(&note, MILESTONE_PAYMENT, blind)?],
+                        call_data, proofs: vec![] })
+                }
+            })),
+            mk_ep_rejecting("CreateJobWithMilestonesAndCapabilityV1_NoChild", false, &["ContractError(Custom(31))"],
+                Box::new({
+                    let caps = caps.clone();
+                    move || {
+                        let s = caps.lock().ok().and_then(|g| g.clone())
+                            .ok_or_else(|| dwow_core::Error::Custom("setup did not run (caps)".into()))?;
+                        let (ex, ey) = employer_pub.xy().ok_or_else(|| dwow_core::Error::Custom("employer pk is identity".into()))?;
+                        let params = dwow_labor_market_contract::model::CreateJobWithMilestonesAndCapabilityParamsV1 {
+                            proof: vec![],
+                            job_id: ms_cap_job_id,
+                            employer_pub_x: ex,
+                            employer_pub_y: ey,
+                            attestation_id,
+                            delivery_type: 0,
+                            payment_amount: MILESTONE_PAYMENT,
+                            payment_token: pallas::Base::from(1u64),
+                            payment_commit_x: pallas::Base::from(2u64),
+                            payment_commit_y: pallas::Base::from(3u64),
+                            deadline_block: MILESTONE_DEADLINE,
+                            milestone_count: 1,
+                            milestones: milestones_of(1),
+                            required_capability_id: s.cap_a.to_bytes(),
+                            required_dag_id: None,
+                        };
+                        let mut call_data = vec![0x0eu8];
+                        call_data.extend_from_slice(&params.encode()
+                            .map_err(|e| dwow_core::Error::Custom(format!("encode: {e}")))?);
+                        Ok(EndpointResult { children: vec![], call_data, proofs: vec![] })
+                    }
+                })),
+            // ── THE LAST OF THE TWO ROWS `OBL-C170` RECORDED, and the only row in this tree whose
+            // child has a child ──
+            //
+            // `dispute_v1` requires a `dao_escrow::ProposeClaimV1` child at selector `0x07` whose
+            // contract id equals the stored DAO-Escrow id (`entrypoint.rs:1037-1066`) — and
+            // `propose_claim_v1` itself requires a `multisig::FinalizeV1` child of its own
+            // (`require_governance_child`, `dao_escrow/src/entrypoint.rs:1421-1428`). So the tree this
+            // row submits is three levels deep, which no fixture could express before
+            // `ChildCall::children` existed: `build_witness_tree` emitted exactly one level, and the
+            // post-order walk that replaced it is the frame side of the same bound.
+            //
+            // **It acts on `cap_job_id`, not on `job_id`.** `dispute_v1` requires the job to be
+            // `Delivered` or `InProgress` (`:1087-1090`), and by the time this row runs `job_id` is
+            // `Confirmed` and `job_id_git` is `Refunded` — both moved there by rows that exist for
+            // other reasons. `cap_job_id` is left `InProgress` by the capability row above and is
+            // touched by nothing else, so pointing the dispute at it costs the fixture no new object
+            // and gives the row a state the contract actually accepts.
+            //
+            // The child is built by the contract's own harness — `propose_claim` and `ms.finalize` —
+            // so the proposal's params and the approval's nullifiers agree with what the contracts
+            // derive; and the approval is the one `setup` cast, over this exact message.
+            mk_ep("DisputeV1", true, Box::new({
+                let approvals = dao_approvals.clone();
+                move || {
+                    let appr = approvals.lock().ok().map(|g| g.clone())
+                        .filter(|a| !a.is_empty())
+                        .ok_or_else(|| dwow_core::Error::Custom("setup did not run (dao approvals)".into()))?;
+                    let r = h.dispute(cap_job_id, worker_secret, pallas::Base::from(99u64), endowment_bulla, worker_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let f = ms.finalize(DaoEscrowHarness::governance_group(), msg_propose, appr)
+                        .map_err(|e| dwow_core::Error::Custom(format!("finalize: {e}")))?;
+                    let pc = dao.propose_claim(
+                        nullifier_k, endowment_bulla, dispute_claim_id, dao_capability_id,
+                        dao_capability_secret, dao_proposer_secret, 10_000,
+                        pallas::Base::from(50u64), owner_pub, dispute_proposal_blind,
+                    ).map_err(|e| dwow_core::Error::Custom(format!("propose_claim: {e}")))?;
+                    Ok(EndpointResult {
+                        children: vec![ChildCall {
+                            contract_id: crate::tests::blockchain::derive_contract_id_from_name("dao_escrow"),
+                            call_data: pc.call_data,
+                            proofs: vec![pc.proof],
+                            children: vec![ChildCall {
+                                contract_id: *MULTISIG_CONTRACT_ID,
+                                call_data: f.call_data,
+                                proofs: vec![f.proof],
+                                children: vec![],
+                            }],
+                        }],
+                        call_data: r.call_data, proofs: vec![r.proof],
+                    })
+                }
             })),
         ],
     }

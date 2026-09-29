@@ -95,7 +95,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let info_db = wasm::db::db_init(cid, LABOR_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, b"db_version", &env!("CARGO_PKG_VERSION").as_bytes())?;
 
-    // Deserialize init params: attestation_contract_id.
+    // Deserialize init params: the two cross-contract ids this contract cannot know for itself.
     //
     // **The deploy path seeds the canonical constant, not `ContractId::ZERO`, and the zero default
     // made `create_job_v1` uncallable.** `create_job_v1` reads this key and refuses a zero id as
@@ -111,8 +111,24 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // guard read as 'unconfigured' and skipped."* **That repair was applied to Identity and to
     // promissory_note and missed Attestation**, which is the third time in this programme that a fix
     // landed on the members of a set that shared a line and missed the sibling beside them.
-    let attestation_cid: ContractId = if _ix.is_empty() {
-        *dwow_sdk::crypto::ATTESTATION_CONTRACT_ID
+    //
+    // **The payload carries two ids since 2026-09-29, where it carried one.** The third id is
+    // DAO-Escrow's, and it is the one that could never be supplied: unlike the three above, DAO-Escrow
+    // is **not** genesis, so it has no canonical constant to seed from and its key sat at zero — an
+    // honest sentinel that nonetheless made `dispute_v1` unreachable by construction on every
+    // deployment, because that handler refuses a zero id before it looks at its child (`OBL-C190`'s
+    // row carries the reading; the endpoint has never been reachable). A deployer *does* know the id
+    // its own deployment derived, so the deploy payload is where it belongs — the shape `stablecoin`
+    // uses to carry its promissory-note id for the same reason
+    // (`stablecoin/src/entrypoint.rs:141-196`, and `ContractTestSpec.deploy_ix` exists for it).
+    //
+    // **The one-id form is gone, and nothing passes it.** The tree's only labor_market deployments are
+    // `deploy_contract()` with an empty ix — the branch below (`heavyweight_pipeline.rs:889`) — and
+    // this fixture's `deploy_ix`, which is written to the new shape in the same change.
+    let (attestation_cid, dao_escrow_cid): (ContractId, ContractId) = if _ix.is_empty() {
+        // Zero for DAO-Escrow, and deliberately not a constant: "not configured" is the truth on this
+        // path, and the guard refuses it rather than skipping it.
+        (*dwow_sdk::crypto::ATTESTATION_CONTRACT_ID, ContractId::ZERO)
     } else {
         deserialize(_ix).map_err(|_| ContractError::IoError("Invalid init params".to_string()))?
     };
@@ -128,12 +144,12 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     //   exactly as promissory_note is one line above. It previously took `[0u8; 32]`, which the guard
     //   read as "unconfigured" and skipped — so `accept_job_with_capability_v1`'s child call could
     //   target *any* contract. It now enforces.
-    // * **DAO-Escrow** has no constant: it is deployer-deployed, and nothing in the tree ever writes a
-    //   non-zero value here (init params carry only `attestation_contract_id`). The zero write stays
-    //   because it is now an honest "not configured" sentinel — the guard refuses it — rather than the
-    //   silent bypass it used to be. The consequence is stated where it bites, in `dispute_v1`.
+    // * **DAO-Escrow** has no constant: it is deployer-deployed, so its id comes from the deploy
+    //   payload and is `ContractId::ZERO` — an honest "not configured" sentinel the guards refuse,
+    //   never a check they skip — when the payload does not name one. The consequence is stated where
+    //   it bites, in `dispute_v1`.
     wasm::db::db_set(info_db, LABOR_CONTRACT_IDENTITY_CONTRACT_ID, &dwow_sdk::crypto::IDENTITY_CONTRACT_ID.to_bytes())?;
-    wasm::db::db_set(info_db, LABOR_CONTRACT_DAO_ESCROW_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, LABOR_CONTRACT_DAO_ESCROW_CONTRACT_ID, &dao_escrow_cid.to_bytes())?;
 
     // Initialize jobs tree
     wasm::db::db_init(cid, LABOR_CONTRACT_JOBS_TREE)?;
@@ -528,7 +544,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::CreateJobWithMilestonesV1 => {
             let params = CreateJobWithMilestonesParamsV1::decode(&self_.data[1..])?;
-            create_job_with_milestones_v1(cid, params)
+            create_job_with_milestones_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::SubmitMilestoneV1 => {
             let params = SubmitMilestoneDeliverableParamsV1::decode(&self_.data[1..])?;
@@ -553,7 +569,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::CreateJobWithMilestonesAndCapabilityV1 => {
             let params = CreateJobWithMilestonesAndCapabilityParamsV1::decode(&self_.data[1..])?;
-            create_job_with_milestones_and_capability_v1(cid, params)
+            create_job_with_milestones_and_capability_v1(cid, call_idx, calls, params)
         }
     }
 }
@@ -1231,7 +1247,22 @@ fn cancel_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
             return Err(LaborMarketError::JobNotFound.into())
         }
     };
+    // **Domain-separated from `create_job_v1`'s seed, and that is the fix for a defect the fixture
+    // found rather than a style choice.** `create_job_v1` requires its deposit child to emit
+    // `pedersen_commitment_u64(payment_amount, poseidon_hash([payment_amount, job_id]))` (`:626`).
+    // This endpoint used to derive exactly that, so the commitment it demanded of the *refund* child
+    // was the one the deposit had already put on the note tree, and `promissory_note` refused it with
+    // `Duplicate commitment in output 0` (`Custom(14)`) — a job created by `create_job_v1` could
+    // never be cancelled (`OBL-C189`).
+    //
+    // The three sibling payouts avoid this by deriving from `params.spent_nullifier`, which is
+    // per-call. This endpoint cannot copy them: `CancelJobParamsV1` carries no nullifier and the
+    // update writes `spent_flag: None`, because its one-shot property is `Created` → `Cancelled`
+    // being terminal. Adding a field nothing binds would be a second guard beside a working one
+    // (R2), so the seed is made call-specific by the domain tag instead. See
+    // `model::LABOR_MARKET_DOMAIN_CANCEL` for why the constant is where it is and why its value.
     let value_blind = poseidon_hash([
+        crate::model::LABOR_MARKET_DOMAIN_CANCEL,
         pallas::Base::from(job.payment_amount),
         params.job_id,
     ]);
@@ -1376,16 +1407,56 @@ fn create_job_apply_v1(cid: ContractId, params: CreateJobParamsV1) -> ContractRe
 // ============================================================================
 
 /// CreateJobWithMilestonesV1 instruction
-fn create_job_with_milestones_v1(cid: ContractId, params: CreateJobWithMilestonesParamsV1) -> ContractResult {
+fn create_job_with_milestones_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobWithMilestonesParamsV1) -> ContractResult {
     msg!("[labor_market::create_job_with_milestones_v1] Creating job with milestones: {:?}", params.job_id);
 
-    // SECURITY GAP, PRE-EXISTING AND NOT YET CLOSED. `create_job_v1` and
-    // `create_job_with_capability_v1` both validate the `promissory_note::transfer_v1` child that
-    // escrows the payment. This function and its capability twin do not — their signatures took
-    // `(_cid, params)` with no `call_idx`/`calls`, so they *could* not, and the milestone-create
-    // paths have never had that check. Writing exec's half is where it becomes possible to add;
-    // it is a missing escrow check, not a phase violation, and it is recorded here rather than
-    // silently left as the stub it was.
+    // Validate the ONE child call this function requires: the `promissory_note::transfer_v1` (0x04)
+    // escrow deposit. This is `create_job_v1`'s check minus the attestation child, and it is here
+    // because of `OBL-C190`.
+    //
+    // **The gap it closes, stated because it stood for as long as it did by being written down as a
+    // gap rather than being one nobody had looked at**: this handler and its capability twin took
+    // `(cid, params)` with no `call_idx`/`calls`, so they *could not* read `children_indexes` — and
+    // did not. `create_job_v1` and `create_job_with_capability_v1` both escrow the payment through
+    // this exact child; the two milestone paths, which set the same `payment_amount` on the same
+    // `Job`, escrowed nothing and could tell nothing. A job could be created here carrying a payment
+    // amount with no note behind it, and the contract had no way to notice.
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[create_job_with_milestones_v1] Error: Expected 1 child call (promissory_note::transfer_v1 0x04), got {}",
+             this_call.children_indexes.len());
+        return Err(LaborMarketError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[create_job_with_milestones_v1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
+    let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
+    let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
+        .ok_or(LaborMarketError::InvalidChildCall)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
+    }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+
+    // The same seed `create_job_v1` derives, because this is the same deposit: a milestone job's
+    // `payment_amount` is what its milestones sum to, and the child must commit to it.
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.payment_amount),
+        params.job_id,
+    ]);
+    if let Err(e) = validate_child_value_commit(
+        &child_call.data, params.payment_amount, value_blind,
+    ) {
+        msg!("[create_job_with_milestones_v1] Error: Child transfer value mismatch: {:?}", e);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
     let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
     if wasm::db::db_contains_key(jobs_db, &params.job_id.to_repr())? {
         msg!("[labor_market::create_job_with_milestones_v1] Job already exists!");
@@ -1892,13 +1963,46 @@ fn create_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<Da
 }
 
 /// CreateJobWithMilestonesAndCapabilityV1 instruction
-fn create_job_with_milestones_and_capability_v1(cid: ContractId, params: CreateJobWithMilestonesAndCapabilityParamsV1) -> ContractResult {
+fn create_job_with_milestones_and_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobWithMilestonesAndCapabilityParamsV1) -> ContractResult {
     msg!("[labor_market::create_job_with_milestones_and_capability_v1] Creating milestone job with capability: {:?}", params.job_id);
 
-    // SECURITY GAP, PRE-EXISTING AND NOT YET CLOSED — same as
-    // `create_job_with_milestones_v1` above: this path takes no `call_idx`/`calls`, so it has never
-    // validated the `promissory_note::transfer_v1` escrow child that `create_job_with_capability_v1`
-    // does. Recorded rather than left as the stub it was.
+    // The same one-child check as its sibling above, and the same `OBL-C190` reason: this path set a
+    // `payment_amount` on a `Job` while validating no escrow child at all, because its signature could
+    // not see one. See `create_job_with_milestones_v1` for the full note.
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[create_job_with_milestones_and_capability_v1] Error: Expected 1 child call (promissory_note::transfer_v1 0x04), got {}",
+             this_call.children_indexes.len());
+        return Err(LaborMarketError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[create_job_with_milestones_and_capability_v1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
+    let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
+    let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
+        .ok_or(LaborMarketError::InvalidChildCall)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
+    }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.payment_amount),
+        params.job_id,
+    ]);
+    if let Err(e) = validate_child_value_commit(
+        &child_call.data, params.payment_amount, value_blind,
+    ) {
+        msg!("[create_job_with_milestones_and_capability_v1] Error: Child transfer value mismatch: {:?}", e);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
     let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
     if wasm::db::db_contains_key(jobs_db, &params.job_id.to_repr())? {
         msg!("[labor_market::create_job_with_milestones_and_capability_v1] Job already exists!");

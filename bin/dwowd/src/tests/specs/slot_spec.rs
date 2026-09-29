@@ -117,7 +117,7 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                 let child_b = pn_transfer_child(&n[2], bet_value, blind_seed_b, blind_seed_b, pallas::Base::zero())?;
                 smol::block_on(chain.block()?.with_call_tree(
                     cid, &r_b.call_data, vec![r_b.proof.clone()],
-                    vec![(child_b.contract_id, child_b.call_data, child_b.proofs)],
+                    vec![child_b],
                 )?.with_fee_collect()?.submit())?;
                 *spin_b.lock().unwrap() = Some(r_b.public_inputs.spin_id);
                 Ok(())

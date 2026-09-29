@@ -366,6 +366,7 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                             contract_id: *IDENTITY_CONTRACT_ID,
                             call_data: v.call_data,
                             proofs: vec![v.proof],
+                            children: vec![],
                         };
                         let r = h.submit_bid_with_capability(
                             cap_tender_id, b_pk, b_sk, 5000,
@@ -399,6 +400,7 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                         contract_id: *IDENTITY_CONTRACT_ID,
                         call_data: v.call_data,
                         proofs: vec![v.proof],
+                        children: vec![],
                     };
                     let r = h.submit_bid_with_capability(
                         cap_tender_id, b_pk, b_sk, 5000,

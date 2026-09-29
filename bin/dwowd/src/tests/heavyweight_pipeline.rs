@@ -64,6 +64,8 @@ use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_sdk::pasta::group::{Group, GroupEncoding};
 use dwow_contract_test_harness::harness::ContractHarness;
 
+use crate::tests::uniform_runner::ChildCall;
+
 
 /// Global counter for unique temp file names — prevents race conditions
 /// when multiple HeavyweightPipeline tests run in parallel.
@@ -94,41 +96,83 @@ pub(crate) fn build_witness(
     dwow_serial::serialize(&core_tx)
 }
 
-/// Build an L1 witness for a multi-call test transaction: children listed before the
-/// parent (DFS post-order). `children` is `(contract_id, call_data, proofs)` per child;
-/// the parent is emitted last with `children_indexes = [0..n]`. The chain tx built by
-/// `build_contract_tx_tree` must list the same `(contract_id, data)` pairs in the same
-/// order so `decode_and_reconcile` reconciles positionally.
+/// Build an L1 witness for a multi-call test transaction.
+///
+/// The tree is emitted **DFS post-order** — a node's own children precede it, and the root is last —
+/// and every node carries `children_indexes` naming its *direct* children. The chain tx built by
+/// `build_contract_tx_tree` must list the same `(contract_id, data)` pairs in the same order so
+/// `decode_and_reconcile` reconciles positionally; the pairs are returned from this function's own
+/// emitted tree rather than re-derived by the caller, so the two cannot disagree.
+///
+/// **Until 2026-09-29 this function produced exactly one level of children** — every child was pushed
+/// with `parent_index: Some(n)` and `children_indexes: vec![]`, and the parent with `(0..n)`. A child
+/// that itself validates a child therefore could not be expressed at all, and neither could any
+/// endpoint requiring one: `dao_escrow`'s `propose_claim_v1` requires a `multisig::FinalizeV1` child
+/// *of its own call* (`require_governance_child`, `dao_escrow/src/entrypoint.rs:1094-1098`), so
+/// `labor_market`'s `DisputeV1` — which must present a `propose_claim_v1` child — was unbuildable from
+/// any fixture. See `ChildCall::children`.
+///
+/// Returns the witness and the post-order `(contract_id, call_data)` pairs it was built from, which
+/// is exactly what the chain tx's `contract_calls` must carry. Returning them from one place is the
+/// point: a caller that re-derived the order from the input tree would be a second, parallel walk
+/// that could drift from this one without either side noticing.
 pub(crate) fn build_witness_tree(
     parent_contract_id: ContractId,
     parent_call_data: &[u8],
     parent_proofs: Vec<Proof>,
-    children: &[(ContractId, Vec<u8>, Vec<Proof>)],
-) -> Vec<u8> {
-    let n = children.len();
-    let mut calls = Vec::with_capacity(n + 1);
-    let mut proofs = Vec::with_capacity(n + 1);
-    for (cid, data, child_proofs) in children {
+    children: Vec<ChildCall>,
+) -> (Vec<u8>, Vec<(ContractId, Vec<u8>)>) {
+    let mut calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::tx::ContractCall>> = vec![];
+    let mut proofs: Vec<Vec<Proof>> = vec![];
+
+    /// Emit `node` and its subtree post-order, returning the index `node` landed at.
+    ///
+    /// A node is pushed with `parent_index: None` and its *caller* sets it, because a node's own index
+    /// is not known until its subtree has been emitted. The root never gets one, which is correct: it
+    /// has no parent.
+    fn emit(
+        node: &ChildCall,
+        calls: &mut Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::tx::ContractCall>>,
+        proofs: &mut Vec<Vec<Proof>>,
+    ) -> usize {
+        let child_indexes: Vec<usize> =
+            node.children.iter().map(|c| emit(c, calls, proofs)).collect();
+        let my_index = calls.len();
+        for ci in &child_indexes {
+            calls[*ci].parent_index = Some(my_index);
+        }
         calls.push(dwow_sdk::dark_tree::DarkLeaf {
-            data: dwow_sdk::tx::ContractCall { contract_id: *cid, data: data.clone() },
-            parent_index: Some(n),
-            children_indexes: vec![],
+            data: dwow_sdk::tx::ContractCall {
+                contract_id: node.contract_id,
+                data: node.call_data.clone(),
+            },
+            parent_index: None,
+            children_indexes: child_indexes,
         });
-        proofs.push(child_proofs.clone());
+        proofs.push(node.proofs.clone());
+        my_index
     }
-    calls.push(dwow_sdk::dark_tree::DarkLeaf {
-        data: dwow_sdk::tx::ContractCall { contract_id: parent_contract_id, data: parent_call_data.to_vec() },
-        parent_index: None,
-        children_indexes: (0..n).collect(),
-    });
-    proofs.push(parent_proofs);
+
+    // The root goes through the same emitter as every other node, so its children's `parent_index` is
+    // set by the same line of code rather than by a second, parallel assignment that could drift.
+    let root = ChildCall {
+        contract_id: parent_contract_id,
+        call_data: parent_call_data.to_vec(),
+        proofs: parent_proofs,
+        children,
+    };
+    emit(&root, &mut calls, &mut proofs);
+
+    let flat_calls: Vec<(ContractId, Vec<u8>)> =
+        calls.iter().map(|c| (c.data.contract_id, c.data.data.clone())).collect();
+
     let core_tx = dwow_core::tx::Transaction {
         calls,
         proofs,
         tx_commitment: [0u8; 32],
         nullifiers: vec![],
     };
-    dwow_serial::serialize(&core_tx)
+    (dwow_serial::serialize(&core_tx), flat_calls)
 }
 
 /// Verify that a witness contains a well-formed DarkLeaf call tree.
@@ -389,8 +433,8 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
                 &execute.call_data,
                 vec![execute.proof.clone()],
                 vec![
-                    (pn_cid, child0.call_data.clone(), child0.proofs.clone()),
-                    (pn_cid, child1.call_data.clone(), child1.proofs.clone()),
+                    ChildCall { contract_id: pn_cid, call_data: child0.call_data.clone(), proofs: child0.proofs.clone(), children: vec![] },
+                    ChildCall { contract_id: pn_cid, call_data: child1.call_data.clone(), proofs: child1.proofs.clone(), children: vec![] },
                 ],
             )?
             .submit()
@@ -589,6 +633,23 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
     dwow_native_token_contract::enable_deterministic_zk();
     dwow_promissory_note_contract::enable_deterministic_zk();
     dwow_labor_market_contract::enable_deterministic_zk();
+    // **The two child contracts this fixture proves for whose clients branch on the flag themselves.**
+    // `Proof::create` is called with `OsRng` unless the contract's own `deterministic_zk_enabled()`
+    // says otherwise, and the runner builds every block **twice** — once per chain — then compares the
+    // final block hashes (PI-7). Random proofs make the two runs differ, so without both of these the
+    // determinism replay fails on the last hash. `insurance_market`'s and `dao_escrow`'s tests carry
+    // the same note for the same reason.
+    //
+    // **Attestation and MultiSig are absent because their harnesses enable their own flag in `spawn`**
+    // (`AttestationHarness::spawn`, `MultiSigHarness::spawn`), which this fixture calls before it builds
+    // any proof of either — Attestation's in `setup`, MultiSig's when the endowment's group is made.
+    // DAO-Escrow's and Identity's harnesses do not, which is why the two lines above are here; the
+    // multisig crate is not a `dwowd` dependency and naming it here would not compile.
+    //
+    // The fixture built Attestation and Identity proofs before 2026-09-29 too, but it never reached
+    // PI-7 — it stopped at block 29 — so the omission could not show.
+    dwow_identity_contract::enable_deterministic_zk();
+    dwow_dao_escrow_contract::enable_deterministic_zk();
     use crate::tests::specs::labor_market_spec::labor_market_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&labor_market_test_spec()))?)

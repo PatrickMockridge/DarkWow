@@ -164,6 +164,7 @@ fn pn_transfer_child(
         contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
         call_data: child.call_data,
         proofs: child.proofs,
+        children: vec![],
     })
 }
 
@@ -593,7 +594,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                         let f = ms.finalize(DaoEscrowHarness::governance_group(), msg_propose, approvals)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
-                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] }],
+                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] }],
                             call_data: r.call_data, proofs: vec![r.proof],
                         })
                     }
@@ -630,7 +631,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult {
                         children: vec![
                             child,
-                            ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] },
+                            ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] },
                         ],
                         call_data: r.call_data, proofs: vec![],
                     })
@@ -681,7 +682,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let f = ms.finalize(DaoEscrowHarness::governance_group(), action_cancel_claim, approvals)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult {
-                        children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] }],
+                        children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] }],
                         call_data: r.call_data, proofs: vec![],
                     })
                 }
@@ -720,7 +721,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                         let f = ms.finalize(DaoEscrowHarness::governance_group(), msg_propose_2, approvals)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
-                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] }],
+                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] }],
                             call_data: r.call_data, proofs: vec![r.proof],
                         })
                     }
@@ -778,7 +779,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                         let f = ms.finalize(DaoEscrowHarness::governance_group(), action_vote, approvals)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
-                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] }],
+                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] }],
                             call_data: r.call_data, proofs: vec![r.proof],
                         })
                     }
@@ -867,7 +868,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                         let f = ms.finalize(g.foreign_group, msg_propose, g.foreign)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
-                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] }],
+                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] }],
                             call_data: r.call_data, proofs: vec![r.proof],
                         })
                     }
@@ -887,7 +888,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                         let f = ms.finalize(DaoEscrowHarness::governance_group(), msg_wrong, approvals)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
-                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] }],
+                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] }],
                             call_data: r.call_data, proofs: vec![r.proof],
                         })
                     }

@@ -299,7 +299,7 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                     let f = ms
                         .finalize(DrainProtectionHarness::governance_group(), h.proposal_id(), a.governance.clone())
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let child = ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] };
+                    let child = ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] };
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -321,7 +321,7 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                         let f = ms
                             .finalize(a.foreign_group, h.proposal_id(), a.foreign.clone())
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let child = ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] };
+                        let child = ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -343,7 +343,7 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                         let f = ms
                             .finalize(DrainProtectionHarness::governance_group(), OTHER_MESSAGE, a.other_message.clone())
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let child = ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof] };
+                        let child = ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),

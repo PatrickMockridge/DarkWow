@@ -30,6 +30,26 @@ use dwow_sdk::{
     pasta::pallas,
 };
 
+/// Domain separator for the value-commit seed `cancel_job_v1` derives for its child transfer.
+///
+/// **Why it exists.** `cancel_job_v1` is the employer's way to take a job's escrow back while the job
+/// is still `Created`. Its seed used to be `poseidon_hash([payment_amount, job_id])` — the *same*
+/// seed `create_job_v1` requires of its **deposit** child — so the commitment cancel demanded was the
+/// one the deposit had already put on the note tree, and `promissory_note` refused it as a duplicate
+/// (`OBL-C189`). A job created by `create_job_v1` could therefore never be cancelled. The three
+/// sibling payouts that get this right derive from the *call* — `params.spent_nullifier` — because
+/// each of them carries one; `cancel_job_v1` carries neither a nullifier nor a spent-flag (its
+/// one-shot property is `Created` → `Cancelled` being terminal), so the seed is made call-specific by
+/// a domain tag rather than by a value it does not have.
+///
+/// **The value is 12.** `1..=5` are `DRK_POSEIDON_DOMAIN_*`
+/// (`src/sdk/src/crypto/constants.rs:55-59`), and 11 is `escrow`'s claim-box-contents and
+/// `dao_escrow`'s governance-approval domain. It only has to be distinct from every other
+/// `poseidon_hash` this contract performs over its own values — which is also why it lives here and
+/// not in `src/sdk`: that path is in every contract's `SOURCE_MANIFEST`, so a constant there stales
+/// all 32 artifacts and moves the genesis pin for a value one contract uses.
+pub const LABOR_MARKET_DOMAIN_CANCEL: pallas::Base = pallas::Base::from_raw([12, 0, 0, 0]);
+
 /// Delivery type for job work
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
