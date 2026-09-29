@@ -542,6 +542,49 @@ fn update_apply_v1(cid: ContractId, update: model::UpdateUpdateV1) -> ContractRe
     Ok(())
 }
 
+/// The value-commit seed every spend path in this contract derives for its
+/// `promissory_note::transfer_v1` child: **the endowment, the amount, and the note the child
+/// spends.**
+///
+/// **One function, because five sites shared one line and they all had the same defect.** Every
+/// `validate_child_value_commit` in this contract seeded with
+/// `poseidon_hash([params.value, params.dao_escrow_bulla.inner()])` — keyed by the record and the
+/// amount, not by the call — and the child's required output is
+/// `pedersen_commitment_u64(value, fp_mod_fv(seed))`, which carries the value and the blind and
+/// **not the recipient**. So any two same-valued movements from one endowment demanded the same
+/// commitment twice, and `promissory_note` refuses a repeat: **an endowment could not pay the same
+/// amount twice, whatever the endpoints were** (`OBL-C191`; measured twice —
+/// `[transfer_v1] Error: Duplicate commitment in output 0`, `ContractError(Custom(14))`).
+///
+/// **The third term is what makes the seed a function of the call.** A note is spent once, so its
+/// nullifier is unique to the call that spends it — and the nullifier is **proof-bound**: the
+/// transfer's revoke circuit takes it as an instance (`promissory_note/src/entrypoint/mod.rs:389`
+/// publishes `input.nullifier.inner()` for each input), so the host has already checked the proof
+/// against the very value read here. A caller cannot name a nullifier the proof does not prove.
+///
+/// Keeping the first two terms is not decoration: they bind the *amount* and the *endowment*, which
+/// is this contract's own statement about which child it will accept, and the nullifier alone would
+/// drop both.
+///
+/// `config/params-alignment`: the decode reads another contract's params, in two lines rather than as
+/// a helper in `promissory_note::validation`, because that contract is **genesis** — a helper there
+/// would move the genesis pin for one non-genesis contract's benefit.
+fn child_value_blind(
+    child_call_data: &[u8],
+    value: u64,
+    bulla: pallas::Base,
+) -> Result<pallas::Base, ContractError> {
+    let transfer_params =
+        dwow_promissory_note_contract::model::TransferParamsV1::decode(&child_call_data[1..])
+            .map_err(|_| DaoEscrowError::InvalidChildCall)?;
+    let spent_note = transfer_params.inputs.first().ok_or(DaoEscrowError::InvalidChildCall)?;
+    Ok(poseidon_hash([
+        pallas::Base::from(value),
+        bulla,
+        spent_note.nullifier.inner(),
+    ]))
+}
+
 /// PayPremiumV1 instruction - member pays premium, receives membership
 fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: model::PayPremiumParamsV1) -> ContractResult {
     msg!("[dao_escrow::pay_premium_v1] Processing premium payment");
@@ -575,10 +618,7 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
         return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
-    let value_blind = poseidon_hash([
-        pallas::Base::from(params.value),
-        params.dao_escrow_bulla.inner(),
-    ]);
+    let value_blind = child_value_blind(&child_call.data, params.value, params.dao_escrow_bulla.inner())?;
     validate_child_value_commit(&child_call.data, params.value, value_blind)?;
 
     // Verify DAO-Escrow endowment exists
@@ -730,45 +770,18 @@ fn withdraw_v1(
         return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
-    // **The seed is a function of the *call*, and what one withdrawal of an amount has that another
-    // does not is the note it spends.** Until 2026-09-29 this was
-    // `poseidon_hash([params.value, params.dao_escrow_bulla.inner()])` — keyed by the record and the
-    // amount — and the child's required output is `pedersen_commitment_u64(value, fp_mod_fv(seed))`,
-    // which carries the value and the blind and **not the recipient**. So the second withdrawal of an
-    // amount demanded the commitment the first had already put on the note tree, and
-    // `promissory_note` refused it as a duplicate: **an endowment could not withdraw the same amount
-    // twice, ever** (`OBL-C191`, measured — `[transfer_v1] Error: Duplicate commitment in output 0`,
-    // `ContractError(Custom(14))`).
-    //
-    // **Nothing else bounds this endpoint, which is why the seed had to.** It records no nullifier,
-    // it changes no state any reader consults, and its authority — the ownership proof — is fresh for
-    // every call. The collision was the only bound there was.
-    //
-    // **The input nullifier is the value to key on, and reading it from the child's own params is
-    // sound.** It is an instance of the transfer's revoke circuit — `promissory_note`'s metadata arm
-    // publishes `input.nullifier.inner()` for each input (`entrypoint/mod.rs:389`) — so the host has
-    // already checked the proof against this very value, and a note is spent once, so one nullifier
-    // cannot appear in two accepted calls. Keying on the *record* was the defect; keying on the
-    // *spend* is the repair, and it is the shape `labor_market`'s three payout seeds already use
-    // (`params.spent_nullifier`), one contract over.
+    // The seed is `child_value_blind`'s — the endowment, the amount, and the note this child spends;
+    // the helper carries the whole argument. What this endpoint adds to it is that **nothing else
+    // bounds it**: it records no nullifier (see the note below on why it must not), it changes no
+    // state any reader consults, and its authority — the ownership proof — is fresh for every call.
+    // So the collision this repair removes was the *only* thing limiting how many withdrawals an
+    // endowment could make, and the limit it imposed was one per distinct amount, ever.
     //
     // The params had nothing to key on: `owner_nullifier` is deterministic in
     // `(owner_secret, dao_escrow_bulla)` (`model/mod.rs:488-501`), so it is *identical* for two
     // withdrawals by one owner, and `withdraw_get_metadata` publishes the zero-pair `tx_binding`
     // (`:1372-1376`), a constant.
-    //
-    // The decode below reads another contract's params, deliberately and in two lines rather than as
-    // a new helper in `promissory_note::validation` — that contract is **genesis**, so a helper there
-    // would move the pin for one non-genesis endpoint's benefit.
-    let transfer_params =
-        dwow_promissory_note_contract::model::TransferParamsV1::decode(&child_call.data[1..])
-            .map_err(|_| DaoEscrowError::InvalidChildCall)?;
-    let spent_note = transfer_params.inputs.first().ok_or(DaoEscrowError::InvalidChildCall)?;
-    let value_blind = poseidon_hash([
-        pallas::Base::from(params.value),
-        params.dao_escrow_bulla.inner(),
-        spent_note.nullifier.inner(),
-    ]);
+    let value_blind = child_value_blind(&child_call.data, params.value, params.dao_escrow_bulla.inner())?;
     validate_child_value_commit(&child_call.data, params.value, value_blind)?;
 
     // Verify endowment exists
@@ -871,10 +884,7 @@ fn endowment_withdraw_v1(
         return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
-    let value_blind = poseidon_hash([
-        pallas::Base::from(params.value),
-        params.dao_escrow_bulla.inner(),
-    ]);
+    let value_blind = child_value_blind(&child_call.data, params.value, params.dao_escrow_bulla.inner())?;
     validate_child_value_commit(&child_call.data, params.value, value_blind)?;
 
     // Verify endowment exists
@@ -1007,10 +1017,7 @@ fn treasury_spend_v1(
         return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
-    let value_blind = poseidon_hash([
-        pallas::Base::from(params.value),
-        params.dao_escrow_bulla.inner(),
-    ]);
+    let value_blind = child_value_blind(&child_call.data, params.value, params.dao_escrow_bulla.inner())?;
     validate_child_value_commit(&child_call.data, params.value, value_blind)?;
 
     // Verify endowment exists and is in treasury mode
@@ -1701,10 +1708,7 @@ fn execute_claim_v1(
         return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
-    let value_blind = poseidon_hash([
-        pallas::Base::from(params.value),
-        params.dao_escrow_bulla.inner(),
-    ]);
+    let value_blind = child_value_blind(&child_call.data, params.value, params.dao_escrow_bulla.inner())?;
     validate_child_value_commit(&child_call.data, params.value, value_blind)?;
 
     // Verify proposal is approved
