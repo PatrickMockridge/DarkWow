@@ -136,7 +136,7 @@ pub fn pool_stake_test_spec() -> ContractTestSpec<'static> {
                         // `value_blind = poseidon_hash([amount, pool_id])` and
                         // `pn_transfer_child` runs the seed through `Blind(fp_mod_fv(..))`.
                         let blind_seed = poseidon_hash([pallas::Base::from(amount), pool_id]);
-                        let child = pn_transfer_child(&n[0], amount, blind_seed, blind_seed, pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[0], amount, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -168,12 +168,9 @@ pub fn pool_stake_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(amount), pool_id]);
-                        // A distinct output commitment blind from the join's. Join and leave both
-                        // transfer `amount` under the same contract-derived value blind, so reusing
-                        // it here reproduces the join's output commitment and `transfer_v1` rejects
-                        // it: "[transfer_v1] Error: Duplicate commitment in output 0" (Custom 14).
-                        let output_blind = pallas::Base::from(9u64);
-                        let child = pn_transfer_child(&n[1], amount, blind_seed, output_blind, pallas::Base::zero())?;
+                        // The leaf blind is derived from the spent note inside `pn_transfer_child`, so
+                        // this call site no longer chooses it and cannot collide with a sibling's.
+                        let child = pn_transfer_child(&n[1], amount, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                     }
                 }),

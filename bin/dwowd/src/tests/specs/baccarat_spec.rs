@@ -103,7 +103,7 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                 let n = notes.lock().unwrap();
                 let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                 let blind_seed_b = poseidon_hash([pallas::Base::from(bet_value), r_b.bet_id]);
-                let child_b = pn_transfer_child(&n[1], bet_value, blind_seed_b, blind_seed_b, pallas::Base::zero())?;
+                let child_b = pn_transfer_child(&n[1], bet_value, blind_seed_b, pallas::Base::zero())?;
                 smol::block_on(chain.block()?.with_call_tree(
                     cid, &r_b.call_data, vec![r_b.proof.clone()],
                     vec![child_b],
@@ -130,7 +130,7 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(bet_value), r.bet_id]);
-                        let child = pn_transfer_child(&n[2], bet_value, blind_seed, blind_seed, pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[2], bet_value, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -205,10 +205,9 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(bet_value), id]);
-                        // Distinct output coin_blind: the setup pre-create already spent a
-                        // note with coin_blind == blind_seed for this bet, so reuse would
-                        // collide (PN DuplicateCommitment).
-                        let child = pn_transfer_child(&n[4], bet_value, blind_seed, poseidon_hash([blind_seed, pallas::Base::from(7u64)]), pallas::Base::zero())?;
+                        // The leaf blind is derived from the spent note inside
+                        // `pn_transfer_child`, so this call site no longer chooses it.
+                        let child = pn_transfer_child(&n[4], bet_value, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),

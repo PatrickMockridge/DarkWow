@@ -130,7 +130,7 @@ pub fn lottery_test_spec() -> ContractTestSpec<'static> {
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *ticket_id.lock().unwrap() = Some(r.public_inputs.ticket_id);
                         let blind_seed = poseidon_hash([pallas::Base::from(ticket_price), id]);
-                        let child = pn_transfer_child(&n[0], ticket_price, blind_seed, blind_seed, pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[0], ticket_price, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),

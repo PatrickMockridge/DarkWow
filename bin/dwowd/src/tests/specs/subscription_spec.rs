@@ -208,7 +208,7 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
                         let vc = pedersen_commitment_u64(PLAN_PRICE, value_blind.clone());
                         #[expect(clippy::unwrap_used, reason = "a Pedersen commitment is never the identity point")]
                         let (vc_x, vc_y) = { let a = vc.to_affine(); let c = a.coordinates().unwrap(); (*c.x(), *c.y()) };
-                        let child = pn_transfer_child(note, PLAN_PRICE, blind_seed, pallas::Base::from(7u64), pallas::Base::zero())?;
+                        let child = pn_transfer_child(note, PLAN_PRICE, blind_seed, pallas::Base::zero())?;
                         let r = h.subscribe(sub_secret, ACCESS_NONCE, vec![MerkleNode::new(pallas::Base::from(0u64))], value_blind.inner(), pallas::Base::from(2u64), pallas::Base::from(3u64), 1000, pallas::Base::from(4u64), 0, vec![MerkleNode::new(pallas::Base::from(0u64))], 0, vec![MerkleNode::new(pallas::Base::from(0u64))], id.inner(), sub_pub, PLAN_ID, PLAN_PRICE, asset_id, PLAN_DURATION, pallas::Base::from(6u64), 100, vc_x, vc_y, pallas::Base::from(9u64), pallas::Base::from(10u64), pallas::Base::from(11u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
@@ -314,7 +314,7 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
                     let lock = f.height.ok_or_else(|| dwow_core::Error::Custom("subscribe height unknown".into()))? + PLAN_DURATION;
                     let note2 = f.note2.as_ref().ok_or_else(|| dwow_core::Error::Custom("second note not issued".into()))?;
                     let blind_seed = poseidon_hash([pallas::Base::from(PLAN_PRICE), id.inner()]);
-                    let child = pn_transfer_child(note2, PLAN_PRICE, blind_seed, pallas::Base::from(9u64), pallas::Base::zero())?;
+                    let child = pn_transfer_child(note2, PLAN_PRICE, blind_seed, pallas::Base::zero())?;
                     let r = h.renew(id.inner(), sub_secret, lock, pallas::Point::identity()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }

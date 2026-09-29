@@ -381,7 +381,7 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                     // here is worth 100, so one input and one output of 100 conserve value with the
                     // shared blind the helper is handed.
                     let blind_seed = poseidon_hash([pallas::Base::from(100u64), pallas::Base::from(1u64)]);
-                    let child = pn_transfer_child(&n[2], 100, blind_seed, pallas::Base::from(7u64), pallas::Base::zero())?;
+                    let child = pn_transfer_child(&n[2], 100, blind_seed, pallas::Base::zero())?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -415,10 +415,9 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(100u64), pallas::Base::from(1u64)]);
-                        // The third note, and an output commitment blind of its own: the positive
-                        // transfer's child creates a commitment with the same value in the same
-                        // asset, and a second one identical to it is a PN duplicate.
-                        let child = pn_transfer_child(&n[3], 100, blind_seed, pallas::Base::from(8u64), pallas::Base::zero())?;
+                        // The third note. The leaf blind is derived from the spent note inside
+                        // `pn_transfer_child`, so this call site no longer chooses it.
+                        let child = pn_transfer_child(&n[3], 100, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),

@@ -75,7 +75,7 @@ type PnNote = (pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base);
 /// `validate_child_value_commit` checks the *output's* commitment against
 /// `pedersen_commitment_u64(bond_amount, value_blind)`.
 fn pn_transfer_child(note: &PnNote, value: u64, blind_seed: pallas::Base) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, asset_id, commitment_blind) = note;
+    let (note_commitment, pos, path, asset_id, commitment_blind) = note;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
     let input = TransferCallInput {
         value,
@@ -97,7 +97,7 @@ fn pn_transfer_child(note: &PnNote, value: u64, blind_seed: pallas::Base) -> dwo
         asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        commitment_blind: blind_seed,
+        commitment_blind: poseidon_hash([blind_seed, *note_commitment]),
     };
     let pn = PromissoryNoteHarness::spawn();
     let child = pn

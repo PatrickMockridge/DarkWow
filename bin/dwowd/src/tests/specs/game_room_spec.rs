@@ -109,7 +109,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(amount), rid]);
-                        let child = pn_transfer_child(&n[0], amount, blind_seed, blind_seed, pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[0], amount, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -150,7 +150,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(amount), rid]);
-                        let child = pn_transfer_child(&n[1], amount, blind_seed, poseidon_hash([blind_seed, pallas::Base::from(7u64)]), pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[1], amount, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -243,7 +243,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(amount), rid]);
-                        let child = pn_transfer_child(&n[3], amount, blind_seed, poseidon_hash([blind_seed, pallas::Base::from(8u64)]), pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[3], amount, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),

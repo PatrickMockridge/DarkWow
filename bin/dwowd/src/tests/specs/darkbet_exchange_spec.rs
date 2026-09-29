@@ -266,7 +266,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(stake), back_order_id]);
-                        let child = pn_transfer_child(&n[1], stake, blind_seed, poseidon_hash([blind_seed, pallas::Base::from(1u64)]), pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[1], stake, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -287,7 +287,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(stake), lay_order_id]);
-                        let child = pn_transfer_child(&n[2], stake, blind_seed, poseidon_hash([blind_seed, pallas::Base::from(2u64)]), pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[2], stake, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -308,7 +308,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(amount), position_id]);
-                        let child = pn_transfer_child(&n[3], amount, blind_seed, poseidon_hash([blind_seed, pallas::Base::from(3u64)]), pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[3], amount, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -329,7 +329,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(lp_amount), lp_share_id]);
-                        let child = pn_transfer_child(&n[4], lp_amount, blind_seed, poseidon_hash([blind_seed, pallas::Base::from(4u64)]), pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[4], lp_amount, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -392,7 +392,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(settle_payout), market_ob]);
-                        let child = pn_transfer_child(&n[7], settle_payout, blind_seed, poseidon_hash([blind_seed, pallas::Base::from(7u64)]), pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[7], settle_payout, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                     }
                 }),
@@ -413,7 +413,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(claim_payout), position_id]);
-                        let child = pn_transfer_child(&n[6], claim_payout, blind_seed, poseidon_hash([blind_seed, pallas::Base::from(6u64)]), pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[6], claim_payout, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -434,7 +434,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(remove_payout), lp_share_id]);
-                        let child = pn_transfer_child(&n[5], remove_payout, blind_seed, poseidon_hash([blind_seed, pallas::Base::from(5u64)]), pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[5], remove_payout, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -455,7 +455,7 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(stake), back_order_id]);
-                        let child = pn_transfer_child(&n[8], stake, blind_seed, poseidon_hash([blind_seed, pallas::Base::from(8u64)]), pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[8], stake, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),

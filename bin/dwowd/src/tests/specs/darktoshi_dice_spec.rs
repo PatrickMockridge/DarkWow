@@ -112,7 +112,7 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
                         *bet_id.lock().unwrap() = Some(r.public_inputs.bet_id);
                         let id = r.public_inputs.bet_id;
                         let blind_seed = poseidon_hash([pallas::Base::from(bet_value), id]);
-                        let child = pn_transfer_child(&n[0], bet_value, blind_seed, blind_seed, pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[0], bet_value, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -174,7 +174,7 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(bet_value), id]);
-                        let child = pn_transfer_child(&n[2], bet_value, blind_seed, blind_seed, pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[2], bet_value, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),

@@ -114,7 +114,7 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                 let n = notes.lock().unwrap();
                 let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                 let blind_seed_b = poseidon_hash([pallas::Base::from(bet_value), r_b.public_inputs.spin_id]);
-                let child_b = pn_transfer_child(&n[2], bet_value, blind_seed_b, blind_seed_b, pallas::Base::zero())?;
+                let child_b = pn_transfer_child(&n[2], bet_value, blind_seed_b, pallas::Base::zero())?;
                 smol::block_on(chain.block()?.with_call_tree(
                     cid, &r_b.call_data, vec![r_b.proof.clone()],
                     vec![child_b],
@@ -141,7 +141,7 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(bet_value), r.public_inputs.spin_id]);
-                        let child = pn_transfer_child(&n[1], bet_value, blind_seed, blind_seed, pallas::Base::zero())?;
+                        let child = pn_transfer_child(&n[1], bet_value, blind_seed, pallas::Base::zero())?;
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),

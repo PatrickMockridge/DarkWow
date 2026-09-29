@@ -49,22 +49,31 @@ pub type PnNote = (pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Bas
 
 /// Build a `promissory_note::transfer_v1` (0x04) child spending an issued note.
 ///
-/// One input → one output, both value `value`. The output's value commitment is
-/// `pedersen(value, fp_mod_fv(blind_seed))`, which a parent contract reproduces via
-/// `validate_child_value_commit(child, value, blind_seed)`.
+/// One input → one output, both value `value`. **Two blinds are in play and they are not
+/// interchangeable:**
 ///
-/// `output_commitment_blind` and `output_spend_hook` are the only two knobs that varied
-/// across the six former per-spec copies; pass `blind_seed` / `zero` for the common
-/// case, or a constant (e.g. 7) / a hook where a spec did so.
-#[allow(clippy::too_many_arguments)]
+/// * the **value** blind is `fp_mod_fv(blind_seed)`, so the output's value commitment is
+///   `pedersen(value, fp_mod_fv(blind_seed))` — the quantity a parent contract reproduces
+///   with `validate_child_value_commit(child, value, blind_seed)`. A caller must match the
+///   parent's own derivation exactly or the call is refused `ValueMismatch`.
+/// * the **leaf** blind is derived here, from the note this child spends, and is
+///   deliberately *not* a parameter. `promissory_note::transfer_v1` refuses an output
+///   whose commitment the note tree already holds, and that commitment is built from the
+///   leaf blind — so a caller that passed `blind_seed` for both got a leaf fixed by
+///   `(seed, value)`, and the second same-valued child for the same object collided
+///   (`[transfer_v1] Error: Duplicate commitment in output 0`, `Custom(14)`). Deriving
+///   from the spent note makes the leaf per-call by construction, since a note is spent
+///   once. See `OBL-C192`.
+///
+/// `output_spend_hook` stays a caller choice: it is a leaf *attribute* a parent contract
+/// may read (e.g. `stablecoin` reads the child's `output.spend_hook`).
 pub fn pn_transfer_child(
     note: &PnNote,
     value: u64,
     blind_seed: pallas::Base,
-    output_commitment_blind: pallas::Base,
     output_spend_hook: pallas::Base,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, asset_id, commitment_blind) = note;
+    let (note_commitment, pos, path, asset_id, commitment_blind) = note;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
 
     let input = TransferCallInput {
@@ -87,7 +96,7 @@ pub fn pn_transfer_child(
         asset_id: *asset_id,
         spend_hook: output_spend_hook,
         user_data: pallas::Base::zero(),
-        commitment_blind: output_commitment_blind,
+        commitment_blind: poseidon_hash([blind_seed, *note_commitment]),
     };
 
     let pn = PromissoryNoteHarness::spawn();
@@ -114,13 +123,21 @@ pub fn pn_transfer_child(
 /// so Pedersen conservation over the two outputs
 /// (`pedersen(locked, b0) == pedersen(payout, b0) + pedersen(change, b1)`) holds only
 /// when `b1 = 0`.
+///
+/// **The *leaf* blinds here are derived, exactly as `pn_transfer_child` derives its own**
+/// (`OBL-C192`), from the spent note plus the output's index. Deriving from the value
+/// instead — as this helper used to — left two holes: two same-valued payouts from
+/// *different* notes met on the leaf, and when `payout == change` the two outputs of a
+/// *single* call met on it, which nothing rejects because the contract's duplicate check
+/// consults the tree rather than the batch being built. The *value* blinds are untouched:
+/// they are the parent's quantity, and the change blind must stay zero.
 pub fn pn_transfer_payout_child(
     note: &PnNote,
     locked_value: u64,
     payout: u64,
     blind_seed: pallas::Base,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, asset_id, commitment_blind) = note;
+    let (note_commitment, pos, path, asset_id, commitment_blind) = note;
     let change = locked_value - payout;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
 
@@ -148,10 +165,19 @@ pub fn pn_transfer_payout_child(
         asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        // Distinct from `blind_seed` (which is also the value_blind seed): a
-        // same-bet lock child with value == payout would otherwise reuse it and
-        // collide (PN DuplicateCommitment).
-        commitment_blind: poseidon_hash([blind_seed, pallas::Base::from(payout)]),
+        // Distinct from `blind_seed` (which is also the value_blind seed), from the
+        // sibling output, and from every other call's child. Two terms do that work:
+        // the spent note (per-call, since a note is spent once) and the output
+        // *index* — not the value. Keying on the value leaves a hole: when
+        // `payout == change` both outputs would carry the same leaf blind AND the
+        // same value, i.e. the same leaf, and nothing rejects a within-call
+        // duplicate — the contract's duplicate loop consults the tree, not the
+        // batch it is building.
+        commitment_blind: poseidon_hash([
+            blind_seed,
+            *note_commitment,
+            pallas::Base::from(0u64),
+        ]),
     };
 
     let mut outputs = vec![payout_out];
@@ -164,7 +190,11 @@ pub fn pn_transfer_payout_child(
             asset_id: *asset_id,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            commitment_blind: poseidon_hash([blind_seed, pallas::Base::from(change)]),
+            commitment_blind: poseidon_hash([
+                blind_seed,
+                *note_commitment,
+                pallas::Base::from(1u64),
+            ]),
         };
         outputs.push(change_out);
         blinds.push(ScalarBlind::from_u64(0));

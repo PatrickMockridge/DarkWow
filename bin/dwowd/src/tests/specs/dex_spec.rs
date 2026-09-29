@@ -18,8 +18,9 @@ fn pn_transfer_child(
     note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
     value: u64,
 ) -> dwow_core::Result<ChildCall> {
-    let (_, pos, path, asset_id, commitment_blind) = note;
-    let value_blind = Blind(fp_mod_fv(poseidon_hash([pallas::Base::from(value), pallas::Base::from(1u64)])).unwrap());
+    let (note_commitment, pos, path, asset_id, commitment_blind) = note;
+    let leaf_seed = poseidon_hash([pallas::Base::from(value), pallas::Base::from(1u64)]);
+    let value_blind = Blind(fp_mod_fv(leaf_seed).unwrap());
     let input = TransferCallInput {
         value,
         asset_id: *asset_id,
@@ -40,7 +41,7 @@ fn pn_transfer_child(
         asset_id: *asset_id,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        commitment_blind: pallas::Base::from(7u64),
+        commitment_blind: poseidon_hash([leaf_seed, *note_commitment]),
     };
     let pn = PromissoryNoteHarness::spawn();
     let child = pn
