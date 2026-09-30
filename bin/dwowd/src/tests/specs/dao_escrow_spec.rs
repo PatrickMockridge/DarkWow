@@ -168,32 +168,27 @@ fn pn_transfer_child(
     })
 }
 
-/// The blind **every spend path in this contract** derives for its child, given the note that child
-/// spends — the fixture's copy of the contract's own `child_value_blind`.
+/// The blind **every spend path in this contract** derives for its child:
+/// `poseidon_hash([value, endowment_bulla])` — the fixture's copy of the contract's own seed, and
+/// **the record and the amount, deliberately not the call**.
 ///
-/// **The spent note's nullifier is the seed's third term since 2026-09-29, and computing it is the
-/// caller's job.** `withdraw_v1` was the first endpoint keyed on it and `endowment_withdraw_v1`,
-/// `treasury_spend_v1`, `pay_premium_v1` and `execute_claim_v1` now are too (`OBL-C191`): the term is
-/// what makes two same-valued movements distinguishable, where keying on `(value, endowment)` made
-/// the second impossible. The value is `Nullifier::new(SecretKey::from_base(secret), commitment)`,
-/// which is verbatim the call the transfer client makes when it builds the same child
-/// (`promissory_note/src/client/transfer.rs:366`) — so this is a call and not a re-derivation.
+/// **This is not the shape `OBL-C191` believed was needed, and the difference is the correction that
+/// row ends on.** It held, for three units, that a record-keyed seed made a second same-valued
+/// movement impossible, and changed five contract sites on that reading. It does not: the duplicate
+/// `promissory_note` refuses is the child's output *commitment* — the note **leaf** — whose blind is
+/// a caller-chosen `TransferCallOutput.commitment_blind`, independent of the value blind this seed
+/// produces (`OBL-C192`). So the obligation was never on the seed. It is on the caller to give each
+/// child a distinct leaf, and `pn_transfer_child` now does that itself, from the note the child
+/// spends (`OBL-C192`'s unit A) — which is why **there is no caller cost here at all**: a wallet
+/// reproducing this seed needs only the value and the endowment, both of which its params carry.
 ///
-/// **This is the whole caller contract, and it is a real cost of the repair.** `WithdrawV1` has no
-/// client at all, so a wallet building the call by hand must compute the note's nullifier *before* it
-/// can derive the blind; for the four other endpoints the same sentence applies, and no client in
-/// this tree carries it. Written here because the cost is invisible from the contract side, which is
-/// the side the repair is on.
-///
-/// **One function for six rows, and that is the point**: the contract's five sites share one seed
-/// derivation, so the fixture that drives them shares one copy of it, and a change to the rule
+/// **One function for nine rows, and that is still the point**: the contract's five sites share one
+/// seed derivation, so the fixture that drives them shares one copy of it, and a change to the rule
 /// breaks every row at once rather than one row at a time.
-fn child_blind(note: &PnNote, value: u64, endowment_bulla: pallas::Base) -> pallas::Base {
-    let nullifier = Nullifier::new(SecretKey::from_base(PN_ISSUE_SECRET), note.0);
+fn child_blind(value: u64, endowment_bulla: pallas::Base) -> pallas::Base {
     poseidon_hash([
         pallas::Base::from(value),
         endowment_bulla,
-        nullifier.inner(),
     ])
 }
 
@@ -556,40 +551,40 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().withdraw_owner.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, child_blind(&note, PN_VALUE_WITHDRAW_OWNER, endowment_bulla))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, child_blind(PN_VALUE_WITHDRAW_OWNER, endowment_bulla))?;
                     let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_OWNER, owner_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
-            // **This row was the pin for `OBL-C191` and is now the repair's positive control.** It was
-            // written to *assert* the collision — `mk_ep_rejecting(… Custom(14))` — because a row
-            // asserting the second withdrawal succeeded would have been red from the day it was written
-            // and indistinguishable from a broken frame, while a row asserting what the code did then
-            // went green and became the instrument that caught this change. Its own measurement is
-            // quoted in `OBL-C191`: `[transfer_v1] Error: Duplicate commitment in output 0` and
+            // **This row was the pin for `OBL-C191` and is now the falsification of that row's
+            // premise.** It was written to *assert* the collision — `mk_ep_rejecting(… Custom(14))` —
+            // because a row asserting the second withdrawal succeeded would have been red from the day
+            // it was written and indistinguishable from a broken frame, while a row asserting what the
+            // code did then went green and became the instrument that caught the change. Its measurement
+            // is quoted in `OBL-C191`: `[transfer_v1] Error: Duplicate commitment in output 0`,
             // `ContractError(Custom(14))`, once per chain.
             //
-            // **What it now asserts is the opposite, on the same frame**: the same endpoint, the same
-            // amount **50_000_000**, a second time, and it must be **accepted**. The seed's third term
-            // is the spent note's nullifier (`child_blind`), and this note is not the one
-            // `WithdrawV1_OwnerPath` spent, so the two withdrawals derive *different* output
-            // commitments and the note tree takes both.
+            // **It is a `Success` row now, and what makes it pass is the correction rather than the
+            // seed.** Both withdrawals derive the *same* seed — `poseidon_hash([value, endowment])`, the
+            // record-keyed form, restored by reverting `OBL-C191`'s units — so their child value blinds
+            // are identical, and the row is accepted anyway because the two children spend **different
+            // notes** and `pn_transfer_child` derives each output **leaf** blind from the note its child
+            // spends (`OBL-C192`'s unit A). Under `OBL-C191`'s reading this row would be impossible, and
+            // that reading is what the pair refutes.
             //
-            // **The pair is two-sided, which is what makes it a control rather than a row that
-            // happens to run** (`R8`): `WithdrawV1_OwnerPath` above proves the first withdrawal of an
-            // amount still works, so a repair that broke the seed outright — deriving something no
-            // caller can reproduce — fails there rather than passing here.
+            // **The pair is two-sided, which is what makes it a control rather than a row that happens
+            // to run** (`R8`): `WithdrawV1_OwnerPath` above proves the first withdrawal of an amount
+            // still works, so a seed no caller could reproduce fails there rather than passing here.
             //
-            // **What would make this row pass for the wrong reason, named so the next reader can
-            // check it**: if the seed ignored the nullifier *and* the note's blind differed, this row
-            // would still be refused — which is why the note carries the array's next free blind (15)
-            // and the row is a `Success` expectation, so the refusal this row used to assert is now a
-            // hard failure rather than a silent pass.
+            // **What would make this row fail — the control's teeth**: remove the leaf derivation from
+            // `pn_transfer_child` and the second child reproduces the first's leaf, the note tree refuses
+            // it (`Custom(14)`), and this row — a `Success` expectation — fails hard rather than reverting
+            // to a silent pass.
             mk_ep("WithdrawV1_OwnerPath_SameAmount", true, Box::new({
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().withdraw_owner_again.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, child_blind(&note, PN_VALUE_WITHDRAW_OWNER, endowment_bulla))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, child_blind(PN_VALUE_WITHDRAW_OWNER, endowment_bulla))?;
                     let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_OWNER, owner_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
@@ -609,7 +604,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let stranger_secret = pallas::Base::from(4321u64);
                     let stranger_pub = PublicKey::from_secret(SecretKey::from_base(stranger_secret));
                     let note = notes.lock().unwrap().withdraw_no_approval.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_NO_APPROVAL, child_blind(&note, PN_VALUE_WITHDRAW_NO_APPROVAL, endowment_bulla))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_NO_APPROVAL, child_blind(PN_VALUE_WITHDRAW_NO_APPROVAL, endowment_bulla))?;
                     let r = h.withdraw(endowment_bulla, stranger_pub, PN_VALUE_WITHDRAW_NO_APPROVAL, stranger_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
@@ -626,7 +621,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().endowment_no_auth.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_ENDOWMENT_NO_AUTH, child_blind(&note, PN_VALUE_ENDOWMENT_NO_AUTH, endowment_bulla))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_ENDOWMENT_NO_AUTH, child_blind(PN_VALUE_ENDOWMENT_NO_AUTH, endowment_bulla))?;
                     let r = h.endowment_withdraw(endowment_bulla, claim_id, owner_pub, PN_VALUE_ENDOWMENT_NO_AUTH).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                 }
@@ -645,7 +640,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().treasury_spend.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_TREASURY_SPEND, child_blind(&note, PN_VALUE_TREASURY_SPEND, endowment_bulla))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_TREASURY_SPEND, child_blind(PN_VALUE_TREASURY_SPEND, endowment_bulla))?;
                     let r = h.treasury_spend(endowment_bulla, owner_pub, PN_VALUE_TREASURY_SPEND).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                 }
@@ -737,7 +732,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 move || {
                     let approvals = gov.lock().unwrap().endowment_withdraw.clone();
                     let note = notes.lock().unwrap().endowment_approved.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_ENDOWMENT_APPROVED, child_blind(&note, PN_VALUE_ENDOWMENT_APPROVED, endowment_bulla))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_ENDOWMENT_APPROVED, child_blind(PN_VALUE_ENDOWMENT_APPROVED, endowment_bulla))?;
                     let r = h.endowment_withdraw(endowment_bulla, claim_id, owner_pub, PN_VALUE_ENDOWMENT_APPROVED)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let f = ms.finalize(DaoEscrowHarness::governance_group(), action_endowment_withdraw, approvals)
@@ -767,17 +762,20 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
             // with the same values. It keeps that property as a positive control, because the two rows
             // still differ in nothing but the recipient, the approval and the spent note.
             //
-            // **This row was the pin and is now the repair's positive control**, on the pattern
-            // `WithdrawV1_OwnerPath_SameAmount` above set: it was written as
+            // **This row was the pin and is now a `Success` row, with the seed deliberately back to
+            // what it was when the refusal was measured.** It was written as
             // `mk_ep_rejecting(… Custom(14))` and measured there (`OBL-C191`'s second measurement,
-            // 700.35s), and it is now a `Success` expectation on the same frame. `child_blind` is the
-            // difference — the seed's third term is the spent note's nullifier, and this note is not
-            // the one the row above spent, so the two children derive different output commitments and
-            // the note tree takes both.
+            // 700.35s); `OBL-C191`'s units then changed the seed and it went green. Reverting those
+            // units restored the record-keyed seed — so the two children derive the **same** value
+            // blind, exactly as they did when the refusal was observed — and the row is accepted
+            // anyway, because they spend different notes and `pn_transfer_child` derives each output
+            // **leaf** blind from the note its child spends (`OBL-C192`'s unit A). The difference
+            // between the refusing run and this one is therefore the *caller's* construction and
+            // nothing else, which is `OBL-C192`'s proposition measured rather than argued.
             //
             // **That history is what makes it a control rather than a row that happens to run**: the
-            // refusal was *observed*, not argued, so a repair that silently left the seed alone would
-            // fail here exactly as the pre-repair run did.
+            // refusal was *observed*, not argued, so removing the leaf derivation would return this row
+            // to the pre-repair run's failure exactly.
             mk_ep("EndowmentWithdrawV1_Approved_DifferentRecipient", false, Box::new({
                 let gov = gov.clone();
                 let notes = notes.clone();
@@ -786,7 +784,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let note = notes.lock().unwrap().endowment_approved_again.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
                     // The seed the *endpoint still uses* — two terms, no nullifier. Unlike `withdraw_v1`
                     // this site was not repaired, so the row states the seed the contract derives.
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_ENDOWMENT_APPROVED, child_blind(&note, PN_VALUE_ENDOWMENT_APPROVED, endowment_bulla))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_ENDOWMENT_APPROVED, child_blind(PN_VALUE_ENDOWMENT_APPROVED, endowment_bulla))?;
                     let r = h.endowment_withdraw(endowment_bulla, claim_id, second_recipient_pub, PN_VALUE_ENDOWMENT_APPROVED)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let f = ms.finalize(DaoEscrowHarness::governance_group(), action_endowment_withdraw_2, approvals)
@@ -820,7 +818,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().execute_claim.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_EXECUTE_CLAIM, child_blind(&note, PN_VALUE_EXECUTE_CLAIM, endowment_bulla))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_EXECUTE_CLAIM, child_blind(PN_VALUE_EXECUTE_CLAIM, endowment_bulla))?;
                     // `proposal_id` is the claim's own id: `propose_claim_v1` files the proposal under
                     // `claim_id` and `execute_claim_v1` looks it up by `proposal_id`, so a fixture that
                     // passed a distinct id would record `ProposalNotFound` and prove nothing about the
@@ -960,7 +958,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().execute_approved.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_EXECUTE_APPROVED, child_blind(&note, PN_VALUE_EXECUTE_APPROVED, endowment_bulla))?;
+                    let child = pn_transfer_child(pn, &note, PN_VALUE_EXECUTE_APPROVED, child_blind(PN_VALUE_EXECUTE_APPROVED, endowment_bulla))?;
                     let r = h.execute_claim(endowment_bulla, CLAIM_ID_LIFECYCLE, owner_pub, PN_VALUE_EXECUTE_APPROVED).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                 }

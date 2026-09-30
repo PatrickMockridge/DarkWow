@@ -31,12 +31,15 @@ use dwow_sdk::{
 };
 
 // `LABOR_MARKET_DOMAIN_CANCEL` stood here — the domain tag `OBL-C189` gave `cancel_job_v1`'s seed
-// when this contract was the first of the class. **It is retired, not renamed**: `OBL-C191`'s unit 2
-// moved all five record-keyed seeds (the four creates and the cancel) onto the note the child
-// spends, through `entrypoint::child_value_blind`, and a tag is no longer read anywhere. A tag
-// separates two *different* endpoints and does nothing for one endpoint against itself, so the tag
-// was the narrower scheme of the two; and a constant with no reader is the shape `R2` names —
-// the absence needs no replacement.
+// when this contract was the first of the class. **It is gone, and so is the seed change it served.**
+// Two readings passed through here and both were answering a defect the seed cannot have. `OBL-C189`
+// separated the cancel from the create with this tag; `OBL-C191`'s unit 2 removed the tag and moved
+// all five record-keyed seeds onto the note the child spends; reverting that unit put the five back
+// where they started — `poseidon_hash([payment_amount, job_id])` — and `entrypoint::child_value_blind`
+// went with it. `OBL-C192` is why neither was needed: `promissory_note` refuses a repeated **leaf**,
+// and the leaf's blind is the caller's, which `pn_transfer_child` now derives from the spent note. A
+// constant with no reader is the shape `R2` names, and so is a seed keyed on a call that was never
+// the problem — the absence of both needs no replacement.
 
 /// Delivery type for job work
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
