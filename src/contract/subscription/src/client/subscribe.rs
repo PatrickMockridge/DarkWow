@@ -170,10 +170,15 @@ impl SubscribeCallData {
     }
 
     pub fn compute_public_inputs(&self) -> SubscribePublicInputs {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+        let (subscriber_pub_x, subscriber_pub_y) = (
+            self.subscriber_public.x().expect("pk not identity"),
+            self.subscriber_public.y().expect("pk not identity"),
+        );
         SubscribePublicInputs {
             subscription_id: self.subscription_id,
-            subscriber_pub_x: self.subscriber_public.x().expect("pk not identity"),
-            subscriber_pub_y: self.subscriber_public.y().expect("pk not identity"),
+            subscriber_pub_x,
+            subscriber_pub_y,
             plan_id: self.plan_id,
             deposit: pallas::Base::from(self.deposit),
             asset_id: self.asset_id,
