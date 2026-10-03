@@ -30,7 +30,8 @@
 #   contrib/clippy_unwrap_audit.sh --crate <pkg>    one package (all its configurations)
 #   contrib/clippy_unwrap_audit.sh --scope-only     print the derived scope, lint nothing
 #   contrib/clippy_unwrap_audit.sh --self-test      negative control (planted defect); exit 0 iff caught
-# EXIT: 0 clean · 1 hits remain · 2 instrument failure · 3 self-test failure.
+# EXIT: 0 clean · 1 hits remain (or `--self-test` failure) · 2 no configuration was measurable ·
+#       3 measurable, but a configuration is unmeasured (a GAP — never "clean").
 #
 # Every cargo invocation runs inside the repository's heavy envelope: a flock around a cgroup scope,
 # so concurrent agents serialize and never exceed the memory ceiling.
@@ -41,7 +42,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-DENY_PAT='cfg_attr(not(test), deny(clippy::unwrap_used'
+DENY_PAT='cfg_attr\(not\(test\), deny\(clippy::(unwrap_used|expect_used)'
+# A local run can drop `--release` (the deny is `not(test)`, true in debug too) via
+# `CLIPPY_AUDIT_PROFILE=` — a lighter census, not a different verdict.
+PROFILE="${CLIPPY_AUDIT_PROFILE---release}"
 HOST="$(rustc -Vv | awk '/^host:/{ print $2 }')"
 WASM_TARGET="wasm32-unknown-unknown"
 LOCK=/tmp/darkfi-heavy.lock
@@ -73,7 +77,7 @@ is_in_scope() {  # $1 = comma-separated root files
   local -a rs
   IFS=',' read -ra rs <<< "$1"
   for f in "${rs[@]}"; do
-    [[ -f "$f" ]] && grep -qF "$DENY_PAT" "$f" && return 0
+    [[ -f "$f" ]] && grep -qE "$DENY_PAT" "$f" && return 0
   done
   return 1
 }
@@ -92,10 +96,10 @@ print_scope() {
   echo "packages=$total in-scope=$ins out-of-scope=$outs"
   # independent cross-check of the in-scope membership (grep vs cargo-metadata derivation)
   local grep_set derived_set gn dn
-  grep_set="$(grep -rlF "$DENY_PAT" --include='lib.rs' --include='main.rs' src bin crates 2>/dev/null | sed "s#^#$REPO_ROOT/#" | sort -u)"
+  grep_set="$(grep -rlE "$DENY_PAT" --include='lib.rs' --include='main.rs' src bin crates 2>/dev/null | sed "s#^#$REPO_ROOT/#" | sort -u)"
   derived_set="$(while IFS=$'\t' read -r pkg roots; do
       is_in_scope "$roots" || continue
-      for rf in ${roots//,/ }; do grep -qF "$DENY_PAT" "$rf" && echo "$rf"; done
+      for rf in ${roots//,/ }; do grep -qE "$DENY_PAT" "$rf" && echo "$rf"; done
     done < <(derive_scope) | sort -u)"
   gn="$(printf '%s\n' "$grep_set" | grep -c .)"
   dn="$(printf '%s\n' "$derived_set" | grep -c .)"
@@ -129,13 +133,13 @@ configs_for() {
   local pkg="$1" src
   src="$(cargo metadata --no-deps --format-version=1 --offline 2>/dev/null \
         | jq -r --arg p "$pkg" '.packages[] | select(.name==$p) | .manifest_path' | xargs dirname)"
-  echo "host-default|--target=$HOST --release --lib --bins"
-  echo "host-allfeatures|--target=$HOST --release --all-features --lib --bins"
+  echo "host-default|--target=$HOST $PROFILE --lib --bins"
+  echo "host-allfeatures|--target=$HOST $PROFILE --all-features --lib --bins"
   if grep -rqE 'cfg\(not\(feature' "$src/src" 2>/dev/null; then
-    echo "host-nodefaults|--target=$HOST --release --no-default-features --lib --bins"
+    echo "host-nodefaults|--target=$HOST $PROFILE --no-default-features --lib --bins"
   fi
   if grep -rqE 'target_arch = "wasm32"' "$src/src" 2>/dev/null || ls "$src"/*.wasm >/dev/null 2>&1; then
-    echo "wasm-default|--target=$WASM_TARGET --release --lib"
+    echo "wasm-default|--target=$WASM_TARGET $PROFILE --lib"
   fi
 }
 
@@ -170,6 +174,15 @@ audit_pkg() {  # $1 = package; returns 0 clean, 1 dirty, 2 no config measured at
 # clean twin; run the SAME cargo->jq->count pipeline; require dirty -> 2 hits and clean -> 0.
 self_test() {
   local tmp; tmp="$(mktemp -d)"; trap 'rm -rf "${tmp:-}"' EXIT
+  # Scope-pattern control: the deny literal must match a crate root denying *either* lint alone,
+  # not only the combined form (this is what `is_in_scope` relies on).
+  local pat_ok=1
+  printf '#![cfg_attr(not(test), deny(clippy::expect_used))]\n' | grep -qE "$DENY_PAT" || pat_ok=0
+  printf '#![cfg_attr(not(test), deny(clippy::unwrap_used))]\n' | grep -qE "$DENY_PAT" || pat_ok=0
+  if [[ "$pat_ok" -eq 0 ]]; then
+    echo "SELF-TEST FAIL: DENY_PAT does not match a crate root that denies a single lint"
+    return 1
+  fi
   mkdir -p "$tmp/dirty/src" "$tmp/clean/src"
   for d in dirty clean; do
     cat > "$tmp/$d/Cargo.toml" <<EOF
