@@ -37,7 +37,6 @@ impl FunctionParams for escrow_model::RefundEscrowParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("escrow_id", format!("{:?}", self.escrow_id))?;
-        dict.set_item("buyer_secret", format!("{:?}", self.buyer_secret))?;
         dict.set_item("spent_nullifier", format!("{:?}", self.spent_nullifier))?;
         dict.set_item("current_block", format!("{:?}", self.current_block))?;
         dict.set_item("timeout", format!("{:?}", self.timeout))?;
@@ -48,7 +47,6 @@ impl FunctionParams for escrow_model::RefundEscrowParamsV1 {
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}escrow_id: {:?}", self.escrow_id).unwrap();
-        writeln!(out, "{prefix}buyer_secret: {:?}", self.buyer_secret).unwrap();
         writeln!(out, "{prefix}spent_nullifier: {:?}", self.spent_nullifier).unwrap();
         writeln!(out, "{prefix}current_block: {:?}", self.current_block).unwrap();
         writeln!(out, "{prefix}timeout: {:?}", self.timeout).unwrap();

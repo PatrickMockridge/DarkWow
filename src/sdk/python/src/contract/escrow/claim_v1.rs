@@ -37,7 +37,6 @@ impl FunctionParams for escrow_model::ClaimEscrowParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("escrow_id", format!("{:?}", self.escrow_id))?;
-        dict.set_item("seller_secret", format!("{:?}", self.seller_secret))?;
         dict.set_item("spent_nullifier", format!("{:?}", self.spent_nullifier))?;
         dict.set_item("recipient_pubkey", format!("{:?}", self.recipient_pubkey))?;
         Ok(dict.unbind())
@@ -46,7 +45,6 @@ impl FunctionParams for escrow_model::ClaimEscrowParamsV1 {
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}escrow_id: {:?}", self.escrow_id).unwrap();
-        writeln!(out, "{prefix}seller_secret: {:?}", self.seller_secret).unwrap();
         writeln!(out, "{prefix}spent_nullifier: {:?}", self.spent_nullifier).unwrap();
         writeln!(out, "{prefix}recipient_pubkey: {:?}", self.recipient_pubkey).unwrap();
         Ok(())

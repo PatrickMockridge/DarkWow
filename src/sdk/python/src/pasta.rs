@@ -157,13 +157,23 @@ macro_rules! impl_affine {
     ($x:ty, $inner:ty, $base:ident, $projective:ty) => {
         #[pymethods]
         impl $x {
-            fn coordinates(&self) -> ($base, $base) {
-                let coords = self.0.coordinates().unwrap();
-                ($base(*coords.x()), $base(*coords.y()))
+            fn coordinates(&self) -> PyResult<($base, $base)> {
+                // `Affine::coordinates` returns a `subtle::CtOption`, `None` exactly for the
+                // identity point (which has no affine coordinates). Raise rather than panic.
+                let coords = self.0.coordinates().into_option().ok_or_else(|| {
+                    pyo3::exceptions::PyValueError::new_err(
+                        "affine point is the identity: it has no coordinates",
+                    )
+                })?;
+                Ok(($base(*coords.x()), $base(*coords.y())))
             }
 
             fn coordinates_str(&self) -> PyResult<Vec<String>> {
-                let coords = self.0.coordinates().unwrap();
+                let coords = self.0.coordinates().into_option().ok_or_else(|| {
+                    pyo3::exceptions::PyValueError::new_err(
+                        "affine point is the identity: it has no coordinates",
+                    )
+                })?;
                 let x = $base(*coords.x()).__str__()?;
                 let y = $base(*coords.y()).__str__()?;
                 Ok(vec![x, y])
@@ -171,8 +181,11 @@ macro_rules! impl_affine {
 
             #[staticmethod]
             fn from_xy(x: &Bound<$base>, y: &Bound<$base>) -> PyResult<Self> {
-                let affine_point =
-                    <$inner>::from_xy(x.borrow().deref().0, y.borrow().deref().0).unwrap();
+                let affine_point = <$inner>::from_xy(x.borrow().deref().0, y.borrow().deref().0)
+                    .into_option()
+                    .ok_or_else(|| {
+                        pyo3::exceptions::PyValueError::new_err("(x, y) is not on the curve")
+                    })?;
                 Ok(Self(affine_point))
             }
 
@@ -198,7 +211,8 @@ macro_rules! impl_point {
         impl $x {
             #[new]
             fn new(x: &Bound<$base>, y: &Bound<$base>) -> PyResult<Self> {
-                let affine_point = <$affine>::from_xy(x, y).unwrap();
+                // `from_xy` is now fallible — it rejects off-curve / identity (x, y) — so propagate.
+                let affine_point = <$affine>::from_xy(x, y)?;
                 Ok(Self::from_affine(affine_point))
             }
 
@@ -235,7 +249,7 @@ macro_rules! impl_point {
 
             fn __str__(slf: &Bound<Self>) -> PyResult<String> {
                 let affine = <$affine>::from_projective(slf);
-                let (x, y) = affine.coordinates();
+                let (x, y) = affine.coordinates()?;
                 Ok(format!("[{}, {}]", x.__str__()?, y.__str__()?))
             }
 
@@ -336,4 +350,19 @@ pub fn create_module(py: pyo3::Python<'_>) -> PyResult<Bound<'_, PyModule>> {
     submod.add_function(wrap_pyfunction!(fp_mod_fv, &submod)?)?;
 
     Ok(submod)
+}
+
+#[cfg(test)]
+mod tests {
+    // R8 control: `Affine::coordinates` returns a `subtle::CtOption`, `None` exactly for the
+    // identity point (which has no affine coordinates). The pymethods used to `.unwrap()` it,
+    // aborting the interpreter; they now raise `ValueError`.
+    use super::*;
+
+    #[test]
+    fn affine_identity_coordinates_raise() {
+        pyo3::prepare_freethreaded_python();
+        let a = EpAffine(pallas::Affine::identity());
+        assert!(a.coordinates().is_err(), "the identity affine must raise, not panic");
+    }
 }
