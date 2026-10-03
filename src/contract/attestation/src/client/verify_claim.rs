@@ -49,11 +49,17 @@ impl VerifyClaimV1PublicInputs {
 }
 
 /// Input data for verify_claim proof generation
+///
+/// Issue #3: this carried `evidence`, `attestation_data` and `nonce`, which the circuit
+/// witnessed and then hashed into three values it discarded — `evidence_hash`,
+/// `attestation_hash` and `leaf` reached no `constrain_instance` and no `constrain_equal_*`,
+/// and the host read none of them. The witnesses and the dead derivations are **removed**
+/// (`AGENTS.md` R2) rather than exposed: the verdict is now computed by the host from
+/// `claim.evidence_commitment` — already checked against the stored claim — and the
+/// attestation's stored `claim_data`, so a proof-bound copy of the same values would be a
+/// second source for a value that has one home.
 #[derive(Debug, Clone)]
 pub struct VerifyClaimV1CallData {
-    pub evidence: pallas::Base,
-    pub attestation_data: pallas::Base,
-    pub nonce: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -63,20 +69,14 @@ impl VerifyClaimV1CallData {
     pub fn new(
         _claim_id: pallas::Base,
         _revealed_result: pallas::Base,
-        evidence: pallas::Base,
-        attestation_data: pallas::Base,
-        nonce: pallas::Base,
+        _evidence: pallas::Base,
+        _attestation_data: pallas::Base,
+        _nonce: pallas::Base,
         _pos: pallas::Base,
         _path: [pallas::Base; 255],
         _revocation_root: pallas::Base,
     ) -> Self {
-        Self {
-            evidence,
-            attestation_data,
-            nonce,
-            tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero(),
-        }
+        Self { tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> VerifyClaimV1PublicInputs {
@@ -86,12 +86,9 @@ impl VerifyClaimV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        // Circuit witness order: evidence, attestation_data, nonce, tx_commitment, tx_nonce, tx_binding
+        // Circuit witness order: tx_commitment, tx_nonce, tx_binding
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
-            Witness::Base(Value::known(self.evidence)),
-            Witness::Base(Value::known(self.attestation_data)),
-            Witness::Base(Value::known(self.nonce)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(tx_binding)),

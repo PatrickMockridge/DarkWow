@@ -332,22 +332,88 @@ fn test_create_claim_update_encoding() {
 
 #[test]
 fn test_verify_claim_params_encoding() {
+    // Issue #3: the struct carried `revealed_result` and `attestation_data` too. The first was
+    // the verdict the host trusted and no circuit witnessed; the second was a caller-supplied
+    // copy of a value the host reads from the attestation record. Both are removed, and the
+    // payload is 96 bytes — three fields — where it was 160.
     let params = VerifyClaimParamsV1 {
         claim_id: ClaimId(pallas::Base::from(1)),
         attestation_id: AttestationId(pallas::Base::from(2)),
         evidence_commitment: pallas::Base::from(3),
-        revealed_result: pallas::Base::from(4),
-        attestation_data: pallas::Base::from(6),
     };
 
     let encoded = serialize(&params);
+    assert_eq!(encoded.len(), VerifyClaimParamsV1::ENCODED_SIZE);
+    assert_eq!(encoded.len(), 96);
+
     let decoded = deserialize::<VerifyClaimParamsV1>(&encoded).unwrap();
 
     assert_eq!(decoded.claim_id, params.claim_id);
     assert_eq!(decoded.attestation_id, params.attestation_id);
     assert_eq!(decoded.evidence_commitment, params.evidence_commitment);
-    assert_eq!(decoded.revealed_result, params.revealed_result);
-    assert_eq!(decoded.attestation_data, params.attestation_data);
+}
+
+/// Issue #3: the control for the predicate, which is now one derivation with one home
+/// (`model::predicate_holds`) called by both `verify_claim_v1` and `validate_claim_v1`. One
+/// assertion per variant, and the ordinal arms are pinned on both sides of their boundary.
+mod predicate_holds {
+    use dwow_attestation_contract::model::{predicate_holds, Predicate};
+    use dwow_sdk::pasta::pallas;
+
+    fn b(n: u64) -> pallas::Base {
+        pallas::Base::from(n)
+    }
+
+    #[test]
+    fn matches_is_equality_including_length() {
+        assert!(predicate_holds(Predicate::Matches, &[b(5)], &[b(5)]));
+        assert!(!predicate_holds(Predicate::Matches, &[b(5)], &[b(6)]));
+        // An attestation of two values is not matched by evidence naming one of them: the
+        // register's `OBL-C154` shape, where a requirement's operand can be satisfied more
+        // cheaply than the requirement means.
+        assert!(!predicate_holds(Predicate::Matches, &[b(5)], &[b(5), b(5)]));
+    }
+
+    #[test]
+    fn greater_or_equal_is_inclusive_and_ordered() {
+        assert!(predicate_holds(Predicate::GreaterOrEqual, &[b(51)], &[b(50)]));
+        assert!(predicate_holds(Predicate::GreaterOrEqual, &[b(50)], &[b(50)]));
+        assert!(!predicate_holds(Predicate::GreaterOrEqual, &[b(49)], &[b(50)]));
+        // Empty evidence or empty claim data is not a satisfied predicate. The stub this
+        // replaced answered `false` here too, but by an `if len() >= 1` guard rather than by
+        // the definition.
+        assert!(!predicate_holds(Predicate::GreaterOrEqual, &[], &[b(50)]));
+        assert!(!predicate_holds(Predicate::GreaterOrEqual, &[b(50)], &[]));
+    }
+
+    #[test]
+    fn less_or_equal_is_inclusive_and_ordered() {
+        assert!(predicate_holds(Predicate::LessOrEqual, &[b(49)], &[b(50)]));
+        assert!(predicate_holds(Predicate::LessOrEqual, &[b(50)], &[b(50)]));
+        assert!(!predicate_holds(Predicate::LessOrEqual, &[b(51)], &[b(50)]));
+    }
+
+    #[test]
+    fn contains_is_a_contiguous_run() {
+        // The stub this replaced compared first elements under the comment "Simplified: just
+        // check first element", which answers `true` for `[1,2]` in `[1,9]`.
+        assert!(!predicate_holds(Predicate::Contains, &[b(1), b(2)], &[b(1), b(9)]));
+        assert!(predicate_holds(Predicate::Contains, &[b(1), b(2)], &[b(0), b(1), b(2), b(3)]));
+        assert!(!predicate_holds(Predicate::Contains, &[b(2), b(1)], &[b(1), b(2)]));
+        // A pattern longer than the data is not contained in it, and an empty pattern is
+        // contained in everything — written out rather than left to `windows(0)`, which
+        // panics.
+        assert!(!predicate_holds(Predicate::Contains, &[b(1), b(2)], &[b(1)]));
+        assert!(predicate_holds(Predicate::Contains, &[], &[b(1)]));
+    }
+
+    #[test]
+    fn custom_is_not_decided_by_this_contract() {
+        // There is no host rule for a custom predicate and no external verifier in this tree
+        // to consult, so the answer is `false` rather than a guess: a claim the contract
+        // cannot evaluate must not be recorded as verified.
+        assert!(!predicate_holds(Predicate::Custom, &[b(1)], &[b(1)]));
+    }
 }
 
 #[test]

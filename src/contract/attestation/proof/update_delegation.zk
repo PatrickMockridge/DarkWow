@@ -3,11 +3,19 @@
 k = 11; field = "pallas";
 constant "UpdateDelegationV2" { EcFixedPointBase NULLIFIER_K, }
 witness "UpdateDelegationV2" {
-    Base delegator_secret, Base delegator_pub_x, Base delegator_pub_y,
     Base tx_commitment, Base tx_nonce, Base tx_binding,
 }
 circuit "UpdateDelegationV2" {
     DOMAIN_TX_BINDING = witness_base(3);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);
+
+    # Issue #3: `delegator_secret` and the delegator's coordinates were witnessed and
+    # constrained by nothing, and there is nothing to bind them **to**: the struct this
+    # instruction decodes, `UpdateDelegationParamsV1`, carries `original_attestation_id`,
+    # `delegation_type` and `max_ratio` and no public key at all, so the record it writes
+    # names no actor the coordinates could be compared against. Removed rather than exposed
+    # — instancing a key no host read reaches would be a public input that means nothing.
+    # Recorded as a finding rather than repaired here: authorizing this arm needs a decision
+    # about which key owns a delegation, which is not this change's to make.
 }

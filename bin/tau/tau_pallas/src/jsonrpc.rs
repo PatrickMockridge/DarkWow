@@ -594,13 +594,13 @@ impl RpcHandler {
                 spent_nullifier,
             )?;
 
-            // Build attestation verify claim child call
+            // Build attestation verify claim child call.
+            // Issue #3: `VerifyClaimParamsV1` is three fields; `revealed_result`,
+            // `revocation_root` and `attestation_data` were never in it, so the six-field
+            // payload this builder used to write could not have decoded.
             let verify_claim_calldata = labor_market_client::build_verify_claim_calldata(
                 claim_id,
                 attestation_id,
-                zero,
-                zero,
-                zero,
                 zero,
             )?;
 

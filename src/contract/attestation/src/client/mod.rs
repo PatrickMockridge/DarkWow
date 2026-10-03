@@ -37,6 +37,7 @@ pub mod check_not_revoked;
 pub mod delegate_attestation;
 pub mod verify_chain;
 pub mod update_delegation;
+pub mod revoke_attestation;
 
 use dwow_sdk::{
     crypto::{PublicKey},
@@ -168,13 +169,16 @@ impl CreateClaimBuilder {
 }
 
 /// Builder for VerifyClaimV1 params
+///
+/// Issue #3: the `revealed_result` and `attestation_data` setters are gone with the fields
+/// they set. `revealed_result` was the verdict the host trusted and no circuit witnessed;
+/// `attestation_data` was a caller-supplied copy of a value the host reads from the
+/// attestation record. The verdict is now derived by the host (`model::predicate_holds`).
 #[derive(Default)]
 pub struct VerifyClaimBuilder {
     claim_id: Option<ClaimId>,
     attestation_id: Option<AttestationId>,
     evidence_commitment: Option<pallas::Base>,
-    revealed_result: Option<pallas::Base>,
-    attestation_data: Option<pallas::Base>,
 }
 
 impl VerifyClaimBuilder {
@@ -197,23 +201,11 @@ impl VerifyClaimBuilder {
         self
     }
 
-    pub fn revealed_result(mut self, result: pallas::Base) -> Self {
-        self.revealed_result = Some(result);
-        self
-    }
-
-    pub fn attestation_data(mut self, data: pallas::Base) -> Self {
-        self.attestation_data = Some(data);
-        self
-    }
-
     pub fn build(self) -> Result<VerifyClaimParamsV1, &'static str> {
         Ok(VerifyClaimParamsV1 {
             claim_id: self.claim_id.ok_or("claim_id not set")?,
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
             evidence_commitment: self.evidence_commitment.ok_or("evidence_commitment not set")?,
-            revealed_result: self.revealed_result.ok_or("revealed_result not set")?,
-            attestation_data: self.attestation_data.unwrap_or_else(pallas::Base::zero),
         })
     }
 }

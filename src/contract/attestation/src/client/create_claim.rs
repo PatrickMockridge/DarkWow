@@ -46,8 +46,16 @@ pub struct CreateClaimV1PublicInputs {
 }
 
 impl CreateClaimV1PublicInputs {
+    /// Issue #3: `claimant_pub_x/y` are appended to the vector. The circuit derive-and-exposes
+    /// the creator's coordinates from the secret, and `create_claim_v1` stores `claimant_pub`
+    /// from these params, so the two must agree or the proof does not verify.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.tx_binding, self.tx_nonce]
+        vec![
+            self.tx_binding,
+            self.tx_nonce,
+            self.claimant_pub_x,
+            self.claimant_pub_y,
+        ]
     }
 }
 
@@ -82,8 +90,13 @@ impl CreateClaimV1CallData {
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
             // Must match circuit witness order:
-            // attestation_id, claimant_secret, claimant_pub_x, claimant_pub_y
-            Witness::Base(Value::known(self.attestation_id)),
+            // creator_secret, creator_pub_x, creator_pub_y, tx_commitment, tx_nonce, tx_binding
+            //
+            // Issue #3: the vector used to start with `self.attestation_id`, standing in the
+            // position the circuit called `claim_data`. The circuit never constrained
+            // `claim_data` and had no wire counterpart for it, so the substituted value was
+            // inert — but it was also the only thing the client contributed there, and the
+            // witness has been removed rather than bound to a field that does not exist.
             Witness::Base(Value::known(self.claimant_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),

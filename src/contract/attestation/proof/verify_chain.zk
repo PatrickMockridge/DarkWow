@@ -3,7 +3,6 @@
 k = 11; field = "pallas";
 constant "VerifyChainV2" { EcFixedPointBase NULLIFIER_K, }
 witness "VerifyChainV2" {
-    Base chain_root, Base verifier_secret, Base verifier_pub_x, Base verifier_pub_y,
     Base tx_commitment, Base tx_nonce, Base tx_binding,
 }
 circuit "VerifyChainV2" {

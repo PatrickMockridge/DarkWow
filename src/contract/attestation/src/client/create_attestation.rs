@@ -45,14 +45,22 @@ pub struct CreateAttestationV1PublicInputs {
 }
 
 impl CreateAttestationV1PublicInputs {
-    /// Returns public inputs in circuit constrain_instance() order:
-    /// tx_binding, tx_nonce (matches create_attestation.zk).
-    /// attestor_pub_x/y are stored in params but NOT constrained
-    /// as instances by the current circuit.
+    /// Returns public inputs in circuit `constrain_instance()` order:
+    /// tx_binding, tx_nonce, attestor_pub_x, attestor_pub_y (matches `create_attestation.zk`).
+    ///
+    /// Issue #3: the last two are new. The comment that stood here said they "are stored in
+    /// params but NOT constrained as instances by the current circuit" — which was true, and
+    /// was the defect: the circuit witnessed the attestor's secret and coordinates and
+    /// constrained neither, so the attestation was created in whatever name the caller
+    /// wrote. The circuit now derive-and-exposes the coordinates from the secret, and the
+    /// metadata arm publishes the coordinates of the key the caller claims; the verifier
+    /// compares them, so the proof verifies only for a caller who can open that key.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.tx_binding,
             self.tx_nonce,
+            self.attestor_pub_x,
+            self.attestor_pub_y,
         ]
     }
 }

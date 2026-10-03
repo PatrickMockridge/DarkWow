@@ -10,4 +10,16 @@ circuit "AttestSlashV2" {
     DOMAIN_TX_BINDING = witness_base(3);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);
+
+    # Issue #3: identical to `create_attestation.zk` — the secret and the public
+    # coordinates were witnessed and unconstrained, so the slash attestation was
+    # attributed to the caller's chosen `relayer_pub` rather than to a key the caller
+    # could open. Derive-and-expose, and `attest_slash_v1` compares the exposed
+    # coordinates against the `relayer_pub` it records.
+    derived_pub = ec_mul_base(attester_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(derived_pub);
+    derived_pub_y = ec_get_y(derived_pub);
+    constrain_equal_base(derived_pub_x, attester_pub_x);
+    constrain_equal_base(derived_pub_y, attester_pub_y);
+    constrain_instance(attester_pub_x); constrain_instance(attester_pub_y);
 }

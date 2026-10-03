@@ -17,6 +17,8 @@ proof_circuit = "CreateAttestationV2"
 [[functions]]
 name = "revoke_attestation"
 code = 1
+requires_proof = true
+proof_circuit = "RevokeAttestationV2"
 
 [[functions]]
 name = "expire_attestation"
@@ -205,4 +207,8 @@ namespace = "attestation"
 
 [[circuits]]
 name = "CommitFeeScheduleV2"
+namespace = "attestation"
+
+[[circuits]]
+name = "RevokeAttestationV2"
 namespace = "attestation"

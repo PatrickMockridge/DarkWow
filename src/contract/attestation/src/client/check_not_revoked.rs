@@ -68,10 +68,14 @@ impl CheckNotRevokedV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        // Circuit witness order: nonce, tx_commitment, tx_nonce, tx_binding
+        // Circuit witness order: tx_commitment, tx_nonce, tx_binding
+        //
+        // Issue #3: the circuit's `nonce` witness fed only `leaf = poseidon_hash(DOMAIN_COMMITMENT,
+        // nonce)`, which reached no instance and no equality and which the host never read —
+        // `check_not_revoked_v1` derives its replay key from `params.nonce` and
+        // `params.revocation_root` itself. The witness and its dead derivation are removed.
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
-            Witness::Base(Value::known(self.nonce)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(tx_binding)),

@@ -5,6 +5,7 @@ constant "DelegateAttestationV2" { EcFixedPointBase NULLIFIER_K, }
 witness "DelegateAttestationV2" {
     Base delegatee_pub_x, Base delegatee_pub_y, Base delegator_secret,
     Base tx_commitment, Base tx_nonce, Base tx_binding,
+    Base delegator_pub_x, Base delegator_pub_y,
 }
 circuit "DelegateAttestationV2" {
     DOMAIN_TX_BINDING = witness_base(3); DOMAIN_COMMITMENT = witness_base(4);
@@ -12,4 +13,17 @@ circuit "DelegateAttestationV2" {
     constrain_instance(delegatee_leaf);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);
+
+    # Issue #3: `delegator_secret` was witnessed and used by nothing while
+    # `process_update` writes the whole delegation record — `delegator_pub` included —
+    # under the delegation id. Derive-and-expose, and `delegate_attestation_v1` compares
+    # the published coordinates against the `delegator_pub` it is about to store. The
+    # coordinates are appended to the witness list rather than inserted, so every
+    # existing witness keeps its index.
+    derived_pub = ec_mul_base(delegator_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(derived_pub);
+    derived_pub_y = ec_get_y(derived_pub);
+    constrain_equal_base(derived_pub_x, delegator_pub_x);
+    constrain_equal_base(derived_pub_y, delegator_pub_y);
+    constrain_instance(delegator_pub_x); constrain_instance(delegator_pub_y);
 }

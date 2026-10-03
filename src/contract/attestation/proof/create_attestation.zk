@@ -10,4 +10,17 @@ circuit "CreateAttestationV2" {
     DOMAIN_TX_BINDING = witness_base(3);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);
+
+    # Issue #3 (github PatrickMockridge/DarkWow#3): `attester_secret` and the two pub
+    # coordinates were witnessed and used by nothing, so the attestation was attributed
+    # to whatever the caller wrote in the wire field. Derive-and-expose — the form
+    # `check-pubkey-binding.sh` calls SOUND and `consume_claim.zk` already uses — makes
+    # the exposed coordinates the ones the secret opens, and `create_attestation_v1`
+    # compares them against the `attestor_pub` it stores.
+    derived_pub = ec_mul_base(attester_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(derived_pub);
+    derived_pub_y = ec_get_y(derived_pub);
+    constrain_equal_base(derived_pub_x, attester_pub_x);
+    constrain_equal_base(derived_pub_y, attester_pub_y);
+    constrain_instance(attester_pub_x); constrain_instance(attester_pub_y);
 }

@@ -175,6 +175,59 @@ impl TryFrom<u8> for Predicate {
     }
 }
 
+/// The contract's **single** definition of what a predicate means.
+///
+/// Issue #3 (github PatrickMockridge/DarkWow#3): two arms answered this question and they
+/// disagreed. `verify_claim_v1` took the caller's word for the answer — it read
+/// `params.revealed_result` off the wire under a comment claiming the circuit constrained
+/// it, which the circuit did not — while `validate_claim_v1` recomputed it with
+/// `Predicate::Custom => false` and, for `Contains`, a stub whose own comment reads
+/// *"Simplified: just check first element"*. Two derivations of one value is the defect
+/// `OBL-C104` records for `subscription`; both arms now call this one, and the normative
+/// statement of each predicate is `doc/src/contract/attestation.md` §Predicates.
+///
+/// `evidence` is what the claimant presents; `claim_data` is what the attestor committed
+/// to. Ordering is over the canonical integer representatives of `pallas::Base`, which is
+/// what the field's `Ord` compares — the ZK comparison chips give no such order, which is
+/// why this cannot be pushed into the circuit.
+pub fn predicate_holds(
+    predicate: Predicate,
+    evidence: &[pallas::Base],
+    claim_data: &[pallas::Base],
+) -> bool {
+    match predicate {
+        // Equality of the two vectors, length included: an attestation of two values is
+        // not matched by evidence naming one of them.
+        Predicate::Matches => evidence == claim_data,
+        // The first elements, as integers.
+        Predicate::GreaterOrEqual => match (evidence.first(), claim_data.first()) {
+            (Some(e), Some(c)) => e >= c,
+            _ => false,
+        },
+        Predicate::LessOrEqual => match (evidence.first(), claim_data.first()) {
+            (Some(e), Some(c)) => e <= c,
+            _ => false,
+        },
+        // The evidence appears as a contiguous run inside the attestation's data. The
+        // empty pattern is contained in everything, which is the conventional reading —
+        // and it is written out rather than left to `windows`, which panics on a
+        // zero-length window.
+        Predicate::Contains => {
+            if evidence.is_empty() {
+                true
+            } else if evidence.len() > claim_data.len() {
+                false
+            } else {
+                claim_data.windows(evidence.len()).any(|w| w == evidence)
+            }
+        }
+        // There is no host rule for a custom predicate and no external verifier in this
+        // tree to consult. Answered `false` rather than guessed at: a claim the contract
+        // cannot evaluate must not be recorded as verified.
+        Predicate::Custom => false,
+    }
+}
+
 impl Predicate { pub fn encode(&self) -> Vec<u8> { vec![*self as u8] } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.is_empty() { return Err(ContractError::IoError("Predicate: empty".into())); } Self::try_from(read_byte(data, 0)?) } }
 
 /// Core attestation data stored on-chain
@@ -534,6 +587,17 @@ impl CreateClaimUpdateV1 {
 }
 
 /// Parameters for verifying a claim
+///
+/// Issue #3 (github PatrickMockridge/DarkWow#3): this struct carried two more fields.
+/// `revealed_result` was the verdict the host used to decide `verified`, and no circuit
+/// witnessed it — `VerifyClaimV2` did not constrain it and `verify_claim_v1` read it
+/// straight off the wire, so any non-zero value verified any claim. It is **removed**
+/// rather than bound: the host now derives the verdict itself (`model::predicate_holds`,
+/// called with the claim's own stored predicate, its stored evidence and the attestation's
+/// stored data), which is `AGENTS.md` R2 — remove the cause rather than add a guard beside
+/// it. `attestation_data` went with it: the host reads the attestation's data from the
+/// record it already has, so a caller-supplied copy was a second source for a value that
+/// has one home.
 #[derive(Debug, Clone,)]
 pub struct VerifyClaimParamsV1 {
     /// Claim ID to verify
@@ -542,15 +606,11 @@ pub struct VerifyClaimParamsV1 {
     pub attestation_id: AttestationId,
     /// Evidence commitment to verify against attestation data
     pub evidence_commitment: pallas::Base,
-    /// Revealed result from ZK proof verification
-    pub revealed_result: pallas::Base,
-    /// Attestation data (hash of claim_data)
-    pub attestation_data: pallas::Base,
 }
 
 impl dwow_serial::Encodable for VerifyClaimParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for VerifyClaimParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl VerifyClaimParamsV1 { pub const ENCODED_SIZE: usize = 160; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(160); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.attestation_id.to_bytes()); b.extend_from_slice(&self.evidence_commitment.to_repr()); b.extend_from_slice(&self.revealed_result.to_repr()); b.extend_from_slice(&self.attestation_data.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 160 { return Err(ContractError::IoError(format!("VerifyClaimParamsV1: expected 160 bytes, got {}", data.len()))); } fn rb(d: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(d, 0)?)).ok_or_else(|| ContractError::IoError("VerifyClaimParamsV1: invalid field".into())) } Ok(VerifyClaimParamsV1 { claim_id: ClaimId::from_bytes(&read_field::<32>(data, 0)?).ok_or_else(|| ContractError::IoError("VerifyClaimParamsV1: invalid claim_id".into()))?, attestation_id: AttestationId::from_bytes(&read_field::<32>(data, 32)?).ok_or_else(|| ContractError::IoError("VerifyClaimParamsV1: invalid attestation_id".into()))?, evidence_commitment: rb(read_slice(data, 64, 32)?)?, revealed_result: rb(read_slice(data, 96, 32)?)?, attestation_data: rb(read_slice(data, 128, 32)?)? }) } }
+impl VerifyClaimParamsV1 { pub const ENCODED_SIZE: usize = 96; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(96); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.attestation_id.to_bytes()); b.extend_from_slice(&self.evidence_commitment.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 96 { return Err(ContractError::IoError(format!("VerifyClaimParamsV1: expected 96 bytes, got {}", data.len()))); } fn rb(d: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(d, 0)?)).ok_or_else(|| ContractError::IoError("VerifyClaimParamsV1: invalid field".into())) } Ok(VerifyClaimParamsV1 { claim_id: ClaimId::from_bytes(&read_field::<32>(data, 0)?).ok_or_else(|| ContractError::IoError("VerifyClaimParamsV1: invalid claim_id".into()))?, attestation_id: AttestationId::from_bytes(&read_field::<32>(data, 32)?).ok_or_else(|| ContractError::IoError("VerifyClaimParamsV1: invalid attestation_id".into()))?, evidence_commitment: rb(read_slice(data, 64, 32)?)? }) } }
 
 /// State update for VerifyClaimV1
 #[derive(Debug, Clone)]

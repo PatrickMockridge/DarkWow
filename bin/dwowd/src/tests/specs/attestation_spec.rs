@@ -83,7 +83,13 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let r = h.create_claim(attestation_id, claimant_secret, pk,
                             Predicate::GreaterOrEqual,
-                            pallas::Base::from(2u64).to_repr().to_vec(),
+                            // Issue #3: the evidence must actually satisfy the predicate now.
+                            // The attestation attests `claim_data = [50]` under
+                            // `GreaterOrEqual`, and the verdict is derived by the contract from
+                            // the stored predicate and this stored value — where the wire's
+                            // `revealed_result` used to decide it, and a `2` here passed under
+                            // an attestation of `50`.
+                            pallas::Base::from(60u64).to_repr().to_vec(),
                             b"result".to_vec(), claim_id)
                             .map_err(modules::error_bridge::bridge)?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
@@ -97,7 +103,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.verify_claim(claim_id, attestation_id,
-                        pallas::Base::from(1u64), pallas::Base::from(2u64),
+                        pallas::Base::from(1u64), pallas::Base::from(60u64),
                         pallas::Base::from(3u64), pallas::Base::from(4u64),
                         pallas::Base::from(5u64), [pallas::Base::from(0u64); 255],
                         pallas::Base::from(6u64))
@@ -226,16 +232,19 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 }),
             },
             EndpointSpec {
-                name: "RevokeAttestationV1", is_zk: false,
+                // Issue #3: this endpoint's `is_zk` was `false` because the instruction had no
+                // circuit — it now requires a proof that the caller can open the attestor's key.
+                name: "RevokeAttestationV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = attestor_pub;
+                    let sk = attestor_secret;
                     move || {
-                        let r = h.revoke_attestation(pk, attestation_id)
+                        let r = h.revoke_attestation(sk, pk, attestation_id)
                             .map_err(modules::error_bridge::bridge)?;
-                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },

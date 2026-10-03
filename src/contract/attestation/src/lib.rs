@@ -144,4 +144,7 @@ pub const ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V2: &str = "DelegateAttestationV
 pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V2: &str = "VerifyChainV2";
 pub const ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V2: &str = "UpdateDelegationV2";
 pub const ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V2: &str = "AttestSlashV2";
+/// Issue #3: `revoke_attestation` had no circuit, and its host check compared the stored
+/// `attestor_pub` against the wire's copy of itself.
+pub const ATTESTATION_CONTRACT_ZKAS_REVOKE_NS_V2: &str = "RevokeAttestationV2";
 pub const ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V2: &str = "CommitFeeScheduleV2";

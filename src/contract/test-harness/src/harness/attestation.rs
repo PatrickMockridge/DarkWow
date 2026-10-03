@@ -56,6 +56,9 @@ use dwow_attestation_contract::client::{
     update_delegation::{
         UpdateDelegationV1CallData, update_delegation_v1_proof, UpdateDelegationV1PublicInputs,
     },
+    revoke_attestation::{
+        RevokeAttestationV1CallData, revoke_attestation_v1_proof, RevokeAttestationV1PublicInputs,
+    },
     verify_claim::{
         VerifyClaimV1CallData, verify_claim_v1_proof, VerifyClaimV1PublicInputs,
     },
@@ -89,6 +92,8 @@ pub struct AttestationHarness {
     verify_chain_pk: ProvingKey,
     update_delegation_zkbin: ZkBinary,
     update_delegation_pk: ProvingKey,
+    revoke_attestation_zkbin: ZkBinary,
+    revoke_attestation_pk: ProvingKey,
 }
 
 impl AttestationHarness {
@@ -115,6 +120,10 @@ impl AttestationHarness {
             include_bytes!("../../../attestation/proof/update_delegation.zk.bin");
         let verify_chain_bin =
             include_bytes!("../../../attestation/proof/verify_chain.zk.bin");
+        // Issue #3: `revoke_attestation` gained a circuit — it had none, so its authority
+        // check compared the stored `attestor_pub` against the wire's copy of itself.
+        let revoke_attestation_bin =
+            include_bytes!("../../../attestation/proof/revoke_attestation.zk.bin");
 
         let create_attestation_zkbin = ZkBinary::decode(create_att_bin, false).unwrap();
         let create_claim_zkbin = ZkBinary::decode(create_claim_bin, false).unwrap();
@@ -126,6 +135,7 @@ impl AttestationHarness {
         let commit_fee_schedule_zkbin = ZkBinary::decode(commit_fee_schedule_bin, false).unwrap();
         let update_delegation_zkbin = ZkBinary::decode(update_delegation_bin, false).unwrap();
         let verify_chain_zkbin = ZkBinary::decode(verify_chain_bin, false).unwrap();
+        let revoke_attestation_zkbin = ZkBinary::decode(revoke_attestation_bin, false).unwrap();
 
         let create_att_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&create_attestation_zkbin).unwrap(),
@@ -166,6 +176,10 @@ impl AttestationHarness {
         let verify_chain_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&verify_chain_zkbin).unwrap(),
             &verify_chain_zkbin,
+        );
+        let revoke_attestation_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&revoke_attestation_zkbin).unwrap(),
+            &revoke_attestation_zkbin,
         );
 
         // Build verify_claim first to isolate which circuit fails
@@ -213,6 +227,9 @@ impl AttestationHarness {
         let verify_chain_pk =
             ProvingKey::build(verify_chain_zkbin.k, &verify_chain_circuit)
                 .expect("ProvingKey::build failed for verify_chain");
+        let revoke_attestation_pk =
+            ProvingKey::build(revoke_attestation_zkbin.k, &revoke_attestation_circuit)
+                .expect("ProvingKey::build failed for revoke_attestation");
 
         Self {
             create_attestation_zkbin,
@@ -235,6 +252,8 @@ impl AttestationHarness {
             update_delegation_pk,
             verify_chain_zkbin,
             verify_chain_pk,
+            revoke_attestation_zkbin,
+            revoke_attestation_pk,
         }
     }
 
@@ -307,13 +326,20 @@ impl AttestationHarness {
     }
 
     /// Verify a claim (function code 0x04)
+    ///
+    /// Issue #3: `revealed_result` and `attestation_data` are no longer part of
+    /// `VerifyClaimParamsV1` and no longer inputs to the verdict — the contract derives it
+    /// from the stored claim's predicate and evidence and the attestation's stored
+    /// `claim_data`. The parameters are kept, underscored, so call sites that still pass
+    /// them read as what they now are: values with nowhere to go.
+    #[allow(clippy::too_many_arguments)]
     pub fn verify_claim(
         &self,
         claim_id: pallas::Base,
         attestation_id: pallas::Base,
-        revealed_result: pallas::Base,
+        _revealed_result: pallas::Base,
         evidence: pallas::Base,
-        attestation_data: pallas::Base,
+        _attestation_data: pallas::Base,
         nonce: pallas::Base,
         pos: pallas::Base,
         path: [pallas::Base; 255],
@@ -321,9 +347,9 @@ impl AttestationHarness {
     ) -> Result<VerifyClaimResult, Box<dyn std::error::Error>> {
         let input = VerifyClaimV1CallData::new(
             claim_id,
-            revealed_result,
+            _revealed_result,
             evidence,
-            attestation_data,
+            _attestation_data,
             nonce,
             pos,
             path,
@@ -339,8 +365,6 @@ impl AttestationHarness {
             claim_id: ClaimId(claim_id),
             attestation_id: AttestationId(attestation_id),
             evidence_commitment: evidence,
-            revealed_result,
-            attestation_data,
         };
 
         let mut call_data = vec![0x04];
@@ -583,19 +607,30 @@ impl AttestationHarness {
         Ok(CommitFeeScheduleResult { call_data, proof })
     }
 
-    /// Revoke an attestation (function code 0x01, non-ZK).
+    /// Revoke an attestation (function code 0x01, ZK — the circuit is new in this change).
+    ///
+    /// Issue #3: the instruction had no circuit, so its only authority check was the stored
+    /// `attestor_pub` against the wire's copy of itself. It now requires a proof that the
+    /// caller can open the attestor's key, which is why this builder takes the secret.
     pub fn revoke_attestation(
         &self,
+        attestor_secret: pallas::Base,
         attestor_pub: PublicKey,
         attestation_id: pallas::Base,
     ) -> Result<RevokeAttestationResult, Box<dyn std::error::Error>> {
+        let input = RevokeAttestationV1CallData::new(attestor_secret, attestor_pub);
+        let (proof, public_inputs) = revoke_attestation_v1_proof(
+            &self.revoke_attestation_zkbin,
+            &self.revoke_attestation_pk,
+            &input,
+        )?;
         let params = dwow_attestation_contract::model::RevokeAttestationParamsV1 {
             attestor_pub,
             attestation_id: dwow_attestation_contract::model::AttestationId(attestation_id),
         };
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
-        Ok(RevokeAttestationResult { call_data })
+        Ok(RevokeAttestationResult { call_data, proof, public_inputs })
     }
 
     /// Expire an attestation (function code 0x02, non-ZK).
@@ -766,6 +801,8 @@ pub struct CommitFeeScheduleResult {
 
 pub struct RevokeAttestationResult {
     pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: RevokeAttestationV1PublicInputs,
 }
 
 pub struct ExpireAttestationResult {

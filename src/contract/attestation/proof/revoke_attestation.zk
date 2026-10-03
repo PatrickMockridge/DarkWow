@@ -1,0 +1,28 @@
+# RevokeAttestation_V2 — domain-separated attestation revocation.
+#
+# Issue #3 (github PatrickMockridge/DarkWow#3): this instruction had **no circuit at all**,
+# and its host compared `attestation.attestor_pub` against `params.attestor_pub` — a stored
+# value against a wire value, both public. Anyone who read the record could copy the stored
+# key into the call and revoke the attestation, because proving knowledge of the key behind
+# it was never asked for. The circuit below asks for exactly that, in the form
+# `check-pubkey-binding.sh` calls SOUND and `consume_claim.zk` already uses:
+# derive-and-expose. The host compares the published coordinates against the `attestor_pub`
+# it reads from the record, so a caller who cannot open that key cannot revoke.
+k = 11; field = "pallas";
+constant "RevokeAttestationV2" { EcFixedPointBase NULLIFIER_K, }
+witness "RevokeAttestationV2" {
+    Base attestor_secret, Base attestor_pub_x, Base attestor_pub_y,
+    Base tx_commitment, Base tx_nonce, Base tx_binding,
+}
+circuit "RevokeAttestationV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+
+    derived_pub = ec_mul_base(attestor_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(derived_pub);
+    derived_pub_y = ec_get_y(derived_pub);
+    constrain_equal_base(derived_pub_x, attestor_pub_x);
+    constrain_equal_base(derived_pub_y, attestor_pub_y);
+    constrain_instance(attestor_pub_x); constrain_instance(attestor_pub_y);
+}

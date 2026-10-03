@@ -3,14 +3,10 @@
 k = 11; field = "pallas";
 constant "VerifyClaimV2" { EcFixedPointBase NULLIFIER_K, }
 witness "VerifyClaimV2" {
-    Base evidence, Base attestation_data, Base nonce,
     Base tx_commitment, Base tx_nonce, Base tx_binding,
 }
 circuit "VerifyClaimV2" {
-    DOMAIN_TX_BINDING = witness_base(3); DOMAIN_COMMITMENT = witness_base(4);
-    evidence_hash = poseidon_hash(DOMAIN_COMMITMENT, evidence);
-    attestation_hash = poseidon_hash(DOMAIN_COMMITMENT, attestation_data);
-    leaf = poseidon_hash(DOMAIN_COMMITMENT, nonce);
+    DOMAIN_TX_BINDING = witness_base(3);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);
 }

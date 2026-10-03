@@ -76,7 +76,12 @@ use crate::{
     ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V2,
+    ATTESTATION_CONTRACT_ZKAS_REVOKE_NS_V2,
 };
+
+// Issue #3: `model::predicate_holds` is the contract's single definition of what a
+// predicate means, called by both `verify_claim_v1` and `validate_claim_v1`.
+use crate::model;
 
 dwow_sdk::define_contract!(
     init: init_contract,
@@ -114,6 +119,10 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&verify_chain_v2_bincode[..])?;
     let verify_claim_v2_bincode = include_bytes!("../proof/verify_claim.zk.bin");
     wasm::db::zkas_db_set(&verify_claim_v2_bincode[..])?;
+    // Issue #3: `revoke_attestation` gained a circuit — it had none, so its authority check
+    // was a public value compared against itself.
+    let revoke_attestation_v2_bincode = include_bytes!("../proof/revoke_attestation.zk.bin");
+    wasm::db::zkas_db_set(&revoke_attestation_v2_bincode[..])?;
 
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
@@ -166,35 +175,50 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         AttestationFunction::CreateAttestationV1 => {
-            let _params = match CreateAttestationParamsV1::decode(payload) {
+            let params = match CreateAttestationParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CreateAttestationParamsV1: {:?}", e);
                     let _ = wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
+            // Issue #3: `create_attestation.zk` derives the attestor's coordinates from
+            // `attester_secret` and instances them. Publishing the coordinates of the key the
+            // caller *claims* is what makes the proof verify only for a caller who can open
+            // it — the verifier compares the two, so `attestor_pub` cannot be someone else's.
+            // Typed rather than panicking: the derived `Decodable` for `PublicKey` builds the
+            // point directly and never calls `from_bytes`, so a decoded key can be the identity.
+            let Some((ax, ay)) = params.attestor_pub.xy() else {
+                return Err(ContractError::IoError(
+                    "params.attestor_pub is the identity point".to_string(),
+                ))
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
-                {
-                    // Circuit constrain_instance order: tx_binding, tx_nonce
-                    vec![txb, Base::zero()]
-                },
+                // Circuit constrain_instance order: tx_binding, tx_nonce, attestor_pub_x, attestor_pub_y
+                vec![txb, Base::zero(), ax, ay],
             ));
         }
         AttestationFunction::CreateClaimV1 => {
-            let _params = match CreateClaimParamsV1::decode(payload) {
+            let params = match CreateClaimParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CreateClaimParamsV1: {:?}", e);
                     let _ = wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
+            // Issue #3: as the arm above — the claim's creator is derive-and-exposed by
+            // `create_claim.zk`, so the published coordinates must be the ones the caller
+            // can open, and `create_claim_v1` stores `claimant_pub` from these params.
+            let Some((cx, cy)) = params.claimant_pub.xy() else {
+                return Err(ContractError::IoError(
+                    "params.claimant_pub is the identity point".to_string(),
+                ))
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V2.to_string(),
-                {
-                    // Circuit constrain_instance order: tx_binding, tx_nonce
-                    vec![txb, Base::zero()]
-                },
+                // Circuit constrain_instance order: tx_binding, tx_nonce, creator_pub_x, creator_pub_y
+                vec![txb, Base::zero(), cx, cy],
             ));
         }
         AttestationFunction::VerifyClaimV1 => {
@@ -281,9 +305,18 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     };
                     // Circuit: delegatee_leaf = poseidon_hash(DOMAIN_COIN_COMMIT, delegatee_pub_x, delegatee_pub_y)
                     // where DOMAIN_COIN_COMMIT = witness_base(4) = 4
-                    // Circuit constrain_instance order: delegatee_leaf, tx_binding, tx_nonce
+                    // Issue #3: the delegator is derive-and-exposed by `delegate_attestation.zk`
+                    // and `process_update` writes the whole record — `delegator_pub` included —
+                    // so the published coordinates must be the ones the caller can open.
+                    let Some((dlx, dly)) = params.delegator_pub.xy() else {
+                        return Err(ContractError::IoError(
+                            "params.delegator_pub is the identity point".to_string(),
+                        ))
+                    };
+                    // Circuit constrain_instance order: delegatee_leaf, tx_binding, tx_nonce,
+                    // delegator_pub_x, delegator_pub_y
                     let delegatee_leaf = poseidon_hash([Base::from(4), ex, ey]);
-                    vec![delegatee_leaf, txb, Base::zero()]
+                    vec![delegatee_leaf, txb, Base::zero(), dlx, dly]
                 },
             ));
         }
@@ -309,6 +342,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     let _ = wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
+            // Issue #3: this instruction authenticates no actor — `UpdateDelegationParamsV1`
+            // carries no public key, so there is none for the circuit to derive-and-expose or
+            // for this arm to publish. The circuit's unused witnesses are removed and the
+            // missing authorization is recorded as a finding rather than guessed at here.
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V2.to_string(),
                 // Circuit constrain_instance order: tx_binding, tx_nonce
@@ -316,35 +353,75 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::AttestSlashV1 => {
-            let _params = match AttestSlashParamsV1::decode(payload) {
+            let params = match AttestSlashParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize AttestSlashParamsV1: {:?}", e);
                     let _ = wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
+            // Issue #3: the slash attestation is attributed to `params.relayer_pub`, and
+            // `attest_slash_v1` derives the record's id from that key as well. The circuit
+            // derive-and-exposes it, so the published coordinates pin both to a key the
+            // caller can open.
+            let Some((rx, ry)) = params.relayer_pub.xy() else {
+                return Err(ContractError::IoError(
+                    "params.relayer_pub is the identity point".to_string(),
+                ))
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V2.to_string(),
-                // Circuit constrain_instance order: tx_binding, tx_nonce
-                vec![txb, Base::zero()],
+                // Circuit constrain_instance order: tx_binding, tx_nonce, attester_pub_x, attester_pub_y
+                vec![txb, Base::zero(), rx, ry],
             ));
         }
         AttestationFunction::CommitFeeScheduleV1 => {
-            let _params = match CommitFeeScheduleParamsV1::decode(payload) {
+            let params = match CommitFeeScheduleParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CommitFeeScheduleParamsV1: {:?}", e);
                     let _ = wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
+            // Issue #3: as the arm above — `commit_fee_schedule_v1` records
+            // `params.attestor_pub` and keys the schedule on a hash of it.
+            let Some((ax, ay)) = params.attestor_pub.xy() else {
+                return Err(ContractError::IoError(
+                    "params.attestor_pub is the identity point".to_string(),
+                ))
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V2.to_string(),
-                // Circuit constrain_instance order: tx_binding, tx_nonce
-                vec![txb, Base::zero()],
+                // Circuit constrain_instance order: tx_binding, tx_nonce, attester_pub_x, attester_pub_y
+                vec![txb, Base::zero(), ax, ay],
             ));
         }
-        // RevokeAttestationV1, ExpireAttestationV1, ValidateClaimV1
-        // have no ZK circuits; return empty metadata.
+        AttestationFunction::RevokeAttestationV1 => {
+            // Issue #3: this instruction had **no circuit at all** — `revoke_attestation_v1`
+            // compared the stored `attestor_pub` against the wire copy of itself, so anyone
+            // who read the record could revoke the attestation. `revoke_attestation.zk` is
+            // new and derive-and-exposes the attestor, so the arm publishes the coordinates
+            // of the key the caller claims and the proof verifies only for a caller who can
+            // open it.
+            let params = match RevokeAttestationParamsV1::decode(payload) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[attestation::get_metadata] Error: Failed to decode RevokeAttestationParamsV1: {:?}", e);
+                    let _ = wasm::util::set_return_data(&vec![]); return Ok(());
+                }
+            };
+            let Some((ax, ay)) = params.attestor_pub.xy() else {
+                return Err(ContractError::IoError(
+                    "params.attestor_pub is the identity point".to_string(),
+                ))
+            };
+            zk_public_inputs.push((
+                ATTESTATION_CONTRACT_ZKAS_REVOKE_NS_V2.to_string(),
+                // Circuit constrain_instance order: tx_binding, tx_nonce, attestor_pub_x, attestor_pub_y
+                vec![txb, Base::zero(), ax, ay],
+            ));
+        }
+        // ExpireAttestationV1 and ValidateClaimV1 have no ZK circuits; return empty metadata.
         _ => {}
     }
 
@@ -743,42 +820,44 @@ fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> Result<Vec<u
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Verify based on predicate type.
-    // ZK circuit (verified by host via get_metadata) constrains revealed_result
-    // to match the predicate evaluation against claim_data and evidence.
-    let verified = match claim.predicate {
-        Predicate::Matches => {
-            // ZK circuit constrains: revealed_result == poseidon_hash(evidence)
-            // Match confirmed if revealed_result is non-zero
-            params.revealed_result != pallas::Base::zero()
-        }
-        Predicate::GreaterOrEqual => {
-            // ZK circuit constrains: ev0 >= cd0 → revealed_result = 1, else 0
-            params.revealed_result == pallas::Base::one()
-        }
-        Predicate::LessOrEqual => {
-            // ZK circuit constrains: ev0 <= cd0 → revealed_result = 1, else 0
-            params.revealed_result == pallas::Base::one()
-        }
-        Predicate::Contains => {
-            // ZK circuit constrains set membership check
-            params.revealed_result != pallas::Base::zero()
-        }
-        Predicate::Custom => {
-            // ZK circuit handles external proof verification
-            params.revealed_result != pallas::Base::zero()
-        }
-    };
+    // The verdict is derived, not received.
+    //
+    // Issue #3 (github PatrickMockridge/DarkWow#3): these lines used to read
+    // `params.revealed_result` — a wire field that **no circuit witnessed**, under a comment
+    // claiming the circuit constrained it — so any non-zero value verified any claim, and a
+    // forged claim could then be consumed. The predicate, the evidence and the attestation's
+    // data now all come from state this contract holds: `claim.predicate` from the claim
+    // record, `params.evidence_commitment` already checked above against
+    // `claim.evidence_commitment`, and `attestation.claim_data` from the attestation record.
+    // `model::predicate_holds` is the single definition of what a predicate means, and
+    // `validate_claim_v1` calls the same function.
+    let verified = model::predicate_holds(
+        claim.predicate,
+        &[params.evidence_commitment],
+        &attestation.claim_data,
+    );
+
+    // Fail closed. A claim whose predicate does not hold must not be **recorded** as a
+    // successful call: this handler used to write `ClaimState::Rejected` and return `Ok`,
+    // so the call succeeded — and `labor_market::submit_deliverable_v1`, whose only
+    // attestation check is that a `VerifyClaimV1` child call exists and is routed to this
+    // contract, marked the job `Delivered` on a claim nothing had verified. A reverting
+    // child is a failing parent call, which is what the requirement has to mean: no
+    // consumer in this tree reads a child call's return data.
+    if !verified {
+        msg!("[attestation::verify_claim_v1] Claim predicate does not hold");
+        return Err(ContractError::InvalidFunction.into())
+    }
 
     // State update: set the state here (exec) and carry the full record to apply.
-    claim.state = if verified { ClaimState::Verified } else { ClaimState::Rejected };
+    claim.state = ClaimState::Verified;
 
     let update = VerifyClaimUpdateV1 {
         claim_id: params.claim_id,
         claim,
     };
 
-    msg!("[attestation::verify_claim_v1] Claim verification result: {:?}", verified);
+    msg!("[attestation::verify_claim_v1] Claim verified");
     Ok(update.encode()?)
 }
 
@@ -891,48 +970,14 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Result<V
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Validate based on predicate type
-    // NOTE: Field comparisons (>=, <=) don't have integer semantics in Pallas.
-    // For production, GreaterOrEqual/LessOrEqual should use ZK circuits with safemath.
-    // This on-chain validation is a best-effort workaround.
-    let valid = match claim.predicate {
-        Predicate::Matches => {
-            // Evidence must match attestation claim_data
-            attestation.claim_data == params.evidence
-        }
-        Predicate::GreaterOrEqual => {
-            // Simplified field comparison - proper comparison requires u64 range
-            // validation and cross_mul pattern in ZK circuit
-            if params.evidence.len() >= 1 && attestation.claim_data.len() >= 1 {
-                params.evidence.first() >= attestation.claim_data.first()
-            } else {
-                false
-            }
-        }
-        Predicate::LessOrEqual => {
-            // Simplified field comparison - proper comparison requires u64 range
-            // validation and cross_mul pattern in ZK circuit
-            if params.evidence.len() >= 1 && attestation.claim_data.len() >= 1 {
-                params.evidence.first() <= attestation.claim_data.first()
-            } else {
-                false
-            }
-        }
-        Predicate::Contains => {
-            // For contains, check if attestation data contains evidence
-            // Simplified: just check first element
-            if params.evidence.len() >= 1 && attestation.claim_data.len() >= 1 {
-                attestation.claim_data.first() == params.evidence.first()
-            } else {
-                false
-            }
-        }
-        Predicate::Custom => {
-            // Custom predicates require ZK verification
-            // This is a fast-path validation without ZK
-            false
-        }
-    };
+    // One derivation, one home. This arm used to carry a second, disagreeing definition of
+    // what a predicate means: `Custom` answered a literal `false`, `Contains` compared
+    // first elements under the comment *"Simplified: just check first element"*, and
+    // `GreaterOrEqual`/`LessOrEqual` carried a note calling the comparison a
+    // "best-effort workaround". `model::predicate_holds` is now the single definition and
+    // `verify_claim_v1` calls the same function, so the two arms cannot drift.
+    let valid =
+        model::predicate_holds(claim.predicate, &params.evidence, &attestation.claim_data);
 
     msg!("[attestation::validate_claim_v1] Validation result: {:?}", valid);
     Ok(ValidateClaimUpdateV1 { claim_id: params.claim_id, valid }.encode())

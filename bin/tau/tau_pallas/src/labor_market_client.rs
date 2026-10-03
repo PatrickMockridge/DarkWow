@@ -74,13 +74,17 @@ pub fn build_submit_deliverable_calldata(
 /// Build call data for Attestation contract's VerifyClaimV1
 ///
 /// Function code: 0x04
+///
+/// Issue #3 (github PatrickMockridge/DarkWow#3): the payload is exactly
+/// `VerifyClaimParamsV1` — `claim_id`, `attestation_id`, `evidence_commitment`, 96 bytes.
+/// This function used to append six fields (adding `revealed_result`, `revocation_root` and
+/// `attestation_data`, 192 bytes) while the contract expects the struct's own encoding, so
+/// the call could never have decoded. `revealed_result` and `attestation_data` are no longer
+/// fields of the struct and no longer inputs to the verdict.
 pub fn build_verify_claim_calldata(
     claim_id: pallas::Base,
     attestation_id: pallas::Base,
     evidence_commitment: pallas::Base,
-    revealed_result: pallas::Base,
-    revocation_root: pallas::Base,
-    attestation_data: pallas::Base,
 ) -> TauPallasResult<Vec<u8>> {
     let mut call_data = Vec::new();
     call_data.push(ATTESTATION_FUNCTION_VERIFY_CLAIM_V1);
@@ -88,9 +92,6 @@ pub fn build_verify_claim_calldata(
     call_data.extend_from_slice(&claim_id.to_repr());
     call_data.extend_from_slice(&attestation_id.to_repr());
     call_data.extend_from_slice(&evidence_commitment.to_repr());
-    call_data.extend_from_slice(&revealed_result.to_repr());
-    call_data.extend_from_slice(&revocation_root.to_repr());
-    call_data.extend_from_slice(&attestation_data.to_repr());
 
     Ok(call_data)
 }

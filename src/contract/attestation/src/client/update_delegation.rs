@@ -18,7 +18,12 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
-/// UpdateDelegationV1 circuit public inputs (V2: only tx_binding, tx_nonce)
+/// UpdateDelegationV1 circuit public inputs (V2: tx_binding, tx_nonce)
+///
+/// Issue #3: the circuit's `delegator_secret` and coordinate witnesses were removed rather
+/// than exposed — `UpdateDelegationParamsV1` carries no public key, so there is no host read
+/// for the coordinates to be bound to, and the arm's missing authorization is recorded as a
+/// finding instead.
 #[derive(Debug, Clone)]
 pub struct UpdateDelegationV1PublicInputs {
     pub tx_binding: pallas::Base,
@@ -66,13 +71,9 @@ impl UpdateDelegationV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
-        let (dx, dy) = self.delegator_public.xy().expect("pk not identity");
+        // Circuit witness order: tx_commitment, tx_nonce, tx_binding
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
-            Witness::Base(Value::known(self.delegator_secret)),
-            Witness::Base(Value::known(dx)),
-            Witness::Base(Value::known(dy)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(tx_binding)),
