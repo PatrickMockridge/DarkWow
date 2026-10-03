@@ -1003,7 +1003,7 @@ impl ClaimPrizeParamsV1 {
                 "ClaimPrizeParamsV1: expected {} bytes, got {}", end + 34, data.len()
             )))
         }
-        let proof = data[33..end].to_vec();
+        let proof = data[36..end].to_vec();
         let computed_commit = read_base(&data[end..end+32])?;
         let tier = data[end+32];
         let matches = data[end+33];
@@ -1237,4 +1237,31 @@ pub fn verify_commitment(
     }
     let computed = poseidon_hash([state, nonce]);
     computed == commitment
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `ClaimPrizeParamsV1` is a length-prefixed codec: `ticket_id` (32) ‖ `SerializedLen` (4) ‖
+    /// proof (L) ‖ `computed_commit` (32) ‖ `tier` (1) ‖ `matches` (1). The proof slice must start
+    /// at 36 (after the 4-byte prefix), not 33 — else the decoded proof carries 3 prefix bytes and
+    /// is 3 bytes too long. No round-trip existed, so this pins it.
+    #[test]
+    fn claim_prize_params_round_trip() {
+        let p = ClaimPrizeParamsV1 {
+            ticket_id: pallas::Base::from(7u64),
+            proof: vec![0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03],
+            tier: 3,
+            matches: 2,
+            computed_commit: pallas::Base::from(99u64),
+        };
+        let bytes = p.encode().expect("encode");
+        let q = ClaimPrizeParamsV1::decode(&bytes).expect("decode");
+        assert_eq!(q.ticket_id, p.ticket_id, "ticket_id");
+        assert_eq!(q.proof, p.proof, "proof (length-prefix boundary)");
+        assert_eq!(q.tier, p.tier, "tier");
+        assert_eq!(q.matches, p.matches, "matches");
+        assert_eq!(q.computed_commit, p.computed_commit, "computed_commit");
+    }
 }
