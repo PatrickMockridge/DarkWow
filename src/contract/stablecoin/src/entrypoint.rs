@@ -1617,10 +1617,12 @@ fn process_governance_report_instruction(
     if gov_point.len() != 64 {
         return Err(ContractError::IoError("governance authority malformed".to_string()))
     }
+    #[expect(clippy::unwrap_used, reason = "length checked immediately above")]
     let gov_x = Option::<pallas::Base>::from(pallas::Base::from_repr(
         gov_point[0..32].try_into().unwrap(),
     ))
     .ok_or_else(|| ContractError::IoError("governance authority x not canonical".to_string()))?;
+    #[expect(clippy::unwrap_used, reason = "length checked immediately above")]
     let gov_y = Option::<pallas::Base>::from(pallas::Base::from_repr(
         gov_point[32..64].try_into().unwrap(),
     ))
@@ -1786,10 +1788,12 @@ fn process_accrue_interest_instruction(
     if authority_point.len() != 64 {
         return Err(ContractError::IoError("governance authority malformed".to_string()))
     }
+    #[expect(clippy::unwrap_used, reason = "length checked immediately above")]
     let authority_x = Option::<pallas::Base>::from(pallas::Base::from_repr(
         authority_point[0..32].try_into().unwrap(),
     ))
     .ok_or_else(|| ContractError::IoError("governance authority x not canonical".to_string()))?;
+    #[expect(clippy::unwrap_used, reason = "length checked immediately above")]
     let authority_y = Option::<pallas::Base>::from(pallas::Base::from_repr(
         authority_point[32..64].try_into().unwrap(),
     ))
