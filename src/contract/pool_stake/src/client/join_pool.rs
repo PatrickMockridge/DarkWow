@@ -37,6 +37,8 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
+use crate::error::PoolStakeError;
+
 /// JoinPoolV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct JoinPoolV1PublicInputs {
@@ -119,16 +121,28 @@ impl JoinPoolV1CallData {
     ///
     /// The client previously published `Base::zero()` for both coordinates while the circuit
     /// derives and constrains them, so the proof could not be satisfied at all.
-    pub fn compute_value_commit(&self) -> (pallas::Base, pallas::Base) {
+    pub fn compute_value_commit(
+        &self,
+    ) -> std::result::Result<(pallas::Base, pallas::Base), PoolStakeError> {
         // `ScalarBlind` is a type alias for `Blind<pallas::Scalar>`, so the constructor is
         // `Blind(...)` — native_token's client does the same (`transfer/proof.rs:196`).
         let point = pedersen_commitment_u64(self.stake_amount, Blind(self.value_blind));
-        #[expect(clippy::expect_used, reason = "a Pedersen commitment to a u64 with a blind is never the identity point")]
+        // `Affine::coordinates()` is `None` exactly for the identity point, and
+        // `pedersen_commitment_u64` returns the identity exactly when `stake_amount` and
+        // `value_blind` are both zero — so this is the only `None`. The former `.expect(...)`
+        // therefore panicked on that (reachable) input; reject it as an error instead, stating the
+        // real condition.
         let coords = point
             .to_affine()
             .coordinates()
-            .expect("value commitment is not the identity");
-        (*coords.x(), *coords.y())
+            .into_option()
+            .ok_or_else(|| {
+                PoolStakeError::InvalidParams(
+                    "JoinPoolV1: value commitment is the identity element (stake_amount 0, blind 0)"
+                        .into(),
+                )
+            })?;
+        Ok((*coords.x(), *coords.y()))
     }
 
     /// The circuit's `tx_binding = poseidon_hash(3, tx_commitment, tx_nonce)`. Was a literal zero
@@ -137,7 +151,9 @@ impl JoinPoolV1CallData {
         poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
     }
 
-    pub fn compute_public_inputs(&self) -> JoinPoolV1PublicInputs {
+    pub fn compute_public_inputs(
+        &self,
+    ) -> std::result::Result<JoinPoolV1PublicInputs, PoolStakeError> {
         let derived_member_id = poseidon_hash([
             pallas::Base::from(4),
             self.pool_id,
@@ -146,8 +162,8 @@ impl JoinPoolV1CallData {
             pallas::Base::from(self.stake_amount),
             pallas::Base::from(self.nonce),
         ]);
-        let (value_commit_x, value_commit_y) = self.compute_value_commit();
-        JoinPoolV1PublicInputs {
+        let (value_commit_x, value_commit_y) = self.compute_value_commit()?;
+        Ok(JoinPoolV1PublicInputs {
             pool_id: self.pool_id,
             member_pub_x: self.member_pub_x,
             member_pub_y: self.member_pub_y,
@@ -159,7 +175,7 @@ impl JoinPoolV1CallData {
             value_commit_y,
             tx_binding: self.compute_tx_binding(),
             tx_nonce: self.tx_nonce,
-        }
+        })
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -187,7 +203,7 @@ pub fn join_pool_v1_proof(
     pk: &ProvingKey,
     input: &JoinPoolV1CallData,
 ) -> Result<(Proof, JoinPoolV1PublicInputs)> {
-    let public_inputs = input.compute_public_inputs();
+    let public_inputs = input.compute_public_inputs()?;
     let witnesses = input.to_witnesses();
 
     let circuit = ZkCircuit::new(witnesses, zkbin);
@@ -202,4 +218,38 @@ pub fn join_pool_v1_proof(
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_sdk::crypto::SecretKey;
+
+    /// R8 control: a `JoinPoolV1CallData` whose `stake_amount` and `value_blind` are both zero
+    /// commits to the identity, whose affine coordinates are absent. `compute_public_inputs` (and
+    /// its `compute_value_commit` helper) must return `Err`, never panic.
+    ///
+    /// `pedersen_commitment_u64(0, 0)` is `V*0 + R*0`, the identity — so `Affine::coordinates()` is
+    /// `None`, the input the former `.expect(...)` panicked on. This is the reachable case the guard
+    /// now rejects.
+    #[test]
+    fn identity_value_commit_is_rejected() {
+        let member = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1u64)));
+        let data = JoinPoolV1CallData::new(
+            pallas::Base::from(7u64),   // pool_id
+            member,
+            0,                          // stake_amount — zero, with a zero blind, commits to the identity
+            pallas::Base::from(0u64),   // asset_id
+            1,                          // nonce
+            pallas::Scalar::from(0u64), // value_blind
+        );
+        assert!(
+            data.compute_value_commit().is_err(),
+            "an identity value commitment must be rejected with an error, never panic"
+        );
+        assert!(
+            data.compute_public_inputs().is_err(),
+            "an identity value commitment must be rejected with an error, never panic"
+        );
+    }
 }
