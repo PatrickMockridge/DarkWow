@@ -281,13 +281,17 @@ run_gate "authority resolves (cited clause exists)" bash "$SCRIPT_DIR/check-auth
 # + `Proof::create(pk, &[circuit], &[], OsRng)`) and says verbatim "CI SHALL fail if either
 # pattern is found". No CI exists in this repository, so it has never run; this is the
 # runner. **It is expected RED**, and that is the point: re-measured 2026-10-03, its five
-# findings are four in `src/contract/test-harness/src/harness/dex.rs` (not a defect — those two
-# endpoints are `is_zk: false`, so the stubs match the spec) and one `comment-deferred` in
+# findings are four in `src/contract/test-harness/src/harness/dex.rs` (a **live** finding, not the
+# "not a defect" this note used to claim: those endpoints' manifest declares `requires_proof = true`
+# with a `proof_circuit` and the entrypoint's `get_metadata` publishes five ZK public inputs, while
+# the harness proves with `empty_witnesses` and empty public inputs and the spec sets `is_zk = false`
+# — see `OBL-C138`) and one `comment-deferred` in
 # `bin/dwowd/src/tests/specs/dao_escrow_spec.rs:2` (a genuine deferral — `PayPremiumV1`'s circuit
 # has never verified, which the contract header records). Wiring it does not make the umbrella
 # green, it makes the umbrella TRUE, which is what the register's OBL-C137 asks for. (This note
 # said "8 findings — four in insurance_market.rs and four in dex.rs"; measured today
-# insurance_market contributes **none**.) Its siblings are declassified instead: see the note below.
+# insurance_market contributes **none**.) Its sibling `check_heavyweight_coverage.sh` is repointed
+# and green below (`OBL-C139`).
 run_gate "heavyweight anti-patterns (spec §4.11)" \
     bash "$REPO_ROOT/contrib/ci/scan_heavyweight_antipatterns.sh"
 # The genesis endpoint-coverage checker, repointed and repaired (OBL-C137 / OBL-C139). It reads each

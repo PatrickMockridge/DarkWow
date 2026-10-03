@@ -17,8 +17,14 @@
 # `src/contract/test-harness/src/harness/dex.rs` (two `empty-witnesses` + two
 # `empty-proof-stub`, over two endpoints) and one `comment-deferred` in
 # `bin/dwowd/src/tests/specs/dao_escrow_spec.rs:2`.
-#   * The dex four are **not a defect**: dex's spec declares those two endpoints `is_zk: false`,
-#     so the stubs match the spec.
+#   * The dex four are a **live finding**. This header used to call them "not a defect" on the
+#     strength of the spec's `is_zk: false` alone; measured further (`OBL-C138`), dex's *manifest*
+#     declares those two functions `requires_proof = true` with a `proof_circuit`, and the
+#     entrypoint's `get_metadata` publishes **five** ZK public inputs (`gov_pub_x`, `gov_pub_y`,
+#     `gov_nullifier`, `tx_binding`, `tx_nonce`) — while the harness proves with `empty_witnesses`
+#     and **empty** public inputs (`&[]`) and the spec marks the endpoints `is_zk = false`. So the
+#     endpoint's ZK authorization is not exercised: the scanner is right, and the *spec* is the
+#     side that disagrees with the contract (`OBL-C138` is the row).
 #   * The `dao_escrow` one is a **genuine deferral**: `PayPremiumV1` is uncovered because the
 #     funding path's proof has never been made to verify, which the contract's own header
 #     records, so there is no honest row to write for it until that circuit is fixed.
