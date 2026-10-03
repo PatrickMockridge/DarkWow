@@ -58,7 +58,8 @@ fn parse_base(s: &str) -> Result<pallas::Base, String> {
     }
     let mut repr = [0u8; 32];
     repr.copy_from_slice(&bytes);
-    Ok(pallas::Base::from_repr(repr).unwrap())
+    Option::<pallas::Base>::from(pallas::Base::from_repr(repr))
+        .ok_or_else(|| "Base value out of range".to_string())
 }
 
 /// Parse a hex string into pallas::Scalar
@@ -281,4 +282,21 @@ pub fn run_prove(args: &[String]) -> ExitCode {
     }
 
     prove(&circuit_path, &witnesses, &public_inputs, Path::new(&output))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R8 control for the `parse_base` fix: a non-canonical 32-byte value was a `.unwrap()` panic
+    /// on the `zkas prove` CLI; it must now be an `Err`. All-`0xff` exceeds the pallas base
+    /// modulus, so `from_repr` returns `None`.
+    #[test]
+    fn parse_base_rejects_non_canonical() {
+        assert!(
+            parse_base(&"ff".repeat(32)).is_err(),
+            "a non-canonical base must be an Err, not a panic"
+        );
+        assert!(parse_base(&"00".repeat(32)).is_ok(), "zero is canonical");
+    }
 }
