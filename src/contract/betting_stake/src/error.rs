@@ -116,3 +116,14 @@ impl From<BettingStakeError> for ContractError {
         }
     }
 }
+
+/// Bridge into the client proof path's `Result`, so a fallible helper in `client/` (whose error is
+/// this crate's own type) propagates with `?` into the `dwow_core::Result` the proof builders
+/// already return. The entrypoint direction (`BettingStakeError` → `ContractError`) is the impl
+/// above; this composes it with `dwow_core`'s own `From<ContractError>`.
+#[cfg(feature = "client")]
+impl From<BettingStakeError> for dwow_core::Error {
+    fn from(e: BettingStakeError) -> Self {
+        Self::ContractError(ContractError::from(e))
+    }
+}

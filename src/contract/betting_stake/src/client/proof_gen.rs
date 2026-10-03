@@ -35,13 +35,28 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
+use crate::error::BettingStakeError;
+
 /// Pedersen value-commitment affine coordinates matching the Stake/Unstake/Claim circuits'
 /// `value_commit = ec_mul_short(amount, V) + ec_mul(value_blind, R)` instance constraint.
-fn value_commit_coords(amount: u64, value_blind: pallas::Scalar) -> (pallas::Base, pallas::Base) {
+///
+/// `Affine::coordinates()` is `None` exactly for the identity point, and
+/// `pedersen_commitment_u64` returns the identity exactly when `amount` and `value_blind` are both
+/// zero — so this is the only `None`. The former `.expect("pedersen commitment is identity")`
+/// stated the *opposite* of the condition it guarded, and panicked on exactly this (reachable)
+/// input; reject it as an error instead, stating the real condition.
+fn value_commit_coords(
+    amount: u64,
+    value_blind: pallas::Scalar,
+) -> std::result::Result<(pallas::Base, pallas::Base), BettingStakeError> {
     use pasta_curves::{arithmetic::CurveAffine, group::Curve};
     let vc = dwow_sdk::crypto::pedersen_commitment_u64(amount, dwow_sdk::crypto::Blind(value_blind));
-    let coords = vc.to_affine().coordinates().expect("pedersen commitment is identity");
-    (*coords.x(), *coords.y())
+    let coords = vc
+        .to_affine()
+        .coordinates()
+        .into_option()
+        .ok_or(BettingStakeError::ValueMismatch)?;
+    Ok((*coords.x(), *coords.y()))
 }
 
 // ============================================================================
@@ -160,10 +175,10 @@ impl StakeV1CallData {
         let staker_nullifier = poseidon_hash([pallas::Base::from(1), stake_id, staker_secret]);
         Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, amount, asset_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
-    pub fn compute_public_inputs(&self) -> StakeV1PublicInputs {
+    pub fn compute_public_inputs(&self) -> std::result::Result<StakeV1PublicInputs, BettingStakeError> {
         let stake_id = poseidon_hash([pallas::Base::from(4), self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.amount), pallas::Base::from(self.nonce)]);
-        let (vc_x, vc_y) = value_commit_coords(self.amount, self.value_blind);
-        StakeV1PublicInputs { stake_id, value_commit_x: vc_x, value_commit_y: vc_y, staker_nullifier: self.staker_nullifier, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
+        let (vc_x, vc_y) = value_commit_coords(self.amount, self.value_blind)?;
+        Ok(StakeV1PublicInputs { stake_id, value_commit_x: vc_x, value_commit_y: vc_y, staker_nullifier: self.staker_nullifier, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce })
     }
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
@@ -185,7 +200,7 @@ impl StakeV1CallData {
 }
 
 pub fn stake_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &StakeV1CallData) -> Result<(Proof, StakeV1PublicInputs)> {
-    let public_inputs = input.compute_public_inputs();
+    let public_inputs = input.compute_public_inputs()?;
     let witnesses = input.to_witnesses();
     let circuit = ZkCircuit::new(witnesses, zkbin);
     #[cfg(not(target_arch = "wasm32"))]
@@ -255,10 +270,10 @@ impl UnstakeV1CallData {
         let staker_nullifier = poseidon_hash([pallas::Base::from(2), stake_id, staker_secret]);
         Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, original_amount, current_amount, accumulated_earnings, asset_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
-    pub fn compute_public_inputs(&self) -> UnstakeV1PublicInputs {
+    pub fn compute_public_inputs(&self) -> std::result::Result<UnstakeV1PublicInputs, BettingStakeError> {
         let stake_id = poseidon_hash([pallas::Base::from(4), self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.original_amount), pallas::Base::from(self.nonce)]);
-        let (vc_x, vc_y) = value_commit_coords(self.original_amount, self.value_blind);
-        UnstakeV1PublicInputs { stake_id, value_commit_x: vc_x, value_commit_y: vc_y, staker_nullifier: self.staker_nullifier, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
+        let (vc_x, vc_y) = value_commit_coords(self.original_amount, self.value_blind)?;
+        Ok(UnstakeV1PublicInputs { stake_id, value_commit_x: vc_x, value_commit_y: vc_y, staker_nullifier: self.staker_nullifier, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce })
     }
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
@@ -282,7 +297,7 @@ impl UnstakeV1CallData {
 }
 
 pub fn unstake_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &UnstakeV1CallData) -> Result<(Proof, UnstakeV1PublicInputs)> {
-    let public_inputs = input.compute_public_inputs();
+    let public_inputs = input.compute_public_inputs()?;
     let witnesses = input.to_witnesses();
     let circuit = ZkCircuit::new(witnesses, zkbin);
     #[cfg(not(target_arch = "wasm32"))]
@@ -350,10 +365,10 @@ impl ClaimV1CallData {
         let staker_nullifier = poseidon_hash([pallas::Base::from(3), stake_id, staker_secret]);
         Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, current_amount, accumulated_earnings, asset_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
-    pub fn compute_public_inputs(&self) -> ClaimV1PublicInputs {
+    pub fn compute_public_inputs(&self) -> std::result::Result<ClaimV1PublicInputs, BettingStakeError> {
         let stake_id = poseidon_hash([pallas::Base::from(4), self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.current_amount), pallas::Base::from(self.nonce)]);
-        let (vc_x, vc_y) = value_commit_coords(self.current_amount, self.value_blind);
-        ClaimV1PublicInputs { stake_id, value_commit_x: vc_x, value_commit_y: vc_y, staker_nullifier: self.staker_nullifier, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce }
+        let (vc_x, vc_y) = value_commit_coords(self.current_amount, self.value_blind)?;
+        Ok(ClaimV1PublicInputs { stake_id, value_commit_x: vc_x, value_commit_y: vc_y, staker_nullifier: self.staker_nullifier, tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce })
     }
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
@@ -376,7 +391,7 @@ impl ClaimV1CallData {
 }
 
 pub fn claim_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &ClaimV1CallData) -> Result<(Proof, ClaimV1PublicInputs)> {
-    let public_inputs = input.compute_public_inputs();
+    let public_inputs = input.compute_public_inputs()?;
     let witnesses = input.to_witnesses();
     let circuit = ZkCircuit::new(witnesses, zkbin);
     #[cfg(not(target_arch = "wasm32"))]
@@ -458,4 +473,24 @@ pub fn update_risk_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &UpdateRis
     #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
     Ok((proof, public_inputs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R8 control: `value_commit_coords(0, 0)` commits to the identity, whose affine coordinates are
+    /// absent. The helper must return `Err`, never panic.
+    ///
+    /// `pedersen_commitment_u64(0, 0)` is `V*0 + R*0`, the identity — so `Affine::coordinates()` is
+    /// `None`, the input the former `.expect("pedersen commitment is identity")` (whose message
+    /// stated the opposite of the condition guarded) panicked on. This is the reachable case the
+    /// guard now rejects.
+    #[test]
+    fn identity_value_commit_is_rejected() {
+        assert!(
+            value_commit_coords(0, pallas::Scalar::from(0u64)).is_err(),
+            "an identity value commitment must be rejected with an error, never panic"
+        );
+    }
 }
