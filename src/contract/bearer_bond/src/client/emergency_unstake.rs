@@ -60,9 +60,9 @@ pub struct EmergencyUnstakeBurnRevealed {
 }
 
 impl EmergencyUnstakeBurnRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let (vc_x, vc_y) = point_coords(self.value_commit);
-        vec![
+    pub fn to_vec(&self) -> Result<Vec<pallas::Base>> {
+        let (vc_x, vc_y) = point_coords(self.value_commit)?;
+        Ok(vec![
             self.nullifier.inner(),
             vc_x,
             vc_y,
@@ -73,7 +73,7 @@ impl EmergencyUnstakeBurnRevealed {
             self.signature_public,
             self.tx_binding,
             self.tx_nonce,
-        ]
+        ])
     }
 }
 
@@ -89,9 +89,9 @@ pub struct EmergencyUnstakeReceiptRevealed {
 }
 
 impl EmergencyUnstakeReceiptRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let (vc_x, vc_y) = point_coords(self.value_commit);
-        vec![
+    pub fn to_vec(&self) -> Result<Vec<pallas::Base>> {
+        let (vc_x, vc_y) = point_coords(self.value_commit)?;
+        Ok(vec![
             self.commitment,
             vc_x,
             vc_y,
@@ -100,7 +100,7 @@ impl EmergencyUnstakeReceiptRevealed {
             self.spend_hook,
             self.tx_binding,
             self.tx_nonce,
-        ]
+        ])
     }
 }
 
@@ -298,7 +298,7 @@ fn create_emergency_unstake_burn_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs))
 }
@@ -352,7 +352,7 @@ fn create_emergency_unstake_receipt_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs))
 }

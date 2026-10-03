@@ -182,11 +182,17 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 
 /// Extract (x, y) base-field coordinates from a pallas::Point for ZK public inputs.
-fn point_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
+///
+/// `Affine::coordinates()` is a `subtle::CtOption` — invisible to `clippy::unwrap_used`, which
+/// only sees `Option`/`Result` — and it is `None` exactly for the identity point. Every caller
+/// passes a `value_commit` that arrived from `::decode`, and the identity decodes fine, so the
+/// former `.expect(...)` was reachable. Reject the identity as an error instead.
+fn point_coords(pt: pallas::Point) -> Result<(pallas::Base, pallas::Base), ContractError> {
     let affine = pt.to_affine();
-    #[expect(clippy::expect_used, reason = "value commitments are ZK-constrained to be non-identity")]
-    let coords = affine.coordinates().expect("point_coords: identity point — ZK circuit must constrain non-identity for value commitments");
-    (*coords.x(), *coords.y())
+    let coords = affine.coordinates().into_option().ok_or_else(|| {
+        ContractError::IoError("point_coords: value_commit is the identity point".to_string())
+    })?;
+    Ok((*coords.x(), *coords.y()))
 }
 
 // ============================================================================
@@ -201,7 +207,7 @@ fn issue_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<C
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
-    let (vc_x, vc_y) = point_coords(params.commitment.value_commit);
+    let (vc_x, vc_y) = point_coords(params.commitment.value_commit)?;
 
     // BlindOutput_V2 order: coin, vc_x, vc_y, token_commit, spend_hook, tx_binding, tx_nonce.
     // The first value is the note commitment, which the host takes from the params because it
@@ -244,7 +250,7 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 
     // Burn proofs (one per input)
     for input in &params.inputs {
-        let (vc_x, vc_y) = point_coords(input.value_commit);
+        let (vc_x, vc_y) = point_coords(input.value_commit)?;
 
         zk_public_inputs.push((
             BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
@@ -265,7 +271,7 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 
     // BlindOutput proofs (one per output)
     for output in &params.outputs {
-        let (vc_x, vc_y) = point_coords(output.value_commit);
+        let (vc_x, vc_y) = point_coords(output.value_commit)?;
 
         zk_public_inputs.push((
             BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V2.to_string(),
@@ -304,7 +310,7 @@ fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     // Burn_V1 proof for bond ownership (nullifier NOT written to tree)
-    let (vc_x, vc_y) = point_coords(params.bond_input.value_commit);
+    let (vc_x, vc_y) = point_coords(params.bond_input.value_commit)?;
 
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
@@ -342,7 +348,7 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     // Burn proof for the input stake commitment
-    let (vc_x, vc_y) = point_coords(params.bond_input.value_commit);
+    let (vc_x, vc_y) = point_coords(params.bond_input.value_commit)?;
 
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
@@ -404,7 +410,7 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     // Burn proof for the input stake commitment
-    let (vc_x, vc_y) = point_coords(params.bond_input.value_commit);
+    let (vc_x, vc_y) = point_coords(params.bond_input.value_commit)?;
 
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
@@ -459,7 +465,7 @@ fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     for input in &params.inputs {
-        let (vc_x, vc_y) = point_coords(input.value_commit);
+        let (vc_x, vc_y) = point_coords(input.value_commit)?;
 
         zk_public_inputs.push((
             BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
@@ -528,7 +534,7 @@ fn pay_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
-    let (vc_x, vc_y) = point_coords(params.interest_commitment.value_commit);
+    let (vc_x, vc_y) = point_coords(params.interest_commitment.value_commit)?;
 
     // BlindOutput_V2 order, and the commitment the client computed for the payment note — the same
     // fault as `issue_stake_metadata` and `transfer_stake_metadata` had: `token_commit` pushed in
@@ -1275,4 +1281,21 @@ fn apply_prove_coverage(cid: ContractId, update: ProveCoverageUpdateV1) -> Contr
     msg!("[apply_prove_coverage] Coverage report stored: series={:?}, block={}, ratio={} bps",
         update.report.series_asset_id, update.report.report_block, update.report.coverage_ratio_bps);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_sdk::pasta::group::Group;
+
+    /// R8 control: the identity point has no affine coordinates, so `point_coords` must return
+    /// `Err`, never panic. The former `.expect(...)` was a `CtOption` the lint cannot see; this is
+    /// the input — a decoded all-zero `value_commit` — it panicked on.
+    #[test]
+    fn point_coords_identity_is_err() {
+        assert!(
+            point_coords(pallas::Point::identity()).is_err(),
+            "the identity point must be rejected with an error, never panic"
+        );
+    }
 }

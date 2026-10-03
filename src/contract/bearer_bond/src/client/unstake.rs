@@ -68,9 +68,9 @@ pub struct UnstakeBurnRevealed {
 }
 
 impl UnstakeBurnRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let (vc_x, vc_y) = point_coords(self.value_commit);
-        vec![
+    pub fn to_vec(&self) -> Result<Vec<pallas::Base>> {
+        let (vc_x, vc_y) = point_coords(self.value_commit)?;
+        Ok(vec![
             self.nullifier.inner(),
             vc_x,
             vc_y,
@@ -81,7 +81,7 @@ impl UnstakeBurnRevealed {
             self.signature_public,
             self.tx_binding,
             self.tx_nonce,
-        ]
+        ])
     }
 }
 
@@ -99,12 +99,12 @@ pub struct UnstakeReceiptRevealed {
 }
 
 impl UnstakeReceiptRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let (vc_x, vc_y) = point_coords(self.value_commit);
+    pub fn to_vec(&self) -> Result<Vec<pallas::Base>> {
+        let (vc_x, vc_y) = point_coords(self.value_commit)?;
         // Redeem_V2's order, and the one the metadata pushes: the tx pair *before* the hook.
         // This vector had `spend_hook` first, which is a third order again — the circuit, the
         // metadata and the client each differed (OBL-Z15).
-        vec![
+        Ok(vec![
             self.commitment,
             vc_x,
             vc_y,
@@ -113,7 +113,7 @@ impl UnstakeReceiptRevealed {
             self.tx_binding,
             self.tx_nonce,
             self.spend_hook,
-        ]
+        ])
     }
 }
 
@@ -345,7 +345,7 @@ fn create_unstake_burn_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs))
 }
@@ -406,7 +406,7 @@ fn create_unstake_receipt_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs))
 }

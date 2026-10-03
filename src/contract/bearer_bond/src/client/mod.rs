@@ -116,9 +116,33 @@ pub struct BearerBondNote {
 }
 
 /// Extract (x, y) base-field coordinates from a pallas::Point for ZK public inputs.
-pub fn point_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
+///
+/// `Affine::coordinates()` returns a `subtle::CtOption` — invisible to `clippy::unwrap_used`,
+/// which only sees `Option`/`Result` — and it is `None` exactly for the identity point. A decoded
+/// all-zero value commitment, or `pedersen_commitment_u64(0, 0)`, is the identity, so the former
+/// `.unwrap()` was a reachable panic. Reject it as an error instead, stating the real condition.
+pub fn point_coords(pt: pallas::Point) -> dwow_core::Result<(pallas::Base, pallas::Base)> {
     use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine};
     let affine = pt.to_affine();
-    let coords = affine.coordinates().unwrap();
-    (*coords.x(), *coords.y())
+    let coords = affine.coordinates().into_option().ok_or_else(|| {
+        dwow_core::Error::Custom("point_coords: value_commit is the identity point".to_string())
+    })?;
+    Ok((*coords.x(), *coords.y()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_sdk::pasta::group::Group;
+
+    /// R8 control: `Affine::coordinates()` is `None` for the identity point, so `point_coords`
+    /// must return `Err`, never panic. The former `.unwrap()` was a `CtOption` the lint cannot
+    /// see; this is the input it panicked on.
+    #[test]
+    fn identity_point_is_rejected() {
+        assert!(
+            point_coords(pallas::Point::identity()).is_err(),
+            "the identity point must be rejected with an error, never panic"
+        );
+    }
 }

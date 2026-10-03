@@ -69,9 +69,9 @@ pub struct TransferBurnRevealed {
 }
 
 impl TransferBurnRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let (vc_x, vc_y) = point_coords(self.value_commit);
-        vec![
+    pub fn to_vec(&self) -> Result<Vec<pallas::Base>> {
+        let (vc_x, vc_y) = point_coords(self.value_commit)?;
+        Ok(vec![
             self.nullifier.inner(),
             vc_x,
             vc_y,
@@ -82,7 +82,7 @@ impl TransferBurnRevealed {
             self.signature_public,
             self.tx_binding,
             self.tx_nonce,
-        ]
+        ])
     }
 }
 
@@ -99,9 +99,9 @@ pub struct TransferBlindOutputRevealed {
 }
 
 impl TransferBlindOutputRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let (vc_x, vc_y) = point_coords(self.value_commit);
-        vec![
+    pub fn to_vec(&self) -> Result<Vec<pallas::Base>> {
+        let (vc_x, vc_y) = point_coords(self.value_commit)?;
+        Ok(vec![
             self.commitment,
             vc_x,
             vc_y,
@@ -109,7 +109,7 @@ impl TransferBlindOutputRevealed {
             self.spend_hook,
             self.tx_binding,
             self.tx_nonce,
-        ]
+        ])
     }
 }
 
@@ -397,7 +397,7 @@ fn create_transfer_burn_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs))
 }
@@ -457,7 +457,7 @@ fn create_transfer_blind_output_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs))
 }

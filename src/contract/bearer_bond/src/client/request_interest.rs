@@ -75,9 +75,9 @@ pub struct RequestInterestRevealed {
 }
 
 impl RequestInterestRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let (vc_x, vc_y) = point_coords(self.value_commit);
-        vec![
+    pub fn to_vec(&self) -> Result<Vec<pallas::Base>> {
+        let (vc_x, vc_y) = point_coords(self.value_commit)?;
+        Ok(vec![
             self.nullifier.inner(),
             vc_x,
             vc_y,
@@ -88,7 +88,7 @@ impl RequestInterestRevealed {
             self.signature_public,
             self.tx_binding,
             self.tx_nonce,
-        ]
+        ])
     }
 }
 
@@ -264,7 +264,7 @@ fn create_request_interest_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs))
 }
