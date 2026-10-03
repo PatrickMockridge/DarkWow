@@ -112,6 +112,11 @@ run_gate "control: heavyweight coverage can fail" \
 # proof-bearing function with no dispatch arm, must each be caught.
 run_gate "control: manifest↔entrypoint agreement can fail" \
     bash "$SCRIPT_DIR/check-manifest-entrypoint-agreement.sh" --self-test
+# The unwrap/expect census's control: a planted unwrap+expect in a dependency-free temp crate must
+# be caught and a clean twin cleared. The instrument that found the rollout's survivors must itself
+# be able to fail, or its "clean" verdict means nothing.
+run_gate "control: clippy unwrap/expect census can fail" \
+    bash "$REPO_ROOT/contrib/clippy_unwrap_audit.sh" --self-test
 
 # Static circuit audits first — they are seconds, and they need no build.
 #
@@ -364,6 +369,15 @@ run_gate "empty metadata arms declared"   bash "$SCRIPT_DIR/check-metadata-arms.
 run_gate "register status markers"        bash "$SCRIPT_DIR/register-status.sh" --check
 
 run_gate "build contract ZK circuits"     "$SCRIPT_DIR/build-contract-zk.sh"
+# The `unwrap_used`/`expect_used` census, made a gate so the rollout cannot silently regress
+# again. The prior claim of a clean tree rested on `make clippy --workspace`, which **aborts on the
+# first crate that errors** — so every crate downstream of the abort was never linted, and this
+# session's survivors (lottery, stablecoin, subscription, drain_protection, dwow_transport) sat
+# unseen. `contrib/clippy_unwrap_audit.sh` derives its 40-crate scope from `cargo metadata` (no
+# hand-typed list to go stale), lints each crate in every configuration it builds in, and reports a
+# GAP — unmeasured, never "clean" — for any that does not compile. **Heavy** (lints all 40 crates).
+run_gate "clippy unwrap/expect census (40 crates)" \
+    bash "$REPO_ROOT/contrib/clippy_unwrap_audit.sh"
 # OBL-Z8: the compiled artefacts are structurally valid. This is the only check that looks at the
 # `.zk.bin` files themselves rather than at the sources — `validate_zk_bins.sh` runs the compiler's
 # own `validate` over every one of them — and it ran nowhere until 2026-09-23. It belongs here,
