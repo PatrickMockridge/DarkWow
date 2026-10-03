@@ -162,5 +162,8 @@ fn test_compute_transfer_mint_revealed_invariants() {
 
     assert_eq!(revealed.total_pin, 400);
     assert_eq!(TransferMintRevealed::COUNT, 10);
-    assert_eq!(revealed.to_public_inputs().len(), TransferMintRevealed::COUNT);
+    assert_eq!(
+        revealed.to_public_inputs().expect("value/cumulative commitments are not identity").len(),
+        TransferMintRevealed::COUNT
+    );
 }

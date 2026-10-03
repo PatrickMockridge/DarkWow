@@ -35,6 +35,7 @@
 //! cannot be used as the return type. The test-time assertion provides the
 //! equivalent enforcement until that feature stabilizes.
 
+use dwow_sdk::GenericResult;
 use pasta_curves::pallas;
 
 /// Maps a ZK circuit namespace to its public input count and ordering.
@@ -56,5 +57,10 @@ pub trait CircuitPublicInputs {
 
     /// Ordered public inputs matching the circuit's `constrain_instance()` sequence.
     /// The caller MUST verify that `.len() == COUNT` if using directly.
-    fn to_public_inputs(&self) -> Vec<pallas::Base>;
+    ///
+    /// Fallible: several public inputs are `x`/`y` coordinates of a curve point
+    /// (value/cumulative commitments). `to_affine().coordinates()` on the
+    /// identity point is `None`, so a point whose affine coordinates do not
+    /// exist yields `Err` here rather than panicking.
+    fn to_public_inputs(&self) -> GenericResult<Vec<pallas::Base>>;
 }

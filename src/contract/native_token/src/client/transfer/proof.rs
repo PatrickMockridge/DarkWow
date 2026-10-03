@@ -37,7 +37,9 @@ use dwow_sdk::{
         pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId,
         MerkleNode, PublicKey, ScalarBlind, SecretKey, AssetId,
     },
+    error::ContractError,
     pasta::pallas,
+    GenericResult,
 };
 use crate::circuit::CircuitPublicInputs;
 use rand::rngs::OsRng;
@@ -74,7 +76,7 @@ pub struct TransferMintRevealed {
 }
 
 impl TransferMintRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
+    pub fn to_vec(&self) -> GenericResult<Vec<pallas::Base>> {
         self.to_public_inputs()
     }
 }
@@ -82,12 +84,14 @@ impl TransferMintRevealed {
 impl crate::circuit::CircuitPublicInputs for TransferMintRevealed {
     const COUNT: usize = 10;
 
-    fn to_public_inputs(&self) -> Vec<pallas::Base> {
+    fn to_public_inputs(&self) -> GenericResult<Vec<pallas::Base>> {
         let valcom_coords = self.value_commit.to_affine().coordinates()
-            .expect("Value commitment cannot be the identity element");
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("TransferMintRevealed: value_commit is the identity point".into()))?;
         let cumcom_coords = self.new_cumulative_commit.to_affine().coordinates()
-            .expect("Cumulative commitment cannot be the identity element");
-        vec![
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("TransferMintRevealed: new_cumulative_commit is the identity point".into()))?;
+        Ok(vec![
             self.commitment.inner(),                  // 1: C
             self.nullifier,                     // 2: nf  (FA-1 fix — was missing)
             *valcom_coords.x(),                 // 3: vc.x
@@ -98,7 +102,7 @@ impl crate::circuit::CircuitPublicInputs for TransferMintRevealed {
             self.tx_binding,                    // 8: tx_binding
             self.tx_nonce,                      // 9: tx_nonce
             pallas::Base::from(self.total_pin), // 10: total_pin
-        ]
+        ])
     }
 }
 
@@ -116,7 +120,7 @@ pub struct TransferBurnRevealed {
 }
 
 impl TransferBurnRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
+    pub fn to_vec(&self) -> GenericResult<Vec<pallas::Base>> {
         self.to_public_inputs()
     }
 }
@@ -125,10 +129,11 @@ impl crate::circuit::CircuitPublicInputs for TransferBurnRevealed {
     const COUNT: usize = 11;
 
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so x()/y() is always Some")]
-    fn to_public_inputs(&self) -> Vec<pallas::Base> {
+    fn to_public_inputs(&self) -> GenericResult<Vec<pallas::Base>> {
         let valcom_coords = self.value_commit.to_affine().coordinates()
-            .expect("Value commitment cannot be the identity element");
-        vec![
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("TransferBurnRevealed: value_commit is the identity point".into()))?;
+        Ok(vec![
             self.nullifier.inner(),             // 1
             *valcom_coords.x(),                 // 2
             *valcom_coords.y(),                 // 3
@@ -140,7 +145,7 @@ impl crate::circuit::CircuitPublicInputs for TransferBurnRevealed {
             self.signature_public.y().expect("pk not identity"),          // 9
             self.tx_binding,                    // 10
             self.tx_nonce,                      // 11
-        ]
+        ])
     }
 }
 
@@ -250,7 +255,8 @@ pub fn create_transfer_mint_proof(
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
     let (pub_x, pub_y) = commitment_public.xy().expect("pk not identity");
     let cumcom_coords = public_inputs.new_cumulative_commit.to_affine().coordinates()
-        .expect("Cumulative commitment cannot be the identity element");
+        .into_option()
+        .ok_or_else(|| ContractError::IoError("create_transfer_mint_proof: new_cumulative_commit is the identity point".into()))?;
 
     let prover_witnesses = vec![
         Witness::Base(Value::known(pub_x)),
@@ -280,12 +286,12 @@ pub fn create_transfer_mint_proof(
     #[cfg(not(target_arch = "wasm32"))]
     let proof = if crate::deterministic_zk_enabled() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+        Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut rng)?
     } else {
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+        Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?
     };
     #[cfg(target_arch = "wasm32")]
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs))
 }
@@ -393,12 +399,67 @@ pub fn create_transfer_burn_proof(
     #[cfg(not(target_arch = "wasm32"))]
     let proof = if crate::deterministic_zk_enabled() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+        Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut rng)?
     } else {
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+        Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?
     };
     #[cfg(target_arch = "wasm32")]
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs, signature_secret))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_commitment_attrs() -> CommitmentAttributes {
+        CommitmentAttributes {
+            version: 0,
+            public_key: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(7u64))),
+            value: 1,
+            asset_id: AssetId::from_base(pallas::Base::from(2u64)),
+            spend_hook: FuncId::from_base(pallas::Base::zero()),
+            user_data: pallas::Base::zero(),
+            blind: Blind(pallas::Base::zero()),
+        }
+    }
+
+    /// R8 control: an identity `value_commit` has no affine coordinates, so the
+    /// fallible `to_public_inputs()` MUST return `Err` — formerly this path
+    /// panicked on the `CtOption` returned by `to_affine().coordinates()`.
+    #[test]
+    fn mint_public_inputs_identity_value_commit_is_err() {
+        let attrs = test_commitment_attrs();
+        let revealed = TransferMintRevealed {
+            commitment: attrs.to_commitment(),
+            value_commit: pallas::Point::identity(),
+            token_commit: pallas::Base::zero(),
+            nullifier: pallas::Base::zero(),
+            new_cumulative_commit: pallas::Point::identity(),
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+            total_pin: 0,
+            commitment_attrs: attrs,
+        };
+        assert!(revealed.to_public_inputs().is_err(), "identity value_commit must yield Err");
+    }
+
+    /// R8 control for the burn reveal's `to_public_inputs()`.
+    #[test]
+    fn burn_public_inputs_identity_value_commit_is_err() {
+        let secret = SecretKey::from_base(pallas::Base::from(7u64));
+        let revealed = TransferBurnRevealed {
+            value_commit: pallas::Point::identity(),
+            token_commit: pallas::Base::zero(),
+            nullifier: Nullifier::new(secret.clone(), pallas::Base::from(3u64)),
+            merkle_root: MerkleNode::new(pallas::Base::zero()),
+            spend_hook: pallas::Base::zero(),
+            user_data_enc: pallas::Base::zero(),
+            signature_public: PublicKey::from_secret(secret),
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
+        assert!(revealed.to_public_inputs().is_err(), "identity value_commit must yield Err");
+    }
 }
