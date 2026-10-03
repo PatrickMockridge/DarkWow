@@ -705,18 +705,29 @@ fn process_spend_hook(cid: ContractId, payload: &[u8]) -> ContractResult {
         }
     }
 
-    // Serialize value commitments
-    let value_commits: Vec<[u8; 64]> = cb.value_commits.iter().map(|vc| {
-        let mut buf = [0u8; 64];
-        let (x, y) = {
-            let affine = vc.to_affine();
-            let coords = affine.coordinates().unwrap();
-            (coords.x().to_repr(), coords.y().to_repr())
-        };
-        buf[..32].copy_from_slice(&x);
-        buf[32..].copy_from_slice(&y);
-        buf
-    }).collect();
+    // Serialize value commitments.
+    //
+    // `Affine::coordinates()` returns a `CtOption<Coordinates>` that is `None` iff the point is
+    // the identity. `RevokeSpendHookPayload::decode` only checks canonicality — it accepts
+    // `pallas::Point::from_bytes([0u8; 32])`, which `pasta_curves` decodes to the identity — so a
+    // remote caller can deliver an identity value commit. Reject it as an error; never unwrap.
+    let value_commits: Vec<[u8; 64]> =
+        cb.value_commits
+            .iter()
+            .map(|vc| -> Result<[u8; 64], ContractError> {
+                let affine = vc.to_affine();
+                let coords = affine.coordinates().into_option().ok_or_else(|| {
+                    ContractError::IoError(
+                        "RevokeSpendHookPayload: value commit is the identity (`Point::from_bytes([0u8;32])` decodes to it)".into(),
+                    )
+                })?;
+                let (x, y) = (coords.x().to_repr(), coords.y().to_repr());
+                let mut buf = [0u8; 64];
+                buf[..32].copy_from_slice(&x);
+                buf[32..].copy_from_slice(&y);
+                Ok(buf)
+            })
+            .collect::<Result<Vec<[u8; 64]>, ContractError>>()?;
 
     // Pre-compute new total_redeemed in exec so apply is a pure write
     let config_db = wasm::db::db_lookup(cid, "config")?;
@@ -2049,4 +2060,30 @@ fn apply_redeem_stable_update(cid: ContractId, update: RedeemStableUpdateV1) -> 
 // ============================================================================
 // UPDATE STRUCTS
 // ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine};
+    use dwow_sdk::pasta::{group::GroupEncoding, pallas};
+
+    /// R8 control: pin the reachability of the identity value-commit defect that
+    /// `process_spend_hook` now rejects instead of unwrapping.
+    ///
+    /// `RevokeSpendHookPayload::decode` gates only on canonicality, and
+    /// `pallas::Point::from_bytes(&[0u8; 32])` decodes to the identity — so the decoder
+    /// *accepts* it. `Affine::coordinates()` is then `None` for the identity, so the former
+    /// `.unwrap()` in `process_spend_hook` was remotely reachable. This test pins both halves:
+    /// the identity is decodable, and its affine coordinates are absent.
+    #[test]
+    fn identity_value_commit_decodes_but_has_no_affine_coordinates() {
+        let point = match Option::<pallas::Point>::from(pallas::Point::from_bytes(&[0u8; 32])) {
+            Some(p) => p,
+            None => panic!("Point::from_bytes([0u8;32]) must decode (to the identity)"),
+        };
+        assert!(
+            point.to_affine().coordinates().into_option().is_none(),
+            "the identity has no affine coordinates; process_spend_hook must reject it, not panic"
+        );
+    }
+}
 
