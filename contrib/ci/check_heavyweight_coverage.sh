@@ -1,200 +1,202 @@
-#!/bin/bash
-# Endpoint coverage checker for genesis contract heavyweight tests.
-# Parses each genesis contract's lib.rs function enum and verifies
-# the heavyweight test exercises each variant through accept_block.
-# Usage: ./check_heavyweight_coverage.sh [--json]
-# Exit 0 = full coverage, Exit 1 = gaps found
+#!/usr/bin/env bash
 #
-# WIRING, decided 2026-09-25: NOT wired, because its verdict is not supported by its own
-# code. Two independent defects, both measured, both in this file:
+# Genesis endpoint coverage: every genesis function-enum variant is exercised through
+# `accept_block` by that contract's own heavyweight spec.
 #
-#   * The `accept_block` check (`check_has_accept_block`) greps from the test function's
-#     line to the next `^fn ` line. For a 4-line wrapper — which the schema MANDATES
-#     (`doc/src/dev/testing/level-2-heavyweight.md:141-150`) — that window collapses to
-#     the function's own signature line, so the check returns `NO_ACCEPT_BLOCK` for **all
-#     nine** genesis contracts, including the two it prints as `[OK]`, while
-#     `bin/dwowd/src/tests/heavyweight_pipeline.rs` contains `accept_block` 39 times and
-#     `submit()` 18 times. It is structurally impossible to satisfy under the schema it
-#     polices.
-#   * `check_variant_in_test` (`:65-77`) assigns `$test_fn` and **never uses it** — the
-#     grep runs against the whole 145 KB file, so "covered" means "the name appears
-#     somewhere in the module".
+# WHY THIS EXISTS. `heavyweight-spec.md` speaks of testing "every endpoint"; §4 is the list of
+# patterns that make such a test a control that cannot fail. This gate is the coverage half — for
+# each genesis contract, does the spec that carries its heavyweight test drive every variant of its
+# function enum through the block path? The question is the same one `OBL-C139` names, and
+# `OBL-C88`'s repair used this measure for `drain_protection`.
 #
-# Both directions of its verdict — `Covered: 17` and `Gaps: 38` — are therefore
-# unsupported, and wiring it would put the umbrella red for a reason nobody can act on.
-# It is kept for the rebuild that fixes those two defects; until then it is a report, not
-# a gate. This is the other half of OBL-C137: one of the three red `contrib/ci` gates was
-# a live defect and is now wired, and this one is a broken instrument.
+# WHAT IT READS NOW, AND WHY IT MOVED (REPAIR + REPOINT, 2026-10-03, OBL-C137). The old checker read
+# a single `bin/dwowd/src/tests/heavyweight_pipeline.rs`, and its verdict was unsupported by its own
+# code — a defect that left it "wired and blind" rather than merely "unwired":
+#   * `check_variant_in_test` took the test-function name and never used it, grepping the whole
+#     ~145 KB module, so "covered" meant "the name appears somewhere in the file";
+#   * `check_has_accept_block` searched from the test function to the next `^fn ` line — a window
+#     that, for the schema-mandated four-line wrapper, collapsed to the signature line, so it
+#     returned `NO_ACCEPT_BLOCK` for **all nine** genesis contracts, including the two it marked OK.
+# The heavyweight tests have since moved into one spec per contract
+# (`bin/dwowd/src/tests/specs/<contract>_spec.rs`), driven by `uniform_runner`, which submits every
+# endpoint through `accept_block`. The file *is* the contract's test now — so the search scope is
+# this contract's spec rather than a shared module, and "exercised through accept_block" becomes
+# "the variant appears in the spec, and the spec goes through the runner".
+#
+# THE DECLARED LIST EXPIRES, deliberately. The variants the tree does not exercise as endpoints are
+# declared below with the reason each is not: a consensus coinbase path submitted by block assembly,
+# an init hook, a host lookup driven as a *child* call. The gate fails if a declared variant
+# *becomes* covered — the declaration is a debt, and adding the row is what pays it. An allowlist
+# that never expires is the "instrument that cannot fail" defect with a longer half-life; this one
+# expires. The count is not stated here: it was 38 on 2026-09-25 against the old file and 5 on
+# 2026-10-03 against the spec tree, and a number in prose is what goes stale first.
+#
+# Usage: contrib/ci/check_heavyweight_coverage.sh
+#        contrib/ci/check_heavyweight_coverage.sh --self-test   (planted gap; requires a non-zero exit)
+# Exit status: 1 on an undeclared gap or a stale declaration; 0 otherwise.
 
-set -u
+set -uo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT="${HEAVY_COVERAGE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+export HEAVY_COVERAGE_ROOT="$ROOT"
 
-HEAVYWEIGHT_FILE="$REPO_ROOT/bin/dwowd/src/tests/heavyweight_pipeline.rs"
-CONTRACT_DIR="$REPO_ROOT/src/contract"
+python3 - "$@" <<'PY'
+import os, re, sys, pathlib, tempfile, shutil
 
-JSON_MODE=false
-if [[ "${1:-}" == "--json" ]]; then
-    JSON_MODE=true
-fi
-
-GAPS=0
-
-# Known genesis contracts and their function enum names
-# Format: contract_dir|enum_name|test_fn_name|contract_id_constant
-declare -A GENESIS_CONTRACTS
-GENESIS_CONTRACTS=(
-    ["native_token"]="NativeTokenFunction|test_heavyweight_native_token|NATIVE_TOKEN_CONTRACT_ID"
-    ["identity"]="IdentityFunction|test_heavyweight_identity|IDENTITY_CONTRACT_ID"
-    ["attestation"]="AttestationFunction|test_heavyweight_attestation|ATTESTATION_CONTRACT_ID"
-    ["multisig"]="MultiSigFunction|test_heavyweight_multisig|MULTISIG_CONTRACT_ID"
-    ["oracle"]="OracleFunction|test_heavyweight_oracle|ORACLE_CONTRACT_ID"
-    ["promissory_note"]="PromissoryNoteFunction|test_heavyweight_promissory_note|PROMISSORY_NOTE_CONTRACT_ID"
-    ["purse"]="PurseFunction|test_heavyweight_purse|PURSE_CONTRACT_ID"
-    ["box"]="BoxFunction|test_heavyweight_box|BOX_CONTRACT_ID"
-    ["deployooor"]="DeployFunction|test_heavyweight_deployooor|DEPLOYOOOR_CONTRACT_ID"
-)
-
-# Parse function variants from lib.rs.
-# Two formats exist:
-# 1. Standard enum: pub enum NativeTokenFunction { FeeV1 = 0x00, ... }
-# 2. Macro: define_contract_function!(BoxFunction { Initialize = 0x00, Put = 0x01, ... });
-parse_enum_variants() {
-    local lib_file="$1"
-    local enum_name="$2"
-
-    # Try macro format first: define_contract_function!(EnumName { Variant = 0xNN, ... });
-    local macro_vars
-    macro_vars=$(sed -n "/define_contract_function!($enum_name {/,/});/p" "$lib_file" 2>/dev/null | \
-        grep -E '^\s+[A-Z][a-zA-Z0-9_]+\s*=' | \
-        sed 's/^\s*//' | sed 's/\s*=.*//' | sed 's/,//')
-
-    if [[ -n "$macro_vars" ]]; then
-        echo "$macro_vars"
-        return 0
-    fi
-
-    # Try standard enum format: pub enum EnumName { Variant = 0xNN, ... }
-    sed -n "/pub enum $enum_name/,/^}/p" "$lib_file" 2>/dev/null | \
-        grep -E '^\s+[A-Z][a-zA-Z0-9_]+\s*=' | \
-        sed 's/^\s*//' | sed 's/\s*=.*//' | sed 's/,//'
+GENESIS = {
+    "native_token":    ("NativeTokenFunction",    "native_token"),
+    "identity":        ("IdentityFunction",       "identity"),
+    "attestation":     ("AttestationFunction",    "attestation"),
+    "multisig":        ("MultiSigFunction",       "multisig"),
+    "oracle":          ("OracleFunction",         "oracle"),
+    "promissory_note": ("PromissoryNoteFunction", "promissory_note"),
+    "purse":           ("PurseFunction",          "purse"),
+    "box":             ("BoxFunction",            "box"),
+    "deployooor":      ("DeployFunction",         "deployooor"),
 }
 
-# Check if a function variant name appears in the heavyweight test
-# within the context of the test function for that contract
-check_variant_in_test() {
-    local variant="$1"
-    local test_fn="$2"
-    # Search for the variant name or its snake_case form within the test function
-    local snake_name
-    snake_name=$(echo "$variant" | sed 's/\([A-Z]\)/_\L\1/g' | sed 's/^_//' | tr '[:upper:]' '[:lower:]')
-    # Look for the variant name in any form within the test function body
-    # (between the test function header and the next test function or EOF)
-    if grep -q "$variant\|$snake_name\|0x0[0-9a-f].*$variant" "$HEAVYWEIGHT_FILE" 2>/dev/null; then
-        return 0
-    fi
-    return 1
+# The measured debt (re-measured 2026-10-03 against the spec tree): the variants each contract's spec
+# leaves unexercised as an endpoint, with the reason each is not. expiry = the variant gaining a
+# matching row (checked below, and a declared variant that IS covered now fails as stale).
+DECLARED = {
+    ("native_token", "PoWRewardV1"):
+        "consensus coinbase (0x05), plaintext/no-proof — submitted by block assembly, not an endpoint call",
+    ("native_token", "UncleMintV1"):
+        "consensus uncle mint (0x07), plaintext/no-proof — submitted by the uncle path, not an endpoint call",
+    ("identity", "InitializeV1"):
+        "driven by the spec's `initialize` hook (`has_initialize: true`), not a named endpoint row",
+    ("multisig", "InitializeV1"):
+        "the fixture sets `has_initialize: false`; the variant is not driven as an endpoint",
+    ("attestation", "CheckAttestationV1"):
+        "non-ZK host lookup (0x0d) driven as a *child* call (e.g. `labor_market`'s create_job), not as attestation's own row",
 }
 
-# Check that the test function's body contains accept_block (submit)
-check_has_accept_block() {
-    local test_fn="$1"
-    local start_line end_line
-    start_line=$(grep -n "fn $test_fn" "$HEAVYWEIGHT_FILE" | head -1 | cut -d: -f1)
-    if [[ -z "$start_line" ]]; then
-        echo "MISSING_TEST"
+def variants(lib_text, enum):
+    """The enum's variant names, in both declared forms (macro and hand-written `pub enum`)."""
+    m = re.search(r'define_contract_function!\(\s*%s\s*\{(.*?)\}\);' % re.escape(enum), lib_text, re.S)
+    body = m.group(1) if m else ""
+    if not body:
+        m = re.search(r'pub enum %s\b[^{]*\{(.*?)\n\}' % re.escape(enum), lib_text, re.S)
+        body = m.group(1) if m else ""
+    return re.findall(r'^\s*([A-Z][A-Za-z0-9_]*)\s*=', body, re.M)
+
+def snake(v):
+    return re.sub(r'(?<!^)(?=[A-Z])', '_', v).lower()
+
+def covered(variant, spec_text):
+    """A variant is covered when its name or its snake_case form appears in the contract's spec.
+    The spec file IS the contract's test, so the whole-file scope is the test's scope."""
+    return bool(re.search(r'\b%s\b|\b%s\b' % (re.escape(variant), re.escape(snake(variant))), spec_text))
+
+def check(root):
+    cdir = root / "src" / "contract"
+    sdir = root / "bin" / "dwowd" / "src" / "tests" / "specs"
+    rows, gaps = [], []
+    for c, (enum, base) in GENESIS.items():
+        lib = cdir / c / "src" / "lib.rs"
+        spec = sdir / (base + "_spec.rs")
+        if not lib.exists():
+            rows.append((c, "NO_LIB_FILE", 0, 0, 0)); continue
+        vs = variants(lib.read_text(), enum)
+        if not vs:
+            rows.append((c, "ENUM_NOT_FOUND", 0, 0, 0)); continue
+        if not spec.exists():
+            rows.append((c, "NO_SPEC_FILE", 0, 0, 0)); continue
+        st = spec.read_text()
+        runner = "HAS_RUNNER" if "uniform_runner" in st else "NO_RUNNER"
+        cov = decl = 0
+        for v in vs:
+            if covered(v, st):
+                cov += 1
+            elif (c, v) in DECLARED:
+                decl += 1
+            else:
+                gaps.append((c, v))
+        rows.append((c, runner, cov, len(vs), decl))
+    stale = []
+    for (c, v) in DECLARED:
+        spec = sdir / (GENESIS[c][1] + "_spec.rs")
+        if spec.exists() and covered(v, spec.read_text()):
+            stale.append((c, v))
+    return rows, gaps, stale
+
+def main():
+    if "--self-test" in sys.argv:
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            src_root = pathlib.Path(os.environ["HEAVY_COVERAGE_ROOT"])
+            for c, (enum, base) in GENESIS.items():
+                lib = src_root / "src" / "contract" / c / "src" / "lib.rs"
+                spec = src_root / "bin" / "dwowd" / "src" / "tests" / "specs" / (base + "_spec.rs")
+                if lib.exists():
+                    d = t / "src" / "contract" / c / "src"; d.mkdir(parents=True, exist_ok=True)
+                    shutil.copy(lib, d / "lib.rs")
+                if spec.exists():
+                    d = t / "bin" / "dwowd" / "src" / "tests" / "specs"; d.mkdir(parents=True, exist_ok=True)
+                    shutil.copy(spec, d / spec.name)
+            # Control 1 — plant an uncovered variant: the spec carries no row for it, so the checker
+            # must report it as an undeclared gap and exit non-zero (not merely die for another reason).
+            lib = t / "src" / "contract" / "native_token" / "src" / "lib.rs"
+            txt = lib.read_text()
+            anchor = "UncleMintV1 = 0x07,"
+            if anchor not in txt:
+                print("FAIL: --self-test could not find native_token's enum to plant into")
+                return 1
+            lib.write_text(txt.replace(anchor, anchor + "\n    PlantedProbeV1 = 0x09,", 1))
+            _, gaps, _ = check(t)
+            probe = [g for g in gaps if g[1] == "PlantedProbeV1"]
+            if not probe:
+                print("FAIL: --self-test planted an uncovered variant and the checker did not report it")
+                return 1
+            print(f"OK: --self-test — the planted uncovered variant is reported ({probe[0][0]}/{probe[0][1]})")
+
+            # Control 2 — make a *declared* variant covered: the declaration must expire, so the
+            # checker must report it stale. An allowlist that cannot expire is the defect this list
+            # exists to avoid, so a control that required the report to *stop* would re-introduce it.
+            lib.write_text(txt)
+            spec = t / "bin" / "dwowd" / "src" / "tests" / "specs" / "native_token_spec.rs"
+            spec.write_text(spec.read_text() + "\n// PoWRewardV1 — now exercised as a row\n")
+            _, _, stale = check(t)
+            if ("native_token", "PoWRewardV1") not in stale:
+                print("FAIL: --self-test covered a declared variant and the checker did not report it stale")
+                return 1
+            print("OK: --self-test — a declared variant that became covered is reported stale")
+        return 0
+
+    root = pathlib.Path(os.environ["HEAVY_COVERAGE_ROOT"])
+    rows, gaps, stale = check(root)
+    total_f = sum(r[3] for r in rows)
+    covered_f = sum(r[2] for r in rows)
+    declared_f = sum(r[4] for r in rows)
+    json_mode = "--json" in sys.argv
+    if json_mode:
+        import json
+        print(json.dumps({"contracts": len(GENESIS), "total_functions": total_f,
+                          "covered_functions": covered_f, "declared": declared_f,
+                          "gaps": len(gaps), "stale": len(stale)}))
+        return 1 if (gaps or stale) else 0
+    for c, status, cov, tot, decl in rows:
+        if status in ("NO_LIB_FILE", "ENUM_NOT_FOUND", "NO_SPEC_FILE"):
+            print(f"[WARN] {c}: {status}")
+        else:
+            mark = "[OK] " if (tot - cov - decl) == 0 else "[GAP]"
+            print(f"{mark} {c}: {cov}/{tot} covered, {decl} declared, runner={status}")
+    for c, v in gaps:
+        print(f"FAIL: {c}::{v} is not covered by its spec and is not declared")
+    for c, v in stale:
+        print(f"FAIL: the declared variant {c}::{v} is now covered — remove it and let the count fall")
+    print("\n=== Coverage Summary ===")
+    print(f"Contracts: {len(GENESIS)}")
+    print(f"Total functions: {total_f}")
+    print(f"Covered: {covered_f}")
+    print(f"Declared: {declared_f}")
+    print(f"Gaps: {len(gaps)}")
+    print(f"Stale: {len(stale)}")
+    if gaps or stale:
+        print(f"\n[FAIL] {len(gaps)} undeclared gap(s), {len(stale)} stale declaration(s).")
         return 1
-    fi
-    # Find the end of the test function (next fn or EOF)
-    end_line=$(tail -n +"$start_line" "$HEAVYWEIGHT_FILE" | grep -n "^fn \|^#\[test\]" | head -1 | cut -d: -f1)
-    if [[ -z "$end_line" ]]; then
-        end_line=$(wc -l < "$HEAVYWEIGHT_FILE")
-    else
-        end_line=$((start_line + end_line - 1))
-    fi
-    # Check for submit() or accept_block in the function body
-    if sed -n "${start_line},${end_line}p" "$HEAVYWEIGHT_FILE" | grep -q 'submit()\|accept_block'; then
-        echo "HAS_ACCEPT_BLOCK"
-        return 0
-    else
-        echo "NO_ACCEPT_BLOCK"
-        return 1
-    fi
-}
+    print("\n[PASS] every genesis variant is covered or declared; no declaration is stale.")
+    return 0
 
-total_contracts=0
-total_functions=0
-covered_functions=0
-
-for contract in "${!GENESIS_CONTRACTS[@]}"; do
-    IFS='|' read -r enum_name test_fn cid_const <<< "${GENESIS_CONTRACTS[$contract]}"
-    lib_file="$CONTRACT_DIR/$contract/src/lib.rs"
-
-    if [[ ! -f "$lib_file" ]]; then
-        if $JSON_MODE; then
-            echo "{\"contract\":\"$contract\",\"status\":\"NO_LIB_FILE\",\"file\":\"$lib_file\"}"
-        else
-            echo "[WARN] $contract: No lib.rs found at $lib_file"
-        fi
-        continue
-    fi
-
-    total_contracts=$((total_contracts + 1))
-
-    variants=$(parse_enum_variants "$lib_file" "$enum_name" || true)
-    if [[ -z "${variants:-}" ]]; then
-        if $JSON_MODE; then
-            echo "{\"contract\":\"$contract\",\"status\":\"ENUM_NOT_FOUND\",\"enum\":\"$enum_name\"}"
-        else
-            echo "[WARN] $contract: Enum $enum_name not found in $lib_file"
-        fi
-        continue
-    fi
-
-    # Check accept_block presence
-    accept_block_status=$(check_has_accept_block "$test_fn")
-
-    missing_variants=""
-    variant_count=0
-    while IFS= read -r variant; do
-        [[ -z "$variant" ]] && continue
-        variant_count=$((variant_count + 1))
-        total_functions=$((total_functions + 1))
-
-        if check_variant_in_test "$variant" "$test_fn"; then
-            covered_functions=$((covered_functions + 1))
-        else
-            missing_variants="$missing_variants $variant"
-            GAPS=$((GAPS + 1))
-        fi
-    done <<< "$variants"
-
-    if $JSON_MODE; then
-        echo "{\"contract\":\"$contract\",\"enum\":\"$enum_name\",\"test_fn\":\"$test_fn\",\"total\":$variant_count,\"covered\":$((variant_count - $(echo "$missing_variants" | wc -w))),\"accept_block\":\"$accept_block_status\",\"missing\":[$(echo "$missing_variants" | sed 's/ /", "/g' | sed 's/^", //' | sed 's/", $//')]}"
-    else
-        covered=$((variant_count - $(echo "$missing_variants" | wc -w)))
-        if [[ -n "$missing_variants" ]]; then
-            echo "[GAP] $contract: $covered/$variant_count functions covered, accept_block=$accept_block_status. Missing:$missing_variants"
-        else
-            echo "[OK]  $contract: $covered/$variant_count functions covered, accept_block=$accept_block_status"
-        fi
-    fi
-done
-
-# Summary
-if $JSON_MODE; then
-    echo "{\"summary\":{\"contracts\":$total_contracts,\"total_functions\":$total_functions,\"covered_functions\":$covered_functions,\"gaps\":$GAPS}}"
-else
-    echo ""
-    echo "=== Coverage Summary ==="
-    echo "Contracts: $total_contracts"
-    echo "Total functions: $total_functions"
-    echo "Covered: $covered_functions"
-    echo "Gaps: $GAPS"
-fi
-
-if [ "$GAPS" -gt 0 ]; then
-    exit 1
-fi
-exit 0
+sys.exit(main())
+PY

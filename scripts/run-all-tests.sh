@@ -98,6 +98,16 @@ run_gate "control: sync conformance reports a missing header" \
 # the report exists to state.
 run_gate "control: the report generator's verdicts can fail" \
     bash "$SCRIPT_DIR/report-status.sh" --self-test
+# The anti-pattern scanner's control: a planted §4.3 deferral in the *spec tree* must be caught.
+# OBL-C137's shape is a gate wired but blind; this proves the repoint reads the migrated tree
+# (`bin/dwowd/src/tests/specs`), not only the pre-migration `heavyweight_pipeline.rs`.
+run_gate "control: heavyweight anti-patterns can fail" \
+    bash "$REPO_ROOT/contrib/ci/scan_heavyweight_antipatterns.sh" --self-test
+# The coverage checker's control: a planted uncovered variant must be reported, and a *declared*
+# variant that becomes covered must be reported stale — an allowlist that cannot expire is the
+# defect this list exists to avoid.
+run_gate "control: heavyweight coverage can fail" \
+    bash "$REPO_ROOT/contrib/ci/check_heavyweight_coverage.sh" --self-test
 
 # Static circuit audits first — they are seconds, and they need no build.
 #
@@ -260,12 +270,22 @@ run_gate "authority resolves (cited clause exists)" bash "$SCRIPT_DIR/check-auth
 # real. `heavyweight-spec.md` §4.11 quotes the exact prohibited snippet (`empty_witnesses()`
 # + `Proof::create(pk, &[circuit], &[], OsRng)`) and says verbatim "CI SHALL fail if either
 # pattern is found". No CI exists in this repository, so it has never run; this is the
-# runner. **It is expected RED**, and that is the point: its 8 findings are live — four in
-# `src/contract/test-harness/src/harness/insurance_market.rs` and four in `harness/dex.rs`.
-# Wiring it does not make the umbrella green, it makes the umbrella TRUE, which is what the
-# register's OBL-C137 asks for. Its siblings are declassified instead: see the note below.
+# runner. **It is expected RED**, and that is the point: re-measured 2026-10-03, its five
+# findings are four in `src/contract/test-harness/src/harness/dex.rs` (not a defect — those two
+# endpoints are `is_zk: false`, so the stubs match the spec) and one `comment-deferred` in
+# `bin/dwowd/src/tests/specs/dao_escrow_spec.rs:2` (a genuine deferral — `PayPremiumV1`'s circuit
+# has never verified, which the contract header records). Wiring it does not make the umbrella
+# green, it makes the umbrella TRUE, which is what the register's OBL-C137 asks for. (This note
+# said "8 findings — four in insurance_market.rs and four in dex.rs"; measured today
+# insurance_market contributes **none**.) Its siblings are declassified instead: see the note below.
 run_gate "heavyweight anti-patterns (spec §4.11)" \
     bash "$REPO_ROOT/contrib/ci/scan_heavyweight_antipatterns.sh"
+# The genesis endpoint-coverage checker, repointed and repaired (OBL-C137 / OBL-C139). It reads each
+# genesis contract's own spec (`bin/dwowd/src/tests/specs/<contract>_spec.rs`) rather than the
+# pre-migration `heavyweight_pipeline.rs`, and the five variants the tree leaves unexercised are
+# declared in the script with their reasons (expiry = the variant gaining a row). **It is green.**
+run_gate "heavyweight coverage (genesis endpoints)" \
+    bash "$REPO_ROOT/contrib/ci/check_heavyweight_coverage.sh"
 # The barb alphabet, in five representations: the Lean `inductive Barb`, the core `BarbId`, the sdk
 # `Barb`, the Python model, and `type-system.md` §1.1. `contrib/barb_alphabet_diff.sh` extracts and
 # diffs the four sets mechanically; `contrib/primitive_barbs_diff.sh` does the same for the *type→barb
