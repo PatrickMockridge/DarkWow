@@ -39,8 +39,8 @@ impl PurseHarness {
         (lp, p, root)
     }
 
-    fn coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
-        let a = pt.to_affine(); let c = a.coordinates().expect("identity point"); (*c.x(), *c.y())
+    fn coords(pt: pallas::Point) -> Result<(pallas::Base, pallas::Base)> {
+        let a = pt.to_affine(); let c = a.coordinates().into_option().ok_or(dwow_core::Error::Custom("identity point".into()))?; Ok((*c.x(), *c.y()))
     }
 
     pub fn deposit(&self, amount: u64) -> Result<PurseDepositResult> {
@@ -62,7 +62,7 @@ impl PurseHarness {
         let er_base: pallas::Base = root.inner();
         let obl=ScalarBlind::from_u64(1u64);let dbl=ScalarBlind::from_u64(2u64);let nbl=ScalarBlind::from_u64(3u64);
         let oc=pedersen_commitment_u64(ob,obl.clone());let nc=pedersen_commitment_u64(nb,nbl.clone());
-        let (ocx,ocy)=Self::coords(oc);let (ncx,ncy)=Self::coords(nc);
+        let (ocx,ocy)=Self::coords(oc)?;let (ncx,ncy)=Self::coords(nc)?;
         let w=vec![Witness::Base(Value::known(pid)),Witness::Base(Value::known(pallas::Base::from(ob))),Witness::Scalar(Value::known(obl.inner())),Witness::Base(Value::known(pallas::Base::from(amount))),Witness::Scalar(Value::known(dbl.inner())),Witness::Base(Value::known(pallas::Base::from(nb))),Witness::Scalar(Value::known(nbl.inner())),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(ocx)),Witness::Base(Value::known(ocy)),Witness::Base(Value::known(ncx)),Witness::Base(Value::known(ncy)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb)),Witness::Base(Value::known(tid)),Witness::Base(Value::known(dpi))];
         let pi=vec![nf,er_base,ocx,ocy,ncx,ncy,nl,tb,tn,dpi];let c=ZkCircuit::new(w,&self.deposit_zkbin);
         let proof = if dwow_purse_contract::deterministic_zk_enabled() {
@@ -116,7 +116,7 @@ impl PurseHarness {
         // obl=5: Pedersen blind balance: obl = nbl + wbl (5 = 3 + 2)
         let obl=ScalarBlind::from_u64(5u64);let wbl=ScalarBlind::from_u64(2u64);let nbl=ScalarBlind::from_u64(3u64);
         let oc=pedersen_commitment_u64(ob,obl.clone());let nc=pedersen_commitment_u64(nb,nbl.clone());
-        let (ocx,ocy)=Self::coords(oc);let (ncx,ncy)=Self::coords(nc);
+        let (ocx,ocy)=Self::coords(oc)?;let (ncx,ncy)=Self::coords(nc)?;
         let w=vec![Witness::Base(Value::known(pid)),Witness::Base(Value::known(pallas::Base::from(ob))),Witness::Scalar(Value::known(obl.inner())),Witness::Base(Value::known(pallas::Base::from(amount))),Witness::Scalar(Value::known(wbl.inner())),Witness::Base(Value::known(pallas::Base::from(nb))),Witness::Scalar(Value::known(nbl.inner())),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(ocx)),Witness::Base(Value::known(ocy)),Witness::Base(Value::known(ncx)),Witness::Base(Value::known(ncy)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb)),Witness::Base(Value::known(tid)),Witness::Base(Value::known(dpi))];
         let pi=vec![nf,er_base,ocx,ocy,ncx,ncy,nl,tb,tn,dpi];let c=ZkCircuit::new(w,&self.withdraw_zkbin);
         let proof = if dwow_purse_contract::deterministic_zk_enabled() {
@@ -169,7 +169,7 @@ impl PurseHarness {
         let root = tree.root(0).expect("tree.root");
         let er_base: pallas::Base = root.inner();
         let bbl=ScalarBlind::from_u64(1u64);let bc=pedersen_commitment_u64(bal,bbl.clone());
-        let (bcx,bcy)=Self::coords(bc);
+        let (bcx,bcy)=Self::coords(bc)?;
         let w=vec![Witness::Base(Value::known(pid)),Witness::Base(Value::known(tid)),Witness::Base(Value::known(pallas::Base::from(bal))),Witness::Scalar(Value::known(bbl.inner())),Witness::Base(Value::known(sn)),Witness::Base(Value::known(dpi)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(tcom)),Witness::Base(Value::known(bcx)),Witness::Base(Value::known(bcy)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Base(Value::known(tblind)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc_)),Witness::Base(Value::known(tn_)),Witness::Base(Value::known(tb))];
         let pi=vec![dpi,er_base,bcx,bcy,tcom,tb,tn_];let c=ZkCircuit::new(w,&self.balance_zkbin);
         let proof = if dwow_purse_contract::deterministic_zk_enabled() {
@@ -196,3 +196,14 @@ impl ContractHarness for PurseHarness {
 pub struct PurseDepositResult { pub call_data: Vec<u8>, pub proof: Proof }
 pub struct PurseWithdrawResult { pub call_data: Vec<u8>, pub proof: Proof }
 pub struct PurseBalanceResult { pub call_data: Vec<u8>, pub proof: Proof }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_sdk::pasta::group::Group;
+
+    #[test]
+    fn coords_identity_is_err() {
+        assert!(PurseHarness::coords(pallas::Point::identity()).is_err());
+    }
+}
