@@ -153,3 +153,14 @@ impl From<EscrowError> for ContractError {
         }
     }
 }
+
+/// Bridge into the client proof path's `Result`, so a fallible helper in `client/` (whose error is
+/// this crate's own type) propagates with `?` into the `dwow_core::Result` the proof builders
+/// already return. The entrypoint direction (`EscrowError` → `ContractError`) is the impl above;
+/// this composes it with `dwow_core`'s own `From<ContractError>`.
+#[cfg(feature = "client")]
+impl From<EscrowError> for dwow_core::Error {
+    fn from(e: EscrowError) -> Self {
+        Self::ContractError(dwow_sdk::error::ContractError::from(e))
+    }
+}

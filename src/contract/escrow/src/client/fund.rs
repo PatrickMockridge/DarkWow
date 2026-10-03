@@ -28,6 +28,7 @@ use dwow_core::{
     zkas::ZkBinary,
     Result,
 };
+use crate::error::EscrowError;
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{pedersen_commitment_u64, pasta_prelude::Curve, pasta_prelude::CurveAffine, poseidon_hash, Blind, MerkleNode},
@@ -98,12 +99,17 @@ impl FundEscrowCallData {
         current.inner()
     }
 
-    pub fn compute_public_inputs(&self) -> FundEscrowPublicInputs {
+    pub fn compute_public_inputs(&self) -> std::result::Result<FundEscrowPublicInputs, EscrowError> {
         // Compute actual Pedersen commitment for value to match circuit behavior
         let value_commit = pedersen_commitment_u64(self.value, Blind(self.value_blind));
-        let value_coords = value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
+        // `Affine::coordinates()` is `None` exactly for the identity point, which has no affine
+        // coordinates; `pedersen_commitment_u64` returns the identity when value and blind are both
+        // zero. The former `.expect(...)` therefore panicked on that reachable input — reject it.
+        let value_coords = value_commit.to_affine().coordinates().into_option().ok_or_else(|| {
+            EscrowError::InvalidCommitment
+        })?;
 
-        FundEscrowPublicInputs {
+        Ok(FundEscrowPublicInputs {
             // For the circuit, we use the computed commitment coordinates
             // The circuit constrains these via ec_mul_short and ec_add
             value_commit_x: *value_coords.x(),
@@ -112,7 +118,7 @@ impl FundEscrowCallData {
             tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
             merkle_root: self.compute_merkle_root(),
-        }
+        })
     }
 
     #[expect(clippy::unwrap_used, reason = "merkle path length equals fixed tree depth")]
@@ -142,7 +148,7 @@ pub fn create_fund_escrow_proof(
     pk: &ProvingKey,
     input: &FundEscrowCallData,
 ) -> Result<(Proof, FundEscrowPublicInputs)> {
-    let public_inputs = input.compute_public_inputs();
+    let public_inputs = input.compute_public_inputs()?;
     let witnesses = input.to_witnesses();
 
     let circuit = ZkCircuit::new(witnesses, zkbin);
@@ -157,4 +163,27 @@ pub fn create_fund_escrow_proof(
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R8 control: `pedersen_commitment_u64(0, 0)` is `V*0 + R*0`, the identity, whose affine
+    /// coordinates are absent. `compute_public_inputs` must return `Err`, never panic. This is the
+    /// reachable input the former `.expect(...)` panicked on.
+    #[test]
+    fn identity_value_commit_is_rejected() {
+        let data = FundEscrowCallData::new(
+            0,                        // value — zero, with a zero blind, commits to the identity
+            pallas::Scalar::from(0u64), // value_blind
+            pallas::Base::from(1u64),
+            0, // merkle_leaf_pos
+            vec![], // merkle_path
+        );
+        assert!(
+            data.compute_public_inputs().is_err(),
+            "an identity value commitment must be rejected with an error, never panic"
+        );
+    }
 }
