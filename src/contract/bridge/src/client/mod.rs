@@ -241,11 +241,11 @@ impl DepositBuilder {
         // bridge_secret = poseidon_hash(recipient_pub_x, recipient_pub_y, nonce)
         // bridge_pub = bridge_secret * G
         // bridge_address = poseidon_hash(bridge_pub.x, bridge_pub.y)
-        let bridge_address = derive_bridge_address(recipient_pub_x, recipient_pub_y, nonce);
+        let bridge_address = derive_bridge_address(recipient_pub_x, recipient_pub_y, nonce)?;
 
         // Step 2: Compute commitment
         // commitment = H(secret, amount, bridge_address)
-        let commitment = compute_commitment(secret, amount, bridge_address);
+        let commitment = compute_commitment(secret, amount, bridge_address)?;
 
         // Step 3: Generate ZK proof
         // The proof demonstrates:
@@ -284,32 +284,40 @@ impl DepositBuilder {
 }
 
 /// Derive bridge address from recipient identity and nonce
-fn derive_bridge_address(recipient_pub_x: [u8; 32], recipient_pub_y: [u8; 32], nonce: u64) -> [u8; 32] {
+fn derive_bridge_address(recipient_pub_x: [u8; 32], recipient_pub_y: [u8; 32], nonce: u64) -> Result<[u8; 32], BridgeClientError> {
     use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{crypto::{pasta_prelude::PrimeField}, pasta::pallas};
 
     // Derive bridge_secret = poseidon_hash(DOMAIN_SIGNATURE_SECRET, recipient_pub_x, recipient_pub_y, nonce)
     // Using poseidon ensures ZK-friendly derivation
-    let recipient_x = pallas::Base::from_repr(recipient_pub_x.into()).unwrap();
-    let recipient_y = pallas::Base::from_repr(recipient_pub_y.into()).unwrap();
+    let recipient_x = pallas::Base::from_repr(recipient_pub_x.into()).into_option().ok_or_else(|| {
+        BridgeClientError::InvalidDepositProof("recipient_pub_x is not a canonical pallas::Base".into())
+    })?;
+    let recipient_y = pallas::Base::from_repr(recipient_pub_y.into()).into_option().ok_or_else(|| {
+        BridgeClientError::InvalidDepositProof("recipient_pub_y is not a canonical pallas::Base".into())
+    })?;
     let bridge_secret = poseidon_hash([pallas::Base::from(7u64), recipient_x, recipient_y, pallas::Base::from(nonce)]);
 
     // Return poseidon hash of the secret as the bridge address
     let address_hash = poseidon_hash([pallas::Base::from(7u64), bridge_secret]);
-    address_hash.to_repr()
+    Ok(address_hash.to_repr())
 }
 
 /// Compute commitment from secret, amount, and bridge address
-fn compute_commitment(secret: [u8; 32], amount: u64, bridge_address: [u8; 32]) -> [u8; 32] {
+fn compute_commitment(secret: [u8; 32], amount: u64, bridge_address: [u8; 32]) -> Result<[u8; 32], BridgeClientError> {
     use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{crypto::{pasta_prelude::PrimeField}, pasta::pallas};
 
     // commitment = poseidon_hash(DOMAIN_COIN_COMMIT, secret, amount, bridge_address)
     // Using poseidon ensures ZK-friendly derivation
-    let secret_base = pallas::Base::from_repr(secret.into()).unwrap();
-    let addr_base = pallas::Base::from_repr(bridge_address.into()).unwrap();
+    let secret_base = pallas::Base::from_repr(secret.into()).into_option().ok_or_else(|| {
+        BridgeClientError::InvalidDepositProof("secret is not a canonical pallas::Base".into())
+    })?;
+    let addr_base = pallas::Base::from_repr(bridge_address.into()).into_option().ok_or_else(|| {
+        BridgeClientError::InvalidDepositProof("bridge_address is not a canonical pallas::Base".into())
+    })?;
     let commitment = poseidon_hash([pallas::Base::from(4u64), secret_base, pallas::Base::from(amount), addr_base]);
-    commitment.to_repr()
+    Ok(commitment.to_repr())
 }
 
 // ============================================================================
@@ -429,15 +437,19 @@ impl WithdrawBuilder {
 }
 
 /// Compute nullifier from secret and recipient_hash (domain-separated)
-pub fn compute_nullifier(secret: [u8; 32], recipient_hash: [u8; 32]) -> [u8; 32] {
+pub fn compute_nullifier(secret: [u8; 32], recipient_hash: [u8; 32]) -> Result<[u8; 32], BridgeClientError> {
     use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{crypto::{pasta_prelude::PrimeField}, pasta::pallas};
 
     // nullifier = poseidon_hash(DOMAIN_NULLIFIER, secret, recipient_hash)
-    let secret_base = pallas::Base::from_repr(secret.into()).unwrap();
-    let recipient_base = pallas::Base::from_repr(recipient_hash.into()).unwrap();
+    let secret_base = pallas::Base::from_repr(secret.into()).into_option().ok_or_else(|| {
+        BridgeClientError::InvalidDepositProof("secret is not a canonical pallas::Base".into())
+    })?;
+    let recipient_base = pallas::Base::from_repr(recipient_hash.into()).into_option().ok_or_else(|| {
+        BridgeClientError::InvalidDepositProof("recipient_hash is not a canonical pallas::Base".into())
+    })?;
     let nullifier = poseidon_hash([pallas::Base::from(1u64), secret_base, recipient_base]);
-    nullifier.to_repr()
+    Ok(nullifier.to_repr())
 }
 
 // ============================================================================
@@ -463,13 +475,39 @@ pub fn derive_bridge_address_external(
     user_pub_x: [u8; 32],
     user_pub_y: [u8; 32],
     nonce: u64,
-) -> [u8; 32] {
+) -> Result<[u8; 32], BridgeClientError> {
     use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{crypto::{pasta_prelude::PrimeField}, pasta::pallas};
 
     // Use poseidon for ZK-friendly hashing, domain-separated
-    let pub_x = pallas::Base::from_repr(user_pub_x.into()).unwrap();
-    let pub_y = pallas::Base::from_repr(user_pub_y.into()).unwrap();
+    let pub_x = pallas::Base::from_repr(user_pub_x.into()).into_option().ok_or_else(|| {
+        BridgeClientError::InvalidDepositProof("user_pub_x is not a canonical pallas::Base".into())
+    })?;
+    let pub_y = pallas::Base::from_repr(user_pub_y.into()).into_option().ok_or_else(|| {
+        BridgeClientError::InvalidDepositProof("user_pub_y is not a canonical pallas::Base".into())
+    })?;
     let cap_hash = poseidon_hash([pallas::Base::from(7u64), pub_x, pub_y, pallas::Base::from(nonce)]);
-    cap_hash.to_repr()
+    Ok(cap_hash.to_repr())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{compute_commitment, compute_nullifier};
+
+    /// `compute_commitment`'s `secret` is an arbitrary `[u8; 32]` deposit secret (~75% of which are
+    /// >= the pallas base modulus). A non-canonical value must be a recoverable `Err`, never a
+    /// panic — `[0xff; 32]` is such a value and it panicked before this fix (`R8` control).
+    #[test]
+    fn compute_commitment_rejects_non_canonical_secret() {
+        let result = compute_commitment([0xffu8; 32], 0, [0u8; 32]);
+        assert!(result.is_err(), "non-canonical secret must yield Err, got {result:?}");
+    }
+
+    /// Same input class for the withdrawal nullifier: `secret` is arbitrary, `[0xff; 32]` is
+    /// non-canonical, and it panicked before this fix (`R8` control).
+    #[test]
+    fn compute_nullifier_rejects_non_canonical_secret() {
+        let result = compute_nullifier([0xffu8; 32], [0u8; 32]);
+        assert!(result.is_err(), "non-canonical secret must yield Err, got {result:?}");
+    }
 }
