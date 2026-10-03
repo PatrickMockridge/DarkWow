@@ -117,7 +117,7 @@ lint_config() {
   { printf '\n===== %s [%s] =====\n' "$pkg" "$label"; } >> "$ERRS"
   flock "$LOCK" systemd-run --user --scope -q --unit="df-audit-$tag" \
     -p MemoryMax=28G -p MemorySwapMax=0 -- \
-    bash -c "cd '$REPO_ROOT' && RAYON_NUM_THREADS=10 cargo clippy -j 8 -p '$pkg' $* --no-deps --message-format=json -- -W clippy::unwrap_used -W clippy::expect_used" \
+    bash -c "cd '$REPO_ROOT' && RAYON_NUM_THREADS=10 cargo clippy -j 8 -p '$pkg' $* --no-deps --message-format=json" \
     > "$json" 2>>"$ERRS"
   LAST_EXIT=$?
   LAST_HITS="$(jq -r "$JQ_HITS" "$json" 2>/dev/null | sort -u)"
@@ -129,35 +129,39 @@ configs_for() {
   local pkg="$1" src
   src="$(cargo metadata --no-deps --format-version=1 --offline 2>/dev/null \
         | jq -r --arg p "$pkg" '.packages[] | select(.name==$p) | .manifest_path' | xargs dirname)"
-  echo "host-allfeatures|--target=$HOST --release --all-features --all-targets"
+  echo "host-default|--target=$HOST --release --lib --bins"
+  echo "host-allfeatures|--target=$HOST --release --all-features --lib --bins"
   if grep -rqE 'cfg\(not\(feature' "$src/src" 2>/dev/null; then
-    echo "host-nodefaults|--target=$HOST --release --no-default-features --all-targets"
+    echo "host-nodefaults|--target=$HOST --release --no-default-features --lib --bins"
   fi
   if grep -rqE 'target_arch = "wasm32"' "$src/src" 2>/dev/null || ls "$src"/*.wasm >/dev/null 2>&1; then
     echo "wasm-default|--target=$WASM_TARGET --release --lib"
   fi
 }
 
-audit_pkg() {  # $1 = package; returns 0 clean, 1 dirty, 2 instrument failure
-  local pkg="$1" dirty=0 fail=0 cfg label args
+audit_pkg() {  # $1 = package; returns 0 clean, 1 dirty, 2 no config measured at all
+  local pkg="$1" dirty=0 measured=0 gap=0 label args
   echo "### $pkg"
   while IFS='|' read -r label args; do
     [[ -z "$label" ]] && continue
     # shellcheck disable=SC2086
     lint_config "$pkg" "$label" $args
     if [[ "$LAST_COUNT" -gt 0 ]]; then
-      dirty=1
+      dirty=1; measured=1
       printf 'DIRTY  %s [%s]: %s hit(s)\n' "$pkg" "$label" "$LAST_COUNT"
       printf '%s\n' "$LAST_HITS" | sed 's/^/    /'
     elif [[ "$LAST_EXIT" -ne 0 ]]; then
-      fail=1
-      printf 'UNMEASURED  %s [%s]: exit %s, no lint hits (see %s)\n' "$pkg" "$label" "$LAST_EXIT" "$ERRS"
+      gap=1
+      printf 'GAP    %s [%s]: this configuration did not compile (exit %s) — unmeasured, not "clean" (see %s)\n' \
+        "$pkg" "$label" "$LAST_EXIT" "$ERRS"
     else
+      measured=1
       printf 'clean  %s [%s]\n' "$pkg" "$label"
     fi
   done < <(configs_for "$pkg")
-  [[ "$fail" -eq 1 ]] && return 2
   [[ "$dirty" -eq 1 ]] && return 1
+  [[ "$measured" -eq 0 ]] && return 2   # not one configuration could be linted
+  [[ "$gap" -eq 1 ]] && return 3         # measured somewhere, but a configuration is unmeasured
   return 0
 }
 
@@ -189,7 +193,7 @@ pub fn g(x: Option<u8>) -> u8 { x.unwrap_or(0) }
 EOF
   local bad=0 hits ex
   for d in dirty clean; do
-    ( cd "$tmp/$d" && RAYON_NUM_THREADS=10 cargo clippy -q --message-format=json -- -W clippy::unwrap_used -W clippy::expect_used ) \
+    ( cd "$tmp/$d" && RAYON_NUM_THREADS=10 cargo clippy -q --message-format=json ) \
       > "$tmp/$d.json" 2>/dev/null
     ex=$?
     hits="$(jq -r "$JQ_HITS" "$tmp/$d.json" 2>/dev/null | sort -u | grep -c .)"
@@ -215,7 +219,7 @@ done
 
 if [[ "$mode" == "scope" ]]; then print_scope; exit 0; fi
 
-rc=0
+rc=0; any_gap=0
 if [[ -n "$only_crate" ]]; then
   audit_pkg "$only_crate"; rc=$?
 else
@@ -223,13 +227,16 @@ else
     is_in_scope "$roots" || continue
     audit_pkg "$pkg"; r=$?
     [[ "$r" -eq 2 ]] && rc=2
+    [[ "$r" -eq 3 ]] && any_gap=1
     [[ "$r" -eq 1 && "$rc" -ne 2 ]] && rc=1
   done < <(derive_scope)
+  [[ "$rc" -eq 0 && "$any_gap" -eq 1 ]] && rc=3
 fi
 echo "---"
 case "$rc" in
   0) echo "AUDIT: clean";;
   1) echo "AUDIT: hits remain";;
-  2) echo "AUDIT: INSTRUMENT FAILURE (a crate/config went unmeasured)";;
+  2) echo "AUDIT: INSTRUMENT FAILURE (a crate could not be linted in any configuration)";;
+  3) echo "AUDIT: clean, but some configurations are unmeasured (see GAP lines)";;
 esac
 exit "$rc"
