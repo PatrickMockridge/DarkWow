@@ -199,8 +199,12 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = attestor_pub;
+                    let sk = attestor_secret;
                     move || {
-                        let r = h.attest_slash(pk, 500, pallas::Base::from(999u64), 5)
+                        // Issue #3: the circuit derives the attestor's coordinates from the
+                        // secret and instances them, so the fixture must present the secret
+                        // behind the key it names rather than an unrelated constant.
+                        let r = h.attest_slash(sk, pk, 500, pallas::Base::from(999u64), 5)
                             .map_err(modules::error_bridge::bridge)?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
@@ -213,8 +217,10 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = attestor_pub;
+                    let sk = attestor_secret;
                     move || {
-                        let r = h.commit_fee_schedule(pk, 100, 50, 1000000, 1000, vec![])
+                        // Issue #3: as the AttestSlash endpoint above.
+                        let r = h.commit_fee_schedule(sk, pk, 100, 50, 1000000, 1000, vec![])
                             .map_err(modules::error_bridge::bridge)?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }

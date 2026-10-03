@@ -291,3 +291,212 @@ fn slot_commit_bet_proof_verifies_against_its_own_circuit() {
         ),
     }
 }
+
+/// github issue #3 — the attestation repair, localised.
+///
+/// `test_heavyweight_attestation` failed at height 10 with `invalid proof: call[0] namespace
+/// 'AttestSlashV2'` after the circuits changed, and that message cannot say which of the two
+/// homes the defect is in: a proof that disagrees with its circuit, or a proof that is fine
+/// against an instance vector the contract does not publish. The endpoint list is also
+/// sequential, so one failure there costs a full run (~900s) and hides every later endpoint.
+/// These cases answer both: each proves against the **same zkbin the contract embeds**, with
+/// the instance vector the metadata arm publishes, and never involves the host.
+///
+/// The two `*_fabricated` cases are the ones that failed. `attest_slash` and
+/// `commit_fee_schedule` have no client module, so their proofs are built by the harness's own
+/// witness construction — which hardcoded a secret of `1` beside whatever public key the
+/// caller passed, and published a two-element vector. While the circuits left the secret and
+/// the coordinates unconstrained that was inert; the moment they derive-and-expose them, the
+/// fixture describes a proof the circuit cannot be satisfied by. The construction is repeated
+/// here rather than imported so that a change to the harness cannot silently change what this
+/// control is checking.
+mod attestation_issue3 {
+    use super::{proving_key, verify_zkp, ZkBinary, ZkVerifyResult, Proof, PublicKey, SecretKey, ZkCircuit, pallas};
+    use dwow_core::zk::{halo2::Value, Witness};
+    use rand::SeedableRng;
+
+    const CREATE_ATTESTATION: &[u8] = include_bytes!("../../attestation/proof/create_attestation.zk.bin");
+    const VERIFY_CLAIM: &[u8] = include_bytes!("../../attestation/proof/verify_claim.zk.bin");
+    const REVOKE: &[u8] = include_bytes!("../../attestation/proof/revoke_attestation.zk.bin");
+    const ATTEST_SLASH: &[u8] = include_bytes!("../../attestation/proof/attest_slash.zk.bin");
+    const COMMIT_FEE: &[u8] = include_bytes!("../../attestation/proof/commit_fee_schedule.zk.bin");
+
+    fn zkbin(bytes: &'static [u8]) -> &'static ZkBinary {
+        // Decoded per call rather than cached: these are five small circuits and the point is
+        // to read the artifact the contract embeds, not a copy this file controls.
+        Box::leak(Box::new(ZkBinary::decode(bytes, false).expect("circuit decodes")))
+    }
+
+    fn txb() -> pallas::Base {
+        // DOMAIN_TX_BINDING = 3, and the fixtures' pair is (0, 0).
+        dwow_sdk::crypto::poseidon_hash([
+            pallas::Base::from(3u64),
+            pallas::Base::zero(),
+            pallas::Base::zero(),
+        ])
+    }
+
+    #[test]
+    fn create_attestation_proof_verifies_and_the_actor_is_bound() {
+        use dwow_attestation_contract::client::create_attestation::{
+            create_attestation_v1_proof, CreateAttestationV1CallData,
+        };
+
+        let zkbin = zkbin(CREATE_ATTESTATION);
+        let pk = proving_key(zkbin);
+
+        let secret = pallas::Base::from(10u64);
+        let public = PublicKey::from_secret(SecretKey::from_base(secret));
+        let (ax, ay) = public.xy().expect("pk not identity");
+
+        let call_data = CreateAttestationV1CallData::new(secret, public);
+        let (proof, public_inputs) =
+            create_attestation_v1_proof(zkbin, &pk, &call_data).expect("the client must build a proof");
+        let inputs = public_inputs.to_vec();
+
+        assert_eq!(inputs.len(), 4, "create_attestation.zk instances tx_binding, tx_nonce, and \
+                                     the two attestor coordinates");
+        assert_eq!(inputs[2], ax);
+        assert_eq!(inputs[3], ay);
+
+        match verify_zkp(&proof, CREATE_ATTESTATION, &inputs) {
+            ZkVerifyResult::Ok => {}
+            other => panic!("create_attestation's proof does not verify against its own circuit ({other:?})"),
+        }
+
+        // The negative half, and it is the whole point of the repair: the same proof must NOT
+        // verify when the instance vector names a different attestor. A circuit that left the
+        // coordinates unconstrained would accept this, which is the forgery.
+        let victim = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(11u64)));
+        let (vx, vy) = victim.xy().expect("pk not identity");
+        let forged = [inputs[0], inputs[1], vx, vy];
+        match verify_zkp(&proof, CREATE_ATTESTATION, &forged) {
+            ZkVerifyResult::Ok => panic!(
+                "create_attestation's proof verifies under the instance vector of a DIFFERENT \
+                 attestor — that is the forgery github issue #3 describes, arriving again."
+            ),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn verify_claim_proof_verifies_against_its_own_circuit() {
+        use dwow_attestation_contract::client::verify_claim::{verify_claim_v1_proof, VerifyClaimV1CallData};
+
+        let zkbin = zkbin(VERIFY_CLAIM);
+        let pk = proving_key(zkbin);
+
+        let call_data = VerifyClaimV1CallData::new(
+            pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(60u64),
+            pallas::Base::from(3u64), pallas::Base::from(4u64), pallas::Base::from(5u64),
+            [pallas::Base::from(0u64); 255], pallas::Base::from(6u64),
+        );
+        let (proof, public_inputs) =
+            verify_claim_v1_proof(zkbin, &pk, &call_data).expect("the client must build a proof");
+        let inputs = public_inputs.to_vec();
+
+        assert_eq!(inputs.len(), 2, "verify_claim.zk instances the tx pair and nothing else — the \
+                                     three hashes it used to compute reached no constraint and its \
+                                     verdict is now derived by the host");
+        match verify_zkp(&proof, VERIFY_CLAIM, &inputs) {
+            ZkVerifyResult::Ok => {}
+            other => panic!("verify_claim's proof does not verify against its own circuit ({other:?})"),
+        }
+    }
+
+    #[test]
+    fn revoke_attestation_proof_verifies_and_the_actor_is_bound() {
+        use dwow_attestation_contract::client::revoke_attestation::{
+            revoke_attestation_v1_proof, RevokeAttestationV1CallData,
+        };
+
+        let zkbin = zkbin(REVOKE);
+        let pk = proving_key(zkbin);
+
+        let secret = pallas::Base::from(10u64);
+        let public = PublicKey::from_secret(SecretKey::from_base(secret));
+        let (ax, ay) = public.xy().expect("pk not identity");
+
+        let call_data = RevokeAttestationV1CallData::new(secret, public);
+        let (proof, public_inputs) =
+            revoke_attestation_v1_proof(zkbin, &pk, &call_data).expect("the client must build a proof");
+        let inputs = public_inputs.to_vec();
+        assert_eq!(inputs.len(), 4);
+
+        match verify_zkp(&proof, REVOKE, &inputs) {
+            ZkVerifyResult::Ok => {}
+            other => panic!("revoke_attestation's proof does not verify against its own circuit ({other:?})"),
+        }
+
+        // The instruction had no circuit at all before this change, and its host compared the
+        // stored key against the wire's copy of itself. The control is that the proof is bound
+        // to the key: a different attestor's instance vector must not verify.
+        let victim = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(11u64)));
+        let (vx, vy) = victim.xy().expect("pk not identity");
+        match verify_zkp(&proof, REVOKE, &[inputs[0], inputs[1], vx, vy]) {
+            ZkVerifyResult::Ok => panic!(
+                "revoke_attestation's proof verifies under another attestor's coordinates — the \
+                 public-against-public check this circuit replaced."
+            ),
+            _ => {}
+        }
+    }
+
+    /// The harness's construction for a circuit with no client, repeated here verbatim.
+    fn fabricated_actor_proof(
+        bytes: &'static [u8],
+        secret: pallas::Base,
+        public: PublicKey,
+    ) -> (Proof, &'static ZkBinary, Vec<pallas::Base>) {
+        let zkbin = zkbin(bytes);
+        let pk = proving_key(zkbin);
+        let (ax, ay) = public.xy().expect("pk not identity");
+        let txb = txb();
+        // Circuit witness order: attester_secret, attester_pub_x, attester_pub_y,
+        // tx_commitment, tx_nonce, tx_binding
+        let witnesses = vec![
+            Witness::Base(Value::known(secret)),
+            Witness::Base(Value::known(ax)),
+            Witness::Base(Value::known(ay)),
+            Witness::Base(Value::known(pallas::Base::zero())),
+            Witness::Base(Value::known(pallas::Base::zero())),
+            Witness::Base(Value::known(txb)),
+        ];
+        // Circuit constrain_instance order: tx_binding, tx_nonce, attester_pub_x, attester_pub_y
+        let publics = vec![txb, pallas::Base::zero(), ax, ay];
+        let circuit = ZkCircuit::new(witnesses, zkbin);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        let proof = Proof::create(&pk, &[circuit], &publics, &mut rng)
+            .expect("an unsatisfied circuit still produces bytes, so this passing means nothing on its own");
+        (proof, zkbin, publics)
+    }
+
+    #[test]
+    fn attest_slash_fabricated_proof_verifies() {
+        let secret = pallas::Base::from(10u64);
+        let public = PublicKey::from_secret(SecretKey::from_base(secret));
+        let (proof, _zkbin, publics) = fabricated_actor_proof(ATTEST_SLASH, secret, public);
+        assert_eq!(publics.len(), 4);
+        match verify_zkp(&proof, ATTEST_SLASH, &publics) {
+            ZkVerifyResult::Ok => {}
+            other => panic!(
+                "attest_slash's fabricated proof does not verify against its own circuit ({other:?}) — \
+                 this is the failure test_heavyweight_attestation reported at height 10, localised."
+            ),
+        }
+    }
+
+    #[test]
+    fn commit_fee_schedule_fabricated_proof_verifies() {
+        let secret = pallas::Base::from(10u64);
+        let public = PublicKey::from_secret(SecretKey::from_base(secret));
+        let (proof, _zkbin, publics) = fabricated_actor_proof(COMMIT_FEE, secret, public);
+        assert_eq!(publics.len(), 4);
+        match verify_zkp(&proof, COMMIT_FEE, &publics) {
+            ZkVerifyResult::Ok => {}
+            other => panic!(
+                "commit_fee_schedule's fabricated proof does not verify against its own circuit ({other:?})"
+            ),
+        }
+    }
+}

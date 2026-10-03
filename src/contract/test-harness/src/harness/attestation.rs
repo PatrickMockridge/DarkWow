@@ -528,8 +528,17 @@ impl AttestationHarness {
     }
 
     /// Slash an attestation (function code 0x0b)
+    /// Issue #3: `attester_secret` is a parameter now, and the instance vector carries the
+    /// coordinates. The circuit no longer leaves the secret and the coordinates unconstrained:
+    /// it derives the coordinates from the secret and instances them, so a fixture that
+    /// hardcoded a secret of `1` beside a public key derived from another value, under a
+    /// two-element instance vector, described a proof the circuit can no longer be satisfied
+    /// by — which is the binding working. The old fixture would have failed at exactly this
+    /// point once the circuits changed, and the value it hardcoded was never related to the
+    /// key it named.
     pub fn attest_slash(
         &self,
+        attester_secret: pallas::Base,
         relayer_pub: PublicKey,
         slash_amount: u64,
         withdrawal_id: pallas::Base,
@@ -538,18 +547,20 @@ impl AttestationHarness {
         let txb = dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
         let (ax, ay) = relayer_pub.xy().expect("pk not identity");
         let witnesses = vec![
-            Witness::Base(Value::known(pallas::Base::from(1u64))),
+            Witness::Base(Value::known(attester_secret)),
             Witness::Base(Value::known(ax)),
             Witness::Base(Value::known(ay)),
             Witness::Base(Value::known(pallas::Base::zero())),
             Witness::Base(Value::known(pallas::Base::zero())),
             Witness::Base(Value::known(txb)),
         ];
+        // Circuit constrain_instance order: tx_binding, tx_nonce, attester_pub_x, attester_pub_y
+        let publics = [txb, pallas::Base::zero(), ax, ay];
         let circuit = ZkCircuit::new(witnesses, &self.attest_slash_zkbin);
         let proof = if dwow_attestation_contract::deterministic_zk_enabled() {
-            Proof::create(&self.attest_slash_pk, &[circuit], &[txb, pallas::Base::zero()], rand::rngs::StdRng::seed_from_u64(0))
+            Proof::create(&self.attest_slash_pk, &[circuit], &publics, rand::rngs::StdRng::seed_from_u64(0))
         } else {
-            Proof::create(&self.attest_slash_pk, &[circuit], &[txb, pallas::Base::zero()], rand::rngs::OsRng)
+            Proof::create(&self.attest_slash_pk, &[circuit], &publics, rand::rngs::OsRng)
         }.map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         let params = AttestSlashParamsV1 {
@@ -566,8 +577,11 @@ impl AttestationHarness {
     }
 
     /// Commit a fee schedule (function code 0x0c)
+    /// Issue #3: as `attest_slash` above — the attester's secret is a parameter and the
+    /// instance vector carries the coordinates, because the circuit derives and exposes them.
     pub fn commit_fee_schedule(
         &self,
+        attester_secret: pallas::Base,
         attestor_pub: PublicKey,
         base_fee_bp: u64,
         guaranteed_premium_bp: u64,
@@ -578,18 +592,20 @@ impl AttestationHarness {
         let txb = dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
         let (ax, ay) = attestor_pub.xy().expect("pk not identity");
         let witnesses = vec![
-            Witness::Base(Value::known(pallas::Base::from(1u64))),
+            Witness::Base(Value::known(attester_secret)),
             Witness::Base(Value::known(ax)),
             Witness::Base(Value::known(ay)),
             Witness::Base(Value::known(pallas::Base::zero())),
             Witness::Base(Value::known(pallas::Base::zero())),
             Witness::Base(Value::known(txb)),
         ];
+        // Circuit constrain_instance order: tx_binding, tx_nonce, attester_pub_x, attester_pub_y
+        let publics = [txb, pallas::Base::zero(), ax, ay];
         let circuit = ZkCircuit::new(witnesses, &self.commit_fee_schedule_zkbin);
         let proof = if dwow_attestation_contract::deterministic_zk_enabled() {
-            Proof::create(&self.commit_fee_schedule_pk, &[circuit], &[txb, pallas::Base::zero()], rand::rngs::StdRng::seed_from_u64(0))
+            Proof::create(&self.commit_fee_schedule_pk, &[circuit], &publics, rand::rngs::StdRng::seed_from_u64(0))
         } else {
-            Proof::create(&self.commit_fee_schedule_pk, &[circuit], &[txb, pallas::Base::zero()], rand::rngs::OsRng)
+            Proof::create(&self.commit_fee_schedule_pk, &[circuit], &publics, rand::rngs::OsRng)
         }.map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         let params = CommitFeeScheduleParamsV1 {
