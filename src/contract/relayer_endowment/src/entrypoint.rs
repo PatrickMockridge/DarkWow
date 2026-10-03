@@ -273,12 +273,21 @@ fn relayer_endowment_claim_fees_get_metadata_v1(
     _cid: ContractId,
     params: ClaimFeesParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
+    // `pallas::Base::from_repr` returns a `subtle::CtOption`, which the `unwrap_used` lint cannot
+    // see. The former `.unwrap()` therefore panicked on any `backer_pub_x`/`y` at or above the
+    // pallas base modulus (~75% of arbitrary 32-byte values). Reject a non-canonical encoding as a
+    // `ContractError` instead, and do it *before* the host block-height call so the rejection needs
+    // no syscall.
+    let backer_pub_x = Option::<pallas::Base>::from(pallas::Base::from_repr(params.backer_pub_x))
+        .ok_or_else(|| ContractError::IoError("ClaimFeesParamsV1: backer_pub_x is not a canonical pallas::Base".into()))?;
+    let backer_pub_y = Option::<pallas::Base>::from(pallas::Base::from_repr(params.backer_pub_y))
+        .ok_or_else(|| ContractError::IoError("ClaimFeesParamsV1: backer_pub_y is not a canonical pallas::Base".into()))?;
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let nonce = wasm::util::get_verifying_block_height()?.get();
     let claim_id = derive_claim_id(
         params.deployment_id,
-        pallas::Base::from_repr(params.backer_pub_x).unwrap(),
-        pallas::Base::from_repr(params.backer_pub_y).unwrap(),
+        backer_pub_x,
+        backer_pub_y,
         params.fee_share,
         nonce,
     );
@@ -1033,3 +1042,29 @@ fn apply_deactivate_endowment_update(
 
 // The ids this contract derives are defined once, in `crate::model` — see the section there
 // for why they must not be defined a second time.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R8 control: a non-canonical `backer_pub_x` (at or above the pallas base modulus) must make
+    /// the metadata function `Err`, never panic.
+    ///
+    /// `[0xff; 32]` is `2^256 - 1`, far above the base modulus, so `pallas::Base::from_repr` returns
+    /// `None`. That `None` is a `subtle::CtOption`, invisible to `clippy::unwrap_used`, which is why
+    /// the former `.unwrap()` shipped a remotely reachable panic. The canonicality check runs before
+    /// the host block-height syscall, so this returns an error without one.
+    #[test]
+    fn claim_fees_metadata_rejects_non_canonical_backer_pub_x() {
+        let params = ClaimFeesParamsV1 {
+            deployment_id: pallas::Base::from(0u64),
+            backer_pub_x: [0xffu8; 32],
+            backer_pub_y: [0u8; 32],
+            fee_share: 0,
+        };
+        assert!(
+            relayer_endowment_claim_fees_get_metadata_v1(ContractId::ZERO, params).is_err(),
+            "a non-canonical backer_pub_x must be rejected with an error, never panic"
+        );
+    }
+}

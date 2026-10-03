@@ -36,6 +36,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 
+use crate::error::RelayerEndowmentError;
 use crate::model::{derive_deployment_id, derive_endowment_id, derive_tx_binding};
 use rand::rngs::OsRng;
 use rand::SeedableRng;
@@ -108,7 +109,9 @@ impl DeployCapitalV1CallData {
         derive_endowment_id(&self.relayer_public, self.backer_cut_bp, self.nonce)
     }
 
-    pub fn compute_public_inputs(&self) -> DeployCapitalV1PublicInputs {
+    pub fn compute_public_inputs(
+        &self,
+    ) -> std::result::Result<DeployCapitalV1PublicInputs, RelayerEndowmentError> {
         // `crate::model`'s derivation, which is the one the exec path stores under and the
         // metadata publishes — see the section there.
         let derived_deployment_id = derive_deployment_id(
@@ -120,15 +123,23 @@ impl DeployCapitalV1CallData {
         );
 
         let value_commit = pedersen_commitment_u64(self.deploy_amount, Blind(self.value_blind));
-        let value_coords = value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
+        // `Affine::coordinates()` is `None` exactly for the identity point, and
+        // `pedersen_commitment_u64` returns the identity exactly when value and blind are both zero
+        // — so this is the only `None`. The former `.expect(...)` therefore panicked on that
+        // (reachable) input; reject it as an error instead, stating the real condition.
+        let value_coords = value_commit.to_affine().coordinates().into_option().ok_or_else(|| {
+            RelayerEndowmentError::InvalidParams(
+                "DeployCapitalV1: value commitment is the identity element (value 0, blind 0)".into(),
+            )
+        })?;
 
-        DeployCapitalV1PublicInputs {
+        Ok(DeployCapitalV1PublicInputs {
             derived_deployment_id,
             value_commit_x: *value_coords.x(),
             value_commit_y: *value_coords.y(),
             tx_binding: derive_tx_binding(self.tx_commitment, self.tx_nonce),
             tx_nonce: self.tx_nonce,
-        }
+        })
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -156,7 +167,7 @@ pub fn deploy_capital_v1_proof(
     pk: &ProvingKey,
     input: &DeployCapitalV1CallData,
 ) -> Result<(Proof, DeployCapitalV1PublicInputs)> {
-    let public_inputs = input.compute_public_inputs();
+    let public_inputs = input.compute_public_inputs()?;
     let witnesses = input.to_witnesses();
 
     let circuit = ZkCircuit::new(witnesses, zkbin);
@@ -171,4 +182,36 @@ pub fn deploy_capital_v1_proof(
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_sdk::crypto::{pasta_prelude::Field, SecretKey};
+
+    /// R8 control: a `DeployCapitalV1CallData` whose `deploy_amount` and `value_blind` are both zero
+    /// commits to the identity, whose affine coordinates are absent. `compute_public_inputs` must
+    /// return `Err`, never panic.
+    ///
+    /// `pedersen_commitment_u64(0, 0)` is `V*0 + R*0`, the identity — so `Affine::coordinates()` is
+    /// `None`, the input the former `.expect(...)` panicked on. This is the reachable case the guard
+    /// now rejects.
+    #[test]
+    fn identity_value_commit_is_rejected() {
+        let relayer = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1u64)));
+        let backer = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2u64)));
+        let data = DeployCapitalV1CallData::new(
+            relayer,
+            backer,
+            500,                    // backer_cut_bp
+            0,                      // deploy_amount — zero, with a zero blind, commits to the identity
+            pallas::Base::from(0u64),
+            1,                      // nonce
+            pallas::Scalar::zero(), // value_blind
+        );
+        assert!(
+            data.compute_public_inputs().is_err(),
+            "an identity value commitment must be rejected with an error, never panic"
+        );
+    }
 }
