@@ -117,7 +117,7 @@ lint_config() {
   { printf '\n===== %s [%s] =====\n' "$pkg" "$label"; } >> "$ERRS"
   flock "$LOCK" systemd-run --user --scope -q --unit="df-audit-$tag" \
     -p MemoryMax=28G -p MemorySwapMax=0 -- \
-    bash -c "cd '$REPO_ROOT' && RAYON_NUM_THREADS=10 cargo clippy -j 8 -p '$pkg' $* --no-deps --message-format=json" \
+    bash -c "cd '$REPO_ROOT' && RAYON_NUM_THREADS=10 cargo clippy -j 8 -p '$pkg' $* --no-deps --message-format=json -- -A clippy::not_unsafe_ptr_arg_deref" \
     > "$json" 2>>"$ERRS"
   LAST_EXIT=$?
   LAST_HITS="$(jq -r "$JQ_HITS" "$json" 2>/dev/null | sort -u)"
