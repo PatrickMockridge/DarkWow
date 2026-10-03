@@ -93,7 +93,7 @@ impl CommitBetV1CallData {
         }
     }
 
-    pub fn compute_public_inputs(&self) -> CommitBetV1PublicInputs {
+    pub fn compute_public_inputs(&self) -> Result<CommitBetV1PublicInputs> {
         let bet_id = poseidon_hash([
             pallas::Base::from(4),
             self.player_pub_x,
@@ -107,14 +107,23 @@ impl CommitBetV1CallData {
         // Compute value commitment: vcv = bet_value * G1 + value_blind * G2
         let value_commit =
             pedersen_commitment_u64(self.bet_value, Blind(self.value_blind));
-        let coords = value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
-        CommitBetV1PublicInputs {
+        // `Affine::coordinates()` is a `subtle::CtOption` — invisible to `clippy::unwrap_used`,
+        // which only sees `Option`/`Result` — and it is `None` exactly for the identity element.
+        // `pedersen_commitment_u64(0, 0)` is `0*G1 + 0*G2`, the identity, so the former
+        // `.expect(...)` panicked on that (reachable) input. Reject it as an error instead.
+        let coords = value_commit.to_affine().coordinates().into_option().ok_or_else(|| {
+            dwow_core::Error::Custom(
+                "CommitBetV1: value commitment is the identity element (bet_value 0, value_blind 0)"
+                    .to_string(),
+            )
+        })?;
+        Ok(CommitBetV1PublicInputs {
             bet_id,
             value_commit_x: *coords.x(),
             value_commit_y: *coords.y(),
             tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
-        }
+        })
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -141,7 +150,7 @@ pub fn create_commit_bet_v1_proof(
     pk: &ProvingKey,
     input: &CommitBetV1CallData,
 ) -> Result<(Proof, CommitBetV1PublicInputs)> {
-    let public_inputs = input.compute_public_inputs();
+    let public_inputs = input.compute_public_inputs()?;
     let witnesses = input.to_witnesses();
 
     let circuit = ZkCircuit::new(witnesses, zkbin);
@@ -156,4 +165,33 @@ pub fn create_commit_bet_v1_proof(
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R8 control: a `CommitBetV1CallData` whose `bet_value` and `value_blind` are both zero
+    /// commits to the identity — `pedersen_commitment_u64(0, 0)` is `0*G1 + 0*G2` — whose affine
+    /// coordinates are absent. `compute_public_inputs` must return `Err`, never panic. The former
+    /// `.expect(...)` was a `CtOption` invisible to `clippy::unwrap_used`.
+    #[test]
+    fn identity_value_commit_is_rejected() {
+        let data = CommitBetV1CallData {
+            player_pub_x: pallas::Base::from(1u64),
+            player_pub_y: pallas::Base::from(2u64),
+            bet_value: 0,
+            bet_type: pallas::Base::from(0u64),
+            secret_nonce: pallas::Base::zero(),
+            blind: pallas::Base::zero(),
+            asset_id: pallas::Base::zero(),
+            value_blind: pallas::Scalar::zero(),
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
+        assert!(
+            data.compute_public_inputs().is_err(),
+            "an identity value commitment must be rejected with an error, never panic"
+        );
+    }
 }
