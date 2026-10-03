@@ -43,6 +43,7 @@ use dwow_sdk::{
 };
 use dwow_serial::serialize;
 
+use crate::error::InsuranceMarketError;
 use crate::model::{
     RegisterRiskTypeParamsV1,
     CreateMarketParamsV1,
@@ -252,10 +253,14 @@ impl PurchaseCoverageV1Builder {
     }
 
     /// Build the params with a Schnorr signature binding (buyer, value_commit, premium)
-    pub fn build(self) -> PurchaseCoverageParamsV1 {
+    pub fn build(self) -> Result<PurchaseCoverageParamsV1, InsuranceMarketError> {
         let premium = crate::model::calculate_premium(self.coverage_amount, self.premium_rate)
             .unwrap_or(0);
-        let vc_coords = self.value_commit.to_affine().coordinates().unwrap();
+        // `Affine::coordinates()` is `None` exactly for the identity point, which has no affine
+        // coordinates; the former `.unwrap()` therefore panicked on that input. Reject it here.
+        let vc_coords = self.value_commit.to_affine().coordinates().into_option().ok_or_else(|| {
+            InsuranceMarketError::InvalidParameter("Invalid value commit".to_string())
+        })?;
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let signature_msg = serialize(&poseidon_hash([
             self.buyer.x().expect("pk not identity"),
@@ -266,14 +271,14 @@ impl PurchaseCoverageV1Builder {
         ]));
         let _signature = self.buyer_secret.sign(&signature_msg);
 
-        PurchaseCoverageParamsV1 {
+        Ok(PurchaseCoverageParamsV1 {
             market_id: self.market_id,
             underwriter_id: self.underwriter_id,
             buyer: self.buyer,
             coverage_amount: self.coverage_amount,
             value_commit: self.value_commit,
             buyer_nullifier: pallas::Base::zero(),
-        }
+        })
     }
 }
 
@@ -326,10 +331,14 @@ impl PurchaseCoverageWithDAGV1Builder {
         self
     }
 
-    pub fn build(self) -> crate::model::PurchaseCoverageWithDAGParamsV1 {
+    pub fn build(self) -> Result<crate::model::PurchaseCoverageWithDAGParamsV1, InsuranceMarketError> {
         let premium = crate::model::calculate_premium(self.coverage_amount, self.premium_rate)
             .unwrap_or(0);
-        let vc_coords = self.value_commit.to_affine().coordinates().unwrap();
+        // `Affine::coordinates()` is `None` exactly for the identity point, which has no affine
+        // coordinates; the former `.unwrap()` therefore panicked on that input. Reject it here.
+        let vc_coords = self.value_commit.to_affine().coordinates().into_option().ok_or_else(|| {
+            InsuranceMarketError::InvalidParameter("Invalid value commit".to_string())
+        })?;
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let signature_msg = serialize(&poseidon_hash([
             self.buyer.x().expect("pk not identity"),
@@ -340,7 +349,7 @@ impl PurchaseCoverageWithDAGV1Builder {
         ]));
         let _signature = self.buyer_secret.sign(&signature_msg);
 
-        crate::model::PurchaseCoverageWithDAGParamsV1 {
+        Ok(crate::model::PurchaseCoverageWithDAGParamsV1 {
             market_id: self.market_id,
             underwriter_id: self.underwriter_id,
             buyer: self.buyer,
@@ -350,7 +359,7 @@ impl PurchaseCoverageWithDAGV1Builder {
             dag_path_index: self.dag_path_index,
             required_dag_id: self.required_dag_id,
             buyer_nullifier: pallas::Base::zero(),
-        }
+        })
     }
 }
 
@@ -446,5 +455,52 @@ impl RetireRiskTypeV1Builder {
         RetireRiskTypeParamsV1 {
             risk_type_id: self.risk_type_id,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_sdk::crypto::pasta_prelude::Group;
+
+    /// R8 control: an identity `value_commit` has no affine coordinates, so `build` must return
+    /// `Err`, never panic. `pallas::Point::identity()` is the reachable input the former `.unwrap()`
+    /// panicked on.
+    #[test]
+    fn identity_value_commit_is_rejected() {
+        let buyer = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1u64)));
+        let buyer_secret = SecretKey::from_base(pallas::Base::from(1u64));
+        let purchase = PurchaseCoverageV1Builder::new(
+            pallas::Base::from(7u64),
+            pallas::Base::from(8u64),
+            buyer,
+            buyer_secret,
+            pallas::Point::identity(),
+        )
+        .coverage_amount(1000)
+        .build();
+        assert!(
+            purchase.is_err(),
+            "an identity value commitment must be rejected with an error, never panic"
+        );
+
+        let buyer_dag = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2u64)));
+        let buyer_dag_secret = SecretKey::from_base(pallas::Base::from(2u64));
+        let purchase_dag = PurchaseCoverageWithDAGV1Builder::new(
+            pallas::Base::from(7u64),
+            pallas::Base::from(8u64),
+            buyer_dag,
+            buyer_dag_secret,
+            pallas::Point::identity(),
+            vec![],
+            0,
+            [0u8; 32],
+        )
+        .coverage_amount(1000)
+        .build();
+        assert!(
+            purchase_dag.is_err(),
+            "an identity value commitment must be rejected with an error, never panic"
+        );
     }
 }
