@@ -194,7 +194,7 @@ impl InitializeBuilder {
 
     /// Build the initialize call parameters — the contract's own type.
     pub fn build(&self) -> Result<InitializeParamsV1, &'static str> {
-        let pi = self.authority.compute_public_inputs();
+        let pi = self.authority.compute_public_inputs()?;
         Ok(InitializeParamsV1 {
             instance_seed: self.instance_seed,
             fund_id: self.fund_id,
@@ -284,7 +284,7 @@ impl ProposeBuilder {
     }
 
     pub fn build(&self) -> Result<ProposeParamsV1, &'static str> {
-        let pi = self.authority.compute_public_inputs();
+        let pi = self.authority.compute_public_inputs()?;
         Ok(ProposeParamsV1 {
             message_hash: self.message_hash,
             multisig_group_id: self.multisig_group_id,
@@ -375,7 +375,7 @@ impl VoteBuilder {
     }
 
     pub fn build(&self) -> Result<VoteParamsV1, &'static str> {
-        let pi = self.authority.compute_public_inputs();
+        let pi = self.authority.compute_public_inputs()?;
         Ok(VoteParamsV1 {
             proposal_id: self.proposal_id,
             voter_pubkey: self.voter_pubkey,
@@ -439,7 +439,7 @@ impl ExecuteBuilder {
     }
 
     pub fn build(&self) -> Result<ExecuteParamsV1, &'static str> {
-        let pi = self.authority.compute_public_inputs();
+        let pi = self.authority.compute_public_inputs()?;
         Ok(ExecuteParamsV1 {
             proposal_id: self.proposal_id,
             signature: self.signature,
@@ -630,7 +630,7 @@ impl TransferBuilder {
     }
 
     pub fn build(&self) -> Result<TransferParamsV1, &'static str> {
-        let pi = self.authority.compute_public_inputs();
+        let pi = self.authority.compute_public_inputs()?;
         Ok(TransferParamsV1 {
             fund_id: self.fund_id,
             amount: self.amount,
@@ -682,7 +682,7 @@ impl LockBuilder {
     }
 
     pub fn build(&self) -> Result<LockParamsV1, &'static str> {
-        let pi = self.authority.compute_public_inputs();
+        let pi = self.authority.compute_public_inputs()?;
         Ok(LockParamsV1 { fund_id: self.fund_id, duration_blocks: self.duration_blocks, signature: self.signature, authority_pub_x: pi.authority_pub_x, authority_pub_y: pi.authority_pub_y, authority_nullifier: pi.authority_nullifier, tx_binding: pi.tx_binding, tx_nonce: pi.tx_nonce })
     }
 }
@@ -715,7 +715,7 @@ impl UnlockBuilder {
     }
 
     pub fn build(&self) -> Result<UnlockParamsV1, &'static str> {
-        let pi = self.authority.compute_public_inputs();
+        let pi = self.authority.compute_public_inputs()?;
         Ok(UnlockParamsV1 { fund_id: self.fund_id, signature: self.signature, authority_pub_x: pi.authority_pub_x, authority_pub_y: pi.authority_pub_y, authority_nullifier: pi.authority_nullifier, tx_binding: pi.tx_binding, tx_nonce: pi.tx_nonce })
     }
 }
@@ -760,7 +760,7 @@ impl UpdateConfigBuilder {
     }
 
     pub fn build(&self) -> Result<UpdateConfigParamsV1, &'static str> {
-        let pi = self.authority.compute_public_inputs();
+        let pi = self.authority.compute_public_inputs()?;
         Ok(UpdateConfigParamsV1 {
             fund_id: self.fund_id,
             rate_limit: self.rate_limit.clone(),
@@ -864,25 +864,26 @@ impl AuthorityCallData {
         poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, self.tx_commitment, self.tx_nonce])
     }
 
-    pub fn compute_public_inputs(&self) -> AuthorityPublicInputs {
-        // `PublicKey::from_secret` is `NullifierK * sk`, identity only for the zero secret, so for a
-        // real authority secret this is total — the same derivation and `expect` the sibling clients
-        // use (`sdk`'s `ContractId::derive`).
-        #[expect(clippy::expect_used, reason = "from_secret yields a non-identity point")]
-        let (x, y) = self.authority_pub().xy().expect("pk not identity");
-        AuthorityPublicInputs {
+    /// Returns `Err` if `authority_secret` is zero: `PublicKey::from_secret` is `NullifierK * sk`, so
+    /// the zero secret yields the identity, whose affine coordinates (`xy()`) do not exist.
+    pub fn compute_public_inputs(&self) -> Result<AuthorityPublicInputs, &'static str> {
+        let (x, y) = self.authority_pub().xy().ok_or(
+            "authority_secret is zero — `NullifierK*0` is the identity, which has no affine coordinates",
+        )?;
+        Ok(AuthorityPublicInputs {
             authority_pub_x: x,
             authority_pub_y: y,
             authority_nullifier: self.authority_nullifier(),
             tx_binding: self.tx_binding(),
             tx_nonce: self.tx_nonce,
-        }
+        })
     }
 
-    /// Prover witnesses, in the order all eight circuits declare them.
-    pub fn to_witnesses(&self) -> Vec<Witness> {
-        let inputs = self.compute_public_inputs();
-        vec![
+    /// Prover witnesses, in the order all eight circuits declare them. Returns `Err` under the same
+    /// condition as `compute_public_inputs`.
+    pub fn to_witnesses(&self) -> Result<Vec<Witness>, &'static str> {
+        let inputs = self.compute_public_inputs()?;
+        Ok(vec![
             Witness::Base(Value::known(self.fund_id)),
             Witness::Base(Value::known(self.authority_secret)),
             Witness::Base(Value::known(inputs.authority_pub_x)),
@@ -891,7 +892,7 @@ impl AuthorityCallData {
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(inputs.tx_binding)),
-        ]
+        ])
     }
 }
 
@@ -905,8 +906,8 @@ pub fn create_authority_proof(
     pk: &ProvingKey,
     input: &AuthorityCallData,
 ) -> dwow_core::Result<(Proof, AuthorityPublicInputs)> {
-    let public_inputs = input.compute_public_inputs();
-    let prover_witnesses = input.to_witnesses();
+    let public_inputs = input.compute_public_inputs().map_err(dwow_core::Error::ParseFailed)?;
+    let prover_witnesses = input.to_witnesses().map_err(dwow_core::Error::ParseFailed)?;
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rand::rngs::OsRng)?;
