@@ -577,17 +577,18 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
             // `PurchaseCoverageParamsV1` (168 B) into a selector that decodes
             // `PurchaseCoverageWithCapabilityParamsV1` (>= 204 B) — measured, the contract's own `msg!`
             // says `Failed to decode PurchaseCoverageWithCapabilityParamsV1: IoError("… too short")` —
-            // so the cause is `metadata-decode-zkp` and NOT the omitted children. No needle here on
-            // purpose: the honest one names that stage, and would stop being true the moment the harness
-            // method is corrected. Owed: `h.purchase_coverage_with_capability`, which is the same recipe
-            // `purchase_coverage` and `purchase_coverage_dag` have just been given.
+            // so the cause is `metadata-decode-zkp` and NOT the omitted children. The needle names
+            // exactly that stage — the endpoint's own code never runs — and it stops being true the
+            // moment the harness method is corrected, which is what we want. Owed:
+            // `h.purchase_coverage_with_capability`, which is the same recipe `purchase_coverage` and
+            // `purchase_coverage_dag` have just been given.
             //
             // Its position at the end of the vec no longer matters: the two rows that could not
             // `generate` now can, so the runner's abort-on-first-error masks nothing.
             EndpointSpec {
                 name: "PurchaseCoverageWithCapabilityV1",
                 is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionNaming(&["metadata-decode-zkp"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {

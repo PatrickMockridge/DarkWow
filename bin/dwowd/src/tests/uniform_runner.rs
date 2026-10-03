@@ -77,21 +77,20 @@ pub struct ChildCall {
 pub enum EndpointExpectation {
     /// Normal accept_block acceptance.
     Success,
-    /// Expect accept_block to return an error (e.g., MintV1 FunctionDisabled).
-    Rejection,
-    /// Expect accept_block to return an error **whose text contains each of these strings**.
+    /// Expect a rejection whose text names the **reason** under test, without asserting *which
+    /// contract* refused.
     ///
-    /// A bare `Rejection` is satisfied by *any* earlier failure in the frame — a missing or extra
-    /// child, a wrong selector, an undecodable parent payload, a failed child — so a row that exists
-    /// to test one specific check and asserts only `Rejection` is a control that cannot fail. This
-    /// variant is how such a row names the check it is about. Use it wherever the rejection's
-    /// *reason* is the thing under test.
+    /// This is the weakest of the three rejection variants and the honest home for a row whose
+    /// subject is a *stage* or *reason* that is not attributable to one contract id — a row refused
+    /// before any contract runs, or a placeholder that names the stage it stops at. A needle is
+    /// satisfied by *any* call in the frame, so a `RejectionNaming` row that carries a child is
+    /// weaker than it looks; prefer the blamed variants below wherever the refuser is determinable.
     ///
-    /// **A needle alone still cannot say *which contract* refused.** Every per-call failure carries
-    /// the same shape — `… (contract <id>): ContractError(Custom(N))` — and `N` is a per-contract
-    /// enum index, so `Custom(14)` is `DuplicateCommitment` in `promissory_note`,
-    /// `GovernanceNotActive` in `dao_escrow` and `UnauthorizedCaller` in `darktoshi_dice`. Use the
-    /// blamed variants below when it matters who refused.
+    /// **A needle alone cannot say *which contract* refused.** Every per-call failure carries the
+    /// same shape — `… (contract <id>): ContractError(Custom(N))` — and `N` is a per-contract enum
+    /// index, so `Custom(14)` is `DuplicateCommitment` in `promissory_note`, `GovernanceNotActive`
+    /// in `dao_escrow` and `UnauthorizedCaller` in `darktoshi_dice`. Use the blamed variants below
+    /// when it matters who refused.
     RejectionNaming(&'static [&'static str]),
     /// Expect a rejection **the endpoint itself** produced.
     ///
@@ -103,6 +102,14 @@ pub enum EndpointExpectation {
     /// green that way for a whole run: the block was refused at `call_idx=0` by the child's
     /// `Duplicate commitment in output 0` and the endpoint's `exec` never appeared.
     RejectionByEndpoint(&'static [&'static str]),
+    /// Expect a rejection **a child call in the frame** produced, with the endpoint never executed.
+    ///
+    /// Calls run DFS post-order, so children occupy the low indices and the endpoint is last. The
+    /// runner derives the blame from the frame itself — the first generated child's resolved
+    /// `ContractId` — and asserts the refusal text names it. A row with this expectation whose
+    /// `generate` returns no child asserts nothing, so the branch refuses it loudly and `validate()`
+    /// refuses an empty needle slice.
+    RejectionByChild(&'static [&'static str]),
 }
 
 impl EndpointExpectation {
@@ -114,8 +121,8 @@ impl EndpointExpectation {
     /// The needles this row requires the run's own error text to contain, if any.
     fn needles(&self) -> &'static [&'static str] {
         match self {
-            Self::Success | Self::Rejection => &[],
-            Self::RejectionNaming(n) | Self::RejectionByEndpoint(n) => n,
+            Self::Success => &[],
+            Self::RejectionNaming(n) | Self::RejectionByEndpoint(n) | Self::RejectionByChild(n) => n,
         }
     }
 }
@@ -167,6 +174,23 @@ pub struct ContractTestSpec<'a> {
     pub deploy_ix: Option<Vec<u8>>,
 }
 
+impl EndpointSpec<'_> {
+    /// A rejection row must name the reason it is about. An empty needle slice is the bare "any
+    /// failure will do" shape this class retired: it is satisfied by a missing child, a wrong
+    /// selector or a failed child, so it constrains nothing. A `Success` row names nothing and is
+    /// fine.
+    fn validate_expectation(&self) -> Result<()> {
+        if self.expectation.is_rejection() && self.expectation.needles().is_empty() {
+            return Err(dwow_core::Error::Custom(format!(
+                "rejection endpoint '{}' names no needle — a rejection row must name the reason it \
+                 is about (a bare rejection is a control that cannot fail)",
+                self.name
+            )));
+        }
+        Ok(())
+    }
+}
+
 impl<'a> ContractTestSpec<'a> {
     /// Verify the spec is internally consistent before running the test.
     pub fn validate(&self) -> Result<()> {
@@ -179,6 +203,12 @@ impl<'a> ContractTestSpec<'a> {
             return Err(dwow_core::Error::Custom(
                 "WASM contract must have wasm_bytes".into()
             ));
+        }
+        // A rejection row must name the check it is about — see `EndpointSpec::validate_expectation`.
+        // This runs before the test body, so a row that names nothing fails in milliseconds rather
+        // than after a proving run.
+        for ep in &self.endpoints {
+            ep.validate_expectation()?;
         }
         Ok(())
     }
@@ -334,6 +364,10 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             // cannot fail. For an endpoint with no children this is byte-identical to the
             // single-call submitter: `build_witness_tree` with an empty child list emits exactly
             // `build_witness`'s transaction, and `build_contract_tx_tree` likewise.
+            //
+            // The first child's id is bound *before* the submitter, because that call moves
+            // `result.children` — the same idiom, and the same reason, as the replay control below.
+            let first_child_cid = result.children.first().map(|c| c.contract_id);
             let submit_result = modules::block_submission::submit_multi_call_block(
                 &chain_a, cid, spec.harness,
                 &result.call_data, result.proofs, endpoint.is_zk, result.children,
@@ -350,6 +384,17 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             // *length prefix*, not a function selector — never assert on it.
             let blamed = match endpoint.expectation {
                 EndpointExpectation::RejectionByEndpoint(_) => Some(cid),
+                EndpointExpectation::RejectionByChild(_) => match first_child_cid {
+                    // A child-bearing frame is required for this attribution to mean anything:
+                    // with no child there is nothing for "the child refused" to be, and the
+                    // assertion below would pass vacuously.
+                    Some(child) => Some(child),
+                    None => panic!(
+                        "TEST-FAIL [{}::{}]: RejectionByChild row generated no child — there is no \
+                         child whose refusal could be asserted, so this row constrains nothing",
+                        spec.name, endpoint.name
+                    ),
+                },
                 _ => None,
             };
             if let Some(id) = blamed {
@@ -504,4 +549,43 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
         "INFRA-FAIL [determinism]: PI-7 block hashes must match for {}", spec.name);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod expectation_rules {
+    use super::*;
+
+    fn spec_with(expectation: EndpointExpectation) -> EndpointSpec<'static> {
+        EndpointSpec {
+            name: "row",
+            is_zk: false,
+            expectation,
+            generate_with_coinbase: None,
+            verify_state: None,
+            generate: Box::new(|| {
+                Ok(EndpointResult { call_data: vec![], proofs: vec![], children: vec![] })
+            }),
+        }
+    }
+
+    /// R8 control for D3: the empty-needle rule is a check that can fail. A rejection row that names
+    /// nothing — the bare "any failure will do" shape this class retired — is refused before the
+    /// test body; one that names its reason, and a `Success` row, pass.
+    #[test]
+    fn a_rejection_row_must_name_its_reason() {
+        for empty in [
+            EndpointExpectation::RejectionNaming(&[]),
+            EndpointExpectation::RejectionByEndpoint(&[]),
+            EndpointExpectation::RejectionByChild(&[]),
+        ] {
+            assert!(
+                spec_with(empty).validate_expectation().is_err(),
+                "an empty-needle rejection row must be refused"
+            );
+        }
+        assert!(spec_with(EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(3))"]))
+            .validate_expectation()
+            .is_ok());
+        assert!(spec_with(EndpointExpectation::Success).validate_expectation().is_ok());
+    }
 }

@@ -55,7 +55,7 @@ use dwow_sdk::crypto::{
 };
 use dwow_sdk::pasta::pallas;
 use crate::tests::uniform_runner::*;
-use super::helpers::{mk_ep, mk_ep_rejecting};
+use super::helpers::{mk_ep, mk_ep_rejecting_naming};
 use std::cell::RefCell; use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -258,7 +258,7 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
             // **What it covers is the child-*shape* half only**: a bid with no child is refused. The
             // `capability_id == required_capability` half is what the last two rows below test, and it
             // needs a tender that *has* a requirement — which is what the two rows before them create.
-            mk_ep_rejecting("SubmitBidWithCapabilityV1_NoChild", true, &["ContractError(Custom(28))"],
+            mk_ep_rejecting_naming("SubmitBidWithCapabilityV1_NoChild", true, &["ContractError(Custom(28))"],
                 Box::new({ let cell = tender_id.clone(); move || {
                     let r = h.submit_bid_with_capability(
                         read_id(&cell), b_pk, b_sk, 5000,
@@ -345,7 +345,7 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
             })),
             // ── THE NEGATIVE CASE. Identical to the positive row below except in which capability the
             // child proves, so a rejection names the guard rather than the frame. ──
-            mk_ep_rejecting("SubmitBidWithCapabilityV1_WrongCapability", true, &["ContractError(Custom(30))"],
+            mk_ep_rejecting_naming("SubmitBidWithCapabilityV1_WrongCapability", true, &["ContractError(Custom(30))"],
                 Box::new({
                     let shared = shared.clone();
                     let id = Box::leak(Box::new(IdentityHarness::spawn()));

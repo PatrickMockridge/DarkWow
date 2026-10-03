@@ -83,7 +83,10 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 // metadata-decode of the empty params instead of the is_zk gate
                 // in block_submission.rs; the assertion is unchanged.
                 name: "FeeCollectV1", is_zk: false,
-                expectation: EndpointExpectation::Rejection, // exercised structurally by with_fee_collect()
+                // The refusal is the host's `metadata-decode-zkp` stage over the empty params this
+                // placeholder sends — the endpoint's own code never runs — so the honest claim is the
+                // stage, not the endpoint (`RejectionNaming`, not `RejectionByEndpoint`).
+                expectation: EndpointExpectation::RejectionNaming(&["metadata-decode-zkp"]),
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| {
                     let h = chain.height().get();
@@ -191,7 +194,10 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
             // MintV1 (0x01) — walled off, returns FunctionDisabled
             EndpointSpec {
                 name: "MintV1", is_zk: false,
-                expectation: EndpointExpectation::Rejection,
+                // `MintV1`'s metadata arm returns `ContractError::InvalidFunction` outright, so the
+                // call is refused at the `metadata` stage before `exec` — the honest claim names the
+                // reason, not the endpoint's own state check.
+                expectation: EndpointExpectation::RejectionNaming(&["InvalidFunction"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(|| {

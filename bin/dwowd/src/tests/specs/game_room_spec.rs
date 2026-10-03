@@ -251,7 +251,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "RaiseV1",
                 is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(28))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new({
@@ -266,7 +266,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "CallV1",
                 is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(28))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new({
@@ -281,7 +281,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "ContributeEntropyV1",
                 is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(27))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new({

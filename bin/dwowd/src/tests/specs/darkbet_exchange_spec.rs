@@ -443,7 +443,10 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "CancelOrderV1",
                 is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                // Provisional `RejectionNaming`: the row builds a child and its comment does not say
+                // whether the child commits, so the refuser is not settled by reading. `OrderAlready-
+                // Matched` → `Custom(9)`. The sweep's run (`OBL-C193`) promotes it.
+                expectation: EndpointExpectation::RejectionNaming(&["ContractError(Custom(9))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new({

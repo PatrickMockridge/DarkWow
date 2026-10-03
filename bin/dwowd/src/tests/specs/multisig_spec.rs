@@ -111,7 +111,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
             // MUST REJECT: only 2/3 signatures
             EndpointSpec {
                 name: "FinalizeV1_insufficient", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(7))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
@@ -128,7 +128,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
             // that is back.
             EndpointSpec {
                 name: "SignV1_non_member", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(5))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {

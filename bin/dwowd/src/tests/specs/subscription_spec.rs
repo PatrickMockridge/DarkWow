@@ -237,7 +237,7 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
             // the one the record derives. Remove that comparison and this endpoint grants access.
             EndpointSpec {
                 name: "verify_access_wrong_plan", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(4))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new({
@@ -280,7 +280,7 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
             // succeeding — which is exactly what it did before this row was worked.
             EndpointSpec {
                 name: "update_usage_past_allowance", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(5))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new({
@@ -326,7 +326,7 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
             // stopped tracking the nullifier at all.
             EndpointSpec {
                 name: "cancel_after_renew", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(7))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new({

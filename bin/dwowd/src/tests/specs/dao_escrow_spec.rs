@@ -72,7 +72,7 @@ use dwow_sdk::crypto::{
 use dwow_sdk::pasta::pallas;
 use std::sync::{Arc, Mutex};
 use crate::tests::uniform_runner::*;
-use super::helpers::{mk_ep, mk_ep_rejecting};
+use super::helpers::{mk_ep, mk_ep_rejecting_naming};
 
 /// `(commitment, leaf position, merkle path, asset id, commitment blind)`. Copied shape
 /// (`escrow_spec.rs`, `insurance_market_spec.rs`).
@@ -557,7 +557,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 }
             })),
             // **This row was the pin for `OBL-C191` and is now the falsification of that row's
-            // premise.** It was written to *assert* the collision — `mk_ep_rejecting(… Custom(14))` —
+            // premise.** It was written to *assert* the collision — `mk_ep_rejecting_naming(… Custom(14))` —
             // because a row asserting the second withdrawal succeeded would have been red from the day
             // it was written and indistinguishable from a broken frame, while a row asserting what the
             // code did then went green and became the instrument that caught the change. Its measurement
@@ -598,7 +598,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
             // the group approval again would refuse here with a different code, and one whose proof had
             // been dropped would *accept* the stranger — because `owner_secret` is what the proof is
             // built from, and this row's caller passes their own.
-            mk_ep_rejecting("WithdrawV1_PayeeIsNotTheOwner", true, &["ContractError(Custom(21))"], Box::new({
+            mk_ep_rejecting_naming("WithdrawV1_PayeeIsNotTheOwner", true, &["ContractError(Custom(21))"], Box::new({
                 let notes = notes.clone();
                 move || {
                     let stranger_secret = pallas::Base::from(4321u64);
@@ -617,7 +617,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
             // is not reached, and neither is any authorization this endpoint used to take from
             // `capability_proof`/`proposal_id` — both of those fields are gone from the params, and the
             // endpoint's only authority is the group whose approval the call does not carry.
-            mk_ep_rejecting("EndowmentWithdrawV1_NoAuthorization", false, &["ContractError(Custom(43))"], Box::new({
+            mk_ep_rejecting_naming("EndowmentWithdrawV1_NoAuthorization", false, &["ContractError(Custom(43))"], Box::new({
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().endowment_no_auth.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
@@ -636,7 +636,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
             // It does not prove `TreasurySpendV1` is unreachable — it is reachable, for a
             // `Treasury`/`TreasuryEndowment` endowment, which this fixture deliberately is not (its rows
             // draw claims from the endowment, the `Escrow` path).
-            mk_ep_rejecting("TreasurySpendV1_ModeGate", false, &["ContractError(Custom(4))"], Box::new({
+            mk_ep_rejecting_naming("TreasurySpendV1_ModeGate", false, &["ContractError(Custom(4))"], Box::new({
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().treasury_spend.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
@@ -764,7 +764,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
             //
             // **This row was the pin and is now a `Success` row, with the seed deliberately back to
             // what it was when the refusal was measured.** It was written as
-            // `mk_ep_rejecting(… Custom(14))` and measured there (`OBL-C191`'s second measurement,
+            // `mk_ep_rejecting_naming(… Custom(14))` and measured there (`OBL-C191`'s second measurement,
             // 700.35s); `OBL-C191`'s units then changed the seed and it went green. Reverting those
             // units restored the record-keyed seed — so the two children derive the **same** value
             // blind, exactly as they did when the refusal was observed — and the row is accepted
@@ -814,7 +814,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
             // successful vote, so the lifecycle does have a successful exit — this claim simply never
             // received one, because no row here votes. A vote row would be the positive control; it needs
             // `VoteClaimV2`'s witness fixture and is not this unit's.
-            mk_ep_rejecting("ExecuteClaimV1_ProposalNotApproved", false, &["ContractError(Custom(38))"], Box::new({
+            mk_ep_rejecting_naming("ExecuteClaimV1_ProposalNotApproved", false, &["ContractError(Custom(38))"], Box::new({
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().execute_claim.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;

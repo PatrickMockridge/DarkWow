@@ -164,8 +164,12 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 // verified when the feature is off. The deposit's child call mints a wrapped
                 // promissory note (`promissory_note::issue_v1`), so the permissive form minted a
                 // value-bearing note against no external backing. The expectation is refusal, which
-                // is the deferral made explicit rather than a silent mint path.
-                expectation: EndpointExpectation::Rejection,
+                // is the deferral made explicit rather than a silent mint path. The refusal is the
+                // endpoint's own fail-closed `verify_chain_proof` arm (`InvalidDeposit` → `Custom(1)`).
+                // Provisional `RejectionNaming`: this row builds a child and its comment does not say
+                // whether the child commits, so the refuser is not settled by reading — the sweep's
+                // run (`OBL-C193`) promotes it.
+                expectation: EndpointExpectation::RejectionNaming(&["ContractError(Custom(1))"]),
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new(move |chain| {
                     let r = chain.query_contract_state(cid, "deposits", &[])?;
@@ -229,7 +233,10 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 // works, and so its absence is visible rather than assumed.
                 name: "WithdrawV1BelowMinimum",
                 is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                // The refusal is the child's: the first generated child is `pn_redeem_child`
+                // (`promissory_note::redeem_v1`), which fails `Custom(13)` ("Merkle root not found")
+                // before the endpoint's anti-dust floor is reached. `RejectionByChild` names it.
+                expectation: EndpointExpectation::RejectionByChild(&["ContractError(Custom(13))"]),
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new(move |chain| {
                     let r = chain.query_contract_state(cid, "withdrawals", &[])?;

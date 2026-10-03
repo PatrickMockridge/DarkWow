@@ -270,7 +270,7 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
             // not a proof-verification failure and not a state precondition.
             EndpointSpec {
                 name: "update_config_by_stranger", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(9))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
@@ -310,7 +310,7 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
             // fund's governance is a signature from anyone.
             EndpointSpec {
                 name: "execute_foreign_group", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(19))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new({
@@ -332,7 +332,7 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
             // a different proposal`.
             EndpointSpec {
                 name: "execute_foreign_message", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(19))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new({
@@ -403,7 +403,7 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
             // endpoint starts succeeding and a rate-limited transfer needs only a proposal id.
             EndpointSpec {
                 name: "transfer_unexecuted_proposal", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(19))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new({
@@ -435,7 +435,7 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
             // timelock check is removed this endpoint starts succeeding and the control is gone.
             EndpointSpec {
                 name: "unlock_before_timelock", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(6))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {

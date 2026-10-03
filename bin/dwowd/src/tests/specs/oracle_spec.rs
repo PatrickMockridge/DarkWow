@@ -119,7 +119,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
             // for a reason unrelated to the fix.
             EndpointSpec {
                 name: "PushValueV1ByStranger", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(3))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
@@ -136,7 +136,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
             // nullifier and must be reported as such rather than as a pass.
             EndpointSpec {
                 name: "PushValueV1Replay", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(9))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {

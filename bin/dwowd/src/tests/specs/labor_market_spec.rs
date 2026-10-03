@@ -15,7 +15,7 @@ use dwow_sdk::pasta::pallas;
 use std::sync::{Arc, Mutex};
 use crate::tests::uniform_runner::{ChildCall, EndpointResult, EndpointSpec, EndpointExpectation};
 use crate::tests::uniform_runner::*;
-use super::helpers::{mk_ep, mk_ep_rejecting};
+use super::helpers::{mk_ep, mk_ep_rejecting_naming};
 
 /// `(commitment, leaf position, merkle path, asset id, commitment blind)` — copied from
 /// `insurance_market_spec.rs:69`, which copies it from `escrow_spec.rs`.
@@ -902,7 +902,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             // `CapabilityNotMet` is `Custom(28)`; `CapabilityRequired` is `Custom(27)` and
             // `InvalidCapability` is `Custom(29)`, so the three are distinguishable and the needle
             // names one of them.
-            mk_ep_rejecting("AcceptJobWithCapabilityV1_WrongCapability", true, &["ContractError(Custom(28))"],
+            mk_ep_rejecting_naming("AcceptJobWithCapabilityV1_WrongCapability", true, &["ContractError(Custom(28))"],
                 Box::new({
                     let caps = caps.clone();
                     // One clone per closure: `cap_proof` is a `Vec<u8>` and a `move` closure takes it
@@ -975,7 +975,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             // It is declared *after* its positive sibling so the pair reads as the row and its control;
             // the order costs nothing either way, because a rejected call leaves no state behind and the
             // child check is reached before the job-exists check.
-            mk_ep_rejecting("CreateJobWithMilestonesV1_NoChild", true, &["ContractError(Custom(31))"],
+            mk_ep_rejecting_naming("CreateJobWithMilestonesV1_NoChild", true, &["ContractError(Custom(31))"],
                 Box::new(move || {
                     let (call_data, proof) = milestones_create_call(
                         h, employer_secret, employer_pub, attestation_id, ms_job_id,
@@ -1072,7 +1072,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         call_data, proofs: vec![] })
                 }
             })),
-            mk_ep_rejecting("CreateJobWithMilestonesAndCapabilityV1_NoChild", false, &["ContractError(Custom(31))"],
+            mk_ep_rejecting_naming("CreateJobWithMilestonesAndCapabilityV1_NoChild", false, &["ContractError(Custom(31))"],
                 Box::new({
                     let caps = caps.clone();
                     move || {

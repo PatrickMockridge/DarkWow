@@ -249,7 +249,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
             // position and the same note, exactly one of the two can be accepted.
             EndpointSpec {
                 name: "MintStableV1MismatchedCommitment", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(17))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new({
@@ -404,13 +404,13 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
             // minimum — and the refusal names those figures.
             //
             // Remove the ratio check and this endpoint is accepted: the position is consumed, the
-            // pool's debt is written past its floor, and `EndpointExpectation::Rejection` asserts
-            // that the block must fail, so the run says so. If this endpoint is ever accepted, a
+            // pool's debt is written past its floor, and `EndpointExpectation::RejectionByEndpoint`
+            // asserts that the block must fail, so the run says so. If this endpoint is ever accepted, a
             // mint can again walk `CDP_TOTAL_DEBT_KEY` up with no floor — and that key is the
             // denominator of the redemption exchange rate and the input to the liquidation gate.
             EndpointSpec {
                 name: "MintStableV1BelowPoolMinimum", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(3))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new({
@@ -484,7 +484,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
             // is what rules out a blanket refusal.
             EndpointSpec {
                 name: "AccrueInterestV1ByStranger", is_zk: true,
-                expectation: EndpointExpectation::Rejection,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(30))"]),
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
