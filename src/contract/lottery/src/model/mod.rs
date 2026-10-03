@@ -859,7 +859,40 @@ pub struct RevealTicketParamsV1 {
     pub matches: u8,
 }
 
-impl RevealTicketParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut b = Vec::with_capacity(69+self.numbers.len()); b.extend_from_slice(&self.ticket_id.to_repr()); b.extend_from_slice(&SerializedLen::try_from_len(self.numbers.len())?.to_le_bytes()); b.extend_from_slice(&self.numbers); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.revealed_commitment.to_repr()); b.push(self.matches); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 69 { return Err(ContractError::IoError(format!("RevealTicketParamsV1: too short ({} bytes)", data.len()))); } let ticket_id = read_base(&data[0..32])?; let num_len = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize(); let end = 36+num_len; if data.len() < end+33 { return Err(ContractError::IoError("RevealTicketParamsV1: numbers truncated".into())); } let numbers = data[36..end].to_vec(); let nonce = read_base(&data[end..end+32])?; let revealed_commitment = read_base(&data[end+32..end+64])?; let matches = data[end+64]; Ok(RevealTicketParamsV1 { ticket_id, numbers, nonce, revealed_commitment, matches }) } }
+impl RevealTicketParamsV1 {
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let mut b = Vec::with_capacity(69 + self.numbers.len());
+        b.extend_from_slice(&self.ticket_id.to_repr());
+        b.extend_from_slice(&SerializedLen::try_from_len(self.numbers.len())?.to_le_bytes());
+        b.extend_from_slice(&self.numbers);
+        b.extend_from_slice(&self.nonce.to_repr());
+        b.extend_from_slice(&self.revealed_commitment.to_repr());
+        b.push(self.matches);
+        Ok(b)
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    #[expect(clippy::unwrap_used, reason = "data.len() >= 69 checked above")]
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 69 {
+            return Err(ContractError::IoError(format!(
+                "RevealTicketParamsV1: too short ({} bytes)", data.len()
+            )));
+        }
+        let ticket_id = read_base(&data[0..32])?;
+        let num_len = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize();
+        let end = 36 + num_len;
+        if data.len() < end + 33 {
+            return Err(ContractError::IoError("RevealTicketParamsV1: numbers truncated".into()));
+        }
+        let numbers = data[36..end].to_vec();
+        let nonce = read_base(&data[end..end+32])?;
+        let revealed_commitment = read_base(&data[end+32..end+64])?;
+        let matches = data[end+64];
+        Ok(RevealTicketParamsV1 { ticket_id, numbers, nonce, revealed_commitment, matches })
+    }
+}
 
 /// Update produced by RevealTicketV1
 #[derive(Debug, Clone)]
@@ -962,6 +995,7 @@ impl ClaimPrizeParamsV1 {
             return Err(ContractError::IoError("ClaimPrizeParamsV1: too short".into()))
         }
         let ticket_id = read_base(&data[0..32])?;
+        #[expect(clippy::unwrap_used, reason = "data.len() >= 70 checked above")]
         let proof_len = SerializedLen::from_le_bytes(data[32..36].try_into().unwrap()).to_usize();
         let end = 36 + proof_len;
         if data.len() != end + 34 {
