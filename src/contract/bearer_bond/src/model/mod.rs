@@ -930,7 +930,10 @@ impl EmergencyUnstakeParamsV1 {
         }
         let bond_input = BondInput::decode(&data[..BondInput::ENCODED_SIZE])?;
         let receipt_commitment = pallas::Base::from_repr(
-            data[BondInput::ENCODED_SIZE..BondInput::ENCODED_SIZE + 32].try_into().unwrap())
+            data[BondInput::ENCODED_SIZE..BondInput::ENCODED_SIZE + 32]
+                .try_into()
+                .map_err(|_| ContractError::IoError(
+                    "EmergencyUnstakeParamsV1: receipt_commitment is not 32 bytes".into()))?)
             .into_option()
             .ok_or_else(|| ContractError::IoError(
                 "EmergencyUnstakeParamsV1: invalid receipt_commitment".into()))?;
