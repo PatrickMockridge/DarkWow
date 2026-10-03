@@ -36,6 +36,8 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
+use crate::error::OtcSwapError;
+
 /// FundSwapV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct FundSwapPublicInputs {
@@ -98,18 +100,26 @@ impl FundSwapCallData {
         current.inner()
     }
 
-    pub fn compute_public_inputs(&self) -> FundSwapPublicInputs {
+    pub fn compute_public_inputs(&self) -> std::result::Result<FundSwapPublicInputs, OtcSwapError> {
         let value_commit = pedersen_commitment_u64(self.value, Blind(self.value_blind));
-        let value_coords = value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
+        // `Affine::coordinates()` is `None` exactly for the identity point, and
+        // `pedersen_commitment_u64` returns the identity exactly when value and blind are both zero
+        // — so this is the only `None`. The former `.expect(...)` therefore panicked on that
+        // (reachable) input; reject it as an error instead, stating the real condition.
+        let value_coords = value_commit
+            .to_affine()
+            .coordinates()
+            .into_option()
+            .ok_or(OtcSwapError::InvalidCommitment)?;
 
-        FundSwapPublicInputs {
+        Ok(FundSwapPublicInputs {
             value_commit_x: *value_coords.x(),
             value_commit_y: *value_coords.y(),
             swap_id: self.swap_id,
             tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
             merkle_root: self.compute_merkle_root(),
-        }
+        })
     }
 
     #[expect(clippy::unwrap_used, reason = "merkle path length equals fixed tree depth")]
@@ -133,7 +143,7 @@ pub fn fund_swap_proof(
     pk: &ProvingKey,
     input: &FundSwapCallData,
 ) -> Result<(Proof, FundSwapPublicInputs)> {
-    let public_inputs = input.compute_public_inputs();
+    let public_inputs = input.compute_public_inputs()?;
     let witnesses = input.to_witnesses();
 
     let circuit = ZkCircuit::new(witnesses, zkbin);
@@ -148,4 +158,31 @@ pub fn fund_swap_proof(
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R8 control: a `FundSwapCallData` whose `value` and `value_blind` are both zero commits to the
+    /// identity, whose affine coordinates are absent. `compute_public_inputs` must return `Err`,
+    /// never panic.
+    ///
+    /// `pedersen_commitment_u64(0, 0)` is `V*0 + R*0`, the identity — so `Affine::coordinates()` is
+    /// `None`, the input the former `.expect(...)` panicked on. This is the reachable case the guard
+    /// now rejects.
+    #[test]
+    fn identity_value_commit_is_rejected() {
+        let data = FundSwapCallData::new(
+            0,                                            // value — zero, with a zero blind, commits to the identity
+            pallas::Scalar::from(0u64),                   // value_blind
+            pallas::Base::from(7u64),                     // swap_id
+            0,                                            // merkle_leaf_pos
+            vec![],                                       // merkle_path
+        );
+        assert!(
+            data.compute_public_inputs().is_err(),
+            "an identity value commitment must be rejected with an error, never panic"
+        );
+    }
 }
