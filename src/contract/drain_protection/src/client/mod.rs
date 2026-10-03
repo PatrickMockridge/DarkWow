@@ -865,8 +865,10 @@ impl AuthorityCallData {
     }
 
     pub fn compute_public_inputs(&self) -> AuthorityPublicInputs {
-        // `PublicKey::from_secret` is a point for every secret, so this is total — the same
-        // `expect` the sibling clients use for the same derivation.
+        // `PublicKey::from_secret` is `NullifierK * sk`, identity only for the zero secret, so for a
+        // real authority secret this is total — the same derivation and `expect` the sibling clients
+        // use (`sdk`'s `ContractId::derive`).
+        #[expect(clippy::expect_used, reason = "from_secret yields a non-identity point")]
         let (x, y) = self.authority_pub().xy().expect("pk not identity");
         AuthorityPublicInputs {
             authority_pub_x: x,
