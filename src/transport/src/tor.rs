@@ -91,7 +91,7 @@ impl TorDialer {
                     // Arti persists onion service keys internally.
                     let config = TorClientConfigBuilder::from_directories(arti_data, arti_cache)
                         .build()
-                        .unwrap();
+                        .map_err(arti_client::ErrorDetail::from)?;
 
                     TorClient::create_bootstrapped(config).await
                 } else {
@@ -189,7 +189,7 @@ impl TorListener {
                     // Arti persists onion service keys internally.
                     let config = TorClientConfigBuilder::from_directories(arti_data, arti_cache)
                         .build()
-                        .unwrap();
+                        .map_err(arti_client::ErrorDetail::from)?;
 
                     TorClient::create_bootstrapped(config).await
                 } else {
@@ -205,6 +205,7 @@ impl TorListener {
             }
         };
 
+        #[expect(clippy::unwrap_used, reason = "the literal `dwow_tor` is a valid slug (non-empty, lowercase ASCII and underscore)")]
         let hs_nick = HsNickname::new("dwow_tor".to_string()).unwrap();
 
         let hs_config = match OnionServiceConfigBuilder::default().nickname(hs_nick).build() {
@@ -236,16 +237,22 @@ impl TorListener {
             }
         };
 
-        let onion_id =
-            base32::encode(false, onion_service.onion_address().unwrap().as_ref()).to_lowercase();
+        let onion_address = onion_service
+            .onion_address()
+            .ok_or_else(|| io::Error::other("Tor onion service has no onion address"))?;
+        let onion_id = base32::encode(false, onion_address.as_ref()).to_lowercase();
 
         verbose!(
             target: "transport::tor::do_listen",
             "[P2P] Established Tor listener on tor://{}:{port}", onion_id,
         );
 
+        #[expect(clippy::unwrap_used, reason = "a base32 onion id and a u16 port always form a valid tor:// Url")]
         let endpoint = Url::parse(&format!("tor://{onion_id}:{port}")).unwrap();
-        self.endpoint.set(endpoint).await.expect("fatal endpoint already set for TorListener");
+        self.endpoint
+            .set(endpoint)
+            .await
+            .map_err(|_| io::Error::other("endpoint already set for TorListener"))?;
 
         Ok(TorListenerIntern {
             port,
@@ -312,6 +319,8 @@ impl PtListener for TorListenerIntern {
             }
         };
 
-        Ok((Box::new(stream), Url::parse(&format!("tor://127.0.0.1:{}", self.port)).unwrap()))
+        #[expect(clippy::unwrap_used, reason = "the literal tor://127.0.0.1:<port> is a valid Url")]
+        let url = Url::parse(&format!("tor://127.0.0.1:{}", self.port)).unwrap();
+        Ok((Box::new(stream), url))
     }
 }

@@ -49,7 +49,8 @@ impl Socks5Dialer {
         */
 
         // Parse destination
-        let mut dest = uri.path().strip_prefix("/").unwrap().split(':');
+        let mut dest =
+            uri.path().strip_prefix("/").ok_or(io::ErrorKind::InvalidInput)?.split(':');
 
         let Some(dest_host) = dest.next() else { return Err(io::ErrorKind::InvalidInput.into()) };
         let Some(dest_port) = dest.next() else { return Err(io::ErrorKind::InvalidInput.into()) };
@@ -59,7 +60,9 @@ impl Socks5Dialer {
             Err(_) => return Err(io::ErrorKind::InvalidData.into()),
         };
 
-        let client = Socks5Client::new(uri.host_str().unwrap(), uri.port().unwrap());
+        let host = uri.host_str().ok_or(io::ErrorKind::InvalidInput)?;
+        let port = uri.port().ok_or(io::ErrorKind::InvalidInput)?;
+        let client = Socks5Client::new(host, port);
         let endpoint: AddrKind = (dest_host, dest_port).into();
 
         Ok(Self { client, endpoint })

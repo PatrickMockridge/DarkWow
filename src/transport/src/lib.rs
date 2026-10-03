@@ -297,8 +297,9 @@ impl Dialer {
 
             #[cfg(feature = "tor")]
             DialerVariant::Tor(dialer) => {
+                #[expect(clippy::unwrap_used, reason = "endpoint host is always set (enforce_hostport! in Dialer::new)")]
                 let host = self.endpoint.host_str().unwrap();
-                #[expect(clippy::unwrap_used, reason = "endpoint port is always set (enforce_hostport! in Listener::new)")]
+                #[expect(clippy::unwrap_used, reason = "endpoint port is always set (enforce_hostport! in Dialer::new)")]
                 let port = self.endpoint.port().unwrap();
                 let stream = dialer.do_dial(host, port, timeout).await?;
                 Ok(Box::new(stream))
@@ -306,8 +307,9 @@ impl Dialer {
 
             #[cfg(feature = "tor")]
             DialerVariant::TorTls(dialer) => {
+                #[expect(clippy::unwrap_used, reason = "endpoint host is always set (enforce_hostport! in Dialer::new)")]
                 let host = self.endpoint.host_str().unwrap();
-                #[expect(clippy::unwrap_used, reason = "endpoint port is always set (enforce_hostport! in Listener::new)")]
+                #[expect(clippy::unwrap_used, reason = "endpoint port is always set (enforce_hostport! in Dialer::new)")]
                 let port = self.endpoint.port().unwrap();
                 let stream = dialer.do_dial(host, port, timeout).await?;
                 let tlsupgrade = tls::TlsUpgrade::new(self.localnet, None).await?;
@@ -506,7 +508,11 @@ impl Listener {
             }
 
             #[cfg(feature = "tor")]
-            ListenerVariant::Tor(listener) => listener.endpoint.get().unwrap().clone(),
+            ListenerVariant::Tor(listener) => {
+                #[expect(clippy::unwrap_used, reason = "endpoint is set by TorListener::do_listen before listen() returns")]
+                let endpoint = listener.endpoint.get().unwrap().clone();
+                endpoint
+            }
 
             #[cfg(feature = "quic")]
             ListenerVariant::Quic(listener) => {

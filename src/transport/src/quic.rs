@@ -150,6 +150,7 @@ async fn get_endpoint_for_target(target: SocketAddr, localnet: bool) -> io::Resu
     drop(reg);
 
     // No suitable endpoint, create one.
+    #[expect(clippy::unwrap_used, reason = "the literals `[::]:0` and `0.0.0.0:0` are valid socket addresses")]
     let bind_addr: SocketAddr =
         if target.is_ipv6() { "[::]:0".parse().unwrap() } else { "0.0.0.0:0".parse().unwrap() };
 
@@ -396,7 +397,10 @@ impl QuicListener {
             local_addr,
         );
 
-        self.port.set(local_addr.port()).await.expect("fatal port already set for QuicListener");
+        self.port
+            .set(local_addr.port())
+            .await
+            .map_err(|_| io::Error::other("port already set for QuicListener"))?;
 
         Ok(QuicListenerIntern { endpoint })
     }

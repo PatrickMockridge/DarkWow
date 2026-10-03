@@ -51,7 +51,9 @@ pub fn encode(padding: bool, data: &[u8]) -> String {
             ret.truncate(len - num_extra);
         }
     }
-    String::from_utf8(ret).unwrap()
+    #[expect(clippy::unwrap_used, reason = "every byte is pushed from ENCODE_STD (ASCII) or set to b'=', so the buffer is valid UTF-8")]
+    let encoded = String::from_utf8(ret).unwrap();
+    encoded
 }
 
 const STD_INV_ALPHABET: [i8; 43] = [

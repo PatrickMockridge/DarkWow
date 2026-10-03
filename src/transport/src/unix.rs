@@ -84,9 +84,14 @@ impl PtListener for SmolUnixListener {
             Err(e) => return Err(e),
         };
 
-        let addr = self.local_addr().unwrap();
-        let addr = addr.as_pathname().unwrap().to_str().unwrap();
-        let url = Url::parse(&format!("unix://{addr}")).unwrap();
+        let addr = self.local_addr()?;
+        let path = addr
+            .as_pathname()
+            .and_then(|p| p.to_str())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "unix socket address is not a file path"))?;
+        let url = Url::parse(&format!("unix://{path}")).map_err(|e| {
+            io::Error::new(io::ErrorKind::InvalidData, format!("Invalid unix socket URL: {e}"))
+        })?;
 
         Ok((Box::new(stream), url))
     }
