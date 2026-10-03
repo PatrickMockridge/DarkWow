@@ -118,7 +118,11 @@ pub mod capability;
 /// Call parameters definitions
 pub mod model;
 
-#[cfg(not(feature = "no-entrypoint"))]
+// `test` is included so the crate's own `cargo test` compiles the entrypoint and its R8 control
+// tests even though the dev-dependency harness enables `no-entrypoint` (feature unification). The
+// entrypoint stays absent from every non-test build that sets `no-entrypoint`, so no other crate's
+// build graph is affected.
+#[cfg(any(test, not(feature = "no-entrypoint")))]
 /// WASM entrypoint functions
 pub mod entrypoint;
 
