@@ -1,0 +1,42 @@
+# Adjudications for `scripts/check-circuit-dead-values.sh` — the rule that a value a circuit
+# computes must reach a constraint, or be named here with the reason it need not.
+#
+# Format, one entry per line:
+#
+#   <rel path> : <name> : <reason citing the mechanism, the host read, or a register ID>
+#
+# Content-keyed on path and name, NOT on line numbers, so a file that shifts underneath an
+# entry keeps its adjudication — the same choice `circuit_pubkey_binding_exceptions.txt` made
+# and for the same reason. A stale entry is reported by the checker so this list cannot
+# outlive its sites.
+#
+# THIS LIST IS A RATCHET, NOT AN AMNESTY, and it is currently EMPTY ON PURPOSE.
+#
+# Measured 2026-10-04 over the whole corpus (177 `.zk` files): 128 undeclared findings — 106
+# dead witnesses and 22 dead derivations — plus 17 unused constant aliases reported separately
+# as informational. The attestation contract, whose defect (github issue #3) is what this
+# checker was written for, is clean: all 11 of its circuits pass.
+#
+# The 128 are NOT adjudicated, and the checker is therefore REPORT-ONLY in
+# `hooks/pre-commit` and in `scripts/run-all-tests.sh`. This is the disposition
+# `check-pubkey-binding.sh` had from 2026-09-22 to 2026-09-23: its 57 candidates were read
+# circuit-and-host together, in slices, one entry at a time, and only then was the gate made
+# blocking. A gate that fails on unadjudicated findings is a gate whose authority cannot be
+# defended yet, which is worse than a report — the reasoning is in that script's header and
+# in register row `OBL-Z18`.
+#
+# What an entry should say, decided by reading the circuit AND its host:
+#
+#   * a witness the host never reads and no derivation feeds — the fix is removal
+#     (AGENTS.md R2: remove the root cause, do not add a compensating guard), so the entry
+#     should be absent and the witness gone;
+#   * a witness the host DOES read — the fix is the `consume_claim.zk` form:
+#     derive-and-expose it and have the host compare the published instance against the
+#     record it holds, as the attestation repair does; the entry should be absent;
+#   * a value that is genuinely inert because the instruction writes nothing and reads
+#     nothing — declare it, and name why the arm exists at all;
+#   * a value reached only through another constraint — it is not dead, and the checker is
+#     wrong; that belongs in this file as an entry with the mechanism, because a checker bug
+#     corrected in the checker leaves this evidence behind.
+#
+# Register row: `OBL-Z23`.

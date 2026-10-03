@@ -230,6 +230,20 @@ run_gate "exec/apply phase rule"          bash "$SCRIPT_DIR/check-phase-host-fun
 # too. The detector itself was left deliberately shallow — see that file's header for why a cleverer
 # classifier was rejected.
 run_gate "circuit pubkey binding"         bash "$SCRIPT_DIR/check-pubkey-binding.sh"
+# OBL-Z23: the dead-value rule — a value a circuit computes that reaches no constraint. H1, a
+# witness no derivation, equality or instance references, is the authorization hole github issue #3
+# used: `attestation` witnessed `attester_secret` and its coordinates and constrained neither in six
+# circuits while the host attributed a stored record to the caller's public key, so one party's own
+# secret could attest in another party's name. H2, an assignment that reaches no constraint, is a
+# check a reader believes was made (`VerifyClaimV2` computed `evidence_hash`, `attestation_hash` and
+# `leaf` and referenced none of them again). The two existing detectors reason about values that
+# *appear in a constraint*, so this class has no operands and no instances for them to inspect.
+# REPORT-ONLY until the list is adjudicated, exactly as `circuit pubkey binding` was until
+# 2026-09-23: measured 2026-10-04 the tree carries 128 undeclared findings over 177 circuits (106
+# dead witnesses, 22 dead derivations) and each has to be read circuit-and-host together. The
+# attestation contract, whose defect the checker was written for, is clean. It becomes a blocking
+# gate in the same move the one above did, and `hooks/pre-commit` reports it in the meantime.
+run_gate "circuit dead values (report-only)" bash "$SCRIPT_DIR/check-circuit-dead-values.sh" --report-only
 # OBL-C99: a client builder's params are the params the contract decodes — the wallet's call is the
 # contract's call. A client that declares its own params type is a second encoder for one function,
 # and the two drift: `drain_protection`'s `initialize`, `execute` and `transfer` builders returned

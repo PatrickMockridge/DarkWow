@@ -66,6 +66,41 @@ Predicates define what verification is required:
 | `Contains` | Data contains a pattern |
 | `Custom` | Custom predicate via ZK circuit |
 
+#### The predicate's definition (normative)
+
+The table above names the predicates; this clause is what they **mean**, and
+`model::predicate_holds` (`src/contract/attestation/src/model/mod.rs`) is the
+one implementation of it. `verify_claim_v1` and `validate_claim_v1` both call
+that function — before github issue #3 they each carried their own answer and
+the two disagreed, `verify_claim_v1` taking the caller's word for the verdict
+from a wire field no circuit witnessed (`params.revealed_result`) and
+`validate_claim_v1` recomputing it with `Predicate::Custom => false` and a
+`Contains` stub that compared first elements.
+
+Let `evidence` be what the claimant presents and `claim_data` what the
+attestor committed to, both `Vec<pallas::Base>`:
+
+- **`Matches`** — `evidence == claim_data`, length included. An attestation of
+  two values is not matched by evidence naming one of them.
+- **`GreaterOrEqual`** — `evidence[0] >= claim_data[0]`, compared as the
+  canonical integer representatives of `pallas::Base` (which is what the
+  field's `Ord` compares, and is why this cannot be pushed into a circuit: the
+  ZK comparison chips give no such order). `false` if either vector is empty.
+- **`LessOrEqual`** — `evidence[0] <= claim_data[0]`, same comparison.
+- **`Contains`** — the evidence occurs as a **contiguous run** inside
+  `claim_data`. An empty pattern is contained in everything. `false` if the
+  pattern is longer than the data.
+- **`Custom`** — `false`. There is no host rule for a custom predicate and no
+  external verifier in this tree to consult, so the answer is `false` rather
+  than a guess: a claim the contract cannot evaluate must not be recorded as
+  verified.
+
+The verdict is derived from state the contract holds — the claim's own stored
+predicate and evidence, and the attestation's stored `claim_data` — and a
+verdict of `false` makes the call **revert** rather than recording
+`ClaimState::Rejected`, so a parent requiring this child call as a condition is
+enforcing something.
+
 ## State Machines
 
 ### Attestation State
@@ -101,6 +136,7 @@ Pending ──[Verify:valid]──> Verified ──[Consume]──> Consumed
 | `UpdateDelegationV1` | 0x0a | Update delegation parameters |
 | `AttestSlashV1` | 0x0b | Slash attestor for false attestation |
 | `CommitFeeScheduleV1` | 0x0c | Commit to fee schedule for attestation services |
+| `CheckAttestationV1` | 0x0d | Resolve an attestation id; the call fails if it names nothing or a non-active attestation |
 
 ## Integration Patterns
 
@@ -145,6 +181,17 @@ Employer attests to a deliverable hash, worker claims completion. Labor Market s
 
 - **Labor Market**: `SubmitDeliverableV1 (0x02)` and `SubmitGitDeliverableV1 (0x03)` both require a child call to `VerifyClaimV1 (0x04)`. The calling contract validates `child_call.data[0] != 0x04`.
 - **DAO-Escrow**: `ResolveDisputeV1 (0x0c)` includes multiple `VerifyClaimV1` child calls for oracle attestation validation.
+
+**What the parent's check is worth depends on this contract failing closed.**
+No consumer in this tree reads a child call's return data, so a parent can
+only enforce a condition whose *violation makes the child revert*. That is
+now true of `VerifyClaimV1`: a claim whose predicate does not hold returns an
+error instead of writing `ClaimState::Rejected` and returning `Ok` (github
+issue #3 — the previous behaviour meant `labor_market::submit_deliverable_v1`
+marked a job `Delivered` on a claim nothing had verified, since its only
+attestation check is that a `VerifyClaimV1` child call exists and is routed
+here). `CheckAttestationV1 (0x0d)` is the other arm built for this purpose,
+and says so in its own documentation.
 
 For the complete cross-contract call map, see [Composability](composability.md).
 
