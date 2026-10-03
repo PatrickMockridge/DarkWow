@@ -128,6 +128,7 @@ INSTRUMENTS = [
     ("fee_guardrails",             "bash contrib/ci/check_fee_guardrails.sh"),
     ("sync_conformance",           "bash contrib/ci/check_sync_conformance.sh"),
     ("heavyweight_coverage",       "bash contrib/ci/check_heavyweight_coverage.sh"),
+    ("manifest_entrypoint",        "bash scripts/check-manifest-entrypoint-agreement.sh"),
     ("length_cast_counter",        "bash contrib/length_cast_counts.sh"),
 ]
 

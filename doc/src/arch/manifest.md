@@ -42,9 +42,9 @@ capability graph usable without decompiling WASM.
 ### What the Manifest Does NOT Reveal
 
 The manifest describes capability **types** and action **structure** — not
-specific capability **instances**. A DAO-Escrow manifest declares that the
+specific capability **instances**. The example manifest declares that the
 contract has a `creator` capability with discriminant `0x00`, but does not
-reveal *who* the creator is or *how many* endowments exist. Instance data —
+reveal *who* the creator is or *how many* things exist. Instance data —
 the actual capabilities held by specific users — remains **encrypted via AEAD**
 and is only discoverable by the holder's wallet through trial decryption.
 
@@ -71,36 +71,35 @@ the bytes. Non-UTF-8 bytes cause the manifest to be silently treated as absent
 
 ```toml
 [contract]
-name = "dao_escrow"
-category = "DAO"
-description = "DAO-governed endowment with DrainProtection"
+name = "example_contract"
+category = "Example"
+description = "A worked example manifest — illustrative only, not a deployed contract."
 version = "1.0.0"
-dependencies = ["native_token_v1"]
+dependencies = []
 
 # --- Functions ---
 # Every function the contract exposes. These map to WASM exports
 # and correspond to ZK circuit proofs.
 
 [[functions]]
-name = "initialize"
+name = "create_thing"
 code = 0x00
-description = "Create a new DAO endowment"
+description = "Create a new thing"
 requires_proof = true
-proof_circuit = "init_v1"
+proof_circuit = "create_thing_v1"
 
 [[functions]]
-name = "pay_premium"
+name = "update_thing"
 code = 0x01
-description = "Pay premium to a drain-protected pool"
+description = "Update an existing thing"
 requires_proof = true
-proof_circuit = "pay_premium_v1"
+proof_circuit = "update_thing_v1"
 
 [[functions]]
-name = "enable_drain_protection"
+name = "close_thing"
 code = 0x02
-description = "Enable drain protection on an endowment"
-requires_proof = true
-proof_circuit = "enable_drain_protection_v1"
+description = "Close a thing; no proof required"
+# `requires_proof` is omitted, which `#[serde(default)]` treats the same as `= false`.
 
 # --- Capabilities ---
 # Capability types this contract defines. Each has a discriminant
@@ -109,44 +108,44 @@ proof_circuit = "enable_drain_protection_v1"
 [[capabilities]]
 discriminant = 0x00
 name = "creator"
-description = "The DAO endowment creator — can enable drain protection"
+description = "The thing's creator"
 
 [[capabilities]]
 discriminant = 0x01
-name = "treasury_governor"
-description = "Can propose and vote on fund allocation"
+name = "approver"
+description = "Can approve changes to a thing"
 
 [[capabilities]]
 discriminant = 0x02
 name = "member"
-description = "DAO member with voting rights"
+description = "A member with update rights"
 
 # --- Actions ---
 # For each function that exercises capabilities, declare what
 # capabilities it requires, consumes, and produces.
 
 [[actions]]
-function = "initialize"
+function = "create_thing"
 requires = { type = "none" }
 consumes = []
 produces = [
-    { name = "creator", description = "Endowment creator capability" },
+    { name = "creator", description = "Thing creator capability" },
 ]
 
 [[actions]]
-function = "pay_premium"
-requires = { type = "any", capabilities = ["creator", "treasury_governor"] }
+function = "update_thing"
+requires = { type = "any", capabilities = ["creator", "approver"] }
 consumes = []
 produces = [
-    { name = "receipt", description = "Premium payment confirmation" },
+    { name = "receipt", description = "Change confirmation" },
 ]
 
 [[actions]]
-function = "enable_drain_protection"
+function = "close_thing"
 requires = { type = "all", capabilities = ["creator"] }
 consumes = []
 produces = [
-    { name = "protected_endowment", description = "Drain-protected endowment reference" },
+    { name = "closed_thing", description = "Closed thing reference" },
 ]
 
 # --- State Trees ---
@@ -154,30 +153,30 @@ produces = [
 # to locate on-chain state for capability resolution.
 
 [[trees]]
-name = "daos"
-description = "Active DAO endowments — keyed by bulla"
+name = "things"
+description = "Active things — keyed by bulla"
 
 [[trees]]
-name = "drain_protection"
-description = "DrainProtection configurations — keyed by fund_id"
+name = "settings"
+description = "Per-thing settings — keyed by fund_id"
 
 # --- ZK Circuits ---
 # Proof circuits the contract references. These correspond to
 # `.zk.bin` files compiled from `.zk` source.
 
 [[circuits]]
-name = "init_v1"
-namespace = "dao_escrow"
+name = "create_thing_v1"
+namespace = "example"
 opcodes = ["WitnessBase", "PoseidonHash", "BaseAdd", "ConstrainInstance"]
 
 [[circuits]]
-name = "pay_premium_v1"
-namespace = "dao_escrow"
+name = "update_thing_v1"
+namespace = "example"
 opcodes = ["WitnessBase", "PoseidonHash", "BaseMul", "BaseAdd", "ConstrainInstance", "ConstrainInstance"]
 
 [[circuits]]
-name = "enable_drain_protection_v1"
-namespace = "dao_escrow"
+name = "close_thing_v1"
+namespace = "example"
 opcodes = ["WitnessBase", "BaseAdd", "ConstrainEqualBase", "ConstrainInstance"]
 
 # --- Parameters ---
@@ -185,20 +184,20 @@ opcodes = ["WitnessBase", "BaseAdd", "ConstrainEqualBase", "ConstrainInstance"]
 # the wallet's CLI and UX about required and optional parameters.
 
 [[parameters]]
-function = "initialize"
+function = "create_thing"
 fields = [
-    { name = "dao_bulla", type = "pallas_base" },
-    { name = "endowment_asset_id", type = "pallas_base" },
+    { name = "thing_bulla", type = "pallas_base" },
+    { name = "thing_asset_id", type = "pallas_base" },
     { name = "owner_pubkey", type = "public_key", optional = true },
     { name = "bulla_blind", type = "pallas_base", optional = true },
-    { name = "enable_drain_protection", type = "bool" },
+    { name = "close_on_create", type = "bool" },
 ]
 
 [[parameters]]
-function = "pay_premium"
+function = "update_thing"
 fields = [
-    { name = "dao_escrow_bulla", type = "pallas_base" },
-    { name = "drain_protection_bulla", type = "pallas_base" },
+    { name = "thing_bulla", type = "pallas_base" },
+    { name = "settings_bulla", type = "pallas_base" },
     { name = "amount", type = "u64" },
 ]
 
@@ -209,21 +208,21 @@ fields = [
 # costs — mismatch triggers reputation impact (black marks).
 
 [[cost_profiles]]
-function = "initialize"
+function = "create_thing"
 circuit_difficulty = 500     # Σ rows(opcode) — ZK row count (gas)
 k_value = 11                  # circuit's Halo2 k parameter (domain size)
 wasm_kb = 2                   # WASM execution overhead in kB-equivalent
 tolerance = 0.50              # ±50% allowed deviation before black mark
 
 [[cost_profiles]]
-function = "pay_premium"
+function = "update_thing"
 circuit_difficulty = 1500
 k_value = 12
 wasm_kb = 1
 tolerance = 0.50
 
 [[cost_profiles]]
-function = "enable_drain_protection"
+function = "close_thing"
 circuit_difficulty = 800
 k_value = 11
 wasm_kb = 1
@@ -242,7 +241,7 @@ requires = { type = "none" }
 requires = { type = "any", capabilities = ["creator", "member"] }
 
 # All listed capabilities are required
-requires = { type = "all", capabilities = ["creator", "treasury_governor"] }
+requires = { type = "all", capabilities = ["creator", "approver"] }
 
 # Must NOT hold the listed capability
 requires = { type = "not", capability = "member" }
@@ -604,8 +603,8 @@ ZK circuits, dependencies, and parameter schemas.
 Implementation: `bin/dww/src/manifest_resolver.rs` — `ManifestResolver::validate_params()`.
 
 ```
-dwow_wallet contract invoke <cid> pay_premium \
-    --params '{"dao_escrow_bulla": "...", "amount": 1000}'
+dwow_wallet contract invoke <cid> update_thing \
+    --params '{"thing_bulla": "...", "amount": 1000}'
 ```
 
 Before building the transaction, `validate_params()` checks the JSON params

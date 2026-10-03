@@ -108,6 +108,10 @@ run_gate "control: heavyweight anti-patterns can fail" \
 # defect this list exists to avoid.
 run_gate "control: heavyweight coverage can fail" \
     bash "$REPO_ROOT/contrib/ci/check_heavyweight_coverage.sh" --self-test
+# The manifest <-> entrypoint gate's control: a manifest code the enum does not assign, and a
+# proof-bearing function with no dispatch arm, must each be caught.
+run_gate "control: manifest↔entrypoint agreement can fail" \
+    bash "$SCRIPT_DIR/check-manifest-entrypoint-agreement.sh" --self-test
 
 # Static circuit audits first — they are seconds, and they need no build.
 #
@@ -118,6 +122,12 @@ run_gate "control: heavyweight coverage can fail" \
 # sdk edit makes all 32 stale. This gate names all of them in one command.
 run_gate "contract artifact freshness"    bash "$SCRIPT_DIR/check-artifact-freshness.sh"
 run_gate "circuit metadata alignment"     bash "$SCRIPT_DIR/check-circuit-metadata-alignment.sh"
+# OBL-C155: the manifest is a third declaration of the same facts as the entrypoint, compared by the
+# gates above to the circuit and the client but to neither the manifest. This gate reads what nothing
+# did — the manifest code set, the name<->variant agreement, and the dispatch arm a proof-bearing
+# function needs (C1/C2/C3/C4; the circuit-side checks are OBL-C91's, deliberately not re-derived).
+run_gate "manifest ↔ entrypoint agreement" \
+    bash "$SCRIPT_DIR/check-manifest-entrypoint-agreement.sh"
 run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain-separation.sh"
 # OBL-Z1: the Orchard-class rule. The other two circuit gates are structural (counts, prefix
 # presence); this is the only one that asks whether an exposed public input is *determined*.
