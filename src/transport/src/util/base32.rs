@@ -16,7 +16,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#![cfg(feature = "nym")]
+// Both `nym.rs` and `tor.rs` use this module, so it must be compiled whenever *either* feature is on.
+// Gated on `nym` alone it was cfg'd out under `tor`-without-`nym` (which `bin/dww`'s `transport-tor`
+// enables), so `tor.rs`'s `use crate::util::base32;` failed to resolve (E0432).
+#![cfg(any(feature = "nym", feature = "tor"))]
 
 //! Base32 encoding as specified by RFC4648
 //! Vendored from src/util/encoding/base32.rs
