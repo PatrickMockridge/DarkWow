@@ -36,6 +36,8 @@ use pasta_curves::{arithmetic::CurveAffine, group::Curve};
 use rand::rngs::OsRng;
 use rand::SeedableRng;
 
+use crate::error::SlotError;
+
 /// CommitBetV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct CommitBetV1PublicInputs {
@@ -93,7 +95,7 @@ impl CommitBetV1CallData {
         }
     }
 
-    pub fn compute_public_inputs(&self) -> CommitBetV1PublicInputs {
+    pub fn compute_public_inputs(&self) -> std::result::Result<CommitBetV1PublicInputs, SlotError> {
         let bet_value_base = pallas::Base::from(self.bet_value);
         let spin_id = poseidon_hash([
             pallas::Base::from(4),
@@ -106,14 +108,22 @@ impl CommitBetV1CallData {
             self.asset_id,
         ]);
         let value_commit = pedersen_commitment_u64(self.bet_value, Blind(self.value_blind));
-        let coords = value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
-        CommitBetV1PublicInputs {
+        // `Affine::coordinates()` is `None` exactly for the identity point, and
+        // `pedersen_commitment_u64` returns the identity exactly when value and blind are both zero
+        // — so this is the only `None`. The former `.expect(...)` therefore panicked on that
+        // (reachable) input; reject it as an error instead, stating the real condition.
+        let coords = value_commit
+            .to_affine()
+            .coordinates()
+            .into_option()
+            .ok_or(SlotError::InvalidBetValue)?;
+        Ok(CommitBetV1PublicInputs {
             spin_id,
             value_commit_x: *coords.x(),
             value_commit_y: *coords.y(),
             tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
-        }
+        })
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -139,7 +149,7 @@ pub fn create_commit_bet_v1_proof(
     pk: &ProvingKey,
     input: &CommitBetV1CallData,
 ) -> Result<(Proof, CommitBetV1PublicInputs)> {
-    let public_inputs = input.compute_public_inputs();
+    let public_inputs = input.compute_public_inputs()?;
     let witnesses = input.to_witnesses();
 
     let circuit = ZkCircuit::new(witnesses, zkbin);
@@ -154,4 +164,35 @@ pub fn create_commit_bet_v1_proof(
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_sdk::crypto::SecretKey;
+
+    /// R8 control: a `CommitBetV1CallData` whose `bet_value` and `value_blind` are both zero commits
+    /// to the identity, whose affine coordinates are absent. `compute_public_inputs` must return
+    /// `Err`, never panic.
+    ///
+    /// `pedersen_commitment_u64(0, 0)` is `V*0 + R*0`, the identity — so `Affine::coordinates()` is
+    /// `None`, the input the former `.expect(...)` panicked on. This is the reachable case the guard
+    /// now rejects.
+    #[test]
+    fn identity_value_commit_is_rejected() {
+        let player = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1u64)));
+        let data = CommitBetV1CallData::new(
+            player,
+            0,                          // bet_value — zero, with a zero blind, commits to the identity
+            5,                          // paylines
+            pallas::Base::from(0u64),   // secret_nonce
+            pallas::Base::from(0u64),   // blind
+            pallas::Base::from(0u64),   // asset_id
+            pallas::Scalar::from(0u64), // value_blind
+        );
+        assert!(
+            data.compute_public_inputs().is_err(),
+            "an identity value commitment must be rejected with an error, never panic"
+        );
+    }
 }
