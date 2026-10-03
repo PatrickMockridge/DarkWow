@@ -63,13 +63,20 @@ pub struct RegisterTypeRevealed {
 }
 
 impl RegisterTypeRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
+    pub fn to_vec(&self) -> std::result::Result<Vec<pallas::Base>, crate::error::ContractError> {
         let (vc_x, vc_y) = {
             let affine = self.value_commit.to_affine();
-            let coords = affine.coordinates().unwrap();
+            // `Affine::coordinates()` is `None` exactly for the identity point, which has no affine
+            // coordinates; `pedersen_commitment_u64(0, Zero)` is the identity, so the former
+            // `.unwrap()` was a reachable abort. Reject it as an error, stating the real condition.
+            let coords = affine.coordinates().into_option().ok_or_else(|| {
+                crate::error::ContractError::IoError(
+                    "RegisterTypeRevealed::to_vec: value_commit is the identity point".to_string(),
+                )
+            })?;
             (*coords.x(), *coords.y())
         };
-        vec![
+        Ok(vec![
             self.asset_id,
             self.token_auth_parent,
             self.commitment.inner(),
@@ -78,7 +85,7 @@ impl RegisterTypeRevealed {
             self.spend_hook,
             self.tx_binding,
             self.tx_nonce,
-        ]
+        ])
     }
 }
 
@@ -191,12 +198,12 @@ impl RegisterTypeCallBuilder {
         #[cfg(not(target_arch = "wasm32"))]
         let proof = if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-            Proof::create(&self.register_type_pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+            Proof::create(&self.register_type_pk, &[circuit], &public_inputs.to_vec()?, &mut rng)?
         } else {
-            Proof::create(&self.register_type_pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+            Proof::create(&self.register_type_pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?
         };
         #[cfg(target_arch = "wasm32")]
-        let proof = Proof::create(&self.register_type_pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+        let proof = Proof::create(&self.register_type_pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
         Ok(RegisterTypeCallDebris {
             params: RegisterTypeParamsV1 {

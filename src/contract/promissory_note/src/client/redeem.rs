@@ -50,10 +50,22 @@ use tracing::debug;
 use super::PromissoryNote;
 use crate::model::{AeadEncryptedNote, CapAttrs, CapCommitment, Input, Nullifier, Output, RedeemParamsV1};
 
-fn point_to_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
+/// Extract (x, y) base-field coordinates from a `pallas::Point`.
+///
+/// `Affine::coordinates()` returns a `subtle::CtOption` — invisible to `clippy::unwrap_used`,
+/// which only sees `Option`/`Result` — and it is `None` exactly for the identity point, which has
+/// no affine coordinates. A `pedersen_commitment_u64(0, Zero)` is the identity, so the former
+/// `.unwrap()` was a reachable abort. Reject it as an error instead, stating the real condition.
+fn point_to_coords(
+    pt: pallas::Point,
+) -> std::result::Result<(pallas::Base, pallas::Base), crate::error::ContractError> {
     let affine = pt.to_affine();
-    let coords = affine.coordinates().unwrap();
-    (*coords.x(), *coords.y())
+    let coords = affine.coordinates().into_option().ok_or_else(|| {
+        crate::error::ContractError::IoError(
+            "point_to_coords: value_commit is the identity point".to_string(),
+        )
+    })?;
+    Ok((*coords.x(), *coords.y()))
 }
 
 // ============================================================================
@@ -77,9 +89,9 @@ pub struct RedeemRevokeRevealed {
 }
 
 impl RedeemRevokeRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let (vc_x, vc_y) = point_to_coords(self.value_commit);
-        vec![
+    pub fn to_vec(&self) -> std::result::Result<Vec<pallas::Base>, crate::error::ContractError> {
+        let (vc_x, vc_y) = point_to_coords(self.value_commit)?;
+        Ok(vec![
             self.nullifier.inner(),
             vc_x,
             vc_y,
@@ -90,7 +102,7 @@ impl RedeemRevokeRevealed {
             self.signature_public,
             self.tx_binding,
             self.tx_nonce,
-        ]
+        ])
     }
 }
 
@@ -108,9 +120,9 @@ pub struct RedeemReceiptRevealed {
 }
 
 impl RedeemReceiptRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let (vc_x, vc_y) = point_to_coords(self.value_commit);
-        vec![
+    pub fn to_vec(&self) -> std::result::Result<Vec<pallas::Base>, crate::error::ContractError> {
+        let (vc_x, vc_y) = point_to_coords(self.value_commit)?;
+        Ok(vec![
             self.commitment.inner(),
             vc_x,
             vc_y,
@@ -119,7 +131,7 @@ impl RedeemReceiptRevealed {
             self.tx_binding,
             self.tx_nonce,
             self.spend_hook,
-        ]
+        ])
     }
 }
 
@@ -394,12 +406,12 @@ fn create_redeem_burn_proof(
     #[cfg(not(target_arch = "wasm32"))]
     let proof = if crate::deterministic_zk_enabled() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+        Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut rng)?
     } else {
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+        Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?
     };
     #[cfg(target_arch = "wasm32")]
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs))
 }
@@ -468,12 +480,12 @@ fn create_redeem_receipt_proof(
     #[cfg(not(target_arch = "wasm32"))]
     let proof = if crate::deterministic_zk_enabled() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+        Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut rng)?
     } else {
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+        Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?
     };
     #[cfg(target_arch = "wasm32")]
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs))
 }

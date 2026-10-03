@@ -66,9 +66,9 @@ pub struct TransferRevokeRevealed {
 }
 
 impl TransferRevokeRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let (vc_x, vc_y) = point_to_coords(self.value_commit);
-        vec![
+    pub fn to_vec(&self) -> std::result::Result<Vec<pallas::Base>, crate::error::ContractError> {
+        let (vc_x, vc_y) = point_to_coords(self.value_commit)?;
+        Ok(vec![
             self.nullifier.inner(),
             vc_x,
             vc_y,
@@ -79,7 +79,7 @@ impl TransferRevokeRevealed {
             self.signature_public,
             self.tx_binding,
             self.tx_nonce,
-        ]
+        ])
     }
 }
 
@@ -96,9 +96,9 @@ pub struct TransferBlindOutputRevealed {
 }
 
 impl TransferBlindOutputRevealed {
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let (vc_x, vc_y) = point_to_coords(self.value_commit);
-        vec![
+    pub fn to_vec(&self) -> std::result::Result<Vec<pallas::Base>, crate::error::ContractError> {
+        let (vc_x, vc_y) = point_to_coords(self.value_commit)?;
+        Ok(vec![
             self.commitment.inner(),
             vc_x,
             vc_y,
@@ -106,15 +106,26 @@ impl TransferBlindOutputRevealed {
             self.spend_hook,
             self.tx_binding,
             self.tx_nonce,
-        ]
+        ])
     }
 }
 
-/// Extract (x, y) base-field coordinates from a pallas::Point.
-fn point_to_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
+/// Extract (x, y) base-field coordinates from a `pallas::Point`.
+///
+/// `Affine::coordinates()` returns a `subtle::CtOption` — invisible to `clippy::unwrap_used`,
+/// which only sees `Option`/`Result` — and it is `None` exactly for the identity point, which has
+/// no affine coordinates. A `pedersen_commitment_u64(0, Zero)` is the identity, so the former
+/// `.unwrap()` was a reachable abort. Reject it as an error instead, stating the real condition.
+fn point_to_coords(
+    pt: pallas::Point,
+) -> std::result::Result<(pallas::Base, pallas::Base), crate::error::ContractError> {
     let affine = pt.to_affine();
-    let coords = affine.coordinates().unwrap();
-    (*coords.x(), *coords.y())
+    let coords = affine.coordinates().into_option().ok_or_else(|| {
+        crate::error::ContractError::IoError(
+            "point_to_coords: value_commit is the identity point".to_string(),
+        )
+    })?;
+    Ok((*coords.x(), *coords.y()))
 }
 
 /// Input commitment for transfer
@@ -436,12 +447,12 @@ fn create_transfer_burn_proof(
     #[cfg(not(target_arch = "wasm32"))]
     let proof = if crate::deterministic_zk_enabled() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+        Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut rng)?
     } else {
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+        Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?
     };
     #[cfg(target_arch = "wasm32")]
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs))
 }
@@ -506,12 +517,30 @@ fn create_transfer_transfer_proof(
     #[cfg(not(target_arch = "wasm32"))]
     let proof = if crate::deterministic_zk_enabled() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+        Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut rng)?
     } else {
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+        Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?
     };
     #[cfg(target_arch = "wasm32")]
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs))
+}
+
+#[cfg(test)]
+mod tests {
+    use dwow_sdk::{pasta::group::Group, pasta::pallas};
+
+    use super::point_to_coords;
+
+    /// R8 control: `Affine::coordinates()` is `None` for the identity point, so `point_to_coords`
+    /// must return `Err`, never abort. The former `.unwrap()` was a `CtOption` the lint cannot see;
+    /// this is the input it aborted on.
+    #[test]
+    fn identity_point_is_rejected() {
+        assert!(
+            point_to_coords(pallas::Point::identity()).is_err(),
+            "the identity point has no affine coordinates; point_to_coords must return Err, never abort"
+        );
+    }
 }
