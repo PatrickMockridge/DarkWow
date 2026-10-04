@@ -44,15 +44,16 @@ use dwow_otc_swap_contract::model::{
     CancelSwapParamsV1, CreateSwapParamsV1, ExecuteSwapParamsV1, FundSwapParamsV1,
 };
 
-/// The commitment a single-call endpoint's proof must bind to (`OBL-C198`).
+/// The commitment over an ordered call set (`OBL-C198`). The order is DFS post-order — children
+/// before the parent — because that is the order the host hashes, and **one** commitment is taken
+/// for the whole transaction so a child's proof and its parent's bind to the same value.
 ///
 /// One helper because every builder in this harness needs the same value, and a second derivation
 /// would be a second value waiting to drift (`safety.md` RC5). It is derived over the call
 /// *including* the contract id — the id is part of the call, and the node recomputes over the same
 /// bytes — which is why the harness is given the deployed id rather than a placeholder.
-fn commitment_of(contract_id: &ContractId, call_data: &[u8]) -> pallas::Base {
-    let call = dwow_sdk::tx::ContractCall { contract_id: *contract_id, data: call_data.to_vec() };
-    dwow_sdk::crypto::util::tx_commitment([&call])
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
 }
 
 /// OTC Swap Harness for isolated testing
@@ -131,7 +132,7 @@ impl OtcSwapHarness {
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
-        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
+        input.tx_commitment = commitment_of(&[dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() }]);
         let (proof, public_inputs) =
             create_swap_proof(&self.create_zkbin, &self.create_pk, &input)?;
 
@@ -141,6 +142,7 @@ impl OtcSwapHarness {
     /// Fund an OTC swap (function code 0x02)
     pub fn fund_swap(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         value: u64,
         value_blind: pallas::Scalar,
         swap_id: pallas::Base,
@@ -168,16 +170,22 @@ impl OtcSwapHarness {
         // prefix is a `ContractError`, not a silent truncation (§A.4.5).
         call_data.extend_from_slice(&params.encode()?);
 
-        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
+        // `OBL-C198`: ONE commitment over the whole ordered call set — children first, this call
+        // last (DFS post-order) — so this proof and its children's bind to the same value.
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
         let (proof, _public_inputs) =
             fund_swap_proof(&self.fund_zkbin, &self.fund_pk, &input)?;
 
-        Ok(FundSwapResult { call_data, proof })
+        Ok(FundSwapResult { call_data, proof, commitment })
     }
 
     /// Execute an OTC swap (function code 0x03)
     pub fn execute_swap(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         swap_id: pallas::Base,
         bob_secret: pallas::Base,
         bob_pubkey: PublicKey,
@@ -201,11 +209,15 @@ impl OtcSwapHarness {
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
-        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
+        // `OBL-C198`: one commitment over the whole ordered call set — see `fund_swap`.
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
         let (proof, _public_inputs) =
             execute_swap_proof(&self.execute_zkbin, &self.execute_pk, &input)?;
 
-        Ok(ExecuteSwapResult { call_data, proof })
+        Ok(ExecuteSwapResult { call_data, proof, commitment })
     }
 
     /// Cancel an OTC swap (function code 0x04)
@@ -236,7 +248,7 @@ impl OtcSwapHarness {
         let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
 
-        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
+        input.tx_commitment = commitment_of(&[dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() }]);
         let (proof, _public_inputs) =
             cancel_swap_proof(&self.cancel_zkbin, &self.cancel_pk, &input)?;
 
@@ -285,12 +297,16 @@ pub struct CreateSwapResult {
 pub struct FundSwapResult {
     pub call_data: Vec<u8>,
     pub proof: Proof,
+    /// The whole-set commitment the proof binds to — the caller proves its children with this.
+    pub commitment: pallas::Base,
 }
 
 /// Result of execute_swap
 pub struct ExecuteSwapResult {
     pub call_data: Vec<u8>,
     pub proof: Proof,
+    /// The whole-set commitment the proof binds to — the caller proves its children with this.
+    pub commitment: pallas::Base,
 }
 
 /// Result of cancel_swap

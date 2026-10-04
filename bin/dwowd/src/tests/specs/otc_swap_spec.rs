@@ -16,14 +16,22 @@ use crate::tests::uniform_runner::{
     ChildCall, ContractTestSpec, EndpointResult, EndpointSpec, EndpointExpectation,
 };
 
-/// Build a PN TransferV1 (0x04) child call spending an issued note.
-fn pn_transfer_child(
+/// `OBL-C198`: build the PN TransferV1 (0x04) child call's **data and plan, without proving** —
+/// the commitment is a derivation over the whole call set, so the blind-output proof is made only
+/// after the parent's call data exists. Returns the ordered-set call, the plan to prove once the
+/// commitment is known, and the nonce the plan binds.
+fn pn_transfer_prepare(
     note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
     value: u64,
     blind_seed: pallas::Base,
-) -> dwow_core::Result<ChildCall> {
+) -> dwow_core::Result<(
+    dwow_sdk::tx::ContractCall,
+    dwow_promissory_note_contract::client::transfer::TransferCallPlan,
+    pallas::Base,
+)> {
     let (note_commitment, pos, path, asset_id, commitment_blind) = note;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
+    let nonce = pallas::Base::zero();
     let input = TransferCallInput {
         value,
         asset_id: *asset_id,
@@ -35,7 +43,7 @@ fn pn_transfer_child(
         secret: pallas::Base::from(100u64),
         ephemeral_signature_secret: pallas::Base::from(9u64),
         tx_commitment: pallas::Base::zero(),
-        tx_nonce: pallas::Base::zero(),
+        tx_nonce: nonce,
     };
     let output = TransferCallOutput {
         recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
@@ -47,15 +55,15 @@ fn pn_transfer_child(
         commitment_blind: poseidon_hash([blind_seed, *note_commitment]),
     };
     let pn = PromissoryNoteHarness::spawn();
-    let child = pn
-        .transfer_with_value_blinds(vec![input], vec![output], Some(vec![value_blind]))
+    let plan = pn
+        .transfer_prepare(vec![input], vec![output], Some(vec![value_blind]))
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall {
-        contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
-        call_data: child.call_data,
-        proofs: child.proofs,
-        children: vec![],
-    })
+    let mut call_data = vec![0x04u8];
+    call_data.extend_from_slice(
+        &plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?,
+    );
+    let call = dwow_sdk::tx::ContractCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, data: call_data };
+    Ok((call, plan, nonce))
 }
 
 pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
@@ -167,12 +175,19 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                     let swap_a = swap_a.clone();
                     move || {
                         let id = swap_a.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("swap A not created".into()))?;
-                        let r = h.fund_swap(send_value, pallas::Scalar::from(100u64), id, 0, vec![MerkleNode::new(pallas::Base::from(0u64)); 32])
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(send_value), id]);
-                        let child = pn_transfer_child(&n[0], send_value, blind_seed)?;
+                        // `OBL-C198`: the child's call data is built first (no proof), then the
+                        // parent's. The parent derives ONE commitment over the ordered set (child
+                        // first, parent last) and the child is proven against that same value, so
+                        // both proofs bind to the transaction they are in.
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[0], send_value, blind_seed)?;
+                        let r = h.fund_swap(&[child_call.clone()], send_value, pallas::Scalar::from(100u64), id, 0, vec![MerkleNode::new(pallas::Base::from(0u64)); 32])
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -188,12 +203,17 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                     let swap_a = swap_a.clone();
                     move || {
                         let id = swap_a.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("swap A not created".into()))?;
-                        let r = h.execute_swap(id, bob_sk, bob_pub, alice_pub, bob_pub)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(send_value), pallas::Base::from(recv_value), id]);
-                        let child = pn_transfer_child(&n[1], send_value, blind_seed)?;
+                        // `OBL-C198`: as in FundSwap — child call data first, parent second, one
+                        // commitment over the ordered set, the child proven against it.
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[1], send_value, blind_seed)?;
+                        let r = h.execute_swap(&[child_call.clone()], id, bob_sk, bob_pub, alice_pub, bob_pub)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),

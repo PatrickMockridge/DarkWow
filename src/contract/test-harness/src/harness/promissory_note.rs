@@ -283,6 +283,32 @@ impl PromissoryNoteHarness {
         })
     }
 
+    /// `OBL-C198`: assemble the transfer call's data and stop, **before** the blind-output proofs
+    /// exist. The caller computes the commitment over the whole ordered call set (children before
+    /// the parent) and only then calls `plan.prove(commitment, nonce)`, so a child transfer binds to
+    /// the same commitment its parent does. `plan.params().encode()` is the call data — selector
+    /// `0x04` prefixed by the caller.
+    ///
+    /// `TransferCallBuilder::build` still exists for single-call transfers, where the caller already
+    /// knows the commitment.
+    pub fn transfer_prepare(
+        &self,
+        inputs: Vec<TransferCallInput>,
+        outputs: Vec<TransferCallOutput>,
+        value_blinds: Option<Vec<dwow_sdk::crypto::ScalarBlind>>,
+    ) -> Result<dwow_promissory_note_contract::client::transfer::TransferCallPlan> {
+        TransferCallBuilder {
+            inputs,
+            outputs,
+            revoke_zkbin: self.revoke_zkbin.clone(),
+            revoke_pk: self.revoke_pk.clone(),
+            transfer_zkbin: self.transfer_zkbin.clone(),
+            transfer_pk: self.transfer_pk.clone(),
+            value_blinds,
+        }
+        .prepare()
+    }
+
     /// Perform an OTC swap between two parties
     /// Inputs are revoked, outputs are transferred - cross-token atomic swap
     /// Redeem commitments (function code 0x01, ZK).
