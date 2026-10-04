@@ -236,7 +236,7 @@ impl HeavyweightPipeline {
         });
         let mut runtime = dwow_core::runtime::vm_runtime::Runtime::new(
             wasm, backend, contract_id, BlockHeight::GENESIS,
-            BlockTarget::MAX, dwow_sdk::tx::TransactionHash::none(), 0,
+            BlockTarget::MAX, dwow_sdk::tx::TransactionHash::none(), [0u8; 32], 0,
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "Runtime::new for deploy: {}", e,
         )))?;
@@ -301,7 +301,7 @@ impl HeavyweightPipeline {
         });
         let mut runtime = dwow_core::runtime::vm_runtime::Runtime::new(
             wasm, backend, contract_id, BlockHeight::GENESIS,
-            BlockTarget::MAX, dwow_sdk::tx::TransactionHash::none(), 0,
+            BlockTarget::MAX, dwow_sdk::tx::TransactionHash::none(), [0u8; 32], 0,
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "Runtime::new for deploy: {}", e,
         )))?;

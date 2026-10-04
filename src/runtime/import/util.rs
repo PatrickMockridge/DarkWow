@@ -356,6 +356,43 @@ pub(crate) fn get_tx_hash(mut ctx: FunctionEnvMut<Env>) -> i64 {
     (objects.len() - 1) as i64
 }
 
+/// Expose the enclosing transaction's commitment to the guest: the canonical repr of the
+/// field element `dwow_sdk::crypto::util::tx_commitment` derives from the transaction's
+/// call set.
+///
+/// `OBL-C198`. A contract's `get_metadata` arm must publish a `tx_binding` derived from the
+/// **real** enclosing transaction, because the node recomputes that derivation and refuses a
+/// proof whose published binding differs (stage 4 of `tx-commitment.md` §Verification). The
+/// arm cannot read the value out of the call data: the commitment covers the call data, so a
+/// binding carried inside it would be computed from a value that covers it — a cycle with no
+/// fixed point, i.e. a proof that can never be satisfied. The host therefore supplies it here,
+/// and the arm derives from it with the call's own `tx_nonce`.
+///
+/// Sized 32 and named for the field element it is, not for the wire type: the guest converts
+/// it with `from_repr`, which always succeeds for a canonical repr and is checked rather than
+/// assumed there.
+pub(crate) fn get_tx_commitment(mut ctx: FunctionEnvMut<Env>) -> i64 {
+    let (env, mut store) = ctx.data_and_store_mut();
+    let cid = env.contract_id;
+
+    if let Err(e) =
+        acl_allow(env, &[ContractSection::Deploy, ContractSection::Metadata, ContractSection::Exec])
+    {
+        error!(
+            target: "runtime::util::get_tx_commitment",
+            "[WASM] [{cid}] get_tx_commitment(): Called in unauthorized section: {e}"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
+    // Subtract used gas. Here we count the size of the object.
+    env.subtract_gas(&mut store, 32);
+
+    let mut objects = env.objects.borrow_mut();
+    objects.push(env.tx_commitment.to_vec());
+    (objects.len() - 1) as i64
+}
+
 /// Will return current runtime configured verifying block height number
 ///
 /// Permissions: deploy, metadata, exec

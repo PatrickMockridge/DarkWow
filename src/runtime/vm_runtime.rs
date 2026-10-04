@@ -155,6 +155,15 @@ pub struct Env {
     pub local_db_handles: RefCell<Vec<DbHandle>>,
     /// The contract ID being executed
     pub contract_id: ContractId,
+    /// The enclosing transaction's commitment, as the canonical repr of the field element
+    /// `dwow_sdk::crypto::util::tx_commitment` derives from the call set.
+    ///
+    /// `OBL-C198`. A contract's `get_metadata` arm has to publish a `tx_binding` derived from
+    /// the *real* transaction — one the node recomputes and compares — and it cannot get that
+    /// value from the call data, because the commitment covers the call data and a binding
+    /// inside it would be computed from a value that covers it: a cycle with no fixed point,
+    /// i.e. an unsatisfiable proof. So the host supplies it, and the arm derives from this.
+    pub tx_commitment: [u8; 32],
     /// The compiled wasm bincode being executed,
     pub contract_bincode: Vec<u8>,
     /// The contract section being executed
@@ -345,6 +354,7 @@ impl Runtime {
         verifying_block_height: BlockHeight,
         block_target: BlockTarget,
         tx_hash: TransactionHash,
+        tx_commitment: [u8; 32],
         call_idx: u8,
     ) -> Result<Self> {
         info!(target: "runtime::vm_runtime", "[WASM] Instantiating a new runtime");
@@ -591,6 +601,7 @@ impl Runtime {
                 verifying_block_height,
                 block_target,
                 tx_hash,
+                tx_commitment,
                 call_idx,
                 instance: None,
                 spend_hook_request: Cell::new(None),
@@ -727,6 +738,11 @@ impl Runtime {
                     import::util::get_block_target,
                 ),
 
+                "get_tx_commitment_" => Function::new_typed_with_env(
+                    &mut store,
+                    &ctx,
+                    import::util::get_tx_commitment,
+                ),
                 "get_tx_hash_" => Function::new_typed_with_env(
                     &mut store,
                     &ctx,

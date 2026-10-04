@@ -67,6 +67,9 @@ use dwow_sdk::crypto::{
     PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
 };
 use dwow_sdk::pasta::pallas;
+// `tx_commitment_of_call_data` calls `.to_repr()` on the field element the derivation
+// returns; that method is `ff::PrimeField`'s.
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::deploy::DeployParamsV1;
 
 use crate::CChainState;
@@ -114,6 +117,36 @@ pub struct ExecutionStats {
 pub struct ExecutionOutcome {
     pub overlay: SledTreeOverlay,
     pub stats: ExecutionStats,
+}
+
+/// The enclosing transaction's commitment, derived from the call set a job carries.
+///
+/// Returns the canonical repr of the field element `dwow_sdk::crypto::util::tx_commitment`
+/// derives — the same value `TransactionBuilder::build` stores in the core transaction and the
+/// node's verifier recomputes for stage 4 (`src/linear/src/zk_verifier.rs`). One derivation,
+/// one home: `safety.md` RC5.
+///
+/// `job.call_data` carries the whole transaction's call tree (the runtime deserializes it and
+/// selects `job.call_idx` from it), so every job of one transaction derives the same value
+/// here. The runtime hands it to the guest as `get_tx_commitment`, which is how a
+/// `get_metadata` arm publishes a `tx_binding` the node can recompute (`OBL-C198`). It cannot
+/// come from the call data: the commitment *covers* the call data, so a binding carried inside
+/// it would be computed from a value that covers it — a cycle with no fixed point, and a proof
+/// nothing can satisfy.
+///
+/// A decode failure returns zeros rather than panicking. `call_data` is the same buffer the
+/// runtime hands the guest, so a guest that cannot decode it fails the call on its own; a
+/// panic here would add a node crash in place of a rejected call and nothing else.
+fn tx_commitment_of_call_data(call_data: &[u8]) -> [u8; 32] {
+    match dwow_serial::deserialize::<
+        Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::tx::ContractCall>>,
+    >(call_data)
+    {
+        Ok(calls) => {
+            dwow_sdk::crypto::util::tx_commitment(calls.iter().map(|c| &c.data)).to_repr()
+        }
+        Err(_) => [0u8; 32],
+    }
 }
 
 /// Extract the DarkLeaf call tree from a transaction witness for WASM delivery.
@@ -428,6 +461,7 @@ pub fn execute_block(
         };
 
         let tx_hash_bytes = dwow_sdk::tx::TransactionHash(*tx_hash.as_bytes());
+        let tx_commitment = tx_commitment_of_call_data(&job.call_data);
         let mut runtime = match dwow_core::runtime::vm_runtime::Runtime::new(
             &job.wasm_bytes,
             backend.clone(),
@@ -435,6 +469,7 @@ pub fn execute_block(
             current_height,
             difficulty,
             tx_hash_bytes,
+            tx_commitment,
             job.call_idx,
         ) {
             Ok(r) => r,
@@ -848,9 +883,16 @@ fn execute_spend_hook(
         Err(_) => { error!(target: "execution", "spend_hook: invalid target CID"); return false; }
     };
 
+    // The commitment is NOT established on this path: this transient runtime runs a spend-hook
+    // target's `metadata`/`spend_hook` for validation, and this function is not handed the
+    // transaction's call set, so it cannot derive one. Zeros are passed rather than a guess.
+    // If a spend-hook target's metadata arm ever derives a `tx_binding` (OBL-C198), the value
+    // it publishes here would be wrong — and that is recorded as owed rather than left to be
+    // discovered. The path that the node's proof verification reads is the job loop above,
+    // which does derive it.
     let mut target_runtime = match dwow_core::runtime::vm_runtime::Runtime::new(
         &target_wasm_bytes, backend.clone(), target_cid,
-        current_height, difficulty, tx_hash_bytes, 0u8,
+        current_height, difficulty, tx_hash_bytes, [0u8; 32], 0u8,
     ) {
         Ok(r) => r,
         Err(_) => { error!(target: "execution", "spend_hook: runtime creation failed"); return false; }
@@ -892,9 +934,13 @@ fn deploy_contract_in_overlay(
         vm,
         block_anchor_tree: Arc::new(Mutex::new(deploy_anchor_tree)),
     });
+    // DeployV1's `__initialize` runs outside any transaction's call set — the hash is
+    // `TransactionHash::none()` — so there is no commitment to derive and zeros are the honest
+    // value. `deployooor` publishes no circuit and no pair (its `get_metadata` returns an empty
+    // table), which is why this is not a hole rather than a choice.
     let mut runtime = dwow_core::runtime::vm_runtime::Runtime::new(
         wasm, backend.clone(), contract_id, current_height,
-        difficulty, dwow_sdk::tx::TransactionHash::none(), 0,
+        difficulty, dwow_sdk::tx::TransactionHash::none(), [0u8; 32], 0,
     ).map_err(|e| Error::Custom(format!("DeployV1 runtime: {}", e)))?;
     runtime.deploy(ix).map_err(|e| Error::Custom(format!("DeployV1 init: {}", e)))?;
     drop(runtime);

@@ -34,6 +34,12 @@ use crate::{
     error::{ContractError, ContractResult, GenericResult},
     tx::TransactionHash,
 };
+// `get_tx_commitment` returns the field element `from_repr` produces. The type is needed on
+// every target — the non-wasm stub's signature names it — while the trait is only used where
+// `from_repr` is called, which is the wasm branch.
+use pasta_curves::pallas;
+#[cfg(target_arch = "wasm32")]
+use pasta_curves::group::ff::PrimeField;
 
 /// Calls the `set_return_data` WASM function. Returns Ok(()) on success.
 /// Otherwise, convert the i64 error code into a [`ContractError`].
@@ -199,6 +205,43 @@ pub fn get_tx_hash() -> GenericResult<TransactionHash> {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn get_tx_hash() -> GenericResult<TransactionHash> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
+/// The enclosing transaction's commitment, as the field element the circuits hash.
+///
+/// `OBL-C198`. A `get_metadata` arm needs this to publish a `tx_binding` the node can
+/// recompute and compare (stage 4 of `tx-commitment.md` §Verification). It cannot come from
+/// the call data — the commitment covers the call data, so a binding inside it would be
+/// computed from a value that covers it, a cycle with no fixed point. The host supplies it.
+///
+/// The host sends the **canonical repr** of `dwow_sdk::crypto::util::tx_commitment`'s field
+/// element. `from_repr` round-trips a repr by construction, but it is still a `CtOption` and
+/// is matched rather than unwrapped — the class this repository has been bitten by twice.
+///
+/// ```
+/// let c = get_tx_commitment();
+/// ```
+#[cfg(target_arch = "wasm32")]
+pub fn get_tx_commitment() -> GenericResult<pallas::Base> {
+    let ret = unsafe { get_tx_commitment_() };
+    let obj = parse_retval_u32(ret)?;
+    // Typed rather than panicking: the size the host reports is not this side's to assume.
+    if get_object_size(obj) != 32 {
+        return Err(ContractError::IoError(format!(
+            "get_tx_commitment: host object is {} bytes, expected 32",
+            get_object_size(obj),
+        )))
+    }
+    let mut commitment_data = [0u8; 32];
+    get_object_bytes(&mut commitment_data, obj);
+    Option::<pallas::Base>::from(pallas::Base::from_repr(commitment_data)).ok_or_else(|| {
+        ContractError::IoError("get_tx_commitment: host value is not a canonical field element".to_string())
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_tx_commitment() -> GenericResult<pallas::Base> {
     Err(ContractError::IoError("wasm host function unavailable".to_string()))
 }
 
@@ -368,6 +411,7 @@ extern "C" {
     fn get_verifying_block_height_() -> i64;
     fn get_block_target_() -> i64;
     fn get_tx_hash_() -> i64;
+    fn get_tx_commitment_() -> i64;
     fn get_call_index_() -> i64;
     fn get_blockchain_time_() -> i64;
     fn get_last_block_height_() -> i64;
