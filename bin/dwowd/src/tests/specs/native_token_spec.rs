@@ -83,10 +83,20 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 // metadata-decode of the empty params instead of the is_zk gate
                 // in block_submission.rs; the assertion is unchanged.
                 name: "FeeCollectV1", is_zk: false,
-                // The refusal is the host's `metadata-decode-zkp` stage over the empty params this
-                // placeholder sends — the endpoint's own code never runs — so the honest claim is the
-                // stage, not the endpoint (`RejectionNaming`, not `RejectionByEndpoint`).
-                expectation: EndpointExpectation::RejectionNaming(&["metadata-decode-zkp"]),
+                // The refusal is `validate_block_structure`'s, and it is the first check the block
+                // meets: a block carrying a FeeCollectV1 and **no** FeeV3 call is a zero-value
+                // claim (`src/linear/src/validation.rs:528`), and the rejection runner submits
+                // exactly that block — `submit_multi_call_block` sends this endpoint's call and
+                // nothing else.
+                //
+                // It said `metadata-decode-zkp` from 2026-10-03 (`02bbddd706`, OBL-C154/C193), and
+                // that needle cannot be reached here: the structural gate fires first and predates
+                // the endpoint by a month (`0d013b28e3`, 2026-08-07). Until 2026-10-03 the
+                // expectation was a bare `Rejection`, which passes on *any* refusal — so the
+                // endpoint was always refused for this reason, and only the naming of the reason is
+                // new. `RejectionNaming` exists to separate "rejected, for the reason under test"
+                // from "rejected, earlier"; naming a stage this block never reaches is the second.
+                expectation: EndpointExpectation::RejectionNaming(&["zero fee calls"]),
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| {
                     let h = chain.height().get();
