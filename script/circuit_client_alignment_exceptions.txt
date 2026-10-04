@@ -65,6 +65,23 @@ native_token/fee : the vector is `create_fee_proof`'s return value, not a `to_ve
 # per-circuit read of which impl builds which circuit's public inputs; they are left declared
 # rather than guessed. `drain_protection` is the largest group: eight circuits over two client
 # impls, which no name-match can separate.
+#
+# TWO MECHANICAL MAPPINGS WERE TRIED AGAINST THIS SET ON 2026-10-04 AND BOTH FAIL, so that the
+# "it needs a read" above is a measurement and not a preference:
+#
+#   * The CIRCUIT'S NAME inside the client sources. `grep` for `CancelOrderV2`,
+#     `DrawWinnersV2`, `ClosePotV2`, `ExecuteV2` and five more across the respective
+#     `src/client/` trees returns nothing at all: a client takes `zkbin: &ZkBinary` as a
+#     parameter and never names the circuit it is proving. The two hits it does produce
+#     (`lottery`'s and `dao_escrow`'s) are coincidences of file naming, not a signal.
+#   * The NAMESPACE CONSTANT — `DARKBET_EXCHANGE_ZKAS_CANCEL_ORDER_NS_V2` and its siblings.
+#     It appears in `src/lib.rs` where it is declared and in the entrypoint where
+#     `zkas_db_set` registers it, and in no client.
+#
+# So the client side of this mapping is genuinely absent from the sources, which is why the
+# `CLIENT_ALIASES` table exists and why it is hand-written. Whoever closes the rest should read
+# the impl, not look for a signal: there is none to find, and the two above are the two that
+# look like one.
 drain_protection/execute : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
 drain_protection/initialize : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
 drain_protection/lock : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
