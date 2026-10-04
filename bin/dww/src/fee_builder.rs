@@ -29,14 +29,13 @@ use dwow_chain::fee_window::{FeeWindowFlags, compute_fee_v3, compute_storage_fee
 use dwow_chain::opcode_cost::circuit_difficulty;
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
-    zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses, Proof},
+    zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},
     zkas::ZkBinary,
 };
 use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
     blockchain::{FeeAmount, FeeTier, RiskFactor, WasmKb},
-    crypto::{BaseBlind, PublicKey, SecretKey, MerkleNode},
-    mass_balance_call_data::MassBalanceFeeV3CallData,
+    crypto::{BaseBlind, Nullifier, PublicKey, SecretKey, MerkleNode},
     pasta::pallas,
     tx::ContractCall,
 };
@@ -44,7 +43,7 @@ use rand::{rngs::StdRng, SeedableRng};
 
 use crate::contract_imports::native_token::{
     DRKW_ASSET_ID,
-    FeeV3CallBuilder, FeeV3CallInput, FeeV3CallOutput,
+    FeeCallPlan, FeeV3CallBuilder, FeeV3CallInput, FeeV3CallOutput,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN,
 };
 use crate::walletdb::WalletPtr;
@@ -68,11 +67,56 @@ use crate::NATIVE_TOKEN_CONTRACT_ID;
 /// factors for the two-component fee formula.
 ///
 /// Schnorr signatures removed per contract-standards.md §3.
-pub fn build_fee_and_finalize_tx(
+/// Everything the caller needs to prove the fee call and finish the transaction.
+///
+/// `OBL-C198`: the transaction commitment is a derivation over the transaction's **whole** call
+/// set, so it cannot be known while any call is still being proved. The fee call is therefore
+/// prepared here — its data and its proof key, and no proof — the caller derives the commitment
+/// once over every call it will submit, and `finish` proves the fee against it.
+pub struct FeeHandoff {
+    plan: FeeCallPlan,
+    nullifier: Nullifier,
+}
+
+impl FeeHandoff {
+    /// The fee call, ready to be put in a transaction and hashed into the commitment.
+    pub fn contract_call(&self) -> ContractCall {
+        ContractCall { contract_id: *NATIVE_TOKEN_CONTRACT_ID, data: self.plan.call_data().to_vec() }
+    }
+
+    /// Prove the fee call against `tx_commitment` and assemble the finished transaction.
+    ///
+    /// `transfer_leaf` is the parent call, already proven against the *same* commitment — the
+    /// two must agree or the node refuses both (`src/linear/src/zk_verifier.rs`).
+    pub fn finish(
+        self,
+        transfer_leaf: ContractCallLeaf,
+        tx_commitment: pallas::Base,
+    ) -> Result<Transaction> {
+        // Taken before the plan is consumed by `prove`. The call data is fixed at `prepare` and
+        // does not change when the proof is made — this is the same call the caller hashed.
+        let fee_call = self.contract_call();
+        let fee_v3_result = self
+            .plan
+            .prove(tx_commitment)
+            .map_err(|e| Error::Custom(format!("Failed to build FeeV3: {:?}", e)))?;
+        let fee_leaf = ContractCallLeaf { call: fee_call, proofs: fee_v3_result.proofs };
+
+        let mut tx_builder = TransactionBuilder::new(transfer_leaf, vec![])
+            .map_err(|e| Error::Custom(format!("Failed to create transaction builder: {:?}", e)))?;
+        tx_builder.nullifiers.push(self.nullifier);
+        tx_builder
+            .append(fee_leaf, vec![])
+            .map_err(|e| Error::Custom(format!("Failed to append fee call: {:?}", e)))?;
+        tx_builder.build().map_err(|e| Error::Custom(format!("Failed to build transaction: {:?}", e)))
+    }
+}
+
+/// Prepare the fee call: compute the fee, choose the cap, and assemble the call **without**
+/// proving it. See [`FeeHandoff`] for why the proof has to wait.
+pub fn prepare_fee_call(
     wallet: &WalletPtr,
     account_mgr: &dwow_accounts::AccountManager,
-    call_leaf: ContractCallLeaf,
-    fee_proofs: Option<Vec<Proof>>,
     exclude_cap_id: Option<&str>,
     seed: [u8; 32],
     circuit_costs: &[u64],
@@ -80,7 +124,7 @@ pub fn build_fee_and_finalize_tx(
     wasm_kb: WasmKb,
     fee_window_flags: FeeWindowFlags,
     tier: FeeTier,
-) -> Result<Transaction> {
+) -> Result<FeeHandoff> {
     // Derive the circuit congestion factor from the latest block header flags.
     // wallet.md §6.4.2 / fee-spec.md §8.2. (The WASM CF was only used for the
     // removed storage term; storage is flat per §12.4.3.)
@@ -214,8 +258,13 @@ pub fn build_fee_and_finalize_tx(
     let fee_pk = ProvingKey::build(fee_zkbin.k, &fee_circuit)
         .map_err(|e| Error::Custom(format!("ProvingKey::build fee: {:?}", e)))?;
 
-    // HAZOP C7 fix: per-transaction random nonces make tx_binding unique.
-    let tx_commitment: pallas::Base = BaseBlind::random(&mut rng).inner();
+    // HAZOP C7 fix: a per-transaction random nonce makes the binding unique.
+    //
+    // The commitment is deliberately *not* drawn here. It is a derivation over the transaction's
+    // **whole** call set, which does not exist yet at this point — the caller derives it once
+    // every call is built and `FeeHandoff::finish` proves against that value (`OBL-C198`). A
+    // value drawn here would be a second, unrelated commitment, which is exactly the defect the
+    // three independent `BaseBlind::random` draws used to cause.
     let tx_nonce: pallas::Base = BaseBlind::random(&mut rng).inner();
 
     // Fee output - change goes back to our MASTER key (rediscoverable at any height).
@@ -233,7 +282,10 @@ pub fn build_fee_and_finalize_tx(
         merkle_root: dark_merkle_root,
         secret: dark_secret.clone(),
         ephemeral_signature_secret: SecretKey::random(&mut rng),
-        tx_commitment,
+        // Vestigial: only `FeeV3CallBuilder::build` — the one-step wrapper for a caller that
+        // already holds its commitment — reads this field. `prepare`/`prove` take the commitment
+        // as an argument (`OBL-C198`), so nothing here may invent one.
+        tx_commitment: pallas::Base::zero(),
         tx_nonce,
     };
 
@@ -257,47 +309,17 @@ pub fn build_fee_and_finalize_tx(
         fee_pk,
     };
 
-    let mut fee_v3_result = fee_builder.build()
-        .map_err(|e| Error::Custom(format!("Failed to build FeeV3: {:?}", e)))?;
-
-    // FeeV3 call data via nominal MassBalanceFeeV3CallData (type-system.md §8.2.3, §10.5).
-    // The selector (0x08) is unchanged; the payload is now FeeParamsV3.
-    // This is the SINGLE constructor — no raw vec![0x08u8] anywhere.
-    let fee_call_data =
-        MassBalanceFeeV3CallData::new(
-            fee_v3_result.params.encode().map_err(|e| Error::ContractError(format!("{e}")))?,
-        ).encode();
-
-    let fee_call = ContractCall {
-        contract_id: *NATIVE_TOKEN_CONTRACT_ID,
-        data: fee_call_data,
-    };
-
-    // P2.2: use the REAL fee proofs from the ZK builder (not empty).
-    // fee_proofs param is for callers that merge proofs externally; default
-    // to the proofs the builder just produced.
-    let fee_leaf_proofs = if let Some(ext) = fee_proofs {
-        if ext.is_empty() { fee_v3_result.proofs } else { ext }
-    } else {
-        fee_v3_result.proofs
-    };
-    let fee_leaf = ContractCallLeaf { call: fee_call, proofs: fee_leaf_proofs };
+    // Prepare, do not prove. The Fee_V3 proof binds to a commitment derived over the
+    // transaction's **whole** call set, which the caller derives once every call is built
+    // (`OBL-C198`); `FeeHandoff::finish` proves it against that value.
+    let plan = fee_builder
+        .prepare()
+        .map_err(|e| Error::Custom(format!("Failed to prepare FeeV3: {:?}", e)))?;
 
     // Collect nullifiers for mempool double-spend detection.
-    let nf = fee_v3_result.params.input.nullifier;
+    let nf = plan.params().input.nullifier;
 
-    // Build final transaction
-    let mut tx_builder = TransactionBuilder::new(call_leaf, vec![])
-        .map_err(|e| Error::Custom(format!("Failed to create transaction builder: {:?}", e)))?;
-    tx_builder.nullifiers.push(nf);
-
-    tx_builder.append(fee_leaf, vec![])
-        .map_err(|e| Error::Custom(format!("Failed to append fee call: {:?}", e)))?;
-
-    let tx = tx_builder.build()
-        .map_err(|e| Error::Custom(format!("Failed to build transaction: {:?}", e)))?;
-
-    Ok(tx)
+    Ok(FeeHandoff { plan, nullifier: nf })
 }
 
 #[cfg(test)]

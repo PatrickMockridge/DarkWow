@@ -86,23 +86,31 @@ impl Dww {
             data: call_data,
         };
 
+        // Attach the fee call and build the transaction (§6.3 step 6) —
+        // fee proofs, fee nullifier, and the outer tx_commitment all handled
+        // by the centralized fee builder.
+        let mut seed = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
+
+        // `OBL-C198`: the transaction commitment is a derivation over the transaction's whole
+        // call set, so the fee call is *prepared* first, the commitment is taken over both
+        // calls, and only then is the fee proved against it. The leaf is assembled after the
+        // commitment, because assembling it moves the call the commitment covers.
+        let fee = crate::fee_builder::prepare_fee_call(
+            &self.wallet, &self.account_mgr, None, seed,
+            &[], self.contract_risk_factor(&deployooor_id, false), wasm_kb, self.latest_fee_window_flags(),
+            FeeTier::LOW,
+        )?;
+        let tx_commitment =
+            dwow_sdk::crypto::util::tx_commitment([&deploy_call, &fee.contract_call()]);
+
         // Create contract call leaf (no proofs for DeployV1 - it's a native contract call)
         let deploy_leaf = ContractCallLeaf {
             call: deploy_call,
             proofs: vec![],
         };
 
-        // Attach the fee call and build the transaction (§6.3 step 6) —
-        // fee proofs, fee nullifier, and the outer tx_commitment all handled
-        // by the centralized fee builder.
-        let mut seed = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
-        let tx = crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, &self.account_mgr, deploy_leaf, None, None, seed,
-            &[], self.contract_risk_factor(&deployooor_id, false), wasm_kb, self.latest_fee_window_flags(),
-            FeeTier::LOW,
-        )?;
-
+        let tx = fee.finish(deploy_leaf, tx_commitment)?;
 
         Ok(tx)
     }

@@ -1352,8 +1352,39 @@ impl Dww {
             });
         }
 
-        let debris = builder.build(&mut rng)
-            .map_err(|e| Error::Custom(format!("transfer build: {}", e)))?;
+        // `OBL-C198`: the order here is forced, not chosen. The transaction commitment is a
+        // derivation over the transaction's **whole** call set, so every call must be built
+        // before any proof — including this transfer's own burn and blind-output proofs, both of
+        // which the circuit binds to it. So: prepare the transfer, prepare the fee, take the
+        // commitment over both, then prove both against that one value.
+        let transfer_plan = builder.prepare(&mut rng)
+            .map_err(|e| Error::Custom(format!("transfer prepare: {}", e)))?;
+
+        // wallet.md §6.3 step 8: serialize params with function selector.
+        // Layout: [0x03][TransferParamsV1] — what the entrypoint's
+        // deserialize(params) and the balance checker parse. Direct encode,
+        // no length prefix.
+        let mut data = vec![0x03u8];
+        data.extend_from_slice(&transfer_plan.params().encode().map_err(|e| Error::ContractError(format!("{e}")))?);
+        let transfer_call = dwow_sdk::tx::ContractCall {
+            contract_id: *NATIVE_TOKEN_CONTRACT_ID,
+            data,
+        };
+
+        // §6.3 step 6 / model steps 3-4: fee from a different DRKW cap.
+        let fee = crate::fee_builder::prepare_fee_call(
+            &self.wallet, &self.account_mgr, Some(&selected.cap_id), seed,
+            &transfer_circuit_costs, self.contract_risk_factor(&*NATIVE_TOKEN_CONTRACT_ID, false), WasmKb::ZERO, self.latest_fee_window_flags(),
+            FeeTier::LOW,
+        )?;
+
+        // The one value both proofs bind to, derived over the whole call set — the transfer call
+        // and the fee call, in the order the transaction will carry them.
+        let tx_commitment =
+            dwow_sdk::crypto::util::tx_commitment([&transfer_call, &fee.contract_call()]);
+
+        let debris = transfer_plan.prove(tx_commitment, tx_nonce)
+            .map_err(|e| Error::Custom(format!("transfer prove: {}", e)))?;
 
         // §6.3 step 4: the nullifiers this transfer publishes — one per
         // consumed input, the SAME values the entrypoint verifies from params.
@@ -1361,29 +1392,12 @@ impl Dww {
             debris.params.inputs.iter().map(|i| i.nullifier).collect();
         // Schnorr signatures removed per contract-standards.md §3.
 
-        // wallet.md §6.3 step 8: serialize params with function selector.
-        // Layout: [0x03][TransferParamsV1] — what the entrypoint's
-        // deserialize(params) and the balance checker parse. Direct encode,
-        // no length prefix.
-        let mut data = vec![0x03u8];
-        data.extend_from_slice(&debris.params.encode().map_err(|e| Error::ContractError(format!("{e}")))?);
-
         let leaf = dwow_core::tx::ContractCallLeaf {
-            call: dwow_sdk::tx::ContractCall {
-                contract_id: *NATIVE_TOKEN_CONTRACT_ID,
-                data,
-            },
+            call: transfer_call,
             proofs: debris.proofs,
         };
 
-        // §6.3 step 6 / model steps 3-4: fee from a different DRKW cap;
-        // TransactionBuilder computes the outer tx_commitment; the fee input's
-        // nullifier is published by the fee builder.
-        let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, &self.account_mgr, leaf, None, Some(&selected.cap_id), seed,
-            &transfer_circuit_costs, self.contract_risk_factor(&*NATIVE_TOKEN_CONTRACT_ID, false), WasmKb::ZERO, self.latest_fee_window_flags(),
-            FeeTier::LOW,
-        )?;
+        let mut tx = fee.finish(leaf, tx_commitment)?;
 
         // Model step 5 (wallet_model.py:3954): nullifier order is
         // [transfer inputs..., fee input].
@@ -1757,10 +1771,16 @@ impl Dww {
                     })
                     .map(|d| vec![d])
                     .unwrap_or_default();
-                let tx = crate::fee_builder::build_fee_and_finalize_tx(
-                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.latest_fee_window_flags(),
+                // `OBL-C198`: the fee call is prepared before it is proved, because its proof
+                // binds to the commitment derived over the transaction's whole call set.
+                let fee = crate::fee_builder::prepare_fee_call(
+                    &self.wallet, &self.account_mgr, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.latest_fee_window_flags(),
             FeeTier::LOW,
         )?;
+                let fee_call = fee.contract_call();
+                let tx_commitment =
+                    dwow_sdk::crypto::util::tx_commitment([&leaf.call, &fee_call]);
+                let tx = fee.finish(leaf, tx_commitment)?;
                 // §6.3 step 7 / mempool admission: ONE signature row per call,
                 // in call order — calls[0] = main (signed by the caller-supplied
                 // secrets matching the call's metadata pubkeys, empty row when
@@ -1815,10 +1835,16 @@ impl Dww {
                         .map(|cp| vec![cp.circuit_difficulty])
                         .unwrap_or_default()
                 };
-                let tx = crate::fee_builder::build_fee_and_finalize_tx(
-                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.latest_fee_window_flags(),
+                // `OBL-C198`: as in the registry path above — the commitment is a derivation
+                // over the whole call set, so the fee is prepared here and proved against it.
+                let fee = crate::fee_builder::prepare_fee_call(
+                    &self.wallet, &self.account_mgr, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.latest_fee_window_flags(),
                     FeeTier::LOW,
                 )?;
+                let fee_call = fee.contract_call();
+                let tx_commitment =
+                    dwow_sdk::crypto::util::tx_commitment([&leaf.call, &fee_call]);
+                let tx = fee.finish(leaf, tx_commitment)?;
                 // Per-call signature rows (see the Path A exit above).
                 // Schnorr signatures removed per contract-standards.md §3.
                 return Ok(tx);
@@ -1901,10 +1927,15 @@ impl Dww {
             })
             .map(|d| vec![d])
             .unwrap_or_default();
-        let tx = crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.latest_fee_window_flags(),
+        // `OBL-C198`: the commitment is a derivation over the whole call set, so the fee call is
+        // prepared first, the commitment taken over both calls, and only then is the fee proved.
+        let fee = crate::fee_builder::prepare_fee_call(
+            &self.wallet, &self.account_mgr, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.latest_fee_window_flags(),
             FeeTier::LOW,
         )?;
+        let fee_call = fee.contract_call();
+        let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&leaf.call, &fee_call]);
+        let tx = fee.finish(leaf, tx_commitment)?;
         // Per-call signature rows (see the Path A exit above).
 
         Ok(tx)
