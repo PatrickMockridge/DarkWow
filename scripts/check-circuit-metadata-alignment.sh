@@ -336,6 +336,36 @@ CLIENT_ALIASES = {
 # check pass by construction, which is the one thing it must not do.
 AMBIGUOUS = []
 
+# Circuits whose client `to_vec` is not located, and which are therefore checked on two legs
+# instead of three. A ratchet, not an adjudication: an entry says "the third leg is unchecked
+# here", never "this site is sound". Format, one per line:
+#
+#   <contract>/<circuit> : <why the file is not named by CLIENT_ALIASES yet>
+#
+# Measured 2026-10-04: 48 of 166 circuits — 29% — and they were printed as a bare `OK` until
+# this list existed, which is OBL-C79's shape (a green line covering a third of the tree) inside
+# the check whose own header cites OBL-C79. An entry leaves this list when the circuit's client
+# is either named in CLIENT_ALIASES or found by name; it does not leave by being excused.
+CLIENT_UNRESOLVED = {}
+# Overridable for the same reason `METADATA_EXCEPTIONS` is, and in the same idiom: a path that can
+# only point at the real file cannot be run against a planted defect, and this list's failure path
+# is the one that has to be controlled.
+_unresolved_path = os.environ.get(
+    "CLIENT_UNRESOLVED_EXCEPTIONS",
+    os.path.join(repo, "script", "circuit_client_alignment_exceptions.txt"))
+if os.path.isfile(_unresolved_path):
+    for _raw in open(_unresolved_path, errors="replace").read().splitlines():
+        _entry = _raw.split("#")[0].strip()
+        if not _entry:
+            continue
+        _parts = [p.strip() for p in _entry.split(" : ", 1)]
+        if len(_parts) != 2:
+            print(f"ERROR: malformed line in script/circuit_client_alignment_exceptions.txt: "
+                  f"{_entry!r}")
+            print("       expected: <contract>/<circuit> : <why the client is not named yet>")
+            sys.exit(2)
+        CLIENT_UNRESOLVED[_parts[0]] = _parts[1]
+
 def client_to_vec_count(contract_dir, circuit_name, contract_name=""):
     """Element count of the client's `to_vec` for this circuit, or None if not found.
 
@@ -405,6 +435,11 @@ if CIRCUIT_FREE:
 print("")
 passes = 0
 failures = 0
+# Circuits checked on TWO legs — circuit instance order and metadata push — because the client's
+# `to_vec` could not be located. A *set*, because one circuit can be reached by more than one
+# namespace push and the summary must not call 63 rows "63 circuits" — the same overstatement the
+# count-mismatch summary below already guards against.
+two_leg = set()
 # Every circuit in scope must reach a verdict line. This set is reconciled against the enumerated
 # scope at the end, so a future `continue` cannot drop a circuit silently — the failure mode that
 # let 21 contracts sit outside this check (OBL-C79).
@@ -503,9 +538,23 @@ for contract_name in COVERED:
                     failures += 1
                     failed_circuits.add((contract_name, circuit_name))
             elif client_count is None:
-                print(f"OK:   {contract_name}/{circuit_name} — {circuit_count} constrain_instance, "
-                      f"{n} metadata pushes ({ns}; no client to_vec found)")
-                passes += 1
+                # The THIRD leg, and until 2026-10-04 this branch printed a bare `OK`: a green line
+                # covering two sides of a three-way invariant, on 48 of 166 circuits. The output now
+                # says which legs it read, and an *undeclared* unresolved client is a failure rather
+                # than a pass — so the gap can be closed but not grown.
+                if f"{contract_name}/{circuit_name}" in CLIENT_UNRESOLVED:
+                    print(f"OK(2/3): {contract_name}/{circuit_name} — {circuit_count} "
+                          f"constrain_instance, {n} metadata pushes ({ns}; client to_vec "
+                          f"unresolved and DECLARED)")
+                    two_leg.add((contract_name, circuit_name))
+                else:
+                    print(f"FAIL: {contract_name}/{circuit_name} — {circuit_count} constrain_instance, "
+                          f"{n} metadata pushes ({ns}), and the client's `to_vec` for this circuit was "
+                          f"not located, so the third leg is unchecked. Name the file in "
+                          f"CLIENT_ALIASES, or declare the circuit in "
+                          f"script/circuit_client_alignment_exceptions.txt")
+                    failures += 1
+                    failed_circuits.add((contract_name, circuit_name))
             elif client_count != circuit_count:
                 print(f"FAIL: {contract_name}/{circuit_name} — circuit {circuit_count} "
                       f"constrain_instance vs client to_vec {client_count}: the proof would be "
@@ -609,6 +658,26 @@ if excused:
 print("---")
 print(f"Covered: {len(COVERED)} of {len(ALL_CONTRACTS)} contracts")
 print(f"Passed: {passes}  Failed: {failures}")
+# COVERAGE OF THE THIRD LEG, printed on its own line and never folded into `Passed`. A row that
+# checked two of three sides is not the same claim as a row that checked three, and a single
+# number covering both is how the 48 became invisible in the first place.
+if two_leg:
+    print(f"Third leg unchecked: {len(two_leg)} circuit(s) — the client `to_vec` was not located, "
+          f"so only the circuit instance order and the metadata push were compared. Declared in "
+          f"script/circuit_client_alignment_exceptions.txt; register OBL-C198.")
+# The other direction, so the list cannot outlive its sites: every declared circuit that the
+# resolver DID reach this run has been repaired, and the declaration is now a line that lies by
+# being present. Not a failure — a repair landing is not a defect — but it must be said, or the
+# next reader counts 48 debts when there are fewer.
+_stale_declarations = sorted(
+    key for key in CLIENT_UNRESOLVED if tuple(key.split("/", 1)) not in two_leg)
+if _stale_declarations:
+    print("")
+    print(f"NOTE: {len(_stale_declarations)} declared circuit(s) whose client was resolved this "
+          f"run — the third leg IS checked for these, so remove their lines from "
+          f"script/circuit_client_alignment_exceptions.txt:")
+    for _key in _stale_declarations:
+        print(f"  {_key}")
 
 # Scope reconciliation, and the reason this gate can be trusted to report a PASS. The check is
 # only as good as the set it walks, so the set it walked is compared against the set it declared,
