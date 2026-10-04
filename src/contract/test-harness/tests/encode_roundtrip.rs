@@ -165,7 +165,7 @@ fn test_multisig_encode_roundtrip() {
         member_commitments: vec![pallas::Base::from(7u64); 3],
         threshold: 2,
         proof: vec![1, 2],
-        tx_binding: pallas::Base::from(99u64),
+        // `tx_binding` left these structs in `OBL-C198`.
         tx_nonce: pallas::Base::from(88u64),
     };
     assert_roundtrip!(CreateGroupParamsV1, cg);
@@ -176,16 +176,17 @@ fn test_multisig_encode_roundtrip() {
         member_commitment: pallas::Base::from(7u64),
         nullifier: pallas::Base::from(8u64),
         proof: vec![1, 2, 3],
-        tx_binding: pallas::Base::from(99u64),
+        // `tx_binding` left these structs in `OBL-C198`.
         tx_nonce: pallas::Base::from(88u64),
     };
     assert_roundtrip!(SignParamsV1, sign);
 
     // OBL-C62: the guard `decode` opens with must be the *exact* minimum, and this is the boundary
     // the defect lived on. The layout is `group_id(32) + message_hash(32) + member_commitment(32) +
-    // nullifier(32) + len(4) + proof + tx_binding(32) + tx_nonce(32)` = `196 + proof.len()`, so a
-    // proof shorter than four bytes encodes to 196..199 — and the guard read `200`, refusing its own
-    // encoder's output for exactly those. The three-byte `sign` above is the instance that was
+    // nullifier(32) + len(4) + proof + tx_nonce(32)` = `164 + proof.len()` — it was `196` while the
+    // params also carried a 32-byte `tx_binding`, which left the wire in `OBL-C198` and moved this
+    // arithmetic with it. A proof shorter than four bytes encoded to 196..199 when the trailer was
+    // 64 — and the guard read `200`, refusing its own encoder's output for exactly those. The three-byte `sign` above is the instance that was
     // failing; these five are the boundary stated rather than stumbled into, and each carries its
     // own control so that removing the guard instead of correcting it cannot pass this test.
     for proof_len in [0usize, 1, 2, 3, 4] {
@@ -195,7 +196,6 @@ fn test_multisig_encode_roundtrip() {
             member_commitment: pallas::Base::from(7u64),
             nullifier: pallas::Base::from(8u64),
             proof: vec![0u8; proof_len],
-            tx_binding: pallas::Base::from(99u64),
             tx_nonce: pallas::Base::from(88u64),
         };
         let encoded = EncodeResult::unwrap_encode(short.encode());
@@ -225,7 +225,7 @@ fn test_multisig_encode_roundtrip() {
         // loop, which are the parts of the layout most likely to drift.
         approvals: vec![dummy_nullifier()],
         proof: vec![5, 6, 7],
-        tx_binding: pallas::Base::from(99u64),
+        // `tx_binding` left these structs in `OBL-C198`.
         tx_nonce: pallas::Base::from(88u64),
     };
     assert_roundtrip!(FinalizeParamsV1, fin);

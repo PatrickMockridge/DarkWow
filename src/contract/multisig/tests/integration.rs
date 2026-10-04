@@ -41,7 +41,7 @@ fn test_create_group_params_roundtrip() {
         member_commitments: vec![dummy_commitment(7), dummy_commitment(8), dummy_commitment(9)],
         threshold: 2,
         proof: vec![1u8, 2, 3, 4],
-        tx_binding: pallas::Base::from(99u64),
+        // `tx_binding` left this struct and the wire in `OBL-C198`; `get_metadata` derives it.
         tx_nonce: pallas::Base::from(88u64),
     };
 
@@ -65,7 +65,6 @@ fn test_sign_params_roundtrip() {
         member_commitment: dummy_commitment(7),
         nullifier: dummy_commitment(11),
         proof: vec![1u8, 2, 3, 4],
-        tx_binding: pallas::Base::from(99u64),
         tx_nonce: pallas::Base::from(88u64),
     };
 
@@ -76,7 +75,7 @@ fn test_sign_params_roundtrip() {
         .expect("round-trip must succeed");
     assert_eq!(decoded.message_hash, params.message_hash);
     assert_eq!(decoded.proof, params.proof);
-    assert_eq!(decoded.tx_binding, params.tx_binding);
+    assert_eq!(decoded.tx_nonce, params.tx_nonce);
 
     assert_eq!(params.encode().unwrap(), encoded, "encode must be deterministic");
 }
@@ -92,7 +91,6 @@ fn test_finalize_params_roundtrip() {
             Nullifier::from_bytes(dummy_commitment(22).to_repr()).unwrap(),
         ],
         proof: vec![5u8, 6, 7, 8],
-        tx_binding: pallas::Base::from(99u64),
         tx_nonce: pallas::Base::from(88u64),
     };
 

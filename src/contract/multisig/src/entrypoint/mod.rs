@@ -2,7 +2,7 @@ use dwow_sdk::{
     blockchain::SerializedLen,
     // `PublicKey` is still needed: `get_metadata` encodes an empty `Vec<PublicKey>` as the
     // Schnorr-signature prohibition stub (contract-standards.md §3). No key is ever put in it.
-    crypto::{pasta_prelude::PrimeField, ContractId, Nullifier, PublicKey},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, pasta_prelude::PrimeField, poseidon_hash, ContractId, Nullifier, PublicKey},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, wasm,
@@ -52,6 +52,18 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
+/// The transaction binding this call publishes: `poseidon(DOMAIN_TX_BINDING, commitment, nonce)`
+/// with the commitment taken from the host (`get_tx_commitment`) — the deriving side of
+/// `OBL-C198`. Three arms need this exact value, so it is written once: a second copy of a
+/// derivation is a second value waiting to drift (`safety.md` RC5).
+///
+/// It cannot be read from the call data instead. The commitment covers the call data, so a
+/// binding carried inside it would be computed from a value that covers it — a cycle with no
+/// fixed point, and a proof nothing can satisfy.
+fn multisig_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
@@ -92,8 +104,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let n = pallas::Base::from(total_keys as u64);
             let group_id = MultiSigGroup::derive_group_id(first, params.threshold, total_keys).inner();
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // `OBL-C198`: the pair is the LAST two instances (`create_group.zk` was reordered to
+            // match), and `tx_binding` is **derived** here rather than echoed from the params —
+            // the commitment covers the call data, so a binding carried inside it would be
+            // computed from a value that covers it. The host exposes the commitment; the call
+            // supplies only the nonce.
             zk_inputs.push((MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V2.to_string(), vec![
-                params.tx_binding, params.tx_nonce, group_id, t, n,
+                group_id, t, n, multisig_tx_binding(params.tx_nonce)?, params.tx_nonce,
             ]));
             // Schnorr signatures prohibited (contract-standards.md §3). Member keys are in ZK public inputs.
             let sigs: Vec<PublicKey> = vec![];
@@ -108,7 +125,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_inputs.push((MULTISIG_CONTRACT_ZKAS_SIGN_NS_V2.to_string(), vec![
                 params.group_id.inner(), params.message_hash,
                 params.member_commitment, params.nullifier,
-                params.tx_binding, params.tx_nonce,
+                multisig_tx_binding(params.tx_nonce)?, params.tx_nonce,
             ]));
             let sigs: Vec<PublicKey> = vec![];
             let mut meta = vec![];
@@ -123,7 +140,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_inputs.push((MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V2.to_string(), vec![
                 params.group_id.inner(), params.message_hash, params.approval_commit,
-                params.tx_binding, params.tx_nonce,
+                multisig_tx_binding(params.tx_nonce)?, params.tx_nonce,
             ]));
             let sigs: Vec<PublicKey> = vec![];
             let mut meta = vec![];

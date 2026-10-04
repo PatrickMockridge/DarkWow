@@ -23,10 +23,15 @@ circuit "CreateGroupV2" {
     range_check(64, threshold);
 
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
-    constrain_instance(tx_binding);
-    constrain_instance(tx_nonce);
 
+    # `OBL-C198`: the tx pair is the **last two** instances of every circuit. The node reads
+    # that position to recompute the binding from the enclosing transaction and refuse a proof
+    # whose published value differs; there is no per-circuit index map, so the position IS the
+    # convention. This circuit placed the pair first, which the convention forbids.
     constrain_instance(group_id);
     constrain_instance(threshold);
     constrain_instance(total_keys);
+
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
 }

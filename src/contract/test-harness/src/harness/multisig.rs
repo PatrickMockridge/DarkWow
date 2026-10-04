@@ -94,8 +94,21 @@ impl MultiSigHarness {
         let group_id = dwow_multisig_contract::model::MultiSigGroup::derive_group_id(
             member_commitments[0], threshold, member_commitments.len() as u8,
         ).inner();
-        let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
+
+        // `OBL-C198`, and the order is the whole point. The params are built and encoded FIRST,
+        // with an **empty** proof: the proof travels in the transaction's proof vector, which
+        // the commitment excludes, and a copy inside the call data would be computed from a
+        // value that covers it. Then the commitment is derived over the finished call, and only
+        // then is the proof made over witnesses bound to that commitment.
+        let params = dwow_multisig_contract::model::CreateGroupParamsV1 {
+            member_commitments, threshold,
+            proof: vec![], tx_nonce,
+        };
+        let mut call_data = vec![0x01u8];
+        call_data.extend_from_slice(&params.encode()?);
+        let call = dwow_sdk::tx::ContractCall { contract_id: *dwow_sdk::crypto::MULTISIG_CONTRACT_ID, data: call_data.clone() };
+        let tx_commitment: pallas::Base = dwow_sdk::crypto::util::tx_commitment([&call]);
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
 
         let witnesses = vec![
@@ -103,7 +116,9 @@ impl MultiSigHarness {
             Witness::Base(Value::known(n)), Witness::Base(Value::known(tx_commitment)),
             Witness::Base(Value::known(tx_nonce)),
         ];
-        let public_inputs = vec![tx_binding, tx_nonce, group_id, t, n];
+        // constrain_instance order: group_id, threshold, total_keys, tx_binding, tx_nonce —
+        // the pair is last, which is the convention the node reads.
+        let public_inputs = vec![group_id, t, n, tx_binding, tx_nonce];
 
         let proof = if dwow_multisig_contract::deterministic_zk_enabled() {
             Proof::create(&self.create_group_pk, &[ZkCircuit::new(witnesses, &self.create_group_zkbin)], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
@@ -111,20 +126,27 @@ impl MultiSigHarness {
             Proof::create(&self.create_group_pk, &[ZkCircuit::new(witnesses, &self.create_group_zkbin)], &public_inputs, OsRng)
         }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
 
-        let params = dwow_multisig_contract::model::CreateGroupParamsV1 {
-            member_commitments, threshold,
-            proof: proof.as_ref().to_vec(), tx_binding, tx_nonce,
-        };
-        let mut call_data = vec![0x01u8];
-        call_data.extend_from_slice(&params.encode()?);
         Ok(CreateGroupResult { call_data, proof, group_id })
     }
 
     pub fn sign(&self, group_id: pallas::Base, message_hash: pallas::Base, signer_secret: pallas::Base) -> Result<SignResult> {
         let member_commitment = Self::member_commitment(signer_secret);
         let nullifier = Self::signer_nullifier(signer_secret, group_id, message_hash);
-        let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
+
+        // Call first, commitment second, proof third — see `create_group` in this file for why
+        // the reverse order cannot bind to a real transaction (`OBL-C198`).
+        let params = dwow_multisig_contract::model::SignParamsV1 {
+            group_id: dwow_multisig_contract::model::GroupId(group_id),
+            message_hash,
+            member_commitment,
+            nullifier: nullifier.inner(),
+            proof: vec![], tx_nonce,
+        };
+        let mut call_data = vec![0x02u8];
+        call_data.extend_from_slice(&params.encode()?);
+        let call = dwow_sdk::tx::ContractCall { contract_id: *dwow_sdk::crypto::MULTISIG_CONTRACT_ID, data: call_data.clone() };
+        let tx_commitment: pallas::Base = dwow_sdk::crypto::util::tx_commitment([&call]);
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
 
         let witnesses = vec![
@@ -146,15 +168,6 @@ impl MultiSigHarness {
             Proof::create(&self.sign_pk, &[ZkCircuit::new(witnesses, &self.sign_zkbin)], &public_inputs, OsRng)
         }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
 
-        let params = dwow_multisig_contract::model::SignParamsV1 {
-            group_id: dwow_multisig_contract::model::GroupId(group_id),
-            message_hash,
-            member_commitment,
-            nullifier: nullifier.inner(),
-            proof: proof.as_ref().to_vec(), tx_binding, tx_nonce,
-        };
-        let mut call_data = vec![0x02u8];
-        call_data.extend_from_slice(&params.encode()?);
         Ok(SignResult { call_data, proof, nullifier })
     }
 
@@ -168,8 +181,19 @@ impl MultiSigHarness {
     ) -> Result<FinalizeResult> {
         // Circuit: DOMAIN_COMMITMENT = witness_base(4) = 4
         let approval_commit = poseidon_hash([pallas::Base::from(4u64), group_id, message_hash]);
-        let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
+
+        // Call first, commitment second, proof third — see `create_group` in this file
+        // (`OBL-C198`).
+        let params = dwow_multisig_contract::model::FinalizeParamsV1 {
+            group_id: dwow_multisig_contract::model::GroupId(group_id),
+            message_hash, approval_commit, approvals,
+            proof: vec![], tx_nonce,
+        };
+        let mut call_data = vec![0x03u8];
+        call_data.extend_from_slice(&params.encode()?);
+        let call = dwow_sdk::tx::ContractCall { contract_id: *dwow_sdk::crypto::MULTISIG_CONTRACT_ID, data: call_data.clone() };
+        let tx_commitment: pallas::Base = dwow_sdk::crypto::util::tx_commitment([&call]);
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
 
         let witnesses = vec![
@@ -186,13 +210,6 @@ impl MultiSigHarness {
             Proof::create(&self.finalize_pk, &[ZkCircuit::new(witnesses, &self.finalize_zkbin)], &public_inputs, OsRng)
         }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
 
-        let params = dwow_multisig_contract::model::FinalizeParamsV1 {
-            group_id: dwow_multisig_contract::model::GroupId(group_id),
-            message_hash, approval_commit, approvals,
-            proof: proof.as_ref().to_vec(), tx_binding, tx_nonce,
-        };
-        let mut call_data = vec![0x03u8];
-        call_data.extend_from_slice(&params.encode()?);
         Ok(FinalizeResult { call_data, proof })
     }
 }
