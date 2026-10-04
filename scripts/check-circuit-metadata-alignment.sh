@@ -329,6 +329,23 @@ CLIENT_ALIASES = {
     # Redeem_V1 circuit").
     ("promissory_note", "transfer"): ("transfer.rs", "TransferBlindOutputRevealed"),
     ("promissory_note", "redeem"): ("redeem.rs", "RedeemReceiptRevealed"),
+    # Odd ones out: a single client file carries every circuit of the contract, so the file name
+    # names no circuit and the impl type is what distinguishes them.
+    ("betting_stake", "init"): ("proof_gen.rs", "InitV1PublicInputs"),
+    ("betting_stake", "stake"): ("proof_gen.rs", "StakeV1PublicInputs"),
+    ("betting_stake", "unstake"): ("proof_gen.rs", "UnstakeV1PublicInputs"),
+    ("betting_stake", "claim"): ("proof_gen.rs", "ClaimV1PublicInputs"),
+    ("betting_stake", "update_risk"): ("proof_gen.rs", "UpdateRiskV1PublicInputs"),
+    # A one-to-one remainder: each contract's circuits are named for their client file except one,
+    # so the unmatched circuit is the unmatched file. Read, not inferred — `set_governance_config`
+    # takes the file `update.rs`, `init` takes `initialize.rs`, `burn` takes `burn_stake.rs`, and
+    # in each case the impl type is the circuit's own name plus the contract's suffix convention.
+    ("stablecoin", "init"): ("initialize.rs", "InitV1PublicInputs"),
+    ("dao_escrow", "set_governance_config"): ("update.rs", "UpdateV1PublicInputs"),
+    ("bearer_bond", "burn"): ("burn_stake.rs", "BurnStakeRevealed"),
+    # `native_token`'s `Mint_V2` is the transfer/spend *output* mint, and its revealed vector is
+    # built in the transfer module — the file is named for neither the circuit nor the function.
+    ("native_token", "mint"): ("transfer/proof.rs", "TransferMintRevealed"),
 }
 
 # Files that carry more than one `to_vec` and no alias naming which one belongs to the circuit.
@@ -366,6 +383,19 @@ if os.path.isfile(_unresolved_path):
             sys.exit(2)
         CLIENT_UNRESOLVED[_parts[0]] = _parts[1]
 
+# The `to_vec` signature, matched loosely on the return type and **exactly** on everything else.
+#
+# It used to require `-> Vec<pallas::Base>` character for character, which is the oldest and
+# commonest spelling (51 impls) but not the only one: 10 return
+# `Result<Vec<pallas::Base>, ContractError>` and 3 `GenericResult<Vec<pallas::Base>>`, and every
+# one of those 13 was invisible — the resolver found no `to_vec` and the circuit's third leg went
+# unchecked *silently*, which is the false negative this function's own docstring says the alias
+# table was added to fix. Requiring `Vec<pallas::Base>` to appear in the return type and letting
+# the wrapper around it vary is the fix; the body is still read by the balanced-`vec![` walk, so
+# this narrows nothing about *what* is compared.
+_TO_VEC = r'fn\s+to_vec\s*\(\s*&self\s*\)\s*->\s*[^{;]*Vec<pallas::Base>[^{;]*\{'
+
+
 def client_to_vec_count(contract_dir, circuit_name, contract_name=""):
     """Element count of the client's `to_vec` for this circuit, or None if not found.
 
@@ -388,7 +418,18 @@ def client_to_vec_count(contract_dir, circuit_name, contract_name=""):
         (contract_name, circuit_name), (f"{circuit_name}.rs", None))
     path = f"{contract_dir}/src/client/{rel}"
     if not os.path.exists(path):
-        return None
+        # Recursive by file *name* — the same rule as above, applied one directory deeper.
+        # `native_token`'s transfer circuits keep their clients in `src/client/transfer/proof.rs`,
+        # so a flat listing found nothing and two circuits went unchecked. It is still a name
+        # match, so it stays unambiguous: the search that was tried and rejected searches the
+        # sources for the *circuit's* name, which matches four files in `dex`.
+        matches = []
+        for root, _dirs, files in os.walk(f"{contract_dir}/src/client"):
+            if rel in files:
+                matches.append(os.path.join(root, rel))
+        if len(matches) != 1:
+            return None
+        path = matches[0]
     src = strip_line_comments(open(path).read())
     start = 0
     if impl_type is not None:
@@ -397,11 +438,11 @@ def client_to_vec_count(contract_dir, circuit_name, contract_name=""):
             return None
         start = block.end()
     if impl_type is None:
-        found = re.findall(r'fn\s+to_vec\s*\(\s*&self\s*\)\s*->\s*Vec<pallas::Base>\s*\{', src)
+        found = re.findall(_TO_VEC, src)
         if len(found) > 1:
             AMBIGUOUS.append((contract_name, circuit_name, rel, len(found)))
             return None
-    m = re.search(r'fn\s+to_vec\s*\(\s*&self\s*\)\s*->\s*Vec<pallas::Base>\s*\{', src[start:])
+    m = re.search(_TO_VEC, src[start:])
     if not m:
         return None
     # The first `vec![` in the function body, balanced — the literal is not adjacent to the brace

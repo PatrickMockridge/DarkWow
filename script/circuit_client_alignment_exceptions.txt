@@ -16,75 +16,72 @@
 # the file. An entry says "the client's public-input vector for this circuit was not located, so
 # the circuit's order was never compared against it". It does **not** say the site is sound, and
 # it must not be read as one: an ignored mismatch here is a proof the verifier refuses, which is
-# exactly the failure this campaign has spent three test runs on. The two reasons below are the
-# only two in the list, and neither is a judgement about the circuit.
+# exactly the failure this campaign has spent four test runs on.
 #
 # ACQUITTAL IS BY REPAIR, NOT BY DECISION. An entry leaves this list when the circuit's vector is
-# found — named in `CLIENT_ALIASES`, added to the resolver, or the client written by whichever
-# session owns that contract. It does not leave by being argued sound.
+# found — named in `CLIENT_ALIASES`, added to the resolver, or written by whichever session owns
+# that contract. It does not leave by being argued sound.
+#
+# THE LIST WAS 48 AND IS 31. The first pass fixed the resolver rather than the entries, and that
+# was the right order: it required the exact signature `-> Vec<pallas::Base>`, which missed the
+# 13 impls returning `Result<Vec<pallas::Base>, _>` or `GenericResult<Vec<pallas::Base>>`, and it
+# looked only at `src/client/*.rs`, which missed `native_token`'s `client/transfer/` subdirectory.
+# Those two were 17 of the 48. Eight more were named in `CLIENT_ALIASES` once the file-to-circuit
+# mapping was read. Every removal is accounted for; none was removed to make the number smaller.
 #
 # Measured 2026-10-04. Register row: OBL-C198.
 
-# ── 42 circuits whose contract HAS a `src/client/` directory ─────────────────────────────────
-#
-# The resolver did not find the vector. It looks for a `to_vec` in `src/client/<circuit>.rs` and
-# then in `CLIENT_ALIASES`, and these build their public inputs somewhere else or under another
-# name — a differently named file (`betting_stake`'s live in `proof_gen.rs`, `box`'s in `mod.rs`),
-# a `to_public_inputs` rather than a `to_vec` (`native_token`'s `TransferMintRevealed`), or a
-# builder the fixture owns. That is a resolver gap and it is fixable circuit by circuit; until
-# each is, the circuit's order is compared against the arm and not against its client.
-attestation/attest_slash : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-attestation/commit_fee_schedule : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-bearer_bond/blind_output : resolver gap — `CLIENT_ALIASES` names `pay_interest.rs`/`PayInterestRevealed`, and the resolver did not match it for this circuit
-bearer_bond/burn : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-bearer_bond/redeem : resolver gap — `CLIENT_ALIASES` names `unstake.rs`/`UnstakeReceiptRevealed`, and the resolver did not match it for this circuit
-betting_stake/claim : resolver gap — this contract's clients live in `src/client/proof_gen.rs`, which is not named after any circuit
-betting_stake/init : resolver gap — this contract's clients live in `src/client/proof_gen.rs`, which is not named after any circuit
-betting_stake/stake : resolver gap — this contract's clients live in `src/client/proof_gen.rs`, which is not named after any circuit
-betting_stake/unstake : resolver gap — this contract's clients live in `src/client/proof_gen.rs`, which is not named after any circuit
-betting_stake/update_risk : resolver gap — this contract's clients live in `src/client/proof_gen.rs`, which is not named after any circuit
-box/put : resolver gap — this contract's clients live in `src/client/mod.rs`, which is not named after any circuit
-box/take : resolver gap — this contract's clients live in `src/client/mod.rs`, which is not named after any circuit
-dao_escrow/set_governance_config : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-darkbet_exchange/cancel_order : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-darkbet_exchange/match_orders : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-darkbet_exchange/place_back : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-darkbet_exchange/place_lay : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-darkbet_exchange/remove_liquidity : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-darkbet_exchange/resolve_market : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-dex/set_transparency_level : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-dex/update_config : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-drain_protection/execute : resolver gap — this contract's clients live in `src/client/exit.rs`, which is not named after any circuit
-drain_protection/initialize : resolver gap — this contract's clients live in `src/client/exit.rs`, which is not named after any circuit
-drain_protection/lock : resolver gap — this contract's clients live in `src/client/exit.rs`, which is not named after any circuit
-drain_protection/propose : resolver gap — this contract's clients live in `src/client/exit.rs`, which is not named after any circuit
-drain_protection/transfer : resolver gap — this contract's clients live in `src/client/exit.rs`, which is not named after any circuit
-drain_protection/unlock : resolver gap — this contract's clients live in `src/client/exit.rs`, which is not named after any circuit
-drain_protection/update_config : resolver gap — this contract's clients live in `src/client/exit.rs`, which is not named after any circuit
-drain_protection/vote : resolver gap — this contract's clients live in `src/client/exit.rs`, which is not named after any circuit
-game_room/close_pot : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-lottery/draw_winners : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-lottery/expire_lottery : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-native_token/burn : resolver gap — `BurnRevealed::to_vec` exists in `src/client/burn.rs` and the resolver did not match it, which is a resolver defect rather than a missing client
-native_token/fee : resolver gap — this circuit's public inputs are `create_fee_proof`'s returned vector, which is not a `to_vec` method at all
-native_token/mint : resolver gap — `TransferMintRevealed` builds its vector in `to_public_inputs`, not `to_vec`, so the resolver's method name misses it
-promissory_note/issue : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-promissory_note/redeem : resolver gap — `CLIENT_ALIASES` names `redeem.rs`/`RedeemReceiptRevealed` and the resolver did not match it for this circuit
-promissory_note/register_type : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-promissory_note/revoke : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-promissory_note/transfer : resolver gap — `CLIENT_ALIASES` names `transfer.rs`/`TransferBlindOutputRevealed` and the resolver did not match it for this circuit
-stablecoin/init : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-stablecoin/update_config : resolver gap — no `to_vec` located for this circuit; its public inputs are built by the fixture or under another name
-
 # ── 6 circuits whose contract has NO client module at all ────────────────────────────────────
 #
-# `src/client/*.rs` is empty for these two contracts: the test fixture builds their proofs, so
-# there is no client vector to compare and the third leg is unchecked by construction rather than
-# by a resolver gap. That is a different debt with a different repair — it closes when the
-# contract grows a client, which is the per-contract migration's business, not the resolver's.
+# `src/client/` holds no `.rs` file for these two contracts: the test fixture builds their proofs,
+# so there is no client vector to compare. Unchecked by construction, not by a resolver gap, and
+# it closes when the contract grows a client — the per-contract migration's business.
 multisig/create_group : no client module — `src/client/*.rs` is empty and the fixture builds this proof
 multisig/finalize : no client module — `src/client/*.rs` is empty and the fixture builds this proof
 multisig/sign : no client module — `src/client/*.rs` is empty and the fixture builds this proof
 purse/balance : no client module — `src/client/*.rs` is empty and the fixture builds this proof
 purse/deposit : no client module — `src/client/*.rs` is empty and the fixture builds this proof
 purse/withdraw : no client module — `src/client/*.rs` is empty and the fixture builds this proof
+
+# ── 4 circuits whose contract HAS clients but none for this circuit ──────────────────────────
+#
+# Read, not inferred. `box`'s `src/client/mod.rs` carries no `to_vec` at all, and `attestation`'s
+# `attest_slash` and `commit_fee_schedule` have no client file — the attestation spec builds both
+# proofs itself, which `OBL-C195`'s row records as the reason its own first heavy run pinned a
+# fixture defect rather than a contract one. `native_token/fee`'s public inputs are the vector
+# `create_fee_proof` returns, which is not a method and so not something this resolver can find.
+box/put : no client `to_vec` — `src/client/mod.rs` builds these calls without one
+box/take : no client `to_vec` — `src/client/mod.rs` builds these calls without one
+attestation/attest_slash : no client module for this circuit — the fixture builds its proof (recorded in OBL-C195)
+attestation/commit_fee_schedule : no client module for this circuit — the fixture builds its proof (recorded in OBL-C195)
+native_token/fee : the vector is `create_fee_proof`'s return value, not a `to_vec` method, so the resolver cannot find it
+
+# ── 21 circuits whose client exists but whose file was not matched ───────────────────────────
+#
+# Each contract has client files, none of them named for this circuit, and more than one candidate
+# per circuit — so naming one without reading it would be a guess, and a guess that happens to
+# match on *count* would make the check pass by construction, which is the one failure mode this
+# resolver's own docstring names as the reason it does not pick vectors by length. These need a
+# per-circuit read of which impl builds which circuit's public inputs; they are left declared
+# rather than guessed. `drain_protection` is the largest group: eight circuits over two client
+# impls, which no name-match can separate.
+drain_protection/execute : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
+drain_protection/initialize : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
+drain_protection/lock : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
+drain_protection/propose : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
+drain_protection/transfer : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
+drain_protection/unlock : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
+drain_protection/update_config : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
+drain_protection/vote : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
+darkbet_exchange/cancel_order : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
+darkbet_exchange/match_orders : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
+darkbet_exchange/place_back : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
+darkbet_exchange/place_lay : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
+darkbet_exchange/remove_liquidity : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
+darkbet_exchange/resolve_market : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
+dex/set_transparency_level : not resolved — none of the six `*PublicInputs` impls in `src/client/` is named for this circuit
+dex/update_config : not resolved — none of the six `*PublicInputs` impls in `src/client/` is named for this circuit
+game_room/close_pot : not resolved — the seven impls in `src/client/` include `settle_pot` and `create_pot` and neither name is this circuit's
+lottery/draw_winners : not resolved — `house_auth.rs::HouseAuthPublicInputs` is the only unclaimed impl, and picking the leftover by elimination is the count-match guess in another shape
+lottery/expire_lottery : not resolved — `house_auth.rs::HouseAuthPublicInputs` is the only unclaimed impl, and picking the leftover by elimination is the count-match guess in another shape
+stablecoin/update_config : not resolved — none of the six `*PublicInputs` impls in `src/client/` is named for this circuit
