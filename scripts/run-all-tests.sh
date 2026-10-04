@@ -132,6 +132,20 @@ run_gate "control: circuit metadata alignment can fail" \
 run_gate "control: the tx-pair-last gate can fail" \
     bash "$SCRIPT_DIR/check-circuit-tx-pair-last.sh" --self-test
 
+# THE LAST TWO UNWIRED CONTROLS, found by censusing which instruments support `--self-test`
+# against which are invoked with it — four were supported-and-unwired, and the pair of circuit
+# gates above were two of them. Both of these are REPORT-ONLY gates today (`OBL-Z23`'s 128
+# undeclared dead values, `OBL-C196`'s 115 host derivations), and that is exactly why their
+# controls had never been called: nothing was blocking on the verdict, so nobody noticed the
+# instrument was never shown to be able to give one. Both are scheduled to block when their lists
+# are adjudicated, and a control wired on the day a gate is promoted is a control that was never
+# run against the code it will judge. They cost nothing here — each plants a defect in a temp
+# tree and asserts on the report.
+run_gate "control: the dead-value gate can fail" \
+    bash "$SCRIPT_DIR/check-circuit-dead-values.sh" --self-test
+run_gate "control: host domain separation can fail" \
+    bash "$SCRIPT_DIR/check-host-domain-separation.sh" --self-test
+
 # Static circuit audits first — they are seconds, and they need no build.
 #
 # Artifact freshness goes before everything that builds, deliberately. `make test` has
