@@ -958,7 +958,7 @@ fn test_recruitment_pipeline_call_data() -> std::result::Result<(), Box<dyn std:
         println!("  DAO-Escrow deployed");
 
         // Attestation already deployed at genesis
-        let att_harness = AttestationHarness::spawn();
+        let att_harness = AttestationHarness::spawn(*dwow_sdk::crypto::ATTESTATION_CONTRACT_ID);
         println!("Attestation harness: {:?}", att_harness.circuits());
         let _att_contract_id = *dwow_sdk::crypto::ATTESTATION_CONTRACT_ID;  // deployed at genesis
 

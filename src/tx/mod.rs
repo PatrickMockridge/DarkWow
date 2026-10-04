@@ -27,7 +27,6 @@ pub use dwow_sdk::dark_tree::DarkLeaf;
 use dwow_sdk::{
     dark_tree::{dark_forest_leaf_vec_integrity_check, DarkForest, DarkTree},
     error::DarkTreeResult,
-    pasta::pallas,
     tx::{ContractCall, TransactionHash},
 };
 

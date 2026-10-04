@@ -218,7 +218,7 @@ fn attestation_child(attestation_id: pallas::Base) -> ChildCall {
 /// witnesses; the parent checks only the selector and the contract id, so the child's own meaning is
 /// the attestation contract's business.
 fn verify_claim_child(claim_id: pallas::Base, attestation_id: pallas::Base) -> dwow_core::Result<ChildCall> {
-    let att = AttestationHarness::spawn();
+    let att = AttestationHarness::spawn(*ATTESTATION_CONTRACT_ID);
     let r = att.verify_claim(
         claim_id, attestation_id,
         pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64),
@@ -400,7 +400,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             // ── The attestation the job names. `create_job_v1` requires the child's
             // `attestation_id` to equal its own `params.attestation_id`, and requires the child at
             // all, so the attestation must exist before the row runs. ──
-            let att = AttestationHarness::spawn();
+            let att = AttestationHarness::spawn(*ATTESTATION_CONTRACT_ID);
             let attestor_secret = pallas::Base::from(30u64);
             let attestor_pub = PublicKey::from_secret(SecretKey::from_base(attestor_secret));
             let a = att.create_attestation(
