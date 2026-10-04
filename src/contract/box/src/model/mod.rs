@@ -114,7 +114,15 @@ fn read_merkle_node(data: &[u8]) -> Result<MerkleNode, ContractError> {
 pub struct PutParams {
     pub nullifier: Nullifier, pub expected_root: MerkleNode, pub new_leaf: MerkleNode,
     pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>,
-    pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base,
+    /// `tx_binding` was here until 2026-10-04 and is **removed**, not moved (`OBL-C198`). The
+    /// commitment is a derivation over the call data, so a binding carried *inside* it would be
+    /// computed from a value that covers it — a cycle with no fixed point. The field's only
+    /// sensible value is therefore the one value it cannot hold, which made it a trap as well as
+    /// an instance of `OBL-C166` ("a parameter a caller must supply is one the contract reads").
+    /// `get_metadata` now derives the binding from the commitment the host exposes
+    /// (`get_tx_commitment`) and this call's own `tx_nonce`, which stays because the prover
+    /// chooses it and it does not depend on the commitment, so it cannot close a loop.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for PutParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
@@ -128,7 +136,9 @@ impl PutParams {
         // `new_contents_commit` a parameter carrying `off_wire`. The manifest says the same, which for
         // one commit it did not (`OBL-C179`).
         let hdr = 100usize;
-        let mut b = Vec::with_capacity(hdr + path_bytes.len() + 1usize + self.proof.len() + 64usize);
+        // 32, not 64: the pair is no longer here. `tx_binding` is derived by `get_metadata`
+        // (`OBL-C198`) and only `tx_nonce` is carried.
+        let mut b = Vec::with_capacity(hdr + path_bytes.len() + 1usize + self.proof.len() + 32usize);
         b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.expected_root.to_bytes()); b.extend_from_slice(&self.new_leaf.to_bytes());
         b.extend_from_slice(&self.leaf_pos.to_le_bytes()); b.extend_from_slice(&path_bytes);
@@ -139,7 +149,7 @@ impl PutParams {
         // convention every contract in the tree follows and the one the SDK's manifest models.
         let pl = dwow_sdk::blockchain::SerializedLen::try_from_len(self.proof.len())?;
         b.extend_from_slice(&pl.to_le_bytes());
-        b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b)
+        b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let hdr = 100usize; if data.len() <= hdr + 1024usize { return Err(BoxError::DecodeFailure{field:"PutParams".into()}.into()); }
@@ -154,10 +164,12 @@ impl PutParams {
                 // A minimum, not an equality: the payload is `selector ++ params ++ AEAD note`, so the
         // params are its front and something follows them. See `purse`'s note — the same shape was
         // measured there by a failing first deposit.
-        if data.len() < pos2.saturating_add(64) { return Err(BoxError::DecodeFailure{field:"PutParams".into()}.into()); }
+        if data.len() < pos2.saturating_add(32) { return Err(BoxError::DecodeFailure{field:"PutParams".into()}.into()); }
         let proof = read_slice(data, path_end+dwow_sdk::blockchain::SerializedLen::ENCODED_SIZE, proof_len)?.to_vec();
-        let tx_binding = read_base(read_slice(data, pos2, 32)?)?; let tx_nonce = read_base(read_slice(data, pos2+32, 32)?)?;
-        Ok(PutParams { nullifier, expected_root, new_leaf, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
+        // `tx_binding` is not read: it is derived by `get_metadata` (`OBL-C198`), so `tx_nonce`
+        // now sits where the pair used to start.
+        let tx_nonce = read_base(read_slice(data, pos2, 32)?)?;
+        Ok(PutParams { nullifier, expected_root, new_leaf, leaf_pos, merkle_path, proof, tx_nonce })
     }
 }
 
@@ -204,7 +216,10 @@ pub struct TakeParams {
     pub contents_commit: pallas::Base,
     pub nullifier: Nullifier, pub expected_root: MerkleNode,
     pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>,
-    pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base,
+    /// See `PutParams`'s note: `tx_binding` is **removed** (`OBL-C198`) — the commitment covers
+    /// the call data, so a binding inside it would be computed from a value that covers it.
+    /// `tx_nonce` stays; the prover chooses it and it does not depend on the commitment.
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for TakeParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
@@ -227,7 +242,7 @@ impl TakeParams {
         // convention every contract in the tree follows and the one the SDK's manifest models.
         let pl = dwow_sdk::blockchain::SerializedLen::try_from_len(self.proof.len())?;
         b.extend_from_slice(&pl.to_le_bytes());
-        b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b)
+        b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let hdr = 100usize; if data.len() <= hdr + 1024usize { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
@@ -243,10 +258,12 @@ impl TakeParams {
                 // A minimum, not an equality: the payload is `selector ++ params ++ AEAD note`, so the
         // params are its front and something follows them. See `purse`'s note — the same shape was
         // measured there by a failing first deposit.
-        if data.len() < pos2.saturating_add(64) { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
+        if data.len() < pos2.saturating_add(32) { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
         let proof = read_slice(data, path_end+dwow_sdk::blockchain::SerializedLen::ENCODED_SIZE, proof_len)?.to_vec();
-        let tx_binding = read_base(read_slice(data, pos2, 32)?)?; let tx_nonce = read_base(read_slice(data, pos2+32, 32)?)?;
-        Ok(TakeParams { contents_commit, nullifier, expected_root, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
+        // `tx_binding` is not read: it is derived by `get_metadata` (`OBL-C198`), so `tx_nonce`
+        // now sits where the pair used to start.
+        let tx_nonce = read_base(read_slice(data, pos2, 32)?)?;
+        Ok(TakeParams { contents_commit, nullifier, expected_root, leaf_pos, merkle_path, proof, tx_nonce })
     }
 }
 

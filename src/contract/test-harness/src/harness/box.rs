@@ -69,14 +69,13 @@ impl BoxHarness {
         let os=pallas::Base::from(42u64);let bid=pallas::Base::from(1u64);
         let op=poseidon_hash([dsig,os]);
         let osn=pallas::Base::zero();let occ=pallas::Base::zero();
-        let ncc=contents;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
-        let nf=poseidon_hash([dnl,os,bid,osn]);let tb=poseidon_hash([dtb,tc,tn]);let nl=poseidon_hash([dml,bid,ncc,nsn,op]);
+        let ncc=contents;let tn=pallas::Base::from(300u64);
+        let nf=poseidon_hash([dnl,os,bid,osn]);let nl=poseidon_hash([dml,bid,ncc,nsn,op]);
         let ol=poseidon_hash([dml,bid,occ,osn,op]);let (lp,p,root)=Self::build_root(ol);
         let er_base: pallas::Base = root.inner();
-        let w=vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(osn)),Witness::Base(Value::known(nsn)),Witness::Base(Value::known(occ)),Witness::Base(Value::known(ncc)),Witness::Base(Value::known(if zero_nullifier_witness { pallas::Base::zero() } else { nf })),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(os)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb)),Witness::Base(Value::known(op))];
-        let pi=vec![nf,er_base,nl,tb,tn];let c=ZkCircuit::new(w,&self.put_zkbin);
-        let proof=Proof::create(&self.put_pk,&[c],&pi,rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
-        let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
+        // `p` is cloned, not moved: the reorder above put this before the witness vector, which
+        // also needs the path.
+        let mpa:[MerkleNode;32]=p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=dwow_sdk::crypto::Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
         let nl_node = dwow_sdk::crypto::MerkleNode::from_base(nl);
         // The nonce and both contents commitments are not in this struct — but that is a property of
@@ -85,7 +84,7 @@ impl BoxHarness {
         // 2026-09-28): a client that builds this call from the manifest encodes them. This harness builds
         // it from `params.encode()` below, which is why they are absent *here*. Unit 7 removes them from
         // the manifest; until then the manifest and this decoder disagree.
-        let params=dwow_box_contract::model::PutParams{nullifier:nf_val,expected_root:root,new_leaf:nl_node,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
+        let params=dwow_box_contract::model::PutParams{nullifier:nf_val,expected_root:root,new_leaf:nl_node,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_nonce:tn};
         let mut cd=vec![0x01u8];cd.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         // Self-addressed AEAD note (wallet.md §2.3, contract-wasm-type-system.md
         // §A.8.2): the produce-side box_capability note carries {commitment,
@@ -102,6 +101,20 @@ impl BoxHarness {
         let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
         let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;
         cd.extend_from_slice(&note_bytes);
+
+        // `OBL-C198`: the proof is built LAST, over the finished call data, because `tx_binding`
+        // is a derivation of the enclosing transaction's commitment — and that commitment covers
+        // these very bytes. It excludes *proofs*, which is what makes the order solvable: build
+        // the call, derive the commitment, then prove. Proving first — the order this harness
+        // used until now — cannot bind to a real transaction at all, and the value it bound to
+        // was the literal `200`: not a transaction's commitment but a number chosen here.
+        let call = dwow_sdk::tx::ContractCall { contract_id: *dwow_sdk::crypto::BOX_CONTRACT_ID, data: cd.clone() };
+        let tc: pallas::Base = dwow_sdk::crypto::util::tx_commitment([&call]);
+        let tb = poseidon_hash([dtb, tc, tn]);
+
+        let w=vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(osn)),Witness::Base(Value::known(nsn)),Witness::Base(Value::known(occ)),Witness::Base(Value::known(ncc)),Witness::Base(Value::known(if zero_nullifier_witness { pallas::Base::zero() } else { nf })),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(os)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb)),Witness::Base(Value::known(op))];
+        let pi=vec![nf,er_base,nl,tb,tn];let c=ZkCircuit::new(w,&self.put_zkbin);
+        let proof=Proof::create(&self.put_pk,&[c],&pi,rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         Ok(BoxPutResult{call_data:cd,proof,inputs:pi})
     }
 
@@ -116,19 +129,29 @@ impl BoxHarness {
         let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);let dsig=pallas::Base::from(7u64);
         let os=pallas::Base::from(42u64);let bid=pallas::Base::from(1u64);let sn=pallas::Base::from(1u64);
         let op=poseidon_hash([dsig,os]);
-        let cc=contents;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
-        let nf=poseidon_hash([dnl,os,bid,sn]);let tb=poseidon_hash([dtb,tc,tn]);let ol=poseidon_hash([dml,bid,cc,sn,op]);
+        let cc=contents;let tn=pallas::Base::from(300u64);
+        let nf=poseidon_hash([dnl,os,bid,sn]);let ol=poseidon_hash([dml,bid,cc,sn,op]);
         let (lp,p,root)=Self::build_root(ol);
         let er_base: pallas::Base = root.inner();
-        let w=vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(cc)),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(os)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb)),Witness::Base(Value::known(op))];
-        let pi=vec![nf,er_base,tb,tn];let c=ZkCircuit::new(w,&self.take_zkbin);
-        let proof=Proof::create(&self.take_pk,&[c],&pi,rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
-        let mpa:[MerkleNode;32]=p.try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
+        // Cloned as in `put_inner`: the reorder put this before the witness vector.
+        let mpa:[MerkleNode;32]=p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=dwow_sdk::crypto::Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
         // `contents_commit` is a field again, and on the wire: a parent contract reads it through the
         // child call to check the box taken is the one it named. See the note in box's model.
-        let params=dwow_box_contract::model::TakeParams{contents_commit:cc,nullifier:nf_val,expected_root:root,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
-        let mut cd=vec![0x02u8];cd.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);Ok(BoxTakeResult{call_data:cd,proof})
+        let params=dwow_box_contract::model::TakeParams{contents_commit:cc,nullifier:nf_val,expected_root:root,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_nonce:tn};
+        let mut cd=vec![0x02u8];cd.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+
+        // Reordered as `put_inner` — see the note there. The proof is built over the finished call
+        // data because `tx_binding` derives from a commitment that covers it, and the commitment
+        // excludes proofs, which is what makes the order solvable (`OBL-C198`).
+        let call = dwow_sdk::tx::ContractCall { contract_id: *dwow_sdk::crypto::BOX_CONTRACT_ID, data: cd.clone() };
+        let tc: pallas::Base = dwow_sdk::crypto::util::tx_commitment([&call]);
+        let tb = poseidon_hash([dtb, tc, tn]);
+
+        let w=vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(cc)),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(os)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb)),Witness::Base(Value::known(op))];
+        let pi=vec![nf,er_base,tb,tn];let c=ZkCircuit::new(w,&self.take_zkbin);
+        let proof=Proof::create(&self.take_pk,&[c],&pi,rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
+        Ok(BoxTakeResult{call_data:cd,proof})
     }
 }
 

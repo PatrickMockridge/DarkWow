@@ -111,7 +111,9 @@ fn test_put_params_encode_decode_roundtrip() {
         leaf_pos: MerklePosition::new(0),
         merkle_path: dummy_merkle_path(),
         proof: vec![1u8, 2, 3],
-        tx_binding: pallas::Base::from(200u64),
+        // `tx_binding` left this struct and the wire in `OBL-C198`: `get_metadata` derives it
+        // from the host-exposed commitment, because a binding inside the call data would be
+        // computed from a value that covers it — a cycle with no fixed point.
         tx_nonce: pallas::Base::from(300u64),
     };
 
@@ -177,7 +179,7 @@ fn test_take_params_encode_decode_roundtrip() {
         leaf_pos: MerklePosition::new(0),
         merkle_path: dummy_merkle_path(),
         proof: vec![4u8, 5, 6],
-        tx_binding: pallas::Base::from(200u64),
+        // As above — see the note on `PutParams` in this file.
         tx_nonce: pallas::Base::from(300u64),
     };
 

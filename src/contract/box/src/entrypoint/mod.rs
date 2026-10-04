@@ -1,5 +1,5 @@
 use dwow_sdk::{
-    crypto::{merkle_anchor, ContractId, MerkleNode, MerkleTree},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, merkle_anchor, poseidon_hash, ContractId, MerkleNode, MerkleTree},
     dark_tree::DarkLeaf, error::{ContractError, ContractResult}, msg, wasm,
     pasta::pallas, ContractCall,
 };
@@ -34,7 +34,9 @@ if !wasm::db::db_contains_key(roots_db, &EMPTY_BOX_TREE_ROOT)? { wasm::db::db_se
 }
 
 // ============================================================================
-// METADATA — pure echo
+// METADATA — the binding is derived from the host-exposed commitment; everything else is
+// extracted from the call. It was "pure echo" until `OBL-C198`, and the two arms below say
+// which values are no longer echoes.
 // ============================================================================
 
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
@@ -67,7 +69,20 @@ fn put_metadata(p: PutParams) -> Result<Vec<u8>, ContractError> {
     let zk_nullifier: pallas::Base = p.nullifier.inner();
     let zk_expected_root: pallas::Base = p.expected_root.inner();
     let zk_new_leaf: pallas::Base = p.new_leaf.inner();
-    let zk_tx_binding: pallas::Base = p.tx_binding;
+    // `OBL-C198`: the binding is **derived**, not echoed. The commitment is a derivation over
+    // this call's own bytes, so a binding carried inside them would be computed from a value
+    // that covers it — a cycle with no fixed point, which is why the field left `PutParams`.
+    // The host exposes the commitment (`get_tx_commitment`); the call supplies only the nonce,
+    // which the prover chooses and which does not depend on the commitment.
+    //
+    // The node recomputes this same expression from the enclosing transaction and refuses a
+    // proof whose published binding differs (stage 4, `tx-commitment.md` §Verification), so the
+    // proof verifies only if its witnesses were bound to the real transaction.
+    let zk_tx_binding: pallas::Base = poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        wasm::util::get_tx_commitment()?,
+        p.tx_nonce,
+    ]);
     let zk_tx_nonce: pallas::Base = p.tx_nonce;
 
     let mut z = vec![]; z.push((BOX_CONTRACT_ZKAS_PUT_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_new_leaf, zk_tx_binding, zk_tx_nonce]));
@@ -77,7 +92,13 @@ fn take_metadata(p: TakeParams) -> Result<Vec<u8>, ContractError> {
     // L1 metadata boundary (Boundary 4): type-annotated extraction.
     let zk_nullifier: pallas::Base = p.nullifier.inner();
     let zk_expected_root: pallas::Base = p.expected_root.inner();
-    let zk_tx_binding: pallas::Base = p.tx_binding;
+    // As `put_metadata`: the binding is derived from the host-exposed commitment, not echoed
+    // from the call (`OBL-C198`).
+    let zk_tx_binding: pallas::Base = poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        wasm::util::get_tx_commitment()?,
+        p.tx_nonce,
+    ]);
     let zk_tx_nonce: pallas::Base = p.tx_nonce;
 
     let mut z = vec![]; z.push((BOX_CONTRACT_ZKAS_TAKE_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_tx_binding, zk_tx_nonce]));
