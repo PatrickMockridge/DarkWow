@@ -1648,7 +1648,6 @@ mod tests {
             old_cumulative_commit: pallas::Point::identity(),
             old_cumulative_blind: pallas::Scalar::zero(),
             new_cumulative_commit: pallas::Point::identity(),
-            tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
     }
@@ -1666,7 +1665,6 @@ mod tests {
             effective_value: 1000,
             commitment_attrs: test_commitment_attrs(1000),
             output: test_output(),
-            tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
     }

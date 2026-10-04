@@ -438,7 +438,6 @@ mod tests {
             old_cumulative_commit: pallas::Point::identity(),
             old_cumulative_blind: pallas::Scalar::zero(),
             new_cumulative_commit: pallas::Point::identity(),
-            tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
 
@@ -457,7 +456,6 @@ mod tests {
             total_fees: FeeAmount::new(1u64),
             output: create_test_output(),
             nullifier: Nullifier::from_bytes([3u8; 32]).unwrap(),
-            tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
 
@@ -524,7 +522,6 @@ mod tests {
         let params = TransferParamsV1 {
             inputs: vec![],
             outputs: vec![],
-            tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
 
@@ -537,7 +534,6 @@ mod tests {
         let params = TransferParamsV1 {
             inputs: vec![create_test_input()],
             outputs: vec![create_test_output()],
-            tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
 
@@ -554,7 +550,6 @@ mod tests {
         let params = SpendParamsV1 {
             input: create_test_input(),
             output: create_test_output(),
-            tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
 
@@ -569,7 +564,6 @@ mod tests {
     fn test_burn_params_v1_empty() {
         let params = BurnParamsV1 {
             inputs: vec![],
-            tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero()
         };
 
@@ -580,7 +574,6 @@ mod tests {
     fn test_burn_params_v1_with_inputs() {
         let params = BurnParamsV1 {
             inputs: vec![create_test_input()],
-            tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero()
         };
 
