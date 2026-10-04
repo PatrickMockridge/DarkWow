@@ -56,8 +56,14 @@ circuit "SettleBet_V2" {
         derived_bet_id,
         secret_nonce,
     );
+    constrain_instance(roll_hash);
+
+    # The pair is the LAST two instances (`OBL-C198`): the node reads `pubvals[len-2]`/
+    # `pubvals[len-1]` and recomputes `tx_binding` there, because nothing in `src/linear/` indexes
+    # this vector at all — the position IS the interface. It sat at 2,3 of 4 with `roll_hash`
+    # after it. The metadata arm's push order and the client's `to_vec` move with it, which
+    # `scripts/check-circuit-metadata-alignment.sh` is the instrument for.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(roll_hash);
 }

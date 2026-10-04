@@ -26,7 +26,7 @@
 use dwow_sdk::{
     crypto::{poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
-    error::ContractResult,
+    error::{ContractError, ContractResult},
     pasta::pallas, wasm, ContractCall,
 };
 use dwow_serial::{deserialize, Encodable};
@@ -81,14 +81,28 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 }
 
 /// Get metadata for ZK proof verification
+/// The transaction binding this call publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// What stood here in all four arms was the constant `poseidon_hash([3, 0, 0])`, which bound every
+/// proof to nothing at all: it was identical in every transaction, so a proof lifted from one
+/// transaction verified in another.
+///
+/// The nonce is zero because these calls carry no nonce field, so every proof in one transaction
+/// publishes the same binding — a *linking* of that transaction's own proofs, which
+/// `tx-commitment.md` §The Nullifier Scheme exists to avoid. It is still strictly better than the
+/// constant, and a per-proof nonce on the wire is owed.
+fn dice_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([pallas::Base::from(3), wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = DiceFunction::try_from(self_.data[0])?;
-
-    // tx fields are zero in heavyweight; the V2 clients commit to poseidon_hash([3, 0, 0]).
-    let tx_binding = poseidon_hash([pallas::Base::from(3), pallas::Base::zero(), pallas::Base::zero()]);
 
     let metadata = match func {
         DiceFunction::CommitBetV1 => {
@@ -113,6 +127,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 vec![]
             } else {
             let vc_coords = coords.unwrap();
+            let tx_binding = dice_tx_binding(pallas::Base::zero())?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::DICE_CONTRACT_ZKAS_COMMIT_NS_V2.to_string(),
@@ -125,6 +140,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         DiceFunction::RevealRollV1 => {
             let params = crate::model::RevealRollParamsV1::decode(&self_.data[1..])?;
+            let tx_binding = dice_tx_binding(pallas::Base::zero())?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             let secret_nonce_commit = poseidon_hash([pallas::Base::from(7), params.secret_nonce]);
             zk_public_inputs.push((
@@ -137,6 +153,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         DiceFunction::HouseCloseV1 => {
             let params = crate::model::HouseCloseParamsV1::decode(&self_.data[1..])?;
+            let tx_binding = dice_tx_binding(pallas::Base::zero())?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::DICE_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V2.to_string(),
@@ -148,10 +165,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         DiceFunction::SettleBetV1 => {
             let params = crate::model::SettleBetParamsV1::decode(&self_.data[1..])?;
+            let tx_binding = dice_tx_binding(pallas::Base::zero())?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::DICE_CONTRACT_ZKAS_SETTLE_NS_V2.to_string(),
-                vec![params.bet_id, tx_binding, pallas::Base::zero(), params.roll_hash],
+                // Order matches `settle_bet.zk`'s `constrain_instance` calls: `bet_id`,
+                // `roll_hash`, then the pair — last (`OBL-C198`).
+                vec![params.bet_id, params.roll_hash, tx_binding, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
