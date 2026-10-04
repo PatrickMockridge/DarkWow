@@ -58,6 +58,47 @@ pub fn hash_to_base(persona: &[u8], vals: &[&[u8]]) -> pallas::Base {
     hash_to_field_elem(persona, vals)
 }
 
+/// Persona for the transaction commitment's derivation. BLAKE2b bounds the
+/// personalization at 16 bytes, which is why the `DRK_SCHNORR_*_DOMAIN`
+/// constants beside this one are exactly that length.
+pub const TX_COMMITMENT_PERSONA: &[u8] = b"DarkWow_TxCommit";
+
+/// The transaction commitment, as the **field element** every circuit witnesses as
+/// `tx_commitment`.
+///
+/// ## Why a field element rather than the blake3 digest
+///
+/// A circuit hashes this value with `poseidon_hash`, whose arguments are `pallas::Base`. A
+/// 32-byte digest is not one: `pallas::Base::from_repr` rejects roughly three of every four
+/// uniform 32-byte strings as non-canonical, so *some* map from bytes to field was always
+/// required and none existed. The wallet filled the gap by substituting a seed-derived
+/// **random** field element in each proof-building path, which is why no proof in this tree
+/// has ever been bound to a real transaction — the value it committed to was invented at
+/// the prover.
+///
+/// ## One derivation, one home
+///
+/// `safety.md` RC5, and the lesson `OBL-C104` records: the transaction builder, the host
+/// runtime that exposes this to a contract, and the node's verifier all call **this**
+/// function. A second derivation anywhere would be a second value, and the two would drift
+/// silently — the failure mode presenting as a proof that does not verify rather than as a
+/// disagreement about a hash.
+///
+/// ## The encoding
+///
+/// Each call is `dwow_serial`-encoded, and those encodings are **self-delimiting** (a
+/// `ContractCall` is a fixed 32-byte id plus a length-prefixed calldata), so concatenating
+/// them cannot be rearranged into a different call set with the same digest. Proofs are
+/// excluded deliberately: they are created after this value is known, so including them
+/// would be circular.
+pub fn tx_commitment<'a>(
+    calls: impl IntoIterator<Item = &'a crate::tx::ContractCall>,
+) -> pallas::Base {
+    let encoded: Vec<Vec<u8>> = calls.into_iter().map(dwow_serial::serialize).collect();
+    let refs: Vec<&[u8]> = encoded.iter().map(Vec::as_slice).collect();
+    hash_to_base(TX_COMMITMENT_PERSONA, &refs)
+}
+
 /// Converts from pallas::Base to pallas::Scalar (aka $x \pmod{r_\mathbb{P}}$).
 ///
 /// This requires no modular reduction because Pallas' base field is smaller than its

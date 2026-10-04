@@ -236,21 +236,33 @@ impl TransactionBuilder {
             proofs.push(leaf.data.proofs);
         }
 
-        // Compute transaction commitment: hash of all call data.
-        // Excludes proofs to avoid circular dependency (proofs aren't
-        // known when tx_commitment is needed as a public input to circuits).
-        let tx_commitment = {
-            use blake3::Hasher;
-            let mut hasher = Hasher::new();
-            for call in &calls {
-                let _ = call.data.encode(&mut hasher);
-            }
-            let hash = hasher.finalize();
-            let mut bytes = [0u8; 32];
-            bytes.copy_from_slice(hash.as_bytes());
-            bytes
-        };
+        // The transaction commitment: the field element every proof in this transaction
+        // binds to, stored as its canonical repr.
+        //
+        // It is a *field element* because the circuits hash it with poseidon, whose
+        // arguments are `pallas::Base` — a 32-byte blake3 digest is not one. Until
+        // 2026-10-04 no map from one to the other existed anywhere, and the wallet filled
+        // the gap by substituting a seed-derived **random** field element in each
+        // proof-building path, so no proof in this tree had ever been bound to a real
+        // transaction. One derivation, one home (`safety.md` RC5): this is the same
+        // function the host runtime exposes to a contract's `get_metadata` arms and the
+        // node's verifier recomputes (`src/linear/src/zk_verifier.rs`).
+        //
+        // Proofs stay excluded — they are created after this value is known, so including
+        // them would be circular.
+        let tx_commitment = commitment_of_calls(&calls);
 
         Ok(Transaction { calls, proofs, tx_commitment, nullifiers: self.nullifiers.clone() })
     }
+}
+
+/// The commitment a transaction built from `calls` will carry — computable **before** its
+/// proofs exist.
+///
+/// `TransactionBuilder::build` computes the commitment at the end, by which time every proof
+/// has already been made; a caller therefore cannot learn what to bind to, which is exactly
+/// how the binding came to be a random field element invented at the prover. This is the
+/// same derivation `build` uses, exposed so a prover can bind to the real value first.
+pub fn commitment_of_calls(calls: &[DarkLeaf<ContractCall>]) -> [u8; 32] {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter().map(|c| &c.data)).to_repr()
 }
