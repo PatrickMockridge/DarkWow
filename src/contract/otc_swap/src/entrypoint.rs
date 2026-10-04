@@ -43,6 +43,7 @@
 
 use dwow_sdk::{
     crypto::{
+        constants::DRK_POSEIDON_DOMAIN_TX_BINDING,
         pasta_prelude::*,
         poseidon_hash, ContractId,
     },
@@ -158,6 +159,23 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::util::set_return_data(&metadata)
 }
 
+/// The transaction binding this call publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// What stood in the four arms below was the constant `poseidon_hash([3, 0, 0])`, which bound every
+/// proof to nothing at all.
+///
+/// The nonce is zero because these calls carry no nonce field, so every proof in one transaction
+/// publishes the same binding — a *linking* of that transaction's own proofs, which
+/// `tx-commitment.md` §The Nullifier Scheme exists to avoid. It is still strictly better than the
+/// constant, which was identical across *every* transaction, and a per-proof nonce on the wire is
+/// owed.
+fn otc_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 /// `get_metadata` for CreateSwapV1
 fn swap_create_get_metadata_v1(
     _cid: ContractId,
@@ -169,9 +187,9 @@ fn swap_create_get_metadata_v1(
 
     // Public inputs for CreateSwap ZK proof (4):
     //   constrain_instance(C) — commitment
-    //   constrain_instance(tx_binding) — pass-through
-    //   constrain_instance(tx_nonce) — pass-through
     //   constrain_instance(bob_commitment) — H(bob_pub.x, bob_pub.y)
+    //   constrain_instance(tx_binding) — derived (OBL-C198)
+    //   constrain_instance(tx_nonce) — pass-through
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (alice_x, alice_y) = params.alice_pubkey.xy().expect("pk not identity");
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
@@ -185,9 +203,11 @@ fn swap_create_get_metadata_v1(
         pallas::Base::from(params.timeout),
     ]);
 
+    // `OBL-C198`: the pair is the last two instances (matching the reordered circuit), and the
+    // binding is **derived** from the host-exposed commitment rather than echoed as the constant.
     zk_public_inputs.push((
         OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
-        vec![commitment, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero(), bob_commitment],
+        vec![commitment, bob_commitment, otc_tx_binding(pallas::Base::zero())?, pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -213,18 +233,18 @@ fn swap_fund_get_metadata_v1(
     // FundSwap circuit exposes:
     // - value_commit_x, value_commit_y
     // - swap_id
-    // - tx_binding (pass-through)
-    // - tx_nonce (pass-through)
     // - merkle_root
+    // - tx_binding (derived, OBL-C198)
+    // - tx_nonce (pass-through)
     zk_public_inputs.push((
         OTC_SWAP_CONTRACT_ZKAS_FUND_NS_V2.to_string(),
         vec![
             *value_coords.x(),
             *value_coords.y(),
             params.swap_id,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
-            pallas::Base::zero(),
             params.merkle_root.inner(),
+            otc_tx_binding(pallas::Base::zero())?,
+            pallas::Base::zero(),
         ],
     ));
 
@@ -249,17 +269,17 @@ fn swap_execute_get_metadata_v1(
     // ExecuteSwap circuit exposes:
     //   constrain_instance(swap_id)
     //   constrain_instance(bob_commitment) — H(bob_pub)
-    //   constrain_instance(tx_binding) — pass-through
-    //   constrain_instance(tx_nonce) — pass-through
     //   constrain_instance(spent_nullifier)
+    //   constrain_instance(tx_binding) — derived (OBL-C198)
+    //   constrain_instance(tx_nonce) — pass-through
     zk_public_inputs.push((
         OTC_SWAP_CONTRACT_ZKAS_EXECUTE_NS_V2.to_string(),
         vec![
             params.swap_id,
             bob_commitment,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
-            pallas::Base::zero(),
             params.spent_nullifier,
+            otc_tx_binding(pallas::Base::zero())?,
+            pallas::Base::zero(),
         ],
     ));
 
@@ -286,9 +306,9 @@ fn swap_cancel_get_metadata_v1(
     //   constrain_instance(current_block)
     //   constrain_instance(alice_x)
     //   constrain_instance(alice_y)
-    //   constrain_instance(tx_binding) — pass-through
-    //   constrain_instance(tx_nonce) — pass-through
     //   constrain_instance(spent_nullifier)
+    //   constrain_instance(tx_binding) — derived (OBL-C198)
+    //   constrain_instance(tx_nonce) — pass-through
     zk_public_inputs.push((
         OTC_SWAP_CONTRACT_ZKAS_CANCEL_NS_V2.to_string(),
         vec![
@@ -297,9 +317,9 @@ fn swap_cancel_get_metadata_v1(
             pallas::Base::from(params.current_block),
             alice_x,
             alice_y,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
-            pallas::Base::zero(),
             params.spent_nullifier,
+            otc_tx_binding(pallas::Base::zero())?,
+            pallas::Base::zero(),
         ],
     ));
 

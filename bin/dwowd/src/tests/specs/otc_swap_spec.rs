@@ -59,7 +59,12 @@ fn pn_transfer_child(
 }
 
 pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(OtcSwapHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its call will carry, because the transaction
+    // commitment is derived over the call *including* the contract id. `deploy_with_ix` assigns
+    // `derive_contract_id_from_name(name)` — a pure function of the name — so the spec computes
+    // exactly the id the pipeline will use rather than a placeholder.
+    let otc_swap_cid = crate::tests::blockchain::derive_contract_id_from_name("otc_swap");
+    let harness = Box::leak(Box::new(OtcSwapHarness::spawn(otc_swap_cid)));
     let h: &OtcSwapHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/otc_swap/dwow_otc_swap_contract.wasm");
 
@@ -84,7 +89,9 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
     ContractTestSpec {
         name: "otc_swap",
         is_genesis: false,
-        contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
+        // `OBL-C198`: the real id, not the stale `[0u8;32]` placeholder — the commitment is derived
+        // over the call including the id, and `deploy_with_ix` assigns `derive_contract_id_from_name`.
+        contract_id: otc_swap_cid,
         harness: h,
         wasm_bytes: Some(wasm),
         has_initialize: false,

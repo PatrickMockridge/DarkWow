@@ -46,7 +46,8 @@ pub struct CreateSwapPublicInputs {
 
 impl CreateSwapPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.commitment, self.tx_binding, self.tx_nonce, self.bob_commitment]
+        // `OBL-C198`: the tx pair is the last two instances (see create_swap.zk).
+        vec![self.commitment, self.bob_commitment, self.tx_binding, self.tx_nonce]
     }
 }
 

@@ -55,9 +55,10 @@ impl FundSwapPublicInputs {
             self.value_commit_x,
             self.value_commit_y,
             self.swap_id,
+            // `OBL-C198`: the tx pair is the last two instances (see fund_swap.zk).
+            self.merkle_root,
             self.tx_binding,
             self.tx_nonce,
-            self.merkle_root,
         ]
     }
 }

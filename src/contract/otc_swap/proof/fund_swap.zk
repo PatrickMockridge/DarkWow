@@ -64,7 +64,10 @@ circuit "FundSwapV2" {
     # Merkle proof verification
     # Verify swap_id exists in the swaps Merkle tree
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+
+    # `OBL-C198`: the tx pair is the last two instances (see create_swap.zk); this circuit placed
+    # the pair before the merkle root.
+    constrain_instance(merkle_root(merkle_leaf_pos, merkle_path, swap_id));
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(merkle_root(merkle_leaf_pos, merkle_path, swap_id));
 }

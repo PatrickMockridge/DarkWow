@@ -75,7 +75,10 @@ circuit "ExecuteSwapV2" {
     constrain_instance(swap_id);
     constrain_instance(bob_commitment);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+
+    # `OBL-C198`: the tx pair is the last two instances (see create_swap.zk); this circuit placed
+    # the pair before the spent nullifier.
+    constrain_instance(N);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(N);
 }

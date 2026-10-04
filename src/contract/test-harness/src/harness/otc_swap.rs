@@ -28,7 +28,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pedersen_commitment_u64, Blind, MerkleNode, PublicKey},
+    crypto::{pedersen_commitment_u64, Blind, ContractId, MerkleNode, PublicKey},
     crypto::pasta_prelude::Group,
     pasta::pallas,
 };
@@ -44,6 +44,17 @@ use dwow_otc_swap_contract::model::{
     CancelSwapParamsV1, CreateSwapParamsV1, ExecuteSwapParamsV1, FundSwapParamsV1,
 };
 
+/// The commitment a single-call endpoint's proof must bind to (`OBL-C198`).
+///
+/// One helper because every builder in this harness needs the same value, and a second derivation
+/// would be a second value waiting to drift (`safety.md` RC5). It is derived over the call
+/// *including* the contract id — the id is part of the call, and the node recomputes over the same
+/// bytes — which is why the harness is given the deployed id rather than a placeholder.
+fn commitment_of(contract_id: &ContractId, call_data: &[u8]) -> pallas::Base {
+    let call = dwow_sdk::tx::ContractCall { contract_id: *contract_id, data: call_data.to_vec() };
+    dwow_sdk::crypto::util::tx_commitment([&call])
+}
+
 /// OTC Swap Harness for isolated testing
 pub struct OtcSwapHarness {
     create_zkbin: ZkBinary,
@@ -54,10 +65,14 @@ pub struct OtcSwapHarness {
     execute_pk: ProvingKey,
     cancel_zkbin: ZkBinary,
     cancel_pk: ProvingKey,
+    /// The contract's deployed id (`OBL-C198`): the commitment is over the call set, and a call
+    /// carries the contract it addresses, so a prover must know this id to derive the commitment
+    /// its proof binds to. The spec supplies it.
+    contract_id: ContractId,
 }
 
 impl OtcSwapHarness {
-    pub fn spawn() -> Self {
+    pub fn spawn(contract_id: ContractId) -> Self {
         let create_bin = include_bytes!("../../../otc_swap/proof/create_swap.zk.bin");
         let fund_bin = include_bytes!("../../../otc_swap/proof/fund_swap.zk.bin");
         let execute_bin = include_bytes!("../../../otc_swap/proof/execute_swap.zk.bin");
@@ -76,7 +91,7 @@ impl OtcSwapHarness {
         let cancel_circuit = ZkCircuit::new(empty_witnesses(&cancel_zkbin).unwrap(), &cancel_zkbin);
         let cancel_pk = ProvingKey::build(cancel_zkbin.k, &cancel_circuit).expect("ProvingKey::build failed");
 
-        Self { create_zkbin, create_pk, fund_zkbin, fund_pk, execute_zkbin, execute_pk, cancel_zkbin, cancel_pk }
+        Self { create_zkbin, create_pk, fund_zkbin, fund_pk, execute_zkbin, execute_pk, cancel_zkbin, cancel_pk, contract_id }
     }
 
     /// Create an OTC swap (function code 0x01)
@@ -92,13 +107,15 @@ impl OtcSwapHarness {
         recv_asset_id: pallas::Base,
         timeout: u64,
     ) -> Result<CreateSwapResult, Box<dyn std::error::Error>> {
-        let input = CreateSwapCallData::new(
+        let mut input = CreateSwapCallData::new(
             alice_secret, alice_pubkey, bob_pubkey,
             send_value, send_asset_id, recv_value, recv_asset_id, timeout,
         );
-        let (proof, public_inputs) =
-            create_swap_proof(&self.create_zkbin, &self.create_pk, &input)?;
-
+        // `OBL-C198`: the call is built before the proof, because the proof binds to a commitment
+        // derived over the call's own bytes (and the order is solvable only because the commitment
+        // excludes proofs). The commitment here is a pure function of the swap's fields, not of
+        // the transaction, so it is known before the call is assembled.
+        let commitment = input.compute_public_inputs().commitment;
         let params = CreateSwapParamsV1 {
             alice_pubkey,
             bob_pubkey,
@@ -107,12 +124,16 @@ impl OtcSwapHarness {
             recv_value,
             recv_asset_id,
             timeout,
-            commitment: public_inputs.commitment,
+            commitment,
             instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
+
+        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
+        let (proof, public_inputs) =
+            create_swap_proof(&self.create_zkbin, &self.create_pk, &input)?;
 
         Ok(CreateSwapResult { call_data, proof, swap_id: public_inputs.commitment })
     }
@@ -126,17 +147,17 @@ impl OtcSwapHarness {
         merkle_leaf_pos: u32,
         merkle_path: Vec<MerkleNode>,
     ) -> Result<FundSwapResult, Box<dyn std::error::Error>> {
-        let input = FundSwapCallData::new(
+        let mut input = FundSwapCallData::new(
             value, value_blind, swap_id, merkle_leaf_pos, merkle_path.clone(),
         );
-        let (proof, public_inputs) =
-            fund_swap_proof(&self.fund_zkbin, &self.fund_pk, &input)?;
-
-        let merkle_root = MerkleNode::new(public_inputs.merkle_root);
+        // `OBL-C198`: the call data and the commitment over it come before the proof. The merkle
+        // root the params carry is a pure function of the path, not of the transaction.
+        let sample = input.compute_public_inputs()?;
+        let merkle_root = MerkleNode::new(sample.merkle_root);
         let merkle_proof: Vec<pallas::Base> = merkle_path.iter().map(|n| n.inner()).collect();
 
         let params = FundSwapParamsV1 {
-            swap_id: public_inputs.swap_id,
+            swap_id: sample.swap_id,
             value_commit: pedersen_commitment_u64(value, Blind(value_blind)),
             merkle_proof,
             merkle_root,
@@ -146,6 +167,10 @@ impl OtcSwapHarness {
         // `encode` is fallible: a length that does not fit the fixed-width
         // prefix is a `ContractError`, not a silent truncation (§A.4.5).
         call_data.extend_from_slice(&params.encode()?);
+
+        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
+        let (proof, _public_inputs) =
+            fund_swap_proof(&self.fund_zkbin, &self.fund_pk, &input)?;
 
         Ok(FundSwapResult { call_data, proof })
     }
@@ -159,22 +184,26 @@ impl OtcSwapHarness {
         alice_recipient: PublicKey,
         bob_recipient: PublicKey,
     ) -> Result<ExecuteSwapResult, Box<dyn std::error::Error>> {
-        let input = ExecuteSwapCallData::new(
+        let mut input = ExecuteSwapCallData::new(
             swap_id, bob_secret, bob_pubkey, alice_recipient, bob_recipient,
         );
-        let (proof, public_inputs) =
-            execute_swap_proof(&self.execute_zkbin, &self.execute_pk, &input)?;
-
+        // `OBL-C198`: the call data and the commitment over it come before the proof. The spent
+        // nullifier the params carry is a pure function of the swap id and the secret.
+        let sample = input.compute_public_inputs();
         let params = ExecuteSwapParamsV1 {
-            swap_id: public_inputs.swap_id,
+            swap_id: sample.swap_id,
             bob_secret,
-            spent_nullifier: public_inputs.spent_nullifier,
+            spent_nullifier: sample.spent_nullifier,
             alice_recipient,
             bob_recipient,
         };
 
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
+
+        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
+        let (proof, _public_inputs) =
+            execute_swap_proof(&self.execute_zkbin, &self.execute_pk, &input)?;
 
         Ok(ExecuteSwapResult { call_data, proof })
     }
@@ -189,16 +218,16 @@ impl OtcSwapHarness {
         current_block: u64,
         recipient_pubkey: PublicKey,
     ) -> Result<CancelSwapResult, Box<dyn std::error::Error>> {
-        let input = CancelSwapCallData::new(
+        let mut input = CancelSwapCallData::new(
             swap_id, alice_secret, alice_pubkey, timeout, current_block, recipient_pubkey,
         );
-        let (proof, public_inputs) =
-            cancel_swap_proof(&self.cancel_zkbin, &self.cancel_pk, &input)?;
-
+        // `OBL-C198`: the call data and the commitment over it come before the proof. The spent
+        // nullifier the params carry is a pure function of the swap id and the secret.
+        let sample = input.compute_public_inputs();
         let params = CancelSwapParamsV1 {
-            swap_id: public_inputs.swap_id,
+            swap_id: sample.swap_id,
             alice_secret,
-            spent_nullifier: public_inputs.spent_nullifier,
+            spent_nullifier: sample.spent_nullifier,
             current_block,
             timeout,
             recipient_pubkey,
@@ -206,6 +235,10 @@ impl OtcSwapHarness {
 
         let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
+
+        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
+        let (proof, _public_inputs) =
+            cancel_swap_proof(&self.cancel_zkbin, &self.cancel_pk, &input)?;
 
         Ok(CancelSwapResult { call_data, proof })
     }

@@ -56,9 +56,10 @@ impl CancelSwapPublicInputs {
             self.current_block,
             self.alice_x,
             self.alice_y,
+            // `OBL-C198`: the tx pair is the last two instances (see cancel_swap.zk).
+            self.spent_nullifier,
             self.tx_binding,
             self.tx_nonce,
-            self.spent_nullifier,
         ]
     }
 }
