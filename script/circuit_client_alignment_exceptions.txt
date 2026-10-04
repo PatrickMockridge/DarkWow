@@ -22,12 +22,20 @@
 # found — named in `CLIENT_ALIASES`, added to the resolver, or written by whichever session owns
 # that contract. It does not leave by being argued sound.
 #
-# THE LIST WAS 48 AND IS 31. The first pass fixed the resolver rather than the entries, and that
-# was the right order: it required the exact signature `-> Vec<pallas::Base>`, which missed the
-# 13 impls returning `Result<Vec<pallas::Base>, _>` or `GenericResult<Vec<pallas::Base>>`, and it
-# looked only at `src/client/*.rs`, which missed `native_token`'s `client/transfer/` subdirectory.
-# Those two were 17 of the 48. Eight more were named in `CLIENT_ALIASES` once the file-to-circuit
-# mapping was read. Every removal is accounted for; none was removed to make the number smaller.
+# THE LIST WAS 48 AND IS 21, AND EVERY REMOVAL IS ACCOUNTED FOR. None was removed to make the
+# number smaller.
+#
+#   48 → 31  the resolver, not the entries. It required the exact signature
+#            `-> Vec<pallas::Base>` — missing the 13 impls returning
+#            `Result<Vec<pallas::Base>, _>` or `GenericResult<Vec<pallas::Base>>` — and it
+#            listed `src/client/*.rs` flat, missing `native_token`'s `client/transfer/`
+#            subdirectory. Those two were 17 of the 48. Eight more were named in
+#            `CLIENT_ALIASES` once the file-to-circuit mapping was read.
+#   31 → 21  ten more named in `CLIENT_ALIASES`, each verified element for element rather than
+#            by count — `drain_protection`'s eight circuits all instance
+#            `authority_pub_x, authority_pub_y, authority_nullifier, tx_binding, tx_nonce` in
+#            that order and `AuthorityPublicInputs::to_vec` returns exactly that; `lottery`'s
+#            two house endpoints likewise over `house_pub_x, house_pub_y, house_nullifier`.
 #
 # Measured 2026-10-04. Register row: OBL-C198.
 
@@ -56,40 +64,37 @@ attestation/attest_slash : no client module for this circuit — the fixture bui
 attestation/commit_fee_schedule : no client module for this circuit — the fixture builds its proof (recorded in OBL-C195)
 native_token/fee : the vector is `create_fee_proof`'s return value, not a `to_vec` method, so the resolver cannot find it
 
-# ── 21 circuits whose client exists but whose file was not matched ───────────────────────────
+# ── 10 circuits whose client exists but whose file was not matched ───────────────────────────
 #
 # Each contract has client files, none of them named for this circuit, and more than one candidate
 # per circuit — so naming one without reading it would be a guess, and a guess that happens to
 # match on *count* would make the check pass by construction, which is the one failure mode this
 # resolver's own docstring names as the reason it does not pick vectors by length. These need a
 # per-circuit read of which impl builds which circuit's public inputs; they are left declared
-# rather than guessed. `drain_protection` is the largest group: eight circuits over two client
-# impls, which no name-match can separate.
+# rather than guessed.
 #
-# TWO MECHANICAL MAPPINGS WERE TRIED AGAINST THIS SET ON 2026-10-04 AND BOTH FAIL, so that the
-# "it needs a read" above is a measurement and not a preference:
+# A THIRD SIGNAL WAS TRIED AND IS THE REASON THESE TEN SURVIVED IT: score every count-matching
+# candidate impl by the identifiers its vector shares with the circuit's `constrain_instance`
+# targets. For `drain_protection` and `lottery` that is decisive — the names AND the order agree
+# exactly — and both are now in `CLIENT_ALIASES`. For these ten it is not: every candidate that
+# matches on count also scores **zero**, so the only thing selecting one would be its length. A
+# resolver that took that answer would be choosing the vector that makes the check pass, and the
+# check would then pass for a reason that is not true.
 #
-#   * The CIRCUIT'S NAME inside the client sources. `grep` for `CancelOrderV2`,
-#     `DrawWinnersV2`, `ClosePotV2`, `ExecuteV2` and five more across the respective
-#     `src/client/` trees returns nothing at all: a client takes `zkbin: &ZkBinary` as a
-#     parameter and never names the circuit it is proving. The two hits it does produce
-#     (`lottery`'s and `dao_escrow`'s) are coincidences of file naming, not a signal.
+# TWO MECHANICAL MAPPINGS WERE ALSO TRIED AND BOTH FAIL, so that "it needs a read" is a
+# measurement and not a preference:
+#
+#   * The CIRCUIT'S NAME inside the client sources. `grep` for `CancelOrderV2`, `ClosePotV2`
+#     and others across the respective `src/client/` trees returns nothing: a client takes
+#     `zkbin: &ZkBinary` as a parameter and never names the circuit it is proving.
 #   * The NAMESPACE CONSTANT — `DARKBET_EXCHANGE_ZKAS_CANCEL_ORDER_NS_V2` and its siblings.
 #     It appears in `src/lib.rs` where it is declared and in the entrypoint where
 #     `zkas_db_set` registers it, and in no client.
 #
 # So the client side of this mapping is genuinely absent from the sources, which is why the
 # `CLIENT_ALIASES` table exists and why it is hand-written. Whoever closes the rest should read
-# the impl, not look for a signal: there is none to find, and the two above are the two that
-# look like one.
-drain_protection/execute : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
-drain_protection/initialize : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
-drain_protection/lock : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
-drain_protection/propose : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
-drain_protection/transfer : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
-drain_protection/unlock : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
-drain_protection/update_config : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
-drain_protection/vote : not resolved — 8 circuits over 2 client impls in `exit.rs` and `mod.rs`; naming one needs a read, and a count-match guess would pass by construction
+# the impl's `to_vec` against the circuit's instances — the three signals above are the three
+# that look mechanical, and two of them find nothing while the third cannot discriminate here.
 darkbet_exchange/cancel_order : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
 darkbet_exchange/match_orders : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
 darkbet_exchange/place_back : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
@@ -99,6 +104,4 @@ darkbet_exchange/resolve_market : not resolved — no client file is named for t
 dex/set_transparency_level : not resolved — none of the six `*PublicInputs` impls in `src/client/` is named for this circuit
 dex/update_config : not resolved — none of the six `*PublicInputs` impls in `src/client/` is named for this circuit
 game_room/close_pot : not resolved — the seven impls in `src/client/` include `settle_pot` and `create_pot` and neither name is this circuit's
-lottery/draw_winners : not resolved — `house_auth.rs::HouseAuthPublicInputs` is the only unclaimed impl, and picking the leftover by elimination is the count-match guess in another shape
-lottery/expire_lottery : not resolved — `house_auth.rs::HouseAuthPublicInputs` is the only unclaimed impl, and picking the leftover by elimination is the count-match guess in another shape
 stablecoin/update_config : not resolved — none of the six `*PublicInputs` impls in `src/client/` is named for this circuit

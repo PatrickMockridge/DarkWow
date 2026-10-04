@@ -346,6 +346,24 @@ CLIENT_ALIASES = {
     # `native_token`'s `Mint_V2` is the transfer/spend *output* mint, and its revealed vector is
     # built in the transfer module — the file is named for neither the circuit nor the function.
     ("native_token", "mint"): ("transfer/proof.rs", "TransferMintRevealed"),
+    # Verified element for element, not by count. `drain_protection`'s eight circuits all instance
+    # `authority_pub_x, authority_pub_y, authority_nullifier, tx_binding, tx_nonce`, in that order,
+    # and `AuthorityPublicInputs::to_vec` returns exactly those five in exactly that order — the
+    # contract's governance endpoints share one authority proof, which is why eight circuits have
+    # one client vector between them.
+    ("drain_protection", "execute"): ("mod.rs", "AuthorityPublicInputs"),
+    ("drain_protection", "initialize"): ("mod.rs", "AuthorityPublicInputs"),
+    ("drain_protection", "lock"): ("mod.rs", "AuthorityPublicInputs"),
+    ("drain_protection", "propose"): ("mod.rs", "AuthorityPublicInputs"),
+    ("drain_protection", "transfer"): ("mod.rs", "AuthorityPublicInputs"),
+    ("drain_protection", "unlock"): ("mod.rs", "AuthorityPublicInputs"),
+    ("drain_protection", "update_config"): ("mod.rs", "AuthorityPublicInputs"),
+    ("drain_protection", "vote"): ("mod.rs", "AuthorityPublicInputs"),
+    # Same check, same result: both house endpoints instance `house_pub_x, house_pub_y,
+    # house_nullifier, tx_binding, tx_nonce` and `HouseAuthPublicInputs::to_vec` returns exactly
+    # that. The two circuits are the same shape, so one vector serves both.
+    ("lottery", "draw_winners"): ("house_auth.rs", "HouseAuthPublicInputs"),
+    ("lottery", "expire_lottery"): ("house_auth.rs", "HouseAuthPublicInputs"),
 }
 
 # Files that carry more than one `to_vec` and no alias naming which one belongs to the circuit.
