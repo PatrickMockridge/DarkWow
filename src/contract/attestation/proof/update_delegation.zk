@@ -4,18 +4,23 @@ k = 11; field = "pallas";
 constant "UpdateDelegationV2" { EcFixedPointBase NULLIFIER_K, }
 witness "UpdateDelegationV2" {
     Base tx_commitment, Base tx_nonce, Base tx_binding,
+    Base delegator_secret, Base delegator_pub_x, Base delegator_pub_y,
 }
 circuit "UpdateDelegationV2" {
     DOMAIN_TX_BINDING = witness_base(3);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);
 
-    # Issue #3: `delegator_secret` and the delegator's coordinates were witnessed and
-    # constrained by nothing, and there is nothing to bind them **to**: the struct this
-    # instruction decodes, `UpdateDelegationParamsV1`, carries `original_attestation_id`,
-    # `delegation_type` and `max_ratio` and no public key at all, so the record it writes
-    # names no actor the coordinates could be compared against. Removed rather than exposed
-    # — instancing a key no host read reaches would be a public input that means nothing.
-    # Recorded as a finding rather than repaired here: authorizing this arm needs a decision
-    # about which key owns a delegation, which is not this change's to make.
+    # OBL-C196(ii): the issue-#3 repair removed `delegator_secret` and the coordinates because
+    # no host read reached them — `UpdateDelegationParamsV1` then carried no public key. They are
+    # restored WITH the host read: `delegator_pub` is on the wire, `update_delegation_v1` loads
+    # the original attestation and requires its `attestor_pub` (the delegator, who granted the
+    # delegation) to equal the key this derives from. The witnesses are APPENDED rather than
+    # inserted, so the tx-pair witness indices are unchanged.
+    derived_pub = ec_mul_base(delegator_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(derived_pub);
+    derived_pub_y = ec_get_y(derived_pub);
+    constrain_equal_base(derived_pub_x, delegator_pub_x);
+    constrain_equal_base(derived_pub_y, delegator_pub_y);
+    constrain_instance(delegator_pub_x); constrain_instance(delegator_pub_y);
 }

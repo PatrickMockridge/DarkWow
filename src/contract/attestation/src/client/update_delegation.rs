@@ -20,19 +20,25 @@ use rand::SeedableRng;
 
 /// UpdateDelegationV1 circuit public inputs (V2: tx_binding, tx_nonce)
 ///
-/// Issue #3: the circuit's `delegator_secret` and coordinate witnesses were removed rather
-/// than exposed — `UpdateDelegationParamsV1` carries no public key, so there is no host read
-/// for the coordinates to be bound to, and the arm's missing authorization is recorded as a
-/// finding instead.
+/// OBL-C196(ii): the delegator's coordinates are back. `delegator_pub` is now on the wire and
+/// `update_delegation_v1` requires it to be the original attestation's `attestor_pub`, so the
+/// circuit derive-and-exposes the coordinates and the arm publishes them.
 #[derive(Debug, Clone)]
 pub struct UpdateDelegationV1PublicInputs {
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
+    pub delegator_pub_x: pallas::Base,
+    pub delegator_pub_y: pallas::Base,
 }
 
 impl UpdateDelegationV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.tx_binding, self.tx_nonce]
+        vec![
+            self.tx_binding,
+            self.tx_nonce,
+            self.delegator_pub_x,
+            self.delegator_pub_y,
+        ]
     }
 }
 
@@ -66,17 +72,31 @@ impl UpdateDelegationV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> UpdateDelegationV1PublicInputs {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+        let (dx, dy) = self.delegator_public.xy().expect("pk not identity");
+        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
-        UpdateDelegationV1PublicInputs { tx_binding, tx_nonce: self.tx_nonce }
+        UpdateDelegationV1PublicInputs {
+            tx_binding,
+            tx_nonce: self.tx_nonce,
+            delegator_pub_x: dx,
+            delegator_pub_y: dy,
+        }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        // Circuit witness order: tx_commitment, tx_nonce, tx_binding
+        // Circuit witness order: tx_commitment, tx_nonce, tx_binding,
+        // delegator_secret, delegator_pub_x, delegator_pub_y
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+        let (dx, dy) = self.delegator_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(tx_binding)),
+            Witness::Base(Value::known(self.delegator_secret)),
+            Witness::Base(Value::known(dx)),
+            Witness::Base(Value::known(dy)),
         ]
     }
 }

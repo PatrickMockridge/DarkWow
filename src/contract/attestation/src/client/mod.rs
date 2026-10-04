@@ -38,6 +38,7 @@ pub mod delegate_attestation;
 pub mod verify_chain;
 pub mod update_delegation;
 pub mod revoke_attestation;
+pub mod expire_attestation;
 
 use dwow_sdk::{
     crypto::{PublicKey},
@@ -322,9 +323,14 @@ impl RevokeAttestationBuilder {
 }
 
 /// Builder for ExpireAttestationV1 params
+///
+/// OBL-C196(i): `attestor_pubkey` is new. The handler checked no caller, so any party could
+/// expire any attestation; the key is now on the wire and `expire_attestation.zk` proves the
+/// caller can open it.
 #[derive(Default)]
 pub struct ExpireAttestationBuilder {
     attestation_id: Option<AttestationId>,
+    attestor_pubkey: Option<PublicKey>,
 }
 
 impl ExpireAttestationBuilder {
@@ -337,9 +343,15 @@ impl ExpireAttestationBuilder {
         self
     }
 
+    pub fn attestor_pubkey(mut self, pubkey: PublicKey) -> Self {
+        self.attestor_pubkey = Some(pubkey);
+        self
+    }
+
     pub fn build(self) -> Result<ExpireAttestationParamsV1, &'static str> {
         Ok(ExpireAttestationParamsV1 {
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
+            attestor_pub: self.attestor_pubkey.ok_or("attestor_pubkey not set")?,
         })
     }
 }

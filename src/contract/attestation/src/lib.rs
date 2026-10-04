@@ -147,4 +147,7 @@ pub const ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V2: &str = "AttestSlashV2";
 /// Issue #3: `revoke_attestation` had no circuit, and its host check compared the stored
 /// `attestor_pub` against the wire's copy of itself.
 pub const ATTESTATION_CONTRACT_ZKAS_REVOKE_NS_V2: &str = "RevokeAttestationV2";
+/// OBL-C196(i): `expire_attestation` wrote `Expired` with no caller check; its circuit now
+/// derive-and-exposes the attestor, as `revoke_attestation`'s does.
+pub const ATTESTATION_CONTRACT_ZKAS_EXPIRE_NS_V2: &str = "ExpireAttestationV2";
 pub const ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V2: &str = "CommitFeeScheduleV2";

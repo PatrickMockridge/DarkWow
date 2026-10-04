@@ -527,16 +527,23 @@ pub struct RevokeAttestationUpdateV1 {
     pub attestation: Attestation,
 }
 
-/// Parameters for expiring an attestation
+/// Parameters for expiring an attestation.
+///
+/// OBL-C196(i): this carried only the id, and the handler checked no caller, so any party could
+/// expire any attestation. `attestor_pub` is now on the wire and `expire_attestation.zk`
+/// derive-and-exposes it, so the host's comparison of the published coordinates against the
+/// stored key is what authorizes the call — the same shape as [`RevokeAttestationParamsV1`].
 #[derive(Debug, Clone,)]
 pub struct ExpireAttestationParamsV1 {
     /// Attestation ID to expire
     pub attestation_id: AttestationId,
+    /// Attestor's public key — the only party permitted to expire
+    pub attestor_pub: PublicKey,
 }
 
 impl dwow_serial::Encodable for ExpireAttestationParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ExpireAttestationParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl ExpireAttestationParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.attestation_id.to_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("ExpireAttestationParamsV1: expected 32 bytes, got {}", data.len()))); } Ok(ExpireAttestationParamsV1 { attestation_id: AttestationId::from_bytes(&read_field::<32>(data, 0)?).ok_or_else(|| ContractError::IoError("ExpireAttestationParamsV1: invalid attestation_id".into()))? }) } }
+impl ExpireAttestationParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.attestation_id.to_bytes()); b.extend_from_slice(&self.attestor_pub.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("ExpireAttestationParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(ExpireAttestationParamsV1 { attestation_id: AttestationId::from_bytes(&read_field::<32>(data, 0)?).ok_or_else(|| ContractError::IoError("ExpireAttestationParamsV1: invalid attestation_id".into()))?, attestor_pub: PublicKey::from_bytes(read_field::<32>(data, 32)?).map_err(|e| ContractError::IoError(format!("ExpireAttestationParamsV1: invalid attestor_pub: {}", e)))? }) } }
 
 /// State update for ExpireAttestationV1
 #[derive(Debug, Clone)]
@@ -918,6 +925,12 @@ pub struct VerifyChainUpdateV1 {
 }
 
 /// Parameters for updating a delegation
+///
+/// OBL-C196(ii): `delegator_pub` is new. The arm wrote the delegation params under
+/// `original_attestation_id` with no caller check and no key to check against; the delegator —
+/// the original attestation's attestor, who granted the delegation — is now on the wire, and
+/// `update_delegation.zk` derive-and-exposes it so the handler's comparison against the
+/// attestation's `attestor_pub` is a possession test.
 #[derive(Debug, Clone)]
 pub struct UpdateDelegationParamsV1 {
     /// ZK proof for delegation update
@@ -928,6 +941,9 @@ pub struct UpdateDelegationParamsV1 {
     pub delegation_type: u8,
     /// Maximum allowed ratio (e.g., 10000 = 100%) (for Restricted type)
     pub max_ratio: u64,
+    /// Delegator's public key — the original attestation's attestor, the only party permitted
+    /// to update its delegation
+    pub delegator_pub: PublicKey,
 }
 
 impl dwow_serial::Encodable for UpdateDelegationParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
@@ -935,12 +951,13 @@ impl dwow_serial::Decodable for UpdateDelegationParamsV1 { fn decode<D: std::io:
 impl UpdateDelegationParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let pl = SerializedLen::try_from_len(self.proof.len())?;
-        let mut b = Vec::with_capacity(45 + self.proof.len());
+        let mut b = Vec::with_capacity(77 + self.proof.len());
         b.extend_from_slice(&pl.to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.original_attestation_id.to_repr());
         b.push(self.delegation_type);
         b.extend_from_slice(&self.max_ratio.to_le_bytes());
+        b.extend_from_slice(&self.delegator_pub.to_bytes());
         Ok(b)
     }
 
@@ -952,10 +969,10 @@ impl UpdateDelegationParamsV1 {
         }
         let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
         let fixed_start = 4 + proof_len;
-        if data.len() < fixed_start + 41 {
+        if data.len() < fixed_start + 73 {
             return Err(ContractError::IoError(format!(
                 "UpdateDelegationParamsV1: expected at least {} bytes, got {}",
-                fixed_start + 41,
+                fixed_start + 73,
                 data.len()
             )));
         }
@@ -968,11 +985,14 @@ impl UpdateDelegationParamsV1 {
                 ))?;
         let delegation_type = read_byte(d, 32)?;
         let max_ratio = u64::from_le_bytes(read_field::<8>(d, 33)?);
+        let delegator_pub = PublicKey::from_bytes(read_field::<32>(d, 41)?)
+            .map_err(|e| ContractError::IoError(format!("UpdateDelegationParamsV1: invalid delegator_pub: {}", e)))?;
         Ok(UpdateDelegationParamsV1 {
             proof,
             original_attestation_id,
             delegation_type,
             max_ratio,
+            delegator_pub,
         })
     }
 }

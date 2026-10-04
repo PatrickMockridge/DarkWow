@@ -77,6 +77,7 @@ use crate::{
     ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_REVOKE_NS_V2,
+    ATTESTATION_CONTRACT_ZKAS_EXPIRE_NS_V2,
 };
 
 // Issue #3: `model::predicate_holds` is the contract's single definition of what a
@@ -123,6 +124,9 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // was a public value compared against itself.
     let revoke_attestation_v2_bincode = include_bytes!("../proof/revoke_attestation.zk.bin");
     wasm::db::zkas_db_set(&revoke_attestation_v2_bincode[..])?;
+    // OBL-C196(i): `expire_attestation` gained a circuit — it wrote `Expired` with no caller check.
+    let expire_attestation_v2_bincode = include_bytes!("../proof/expire_attestation.zk.bin");
+    wasm::db::zkas_db_set(&expire_attestation_v2_bincode[..])?;
 
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
@@ -335,21 +339,26 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::UpdateDelegationV1 => {
-            let _params = match UpdateDelegationParamsV1::decode(payload) {
+            // OBL-C196(ii): the arm authenticated no actor because the params carried no key.
+            // `delegator_pub` is now on the wire and the circuit derive-and-exposes it, so this
+            // arm publishes the coordinates of the key the caller claims; the handler compares
+            // them (via the proof) against the original attestation's `attestor_pub`.
+            let params = match UpdateDelegationParamsV1::decode(payload) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to decode UpdateDelegationParamsV1: {:?}", e);
                     let _ = wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
-            // Issue #3: this instruction authenticates no actor — `UpdateDelegationParamsV1`
-            // carries no public key, so there is none for the circuit to derive-and-expose or
-            // for this arm to publish. The circuit's unused witnesses are removed and the
-            // missing authorization is recorded as a finding rather than guessed at here.
+            let Some((dx, dy)) = params.delegator_pub.xy() else {
+                return Err(ContractError::IoError(
+                    "params.delegator_pub is the identity point".to_string(),
+                ))
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V2.to_string(),
-                // Circuit constrain_instance order: tx_binding, tx_nonce
-                vec![txb, Base::zero()],
+                // Circuit constrain_instance order: tx_binding, tx_nonce, delegator_pub_x, delegator_pub_y
+                vec![txb, Base::zero(), dx, dy],
             ));
         }
         AttestationFunction::AttestSlashV1 => {
@@ -421,7 +430,30 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 vec![txb, Base::zero(), ax, ay],
             ));
         }
-        // ExpireAttestationV1 and ValidateClaimV1 have no ZK circuits; return empty metadata.
+        AttestationFunction::ExpireAttestationV1 => {
+            // OBL-C196(i): `expire_attestation_v1` checked no caller, so any party could flip any
+            // attestation to `Expired`. `expire_attestation.zk` derive-and-exposes the attestor, so
+            // the arm publishes the coordinates of the key the caller claims and the proof verifies
+            // only for a caller who can open it — `revoke_attestation`'s form.
+            let params = match ExpireAttestationParamsV1::decode(payload) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[attestation::get_metadata] Error: Failed to decode ExpireAttestationParamsV1: {:?}", e);
+                    let _ = wasm::util::set_return_data(&vec![]); return Ok(());
+                }
+            };
+            let Some((ax, ay)) = params.attestor_pub.xy() else {
+                return Err(ContractError::IoError(
+                    "params.attestor_pub is the identity point".to_string(),
+                ))
+            };
+            zk_public_inputs.push((
+                ATTESTATION_CONTRACT_ZKAS_EXPIRE_NS_V2.to_string(),
+                // Circuit constrain_instance order: tx_binding, tx_nonce, attestor_pub_x, attestor_pub_y
+                vec![txb, Base::zero(), ax, ay],
+            ));
+        }
+        // ValidateClaimV1 has no ZK circuit; return empty metadata.
         _ => {}
     }
 
@@ -612,6 +644,15 @@ fn expire_attestation_v1(cid: ContractId, params: ExpireAttestationParamsV1) -> 
                 return Err(ContractError::InvalidFunction.into())
             }
         };
+
+    // Verify caller is attestor. OBL-C196(i): this arm checked no caller at all, so any party
+    // could flip any attestation to Expired once its declared expiry passed. The coordinates of
+    // `params.attestor_pub` are published as public inputs and `expire_attestation.zk` proves the
+    // caller can open that key, so this comparison is a possession test, not a public-vs-public one.
+    if attestation.attestor_pub != params.attestor_pub {
+        msg!("[attestation::expire_attestation_v1] ERROR: Not attestor");
+        return Err(ContractError::InvalidFunction.into())
+    }
 
     // Verify attestation is active
     if attestation.state != AttestationState::Active {
@@ -976,8 +1017,13 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Result<V
     // `GreaterOrEqual`/`LessOrEqual` carried a note calling the comparison a
     // "best-effort workaround". `model::predicate_holds` is now the single definition and
     // `verify_claim_v1` calls the same function, so the two arms cannot drift.
-    let valid =
-        model::predicate_holds(claim.predicate, &params.evidence, &attestation.claim_data);
+    // A `validate` answer means "this is a currently-valid, unconsumed claim": the predicate holds
+    // AND the claim is live. OBL-C196(iii): before this, the arm answered the predicate for a claim
+    // in ANY state, so a consumer reading `valid: true` for a `Consumed` claim was reading a verdict
+    // about the wrong question. `ClaimState::Verified` is the only live state — `Pending` has no
+    // verdict yet, `Rejected` failed, `Consumed` is spent.
+    let valid = claim.state == ClaimState::Verified
+        && model::predicate_holds(claim.predicate, &params.evidence, &attestation.claim_data);
 
     msg!("[attestation::validate_claim_v1] Validation result: {:?}", valid);
     Ok(ValidateClaimUpdateV1 { claim_id: params.claim_id, valid }.encode())
@@ -1093,10 +1139,22 @@ fn update_delegation_v1(cid: ContractId, params: UpdateDelegationParamsV1) -> Re
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Verify the original attestation exists
+    // Load the original attestation. OBL-C196(ii): the arm used to check only that it *exists*,
+    // and wrote the delegation under its id with no caller check. The delegator is the attestor
+    // who granted the delegation, so require the caller's key to be that attestor. The
+    // coordinates of `params.delegator_pub` are public inputs and `update_delegation.zk` proves
+    // the caller can open that key, so this is a possession test, not public-vs-public.
     let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-    if !wasm::db::db_contains_key(attestations_db, &params.original_attestation_id.to_repr())? {
-        msg!("[attestation::update_delegation_v1] Error: Original attestation not found");
+    let attestation: Attestation =
+        match wasm::db::db_get(attestations_db, &params.original_attestation_id.to_repr())? {
+            Some(data) => Attestation::decode(&data)?,
+            None => {
+                msg!("[attestation::update_delegation_v1] Error: Original attestation not found");
+                return Err(ContractError::InvalidFunction.into())
+            }
+        };
+    if attestation.attestor_pub != params.delegator_pub {
+        msg!("[attestation::update_delegation_v1] Error: Not the delegator");
         return Err(ContractError::InvalidFunction.into())
     }
 

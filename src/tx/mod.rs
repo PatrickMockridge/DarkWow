@@ -34,6 +34,12 @@ use dwow_sdk::{
 use dwow_serial::{Encodable, SerialDecodable, SerialEncodable};
 use tracing::{debug, error};
 
+// `commitment_of_calls` calls `.to_repr()` on the field element `tx_commitment` returns; that
+// method is `ff::PrimeField`'s. The import was missing from the commit that added the call
+// (`cc0c87fcc7`), which verified only `dwow-sdk`/`dwow_core` — the route that compiles this module
+// under a narrower feature set — and so did not build `dwowd`.
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
+
 use dwow_sdk::crypto::Nullifier;
 
 use crate::{

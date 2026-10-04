@@ -23,6 +23,8 @@ proof_circuit = "RevokeAttestationV2"
 [[functions]]
 name = "expire_attestation"
 code = 2
+requires_proof = true
+proof_circuit = "ExpireAttestationV2"
 
 [[functions]]
 name = "create_claim"
@@ -211,4 +213,8 @@ namespace = "attestation"
 
 [[circuits]]
 name = "RevokeAttestationV2"
+namespace = "attestation"
+
+[[circuits]]
+name = "ExpireAttestationV2"
 namespace = "attestation"

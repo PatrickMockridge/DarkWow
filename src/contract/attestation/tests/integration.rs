@@ -251,6 +251,7 @@ fn test_revoke_attestation_update_encoding() {
 fn test_expire_attestation_params_encoding() {
     let params = ExpireAttestationParamsV1 {
         attestation_id: AttestationId(pallas::Base::from(1)),
+        attestor_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
     };
 
     let encoded = serialize(&params);

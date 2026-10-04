@@ -320,6 +320,8 @@ mod attestation_issue3 {
     const REVOKE: &[u8] = include_bytes!("../../attestation/proof/revoke_attestation.zk.bin");
     const ATTEST_SLASH: &[u8] = include_bytes!("../../attestation/proof/attest_slash.zk.bin");
     const COMMIT_FEE: &[u8] = include_bytes!("../../attestation/proof/commit_fee_schedule.zk.bin");
+    const EXPIRE: &[u8] = include_bytes!("../../attestation/proof/expire_attestation.zk.bin");
+    const UPDATE_DELEGATION: &[u8] = include_bytes!("../../attestation/proof/update_delegation.zk.bin");
 
     fn zkbin(bytes: &'static [u8]) -> &'static ZkBinary {
         // Decoded per call rather than cached: these are five small circuits and the point is
@@ -437,6 +439,91 @@ mod attestation_issue3 {
             ZkVerifyResult::Ok => panic!(
                 "revoke_attestation's proof verifies under another attestor's coordinates — the \
                  public-against-public check this circuit replaced."
+            ),
+            _ => {}
+        }
+    }
+
+    /// OBL-C196(i): `expire_attestation` gained a circuit. Its arm checked no caller, so any party
+    /// could flip any attestation to `Expired`; the circuit derive-and-exposes the attestor and the
+    /// handler compares the published coordinates against the stored key. The two-sided control is
+    /// the same as revoke's: bound to the actor's own key, and NOT under another's.
+    #[test]
+    fn expire_attestation_proof_verifies_and_the_actor_is_bound() {
+        use dwow_attestation_contract::client::expire_attestation::{
+            expire_attestation_v1_proof, ExpireAttestationV1CallData,
+        };
+
+        let zkbin = zkbin(EXPIRE);
+        let pk = proving_key(zkbin);
+
+        let secret = pallas::Base::from(10u64);
+        let public = PublicKey::from_secret(SecretKey::from_base(secret));
+        let (ax, ay) = public.xy().expect("pk not identity");
+
+        let call_data = ExpireAttestationV1CallData::new(secret, public);
+        let (proof, public_inputs) =
+            expire_attestation_v1_proof(zkbin, &pk, &call_data).expect("the client must build a proof");
+        let inputs = public_inputs.to_vec();
+        assert_eq!(inputs.len(), 4, "expire_attestation.zk instances the tx pair and the two attestor coordinates");
+        assert_eq!(inputs[2], ax);
+        assert_eq!(inputs[3], ay);
+
+        match verify_zkp(&proof, EXPIRE, &inputs) {
+            ZkVerifyResult::Ok => {}
+            other => panic!("expire_attestation's proof does not verify against its own circuit ({other:?})"),
+        }
+
+        let victim = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(11u64)));
+        let (vx, vy) = victim.xy().expect("pk not identity");
+        match verify_zkp(&proof, EXPIRE, &[inputs[0], inputs[1], vx, vy]) {
+            ZkVerifyResult::Ok => panic!(
+                "expire_attestation's proof verifies under another attestor's coordinates — any \
+                 party could expire any attestation, which is the hole this circuit closed."
+            ),
+            _ => {}
+        }
+    }
+
+    /// OBL-C196(ii): `update_delegation`'s witnesses were restored with the host read. The
+    /// delegator is the original attestation's attestor, so the same two-sided control applies.
+    #[test]
+    fn update_delegation_proof_verifies_and_the_actor_is_bound() {
+        use dwow_attestation_contract::client::update_delegation::{
+            update_delegation_v1_proof, UpdateDelegationV1CallData,
+        };
+
+        let zkbin = zkbin(UPDATE_DELEGATION);
+        let pk = proving_key(zkbin);
+
+        let secret = pallas::Base::from(10u64);
+        let public = PublicKey::from_secret(SecretKey::from_base(secret));
+        let (dx, dy) = public.xy().expect("pk not identity");
+
+        let call_data = UpdateDelegationV1CallData {
+            delegator_secret: secret,
+            delegator_public: public,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
+        let (proof, public_inputs) =
+            update_delegation_v1_proof(zkbin, &pk, &call_data).expect("the client must build a proof");
+        let inputs = public_inputs.to_vec();
+        assert_eq!(inputs.len(), 4, "update_delegation.zk instances tx_binding, tx_nonce and the two delegator coordinates");
+        assert_eq!(inputs[2], dx);
+        assert_eq!(inputs[3], dy);
+
+        match verify_zkp(&proof, UPDATE_DELEGATION, &inputs) {
+            ZkVerifyResult::Ok => {}
+            other => panic!("update_delegation's proof does not verify against its own circuit ({other:?})"),
+        }
+
+        let victim = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(11u64)));
+        let (vx, vy) = victim.xy().expect("pk not identity");
+        match verify_zkp(&proof, UPDATE_DELEGATION, &[inputs[0], inputs[1], vx, vy]) {
+            ZkVerifyResult::Ok => panic!(
+                "update_delegation's proof verifies under another delegator's coordinates — the arm \
+                 authorized no one before this."
             ),
             _ => {}
         }

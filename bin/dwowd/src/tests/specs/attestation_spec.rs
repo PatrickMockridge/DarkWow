@@ -181,15 +181,21 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
-                generate: Box::new(move || {
-                    let r = h.update_delegation(
-                        attestation_id, pallas::Base::from(0u64),
-                        pallas::Base::from(0u64), pallas::Base::from(5u64),
-                        pallas::Base::from(1000u64), pallas::Base::from(500u64),
-                        pallas::Base::from(10000u64),
-                        10000, 0)
-                        .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                generate: Box::new({
+                    let pk = attestor_pub;
+                    let sk = attestor_secret;
+                    move || {
+                        // OBL-C196(ii): the delegator is the original attestation's attestor, so
+                        // the fixture presents that secret.
+                        let r = h.update_delegation(
+                            attestation_id, pallas::Base::from(0u64),
+                            pallas::Base::from(0u64), pallas::Base::from(5u64),
+                            pallas::Base::from(1000u64), pallas::Base::from(500u64),
+                            pallas::Base::from(10000u64),
+                            10000, 0, sk, pk)
+                            .map_err(modules::error_bridge::bridge)?;
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                    }
                 }),
             },
             EndpointSpec {
@@ -255,14 +261,19 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 }),
             },
             EndpointSpec {
-                name: "ExpireAttestationV1", is_zk: false,
+                name: "ExpireAttestationV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = expire_attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
-                generate: Box::new(move || {
-                    let r = h.expire_attestation(expire_attestation_id)
-                        .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+                generate: Box::new({
+                    let pk = attestor_pub;
+                    let sk = attestor_secret;
+                    move || {
+                        // OBL-C196(i): expiry now requires proof of the attestor's key.
+                        let r = h.expire_attestation(sk, pk, expire_attestation_id)
+                            .map_err(modules::error_bridge::bridge)?;
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                    }
                 }),
             },
             EndpointSpec {
