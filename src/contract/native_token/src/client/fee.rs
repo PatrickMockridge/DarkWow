@@ -130,12 +130,25 @@ impl FeeV3CallBuilder {
     /// circuit still constrains input = output + fee internally via the hidden
     /// commitment Pedersen commitments, binding the input/output values to the now-
     /// public fee. No threshold proof, no encrypted-fee channel.
+    /// Build the fee call and prove it in one step, with the commitment the input carries.
+    ///
+    /// Kept for callers that already know theirs. A caller that does not — because the
+    /// commitment is a derivation over the finished call set — uses [`Self::prepare`] and then
+    /// [`FeeCallPlan::prove`] (`OBL-C198`).
     pub fn build(mut self) -> Result<FeeV3Result, ContractError> {
+        let commitment = self.input.tx_commitment;
+        self.prepare()?.prove(commitment)
+    }
+
+    /// Assemble the fee call's data and stop — **before** the Fee_V3 proof exists.
+    ///
+    /// `OBL-C198`: the proof binds to a commitment derived over the call data, so the call is
+    /// built here and proved in [`FeeCallPlan::prove`]. Nothing in this half depends on the
+    /// commitment; the fee amount is plaintext throughout and is not affected either way.
+    pub fn prepare(mut self) -> Result<FeeCallPlan, ContractError> {
         if self.input.value <= self.fee_amount.get() {
             return Err(ContractError::Custom(0)); // ↓bad-fee-amount — spec §11
         }
-
-        let mut proofs: Vec<Proof> = vec![];
 
         // Generate blinds. Pedersen mass balance requires:
         //   output_blind + fee_blind == input_blind
@@ -187,29 +200,18 @@ impl FeeV3CallBuilder {
             self.input.tx_nonce,
         );
 
-        // Build Fee_V3 proof using pre-built proving key
-        let (fee_proof, _revealed) = create_fee_proof(
-            &self.fee_zkbin,
-            &self.fee_pk,
-            &self.input,
-            input_value_blind.clone(),
-            &self.output,
-            output_value_blind.clone(),
-            token_blind.clone(),
-            self.fee_amount,
-            fee_value_blind.clone(),
-            self.input.tx_commitment,
-            output_commitment_blind.clone(),
-        )?;
-        proofs.push(fee_proof);
+        // The Fee_V3 proof is made in `prove`, once the caller has derived the commitment over
+        // the transaction's whole call set — not here, and not over one call (`OBL-C198`).
 
         // Build Input/Output params
+        // Cloned, not moved: the plan needs all three again for the proof, which is now made
+        // later and elsewhere.
         let (params_input, params_output) = build_fee_v3_params(
             &self.input,
             &self.output,
-            input_value_blind,
-            output_value_blind,
-            output_commitment_blind,
+            input_value_blind.clone(),
+            output_value_blind.clone(),
+            output_commitment_blind.clone(),
             token_blind.clone(),
             output_value,
         )?;
@@ -237,7 +239,74 @@ impl FeeV3CallBuilder {
         call_data.push(0x08u8);
         call_data.extend_from_slice(&encoded_params);
 
-        Ok(FeeV3Result { call_data, params, proofs })
+        Ok(FeeCallPlan {
+            fee_zkbin: self.fee_zkbin,
+            fee_pk: self.fee_pk,
+            input: self.input,
+            output: self.output,
+            input_value_blind,
+            output_value_blind,
+            output_commitment_blind,
+            token_blind,
+            fee_amount: self.fee_amount,
+            fee_value_blind,
+            params,
+            call_data,
+        })
+    }
+}
+
+/// A fee call whose data is assembled and whose Fee_V3 proof is not yet made.
+///
+/// The second half of the split `OBL-C198` forced: the transaction commitment is a derivation
+/// over the call data and covers the **whole** transaction's call set, so the call — and the
+/// whole set — must exist before its proof. A caller therefore builds every call, derives the
+/// commitment once over the ordered set, and only then calls [`FeeCallPlan::prove`].
+pub struct FeeCallPlan {
+    fee_zkbin: ZkBinary,
+    fee_pk: ProvingKey,
+    input: FeeV3CallInput,
+    output: FeeV3CallOutput,
+    input_value_blind: ScalarBlind,
+    output_value_blind: ScalarBlind,
+    output_commitment_blind: BaseBlind,
+    token_blind: BaseBlind,
+    fee_amount: FeeAmount,
+    fee_value_blind: ScalarBlind,
+    params: FeeParamsV3,
+    call_data: Vec<u8>,
+}
+
+impl FeeCallPlan {
+    /// The call's data, ready to put in a transaction.
+    pub fn call_data(&self) -> &[u8] {
+        &self.call_data
+    }
+
+    /// The contract's call parameters.
+    pub fn params(&self) -> &FeeParamsV3 {
+        &self.params
+    }
+
+    /// Prove the fee call, binding to `tx_commitment`.
+    ///
+    /// No nonce parameter: the Fee_V3 circuit's nonce witness comes from the input the caller
+    /// built, and only the *commitment* has to arrive here.
+    pub fn prove(self, tx_commitment: pallas::Base) -> Result<FeeV3Result, ContractError> {
+        let (fee_proof, _revealed) = create_fee_proof(
+            &self.fee_zkbin,
+            &self.fee_pk,
+            &self.input,
+            self.input_value_blind,
+            &self.output,
+            self.output_value_blind,
+            self.token_blind,
+            self.fee_amount,
+            self.fee_value_blind,
+            tx_commitment,
+            self.output_commitment_blind,
+        )?;
+        Ok(FeeV3Result { call_data: self.call_data, params: self.params, proofs: vec![fee_proof] })
     }
 }
 
