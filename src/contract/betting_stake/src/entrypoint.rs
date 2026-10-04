@@ -85,6 +85,23 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
+/// The transaction binding this call publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be
+/// computed from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can
+/// satisfy. What stood here was the constant `poseidon_hash([3, 0, 0])`, which bound every proof
+/// to nothing at all.
+///
+/// The nonce is zero because these calls carry no nonce field, so every proof in one transaction
+/// publishes the same binding — a *linking* of that transaction's own proofs, which
+/// `tx-commitment.md` §The Nullifier Scheme exists to avoid. It is still strictly better than
+/// the constant, which was identical across *every* transaction, and a per-proof nonce on the
+/// wire is owed.
+fn tx_binding_of(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([pallas::Base::from(3), wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 /// Get metadata for ZK proof verification
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
@@ -92,8 +109,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let self_ = &calls[call_idx].data;
     let func = BettingStakeFunction::try_from(self_.data[0]).map_err(|_| BettingStakeError::InvalidFunction)?;
 
-    // tx fields are zero in heavyweight; the V2 clients commit to poseidon_hash([3, 0, 0]).
-    let tx_binding = poseidon_hash([pallas::Base::from(3), pallas::Base::zero(), pallas::Base::zero()]);
+    let tx_binding = tx_binding_of(pallas::Base::zero())?;
 
     let metadata = match func {
         BettingStakeFunction::InitializeV1 => {
@@ -102,7 +118,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_INIT_NS_V2.to_string(),
-                vec![tx_binding, pallas::Base::zero(), table_id],
+                // `OBL-C198`: the pair is the last two instances, matching the reordered circuits.
+                vec![table_id, tx_binding, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -144,7 +161,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_UPDATE_RISK_NS_V2.to_string(),
-                vec![tx_binding, pallas::Base::zero(), table_id],
+                // `OBL-C198`: the pair is the last two instances, matching the reordered circuits.
+                vec![table_id, tx_binding, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;

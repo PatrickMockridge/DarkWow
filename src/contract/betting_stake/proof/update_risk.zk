@@ -44,7 +44,10 @@ circuit "UpdateRiskV2" {
         nonce,
     );
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    # `OBL-C198`: the tx pair is the last two instances — the node reads that position. See
+    # `init.zk` in this directory for the convention and why there is no index map.
+    constrain_instance(derived_table_id);
+
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(derived_table_id);
 }

@@ -72,7 +72,10 @@ pub struct InitV1PublicInputs {
 
 impl InitV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.tx_binding, self.tx_nonce, self.table_id]
+        // `OBL-C198`: the pair is the last two instances — the circuit was reordered and the
+        // metadata arm follows it, so the client must too. The three sides are one invariant;
+        // this one was the third and the end-to-end spec caught it.
+        vec![self.table_id, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -419,7 +422,10 @@ pub struct UpdateRiskV1PublicInputs {
 
 impl UpdateRiskV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.tx_binding, self.tx_nonce, self.table_id]
+        // `OBL-C198`: the pair is the last two instances — the circuit was reordered and the
+        // metadata arm follows it, so the client must too. The three sides are one invariant;
+        // this one was the third and the end-to-end spec caught it.
+        vec![self.table_id, self.tx_binding, self.tx_nonce]
     }
 }
 

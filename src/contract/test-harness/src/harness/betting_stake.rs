@@ -33,7 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Field, Group},
-        PublicKey, SecretKey,
+        ContractId, PublicKey, SecretKey,
     },
     pasta::pallas,
 };
@@ -70,11 +70,32 @@ pub struct BettingStakeHarness {
     update_risk_zkbin: ZkBinary,
     /// UpdateRisk_V1 ProvingKey
     update_risk_pk: ProvingKey,
+    /// The contract's deployed id.
+    ///
+    /// `OBL-C198`: the transaction commitment is a derivation over the call set, and a call
+    /// carries the contract it addresses — so a prover must know this id to derive the
+    /// commitment its proof binds to. The spec supplies it, because the id is assigned at
+    /// deployment and this harness is constructed before that.
+    contract_id: ContractId,
+}
+
+/// The commitment a single-call endpoint's proof must bind to (`OBL-C198`).
+///
+/// One helper because every builder in this harness needs the same value, and a second
+/// derivation would be a second value waiting to drift (`safety.md` RC5). It is derived over the
+/// call *including* the contract id — the id is part of the call, and the node recomputes over
+/// the same bytes — which is why the harness is given the deployed id rather than the spec's
+/// placeholder.
+fn commitment_of(contract_id: &ContractId, call_data: &[u8]) -> pallas::Base {
+    let call = dwow_sdk::tx::ContractCall { contract_id: *contract_id, data: call_data.to_vec() };
+    dwow_sdk::crypto::util::tx_commitment([&call])
 }
 
 impl BettingStakeHarness {
-    /// Spawn a new BettingStake harness with pre-loaded circuits
-    pub fn spawn() -> Self {
+    /// Spawn a new BettingStake harness with pre-loaded circuits.
+    ///
+    /// `contract_id` is the id the spec's call will carry — see the field's note.
+    pub fn spawn(contract_id: ContractId) -> Self {
         let init_bin = include_bytes!("../../../betting_stake/proof/init.zk.bin");
         let stake_bin = include_bytes!("../../../betting_stake/proof/stake.zk.bin");
         let unstake_bin = include_bytes!("../../../betting_stake/proof/unstake.zk.bin");
@@ -115,6 +136,7 @@ impl BettingStakeHarness {
             claim_pk,
             update_risk_zkbin,
             update_risk_pk,
+            contract_id,
         }
     }
 
@@ -127,10 +149,9 @@ impl BettingStakeHarness {
     ) -> Result<InitializeResult> {
         let nonce = 0u64;
 
-        // Generate ZK proof for Init circuit
-        let input = InitV1CallData::new(betting_contract_id, house_edge_bp, risk_profile, nonce);
-        let (proof, _public_inputs) = init_v1_proof(&self.init_zkbin, &self.init_pk, &input)?;
-
+        // `OBL-C198`: the call is built **before** the proof, because the proof binds to a
+        // commitment derived over the call's own bytes. The order is solvable only because the
+        // commitment excludes proofs — which is also why the params carry no proof.
         let params = InitializeParamsV1 {
             betting_contract_id,
             house_edge_bp,
@@ -139,9 +160,12 @@ impl BettingStakeHarness {
             signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
             instance_seed: [0u8; 32],
         };
-
         let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode());
+
+        let mut input = InitV1CallData::new(betting_contract_id, house_edge_bp, risk_profile, nonce);
+        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
+        let (proof, _public_inputs) = init_v1_proof(&self.init_zkbin, &self.init_pk, &input)?;
 
         Ok(InitializeResult { call_data, proof })
     }
@@ -160,7 +184,8 @@ impl BettingStakeHarness {
         let asset_id = pallas::Base::zero();
         let value_blind = pallas::Scalar::from(7u64);
 
-        // Generate ZK proof for Stake circuit
+        // The call data is built before the proof so the commitment can be derived over it
+        // (`OBL-C198`); the params read `input.staker_nullifier`, so `input` precedes both.
         let input = StakeV1CallData::new(
             table_id,
             staker_pub,
@@ -170,7 +195,6 @@ impl BettingStakeHarness {
             nonce,
             value_blind,
         );
-        let (proof, _public_inputs) = stake_v1_proof(&self.stake_zkbin, &self.stake_pk, &input)?;
 
         let value_commit = dwow_sdk::crypto::pedersen_commitment_u64(amount, dwow_sdk::crypto::Blind(value_blind));
         let params = StakeParamsV1 {
@@ -187,6 +211,10 @@ impl BettingStakeHarness {
 
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
+
+        let mut input = input;
+        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
+        let (proof, _public_inputs) = stake_v1_proof(&self.stake_zkbin, &self.stake_pk, &input)?;
 
         Ok(StakeResult { call_data, proof })
     }
@@ -214,8 +242,6 @@ impl BettingStakeHarness {
             stake.nonce,
             value_blind,
         );
-        let (proof, _public_inputs) = unstake_v1_proof(&self.unstake_zkbin, &self.unstake_pk, &input)?;
-
         let value_commit = dwow_sdk::crypto::pedersen_commitment_u64(stake.original_amount, dwow_sdk::crypto::Blind(value_blind));
         let params = UnstakeParamsV1 {
             stake_id,
@@ -231,6 +257,11 @@ impl BettingStakeHarness {
 
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
+
+        // Call first, commitment second, proof third (`OBL-C198`).
+        let mut input = input;
+        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
+        let (proof, _public_inputs) = unstake_v1_proof(&self.unstake_zkbin, &self.unstake_pk, &input)?;
 
         Ok(UnstakeResult { call_data, proof })
     }
@@ -255,8 +286,6 @@ impl BettingStakeHarness {
             stake.nonce,
             value_blind,
         );
-        let (proof, _public_inputs) = claim_v1_proof(&self.claim_zkbin, &self.claim_pk, &input)?;
-
         let value_commit = dwow_sdk::crypto::pedersen_commitment_u64(stake.current_amount, dwow_sdk::crypto::Blind(value_blind));
         let params = ClaimEarningsParamsV1 {
             stake_id,
@@ -270,6 +299,11 @@ impl BettingStakeHarness {
 
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
+
+        // Call first, commitment second, proof third (`OBL-C198`).
+        let mut input = input;
+        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
+        let (proof, _public_inputs) = claim_v1_proof(&self.claim_zkbin, &self.claim_pk, &input)?;
 
         Ok(ClaimEarningsResult { call_data, proof })
     }
@@ -288,7 +322,6 @@ impl BettingStakeHarness {
     ) -> Result<UpdateRiskResult> {
         let nonce = 0u64;
 
-        // Generate ZK proof for UpdateRisk circuit
         let input = UpdateRiskV1CallData::new(
             betting_contract_id,
             total_stake,
@@ -297,7 +330,6 @@ impl BettingStakeHarness {
             risk_profile,
             nonce,
         );
-        let (proof, _public_inputs) = update_risk_v1_proof(&self.update_risk_zkbin, &self.update_risk_pk, &input)?;
 
         let params = UpdateRiskParamsV1 {
             table_id,
@@ -309,6 +341,11 @@ impl BettingStakeHarness {
 
         let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
+
+        // Call first, commitment second, proof third (`OBL-C198`).
+        let mut input = input;
+        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
+        let (proof, _public_inputs) = update_risk_v1_proof(&self.update_risk_zkbin, &self.update_risk_pk, &input)?;
 
         Ok(UpdateRiskResult { call_data, proof })
     }

@@ -23,7 +23,12 @@ use crate::tests::uniform_runner::{
 };
 
 pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(BettingStakeHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its call will carry, because the transaction
+    // commitment is derived over the call *including* the contract id. `deploy_with_ix` assigns
+    // `derive_contract_id_from_name(name)` — a pure function of the name — so the spec computes
+    // exactly the id the pipeline will use rather than a placeholder.
+    let betting_stake_cid = crate::tests::blockchain::derive_contract_id_from_name("betting_stake");
+    let harness = Box::leak(Box::new(BettingStakeHarness::spawn(betting_stake_cid)));
     let h: &BettingStakeHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/betting_stake/dwow_betting_stake_contract.wasm");
 
@@ -59,7 +64,12 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
     ContractTestSpec {
         name: "betting_stake",
         is_genesis: false,
-        contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
+        // `OBL-C198`: the harness needs the id its call will carry, because the transaction
+        // commitment is derived over the call *including* the contract id. The placeholder this
+        // replaced (`ContractId::from_bytes([0u8;32])`) was stale: `deploy_with_ix` assigns
+        // `derive_contract_id_from_name(name)`, a pure function of the name, so the spec can
+        // compute exactly the id the pipeline will use.
+        contract_id: betting_stake_cid,
         harness: h,
         wasm_bytes: Some(wasm),
         has_initialize: false,
