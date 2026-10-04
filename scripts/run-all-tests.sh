@@ -118,6 +118,20 @@ run_gate "control: manifest↔entrypoint agreement can fail" \
 run_gate "control: clippy unwrap/expect census can fail" \
     bash "$REPO_ROOT/contrib/clippy_unwrap_audit.sh" --self-test
 
+# The two circuit-vs-client gates, whose controls were missing while their verdicts were not.
+# `check-circuit-tx-pair-last.sh` has had a `--self-test` since it was written and nothing called
+# it; `check-circuit-metadata-alignment.sh` had none at all, and the cost of that is on record —
+# thirteen circuits sat inside its `Passed` with no comparison made, because two branches printed a
+# `WARN`, did `passes += 1` and skipped the pair rule, and nothing could plant a case to show it.
+# Both controls build a corpus, plant the defect, and assert on the report's CONTENT: the
+# alignment control plants a count short by one, a pair that counts correctly but sits in the wrong
+# place, and a circuit with no readable leg at all — with a conforming corpus alongside, so a
+# checker that reported everything would fail the control too.
+run_gate "control: circuit metadata alignment can fail" \
+    bash "$SCRIPT_DIR/check-circuit-metadata-alignment.sh" --self-test
+run_gate "control: the tx-pair-last gate can fail" \
+    bash "$SCRIPT_DIR/check-circuit-tx-pair-last.sh" --self-test
+
 # Static circuit audits first — they are seconds, and they need no build.
 #
 # Artifact freshness goes before everything that builds, deliberately. `make test` has

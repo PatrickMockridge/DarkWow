@@ -91,6 +91,223 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+SELF_TEST=0
+TARGETS=()
+for arg in "$@"; do
+    case "$arg" in
+        --self-test) SELF_TEST=1 ;;
+        *) TARGETS+=("$arg") ;;
+    esac
+done
+
+# ── THE SELF-TEST ────────────────────────────────────────────────────────────────────────────
+#
+# R8: an instrument that cannot be shown to fail is not an instrument. Four rules in this gate
+# each had to be *proven* rather than asserted, and one of them (`WARN(0/3)`) was silently wrong
+# for thirteen circuits until 2026-10-04 precisely because nothing planted a defect for it. So
+# this builds two corpora under a temporary `CONTRACT_ROOT` — one entirely conforming and one
+# carrying three planted defects — and asserts on the CONTENT of each report, never on an exit
+# code: a traceback also exits non-zero, so an exit-code assertion would pass while the checker
+# was crashing, which is R8's own subject written into the check that exists to catch a missing
+# check.
+#
+# The planted defects, one per rule, and the reasons they are these and not others:
+#
+#   badcontract/countshort  3 pushed values against 4 instances — the oldest rule in the gate.
+#   badcontract/pairswap    counts AGREE at 4 and the pair sits at 3,4 in the circuit while the
+#                           client's `to_vec` puts it at 2,3. This is the shape that cost the
+#                           peer session a 907-second run: everything counts correctly and the
+#                           proof is refused. It is invisible to a count-only checker.
+#   badcontract/clientless  the arm pushes `params.zk_public_inputs` (not a literal) and there is
+#                           no client file, so NO leg is readable. This one must be a FAIL when
+#                           undeclared — that is the 2026-10-04 repair, and before it this site
+#                           printed `WARN`, incremented `passes`, and was covered by a line
+#                           reading "All 166 circuits … have matching metadata push counts".
+#
+# `okcontract` is the negative control, and it is not decoration: a checker that reported every
+# circuit would pass all three assertions above.
+if [ "$SELF_TEST" -eq 1 ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+
+    mkdir -p "$TMP/a/src/contract/okcontract/proof" \
+             "$TMP/a/src/contract/okcontract/src/client" \
+             "$TMP/b/src/contract/badcontract/proof" \
+             "$TMP/b/src/contract/badcontract/src/client"
+
+    # ── corpus A: conforming ────────────────────────────────────────────────────────────────
+    cat > "$TMP/a/src/contract/okcontract/proof/ok.zk" <<'ZKEOF'
+k = 11; field = "pallas";
+constant "OkV2" { }
+witness "OkV2" { Base derived_x, Base tx_commitment, Base tx_nonce, Base tx_binding, }
+circuit "OkV2" {
+    derived_x = poseidon_hash(witness_base(4), tx_commitment);
+    constrain_instance(derived_x);
+    tx_binding = poseidon_hash(witness_base(3), tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}
+ZKEOF
+    cat > "$TMP/a/src/contract/okcontract/src/lib.rs" <<'RSEOF'
+pub const OKC_ZKAS_OK_NS_V2: &str = "OkV2";
+RSEOF
+    cat > "$TMP/a/src/contract/okcontract/src/entrypoint.rs" <<'RSEOF'
+fn get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        OKC_ZKAS_OK_NS_V2.to_string(),
+        vec![params.derived_x, params.tx_binding, params.tx_nonce],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    wasm::util::set_return_data(&metadata)
+}
+RSEOF
+    cat > "$TMP/a/src/contract/okcontract/src/client/ok.rs" <<'RSEOF'
+pub struct OkPublicInputs { pub derived_x: pallas::Base, pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base }
+impl OkPublicInputs {
+    pub fn to_vec(&self) -> Vec<pallas::Base> {
+        vec![self.derived_x, self.tx_binding, self.tx_nonce]
+    }
+}
+RSEOF
+
+    # ── corpus B: three planted defects ─────────────────────────────────────────────────────
+    cat > "$TMP/b/src/contract/badcontract/proof/countshort.zk" <<'ZKEOF'
+k = 11; field = "pallas";
+constant "CountShortV2" { }
+witness "CountShortV2" { Base derived_a, Base derived_b, }
+circuit "CountShortV2" {
+    derived_a = poseidon_hash(witness_base(4), derived_b);
+    constrain_instance(derived_a);
+    constrain_instance(derived_b);
+    tx_binding = poseidon_hash(witness_base(3), derived_a, derived_b);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}
+ZKEOF
+    cat > "$TMP/b/src/contract/badcontract/proof/pairswap.zk" <<'ZKEOF'
+k = 11; field = "pallas";
+constant "PairSwapV2" { }
+witness "PairSwapV2" { Base derived_x, Base roll_hash, }
+circuit "PairSwapV2" {
+    derived_x = poseidon_hash(witness_base(4), roll_hash);
+    constrain_instance(derived_x);
+    constrain_instance(roll_hash);
+    tx_binding = poseidon_hash(witness_base(3), derived_x, roll_hash);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}
+ZKEOF
+    cat > "$TMP/b/src/contract/badcontract/proof/clientless.zk" <<'ZKEOF'
+k = 11; field = "pallas";
+constant "ClientlessV2" { }
+witness "ClientlessV2" { Base derived_a, Base derived_b, Base derived_c, }
+circuit "ClientlessV2" {
+    derived_a = poseidon_hash(witness_base(4), derived_b);
+    derived_b = poseidon_hash(witness_base(4), derived_c);
+    derived_c = poseidon_hash(witness_base(4), derived_a);
+    constrain_instance(derived_a);
+    constrain_instance(derived_b);
+    constrain_instance(derived_c);
+    constrain_instance(derived_a);
+    constrain_instance(derived_c);
+}
+ZKEOF
+    cat > "$TMP/b/src/contract/badcontract/src/lib.rs" <<'RSEOF'
+pub const BADC_ZKAS_COUNTSHORT_NS_V2: &str = "CountShortV2";
+pub const BADC_ZKAS_PAIRSWAP_NS_V2: &str = "PairSwapV2";
+pub const BADC_ZKAS_CLIENTLESS_NS_V2: &str = "ClientlessV2";
+RSEOF
+    cat > "$TMP/b/src/contract/badcontract/src/entrypoint.rs" <<'RSEOF'
+fn get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        BADC_ZKAS_COUNTSHORT_NS_V2.to_string(),
+        vec![params.derived_a, params.derived_b, params.tx_binding],
+    ));
+    zk_public_inputs.push((
+        BADC_ZKAS_PAIRSWAP_NS_V2.to_string(),
+        vec![params.derived_x, params.roll_hash, params.tx_binding, params.tx_nonce],
+    ));
+    zk_public_inputs.push((
+        BADC_ZKAS_CLIENTLESS_NS_V2.to_string(),
+        params.zk_public_inputs,
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    wasm::util::set_return_data(&metadata)
+}
+RSEOF
+    # `countshort`'s client is short too (3 against 4) and `pairswap`'s is the RIGHT length with
+    # the pair in the WRONG place. No `clientless.rs`: the third defect is the absent one.
+    cat > "$TMP/b/src/contract/badcontract/src/client/countshort.rs" <<'RSEOF'
+pub struct CountShortPublicInputs { pub derived_a: pallas::Base, pub tx_binding: pallas::Base }
+impl CountShortPublicInputs {
+    pub fn to_vec(&self) -> Vec<pallas::Base> {
+        vec![self.derived_a, self.tx_binding, self.tx_nonce]
+    }
+}
+RSEOF
+    cat > "$TMP/b/src/contract/badcontract/src/client/pairswap.rs" <<'RSEOF'
+pub struct PairSwapPublicInputs { pub derived_x: pallas::Base, pub roll_hash: pallas::Base }
+impl PairSwapPublicInputs {
+    pub fn to_vec(&self) -> Vec<pallas::Base> {
+        vec![self.derived_x, self.tx_binding, self.tx_nonce, self.roll_hash]
+    }
+}
+RSEOF
+
+    run_against() {
+        CONTRACT_ROOT="$1" \
+        METADATA_EXCEPTIONS=/dev/null \
+        CLIENT_UNRESOLVED_EXCEPTIONS=/dev/null \
+        REPO_ROOT="$REPO_ROOT" \
+            bash "$0" 2>&1
+    }
+
+    FAILED=0
+
+    A_OUT="$(run_against "$TMP/a/src/contract")" || true
+    if ! printf '%s\n' "$A_OUT" | grep -qF "Passed: 1  Failed: 0"; then
+        echo "SELF-TEST FAILED: the conforming corpus did not pass cleanly."
+        FAILED=1
+    fi
+    if printf '%s\n' "$A_OUT" | grep -q '^FAIL'; then
+        echo "SELF-TEST FAILED: reported a conforming corpus (okcontract/ok) as failing."
+        FAILED=1
+    fi
+
+    B_OUT="$(run_against "$TMP/b/src/contract")" || true
+    for want in \
+        "4 constrain_instance vs 3 pushed values" \
+        "the circuit instances \`tx_binding\` at position 3" \
+        "NO leg was compared"
+    do
+        if ! printf '%s\n' "$B_OUT" | grep -qF "$want"; then
+            echo "SELF-TEST FAILED: the planted defect was not reported: $want"
+            FAILED=1
+        fi
+    done
+    # The third defect must be attributed to the circuit it was planted in, not merely present:
+    # a message with the right words and the wrong subject is the failure mode a substring test
+    # alone cannot see.
+    if ! printf '%s\n' "$B_OUT" | grep -qF "FAIL: badcontract/clientless"; then
+        echo "SELF-TEST FAILED: the clientless circuit was not named as the failing subject."
+        FAILED=1
+    fi
+
+    if [ "$FAILED" -ne 0 ]; then
+        echo ""
+        echo "--- conforming corpus ---"; printf '%s\n' "$A_OUT"
+        echo "--- defective corpus ---"; printf '%s\n' "$B_OUT"
+        exit 1
+    fi
+    echo "SELF-TEST OK: the conforming corpus passed; the short count, the swapped pair and the"
+    echo "              clientless circuit were each reported by name."
+    exit 0
+fi
+
 REPO_ROOT="$REPO_ROOT" python3 - "$@" <<'PYEOF'
 import os, re, sys, glob
 
@@ -101,7 +318,13 @@ repo = os.environ["REPO_ROOT"]
 # scope if and only if it ships circuits. `CIRCUIT_FREE` is named in the output
 # rather than omitted, so the gate's coverage is always on screen and an
 # accidental shrink of the covered set cannot pass unremarked.
-CONTRACT_ROOT = os.path.join(repo, "src", "contract")
+#
+# OVERRIDABLE FOR THE SELF-TEST, and this is why: the four rules below can only be shown to
+# work by planting a defect, and a defect cannot be planted in the real corpus. A path that can
+# only point at `src/contract` is a path whose failure modes are asserted rather than
+# demonstrated — the same argument `METADATA_EXCEPTIONS` and `CLIENT_UNRESOLVED_EXCEPTIONS`
+# carry, applied to the corpus itself.
+CONTRACT_ROOT = os.environ.get("CONTRACT_ROOT") or os.path.join(repo, "src", "contract")
 ALL_CONTRACTS = sorted(
     os.path.basename(d) for d in glob.glob(os.path.join(CONTRACT_ROOT, "*"))
     if os.path.isdir(d))
@@ -549,8 +772,11 @@ no_leg = set()
 seen = set()
 failed_circuits = set()
 for contract_name in COVERED:
-    proof_dir = f"{repo}/src/contract/{contract_name}/proof"
-    contract_dir = f"{repo}/src/contract/{contract_name}"
+    # Derived from `CONTRACT_ROOT`, never from `repo` — the self-test overrides the root, and a
+    # walk that enumerates the overridden root while reading the real one would report every
+    # planted circuit as "in scope but never reached a verdict". That is how it was found.
+    contract_dir = os.path.join(CONTRACT_ROOT, contract_name)
+    proof_dir = os.path.join(contract_dir, "proof")
     # Discovered by what the file DOES, not where it sits. The glob alone
     # (`src/entrypoint.rs` + `src/entrypoint/*.rs`) missed `game_room`, whose
     # `get_metadata` is in `src/lib.rs:236` — so all twelve of its circuits were
