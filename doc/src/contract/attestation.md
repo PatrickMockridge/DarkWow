@@ -106,10 +106,15 @@ enforcing something.
 ### Attestation State
 
 ```
-Active ──[Revoke]──> Revoked
+Active ──[Revoke, by the attestor]──> Revoked
     │
-    └──[Expire]──> Expired
+    └──[Expire, by the attestor]──> Expired
 ```
+
+Both transitions are the **attestor's** act: each arm requires a proof of the attestor's key and
+compares the published coordinates against the record's `attestor_pub` (OBL-C196). Expiry is not
+derived at read time from `expires_at` — `consume`/`validate`/`check_attestation` gate on the
+`Expired` state, so the write is the attestor materialising a fact whose block has passed.
 
 ### Claim State
 
@@ -125,15 +130,15 @@ Pending ──[Verify:valid]──> Verified ──[Consume]──> Consumed
 |----------|--------|-------------|
 | `CreateAttestationV1` | 0x00 | Attestor creates an attestation |
 | `RevokeAttestationV1` | 0x01 | Attestor revokes an attestation |
-| `ExpireAttestationV1` | 0x02 | Mark attestation as expired |
+| `ExpireAttestationV1` | 0x02 | Attestor marks an attestation expired (ZK: proof of the attestor's key, OBL-C196) |
 | `CreateClaimV1` | 0x03 | Claimant creates a claim |
 | `VerifyClaimV1` | 0x04 | Verify claim (ZK + on-chain) |
 | `ConsumeClaimV1` | 0x05 | Mark claim as consumed (prevents replay) |
-| `ValidateClaimV1` | 0x06 | Fast path: verify without consuming |
+| `ValidateClaimV1` | 0x06 | Fast path: does the claim currently hold — predicate holds **and** the claim is `Verified` (OBL-C196) |
 | `CheckNotRevokedV1` | 0x07 | Verify credential not revoked (Identity contract integration) |
 | `DelegateAttestationV1` | 0x08 | Delegate attestation authority |
 | `VerifyChainV1` | 0x09 | Multi-step attestation chain verification |
-| `UpdateDelegationV1` | 0x0a | Update delegation parameters |
+| `UpdateDelegationV1` | 0x0a | Update delegation parameters, by the **delegator** — the original attestation's attestor (ZK, OBL-C196) |
 | `AttestSlashV1` | 0x0b | Slash attestor for false attestation |
 | `CommitFeeScheduleV1` | 0x0c | Commit to fee schedule for attestation services |
 | `CheckAttestationV1` | 0x0d | Resolve an attestation id; the call fails if it names nothing or a non-active attestation |
@@ -264,7 +269,9 @@ All 10 circuits compiled to `.zk.bin`:
 | `check_not_revoked.zk` | Prove credential not revoked (Identity contract integration) |
 | `delegate_attestation.zk` | Prove valid delegation of attestation authority |
 | `verify_chain.zk` | Prove multi-step attestation chain valid |
-| `update_delegation.zk` | Prove delegation update authorized |
+| `update_delegation.zk` | Prove the delegator can open the key the update names (derive-and-expose; OBL-C196) |
+| `expire_attestation.zk` | Prove the attestor can open the key the expiry names (derive-and-expose; OBL-C196) |
+| `revoke_attestation.zk` | Prove the attestor can open the key the revocation names (derive-and-expose; OBL-C195) |
 | `attest_slash.zk` | Prove attestor submitted false attestation |
 | `commit_fee_schedule.zk` | Prove fee schedule commitment correctly formed |
 
