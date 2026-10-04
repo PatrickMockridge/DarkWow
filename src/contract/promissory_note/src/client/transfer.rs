@@ -232,9 +232,9 @@ impl TransferCallBuilder {
             .into());
         }
 
-        let mut proofs = vec![];
         let mut inputs = vec![];
         let mut outputs = vec![];
+        let mut planned_inputs: Vec<PlannedTransferInput> = vec![];
         let mut planned_outputs: Vec<PlannedTransferOutput> = vec![];
 
         // Pre-generate value_blinds so burn and output proofs share the same
@@ -267,25 +267,32 @@ impl TransferCallBuilder {
                 BaseBlind::random(&mut OsRng)
             };
 
-            let (burn_proof, revealed) = create_transfer_burn_proof(
-                &self.revoke_zkbin,
-                &self.revoke_pk,
+            // Derive, do not prove. `revoke.zk` instances the tx pair — its last two instance
+            // targets — so this proof is *bound* by the commitment and cannot be made until the
+            // caller has derived it (`OBL-C198`). Making it here with the builder's own (zero)
+            // commitment while the arm published the host's was the defect this fixes.
+            let derived = derive_transfer_burn(
                 input,
+                value_blind.clone(),
+                asset_id_blind.clone(),
+                user_data_blind.clone(),
+            );
+
+            inputs.push(Input {
+                value_commit: derived.value_commit,
+                token_commit: derived.token_commit,
+                nullifier: derived.nullifier,
+                merkle_root: derived.merkle_root,
+                user_data_enc: derived.user_data_enc,
+                spend_hook: FuncId::from_base(input.spend_hook),
+                signature_public: derived.signature_public,
+            });
+
+            planned_inputs.push(PlannedTransferInput {
+                input: input.clone(),
                 value_blind,
                 asset_id_blind,
                 user_data_blind,
-            )?;
-
-            proofs.push(burn_proof);
-
-            inputs.push(Input {
-                value_commit: revealed.value_commit,
-                token_commit: revealed.token_commit,
-                nullifier: revealed.nullifier,
-                merkle_root: revealed.merkle_root,
-                user_data_enc: revealed.user_data_enc,
-                spend_hook: FuncId::from_base(input.spend_hook),
-                signature_public: revealed.signature_public,
             });
         }
 
@@ -351,12 +358,14 @@ impl TransferCallBuilder {
         // the host exposes (`OBL-C198`), because a binding inside the call data would be computed
         // from a value that covers it. Only the nonce is carried.
         Ok(TransferCallPlan {
+            revoke_zkbin: self.revoke_zkbin,
+            revoke_pk: self.revoke_pk,
             transfer_zkbin: self.transfer_zkbin,
             transfer_pk: self.transfer_pk,
+            planned_inputs,
             planned_outputs,
             inputs,
             outputs,
-            proofs,
             tx_nonce: self.inputs[0].tx_nonce,
         })
     }
@@ -371,13 +380,23 @@ impl TransferCallBuilder {
 /// submit (parent and children), derives the commitment once over that ordered set, and only
 /// then calls [`TransferCallPlan::prove`] with it, so parent and child bind to the same value.
 pub struct TransferCallPlan {
+    revoke_zkbin: ZkBinary,
+    revoke_pk: ProvingKey,
     transfer_zkbin: ZkBinary,
     transfer_pk: ProvingKey,
+    planned_inputs: Vec<PlannedTransferInput>,
     planned_outputs: Vec<PlannedTransferOutput>,
     inputs: Vec<Input>,
     outputs: Vec<Output>,
-    proofs: Vec<Proof>,
     tx_nonce: pallas::Base,
+}
+
+/// What a burn proof needs that the derivation does not produce.
+struct PlannedTransferInput {
+    input: TransferCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+    user_data_blind: BaseBlind,
 }
 
 /// What a blind-output proof needs that the derivation does not produce.
@@ -397,12 +416,34 @@ impl TransferCallPlan {
         }
     }
 
-    /// Prove every blind output in this plan, binding to `tx_commitment`.
+    /// Prove every call in this plan, binding to `tx_commitment`.
+    ///
+    /// **Burn proofs first**, then the blind outputs — the order the old `build` produced, and
+    /// both kinds are bound by the commitment. The burn proof takes the commitment from the
+    /// input's own fields rather than as an argument, so each planned input is cloned and given
+    /// the caller's value before proving.
     pub fn prove(
-        mut self,
+        self,
         tx_commitment: pallas::Base,
         tx_nonce: pallas::Base,
     ) -> Result<TransferCallDebris> {
+        let mut proofs: Vec<Proof> = vec![];
+
+        for p in &self.planned_inputs {
+            let mut input = p.input.clone();
+            input.tx_commitment = tx_commitment;
+            input.tx_nonce = tx_nonce;
+            let (burn_proof, _revealed) = create_transfer_burn_proof(
+                &self.revoke_zkbin,
+                &self.revoke_pk,
+                &input,
+                p.value_blind.clone(),
+                p.asset_id_blind.clone(),
+                p.user_data_blind.clone(),
+            )?;
+            proofs.push(burn_proof);
+        }
+
         for p in &self.planned_outputs {
             let (transfer_proof, _revealed) = create_transfer_transfer_proof(
                 &self.transfer_zkbin,
@@ -413,22 +454,48 @@ impl TransferCallPlan {
                 tx_commitment,
                 tx_nonce,
             )?;
-            self.proofs.push(transfer_proof);
+            proofs.push(transfer_proof);
         }
-        Ok(TransferCallDebris { params: self.params(), proofs: self.proofs })
+
+        Ok(TransferCallDebris { params: self.params(), proofs })
     }
 }
 
 /// Create a burn proof for transfer.
 /// Value commitment: Pedersen (additively homomorphic).
-fn create_transfer_burn_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
+/// What a burn proof reveals, derived from its witnesses alone.
+///
+/// `OBL-C198`: the transaction commitment is a derivation over the call data, so the call has to
+/// be assembled before its proof — and the call carries these values. None depends on the
+/// commitment; `tx_binding` does, and is deliberately not here, so a caller can build the call
+/// first and prove second.
+///
+/// **`revoke.zk` instances the tx pair**, as its last two instance targets — so unlike a
+/// proof that merely *carries* the pair, this one is bound by it and cannot be made before the
+/// commitment exists. That was the error this extraction fixes: `prepare` made the burn proofs
+/// with the builder's own (zero) commitment while the arm published the host's.
+///
+/// One derivation, one home: `create_transfer_burn_proof` calls this (`safety.md` RC5).
+pub struct TransferRevokeDerived {
+    pub nullifier: Nullifier,
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+    pub merkle_root: MerkleNode,
+    pub user_data_enc: pallas::Base,
+    pub spend_hook: pallas::Base,
+    pub signature_public: pallas::Base,
+    /// Not a revealed value — an intermediate the witness vector needs, carried here so the
+    /// proof function does not recompute the derivation it just called.
+    pub signature_secret: pallas::Base,
+}
+
+/// Derive the burn's revealed values. Pure: no commitment, no proof, no randomness.
+pub fn derive_transfer_burn(
     input: &TransferCallInput,
     value_blind: ScalarBlind,
     asset_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
-) -> Result<(Proof, TransferRevokeRevealed)> {
+) -> TransferRevokeDerived {
     // Derive public key from secret using Poseidon (Schnorr-style).
     // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
@@ -477,6 +544,26 @@ fn create_transfer_burn_proof(
     // signature_public = H(7, signature_secret) — matches revoke.rs / revoke.zk.
     let signature_secret = poseidon_hash([pallas::Base::from(7), input.secret, nullifier.inner()]);
     let signature_public = poseidon_hash([pallas::Base::from(7), signature_secret]);
+
+    TransferRevokeDerived {
+        nullifier, value_commit, token_commit, merkle_root, user_data_enc,
+        spend_hook: input.spend_hook, signature_public, signature_secret,
+    }
+}
+
+fn create_transfer_burn_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &TransferCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+) -> Result<(Proof, TransferRevokeRevealed)> {
+    let TransferRevokeDerived {
+        nullifier, value_commit, token_commit, merkle_root, user_data_enc,
+        spend_hook, signature_public, signature_secret,
+    } = derive_transfer_burn(input, value_blind.clone(), asset_id_blind.clone(), user_data_blind.clone());
+
     let tx_binding = poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]);
 
     let public_inputs = TransferRevokeRevealed {
