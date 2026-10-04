@@ -48,7 +48,7 @@ macro_rules! zk_check_with_id {
 fn test_all_harnesses_zk_coverage() {
     use dwow_contract_test_harness::harness::*;
 
-    zk_check!(AttestationHarness, "attestation");
+    zk_check_with_id!(AttestationHarness, "attestation");
     zk_check!(AuctionHarness, "auction");
     zk_check!(BaccaratHarness, "baccarat");
     zk_check!(BearerBondHarness, "bearer_bond");

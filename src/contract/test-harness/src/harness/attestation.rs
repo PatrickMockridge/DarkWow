@@ -30,11 +30,18 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
 use rand::SeedableRng;
+
+/// The commitment over an ordered call set (`OBL-C198`). The order is DFS post-order; attestation's
+/// endpoints are childless, so each builder passes a one-element set. One commitment per
+/// transaction, so an arm's proof and the arm's published binding are the same value.
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
+}
 
 use dwow_attestation_contract::client::{
     check_not_revoked::{
@@ -99,10 +106,19 @@ pub struct AttestationHarness {
     revoke_attestation_pk: ProvingKey,
     expire_attestation_zkbin: ZkBinary,
     expire_attestation_pk: ProvingKey,
+    /// The contract's deployed id (`OBL-C198`): the commitment is over the call set, and a call
+    /// carries the contract it addresses, so a prover must know this id.
+    contract_id: ContractId,
 }
 
 impl AttestationHarness {
-    pub fn spawn() -> Self {
+    /// The commitment for a single-call endpoint of this harness — the call, and the node's own
+    /// derivation over it (`OBL-C198`). One helper, so a second derivation cannot drift.
+    fn commitment(&self, call_data: &[u8]) -> pallas::Base {
+        commitment_of(&[dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.to_vec() }])
+    }
+
+    pub fn spawn(contract_id: ContractId) -> Self {
         dwow_attestation_contract::enable_deterministic_zk();
         let create_att_bin =
             include_bytes!("../../../attestation/proof/create_attestation.zk.bin");
@@ -272,6 +288,7 @@ impl AttestationHarness {
             revoke_attestation_pk,
             expire_attestation_zkbin,
             expire_attestation_pk,
+            contract_id,
         }
     }
 
@@ -286,15 +303,12 @@ impl AttestationHarness {
         expires_at: Option<u64>,
         attestation_id: pallas::Base,
     ) -> Result<CreateAttestationResult, Box<dyn std::error::Error>> {
-        let input = CreateAttestationV1CallData::new(attestor_secret, attestor_public);
-        let (proof, public_inputs) = create_attestation_v1_proof(
-            &self.create_attestation_zkbin,
-            &self.create_attestation_pk,
-            &input,
-        )?;
+        let mut input = CreateAttestationV1CallData::new(attestor_secret, attestor_public);
 
         let params = CreateAttestationParamsV1 {
-            proof: proof.as_ref().to_vec(),
+            // `OBL-C198`: the params carry an **empty** proof — the real proof rides the tx proof
+            // vector, which the commitment excludes, else the commitment would cover the proof.
+            proof: vec![],
             attestation_id: AttestationId(attestation_id),
             attestor_pub: attestor_public,
             claim_type,
@@ -305,6 +319,15 @@ impl AttestationHarness {
 
         let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode()?);
+
+        // `OBL-C198`: prove LAST, over the finished call data — the commitment is a derivation over
+        // these bytes and excludes proofs, which is what makes the order solvable.
+        input.tx_commitment = self.commitment(&call_data);
+        let (proof, public_inputs) = create_attestation_v1_proof(
+            &self.create_attestation_zkbin,
+            &self.create_attestation_pk,
+            &input,
+        )?;
 
         Ok(CreateAttestationResult { call_data, attestation_id, proof, public_inputs })
     }
@@ -320,15 +343,12 @@ impl AttestationHarness {
         revealed_result: Vec<u8>,
         claim_id: pallas::Base,
     ) -> Result<CreateClaimResult, Box<dyn std::error::Error>> {
-        let input = CreateClaimV1CallData::new(attestation_id, claimant_secret, claimant_public);
-        let (proof, public_inputs) = create_claim_v1_proof(
-            &self.create_claim_zkbin,
-            &self.create_claim_pk,
-            &input,
-        )?;
+        let mut input = CreateClaimV1CallData::new(attestation_id, claimant_secret, claimant_public);
 
         let params = CreateClaimParamsV1 {
-            proof: proof.as_ref().to_vec(),
+            // `OBL-C198`: the params carry an **empty** proof — the real proof rides the tx proof
+            // vector, which the commitment excludes, else the commitment would cover the proof.
+            proof: vec![],
             claim_id: ClaimId(claim_id),
             attestation_id: AttestationId(attestation_id),
             claimant_pub: claimant_public,
@@ -339,6 +359,14 @@ impl AttestationHarness {
 
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode()?);
+
+        // `OBL-C198`: prove LAST, over the finished call data.
+        input.tx_commitment = self.commitment(&call_data);
+        let (proof, public_inputs) = create_claim_v1_proof(
+            &self.create_claim_zkbin,
+            &self.create_claim_pk,
+            &input,
+        )?;
 
         Ok(CreateClaimResult { call_data, claim_id, proof, public_inputs })
     }
@@ -363,7 +391,7 @@ impl AttestationHarness {
         path: [pallas::Base; 255],
         revocation_root: pallas::Base,
     ) -> Result<VerifyClaimResult, Box<dyn std::error::Error>> {
-        let input = VerifyClaimV1CallData::new(
+        let mut input = VerifyClaimV1CallData::new(
             claim_id,
             _revealed_result,
             evidence,
@@ -373,11 +401,6 @@ impl AttestationHarness {
             path,
             revocation_root,
         );
-        let (proof, public_inputs) = verify_claim_v1_proof(
-            &self.verify_claim_zkbin,
-            &self.verify_claim_pk,
-            &input,
-        )?;
 
         let params = VerifyClaimParamsV1 {
             claim_id: ClaimId(claim_id),
@@ -387,6 +410,14 @@ impl AttestationHarness {
 
         let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
+
+        // `OBL-C198`: prove LAST, over the finished call data.
+        input.tx_commitment = self.commitment(&call_data);
+        let (proof, public_inputs) = verify_claim_v1_proof(
+            &self.verify_claim_zkbin,
+            &self.verify_claim_pk,
+            &input,
+        )?;
 
         Ok(VerifyClaimResult { call_data, proof, public_inputs })
     }
@@ -400,22 +431,28 @@ impl AttestationHarness {
         claimant_secret: pallas::Base,
         claimant_public: PublicKey,
     ) -> Result<ConsumeClaimResult, Box<dyn std::error::Error>> {
-        let input = ConsumeClaimV1CallData::new(claim_id, nullifier, claimant_secret, claimant_public);
-        let (proof, public_inputs) = consume_claim_v1_proof(
-            &self.consume_claim_zkbin,
-            &self.consume_claim_pk,
-            &input,
-        )?;
+        let mut input = ConsumeClaimV1CallData::new(claim_id, nullifier, claimant_secret, claimant_public);
+        // `OBL-C198`: the nullifier the params carry is a pure function of the claim and the
+        // secret — not of the transaction — so it is known before the call is assembled. The call
+        // data then exists, the commitment is derived over it, and only then is the proof made.
+        let nullifier_out = input.compute_public_inputs().nullifier;
 
         let params = ConsumeClaimParamsV1 {
             claim_id: ClaimId(claim_id),
             attestation_id: AttestationId(attestation_id),
             claimant_pub: claimant_public,
-            nullifier: public_inputs.nullifier,
+            nullifier: nullifier_out,
         };
 
         let mut call_data = vec![0x05];
         call_data.extend_from_slice(&params.encode());
+
+        input.tx_commitment = self.commitment(&call_data);
+        let (proof, public_inputs) = consume_claim_v1_proof(
+            &self.consume_claim_zkbin,
+            &self.consume_claim_pk,
+            &input,
+        )?;
 
         Ok(ConsumeClaimResult { call_data, proof, public_inputs })
     }
@@ -443,7 +480,7 @@ impl AttestationHarness {
         delegator_public: PublicKey,
         delegatee_public: PublicKey,
     ) -> Result<DelegateAttestationResult, Box<dyn std::error::Error>> {
-        let input = DelegateAttestationV1CallData::new(
+        let mut input = DelegateAttestationV1CallData::new(
             delegation_id,
             parent_id,
             delegator_secret,
@@ -463,14 +500,11 @@ impl AttestationHarness {
             delegator_public,
             delegatee_public,
         );
-        let (proof, public_inputs) = delegate_attestation_v1_proof(
-            &self.delegate_attestation_zkbin,
-            &self.delegate_attestation_pk,
-            &input,
-        )?;
 
         let params = DelegateAttestationParamsV1 {
-            proof: proof.as_ref().to_vec(),
+            // `OBL-C198`: the params carry an **empty** proof — the real proof rides the tx proof
+            // vector, which the commitment excludes, else the commitment would cover the proof.
+            proof: vec![],
             delegation_id,
             parent_id,
             delegator_pub: delegator_public,
@@ -481,6 +515,14 @@ impl AttestationHarness {
 
         let mut call_data = vec![0x08];
         call_data.extend_from_slice(&params.encode()?);
+
+        // `OBL-C198`: prove LAST, over the finished call data.
+        input.tx_commitment = self.commitment(&call_data);
+        let (proof, public_inputs) = delegate_attestation_v1_proof(
+            &self.delegate_attestation_zkbin,
+            &self.delegate_attestation_pk,
+            &input,
+        )?;
 
         Ok(DelegateAttestationResult { call_data, proof, public_inputs })
     }
@@ -493,19 +535,24 @@ impl AttestationHarness {
         pos: u64,
         path: Vec<dwow_sdk::crypto::MerkleNode>,
     ) -> Result<CheckNotRevokedResult, Box<dyn std::error::Error>> {
-        let input = CheckNotRevokedV1CallData::new(revocation_root, nonce, pos, path);
-        let (proof, public_inputs) = check_not_revoked_v1_proof(
-            &self.check_not_revoked_zkbin, &self.check_not_revoked_pk, &input,
-        )?;
+        let mut input = CheckNotRevokedV1CallData::new(revocation_root, nonce, pos, path);
 
         let params = CheckNotRevokedParamsV1 {
-            proof: proof.as_ref().to_vec(),
+            // `OBL-C198`: the params carry an **empty** proof — the real proof rides the tx proof
+            // vector, which the commitment excludes, else the commitment would cover the proof.
+            proof: vec![],
             revocation_root,
             nonce,
         };
 
         let mut call_data = vec![0x07];
         call_data.extend_from_slice(&params.encode()?);
+
+        // `OBL-C198`: prove LAST, over the finished call data.
+        input.tx_commitment = self.commitment(&call_data);
+        let (proof, public_inputs) = check_not_revoked_v1_proof(
+            &self.check_not_revoked_zkbin, &self.check_not_revoked_pk, &input,
+        )?;
 
         Ok(CheckNotRevokedResult { call_data, proof, public_inputs })
     }
@@ -535,18 +582,17 @@ impl AttestationHarness {
             delegation_type, current_depth, max_depth,
             delegator_stake, delegatee_stake, max_ratio,
         );
-        let input = UpdateDelegationV1CallData {
+        let mut input = UpdateDelegationV1CallData {
             delegator_secret,
             delegator_public: delegator_pub,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
-        let (proof, public_inputs) = update_delegation_v1_proof(
-            &self.update_delegation_zkbin, &self.update_delegation_pk, &input,
-        )?;
 
         let params = UpdateDelegationParamsV1 {
-            proof: proof.as_ref().to_vec(),
+            // `OBL-C198`: the params carry an **empty** proof — the real proof rides the tx proof
+            // vector, which the commitment excludes, else the commitment would cover the proof.
+            proof: vec![],
             original_attestation_id,
             delegation_type: delegation_type_u8,
             max_ratio: max_ratio_u64,
@@ -555,6 +601,12 @@ impl AttestationHarness {
 
         let mut call_data = vec![0x0a];
         call_data.extend_from_slice(&params.encode()?);
+
+        // `OBL-C198`: prove LAST, over the finished call data.
+        input.tx_commitment = self.commitment(&call_data);
+        let (proof, public_inputs) = update_delegation_v1_proof(
+            &self.update_delegation_zkbin, &self.update_delegation_pk, &input,
+        )?;
 
         Ok(UpdateDelegationResult { call_data, proof, public_inputs })
     }
@@ -576,25 +628,7 @@ impl AttestationHarness {
         withdrawal_id: pallas::Base,
         block_height: u64,
     ) -> Result<AttestSlashResult, Box<dyn std::error::Error>> {
-        let txb = dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
         let (ax, ay) = relayer_pub.xy().expect("pk not identity");
-        let witnesses = vec![
-            Witness::Base(Value::known(attester_secret)),
-            Witness::Base(Value::known(ax)),
-            Witness::Base(Value::known(ay)),
-            Witness::Base(Value::known(pallas::Base::zero())),
-            Witness::Base(Value::known(pallas::Base::zero())),
-            Witness::Base(Value::known(txb)),
-        ];
-        // Circuit constrain_instance order: tx_binding, tx_nonce, attester_pub_x, attester_pub_y
-        let publics = [txb, pallas::Base::zero(), ax, ay];
-        let circuit = ZkCircuit::new(witnesses, &self.attest_slash_zkbin);
-        let proof = if dwow_attestation_contract::deterministic_zk_enabled() {
-            Proof::create(&self.attest_slash_pk, &[circuit], &publics, rand::rngs::StdRng::seed_from_u64(0))
-        } else {
-            Proof::create(&self.attest_slash_pk, &[circuit], &publics, rand::rngs::OsRng)
-        }.map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-
         let params = AttestSlashParamsV1 {
             relayer_pub,
             slash_amount,
@@ -604,6 +638,29 @@ impl AttestationHarness {
 
         let mut call_data = vec![0x0b];
         call_data.extend_from_slice(&params.encode());
+
+        // `OBL-C198`: the binding derives from the commitment over the finished call data. It was
+        // the constant `poseidon_hash(3, 0, 0)`, which bound the proof to nothing at all.
+        let tc = self.commitment(&call_data);
+        let txb = dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), tc, pallas::Base::zero()]);
+        // Circuit witness order: attester_secret, attester_pub_x, attester_pub_y, tx_commitment,
+        // tx_nonce, tx_binding — and `tx_commitment` is now the real commitment.
+        let witnesses = vec![
+            Witness::Base(Value::known(attester_secret)),
+            Witness::Base(Value::known(ax)),
+            Witness::Base(Value::known(ay)),
+            Witness::Base(Value::known(tc)),
+            Witness::Base(Value::known(pallas::Base::zero())),
+            Witness::Base(Value::known(txb)),
+        ];
+        // Circuit constrain_instance order: attester_pub_x, attester_pub_y, tx_binding, tx_nonce
+        let publics = [ax, ay, txb, pallas::Base::zero()];
+        let circuit = ZkCircuit::new(witnesses, &self.attest_slash_zkbin);
+        let proof = if dwow_attestation_contract::deterministic_zk_enabled() {
+            Proof::create(&self.attest_slash_pk, &[circuit], &publics, rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            Proof::create(&self.attest_slash_pk, &[circuit], &publics, rand::rngs::OsRng)
+        }.map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         Ok(AttestSlashResult { call_data, proof })
     }
@@ -621,25 +678,7 @@ impl AttestationHarness {
         min_amount: u64,
         metadata: Vec<u8>,
     ) -> Result<CommitFeeScheduleResult, Box<dyn std::error::Error>> {
-        let txb = dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
         let (ax, ay) = attestor_pub.xy().expect("pk not identity");
-        let witnesses = vec![
-            Witness::Base(Value::known(attester_secret)),
-            Witness::Base(Value::known(ax)),
-            Witness::Base(Value::known(ay)),
-            Witness::Base(Value::known(pallas::Base::zero())),
-            Witness::Base(Value::known(pallas::Base::zero())),
-            Witness::Base(Value::known(txb)),
-        ];
-        // Circuit constrain_instance order: tx_binding, tx_nonce, attester_pub_x, attester_pub_y
-        let publics = [txb, pallas::Base::zero(), ax, ay];
-        let circuit = ZkCircuit::new(witnesses, &self.commit_fee_schedule_zkbin);
-        let proof = if dwow_attestation_contract::deterministic_zk_enabled() {
-            Proof::create(&self.commit_fee_schedule_pk, &[circuit], &publics, rand::rngs::StdRng::seed_from_u64(0))
-        } else {
-            Proof::create(&self.commit_fee_schedule_pk, &[circuit], &publics, rand::rngs::OsRng)
-        }.map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-
         let params = CommitFeeScheduleParamsV1 {
             attestor_pub,
             base_fee_bp,
@@ -651,6 +690,26 @@ impl AttestationHarness {
 
         let mut call_data = vec![0x0c];
         call_data.extend_from_slice(&params.encode()?);
+
+        // `OBL-C198`: the binding derives from the commitment over the finished call data.
+        let tc = self.commitment(&call_data);
+        let txb = dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), tc, pallas::Base::zero()]);
+        let witnesses = vec![
+            Witness::Base(Value::known(attester_secret)),
+            Witness::Base(Value::known(ax)),
+            Witness::Base(Value::known(ay)),
+            Witness::Base(Value::known(tc)),
+            Witness::Base(Value::known(pallas::Base::zero())),
+            Witness::Base(Value::known(txb)),
+        ];
+        // Circuit constrain_instance order: attester_pub_x, attester_pub_y, tx_binding, tx_nonce
+        let publics = [ax, ay, txb, pallas::Base::zero()];
+        let circuit = ZkCircuit::new(witnesses, &self.commit_fee_schedule_zkbin);
+        let proof = if dwow_attestation_contract::deterministic_zk_enabled() {
+            Proof::create(&self.commit_fee_schedule_pk, &[circuit], &publics, rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            Proof::create(&self.commit_fee_schedule_pk, &[circuit], &publics, rand::rngs::OsRng)
+        }.map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         Ok(CommitFeeScheduleResult { call_data, proof })
     }
@@ -666,18 +725,20 @@ impl AttestationHarness {
         attestor_pub: PublicKey,
         attestation_id: pallas::Base,
     ) -> Result<RevokeAttestationResult, Box<dyn std::error::Error>> {
-        let input = RevokeAttestationV1CallData::new(attestor_secret, attestor_pub);
-        let (proof, public_inputs) = revoke_attestation_v1_proof(
-            &self.revoke_attestation_zkbin,
-            &self.revoke_attestation_pk,
-            &input,
-        )?;
+        let mut input = RevokeAttestationV1CallData::new(attestor_secret, attestor_pub);
         let params = dwow_attestation_contract::model::RevokeAttestationParamsV1 {
             attestor_pub,
             attestation_id: dwow_attestation_contract::model::AttestationId(attestation_id),
         };
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
+        // `OBL-C198`: prove LAST, over the finished call data.
+        input.tx_commitment = self.commitment(&call_data);
+        let (proof, public_inputs) = revoke_attestation_v1_proof(
+            &self.revoke_attestation_zkbin,
+            &self.revoke_attestation_pk,
+            &input,
+        )?;
         Ok(RevokeAttestationResult { call_data, proof, public_inputs })
     }
 
@@ -692,18 +753,20 @@ impl AttestationHarness {
         attestor_pub: PublicKey,
         attestation_id: pallas::Base,
     ) -> Result<ExpireAttestationResult, Box<dyn std::error::Error>> {
-        let input = ExpireAttestationV1CallData::new(attestor_secret, attestor_pub);
-        let (proof, public_inputs) = expire_attestation_v1_proof(
-            &self.expire_attestation_zkbin,
-            &self.expire_attestation_pk,
-            &input,
-        )?;
+        let mut input = ExpireAttestationV1CallData::new(attestor_secret, attestor_pub);
         let params = dwow_attestation_contract::model::ExpireAttestationParamsV1 {
             attestation_id: dwow_attestation_contract::model::AttestationId(attestation_id),
             attestor_pub,
         };
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
+        // `OBL-C198`: prove LAST, over the finished call data.
+        input.tx_commitment = self.commitment(&call_data);
+        let (proof, public_inputs) = expire_attestation_v1_proof(
+            &self.expire_attestation_zkbin,
+            &self.expire_attestation_pk,
+            &input,
+        )?;
         Ok(ExpireAttestationResult { call_data, proof, public_inputs })
     }
 
@@ -713,21 +776,25 @@ impl AttestationHarness {
         delegation_id: pallas::Base,
     ) -> Result<VerifyChainResult, Box<dyn std::error::Error>> {
         use dwow_attestation_contract::client::verify_chain::{VerifyChainV1CallData, verify_chain_v1_proof};
-        let input = VerifyChainV1CallData::new(
+        let mut input = VerifyChainV1CallData::new(
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             pallas::Base::zero(), pallas::Base::zero(),
             pallas::Base::zero(), [pallas::Base::from(0u64); 255],
         );
-        let (proof, _public_inputs) = verify_chain_v1_proof(
-            &self.verify_chain_zkbin, &self.verify_chain_pk, &input,
-        )?;
         let params = dwow_attestation_contract::model::VerifyChainParamsV1 {
-            proof: proof.as_ref().to_vec(),
+            // `OBL-C198`: the params carry an **empty** proof — the real proof rides the tx proof
+            // vector, which the commitment excludes, else the commitment would cover the proof.
+            proof: vec![],
             delegation_id,
             parent_id: pallas::Base::zero(),
         };
         let mut call_data = vec![0x09];
         call_data.extend_from_slice(&params.encode()?);
+        // `OBL-C198`: prove LAST, over the finished call data.
+        input.tx_commitment = self.commitment(&call_data);
+        let (proof, _public_inputs) = verify_chain_v1_proof(
+            &self.verify_chain_zkbin, &self.verify_chain_pk, &input,
+        )?;
         Ok(VerifyChainResult { call_data, proof })
     }
 

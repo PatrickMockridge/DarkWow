@@ -56,11 +56,12 @@ impl CreateAttestationV1PublicInputs {
     /// metadata arm publishes the coordinates of the key the caller claims; the verifier
     /// compares them, so the proof verifies only for a caller who can open that key.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
+        // `OBL-C198`: the tx pair is the last two instances (matching the reordered circuit).
         vec![
-            self.tx_binding,
-            self.tx_nonce,
             self.attestor_pub_x,
             self.attestor_pub_y,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }

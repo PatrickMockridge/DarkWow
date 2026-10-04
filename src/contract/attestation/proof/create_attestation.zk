@@ -9,7 +9,6 @@ witness "CreateAttestationV2" {
 circuit "CreateAttestationV2" {
     DOMAIN_TX_BINDING = witness_base(3);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
-    constrain_instance(tx_binding); constrain_instance(tx_nonce);
 
     # Issue #3 (github PatrickMockridge/DarkWow#3): `attester_secret` and the two pub
     # coordinates were witnessed and used by nothing, so the attestation was attributed
@@ -23,4 +22,9 @@ circuit "CreateAttestationV2" {
     constrain_equal_base(derived_pub_x, attester_pub_x);
     constrain_equal_base(derived_pub_y, attester_pub_y);
     constrain_instance(attester_pub_x); constrain_instance(attester_pub_y);
+
+    # `OBL-C198`: the tx pair is the **last two** instances — the node reads that position to
+    # recompute the binding from the enclosing transaction, and there is no per-circuit index map,
+    # so the position IS the convention. It sat first.
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
 }

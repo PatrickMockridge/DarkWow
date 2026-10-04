@@ -33,11 +33,12 @@ pub struct UpdateDelegationV1PublicInputs {
 
 impl UpdateDelegationV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
+        // `OBL-C198`: the tx pair is the last two instances (matching the reordered circuit).
         vec![
-            self.tx_binding,
-            self.tx_nonce,
             self.delegator_pub_x,
             self.delegator_pub_y,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }

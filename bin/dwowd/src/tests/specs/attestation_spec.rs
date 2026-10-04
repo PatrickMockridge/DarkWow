@@ -12,7 +12,9 @@ use crate::tests::uniform_runner::{
 };
 
 pub fn attestation_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(AttestationHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its calls will carry (the commitment is derived over
+    // the call *including* the id). `attestation` is genesis, so the constant is the id it carries.
+    let harness = Box::leak(Box::new(AttestationHarness::spawn(*ATTESTATION_CONTRACT_ID)));
     let h: &AttestationHarness = harness;
 
     let attestor_secret = pallas::Base::from(10u64);

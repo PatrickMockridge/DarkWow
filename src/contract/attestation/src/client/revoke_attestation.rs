@@ -54,11 +54,12 @@ pub struct RevokeAttestationV1PublicInputs {
 
 impl RevokeAttestationV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
+        // `OBL-C198`: the tx pair is the last two instances (matching the reordered circuit).
         vec![
-            self.tx_binding,
-            self.tx_nonce,
             self.attestor_pub_x,
             self.attestor_pub_y,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }

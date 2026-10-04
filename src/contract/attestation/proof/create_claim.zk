@@ -9,7 +9,6 @@ witness "CreateClaimV2" {
 circuit "CreateClaimV2" {
     DOMAIN_TX_BINDING = witness_base(3);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
-    constrain_instance(tx_binding); constrain_instance(tx_nonce);
 
     # Issue #3: `claim_data`, `creator_secret` and the creator's coordinates were all
     # witnessed and used by nothing, so the claim was created in whatever name the caller
@@ -23,4 +22,7 @@ circuit "CreateClaimV2" {
     constrain_equal_base(derived_pub_x, creator_pub_x);
     constrain_equal_base(derived_pub_y, creator_pub_y);
     constrain_instance(creator_pub_x); constrain_instance(creator_pub_y);
+
+    # `OBL-C198`: the tx pair is the last two instances (the node reads that position); it sat first.
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
 }

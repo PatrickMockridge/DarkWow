@@ -9,7 +9,6 @@ witness "AttestSlashV2" {
 circuit "AttestSlashV2" {
     DOMAIN_TX_BINDING = witness_base(3);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
-    constrain_instance(tx_binding); constrain_instance(tx_nonce);
 
     # Issue #3: identical to `create_attestation.zk` — the secret and the public
     # coordinates were witnessed and unconstrained, so the slash attestation was
@@ -22,4 +21,7 @@ circuit "AttestSlashV2" {
     constrain_equal_base(derived_pub_x, attester_pub_x);
     constrain_equal_base(derived_pub_y, attester_pub_y);
     constrain_instance(attester_pub_x); constrain_instance(attester_pub_y);
+
+    # `OBL-C198`: the tx pair is the last two instances (the node reads that position); it sat first.
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
 }

@@ -52,12 +52,13 @@ impl DelegateAttestationV1PublicInputs {
     /// — `delegator_pub` included — so the proof verifies only for a caller who can open the
     /// key the record will name.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
+        // `OBL-C198`: the tx pair is the last two instances (matching the reordered circuit).
         vec![
             self.delegatee_leaf,
-            self.tx_binding,
-            self.tx_nonce,
             self.delegator_pub_x,
             self.delegator_pub_y,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }

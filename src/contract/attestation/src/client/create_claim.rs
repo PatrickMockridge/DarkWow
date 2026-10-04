@@ -50,11 +50,12 @@ impl CreateClaimV1PublicInputs {
     /// the creator's coordinates from the secret, and `create_claim_v1` stores `claimant_pub`
     /// from these params, so the two must agree or the proof does not verify.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
+        // `OBL-C198`: the tx pair is the last two instances (matching the reordered circuit).
         vec![
-            self.tx_binding,
-            self.tx_nonce,
             self.claimant_pub_x,
             self.claimant_pub_y,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }

@@ -38,7 +38,7 @@
 //! 4. Claim can be consumed (prevents replay)
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, pasta_prelude::PrimeField, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
@@ -155,6 +155,16 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 // METADATA (ZK proof verification)
 // ============================================================================
 
+/// The transaction binding every attestation proof publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`), not the call data: the commitment is
+/// a derivation over the call data, so a binding carried inside it would be computed from a value
+/// that covers it — a cycle with no fixed point. What stood here was the constant
+/// `poseidon_hash(3, 0, 0)`, identical across every transaction and every proof.
+fn attestation_tx_binding(tx_nonce: Base) -> Result<Base, ContractError> {
+    Ok(poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
@@ -172,10 +182,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
 
-    // Circuit computes tx_binding = poseidon_hash(witness[3], witness[3], witness[4]) =
-    // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3.
-    // All clients compute tx_binding = poseidon_hash(3, 0, 0).
-    let txb = poseidon_hash([Base::from(3), Base::zero(), Base::zero()]);
+    // `OBL-C198`: the binding is **derived** from the commitment the host exposes, not the
+    // constant `poseidon_hash(3, 0, 0)` that bound every proof to nothing at all. The commitment
+    // is a derivation over the call data, so a binding carried inside the call data would be
+    // computed from a value that covers it — a cycle with no fixed point. The nonce is zero
+    // because these calls carry no nonce field.
+    let txb = attestation_tx_binding(Base::zero())?;
 
     match func {
         AttestationFunction::CreateAttestationV1 => {
@@ -199,8 +211,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
-                // Circuit constrain_instance order: tx_binding, tx_nonce, attestor_pub_x, attestor_pub_y
-                vec![txb, Base::zero(), ax, ay],
+                // `OBL-C198`: the pair is the last two instances (matching the reordered circuit).
+                vec![ax, ay, txb, Base::zero()],
             ));
         }
         AttestationFunction::CreateClaimV1 => {
@@ -221,8 +233,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V2.to_string(),
-                // Circuit constrain_instance order: tx_binding, tx_nonce, creator_pub_x, creator_pub_y
-                vec![txb, Base::zero(), cx, cy],
+                // `OBL-C198`: the pair is the last two instances (matching the reordered circuit).
+                vec![cx, cy, txb, Base::zero()],
             ));
         }
         AttestationFunction::VerifyClaimV1 => {
@@ -317,10 +329,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                             "params.delegator_pub is the identity point".to_string(),
                         ))
                     };
-                    // Circuit constrain_instance order: delegatee_leaf, tx_binding, tx_nonce,
-                    // delegator_pub_x, delegator_pub_y
+                    // `OBL-C198`: the pair is the last two instances (matching the reordered
+                    // circuit: delegatee_leaf, delegator_pub_x, delegator_pub_y, tx_binding, tx_nonce).
                     let delegatee_leaf = poseidon_hash([Base::from(4), ex, ey]);
-                    vec![delegatee_leaf, txb, Base::zero(), dlx, dly]
+                    vec![delegatee_leaf, dlx, dly, txb, Base::zero()]
                 },
             ));
         }
@@ -357,8 +369,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V2.to_string(),
-                // Circuit constrain_instance order: tx_binding, tx_nonce, delegator_pub_x, delegator_pub_y
-                vec![txb, Base::zero(), dx, dy],
+                // `OBL-C198`: the pair is the last two instances (matching the reordered circuit).
+                vec![dx, dy, txb, Base::zero()],
             ));
         }
         AttestationFunction::AttestSlashV1 => {
@@ -380,8 +392,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V2.to_string(),
-                // Circuit constrain_instance order: tx_binding, tx_nonce, attester_pub_x, attester_pub_y
-                vec![txb, Base::zero(), rx, ry],
+                // `OBL-C198`: the pair is the last two instances (matching the reordered circuit).
+                vec![rx, ry, txb, Base::zero()],
             ));
         }
         AttestationFunction::CommitFeeScheduleV1 => {
@@ -401,8 +413,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V2.to_string(),
-                // Circuit constrain_instance order: tx_binding, tx_nonce, attester_pub_x, attester_pub_y
-                vec![txb, Base::zero(), ax, ay],
+                // `OBL-C198`: the pair is the last two instances (matching the reordered circuit).
+                vec![ax, ay, txb, Base::zero()],
             ));
         }
         AttestationFunction::RevokeAttestationV1 => {
@@ -426,8 +438,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_REVOKE_NS_V2.to_string(),
-                // Circuit constrain_instance order: tx_binding, tx_nonce, attestor_pub_x, attestor_pub_y
-                vec![txb, Base::zero(), ax, ay],
+                // `OBL-C198`: the pair is the last two instances (matching the reordered circuit).
+                vec![ax, ay, txb, Base::zero()],
             ));
         }
         AttestationFunction::ExpireAttestationV1 => {
@@ -449,8 +461,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_EXPIRE_NS_V2.to_string(),
-                // Circuit constrain_instance order: tx_binding, tx_nonce, attestor_pub_x, attestor_pub_y
-                vec![txb, Base::zero(), ax, ay],
+                // `OBL-C198`: the pair is the last two instances (matching the reordered circuit).
+                vec![ax, ay, txb, Base::zero()],
             ));
         }
         // ValidateClaimV1 has no ZK circuit; return empty metadata.
@@ -1032,10 +1044,9 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Result<V
 fn check_not_revoked_v1(cid: ContractId, params: CheckNotRevokedParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::check_not_revoked_v1] Checking nonce not revoked");
 
-    if params.proof.is_empty() {
-        msg!("[attestation::check_not_revoked_v1] Error: Missing ZK proof");
-        return Err(ContractError::InvalidFunction.into())
-    }
+    // `OBL-C198`: the params' `proof` is always empty now — the real proof rides the transaction's
+    // proof vector, which the commitment excludes — so the presence guard that stood here would
+    // reject every call. Its job moved to the node (`zk_verifier.rs`'s per-call count check).
 
     // Check if proof already used (replay protection)
     let nullifiers_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_NULLIFIERS_TREE)?;
@@ -1078,10 +1089,8 @@ fn check_attestation_v1(cid: ContractId, params: CheckAttestationParamsV1) -> Re
 fn delegate_attestation_v1(cid: ContractId, params: DelegateAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::delegate_attestation_v1] Delegating attestation: {:?}", params.delegation_id);
 
-    if params.proof.is_empty() {
-        msg!("[attestation::delegate_attestation_v1] Error: Missing ZK proof");
-        return Err(ContractError::InvalidFunction.into())
-    }
+    // `OBL-C198`: as `check_not_revoked_v1` — the params' `proof` is always empty and the presence
+    // check lives in the node (`zk_verifier.rs`'s per-call count check).
 
     // Check that delegator and delegatee are different
     if params.delegator_pub == params.delegatee_pub {
@@ -1107,10 +1116,8 @@ fn delegate_attestation_v1(cid: ContractId, params: DelegateAttestationParamsV1)
 fn verify_chain_v1(cid: ContractId, params: VerifyChainParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::verify_chain_v1] Verifying delegation chain: {:?}", params.delegation_id);
 
-    if params.proof.is_empty() {
-        msg!("[attestation::verify_chain_v1] Error: Missing ZK proof");
-        return Err(ContractError::InvalidFunction.into())
-    }
+    // `OBL-C198`: as `check_not_revoked_v1` — the params' `proof` is always empty and the presence
+    // check lives in the node (`zk_verifier.rs`'s per-call count check).
 
     // Look up the delegation in the chain
     let delegations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_DELEGATIONS_TREE)?;
@@ -1134,10 +1141,8 @@ fn verify_chain_v1(cid: ContractId, params: VerifyChainParamsV1) -> Result<Vec<u
 fn update_delegation_v1(cid: ContractId, params: UpdateDelegationParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::update_delegation_v1] Updating delegation: {:?}", params.original_attestation_id);
 
-    if params.proof.is_empty() {
-        msg!("[attestation::update_delegation_v1] Error: Missing ZK proof");
-        return Err(ContractError::InvalidFunction.into())
-    }
+    // `OBL-C198`: as `check_not_revoked_v1` — the params' `proof` is always empty and the presence
+    // check lives in the node (`zk_verifier.rs`'s per-call count check).
 
     // Load the original attestation. OBL-C196(ii): the arm used to check only that it *exists*,
     // and wrote the delegation under its id with no caller check. The delegator is the attestor
