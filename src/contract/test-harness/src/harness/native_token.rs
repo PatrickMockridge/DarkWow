@@ -37,7 +37,7 @@ use dwow_sdk::{
 };
 use dwow_native_token_contract::{
     client::{
-        burn::BurnCallBuilder,
+        burn::{BurnCallBuilder, BurnCallPlan},
         fee::{FeeCallPlan, FeeV3CallBuilder, FeeV3CallInput, FeeV3CallOutput},
     },
     model::{FeeParamsV3, Output},
@@ -90,18 +90,40 @@ impl NativeTokenHarness {
         }
     }
 
-    /// Build a burn call (destroy native tokens)
-    pub fn burn(
+    /// Prepare a burn call (destroy native tokens) — data assembled, proofs **not yet made**.
+    ///
+    /// `OBL-C198`: the Burn_V2 proof binds to the transaction commitment, which is a derivation
+    /// over the transaction's whole call set — so the call has to exist before its proof can,
+    /// and only the caller knows what else its transaction carries. Same split, and the same
+    /// reason, as [`Self::fee_v3_prepare`].
+    pub fn burn_prepare(
         &self,
         inputs: Vec<BurnCallInput>,
-    ) -> Result<BurnResult, Box<dyn std::error::Error>> {
+    ) -> Result<BurnCallPlan, Box<dyn std::error::Error>> {
         let burn_zkbin = self.burn_zkbin.clone();
         let burn_pk = self.burn_pk.clone();
+        Ok(BurnCallBuilder { inputs, burn_zkbin, burn_pk }.prepare()?)
+    }
 
-        let debris = BurnCallBuilder { inputs, burn_zkbin, burn_pk }.build()?;
-
+    /// Prepare and prove a burn call for a transaction in which it is the **only** call.
+    ///
+    /// The shortcut is the name, exactly as in [`Self::fee_v3_solo`]: the commitment is derived
+    /// over the burn call alone, which is correct only when the transaction carries nothing else.
+    /// A caller with children must use [`Self::burn_prepare`], assemble the whole ordered set,
+    /// derive with `dwow_sdk::crypto::util::tx_commitment`, and prove.
+    pub fn burn_solo(
+        &self,
+        contract_id: ContractId,
+        plan: BurnCallPlan,
+    ) -> Result<BurnResult, Box<dyn std::error::Error>> {
+        // The params are fixed at `prepare` and a proof does not change them, so the call the
+        // commitment covers is byte-identical to the one proved below.
         let mut call_data = vec![0x02u8]; // BurnV1
-        call_data.extend_from_slice(&debris.params.encode()?);
+        call_data.extend_from_slice(&plan.params().encode()?);
+        let call = dwow_sdk::tx::ContractCall { contract_id, data: call_data.clone() };
+        let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&call]);
+
+        let debris = plan.prove(tx_commitment)?;
 
         Ok(BurnResult {
             call_data,
@@ -248,8 +270,14 @@ impl NativeTokenHarness {
 
     /// Build a transfer call (function code 0x03, ZK).
     /// Wraps the existing TransferCallBuilder with deterministic test inputs.
-    pub fn transfer(
+    /// Prepare and prove a transfer call for a transaction in which it is the **only** call.
+    ///
+    /// The shortcut is the name, exactly as in [`Self::fee_v3_solo`] and [`Self::burn_solo`]:
+    /// the commitment is derived over this call alone, which is correct only when the
+    /// transaction carries nothing else (`OBL-C198`).
+    pub fn transfer_solo(
         &self,
+        contract_id: ContractId,
         value: u64,
         asset_id: pallas::Base,
         secret: SecretKey,
@@ -298,22 +326,36 @@ impl NativeTokenHarness {
             tx_nonce: pallas::Base::zero(),
         };
         // DZ-4: deterministic RNG in test mode for PI-7 replay.
-        let debris = if dwow_native_token_contract::deterministic_zk_enabled() {
+        let plan = if dwow_native_token_contract::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-            builder.build(&mut rng)?
+            builder.prepare(&mut rng)?
         } else {
             let mut rng = OsRng;
-            builder.build(&mut rng)?
+            builder.prepare(&mut rng)?
         };
+
+        // `OBL-C198`: the params are fixed at `prepare` and a proof does not change them, so the
+        // call the commitment covers is byte-identical to the one proved a line later.
+        let params = plan.params();
+        let tx_nonce = params.tx_nonce;
         let mut call_data = vec![0x03u8]; // TransferV1
-        call_data.extend_from_slice(&debris.params.encode()?);
+        call_data.extend_from_slice(&params.encode()?);
+        let call = dwow_sdk::tx::ContractCall { contract_id, data: call_data.clone() };
+        let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&call]);
+
+        let debris = plan.prove(tx_commitment, tx_nonce)?;
+
         Ok(TransferResult { call_data, proofs: debris.proofs, nullifier: debris.params.inputs[0].nullifier })
     }
 
     /// Build a spend call (function code 0x04, ZK).
     /// Single input burn + single output mint, same pattern as TransferV1.
-    pub fn spend(
+    /// Prepare and prove a spend call for a transaction in which it is the **only** call.
+    ///
+    /// Same shortcut and the same caveat as [`Self::transfer_solo`] (`OBL-C198`).
+    pub fn spend_solo(
         &self,
+        contract_id: ContractId,
         value: u64,
         asset_id: pallas::Base,
         secret: SecretKey,
@@ -354,27 +396,35 @@ impl NativeTokenHarness {
             tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
         };
         // DZ-4: deterministic RNG in test mode for PI-7 replay.
-        let debris = if dwow_native_token_contract::deterministic_zk_enabled() {
+        let plan = if dwow_native_token_contract::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-            builder.build(&mut rng)?
+            builder.prepare(&mut rng)?
         } else {
             let mut rng = OsRng;
-            builder.build(&mut rng)?
+            builder.prepare(&mut rng)?
         };
 
-        // Wrap TransferCallDebris as SpendParamsV1 for function code 0x04
+        // Wrap the plan's TransferParamsV1 as SpendParamsV1 for function code 0x04. The wrap is
+        // commitment-independent, so it happens before the commitment is taken — and the call
+        // the commitment covers is the call that gets proved.
+        let tp = plan.params();
         let params = SpendParamsV1 {
-            input: debris.params.inputs.into_iter().next()
+            input: tp.inputs.into_iter().next()
                 .unwrap_or_else(|| panic!("expected 1 input")),
-            output: debris.params.outputs.into_iter().next()
+            output: tp.outputs.into_iter().next()
                 .unwrap_or_else(|| panic!("expected 1 output")),
             // `tx_binding` is not carried: `get_metadata` derives it from the commitment the
-            // host exposes (`OBL-C198`). The harness's own proof still binds to a commitment —
-            // see `commitment_of` in this file — but the *params* no longer carry the value.
-            tx_nonce: debris.params.tx_nonce,
+            // host exposes (`OBL-C198`).
+            tx_nonce: tp.tx_nonce,
         };
+        let tx_nonce = params.tx_nonce;
         let mut call_data = vec![0x04u8]; // SpendV1
         call_data.extend_from_slice(&params.encode()?);
+        let call = dwow_sdk::tx::ContractCall { contract_id, data: call_data.clone() };
+        let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&call]);
+
+        let debris = plan.prove(tx_commitment, tx_nonce)?;
+
         Ok(SpendResult { call_data, proofs: debris.proofs, nullifier: params.input.nullifier })
     }
 }

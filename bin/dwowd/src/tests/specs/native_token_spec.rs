@@ -146,7 +146,9 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                             tx_commitment: pallas::Base::zero(),
                             tx_nonce: pallas::Base::zero(),
                         };
-                        let r = h.burn(vec![input])
+                        let burn_plan = h.burn_prepare(vec![input])
+                            .map_err(modules::error_bridge::bridge)?;
+                        let r = h.burn_solo(*NATIVE_TOKEN_CONTRACT_ID, burn_plan)
                             .map_err(modules::error_bridge::bridge)?;
                         *burn_nf.lock().unwrap() = Some(r.inputs[0].nullifier.to_bytes().to_vec());
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
@@ -162,7 +164,8 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                     let transfer_nf = transfer_nf.clone();
                     move |coinbase| {
                         let recipient_pub = PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap());
-                        let r = h.transfer(
+                        let r = h.transfer_solo(
+                            *NATIVE_TOKEN_CONTRACT_ID,
                             coinbase.coin_value,
                             pallas::Base::zero(),
                             coinbase.secret.clone(),
@@ -185,7 +188,8 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                     let spend_nf = spend_nf.clone();
                     move |coinbase| {
                         let recipient_pub = PublicKey::from_secret(SecretKey::from_bytes([6u8; 32]).unwrap());
-                        let r = h.spend(
+                        let r = h.spend_solo(
+                            *NATIVE_TOKEN_CONTRACT_ID,
                             coinbase.coin_value,
                             pallas::Base::zero(),
                             coinbase.secret.clone(),
