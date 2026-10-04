@@ -144,4 +144,38 @@ if [ -x "$HOSTDOM_CHECKER" ]; then
         echo "  script/host_domain_exceptions.txt and scripts/check-host-domain-separation.sh."
     fi
 fi
+
+# ---------------------------------------------------------------------------
+# The fourth circuit detector, and the only one of the four that BLOCKS on its first run.
+#
+# `OBL-C198`'s node check has to find the proof's `tx_binding` in the public-input vector, and
+# nothing in `src/linear/` indexes that vector — so the position *is* the interface: the pair is
+# the last two instances. That is a shape, not a name mapping, which is why it can be gated
+# where `check-circuit-metadata-alignment.sh`'s order comparison can only warn. Stage 4 cannot be
+# written at all until every circuit places the pair there.
+#
+# It blocks from the first run, unlike the three above, and the reason is that its findings are
+# already adjudicated: measured 2026-10-04 there are exactly 31 — 30 with the pair elsewhere in
+# the vector and one (`bearer_bond`'s `ProveCoverage_V2`) with no pair at all — every one
+# enumerated in `circuit_tx_pair_last_exceptions.txt` with the register row that schedules its
+# repair. There is no fifth category, so a finding that is NOT in that list is a circuit edited
+# into a shape the node cannot read, and that is a blocked commit by construction.
+PAIR_CHECKER="$REPO_ROOT/scripts/check-circuit-tx-pair-last.sh"
+if [ -x "$PAIR_CHECKER" ]; then
+    if [ "${#FILES[@]}" -eq 0 ]; then
+        PAIR_OUT="$(bash "$PAIR_CHECKER" 2>&1)"
+    else
+        PAIR_OUT="$(bash "$PAIR_CHECKER" "${FILES[@]}" 2>&1)"
+    fi
+    PAIR_STATUS=$?
+    if [ "$PAIR_STATUS" -ne 0 ]; then
+        echo ""
+        echo "$PAIR_OUT" | sed 's/^/  /'
+        echo ""
+        echo "BLOCKED: a circuit's last two instances must be \`tx_binding\` then \`tx_nonce\`"
+        echo "  (OBL-C198). The node reads the pair from the end of the public-input vector and"
+        echo "  there is no per-circuit index map. See scripts/check-circuit-tx-pair-last.sh."
+        exit 1
+    fi
+fi
 exit 0

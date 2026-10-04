@@ -250,6 +250,19 @@ run_gate "circuit dead values (report-only)" bash "$SCRIPT_DIR/check-circuit-dea
 # list is adjudicated, as the two above were: measured 2026-10-04 the tree carries 120 undeclared
 # host derivations and each has to be read before a gate can block on it.
 run_gate "host domain separation (report-only)" bash "$SCRIPT_DIR/check-host-domain-separation.sh"
+# OBL-C198: a circuit's last two `constrain_instance` targets are `tx_binding` then `tx_nonce`.
+# Stage 4 of the tx_binding chain is one comparison — the node recomputes
+# `poseidon(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` over the enclosing transaction and
+# requires it to equal what the proof published — and nothing in `src/linear/` indexes a
+# public-input vector, so the position *is* the interface. That makes it a shape rather than a
+# name mapping, which is why it gates where `check-circuit-metadata-alignment.sh`'s order
+# comparison can only warn. BLOCKING from the first run, unlike the three above: measured
+# 2026-10-04 its findings are exactly 31 (30 with the pair elsewhere in the vector, 1 —
+# `bearer_bond`'s `ProveCoverage_V2` — with no pair at all), every one enumerated in
+# `circuit_tx_pair_last_exceptions.txt` with the register row that schedules its repair, so
+# there is no fifth category and a finding outside that list is a blocked commit by
+# construction. `hooks/pre-commit` blocks on it too.
+run_gate "circuit tx pair last" bash "$SCRIPT_DIR/check-circuit-tx-pair-last.sh"
 # OBL-C99: a client builder's params are the params the contract decodes — the wallet's call is the
 # contract's call. A client that declares its own params type is a second encoder for one function,
 # and the two drift: `drain_protection`'s `initialize`, `execute` and `transfer` builders returned

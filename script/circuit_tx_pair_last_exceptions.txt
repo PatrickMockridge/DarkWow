@@ -1,0 +1,64 @@
+# Adjudications for `scripts/check-circuit-tx-pair-last.sh` — the rule that a circuit's last
+# two `constrain_instance` targets are `tx_binding` then `tx_nonce`.
+#
+# Format, one entry per line:
+#
+#   <rel path> : <circuit> : <reason citing the mechanism, the host read, or a register ID>
+#
+# Content-keyed on path and circuit name, NOT on line numbers, so a file that shifts
+# underneath an entry keeps its adjudication — the same choice
+# `circuit_pubkey_binding_exceptions.txt` and `circuit_dead_value_exceptions.txt` made, and
+# for the same reason. A stale entry is reported by the checker so this list cannot outlive
+# its sites.
+#
+# THE LIST IS A RATCHET, NOT AN AMNESTY. Every entry here is a circuit with the pair in the
+# wrong place, and every one of them is scheduled for the same repair: move
+# `constrain_instance(tx_binding); constrain_instance(tx_nonce);` to the end. Ten were
+# repaired in the first pass (`box`, `multisig`, `betting_stake`, `purse`, `otc_swap`,
+# `native_token` x3, plus the verdict reorders) and each deletion from this file should
+# follow the same unit of work.
+#
+# WHY THE REPAIR IS PER CONTRACT AND NOT A SWEEP. Moving an instance renumbers three
+# vectors that must agree element for element: the circuit's `constrain_instance` order, the
+# `get_metadata` arm's push order, and the client's `to_public_inputs`/`to_vec`. Reordering
+# the circuit alone yields a proof that fails verification, and
+# `scripts/check-circuit-metadata-alignment.sh` is the instrument that says so — it compares
+# counts as a PASS and order as a WARN. `OBL-C198` is the register row for the campaign.
+#
+# EVERY NON-CONFORMING CIRCUIT IN THE TREE IS LISTED. Measured 2026-10-04 over 166 circuits:
+# 136 conform, 30 have the pair elsewhere in the vector, and 1 (`bearer_bond`'s
+# `ProveCoverage_V2`) has no pair at all. There is no fourth category, so this file is the
+# complete census — a circuit that conforms today and is edited into the middle shape fails
+# the check, which is the point.
+
+src/contract/bearer_bond/proof/prove_coverage.zk : ProveCoverage_V2 : `OBL-C198` — has no tx pair at all (it instances no tx_binding and no tx_nonce). The node reads the pair from the end of every vector, so this circuit cannot be covered by stage 4 until it carries one; it is exercised by a spec, which is what makes the omission visible rather than silent.
+src/contract/bearer_bond/proof/redeem.zk : Redeem_V2 : `OBL-C198` — pair at 5,6 of 8; `coin_spend_hook` follows. Reorder opens the per-contract unit (circuit + arm + `to_public_inputs`).
+src/contract/dao_escrow/proof/init.zk : InitV2 : `OBL-C198` — pair at 1,2 of 4; `endowment_bulla` follows.
+src/contract/dao_escrow/proof/propose_claim.zk : ProposeClaimV2 : `OBL-C198` — pair at 0,1 of 3; `claim_commit` follows.
+src/contract/dao_escrow/proof/vote_claim.zk : VoteClaimV2 : `OBL-C198` — pair at 0,1 of 3; `vote_nullifier` follows.
+src/contract/darktoshi_dice/proof/settle_bet.zk : SettleBet_V2 : `OBL-C198` — pair at 1,2 of 4; `roll_hash` follows.
+src/contract/escrow/proof/cancel.zk : CancelEscrowV2 : `OBL-C198` — pair at 3,4 of 6; `cancel_nullifier` follows.
+src/contract/escrow/proof/claim.zk : ClaimEscrowV2 : `OBL-C198` — pair at 2,3 of 5; `spent_nullifier` follows.
+src/contract/escrow/proof/create_escrow.zk : CreateEscrowV2 : `OBL-C198` — pair at 1,2 of 4; `seller_commitment` follows.
+src/contract/escrow/proof/fund.zk : FundEscrowV2 : `OBL-C198` — pair at 3,4 of 6; the merkle-root instance follows.
+src/contract/escrow/proof/refund.zk : RefundEscrowV2 : `OBL-C198` — pair at 5,6 of 8; `spent_nullifier` follows.
+src/contract/game_room/proof/create_room.zk : CreateRoomV2 : `OBL-C198` — pair at 0,1 of 3; `derived_room_id` follows.
+src/contract/game_room/proof/deposit.zk : DepositV2 : `OBL-C198` — pair at 1,2 of 4; `derived_player_key` follows.
+src/contract/game_room/proof/place_bet.zk : PlaceBetV2 : `OBL-C198` — pair at 1,2 of 4; `derived_commitment` follows.
+src/contract/game_room/proof/settle_pot.zk : SettlePotV2 : `OBL-C198` — pair at 1,2 of 4; `derived_pot_id` follows.
+src/contract/insurance_market/proof/purchase_coverage_with_capability.zk : PurchaseCoverageWithCapabilityV2 : `OBL-C198` — pair at 2,3 of 6; `required_capability_id` and `buyer_nullifier` follow.
+src/contract/insurance_market/proof/underwrite_with_capability.zk : UnderwriteV2 : `OBL-C198` — pair at 2,3 of 5; `required_capability_id` follows.
+src/contract/pool_stake/proof/allocate_coverage.zk : AllocateCoverageV2 : `OBL-C198` — pair at 0,1 of 3; `derived_allocation_id` follows.
+src/contract/pool_stake/proof/create_pool.zk : CreatePoolV2 : `OBL-C198` — pair at 0,1 of 3; `derived_pool_id` follows.
+src/contract/pool_stake/proof/join_pool.zk : JoinPoolV2 : `OBL-C198` — pair at 2,3 of 5; the value-commitment y coordinate follows.
+src/contract/pool_stake/proof/slash_coverage.zk : SlashCoverageV2 : `OBL-C198` — pair at 0,1 of 3; `derived_slash_id` follows.
+src/contract/promissory_note/proof/redeem.zk : Redeem_V2 : `OBL-C198` — pair at 5,6 of 8; `coin_spend_hook` follows. `promissory_note`'s transfer and burn paths were migrated in the first pass; this circuit and `revoke.zk` were not, and the instrument is what made the difference visible.
+src/contract/relayer_endowment/proof/claim_fees.zk : ClaimFeesV2 : `OBL-C198` — pair at 0,1 of 3; `derived_claim_id` follows.
+src/contract/relayer_endowment/proof/deploy_capital.zk : DeployCapitalV2 : `OBL-C198` — pair at 2,3 of 5; the value-commitment y coordinate follows.
+src/contract/relayer_endowment/proof/initialize.zk : InitializeV2 : `OBL-C198` — pair at 0,1 of 3; `derived_endowment_id` follows.
+src/contract/roulette/proof/settle_bet.zk : SettleBet_V2 : `OBL-C198` — pair at 0,1 of 3; `payout` follows.
+src/contract/slot/proof/settle_bet.zk : SettleBet_V2 : `OBL-C198` — pair at 1,2 of 4; `payout` follows.
+src/contract/stablecoin/proof/init.zk : InitV2 : `OBL-C198` — pair at 0,1 of 3; `deployer_auth` follows.
+src/contract/subscription/proof/subscribe.zk : SubscribeV2 : `OBL-C198` — pair at 0,1 of 3; `derived_id` follows.
+src/contract/subscription/proof/update_usage.zk : UpdateUsageV2 : `OBL-C198` — pair at 0,1 of 3; `derived_id` follows.
+src/contract/subscription/proof/verify_access.zk : VerifyAccessV2 : `OBL-C198` — pair at 0,1 of 3; `derived_capability` follows.
