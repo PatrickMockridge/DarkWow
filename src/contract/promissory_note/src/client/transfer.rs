@@ -204,7 +204,19 @@ pub struct TransferCallBuilder {
 
 impl TransferCallBuilder {
     /// Build the Transfer call debris
+    /// Build the call and prove it in one step, with the commitment the inputs carry.
+    ///
+    /// Kept for callers that already know theirs. A caller that does not — because the
+    /// commitment is a derivation over the finished call set — uses [`Self::prepare`] and then
+    /// [`TransferCallPlan::prove`] once the whole transaction is assembled (`OBL-C198`).
     pub fn build(self) -> Result<TransferCallDebris> {
+        let commitment = self.inputs[0].tx_commitment;
+        let nonce = self.inputs[0].tx_nonce;
+        self.prepare()?.prove(commitment, nonce)
+    }
+
+    /// Assemble the call's data and stop — **before** the blind-output proofs exist.
+    pub fn prepare(self) -> Result<TransferCallPlan> {
         debug!(target: "contract::promissory_note::client::transfer", "Building PromissoryNote::TransferV1 contract call");
 
         if self.inputs.is_empty() {
@@ -223,6 +235,7 @@ impl TransferCallBuilder {
         let mut proofs = vec![];
         let mut inputs = vec![];
         let mut outputs = vec![];
+        let mut planned_outputs: Vec<PlannedTransferOutput> = vec![];
 
         // Pre-generate value_blinds so burn and output proofs share the same
         // blind per input-output pair. Pedersen value conservation requires
@@ -283,17 +296,16 @@ impl TransferCallBuilder {
             // Deterministic asset_id_blind: matches burn proof for value conservation.
             let asset_id_blind = Blind(poseidon_hash([output.asset_id]));
 
-            let (transfer_proof, revealed) = create_transfer_transfer_proof(
-                &self.transfer_zkbin,
-                &self.transfer_pk,
-                output,
-                value_blind.clone(),
-                asset_id_blind.clone(),
-                self.inputs[0].tx_commitment,
-                self.inputs[0].tx_nonce,
-            )?;
+            // Derive, do not prove — the proof binds to a commitment derived over the finished
+            // call data (`OBL-C198`), so the call is built here and proved in
+            // `TransferCallPlan::prove`.
+            let derived = derive_transfer_blind_output(output, value_blind.clone(), asset_id_blind.clone());
 
-            proofs.push(transfer_proof);
+            planned_outputs.push(PlannedTransferOutput {
+                output: output.clone(),
+                value_blind: value_blind.clone(),
+                asset_id_blind: asset_id_blind.clone(),
+            });
 
             // Build note with all attributes the recipient needs to verify the commitment.
             // token_blind in the note must match asset_id_blind used in the ZK proof
@@ -307,7 +319,7 @@ impl TransferCallBuilder {
                 value_blind: value_blind.inner(),
                 token_blind: asset_id_blind.inner(),
                 memo: vec![],
-                commitment: revealed.commitment.inner(),
+                commitment: derived.commitment.inner(),
             };
 
             // Encrypt note to recipient's public key using AEAD (Diffie-Hellman + ChaCha20Poly1305).
@@ -327,25 +339,83 @@ impl TransferCallBuilder {
             }))?;
 
             outputs.push(Output {
-                value_commit: revealed.value_commit,
-                token_commit: revealed.token_commit,
-                commitment: revealed.commitment,
+                value_commit: derived.value_commit,
+                token_commit: derived.token_commit,
+                commitment: derived.commitment,
                 note: encrypted_note,
                 spend_hook: FuncId::from_base(output.spend_hook),
             });
         }
 
-        // The params' tx_binding/tx_nonce must match what the burn and output proofs
-        // derived, so the contract's get_metadata returns the same values the proofs
-        // committed to. All inputs in one transaction share the same binding.
-        let tx_commitment = self.inputs[0].tx_commitment;
-        let tx_nonce = self.inputs[0].tx_nonce;
-        let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
-
-        Ok(TransferCallDebris {
-            params: TransferParamsV1 { inputs, outputs, tx_binding, tx_nonce },
+        // The params no longer carry the binding: `get_metadata` derives it from the commitment
+        // the host exposes (`OBL-C198`), because a binding inside the call data would be computed
+        // from a value that covers it. Only the nonce is carried.
+        Ok(TransferCallPlan {
+            transfer_zkbin: self.transfer_zkbin,
+            transfer_pk: self.transfer_pk,
+            planned_outputs,
+            inputs,
+            outputs,
             proofs,
+            tx_nonce: self.inputs[0].tx_nonce,
         })
+    }
+}
+
+/// A transfer call whose data is assembled and whose blind-output proofs are not yet made.
+///
+/// The second half of the split `OBL-C198` forced, and it is the split that unblocks every
+/// composition where this call is a **child**: the transaction commitment is a derivation over
+/// the call data, so the call must exist before its proof — and it covers the *whole*
+/// transaction's call set, not this call alone. A caller therefore builds every call it will
+/// submit (parent and children), derives the commitment once over that ordered set, and only
+/// then calls [`TransferCallPlan::prove`] with it, so parent and child bind to the same value.
+pub struct TransferCallPlan {
+    transfer_zkbin: ZkBinary,
+    transfer_pk: ProvingKey,
+    planned_outputs: Vec<PlannedTransferOutput>,
+    inputs: Vec<Input>,
+    outputs: Vec<Output>,
+    proofs: Vec<Proof>,
+    tx_nonce: pallas::Base,
+}
+
+/// What a blind-output proof needs that the derivation does not produce.
+struct PlannedTransferOutput {
+    output: TransferCallOutput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+}
+
+impl TransferCallPlan {
+    /// The contract's call parameters — no `tx_binding`, which `get_metadata` derives.
+    pub fn params(&self) -> TransferParamsV1 {
+        TransferParamsV1 {
+            inputs: self.inputs.clone(),
+            outputs: self.outputs.clone(),
+            tx_nonce: self.tx_nonce,
+        }
+    }
+
+    /// Prove every blind output in this plan, binding to `tx_commitment`.
+    pub fn prove(
+        mut self,
+        tx_commitment: pallas::Base,
+        tx_nonce: pallas::Base,
+    ) -> Result<TransferCallDebris> {
+        for p in &self.planned_outputs {
+            let (transfer_proof, _revealed) = create_transfer_transfer_proof(
+                &self.transfer_zkbin,
+                &self.transfer_pk,
+                &p.output,
+                p.value_blind.clone(),
+                p.asset_id_blind.clone(),
+                tx_commitment,
+                tx_nonce,
+            )?;
+            self.proofs.push(transfer_proof);
+        }
+        Ok(TransferCallDebris { params: self.params(), proofs: self.proofs })
     }
 }
 
@@ -464,15 +534,27 @@ fn create_transfer_burn_proof(
 ///
 /// Now constrains token_commit so the entrypoint can group inputs and outputs
 /// per token type for value conservation.
-fn create_transfer_transfer_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
+/// The values a blind-output proof reveals, derived from its witnesses alone.
+///
+/// `OBL-C198`: the transaction commitment is a derivation over the call data, so the call has
+/// to be assembled before its proof — and the call carries these three values. None of them
+/// depends on the commitment (`tx_binding` does, and is deliberately not here), so a caller can
+/// build the call first and prove second.
+///
+/// One derivation, one home: `create_transfer_transfer_proof` calls this rather than repeating
+/// it (`safety.md` RC5).
+pub struct TransferBlindOutputDerived {
+    pub commitment: CapCommitment,
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+}
+
+/// Derive the blind output's revealed values. Pure: no commitment, no proof, no randomness.
+pub fn derive_transfer_blind_output(
     output: &TransferCallOutput,
     value_blind: ScalarBlind,
     asset_id_blind: BaseBlind,
-    tx_commitment: pallas::Base,
-    tx_nonce: pallas::Base,
-) -> Result<(Proof, TransferBlindOutputRevealed)> {
+) -> TransferBlindOutputDerived {
     // Create commitment attributes
     let attrs = CapAttrs {
         public_key: output.recipient,
@@ -490,6 +572,22 @@ fn create_transfer_transfer_proof(
     // Token commitment - now ZK-constrained in BlindOutputV1
     // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
     let token_commit = poseidon_hash([pallas::Base::from(2), output.asset_id, asset_id_blind.inner()]);
+
+    TransferBlindOutputDerived { commitment, value_commit, token_commit }
+}
+
+fn create_transfer_transfer_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    output: &TransferCallOutput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+    tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
+) -> Result<(Proof, TransferBlindOutputRevealed)> {
+    // Cloned rather than moved: the witnesses below still need both blinds.
+    let TransferBlindOutputDerived { commitment, value_commit, token_commit } =
+        derive_transfer_blind_output(output, value_blind.clone(), asset_id_blind.clone());
 
     let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
 

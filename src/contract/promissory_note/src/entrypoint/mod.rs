@@ -99,6 +99,24 @@ dwow_sdk::define_contract!(
 // CONTRACT INITIALIZATION
 // ============================================================================
 
+/// The transaction binding these arms publish — the deriving side of `OBL-C198`.
+///
+/// `tx_binding` left `TransferParamsV1` in that change and is derived here instead. It cannot be
+/// read from the call data: the transaction commitment is a derivation over the call data, so a
+/// binding carried inside it would be computed from a value that covers it — a cycle with no
+/// fixed point. The host exposes the commitment (`get_tx_commitment`); the call supplies only
+/// the nonce, which the prover chooses and which does not depend on the commitment.
+///
+/// One helper because two arms need this exact value, and a second copy of a derivation is a
+/// second value waiting to drift (`safety.md` RC5).
+fn tx_binding_of(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(dwow_sdk::crypto::poseidon_hash([
+        dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING,
+        dwow_sdk::wasm::util::get_tx_commitment()?,
+        tx_nonce,
+    ]))
+}
+
 pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[promissory_note::init_contract] Initializing promissory_note contract (DeFi tokens)");
 
@@ -444,7 +462,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
                 input.user_data_enc,
                 zk_spend_hook,
                 input.signature_public,
-                params.tx_binding,
+                tx_binding_of(params.tx_nonce)?,
                 params.tx_nonce,
             ],
         ));
@@ -461,7 +479,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V2.to_string(),
             vec![zk_commitment, vc_x, vc_y, output.token_commit,
-                 zk_spend_hook, params.tx_binding, params.tx_nonce],
+                 zk_spend_hook, tx_binding_of(params.tx_nonce)?, params.tx_nonce],
         ));
     }
 
@@ -1178,7 +1196,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V2.to_string(),
             vec![zk_commitment, vc_x, vc_y, output.token_commit,
-                 zk_spend_hook, params.tx_binding, params.tx_nonce],
+                 zk_spend_hook, tx_binding_of(params.tx_nonce)?, params.tx_nonce],
         ));
     }
 

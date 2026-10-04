@@ -662,8 +662,11 @@ pub struct TransferParamsV1 {
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
     /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
-    pub tx_binding: pallas::Base,
-    /// Transaction nonce
+    /// `tx_binding` stood above this and is **removed**, not moved (`OBL-C198`): the transaction
+    /// commitment is a derivation over the call data, so a binding carried inside it would be
+    /// computed from a value that covers it. `get_metadata` derives it from the commitment the
+    /// host exposes. `tx_nonce` stays — the prover chooses it and it does not depend on the
+    /// commitment.
     pub tx_nonce: pallas::Base,
 }
 
@@ -679,7 +682,7 @@ impl TransferParamsV1 {
         let output_bytes: Vec<Vec<u8>> =
             self.outputs.iter().map(|o| o.encode()).collect::<Result<Vec<_>, _>>()?;
         let output_cap: usize = output_bytes.iter().map(|b| b.len()).sum();
-        let mut buf = Vec::with_capacity(8 + input_cap + output_cap + output_bytes.len() * 4 + 64);
+        let mut buf = Vec::with_capacity(8 + input_cap + output_cap + output_bytes.len() * 4 + 32);
         buf.extend_from_slice(&ic.to_le_bytes());
         for input in &self.inputs { buf.extend_from_slice(&input.encode()); }
         buf.extend_from_slice(&oc.to_le_bytes());
@@ -687,14 +690,14 @@ impl TransferParamsV1 {
             buf.extend_from_slice(&SerializedLen::try_from_len(ob.len())?.to_le_bytes());
             buf.extend_from_slice(ob);
         }
-        buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // 4(input count) + 4(output count) + 32(tx_binding) + 32(tx_nonce) = 72
-        if data.len() < 72 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); }
+        // 4(input count) + 4(output count) + 32(tx_nonce) = 40. It read 72 while the params also
+        // carried a 32-byte `tx_binding`, which left the wire in `OBL-C198`.
+        if data.len() < 40 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); }
         let input_count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
         let mut pos = 4;
         let mut inputs = Vec::with_capacity(input_count);
@@ -717,12 +720,12 @@ impl TransferParamsV1 {
             outputs.push(Output::decode(read_slice(data, pos, out_len)?)?);
             pos += out_len;
         }
-        if data.len() < pos + 64 { return Err(ContractError::IoError("TransferParamsV1: missing trailing fields".into())); }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
-            .ok_or_else(|| ContractError::IoError("TransferParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+        if data.len() < pos + 32 { return Err(ContractError::IoError("TransferParamsV1: missing trailing fields".into())); }
+        // `tx_binding` is not read: `get_metadata` derives it (`OBL-C198`), so `tx_nonce` now
+        // sits where the pair used to start.
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("TransferParamsV1: invalid tx_nonce".into()))?;
-        Ok(TransferParamsV1 { inputs, outputs, tx_binding, tx_nonce })
+        Ok(TransferParamsV1 { inputs, outputs, tx_nonce })
     }
 }
 
