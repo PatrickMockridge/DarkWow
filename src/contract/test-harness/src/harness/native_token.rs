@@ -31,14 +31,14 @@ use dwow_core::{
 };
 use dwow_sdk::{
     blockchain::{FeeAmount, FeeTier},
-    crypto::{MerkleNode, PublicKey, SecretKey, poseidon_hash},
+    crypto::{ContractId, MerkleNode, PublicKey, SecretKey, poseidon_hash},
     crypto::pasta_prelude::Group,
     pasta::pallas,
 };
 use dwow_native_token_contract::{
     client::{
         burn::BurnCallBuilder,
-        fee::{FeeV3CallBuilder, FeeV3CallInput, FeeV3CallOutput},
+        fee::{FeeCallPlan, FeeV3CallBuilder, FeeV3CallInput, FeeV3CallOutput},
     },
     model::{FeeParamsV3, Output},
 };
@@ -110,13 +110,20 @@ impl NativeTokenHarness {
         })
     }
 
-    /// Build a FeeV3 call (plaintext fee payment) at the given [`FeeTier`].
+    /// Prepare a FeeV3 call (plaintext fee payment) at the given [`FeeTier`] — data assembled,
+    /// proof **not yet made**.
     ///
     /// Produces `[0x08][FeeParamsV3]` call data. The `0x08` opcode is named `FeeV3`; the
     /// fee MODEL it carries is FeeV3 (`FeeParamsV3`), and `tier` is the tier field of
     /// that model — it is a real input to `compute_fee_v3`, not a constant. The proof
     /// is still the `FeeV3` mass-balance circuit.
-    pub fn fee_v3(
+    ///
+    /// The split is forced rather than a convenience (`OBL-C198`). The Fee_V3 proof binds to the
+    /// transaction commitment, which is a derivation over the transaction's **whole** call set —
+    /// so the call has to exist before its proof can, and only the caller knows what else its
+    /// transaction carries. A proof made without that is refused by the contract's own
+    /// `get_metadata` arm, which derives the same binding from the commitment the host hands it.
+    pub fn fee_v3_prepare(
         &self,
         input_value: u64,
         asset_id: pallas::Base,
@@ -133,7 +140,7 @@ impl NativeTokenHarness {
         output_user_data: pallas::Base,
         fee_amount: u64,
         tier: FeeTier,
-    ) -> Result<FeeV3Result, Box<dyn std::error::Error>> {
+    ) -> Result<FeeCallPlan, Box<dyn std::error::Error>> {
         // `checked_sub`, not a bare `-`. An over-large fee must reach the builder's own
         // `input.value <= fee_amount` rejection (R3a), or surface as an error — never as
         // a debug-mode subtraction panic, which is what this line used to do.
@@ -169,14 +176,74 @@ impl NativeTokenHarness {
             fee_pk: self.fee_pk.clone(),
         };
 
-        let result = builder.build()
+        let plan = builder
+            .prepare()
             .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+        Ok(plan)
+    }
 
-        // FeeV3 call data: [0x08][FeeParamsV3 encoded] — plaintext fee
-        let mut call_data = vec![0x08u8];
-        call_data.extend_from_slice(&result.params.encode()?);
+    /// Prove a prepared FeeV3 call against `tx_commitment`.
+    ///
+    /// `tx_commitment` is what `dwow_sdk::crypto::util::tx_commitment` derives over the whole
+    /// call set, in the order the transaction carries it — the same value the node stores in the
+    /// core transaction and the contract's `get_metadata` arm derives its binding from. One
+    /// derivation, one home: a caller that invents one here is producing a proof the contract
+    /// refuses.
+    pub fn fee_v3_prove(
+        &self,
+        plan: FeeCallPlan,
+        tx_commitment: pallas::Base,
+    ) -> Result<FeeV3Result, Box<dyn std::error::Error>> {
+        let result = plan
+            .prove(tx_commitment)
+            .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+        Ok(FeeV3Result {
+            call_data: result.call_data,
+            params: result.params,
+            proofs: result.proofs,
+        })
+    }
 
-        Ok(FeeV3Result { call_data, params: result.params, proofs: result.proofs })
+    /// Prepare **and** prove a FeeV3 call for a transaction in which it is the only call.
+    ///
+    /// The shortcut in the name is the point, and it is the reason this is a second entry point
+    /// rather than the only one: it derives the commitment over the fee call **alone**, which is
+    /// correct exactly when the transaction carries nothing else, and wrong — silently, as a
+    /// proof refused at verification with no hint that the call set was why — the moment it
+    /// carries a second call. A caller whose transaction has children must use
+    /// [`Self::fee_v3_prepare`], assemble the whole ordered set, derive over it with
+    /// `dwow_sdk::crypto::util::tx_commitment`, and then [`Self::fee_v3_prove`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn fee_v3_solo(
+        &self,
+        contract_id: ContractId,
+        input_value: u64,
+        asset_id: pallas::Base,
+        spend_hook: pallas::Base,
+        user_data: pallas::Base,
+        commitment_blind: pallas::Base,
+        leaf_position: u64,
+        merkle_path: Vec<MerkleNode>,
+        merkle_root: MerkleNode,
+        secret: SecretKey,
+        ephemeral_signature_secret: SecretKey,
+        recipient: PublicKey,
+        output_spend_hook: pallas::Base,
+        output_user_data: pallas::Base,
+        fee_amount: u64,
+        tier: FeeTier,
+    ) -> Result<FeeV3Result, Box<dyn std::error::Error>> {
+        let plan = self.fee_v3_prepare(
+            input_value, asset_id, spend_hook, user_data, commitment_blind, leaf_position,
+            merkle_path, merkle_root, secret, ephemeral_signature_secret, recipient,
+            output_spend_hook, output_user_data, fee_amount, tier,
+        )?;
+        let call = dwow_sdk::tx::ContractCall {
+            contract_id,
+            data: plan.call_data().to_vec(),
+        };
+        let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&call]);
+        self.fee_v3_prove(plan, tx_commitment)
     }
 
     /// Build a transfer call (function code 0x03, ZK).

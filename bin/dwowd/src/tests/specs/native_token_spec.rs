@@ -40,7 +40,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                     move |coinbase| {
                         // Leaf position/path/root are precomputed from the on-chain
                         // coin merkle tree (coinbase_coordination) — never rebuilt here.
-                        let r = h.fee_v3(
+                        let r = h.fee_v3_solo(*NATIVE_TOKEN_CONTRACT_ID,
                             coinbase.coin_value, pallas::Base::zero(),
                             pallas::Base::from(0u64), pallas::Base::from(0u64),
                             coinbase.commitment_blind,

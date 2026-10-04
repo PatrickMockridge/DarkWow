@@ -75,7 +75,7 @@ pub async fn run_fee_integration_full_lifecycle() -> Result<()> {
         .map_err(crate::tests::modules::error_bridge::bridge)?;
     let fee_amount: u64 = 1;
 
-    let fee_result = native_harness.fee_v3(
+    let fee_result = native_harness.fee_v3_solo(cid,
         cb2.coin_value,
         pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
         cb2.commitment_blind,
@@ -276,7 +276,7 @@ pub async fn run_fee_integration_mempool_lifecycle() -> Result<()> {
         .mining_keypair(BlockHeight::new(2))
         .map_err(crate::tests::modules::error_bridge::bridge)?;
     let fee_amount: u64 = 150_000_000; // above premium threshold
-    let fee_result = native_harness.fee_v3(
+    let fee_result = native_harness.fee_v3_solo(cid,
         cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
         cb2.commitment_blind, u64::from(coin_pos), path, root,
         mining_kp.secret.clone(), mining_kp.secret.clone(),

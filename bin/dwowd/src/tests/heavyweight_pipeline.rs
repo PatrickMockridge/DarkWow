@@ -83,14 +83,21 @@ pub(crate) fn build_witness(
     proofs: Vec<Proof>,
 ) -> Vec<u8> {
     let core_call = dwow_sdk::tx::ContractCall { contract_id, data: call_data.to_vec() };
+    let calls = vec![dwow_sdk::dark_tree::DarkLeaf {
+        data: core_call,
+        parent_index: None,
+        children_indexes: vec![],
+    }];
+    // `OBL-C198`: the commitment is computed by the same function `TransactionBuilder::build`
+    // uses, over the call set this witness actually carries — not left at zeros. It was zeros
+    // until the runtime started handing contracts the value from the witness rather than
+    // re-deriving it, so nothing read it; now the arm of every contract derives its `tx_binding`
+    // from it, and a proof whose client bound the real value is refused if this disagrees.
+    let tx_commitment = dwow_core::tx::commitment_of_calls(&calls);
     let core_tx = dwow_core::tx::Transaction {
-        calls: vec![dwow_sdk::dark_tree::DarkLeaf {
-            data: core_call,
-            parent_index: None,
-            children_indexes: vec![],
-        }],
+        calls,
         proofs: vec![proofs],
-        tx_commitment: [0u8; 32],
+        tx_commitment,
         nullifiers: vec![],
     };
     dwow_serial::serialize(&core_tx)
@@ -166,10 +173,15 @@ pub(crate) fn build_witness_tree(
     let flat_calls: Vec<(ContractId, Vec<u8>)> =
         calls.iter().map(|c| (c.data.contract_id, c.data.data.clone())).collect();
 
+    // The commitment over the emitted post-order call set, by the same derivation the production
+    // builder uses — see the note in `build_witness`. A caller proving a call in this tree must
+    // derive the same value over the same order, which is why `emit` above is the one walk that
+    // decides it.
+    let tx_commitment = dwow_core::tx::commitment_of_calls(&calls);
     let core_tx = dwow_core::tx::Transaction {
         calls,
         proofs,
-        tx_commitment: [0u8; 32],
+        tx_commitment,
         nullifiers: vec![],
     };
     (dwow_serial::serialize(&core_tx), flat_calls)
@@ -1954,8 +1966,8 @@ fn test_heavyweight_fee_v3() -> std::result::Result<(), Box<dyn std::error::Erro
             "FeeV3 at zero congestion, tier LOW, baseline risk must be exactly gas"
         );
 
-        let fee_result = native_harness.fee_v3(
-            cb2.coin_value,
+        let fee_result = native_harness.fee_v3_solo(
+            cid, cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind,
             u64::from(coin_pos),
@@ -2009,7 +2021,8 @@ fn test_heavyweight_fee_v3() -> std::result::Result<(), Box<dyn std::error::Erro
         // reached. Either way it must be an error — never a subtraction panic, which is
         // what a bare `input_value - fee_amount` produced here.
         // fee=11 with input=10 must be rejected.
-        assert!(native_harness.fee_v3(
+        assert!(native_harness.fee_v3_solo(
+            cid,
             10, // input_value = 10
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path.clone(), root,
@@ -2078,7 +2091,8 @@ fn test_heavyweight_fee_v3() -> std::result::Result<(), Box<dyn std::error::Erro
         );
 
         // fee4a: spends cb3 commitment at position 3 (created at height 3, unspent)
-        let fee4a = native_harness.fee_v3(
+        let fee4a = native_harness.fee_v3_solo(
+            cid,
             cb3.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb3.commitment_blind, u64::from(pos3), path3.clone(), root3,
             mining_kp_3.secret.clone(), mining_kp_3.secret.clone(),
@@ -2089,7 +2103,8 @@ fn test_heavyweight_fee_v3() -> std::result::Result<(), Box<dyn std::error::Erro
         ).map_err(|e| dwow_core::Error::Custom(format!("TEST-FAIL [v3-multi-fee]: {}", e)))?;
 
         // fee4b: spends genesis coinbase at position 1 (never spent)
-        let fee4b = native_harness.fee_v3(
+        let fee4b = native_harness.fee_v3_solo(
+            cid,
             gen_reward.get(), pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             gen_cb.commitment_blind, u64::from(pos_gen), path_gen, root_gen,
             mining_kp_1.secret.clone(), mining_kp_1.secret,
@@ -2190,8 +2205,8 @@ fn test_heavyweight_fee_v3_deploy() -> std::result::Result<(), Box<dyn std::erro
         let root = tree.root(0).expect("tree.root");
 
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
-        let fee_result = native_harness.fee_v3(
-            cb2.coin_value,
+        let fee_result = native_harness.fee_v3_solo(
+            *NATIVE_TOKEN_CONTRACT_ID, cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind,
             u64::from(coin_pos),
@@ -2287,8 +2302,8 @@ fn test_heavyweight_fee_v3_box() -> std::result::Result<(), Box<dyn std::error::
         let root = tree.root(0).expect("tree.root");
 
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
-        let fee_result = native_harness.fee_v3(
-            cb2.coin_value,
+        let fee_result = native_harness.fee_v3_solo(
+            *NATIVE_TOKEN_CONTRACT_ID, cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind,
             u64::from(coin_pos),
@@ -2434,7 +2449,8 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
         let root = tree.root(0).expect("tree.root");
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
 
-        let fee_result = native_harness.fee_v3(
+        let fee_result = native_harness.fee_v3_solo(
+            cid,
             cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path, root,
@@ -2734,7 +2750,8 @@ fn test_fee_integration_attack_vectors() -> std::result::Result<(), Box<dyn std:
 
         let mining_kp = chain.mining_keypair(dwow_sdk::blockchain::BlockHeight::new(2))?;
         let fee_amount: u64 = 1;
-        let fee_result = native_harness.fee_v3(
+        let fee_result = native_harness.fee_v3_solo(
+            cid,
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret.clone(),
@@ -3013,8 +3030,8 @@ fn test_fee_integration_multi_contract_differential() -> std::result::Result<(),
         let root = tree.root(0).expect("tree.root");
 
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
-        let fee_result = native_harness.fee_v3(
-            cb2.coin_value,
+        let fee_result = native_harness.fee_v3_solo(
+            *NATIVE_TOKEN_CONTRACT_ID, cb2.coin_value,
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind,
             u64::from(coin_pos),

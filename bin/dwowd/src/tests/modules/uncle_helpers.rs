@@ -120,7 +120,8 @@ pub fn native_token_call(
     // reconcile with the chain; the output side is a new coin.
     let recipient = PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?);
 
-    let result = harness.fee_v3(
+    let result = harness.fee_v3_solo(
+        *NATIVE_TOKEN_CONTRACT_ID,
         pf.coin_value,
         DRKW_ASSET_ID.inner(),
         pallas::Base::zero(), // spend_hook

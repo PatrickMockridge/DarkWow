@@ -229,7 +229,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
 
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
         let fee_amount: u64 = 150_000_000; // above premium threshold
-        let fee_result = native_harness.fee_v3(
+        let fee_result = native_harness.fee_v3_solo(cid,
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret,
@@ -376,7 +376,7 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
 
         let mining_kp = chain.mining_keypair(BlockHeight::new(2))?;
         let fee_amount: u64 = 150_000_000; // above premium threshold
-        let fee_result = native_harness.fee_v3(
+        let fee_result = native_harness.fee_v3_solo(cid,
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret,
@@ -539,7 +539,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         let general: u64 = 1_000_000;
 
         // Tx1: fee=150M
-        let fr1 = native_harness.fee_v3(
+        let fr1 = native_harness.fee_v3_solo(cid,
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path.clone(), root,
             mining_kp.secret.clone(), mining_kp.secret.clone(),
@@ -549,7 +549,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         ).map_err(|e| dwow_core::Error::Custom(format!("[NF1-ST2] fee_v3 tx1: {}", e)))?;
 
         // Tx2: fee=200M, SAME commitment → SAME nullifier
-        let fr2 = native_harness.fee_v3(
+        let fr2 = native_harness.fee_v3_solo(cid,
             cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.commitment_blind, u64::from(coin_pos), path, root,
             mining_kp.secret.clone(), mining_kp.secret,
