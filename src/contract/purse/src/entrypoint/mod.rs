@@ -1,5 +1,5 @@
 use dwow_sdk::{
-    crypto::{merkle_anchor, ContractId, MerkleNode, MerkleTree},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, merkle_anchor, poseidon_hash, ContractId, MerkleNode, MerkleTree},
     dark_tree::DarkLeaf, error::{ContractError, ContractResult}, msg, wasm,
     pasta::pallas, ContractCall,
 };
@@ -62,6 +62,16 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::util::set_return_data(&metadata)
 }
 
+/// The transaction binding this call publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// What stood in the three arms was `params.tx_binding`, a value the caller supplied.
+fn purse_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 fn deposit_metadata(p: DepositParams) -> Result<Vec<u8>, ContractError> {
     // L1 metadata boundary (Boundary 4): type-annotated extraction.
     // Order MUST match circuit constrain_instance order.
@@ -72,14 +82,14 @@ fn deposit_metadata(p: DepositParams) -> Result<Vec<u8>, ContractError> {
     let zk_old_commit_y: pallas::Base = p.old_commit_y;
     let zk_new_commit_x: pallas::Base = p.new_commit_x;
     let zk_new_commit_y: pallas::Base = p.new_commit_y;
-    let zk_tx_binding: pallas::Base = p.tx_binding;
+    // `OBL-C198`: the binding is **derived** from the host-exposed commitment, not echoed from
+    // `params.tx_binding`.
+    let zk_tx_binding: pallas::Base = purse_tx_binding(p.tx_nonce)?;
     let zk_tx_nonce: pallas::Base = p.tx_nonce;
-    // **Last**, matching the circuit's instance sequence: the nine above keep their indices, and
-    // `derived_purse_id` is appended where `deposit.zk` and `withdraw.zk` constrain it. A vector in a
-    // different order than the circuit publishes is one the verifier never asks for.
     let zk_derived_purse_id: pallas::Base = p.derived_purse_id;
 
-    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_DEPOSIT_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_old_commit_x, zk_old_commit_y, zk_new_commit_x, zk_new_commit_y, zk_new_leaf, zk_tx_binding, zk_tx_nonce, zk_derived_purse_id]));
+    // `OBL-C198`: the tx pair is the last two instances (matching the reordered `deposit.zk`).
+    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_DEPOSIT_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_old_commit_x, zk_old_commit_y, zk_new_commit_x, zk_new_commit_y, zk_new_leaf, zk_derived_purse_id, zk_tx_binding, zk_tx_nonce]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 fn withdraw_metadata(p: WithdrawParams) -> Result<Vec<u8>, ContractError> {
@@ -91,14 +101,13 @@ fn withdraw_metadata(p: WithdrawParams) -> Result<Vec<u8>, ContractError> {
     let zk_old_commit_y: pallas::Base = p.old_commit_y;
     let zk_new_commit_x: pallas::Base = p.new_commit_x;
     let zk_new_commit_y: pallas::Base = p.new_commit_y;
-    let zk_tx_binding: pallas::Base = p.tx_binding;
+    // `OBL-C198`: the binding is derived from the host-exposed commitment, not echoed.
+    let zk_tx_binding: pallas::Base = purse_tx_binding(p.tx_nonce)?;
     let zk_tx_nonce: pallas::Base = p.tx_nonce;
-    // **Last**, matching the circuit's instance sequence: the nine above keep their indices, and
-    // `derived_purse_id` is appended where `deposit.zk` and `withdraw.zk` constrain it. A vector in a
-    // different order than the circuit publishes is one the verifier never asks for.
     let zk_derived_purse_id: pallas::Base = p.derived_purse_id;
 
-    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_WITHDRAW_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_old_commit_x, zk_old_commit_y, zk_new_commit_x, zk_new_commit_y, zk_new_leaf, zk_tx_binding, zk_tx_nonce, zk_derived_purse_id]));
+    // `OBL-C198`: the tx pair is the last two instances (matching the reordered `withdraw.zk`).
+    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_WITHDRAW_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_old_commit_x, zk_old_commit_y, zk_new_commit_x, zk_new_commit_y, zk_new_leaf, zk_derived_purse_id, zk_tx_binding, zk_tx_nonce]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 fn balance_metadata(p: BalanceParams) -> Result<Vec<u8>, ContractError> {
@@ -108,7 +117,9 @@ fn balance_metadata(p: BalanceParams) -> Result<Vec<u8>, ContractError> {
     let zk_balance_commit_x: pallas::Base = p.balance_commit_x;
     let zk_balance_commit_y: pallas::Base = p.balance_commit_y;
     let zk_token_commit: pallas::Base = p.token_commit;
-    let zk_tx_binding: pallas::Base = p.tx_binding;
+    // `OBL-C198`: the binding is derived from the host-exposed commitment, not echoed. The push
+    // order already has the pair last, matching `balance.zk`.
+    let zk_tx_binding: pallas::Base = purse_tx_binding(p.tx_nonce)?;
     let zk_tx_nonce: pallas::Base = p.tx_nonce;
 
     let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_BALANCE_NS.to_string(), vec![zk_derived_purse_id, zk_expected_root, zk_balance_commit_x, zk_balance_commit_y, zk_token_commit, zk_tx_binding, zk_tx_nonce]));

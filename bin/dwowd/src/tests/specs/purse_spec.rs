@@ -16,7 +16,10 @@ use crate::tests::uniform_runner::{
 };
 
 pub fn purse_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(PurseHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its call will carry, because the commitment is
+    // derived over the call *including* the contract id. `purse` is genesis, so the id it carries
+    // is the constant `PURSE_CONTRACT_ID` the spec already builds the call with.
+    let harness = Box::leak(Box::new(PurseHarness::spawn(*PURSE_CONTRACT_ID)));
 
     ContractTestSpec {
         name: "purse",

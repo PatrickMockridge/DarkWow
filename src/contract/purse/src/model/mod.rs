@@ -133,7 +133,12 @@ type MerklePath = [MerkleNode; 32];
 #[derive(Debug, Clone)] pub struct DepositParams {
     pub nullifier: Nullifier, pub expected_root: MerkleNode, pub new_leaf: MerkleNode,
     pub old_commit_x: pallas::Base, pub old_commit_y: pallas::Base, pub new_commit_x: pallas::Base, pub new_commit_y: pallas::Base,
-    pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>, pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base,
+    // `tx_binding` was here until 2026-10-04 and is **removed**, not moved (`OBL-C198`). The
+    // commitment is a derivation over the call data, so a binding carried *inside* it would be
+    // computed from a value that covers it — a cycle with no fixed point. `get_metadata` now
+    // derives it from the commitment the host exposes (`get_tx_commitment`); `tx_nonce` stays,
+    // because the prover chooses it and it does not depend on the commitment.
+    pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>, pub tx_nonce: pallas::Base,
     /// `poseidon_hash(4, owner_pub, asset_id, purse_id)` — the purse this operation names.
     ///
     /// **It replaced `asset_id`, which was on the wire for a reason that no longer holds.** The field
@@ -156,7 +161,9 @@ impl DepositParams {
         // hdr = 228 (was 252): the three balances left the wire. `nullifier` is at offset 0 now, so
         // every offset below moved by 24.
         let hdr=228usize; let pb:Vec<u8>=self.merkle_path.iter().flat_map(|n|n.to_bytes()).collect();
-        let mut b=Vec::with_capacity(hdr+pb.len()+1+self.proof.len()+64);
+        // 32, not 64: `tx_binding` is derived by `get_metadata` (`OBL-C198`) and only `tx_nonce` is
+        // carried.
+        let mut b=Vec::with_capacity(hdr+pb.len()+1+self.proof.len()+32);
         b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.expected_root.to_bytes()); b.extend_from_slice(&self.new_leaf.to_bytes());
         b.extend_from_slice(&self.old_commit_x.to_repr()); b.extend_from_slice(&self.old_commit_y.to_repr());
@@ -169,7 +176,7 @@ impl DepositParams {
         // length that does not fit, and its decoder is the exact inverse of its encoder.
         let pl = SerializedLen::try_from_len(self.proof.len())?;
         b.extend_from_slice(&pl.to_le_bytes());
-        b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b.extend_from_slice(&self.derived_purse_id.to_repr()); Ok(b)
+        b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_nonce.to_repr()); b.extend_from_slice(&self.derived_purse_id.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let hdr=228usize; if data.len()<=hdr+1024usize { return Err(PurseError::DecodeFailure{field:"DepositParams".into()}.into()); }
@@ -187,10 +194,10 @@ impl DepositParams {
         // is how this was found, on the first deposit of `test_heavyweight_purse`. The length prefix
         // still does its job: it says where the proof ends, so the three trailing fields are read at the
         // right offsets whatever follows them.
-        if data.len() < p2.saturating_add(96) { return Err(PurseError::DecodeFailure{field:"DepositParams".into()}.into()); }
+        if data.len() < p2.saturating_add(64) { return Err(PurseError::DecodeFailure{field:"DepositParams".into()}.into()); }
         let proof=read_slice(data,pe+SerializedLen::ENCODED_SIZE,pl)?.to_vec();
-        let tb=read_base(read_slice(data,p2,32)?)?; let tn=read_base(read_slice(data,p2+32,32)?)?; let dpi=read_base(read_slice(data,p2+64,32)?)?;
-        Ok(DepositParams{nullifier:nf,expected_root:er,new_leaf:nl,old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:lp,merkle_path:mp,proof,tx_binding:tb,tx_nonce:tn,derived_purse_id:dpi})
+        let tn=read_base(read_slice(data,p2,32)?)?; let dpi=read_base(read_slice(data,p2+32,32)?)?;
+        Ok(DepositParams{nullifier:nf,expected_root:er,new_leaf:nl,old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:lp,merkle_path:mp,proof,tx_nonce:tn,derived_purse_id:dpi})
     }
 }
 
@@ -206,7 +213,8 @@ impl DepositUpdate { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { le
 #[derive(Debug, Clone)] pub struct WithdrawParams {
     pub nullifier: Nullifier, pub expected_root: MerkleNode, pub new_leaf: MerkleNode,
     pub old_commit_x: pallas::Base, pub old_commit_y: pallas::Base, pub new_commit_x: pallas::Base, pub new_commit_y: pallas::Base,
-    pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>, pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base,
+    // `tx_binding` removed as in `DepositParams` (`OBL-C198`); this struct shares that wire format.
+    pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>, pub tx_nonce: pallas::Base,
     /// See `DepositParams::derived_purse_id` — the field is the same in the same position, and
     /// `asset_id` left the wire in the same change.
     pub derived_purse_id: pallas::Base,
@@ -220,8 +228,8 @@ impl DepositUpdate { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { le
 // deposit_amount. This is intentional — the two operations have identical
 // payload layout. If DepositParams' encoding changes, verify WithdrawParams
 // round-trip tests in tests/integration.rs still pass.
-impl WithdrawParams { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { DepositParams{nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_binding:self.tx_binding,tx_nonce:self.tx_nonce,derived_purse_id:self.derived_purse_id}.encode() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { let dp = DepositParams::decode(data)?; Ok(WithdrawParams{nullifier:dp.nullifier,expected_root:dp.expected_root,new_leaf:dp.new_leaf,old_commit_x:dp.old_commit_x,old_commit_y:dp.old_commit_y,new_commit_x:dp.new_commit_x,new_commit_y:dp.new_commit_y,leaf_pos:dp.leaf_pos,merkle_path:dp.merkle_path,proof:dp.proof,tx_binding:dp.tx_binding,tx_nonce:dp.tx_nonce,derived_purse_id:dp.derived_purse_id}) } }
-impl dwow_serial::Encodable for WithdrawParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = DepositParams{nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_binding:self.tx_binding,tx_nonce:self.tx_nonce,derived_purse_id:self.derived_purse_id}.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
+impl WithdrawParams { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { DepositParams{nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_nonce:self.tx_nonce,derived_purse_id:self.derived_purse_id}.encode() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { let dp = DepositParams::decode(data)?; Ok(WithdrawParams{nullifier:dp.nullifier,expected_root:dp.expected_root,new_leaf:dp.new_leaf,old_commit_x:dp.old_commit_x,old_commit_y:dp.old_commit_y,new_commit_x:dp.new_commit_x,new_commit_y:dp.new_commit_y,leaf_pos:dp.leaf_pos,merkle_path:dp.merkle_path,proof:dp.proof,tx_nonce:dp.tx_nonce,derived_purse_id:dp.derived_purse_id}) } }
+impl dwow_serial::Encodable for WithdrawParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = DepositParams{nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_nonce:self.tx_nonce,derived_purse_id:self.derived_purse_id}.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for WithdrawParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 #[derive(Debug, Clone)] pub struct WithdrawUpdate { pub nullifier: Nullifier, pub new_leaf: MerkleNode }
@@ -242,7 +250,8 @@ impl WithdrawUpdate { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { l
 #[derive(Debug, Clone)] pub struct BalanceParams {
     pub derived_purse_id: pallas::Base, pub expected_root: MerkleNode, pub token_commit: pallas::Base,
     pub balance_commit_x: pallas::Base, pub balance_commit_y: pallas::Base,
-    pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>, pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base,
+    // `tx_binding` removed as in `DepositParams` (`OBL-C198`).
+    pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>, pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for BalanceParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
@@ -250,7 +259,8 @@ impl dwow_serial::Decodable for BalanceParams { fn decode<D: std::io::Read>(d: &
 impl BalanceParams {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let hdr=164usize; let pb:Vec<u8>=self.merkle_path.iter().flat_map(|n|n.to_bytes()).collect();
-        let mut b=Vec::with_capacity(hdr+pb.len()+1+self.proof.len()+64);
+        // 32, not 64: `tx_binding` is derived (`OBL-C198`).
+        let mut b=Vec::with_capacity(hdr+pb.len()+1+self.proof.len()+32);
         b.extend_from_slice(&self.derived_purse_id.to_repr()); b.extend_from_slice(&self.expected_root.to_bytes());
         b.extend_from_slice(&self.token_commit.to_repr()); b.extend_from_slice(&self.balance_commit_x.to_repr());
         b.extend_from_slice(&self.balance_commit_y.to_repr()); b.extend_from_slice(&self.leaf_pos.to_le_bytes());
@@ -259,7 +269,7 @@ impl BalanceParams {
         // `u8` proof prefix in this file.
         let pl = SerializedLen::try_from_len(self.proof.len())?;
         b.extend_from_slice(&pl.to_le_bytes());
-        b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b)
+        b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let hdr=164usize; if data.len()<=hdr+1024usize { return Err(PurseError::DecodeFailure{field:"BalanceParams".into()}.into()); }
@@ -271,9 +281,9 @@ impl BalanceParams {
         let p2 = pe.saturating_add(SerializedLen::ENCODED_SIZE).saturating_add(pl);
         // A minimum, for the reason stated at `DepositParams::decode`: the payload continues past the
         // params with the caller's note.
-        if data.len() < p2.saturating_add(64) { return Err(PurseError::DecodeFailure{field:"BalanceParams".into()}.into()); }
+        if data.len() < p2.saturating_add(32) { return Err(PurseError::DecodeFailure{field:"BalanceParams".into()}.into()); }
         let proof=read_slice(data,pe+SerializedLen::ENCODED_SIZE,pl)?.to_vec();
-        let tb=read_base(read_slice(data,p2,32)?)?; let tn=read_base(read_slice(data,p2+32,32)?)?;
-        Ok(BalanceParams{derived_purse_id:dpi,expected_root:er,token_commit:tc,balance_commit_x:bcx,balance_commit_y:bcy,leaf_pos:lp,merkle_path:mp,proof,tx_binding:tb,tx_nonce:tn})
+        let tn=read_base(read_slice(data,p2,32)?)?;
+        Ok(BalanceParams{derived_purse_id:dpi,expected_root:er,token_commit:tc,balance_commit_x:bcx,balance_commit_y:bcy,leaf_pos:lp,merkle_path:mp,proof,tx_nonce:tn})
     }
 }

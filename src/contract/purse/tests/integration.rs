@@ -48,7 +48,8 @@ fn test_deposit_params_encode_decode_roundtrip() {
         leaf_pos: MerklePosition::new(0),
         merkle_path: dummy_merkle_path(),
         proof: vec![1u8, 2, 3],
-        tx_binding: pallas::Base::from(200u64),
+        // `tx_binding` removed from the params and the wire (`OBL-C198`): the arm derives it from
+        // the host-exposed commitment.
         tx_nonce: pallas::Base::from(300u64),
         // `asset_id` was here and left the wire in `e6a4df553c` (unit 3). It is witness slot 22,
         // sourced `note:asset_id`, and what replaced it as the final wire field is the purse
@@ -81,7 +82,8 @@ fn test_withdraw_params_encode_decode_roundtrip() {
         leaf_pos: MerklePosition::new(0),
         merkle_path: dummy_merkle_path(),
         proof: vec![4u8, 5, 6],
-        tx_binding: pallas::Base::from(200u64),
+        // `tx_binding` removed from the params and the wire (`OBL-C198`): the arm derives it from
+        // the host-exposed commitment.
         tx_nonce: pallas::Base::from(300u64),
         // `asset_id` was here and left the wire in `e6a4df553c` (unit 3); see the note above.
         derived_purse_id: pallas::Base::from(1u64),
@@ -110,7 +112,8 @@ fn test_balance_params_encode_decode_roundtrip() {
         leaf_pos: MerklePosition::new(0),
         merkle_path: dummy_merkle_path(),
         proof: vec![7u8, 8, 9],
-        tx_binding: pallas::Base::from(200u64),
+        // `tx_binding` removed from the params and the wire (`OBL-C198`): the arm derives it from
+        // the host-exposed commitment.
         tx_nonce: pallas::Base::from(300u64),
     };
 
