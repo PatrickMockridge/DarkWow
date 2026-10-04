@@ -347,11 +347,9 @@ impl BurnCallBuilder {
         Ok(BurnCallDebris {
             params: BurnParamsV1 {
                 inputs,
-                tx_binding: poseidon_hash([
-                    DRK_POSEIDON_DOMAIN_TX_BINDING,
-                    tx_commitment,
-                    tx_nonce,
-                ]),
+                // `tx_binding` left these params in `OBL-C198`; `get_metadata` derives it from
+                // the commitment the host exposes, because a binding inside the call data would
+                // be computed from a value that covers it.
                 tx_nonce,
             },
             proofs,

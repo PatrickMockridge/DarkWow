@@ -301,7 +301,9 @@ impl NativeTokenHarness {
                 .unwrap_or_else(|| panic!("expected 1 input")),
             output: debris.params.outputs.into_iter().next()
                 .unwrap_or_else(|| panic!("expected 1 output")),
-            tx_binding: debris.params.tx_binding,
+            // `tx_binding` is not carried: `get_metadata` derives it from the commitment the
+            // host exposes (`OBL-C198`). The harness's own proof still binds to a commitment —
+            // see `commitment_of` in this file — but the *params* no longer carry the value.
             tx_nonce: debris.params.tx_nonce,
         };
         let mut call_data = vec![0x04u8]; // SpendV1

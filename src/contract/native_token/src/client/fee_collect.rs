@@ -171,7 +171,7 @@ impl FeeCollectCallBuilder {
                     note: encrypted_note,
                 },
                 nullifier,
-                tx_binding,
+                // `tx_binding` left these params in `OBL-C198`; `get_metadata` derives it.
                 tx_nonce: self.tx_nonce,
             },
         })

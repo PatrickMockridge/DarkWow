@@ -146,19 +146,40 @@ impl TransferCallBuilder {
     ///   blind feeds the mint proof, the params commitment, and the encrypted note,
     ///   so the proof's constrained commitment is the commitment the chain stores and the
     ///   commitment the recipient's scan reconstructs (scan.rs `build_native_token_cap_record`).
+    /// Build the call and prove it in one step, with the commitment the builder was given.
+    ///
+    /// Kept for callers that already know theirs; the wallet no longer does, because the
+    /// commitment is a derivation over the finished call set, so it uses [`Self::prepare`] and
+    /// then [`TransferCallPlan::prove`] once the whole transaction is assembled (`OBL-C198`).
     #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
     pub fn build(self, rng: &mut (impl CryptoRng + RngCore)) -> Result<TransferCallDebris> {
-        let mut proofs: Vec<Proof> = vec![];
+        let commitment = self.tx_commitment;
+        let nonce = self.tx_nonce;
+        self.prepare(rng)?.prove(commitment, nonce)
+    }
+
+    /// Assemble the call's data and stop — **before** any proof exists.
+    ///
+    /// `OBL-C198`: the transaction commitment is a derivation over the call data, so a prover
+    /// cannot bind to it until the call is built. This is the first half; the second is
+    /// [`TransferCallPlan::prove`], which takes the commitment once the caller has derived it
+    /// over the transaction's whole call set — not over this one call.
+    ///
+    /// Nothing here depends on the commitment. The revealed values a burn and a mint produce
+    /// are derived by `derive_transfer_burn`/`derive_transfer_mint`, which are the same
+    /// functions the proof builders call (`safety.md` RC5).
+    pub fn prepare(self, rng: &mut (impl CryptoRng + RngCore)) -> Result<TransferCallPlan> {
         let mut input_entries: Vec<crate::model::Input> = vec![];
         let mut output_entries: Vec<crate::model::Output> = vec![];
-        let mut signature_secrets: Vec<SecretKey> = vec![];
+        let mut planned_inputs: Vec<PlannedInput> = vec![];
+        let mut planned_outputs: Vec<PlannedOutput> = vec![];
 
         // Native token convention: token_commit = poseidon(asset_id, 0) with
         // asset_id = 0 (AssetId::DRKW). Shared by ALL inputs and outputs so the
         // entrypoint's per-token conservation sums group correctly.
         let token_blind = BaseBlind::ZERO;
 
-        // --- Per-input: burn proof ---
+        // --- Per-input: derive, and record what the burn proof will need ---
         // Track the input blind sum for output-side balancing.
         let mut input_blind_sum = pallas::Scalar::zero();
         for (witness, secret, spend_hook) in &self.inputs {
@@ -181,30 +202,26 @@ impl TransferCallBuilder {
                 signature_public: PublicKey::from_secret(secret.clone()),
             };
 
-            let (burn_proof, revealed, sig_secret) = proof::create_transfer_burn_proof(
-                &self.burn_zkbin,
-                &self.burn_pk,
-                &call_input,
-                witness,
-                value_blind.clone(),
-                token_blind.clone(),
-                user_data_blind.clone(),
-                secret.clone(),
-                self.tx_commitment,
-                self.tx_nonce,
-            )?;
-
-            proofs.push(burn_proof);
-            signature_secrets.push(sig_secret);
+            // The derivation the proof will constrain, made once and shared with it.
+            let derived = proof::derive_transfer_burn(&call_input, witness, secret);
 
             input_entries.push(crate::model::Input {
-                value_commit: revealed.value_commit,
-                token_commit: revealed.token_commit,
-                nullifier: revealed.nullifier,  // TransferBurnRevealed: Nullifier type
-                merkle_root: revealed.merkle_root,
-                user_data_enc: revealed.user_data_enc,
+                value_commit: call_input.value_commit,
+                token_commit: call_input.token_commit,
+                nullifier: derived.nullifier,
+                merkle_root: derived.merkle_root,
+                user_data_enc: call_input.user_data_enc,
                 spend_hook: FuncId::from_base(*spend_hook),
-                signature_public: revealed.signature_public,
+                signature_public: derived.signature_public,
+            });
+
+            planned_inputs.push(PlannedInput {
+                call_input,
+                witness: witness.clone(),
+                value_blind,
+                token_blind: token_blind.clone(),
+                user_data_blind,
+                secret: secret.clone(),
             });
         }
 
@@ -229,9 +246,10 @@ impl TransferCallBuilder {
             // they can compute the nullifier and spend the commitment later.
             let spend_secret = SecretKey::random(rng);
 
-            let (mint_proof, revealed) = proof::create_transfer_mint_proof(
-                &self.mint_zkbin,
-                &self.mint_pk,
+            // The derivation the mint proof will constrain, made once and shared with it —
+            // `OBL-C198`, and it needs no commitment, which is what lets the call be built
+            // before the proof.
+            let derived = proof::derive_transfer_mint(
                 output,
                 output.value,             // effective_value == value (no uncle split on transfers)
                 0,                        // total_pin — transfers are not split
@@ -243,11 +261,16 @@ impl TransferCallBuilder {
                 Blind(output.blind.clone().inner()),
                 0,                       // old_cumulative_value (identity for non-coinbase)
                 pallas::Scalar::zero(),   // old_cumulative_blind (identity for non-coinbase)
-                self.tx_commitment,
-                self.tx_nonce,
-            )?;
+            );
 
-            proofs.push(mint_proof);
+            planned_outputs.push(PlannedOutput {
+                output: output.clone(),
+                effective_value: output.value,
+                spend_secret: spend_secret.clone(),
+                value_blind: value_blind.clone(),
+                token_blind: token_blind.clone(),
+                commitment_blind: Blind(output.blind.clone().inner()),
+            });
 
             // Compose the note — blinds MUST match proof witnesses. The commitment
             // blind is `output.blind`: the recipient's scan reconstructs the
@@ -268,29 +291,134 @@ impl TransferCallBuilder {
                 AeadEncryptedNote::encrypt(&note, &output.public_key, rng)?;
 
             output_entries.push(crate::model::Output {
-                value_commit: revealed.value_commit,
-                token_commit: revealed.token_commit,
+                value_commit: derived.value_commit,
+                token_commit: derived.token_commit,
                 // The proof's constrained commitment IS the params commitment — computed
-                // from `output.blind` inside create_transfer_mint_proof.
-                commitment: revealed.commitment,
+                // from `output.blind` by `derive_transfer_mint`.
+                commitment: derived.commitment,
                 nullifier: Some(
-                    Nullifier::from_bytes(revealed.nullifier.to_repr()).expect("nf zero"),
+                    Nullifier::from_bytes(derived.nullifier.to_repr()).expect("nf zero"),
                 ),
                 note: encrypted_note,
             });
         }
 
-        let tx_binding = poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, self.tx_commitment, self.tx_nonce]);
-
-        Ok(TransferCallDebris {
-            params: TransferParamsV1 {
-                inputs: input_entries,
-                outputs: output_entries,
-                tx_binding,
-                tx_nonce: self.tx_nonce,
-            },
-            proofs,
-            signature_secrets,
+        Ok(TransferCallPlan {
+            input_entries,
+            output_entries,
+            planned_inputs,
+            planned_outputs,
+            tx_nonce: self.tx_nonce,
+            burn_zkbin: self.burn_zkbin,
+            burn_pk: self.burn_pk,
+            mint_zkbin: self.mint_zkbin,
+            mint_pk: self.mint_pk,
         })
+    }
+}
+
+/// A transfer call whose data is assembled and whose proofs are not yet made.
+///
+/// The second half of the split `OBL-C198` forced. The transaction commitment is a derivation
+/// over the call data, so the call has to exist before its proof — and it covers the **whole
+/// transaction's** call set, not this call alone. A caller therefore builds every call it will
+/// submit (parent and children), derives the commitment once over that ordered set, and only
+/// then calls [`TransferCallPlan::prove`] with it.
+pub struct TransferCallPlan {
+    input_entries: Vec<crate::model::Input>,
+    output_entries: Vec<crate::model::Output>,
+    planned_inputs: Vec<PlannedInput>,
+    planned_outputs: Vec<PlannedOutput>,
+    tx_nonce: pallas::Base,
+    burn_zkbin: ZkBinary,
+    burn_pk: ProvingKey,
+    mint_zkbin: ZkBinary,
+    mint_pk: ProvingKey,
+}
+
+/// What a burn proof needs that the derivation does not produce.
+struct PlannedInput {
+    call_input: crate::model::Input,
+    witness: InputWitness,
+    value_blind: ScalarBlind,
+    token_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+    secret: SecretKey,
+}
+
+/// What a mint proof needs that the derivation does not produce.
+struct PlannedOutput {
+    output: TransferCallOutput,
+    effective_value: u64,
+    spend_secret: SecretKey,
+    value_blind: ScalarBlind,
+    token_blind: BaseBlind,
+    commitment_blind: BaseBlind,
+}
+
+impl TransferCallPlan {
+    /// The contract's call parameters.
+    ///
+    /// **No `tx_binding`**: the field left this struct in `OBL-C198`. That binding is derived
+    /// by `get_metadata` from the commitment the host exposes, because the commitment covers
+    /// the call data and a binding inside it would be computed from a value that covers it —
+    /// a cycle with no fixed point. `tx_nonce` stays: the prover chooses it and it does not
+    /// depend on the commitment.
+    pub fn params(&self) -> TransferParamsV1 {
+        TransferParamsV1 {
+            inputs: self.input_entries.clone(),
+            outputs: self.output_entries.clone(),
+            tx_nonce: self.tx_nonce,
+        }
+    }
+
+    /// Prove every call in this plan, binding to `tx_commitment`.
+    pub fn prove(
+        self,
+        tx_commitment: pallas::Base,
+        tx_nonce: pallas::Base,
+    ) -> Result<TransferCallDebris> {
+        let mut proofs: Vec<Proof> = vec![];
+        let mut signature_secrets: Vec<SecretKey> = vec![];
+
+        for p in &self.planned_inputs {
+            let (burn_proof, _revealed, sig_secret) = proof::create_transfer_burn_proof(
+                &self.burn_zkbin,
+                &self.burn_pk,
+                &p.call_input,
+                &p.witness,
+                p.value_blind.clone(),
+                p.token_blind.clone(),
+                p.user_data_blind.clone(),
+                p.secret.clone(),
+                tx_commitment,
+                tx_nonce,
+            )?;
+            proofs.push(burn_proof);
+            signature_secrets.push(sig_secret);
+        }
+
+        for p in &self.planned_outputs {
+            let (mint_proof, _revealed) = proof::create_transfer_mint_proof(
+                &self.mint_zkbin,
+                &self.mint_pk,
+                &p.output,
+                p.effective_value,   // effective_value == value (no uncle split on transfers)
+                0,                   // total_pin — transfers are not split
+                p.spend_secret.clone(),
+                p.value_blind.clone(),
+                p.token_blind.clone(),
+                p.output.spend_hook.inner(),
+                p.output.user_data,
+                p.commitment_blind.clone(),
+                0,                   // old_cumulative_value (identity for non-coinbase)
+                pallas::Scalar::zero(), // old_cumulative_blind (identity for non-coinbase)
+                tx_commitment,
+                tx_nonce,
+            )?;
+            proofs.push(mint_proof);
+        }
+
+        Ok(TransferCallDebris { params: self.params(), proofs, signature_secrets })
     }
 }

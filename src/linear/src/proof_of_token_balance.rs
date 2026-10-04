@@ -473,7 +473,7 @@ mod tests {
         let params = TransferParamsV1 {
             inputs: vec![input],
             outputs: vec![output],
-            tx_binding: pallas::Base::zero(),
+            // `tx_binding` left these params in `OBL-C198`; `get_metadata` derives it.
             tx_nonce: pallas::Base::zero(),
         };
 
@@ -554,7 +554,7 @@ mod tests {
                 nullifier: Some(Nullifier::new(secret, commitment.inner())),
                 note: AeadEncryptedNote { ciphertext: vec![], ephem_public: pubkey },
             }],
-            tx_binding: pallas::Base::zero(),
+            // `tx_binding` left these params in `OBL-C198`; `get_metadata` derives it.
             tx_nonce: pallas::Base::zero(),
         };
 

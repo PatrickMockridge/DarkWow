@@ -36,7 +36,7 @@
 //! - Uses AeadEncryptedNote for encrypted notes
 //! - Uses nullifiers for double-spend prevention
 
-use dwow_sdk::crypto::{constants::DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, poseidon_hash};
+use dwow_sdk::crypto::{constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING}, poseidon_hash};
 use dwow_sdk::{
     blockchain::{expected_reward, BlockHeight, FeeAmount},
     crypto::{
@@ -84,6 +84,21 @@ dwow_sdk::define_contract!(
 // ============================================================================
 // CONTRACT INITIALIZATION (CONSENSUS CRITICAL)
 // ============================================================================
+
+/// The transaction binding a `get_metadata` arm publishes — the deriving side of `OBL-C198`.
+///
+/// `tx_binding` left every one of this contract's params in that change and is derived here
+/// instead. It cannot be read from the call data: the transaction commitment is a derivation
+/// over the call data, so a binding carried inside it would be computed from a value that
+/// covers it — a cycle with no fixed point. The host exposes the commitment
+/// (`get_tx_commitment`); the call supplies only the nonce, which the prover chooses and which
+/// does not depend on the commitment.
+///
+/// One helper because six arms need this exact value, and a second copy of a derivation is a
+/// second value waiting to drift (`safety.md` RC5).
+fn tx_binding_of(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, wasm::util::get_tx_commitment()?, tx_nonce]))
+}
 
 pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[native_token::init_contract] Initializing native_token contract");
@@ -432,7 +447,7 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contrac
                 input.spend_hook.inner(),        // 7
                 sig_x,                          // 8
                 sig_y,                          // 9
-                bp.tx_binding,                  // 10: tx_binding
+                tx_binding_of(bp.tx_nonce)?,     // 10: tx_binding (derived, OBL-C198)
                 bp.tx_nonce,                    // 11: tx_nonce
             ],
         ));
@@ -477,7 +492,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Con
                 input.spend_hook.inner(),        // 7
                 sig_x,                          // 8
                 sig_y,                          // 9
-                tp.tx_binding,                  // 10: tx_binding
+                tx_binding_of(tp.tx_nonce)?,     // 10: tx_binding (derived, OBL-C198)
                 tp.tx_nonce,                    // 11: tx_nonce
             ],
         ));
@@ -517,7 +532,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Con
                 output.token_commit,            // 5: tc
                 value_x,                        // 6: S_H.x (== vc.x — identity + vc = vc)
                 value_y,                        // 7: S_H.y (== vc.y)
-                tp.tx_binding,                  // 8: tx_binding
+                tx_binding_of(tp.tx_nonce)?,     // 8: tx_binding (derived, OBL-C198)
                 tp.tx_nonce,                    // 9: tx_nonce
                 pallas::Base::ZERO,             // 10: total_pin (0 for transfers)
             ],
@@ -568,7 +583,7 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contra
             sp.input.spend_hook.inner(),         // 7
             sig_x,                              // 8
             sig_y,                              // 9
-            sp.tx_binding,                      // 10: tx_binding
+            tx_binding_of(sp.tx_nonce)?,         // 10: tx_binding (derived, OBL-C198)
             sp.tx_nonce,                        // 11: tx_nonce
         ],
     ));
@@ -592,7 +607,7 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contra
             sp.output.token_commit,             // 5: tc
             output_x,                           // 6: S_H.x (== vc.x — identity + vc = vc, non-coinbase mint)
             output_y,                           // 7: S_H.y (== vc.y)
-            sp.tx_binding,                      // 8: tx_binding
+            tx_binding_of(sp.tx_nonce)?,         // 8: tx_binding (derived, OBL-C198)
             sp.tx_nonce,                        // 9: tx_nonce
             pallas::Base::ZERO,                 // 10: total_pin (0 for spend)
         ],

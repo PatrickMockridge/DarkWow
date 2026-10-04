@@ -156,7 +156,25 @@ impl crate::circuit::CircuitPublicInputs for TransferBurnRevealed {
 /// commitment, value/token commitments, cumulative supply chain step, nullifier,
 /// and transaction binding — all plaintext Pedersen/Poseidon.
 #[allow(clippy::too_many_arguments)]
-pub fn compute_transfer_mint_revealed(
+/// What a mint reveals, minus the two fields that depend on the transaction commitment.
+///
+/// `OBL-C198`: the call has to be assembled before its proof can be made, and the call carries
+/// `value_commit`, `token_commit`, `commitment` and `nullifier` — none of which depends on the
+/// commitment. `tx_binding` does, so it is filled in later by
+/// [`compute_transfer_mint_revealed`]; one derivation, one home (`safety.md` RC5).
+pub struct TransferMintDerived {
+    pub commitment: Commitment,
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+    pub nullifier: pallas::Base,
+    pub new_cumulative_commit: pallas::Point,
+    pub total_pin: u64,
+    pub commitment_attrs: CommitmentAttributes,
+}
+
+/// Derive the mint's commitment-independent values. Pure: no commitment, no proof, no randomness.
+#[allow(clippy::too_many_arguments)]
+pub fn derive_transfer_mint(
     output: &TransferCallOutput,
     effective_value: u64,
     total_pin: u64,
@@ -168,9 +186,7 @@ pub fn compute_transfer_mint_revealed(
     commitment_blind: BaseBlind,
     old_cumulative_value: u64,
     old_cumulative_blind: pallas::Scalar,
-    tx_commitment: pallas::Base,
-    tx_nonce: pallas::Base,
-) -> TransferMintRevealed {
+) -> TransferMintDerived {
     let value_commit = pedersen_commitment_u64(output.value, value_blind.clone());
     let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, output.asset_id.inner(), token_blind.clone().inner()]);
     // Mint_V2 C1/C2 (M8): the commitment's public key is derived from spend_secret,
@@ -205,10 +221,40 @@ pub fn compute_transfer_mint_revealed(
     // Compute nullifier: nf = poseidon_hash(DOMAIN_NULLIFIER, spend_secret, commitment)
     let nf = Nullifier::new(spend_secret.clone(), commitment.inner()).inner();
 
+    TransferMintDerived {
+        commitment, value_commit, token_commit, nullifier: nf,
+        new_cumulative_commit, total_pin, commitment_attrs,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn compute_transfer_mint_revealed(
+    output: &TransferCallOutput,
+    effective_value: u64,
+    total_pin: u64,
+    spend_secret: SecretKey,
+    value_blind: ScalarBlind,
+    token_blind: BaseBlind,
+    spend_hook: pallas::Base,
+    user_data: pallas::Base,
+    commitment_blind: BaseBlind,
+    old_cumulative_value: u64,
+    old_cumulative_blind: pallas::Scalar,
+    tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
+) -> TransferMintRevealed {
+    let TransferMintDerived {
+        commitment, value_commit, token_commit, nullifier, new_cumulative_commit,
+        total_pin, commitment_attrs,
+    } = derive_transfer_mint(
+        output, effective_value, total_pin, spend_secret, value_blind, token_blind,
+        spend_hook, user_data, commitment_blind, old_cumulative_value, old_cumulative_blind,
+    );
+
     let tx_binding = poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, tx_commitment, tx_nonce]);
 
     TransferMintRevealed {
-        commitment, value_commit, token_commit, nullifier: nf,
+        commitment, value_commit, token_commit, nullifier,
         new_cumulative_commit, tx_binding, tx_nonce, total_pin,
         commitment_attrs,
     }
@@ -296,26 +342,35 @@ pub fn create_transfer_mint_proof(
     Ok((proof, public_inputs))
 }
 
-/// Create a ZK proof for burning (destroying) a commitment.
-/// Returns (proof, revealed_public_inputs, per_burn_signature_secret).
-#[allow(clippy::too_many_arguments)]
-pub fn create_transfer_burn_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
+/// What a burn proof reveals, derived **from the witnesses alone**.
+///
+/// `OBL-C198`: the transaction commitment is a derivation over the call data, so the call has
+/// to be assembled before its proof can be made — and the call carries these values
+/// (`value_commit`, `nullifier`, `merkle_root`, …). None of them depends on the commitment, so
+/// they can be derived in a first pass and the proof made in a second. `tx_binding` is the one
+/// revealed value that *does* depend on it and is not part of this struct.
+///
+/// One derivation, one home: `create_transfer_burn_proof` calls this rather than repeating it
+/// (`safety.md` RC5) — a second copy would be a second value waiting to drift.
+pub struct TransferBurnDerived {
+    pub commitment: Commitment,
+    pub nullifier: Nullifier,
+    pub signature_secret: SecretKey,
+    pub signature_public: PublicKey,
+    pub merkle_root: MerkleNode,
+}
+
+/// Derive the burn's revealed values. Pure: no commitment, no proof, no randomness.
+pub fn derive_transfer_burn(
     input: &TransferCallInput,
     witness: &InputWitness,
-    value_blind: ScalarBlind,
-    token_blind: BaseBlind,
-    user_data_blind: BaseBlind,
-    secret: SecretKey,
-    tx_commitment: pallas::Base,
-    tx_nonce: pallas::Base,
-) -> Result<(Proof, TransferBurnRevealed, SecretKey)> {
+    secret: &SecretKey,
+) -> TransferBurnDerived {
     let public_key = PublicKey::from_secret(secret.clone());
 
     // Reconstruct commitment from the witness data
     let commitment = CommitmentAttributes {
-            version: 0,
+        version: 0,
         public_key,
         value: witness.value,
         asset_id: AssetId::from_base(witness.asset_id),
@@ -348,6 +403,27 @@ pub fn create_transfer_burn_proof(
         }
         current
     };
+
+    TransferBurnDerived { commitment, nullifier, signature_secret, signature_public, merkle_root }
+}
+
+/// Create a ZK proof for burning (destroying) a commitment.
+/// Returns (proof, revealed_public_inputs, per_burn_signature_secret).
+#[allow(clippy::too_many_arguments)]
+pub fn create_transfer_burn_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &TransferCallInput,
+    witness: &InputWitness,
+    value_blind: ScalarBlind,
+    token_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+    secret: SecretKey,
+    tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
+) -> Result<(Proof, TransferBurnRevealed, SecretKey)> {
+    let TransferBurnDerived { nullifier, signature_secret, signature_public, merkle_root, .. } =
+        derive_transfer_burn(input, witness, &secret);
 
     let public_inputs = TransferBurnRevealed {
         value_commit: input.value_commit,

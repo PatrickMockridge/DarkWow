@@ -189,7 +189,7 @@ pub fn build_uncle_mint(
             user_data,
             blind: commitment_blind,
         },
-        tx_binding,
+        // `tx_binding` left these params in `OBL-C198`; `get_metadata` derives it.
         tx_nonce,
     };
     Ok(UncleMintCallDebris { params })

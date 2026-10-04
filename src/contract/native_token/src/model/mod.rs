@@ -532,9 +532,9 @@ pub struct PoWRewardParamsV1 {
     /// New cumulative value commitment (Pedersen point: S_H).
     /// Exposed as circuit public input (constrain_instance).
     pub new_cumulative_commit: pallas::Point,
-    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
-    pub tx_binding: pallas::Base,
-    /// Transaction nonce: unique per transaction
+    /// `tx_binding` stood above this and is **removed**, not moved (`OBL-C198`): the commitment
+    /// is a derivation over the call data, so a binding inside it would be computed from a
+    /// value that covers it. `get_metadata` derives it from the host-exposed commitment.
     pub tx_nonce: pallas::Base,
 }
 
@@ -545,7 +545,7 @@ impl PoWRewardParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let input_bytes = self.input.encode();
         let output_bytes = self.output.encode()?;
-        let cap = input_bytes.len() + output_bytes.len() + 200;
+        let cap = input_bytes.len() + output_bytes.len() + 168;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&input_bytes);
         buf.extend_from_slice(&output_bytes);
@@ -554,7 +554,6 @@ impl PoWRewardParamsV1 {
         buf.extend_from_slice(&self.old_cumulative_commit.to_bytes());
         buf.extend_from_slice(&self.old_cumulative_blind.to_repr());
         buf.extend_from_slice(&self.new_cumulative_commit.to_bytes());
-        buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf.extend_from_slice(&self.total_pin.to_le_bytes());
         buf.extend_from_slice(&self.effective_value.to_le_bytes());
@@ -574,9 +573,11 @@ impl PoWRewardParamsV1 {
         let output = Output::decode(read_slice(data, input_len, output_len)?)?;
         let pos = input_len + output_len;
         // trailer: nullifier(32) + supply(8) + old_commit(32) + old_blind(32)
-        //          + new_commit(32) + tx_binding(32) + tx_nonce(32) + total_pin(8)
+        //          + new_commit(32) + tx_nonce(32) + total_pin(8)
         //          + effective_value(8) + commitment_attrs(169)
-        let trailer = 208 + 8 + CommitmentAttributes::ENCODED_SIZE;
+        // It read 208 while the params also carried a 32-byte `tx_binding`, which left the wire
+        // in `OBL-C198`; this number is the arithmetic below and not a bound, so it moved with it.
+        let trailer = 176 + 8 + CommitmentAttributes::ENCODED_SIZE;
         if data.len() < pos + trailer {
             return Err(ContractError::IoError(format!(
                 "PoWRewardParamsV1: expected at least {} bytes, got {}", pos + trailer, data.len()
@@ -591,16 +592,16 @@ impl PoWRewardParamsV1 {
             .ok_or_else(|| ContractError::IoError("PoWRewardParamsV1: invalid old_cumulative_blind".into()))?;
         let new_cumulative_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(&read_field::<32>(data, pos+104)?))
             .ok_or_else(|| ContractError::IoError("PoWRewardParamsV1: invalid new_cumulative_commit".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+136)?))
-            .ok_or_else(|| ContractError::IoError("PoWRewardParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+168)?))
+        // `tx_binding` is not read: `get_metadata` derives it (`OBL-C198`), so every offset after
+        // it moved down by 32.
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+136)?))
             .ok_or_else(|| ContractError::IoError("PoWRewardParamsV1: invalid tx_nonce".into()))?;
-        let total_pin = u64::from_le_bytes(read_field::<8>(data, pos+200)?);
-        let effective_value = u64::from_le_bytes(read_field::<8>(data, pos+208)?);
+        let total_pin = u64::from_le_bytes(read_field::<8>(data, pos+168)?);
+        let effective_value = u64::from_le_bytes(read_field::<8>(data, pos+176)?);
         let commitment_attrs = CommitmentAttributes::decode(
-            read_slice(data, pos + 216, CommitmentAttributes::ENCODED_SIZE)?,
+            read_slice(data, pos + 184, CommitmentAttributes::ENCODED_SIZE)?,
         )?;
-        Ok(PoWRewardParamsV1 { input, total_pin, effective_value, commitment_attrs, output, nullifier, expected_cumulative_supply, old_cumulative_commit, old_cumulative_blind, new_cumulative_commit, tx_binding, tx_nonce })
+        Ok(PoWRewardParamsV1 { input, total_pin, effective_value, commitment_attrs, output, nullifier, expected_cumulative_supply, old_cumulative_commit, old_cumulative_blind, new_cumulative_commit, tx_nonce })
     }
 }
 
@@ -639,7 +640,9 @@ pub struct UncleMintParamsV1 {
     /// cannot be re-derived on-chain. Spec: uncle_merkle.md §"Spendable-note mass
     /// balance".
     pub commitment_attrs: CommitmentAttributes,
-    pub tx_binding: pallas::Base,
+    /// `tx_binding` stood above this and is **removed**, not moved (`OBL-C198`): the commitment
+    /// covers the call data, so a binding inside it would be computed from a value that covers
+    /// it. `get_metadata` derives it from the host-exposed commitment.
     pub tx_nonce: pallas::Base,
     // NOTE: there is deliberately NO nullifier field. The canonical miner minting
     // this note does not know the uncle miner's spend key, so it cannot compute
@@ -652,19 +655,19 @@ impl dwow_serial::Decodable for UncleMintParamsV1 { fn decode<D: std::io::Read>(
 
 impl UncleMintParamsV1 {
     /// Bytes after the variable-length output:
-    /// tx_binding(32) + tx_nonce(32) + total_pin(8) + effective_value(8) + attrs(169).
-    const TRAILER_SIZE: usize = 32 + 32 + 8 + 8 + CommitmentAttributes::ENCODED_SIZE;
+    /// tx_nonce(32) + total_pin(8) + effective_value(8) + attrs(169).
+    /// It carried a 32-byte `tx_binding` too, until `OBL-C198` took that off the wire.
+    const TRAILER_SIZE: usize = 32 + 8 + 8 + CommitmentAttributes::ENCODED_SIZE;
 
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let input_bytes = self.input.encode();
         let output_bytes = self.output.encode()?;
         let attrs_bytes = self.commitment_attrs.encode();
         let mut buf = Vec::with_capacity(
-            input_bytes.len() + output_bytes.len() + attrs_bytes.len() + 80,
+            input_bytes.len() + output_bytes.len() + attrs_bytes.len() + 48,
         );
         buf.extend_from_slice(&input_bytes);
         buf.extend_from_slice(&output_bytes);
-        buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf.extend_from_slice(&self.total_pin.to_le_bytes());
         buf.extend_from_slice(&self.effective_value.to_le_bytes());
@@ -690,17 +693,17 @@ impl UncleMintParamsV1 {
                 pos + Self::TRAILER_SIZE, data.len()
             )));
         }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
-            .ok_or_else(|| ContractError::IoError("UncleMintParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos + 32)?))
+        // `tx_binding` is not read: `get_metadata` derives it (`OBL-C198`), so every offset after
+        // it moved down by 32.
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("UncleMintParamsV1: invalid tx_nonce".into()))?;
-        let total_pin = u64::from_le_bytes(read_field::<8>(data, pos + 64)?);
-        let effective_value = u64::from_le_bytes(read_field::<8>(data, pos + 72)?);
+        let total_pin = u64::from_le_bytes(read_field::<8>(data, pos + 32)?);
+        let effective_value = u64::from_le_bytes(read_field::<8>(data, pos + 40)?);
         let commitment_attrs = CommitmentAttributes::decode(
-            read_slice(data, pos + 80, CommitmentAttributes::ENCODED_SIZE)?,
+            read_slice(data, pos + 48, CommitmentAttributes::ENCODED_SIZE)?,
         )?;
         Ok(UncleMintParamsV1 {
-            input, total_pin, output, effective_value, commitment_attrs, tx_binding, tx_nonce,
+            input, total_pin, output, effective_value, commitment_attrs, tx_nonce,
         })
     }
 }
@@ -757,9 +760,14 @@ impl UncleMintUpdateV1 {
 pub struct TransferParamsV1 {
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
-    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
-    pub tx_binding: pallas::Base,
-    /// Transaction nonce: unique per transaction
+    /// Transaction nonce: unique per transaction.
+    ///
+    /// `tx_binding` stood above this and is **removed**, not moved (`OBL-C198`). The
+    /// transaction commitment is a derivation over the call data, so a binding carried inside
+    /// it would be computed from a value that covers it — a cycle with no fixed point, and a
+    /// proof nothing can satisfy. `get_metadata` derives it from the commitment the host
+    /// exposes (`get_tx_commitment`) and this call's own nonce. `tx_nonce` stays: the prover
+    /// chooses it and it does not depend on the commitment.
     pub tx_nonce: pallas::Base,
 }
 
@@ -774,7 +782,7 @@ impl TransferParamsV1 {
         let output_bytes: Vec<Vec<u8>> =
             self.outputs.iter().map(|o| o.encode()).collect::<Result<Vec<_>, _>>()?;
         let output_cap: usize = output_bytes.iter().map(|b| b.len()).sum();
-        let cap = 8 + input_cap + output_cap + output_bytes.len() * 4 + 64;
+        let cap = 8 + input_cap + output_cap + output_bytes.len() * 4 + 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&ic.to_le_bytes());
         for input in &self.inputs { buf.extend_from_slice(&input.encode()); }
@@ -783,14 +791,15 @@ impl TransferParamsV1 {
             buf.extend_from_slice(&SerializedLen::try_from_len(ob.len())?.to_le_bytes());
             buf.extend_from_slice(ob);
         }
-        buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // 4(input count) + 4(output count) + 32(tx_binding) + 32(tx_nonce) = 72
-        if data.len() < 72 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); }
+        // 4(input count) + 4(output count) + 32(tx_nonce) = 40. It was 72 while the params also
+        // carried a 32-byte `tx_binding`, which left the wire in `OBL-C198`; this guard's rule is
+        // the arithmetic below and not a bound, so the number moved with the field.
+        if data.len() < 40 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); }
         let input_count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
         let mut pos = 4;
         let mut inputs = Vec::with_capacity(input_count);
@@ -813,12 +822,12 @@ impl TransferParamsV1 {
             outputs.push(Output::decode(read_slice(data, pos, out_len)?)?);
             pos += out_len;
         }
-        if data.len() < pos + 64 { return Err(ContractError::IoError("TransferParamsV1: missing trailing fields".into())); }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
-            .ok_or_else(|| ContractError::IoError("TransferParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+        if data.len() < pos + 32 { return Err(ContractError::IoError("TransferParamsV1: missing trailing fields".into())); }
+        // `tx_binding` is not read: it is derived by `get_metadata` (`OBL-C198`), so `tx_nonce`
+        // now sits where the pair used to start.
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("TransferParamsV1: invalid tx_nonce".into()))?;
-        Ok(TransferParamsV1 { inputs, outputs, tx_binding, tx_nonce })
+        Ok(TransferParamsV1 { inputs, outputs, tx_nonce })
     }
 }
 
@@ -834,9 +843,9 @@ pub struct TransferUpdateV1 {
 pub struct SpendParamsV1 {
     pub input: Input,
     pub output: Output,
-    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
-    pub tx_binding: pallas::Base,
-    /// Transaction nonce: unique per transaction
+    /// `tx_binding` was here and is **removed**, not moved (`OBL-C198`): the commitment is a
+    /// derivation over the call data, so a binding inside it would be computed from a value
+    /// that covers it. `get_metadata` derives it from the host-exposed commitment.
     pub tx_nonce: pallas::Base,
 }
 
@@ -847,11 +856,10 @@ impl SpendParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let input_bytes = self.input.encode();
         let output_bytes = self.output.encode()?;
-        let cap = input_bytes.len() + output_bytes.len() + 64;
+        let cap = input_bytes.len() + output_bytes.len() + 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&input_bytes);
         buf.extend_from_slice(&output_bytes);
-        buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(buf)
     }
@@ -862,14 +870,14 @@ impl SpendParamsV1 {
         let out_len = 132 + SerializedLen::from_le_bytes(read_field::<4>(data, in_len+128)?).to_usize();
         let output = Output::decode(read_slice(data, in_len, out_len)?)?;
         let pos = in_len + out_len;
-        if data.len() < pos + 64 {
-            return Err(ContractError::IoError(format!("SpendParamsV1: expected at least {} bytes, got {}", pos + 64, data.len())));
+        if data.len() < pos + 32 {
+            return Err(ContractError::IoError(format!("SpendParamsV1: expected at least {} bytes, got {}", pos + 32, data.len())));
         }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
-            .ok_or_else(|| ContractError::IoError("SpendParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+        // `tx_binding` is not read: `get_metadata` derives it (`OBL-C198`), so `tx_nonce` now
+        // sits where the pair used to start.
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("SpendParamsV1: invalid tx_nonce".into()))?;
-        Ok(SpendParamsV1 { input, output, tx_binding, tx_nonce })
+        Ok(SpendParamsV1 { input, output, tx_nonce })
     }
 }
 
@@ -885,7 +893,9 @@ pub struct SpendUpdateV1 {
 pub struct BurnParamsV1 {
     /// Anonymous inputs being burned
     pub inputs: Vec<Input>,
-    pub tx_binding: pallas::Base,
+    /// `tx_binding` stood above this and is **removed**, not moved (`OBL-C198`): the commitment
+    /// covers the call data, so a binding inside it would be computed from a value that covers
+    /// it. `get_metadata` derives it from the host-exposed commitment.
     pub tx_nonce: pallas::Base,
 }
 
@@ -895,17 +905,18 @@ impl dwow_serial::Decodable for BurnParamsV1 { fn decode<D: std::io::Read>(d: &m
 impl BurnParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let n = SerializedLen::try_from_len(self.inputs.len())?;
-        let cap = 4 + self.inputs.len() * Input::ENCODED_SIZE + 64;
+        let cap = 4 + self.inputs.len() * Input::ENCODED_SIZE + 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&n.to_le_bytes());
         for input in &self.inputs { buf.extend_from_slice(&input.encode()); }
-        buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 68 { return Err(ContractError::IoError("BurnParamsV1: too short".into())); }
+        // 4(count) + 32(tx_nonce) = 36. It read 68 while the params also carried a 32-byte
+        // `tx_binding`, which left the wire in `OBL-C198`.
+        if data.len() < 36 { return Err(ContractError::IoError("BurnParamsV1: too short".into())); }
         let count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
         let mut pos = 4;
         let mut inputs = Vec::with_capacity(count);
@@ -916,12 +927,12 @@ impl BurnParamsV1 {
             inputs.push(Input::decode(read_slice(data, pos, Input::ENCODED_SIZE)?)?);
             pos += Input::ENCODED_SIZE;
         }
-        if data.len() < pos + 64 { return Err(ContractError::IoError("BurnParamsV1: missing trailing fields".into())); }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
-            .ok_or_else(|| ContractError::IoError("BurnParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+        if data.len() < pos + 32 { return Err(ContractError::IoError("BurnParamsV1: missing trailing fields".into())); }
+        // `tx_binding` is not read: `get_metadata` derives it (`OBL-C198`), so `tx_nonce` now
+        // sits where the pair used to start.
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("BurnParamsV1: invalid tx_nonce".into()))?;
-        Ok(BurnParamsV1 { inputs, tx_binding, tx_nonce })
+        Ok(BurnParamsV1 { inputs, tx_nonce })
     }
 }
 
@@ -946,9 +957,9 @@ pub struct FeeCollectParamsV1 {
     pub output: Output,
     /// Nullifier: nf = poseidon_hash(sk_H, fee_commitment)
     pub nullifier: Nullifier,
-    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
-    pub tx_binding: pallas::Base,
-    /// Transaction nonce: unique per transaction
+    /// `tx_binding` stood above this and is **removed**, not moved (`OBL-C198`): the commitment
+    /// covers the call data, so a binding inside it would be computed from a value that covers
+    /// it. `get_metadata` derives it from the host-exposed commitment.
     pub tx_nonce: pallas::Base,
 }
 
@@ -958,30 +969,31 @@ impl dwow_serial::Decodable for FeeCollectParamsV1 { fn decode<D: std::io::Read>
 impl FeeCollectParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let output_bytes = self.output.encode()?;
-        let cap = 8 + output_bytes.len() + 96;
+        let cap = 8 + output_bytes.len() + 64;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.total_fees.to_le_bytes());
         buf.extend_from_slice(&output_bytes);
         buf.extend_from_slice(&self.nullifier.to_bytes());
-        buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 105 { return Err(ContractError::IoError("FeeCollectParamsV1: too short".into())); }
+        // 8(total_fees) + 32(nullifier) + 32(tx_nonce) = 72. It read 105 while the params also
+        // carried a 32-byte `tx_binding`, which left the wire in `OBL-C198`.
+        if data.len() < 72 { return Err(ContractError::IoError("FeeCollectParamsV1: too short".into())); }
         let total_fees = u64::from_le_bytes(read_field::<8>(data, 0)?);
         let out_len = 132 + SerializedLen::from_le_bytes(read_field::<4>(data, 8+128)?).to_usize();
         let output = Output::decode(read_slice(data, 8, out_len)?)?;
         let pos = 8 + out_len;
-        if data.len() < pos + 96 { return Err(ContractError::IoError(format!("FeeCollectParamsV1: expected at least {} bytes, got {}", pos + 96, data.len()))); }
+        if data.len() < pos + 64 { return Err(ContractError::IoError(format!("FeeCollectParamsV1: expected at least {} bytes, got {}", pos + 64, data.len()))); }
         let nullifier = Nullifier::from_bytes(read_field::<32>(data, pos)?)
             .map_err(|e| ContractError::IoError(format!("FeeCollectParamsV1: invalid nullifier: {}", e)))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
-            .ok_or_else(|| ContractError::IoError("FeeCollectParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+64)?))
+        // `tx_binding` is not read: `get_metadata` derives it (`OBL-C198`), so `tx_nonce` moved
+        // down by 32 into the position it occupied after the pair.
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
             .ok_or_else(|| ContractError::IoError("FeeCollectParamsV1: invalid tx_nonce".into()))?;
-        Ok(FeeCollectParamsV1 { total_fees: FeeAmount::new(total_fees), output, nullifier, tx_binding, tx_nonce })
+        Ok(FeeCollectParamsV1 { total_fees: FeeAmount::new(total_fees), output, nullifier, tx_nonce })
     }
 }
 
