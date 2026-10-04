@@ -179,7 +179,7 @@ pub fn build_contract_tx_tree(calls: Vec<(dwow_sdk::crypto::ContractId, Vec<u8>)
 /// strings, one of which will rot silently.
 pub fn build_fee_v3_tx(fee: u64) -> TestResult<Transaction> {
     use dwow_native_token_contract::model::{
-        fee::{FeeParamsV3, FeeV3TxBinding},
+        fee::FeeParamsV3,
         Commitment, Input, Nullifier, Output, DRKW_ASSET_ID,
     };
     use dwow_sdk::blockchain::{FeeAmount, FeeTier};

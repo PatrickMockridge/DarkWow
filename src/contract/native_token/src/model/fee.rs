@@ -7,62 +7,17 @@
 //! now `fee: FeeAmount` in the clear, with a three-tier priority selector.
 //!
 //! The `Fee_V3` mass-balance circuit (`fee.zk`) is retained — it still binds the
-//! hidden input/output commitment values to the now-public fee — via `FeeV3TxBinding`.
+//! hidden input/output commitment values to the now-public fee.
 //!
 //! Spec: fee-spec.md §12.4.
 
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::blockchain::{FeeAmount, FeeTier, SerializedLen};
-use dwow_sdk::crypto::poseidon_hash;
 use crate::error::NativeTokenError;
-use dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING;
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::{group::GroupEncoding, pallas};
 
 use super::{read_byte, read_field, read_slice, Input, Output};
-
-// ============================================================
-// §12.4 — Nominal tx_binding Type (retained for the Fee_V3 mass-balance proof)
-// ============================================================
-
-/// Tx binding for the retained Fee_V3 mass-balance proof (fee.zk).
-///
-/// Computed as `poseidon(DOMAIN_TX_BINDING=3, tx_commitment, tx_nonce)`.
-/// Prevents Fee_V3 proof replay across different transactions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FeeV3TxBinding(pallas::Base);
-
-impl FeeV3TxBinding {
-    /// Compute the Fee_V3 tx binding from tx_commitment and tx_nonce.
-    ///
-    /// `poseidon(DRK_POSEIDON_DOMAIN_TX_BINDING=3, tx_commitment, tx_nonce)`
-    pub fn compute(tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Self {
-        Self(poseidon_hash([
-            DRK_POSEIDON_DOMAIN_TX_BINDING,
-            tx_commitment,
-            tx_nonce,
-        ]))
-    }
-
-    /// Extract the inner `pallas::Base` value.
-    /// Use this at ZK proof public-input boundaries only.
-    pub fn inner(&self) -> pallas::Base {
-        self.0
-    }
-}
-
-impl dwow_serial::Encodable for FeeV3TxBinding {
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
-        self.0.encode(w)
-    }
-}
-
-impl dwow_serial::Decodable for FeeV3TxBinding {
-    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
-        let inner = pallas::Base::decode(d)?;
-        Ok(Self(inner))
-    }
-}
 
 // ============================================================
 

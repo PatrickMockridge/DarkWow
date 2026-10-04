@@ -46,7 +46,7 @@ use dwow_sdk::{
 use rand::SeedableRng;
 
 use crate::client::NativeToken;
-use crate::model::fee::{FeeParamsV3, FeeV3TxBinding};
+use crate::model::fee::FeeParamsV3;
 use crate::model::{CommitmentAttributes, Input, Output};
 
 // ---- Domain-labeled fee wrappers ----
@@ -191,14 +191,6 @@ impl FeeV3CallBuilder {
 
         // Compute output value
         let output_value = self.input.value - self.fee_amount.get();
-
-        // Fee_V3 circuit tx_binding: bound to tx_nonce (matches fee.zk).
-        // Used for the Fee_V3 proof public inputs and stored in FeeParamsV3.
-        // Per fee-spec.md §5.5.1: nominal type, domain mass_balance.
-        let fee_v3_tx_binding = FeeV3TxBinding::compute(
-            self.input.tx_commitment,
-            self.input.tx_nonce,
-        );
 
         // The Fee_V3 proof is made in `prove`, once the caller has derived the commitment over
         // the transaction's whole call set — not here, and not over one call (`OBL-C198`).

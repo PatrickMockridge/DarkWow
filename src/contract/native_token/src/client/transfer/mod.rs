@@ -78,7 +78,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::crypto::{
-    constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING, DRK_POSEIDON_DOMAIN_USER_DATA_ENC},
+    constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_USER_DATA_ENC},
     note::AeadEncryptedNote,
     pedersen_commitment_u64, poseidon_hash,
     BaseBlind, Blind, FuncId, MerkleNode, PublicKey, ScalarBlind, SecretKey,
