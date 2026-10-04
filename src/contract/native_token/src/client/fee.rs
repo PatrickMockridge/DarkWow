@@ -225,7 +225,9 @@ impl FeeV3CallBuilder {
             fee: self.fee_amount,
             tier: self.tier,
             fee_value_commit,
-            fee_v3_tx_binding,
+            // `fee_v3_tx_binding` is not carried: the arm derives it from the host-exposed
+            // commitment (`OBL-C198`). The binding below still feeds the *proof*'s public
+            // inputs, which is the only place it belongs now. `fee` above stays plaintext.
             tx_nonce: self.input.tx_nonce,
         };
 

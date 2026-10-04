@@ -349,7 +349,7 @@ fn fee_v3_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
             output_y,                               // 11
             fee_x,                                  // 12: fee_value_commit x
             fee_y,                                  // 13: fee_value_commit y
-            fee_params.fee_v3_tx_binding.inner(),     // 14: FeeV3TxBinding
+            tx_binding_of(fee_params.tx_nonce)?,     // 14: tx_binding (derived, OBL-C198)
             fee_params.tx_nonce,                    // 15: tx_nonce
         ],
     ));

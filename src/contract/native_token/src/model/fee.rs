@@ -82,8 +82,11 @@ pub struct FeeParamsV3 {
     /// Pedersen commitment to the fee — KEPT so the host can verify the retained
     /// Fee_V3 mass-balance proof (whose public inputs include its coordinates).
     pub fee_value_commit: pallas::Point,
-    /// Fee_V3 mass-balance proof tx_binding — poseidon(3, tx_commitment, tx_nonce).
-    pub fee_v3_tx_binding: FeeV3TxBinding,
+    /// `fee_v3_tx_binding` stood above this and is **removed**, not moved (`OBL-C198`): the
+    /// transaction commitment covers the call data, so a binding inside it would be computed
+    /// from a value that covers it — a cycle with no fixed point. `get_metadata` derives it from
+    /// the commitment the host exposes. Note this is about the *binding* only: the fee amount
+    /// beside it is plaintext, and stays plaintext.
     pub tx_nonce: pallas::Base,
 }
 
@@ -107,7 +110,7 @@ impl FeeParamsV3 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let input_bytes = self.input.encode();
         let output_bytes = self.output.encode()?;
-        let mut buf = Vec::with_capacity(input_bytes.len() + output_bytes.len() + 8 + 1 + 32 + 32 + 32);
+        let mut buf = Vec::with_capacity(input_bytes.len() + output_bytes.len() + 8 + 1 + 32 + 32);
         buf.extend_from_slice(&input_bytes);
         buf.extend_from_slice(&output_bytes);
         // fee: FeeAmount (8 bytes LE) — plaintext
@@ -116,8 +119,8 @@ impl FeeParamsV3 {
         buf.push(self.tier.tier_multiplier() as u8);
         // fee_value_commit: pallas::Point (32 bytes compressed) — kept for proof verification
         buf.extend_from_slice(&self.fee_value_commit.to_bytes());
-        // fee_v3_tx_binding (32 bytes) + tx_nonce (32 bytes)
-        buf.extend_from_slice(&self.fee_v3_tx_binding.inner().to_repr());
+        // tx_nonce (32 bytes). `fee_v3_tx_binding` sat before it until `OBL-C198` took the
+        // binding off the wire.
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(buf)
     }
@@ -161,15 +164,14 @@ impl FeeParamsV3 {
         ).ok_or_else(|| parse_err("FeeParamsV3: invalid fee_value_commit"))?;
         pos += 32;
 
-        // fee_v3_tx_binding (32 bytes) + tx_nonce (32 bytes)
-        if data.len() < pos + 64 {
-            return Err(parse_err("FeeParamsV3: too short for binding + nonce"));
+        // tx_nonce (32 bytes). `fee_v3_tx_binding` sat before it until `OBL-C198`; the binding
+        // is derived by `get_metadata` from the host-exposed commitment, so the nonce moved
+        // down into its position.
+        if data.len() < pos + 32 {
+            return Err(parse_err("FeeParamsV3: too short for nonce"));
         }
-        let fee_v3_tx_binding = FeeV3TxBinding(Option::<pallas::Base>::from(
-            pallas::Base::from_repr(read_field::<32>(data, pos)?)
-        ).ok_or_else(|| parse_err("FeeParamsV3: invalid fee_v3_tx_binding"))?);
         let tx_nonce = Option::<pallas::Base>::from(
-            pallas::Base::from_repr(read_field::<32>(data, pos + 32)?)
+            pallas::Base::from_repr(read_field::<32>(data, pos)?)
         ).ok_or_else(|| parse_err("FeeParamsV3: invalid tx_nonce"))?;
 
         Ok(FeeParamsV3 {
@@ -178,7 +180,6 @@ impl FeeParamsV3 {
             fee,
             tier,
             fee_value_commit,
-            fee_v3_tx_binding,
             tx_nonce,
         })
     }

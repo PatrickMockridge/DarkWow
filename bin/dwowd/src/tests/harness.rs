@@ -219,7 +219,8 @@ pub fn build_fee_v3_tx(fee: u64) -> TestResult<Transaction> {
         fee: FeeAmount::new(fee),
         tier: FeeTier::LOW,
         fee_value_commit: pallas::Point::default(),
-        fee_v3_tx_binding: FeeV3TxBinding::compute(pallas::Base::zero(), pallas::Base::zero()),
+        // `fee_v3_tx_binding` is not carried: `get_metadata` derives it from the commitment the
+        // host exposes (`OBL-C198`). The *binding* left the wire; the fee amount stays plaintext.
         tx_nonce: pallas::Base::zero(),
     };
 
