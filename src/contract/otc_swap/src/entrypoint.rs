@@ -463,6 +463,11 @@ fn swap_fund_process_instruction_v1(
         pallas::Base::from(swap.send_value),
         swap.id,
     ]);
+    // `OBL-C198` diagnostic: `validate_child_value_commit` returns the same no-message
+    // `InvalidFunction` for an empty calldata and for a decode failure, so log the shape that
+    // distinguishes them — length, selector, and the child-call index.
+    msg!("[FundSwapV1] child calldata: len={}, data[0]=0x{:02x}, children_indexes={:?}",
+         child_call.data.len(), child_call.data[0], this_call.children_indexes);
     validate_child_value_commit(&child_call.data, swap.send_value, value_blind)?;
 
     // Update swap with funding details
