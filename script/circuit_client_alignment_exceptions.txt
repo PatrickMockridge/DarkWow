@@ -1,4 +1,4 @@
-# Circuits `check-circuit-metadata-alignment.sh` checks on TWO legs instead of three.
+# Circuits `check-circuit-metadata-alignment.sh` cannot check on all three legs.
 #
 # The invariant that script enforces is three-way — the circuit's `constrain_instance` order,
 # the `get_metadata` arm's push order, and the client's `to_vec` — and it has always been able
@@ -8,9 +8,26 @@
 # incident that taught the repository to print coverage. It now prints `OK(2/3)`, counts the
 # rows, and fails on an *undeclared* unresolved client.
 #
+# THERE ARE THREE UNCHECKED STATES, NOT ONE, and the file distinguishes them because the check
+# now does:
+#
+#   `OK(2/3)`       the circuit and the metadata arm were compared; the client's `to_vec` was
+#                   not located. The first two sections of this file.
+#   `OK(client)`    the client WAS compared against the circuit, and the metadata arm was not
+#                   readable (its vector is built in a shared helper, or rides the call data as
+#                   `params.zk_public_inputs`). In both shapes the same bytes reach both, so the
+#                   comparison that catches a wrong-vector proof was still made. NOT a debt in
+#                   this file — named on the gate's own coverage line.
+#   `WARN(0/3)`     NEITHER leg was readable: no literal metadata push and no client `to_vec`.
+#                   Nothing was compared. The third section below.
+#
+# The third state was counted inside `Passed`, with no comparison made, until 2026-10-04 — and
+# the ten circuits in the second state were `WARN` + `passes += 1` for the same reason. Both now
+# print which leg they read, and a `WARN(0/3)` circuit that is not declared here is a FAIL.
+#
 # Format, one entry per line:
 #
-#   <contract>/<circuit> : <why the third leg is unchecked here>
+#   <contract>/<circuit> : <why the leg(s) are unchecked here>
 #
 # THIS IS A DEBT CENSUS, NOT A SET OF ADJUDICATIONS, and the distinction is the whole point of
 # the file. An entry says "the client's public-input vector for this circuit was not located, so
@@ -22,8 +39,9 @@
 # found — named in `CLIENT_ALIASES`, added to the resolver, or written by whichever session owns
 # that contract. It does not leave by being argued sound.
 #
-# THE LIST WAS 48 AND IS 21, AND EVERY REMOVAL IS ACCOUNTED FOR. None was removed to make the
-# number smaller.
+# THE LIST WAS 48 AND IS 23, AND EVERY ENTRY IS ACCOUNTED FOR. None was removed to make the
+# number smaller, and three were ADDED when a worse state than any of these turned out to be
+# counted as checked.
 #
 #   48 → 31  the resolver, not the entries. It required the exact signature
 #            `-> Vec<pallas::Base>` — missing the 13 impls returning
@@ -36,6 +54,14 @@
 #            `authority_pub_x, authority_pub_y, authority_nullifier, tx_binding, tx_nonce` in
 #            that order and `AuthorityPublicInputs::to_vec` returns exactly that; `lottery`'s
 #            two house endpoints likewise over `house_pub_x, house_pub_y, house_nullifier`.
+#   21 → 23  two moves in opposite directions, and the second is the one that matters.
+#            DOWN: `game_room`'s six identity endpoints resolve to one shared vector, stated in
+#            the source — `client/identity_proof.rs`'s module doc names all six and
+#            `IdentityPublicInputs::to_vec` returns the circuit's five in order. Five of them
+#            were in the state described in the new section below; `close_pot` was declared here.
+#            UP: the ten circuits whose metadata vector is not a literal at the push site are now
+#            compared on the CLIENT leg instead of being counted as checked, and the three that
+#            have no client `to_vec` either are declared in their own section below.
 #
 # Measured 2026-10-04. Register row: OBL-C198.
 
@@ -64,7 +90,28 @@ attestation/attest_slash : no client module for this circuit — the fixture bui
 attestation/commit_fee_schedule : no client module for this circuit — the fixture builds its proof (recorded in OBL-C195)
 native_token/fee : the vector is `create_fee_proof`'s return value, not a `to_vec` method, so the resolver cannot find it
 
-# ── 10 circuits whose client exists but whose file was not matched ───────────────────────────
+# ── 3 circuits on which NEITHER leg is readable — declared 2026-10-04 ────────────────────────
+#
+# These are in a different state from the rows above, and worse than the two-leg rows that follow.
+# The metadata arm pushes `params.zk_public_inputs`, whose length the caller decides, so leg 2 is
+# unreadable; and there is no client file for the circuit — `harness/stablecoin.rs:557,575,593`
+# builds all three from `trivial_position_witnesses_and_inputs()` — so leg 3 is unreadable too.
+# Nothing was compared. They were `WARN` + `Passed` until 2026-10-04, inside a line that read "All
+# 166 circuits … have matching metadata push counts".
+#
+# `open_position` is NOT here: it instances the same four values and IS built by the client
+# (`OpenPositionPublicInputs::to_vec`, whose doc names the four in order), so it resolves to three
+# legs. The three below are the ones the harness builds itself.
+#
+# THE CYCLE WARNING APPLIES TO THESE THREE. A fixture-authored public-input vector is exactly what
+# stage ④ refuses: the arm publishes whatever `trivial_position_witnesses_and_inputs()` returns, so
+# when the node starts recomputing the pair, this fixture has to publish a real one. Whoever
+# migrates `stablecoin` should read these three first.
+stablecoin/add_collateral : no client `to_vec` AND the metadata push is caller-supplied — the fixture builds it (`trivial_position_witnesses_and_inputs`)
+stablecoin/remove_collateral : no client `to_vec` AND the metadata push is caller-supplied — the fixture builds it (`trivial_position_witnesses_and_inputs`)
+stablecoin/repay_stable : no client `to_vec` AND the metadata push is caller-supplied — the fixture builds it (`trivial_position_witnesses_and_inputs`)
+
+# ── 9 circuits whose client exists but whose file was not matched ────────────────────────────
 #
 # Each contract has client files, none of them named for this circuit, and more than one candidate
 # per circuit — so naming one without reading it would be a guess, and a guess that happens to
@@ -103,5 +150,4 @@ darkbet_exchange/remove_liquidity : not resolved — no client file is named for
 darkbet_exchange/resolve_market : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
 dex/set_transparency_level : not resolved — none of the six `*PublicInputs` impls in `src/client/` is named for this circuit
 dex/update_config : not resolved — none of the six `*PublicInputs` impls in `src/client/` is named for this circuit
-game_room/close_pot : not resolved — the seven impls in `src/client/` include `settle_pot` and `create_pot` and neither name is this circuit's
 stablecoin/update_config : not resolved — none of the six `*PublicInputs` impls in `src/client/` is named for this circuit

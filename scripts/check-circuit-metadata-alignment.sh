@@ -364,6 +364,21 @@ CLIENT_ALIASES = {
     # that. The two circuits are the same shape, so one vector serves both.
     ("lottery", "draw_winners"): ("house_auth.rs", "HouseAuthPublicInputs"),
     ("lottery", "expire_lottery"): ("house_auth.rs", "HouseAuthPublicInputs"),
+    # One shared identity vector for six circuits, and the sharing is stated in the source rather
+    # than inferred: `src/client/identity_proof.rs`'s module doc says "withdraw, raise, call, fold,
+    # close_pot, contribute_entropy share the same layout … instances (5): player_pub_x,
+    # player_pub_y, player_nullifier, tx_binding, tx_nonce", and `IdentityPublicInputs::to_vec`
+    # returns `[pub_x, pub_y, nullifier, tx_binding, tx_nonce]`. Both sides read: five against
+    # five, same order. The harness confirms the linkage rather than the doc alone —
+    # `harness/game_room.rs` calls `create_identity_proof` for all six (`:173` withdraw through
+    # `:251` contribute_entropy). Without the alias all six had no located client, and five of them
+    # had no readable metadata leg either, so they reached a verdict having compared nothing.
+    ("game_room", "call"): ("identity_proof.rs", "IdentityPublicInputs"),
+    ("game_room", "close_pot"): ("identity_proof.rs", "IdentityPublicInputs"),
+    ("game_room", "contribute_entropy"): ("identity_proof.rs", "IdentityPublicInputs"),
+    ("game_room", "fold"): ("identity_proof.rs", "IdentityPublicInputs"),
+    ("game_room", "raise"): ("identity_proof.rs", "IdentityPublicInputs"),
+    ("game_room", "withdraw"): ("identity_proof.rs", "IdentityPublicInputs"),
 }
 
 # Files that carry more than one `to_vec` and no alias naming which one belongs to the circuit.
@@ -499,6 +514,20 @@ failures = 0
 # namespace push and the summary must not call 63 rows "63 circuits" — the same overstatement the
 # count-mismatch summary below already guards against.
 two_leg = set()
+# Circuits checked on the CLIENT leg only, because the metadata vector is not a literal at the
+# push site — either it is built inside a shared helper that takes the namespace as an argument
+# (`game_room`'s `identity_get_metadata_v1`) or it rides the call data (`stablecoin`'s
+# `params.zk_public_inputs`). These are NOT defects: in both shapes the vector and the client's
+# `to_vec` are the same bytes. What they are is a leg this gate could not read, so they are
+# counted on their own line rather than folded into `Passed`.
+client_only = set()
+# Circuits on which NO leg was compared — no readable metadata push AND no located client
+# `to_vec`. A circuit in here is in scope and reached a verdict, but the verdict is "nothing was
+# checked", which is exactly what the final PASS line must not claim. Before 2026-10-04 the
+# thirteen circuits in this set were counted inside `Passed` and covered by a line that read
+# "All 166 circuits … have matching metadata push counts" — the OBL-C79 shape, in the branch
+# whose own comment says the count is not statically checkable.
+no_leg = set()
 # Every circuit in scope must reach a verdict line. This set is reconciled against the enumerated
 # scope at the end, so a future `continue` cannot drop a circuit silently — the failure mode that
 # let 21 contracts sit outside this check (OBL-C79).
@@ -539,9 +568,11 @@ for contract_name in COVERED:
 
         if circuit_count == 0:
             print(f"WARN: {contract_name}/{circuit_name} — zero constrain_instance calls")
+            no_leg.add((contract_name, circuit_name))
             continue
         if not entrypoint_files:
             print(f"SKIP: {contract_name}/{circuit_name} — no entrypoint source found")
+            no_leg.add((contract_name, circuit_name))
             continue
 
         # Prefer the constant whose *value* is this circuit's identity string; fall back to the
@@ -553,6 +584,23 @@ for contract_name in COVERED:
         else:
             pattern = re.compile(rf'ZKAS_{circuit_name.upper()}_NS(_V[0-9]+)?$')
             matched = [(ns, elems) for (ns, elems) in pushes if pattern.search(ns)]
+        # EITHER THE METADATA LEG IS READABLE, OR IT IS NOT. When it is not, leg 2 is genuinely
+        # absent and this says so — but the CLIENT leg does not depend on it, and until 2026-10-04
+        # both branches below threw it away: each printed a WARN, did `passes += 1`, and `continue`d
+        # past the pair rule. Thirteen circuits (game_room's five identity endpoints, stablecoin's
+        # six caller-supplied ones, attestation's two) were counted inside `Passed` with NO
+        # comparison made, on the gate whose header cites OBL-C79 as the incident that taught this
+        # repository to print its coverage. A `WARN` covering a third of the invariant is the same
+        # defect as a bare `OK` covering two legs of it.
+        #
+        # So: name the reason, then make the comparison that IS available. In both shapes the
+        # metadata vector and the client's `to_vec` are the same bytes — `zk_public_inputs:
+        # public_inputs.to_vec()` in the harness for stablecoin, and the arm pushes
+        # `params.zk_public_inputs` — so client-vs-circuit is exactly the check that matters here.
+        # Where even the client is unlocatable the circuit goes in `no_leg`, and the PASS line at
+        # the end stops claiming it.
+        unreadable = None
+        label = None
         if not matched:
             # Distinguish "the namespace never appears" from "it appears, but the vector is built
             # somewhere this line cannot see". `game_room` passes five of its namespaces as an
@@ -560,31 +608,61 @@ for contract_name in COVERED:
             # (`lib.rs:270-290`) — so the vector is inside the shared helper and its count is no
             # more statically visible here than `stablecoin`'s caller-supplied
             # `params.zk_public_inputs`. Reporting those as defects would be five false findings
-            # against correct code; a WARN that names the reason is what the gate does elsewhere
-            # for exactly this situation. A namespace that is referenced NOWHERE is a real
-            # absence — the metadata function has no arm for the circuit at all.
+            # against correct code. A namespace that is referenced NOWHERE is a real absence — the
+            # metadata function has no arm for the circuit at all.
             referenced = bool(ns_names) and any(
                 re.search(rf'\b{re.escape(n)}\b', entrypoint_src) for n in (ns_names or []))
             label = ' | '.join(ns_names) if ns_names else 'ZKAS_' + circuit_name.upper() + '_NS'
-            if referenced:
-                print(f"WARN: {contract_name}/{circuit_name} — {circuit_count} constrain_instance; "
-                      f"the vector for {label} is built elsewhere (the namespace is passed to a "
-                      f"builder or supplied by the caller), so the count is not statically "
-                      f"checkable here")
-                passes += 1
-            else:
+            if not referenced:
                 print(f"FAIL: {contract_name}/{circuit_name} — circuit has {circuit_count} "
                       f"constrain_instance but no metadata push carries {label}"
                       f"{'' if identity else ' (circuit declares no identity string)'}")
                 failures += 1
                 failed_circuits.add((contract_name, circuit_name))
-            continue
-        if all(elems is None for _, elems in matched):
-            print(f"WARN: {contract_name}/{circuit_name} — {circuit_count} constrain_instance, but "
-                  f"the metadata push for {matched[0][0]} is not a literal vector (the caller "
-                  f"supplies it), so the count is not statically checkable")
-            passes += 1
-            continue
+                continue
+            unreadable = (f"the vector for {label} is built elsewhere (the namespace is passed to "
+                          f"a builder or supplied by the caller)")
+        elif all(elems is None for _, elems in matched):
+            label = matched[0][0]
+            unreadable = (f"the metadata push for {label} is not a literal vector (the caller "
+                          f"supplies it)")
+        if unreadable is not None:
+            if client_count is None:
+                if f"{contract_name}/{circuit_name}" in CLIENT_UNRESOLVED:
+                    print(f"WARN(0/3): {contract_name}/{circuit_name} — {circuit_count} "
+                          f"constrain_instance; {unreadable}; and no client `to_vec` was located "
+                          f"either, so NEITHER leg was compared (DECLARED)")
+                    no_leg.add((contract_name, circuit_name))
+                else:
+                    # WORSE THAN THE TWO-LEG CASE, SO AT LEAST AS LOUD. A circuit declared in
+                    # `circuit_client_alignment_exceptions.txt` says "one leg is unchecked here";
+                    # an undeclared one that reaches this line had nothing compared at all, and
+                    # must not be able to appear without someone writing it down.
+                    print(f"FAIL: {contract_name}/{circuit_name} — {circuit_count} "
+                          f"constrain_instance; {unreadable}; and the client's `to_vec` was not "
+                          f"located either, so NO leg was compared. Name the file in "
+                          f"CLIENT_ALIASES, or declare the circuit in "
+                          f"script/circuit_client_alignment_exceptions.txt")
+                    failures += 1
+                    failed_circuits.add((contract_name, circuit_name))
+            elif client_count == circuit_count:
+                print(f"OK(client): {contract_name}/{circuit_name} — {circuit_count} "
+                      f"constrain_instance, {client_count} client public inputs ({label}; "
+                      f"{unreadable})")
+                passes += 1
+                client_only.add((contract_name, circuit_name))
+            else:
+                print(f"FAIL: {contract_name}/{circuit_name} — circuit {circuit_count} "
+                      f"constrain_instance vs client to_vec {client_count}: the proof would be "
+                      f"created over a different public-input vector than the verifier uses "
+                      f"({label}; {unreadable})")
+                failures += 1
+                failed_circuits.add((contract_name, circuit_name))
+            # NO `continue`. The pair rule below compares the client against the CIRCUIT and does
+            # not read the metadata leg at all, so it must still run for these circuits — they are
+            # exactly the ones whose reordering would otherwise go unremarked.
+            matched = []
+
         matched = [(ns, elems) for ns, elems in matched if elems is not None]
         excuse = metadata_exceptions.get(f"{contract_name}/{circuit_name}")
         for ns, elems in matched:
@@ -758,12 +836,41 @@ if two_leg:
     print(f"Third leg unchecked: {len(two_leg)} circuit(s) — the client `to_vec` was not located, "
           f"so only the circuit instance order and the metadata push were compared. Declared in "
           f"script/circuit_client_alignment_exceptions.txt; register OBL-C198.")
+# THE MIDDLE LEG, the third coverage state and the one that was missing until 2026-10-04. These
+# circuits are in `Passed` — the client was compared against the circuit, which is the leg that
+# catches a proof built over a different vector — but leg 2 was not read, so the row is not the
+# same claim as a three-leg row and is printed on its own line.
+if client_only:
+    print(f"Metadata leg unchecked (client compared instead): {len(client_only)} circuit(s) — the "
+          f"metadata vector is not a literal at the push site, so leg 2 was not read. In these "
+          f"shapes the same bytes reach both (`params.zk_public_inputs` is the client's `to_vec`), "
+          f"so the comparison that matters was still made.")
+# AND THE STATE THAT MATTERS MOST: nothing was compared. Named loudly, and `no_leg` is excluded
+# from the PASS sentence below, because a circuit that reached no comparison has not been shown to
+# agree with anything — it has been shown to be in scope.
+if no_leg:
+    print(f"UNCHECKED: {len(no_leg)} circuit(s) — neither the metadata leg nor the client leg "
+          f"could be read, so NO comparison was made and these are NOT covered by the PASS below:")
+    for _key in sorted(no_leg):
+        print(f"  {_key[0]}/{_key[1]}")
 # The other direction, so the list cannot outlive its sites: every declared circuit that the
 # resolver DID reach this run has been repaired, and the declaration is now a line that lies by
 # being present. Not a failure — a repair landing is not a defect — but it must be said, or the
 # next reader counts 48 debts when there are fewer.
+#
+# ONLY ON A FULL RUN, and the guard is the whole point of this paragraph. `two_leg` holds the
+# circuits this run actually walked; on `… <contract>` that is one contract's worth, so every
+# declaration belonging to any *other* contract is absent from it and would be reported as
+# repaired. Measured 2026-10-04: the first single-contract run after the six `multisig`/`purse`
+# lines were read told the reader to delete twenty valid declarations, including
+# `game_room/close_pot` from a run of `dex`. A NOTE that instructs a deletion is the kind of
+# signal a reader obeys, so it is suppressed rather than softened when the coverage is partial.
+# `no_leg` is excluded as well as `two_leg`: a circuit declared because NEITHER leg was readable
+# is still a live debt, and reporting it as repaired would invert the declaration's meaning.
 _stale_declarations = sorted(
-    key for key in CLIENT_UNRESOLVED if tuple(key.split("/", 1)) not in two_leg)
+    key for key in CLIENT_UNRESOLVED
+    if tuple(key.split("/", 1)) not in two_leg and tuple(key.split("/", 1)) not in no_leg
+) if len(COVERED) == len(FULL_COVERED) else []
 if _stale_declarations:
     print("")
     print(f"NOTE: {len(_stale_declarations)} declared circuit(s) whose client was resolved this "
@@ -794,8 +901,13 @@ if not COVERED:
     sys.exit(1)
 
 if failures == 0 and not literal_findings and not EXCEPTION_FILE_ERRORS:
-    print(f"PASS: All {len(seen)} circuits across {len(COVERED)} contracts have matching metadata "
-          f"push counts")
+    if no_leg:
+        print(f"PASS(partial): {len(seen) - len(no_leg)} of {len(seen)} circuits across "
+              f"{len(COVERED)} contracts have matching metadata push counts; {len(no_leg)} could "
+              f"not be compared at all (named above)")
+    else:
+        print(f"PASS: All {len(seen)} circuits across {len(COVERED)} contracts have matching "
+              f"metadata push counts")
     if order_warnings:
         print(f"      ({len(set(order_warnings))} order warning(s) above are advisory, not blocking.)")
     sys.exit(0)
