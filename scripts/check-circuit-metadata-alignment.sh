@@ -396,8 +396,8 @@ if os.path.isfile(_unresolved_path):
 _TO_VEC = r'fn\s+to_vec\s*\(\s*&self\s*\)\s*->\s*[^{;]*Vec<pallas::Base>[^{;]*\{'
 
 
-def client_to_vec_count(contract_dir, circuit_name, contract_name=""):
-    """Element count of the client's `to_vec` for this circuit, or None if not found.
+def client_to_vec_elements(contract_dir, circuit_name, contract_name=""):
+    """The elements of the client's `to_vec` for this circuit, or None if not found.
 
     Resolved by file name first — `src/client/<circuit>.rs` — then by `CLIENT_ALIASES`, because the
     file name is not the circuit's name in general: `bearer_bond`'s `BlindOutput_V2` public inputs
@@ -458,7 +458,7 @@ def client_to_vec_count(contract_dir, circuit_name, contract_name=""):
         j += 1
     if depth > 0:
         return None
-    return len(split_top(src[i:j - 1]))
+    return split_top(src[i:j - 1])
 
 metadata_exceptions = load_metadata_exceptions()
 excused = []
@@ -515,7 +515,8 @@ for contract_name in COVERED:
         zk_src = strip_zk_comments(open(zk_file).read())
         instance_order = circuit_instance_order(zk_src)
         circuit_count = len(instance_order)
-        client_count = client_to_vec_count(contract_dir, circuit_name, contract_name)
+        client_elems = client_to_vec_elements(contract_dir, circuit_name, contract_name)
+        client_count = None if client_elems is None else len(client_elems)
         identity = circuit_identity(zk_src)
 
         if circuit_count == 0:
@@ -606,6 +607,39 @@ for contract_name in COVERED:
                 print(f"OK:   {contract_name}/{circuit_name} — {circuit_count} constrain_instance, "
                       f"{n} metadata pushes, {client_count} client public inputs ({ns})")
                 passes += 1
+
+        # THE TX PAIR'S POSITION IN THE CLIENT — a hard rule, and the one place in this file where
+        # a name mapping is not a heuristic.
+        #
+        # Everywhere else the order comparison is advisory because mapping a circuit's variable to
+        # a Rust expression has to guess. The pair is different: `tx_binding` and `tx_nonce` are
+        # the two names, they appear under those names in both the circuit and the client, and the
+        # client's element at the circuit's index either names its variable or it does not. So this
+        # is compared and failed on, not warned about.
+        #
+        # It compares client against CIRCUIT, never against a convention — which is what makes it
+        # safe to run today, with 31 circuits still un-reordered. A circuit whose pair has not
+        # moved has a client whose pair has not moved either, and this rule is silent; it fires
+        # only when the two DISAGREE. That disagreement is the defect that cost the peer session a
+        # 907-second run: the circuit and the arm reordered, the client overlooked, everything
+        # counting correctly and the proof refused.
+        if client_elems is not None and len(client_elems) == circuit_count:
+            pair_idx = [k for k, v in enumerate(instance_order) if v in ("tx_binding", "tx_nonce")]
+            if len(pair_idx) == 2:
+                for k in pair_idx:
+                    want = instance_order[k]
+                    # Case-insensitive: a client that computes the binding inline names the
+                    # constant (`DRK_POSEIDON_DOMAIN_TX_BINDING`), not the circuit variable.
+                    got = client_elems[k].lower()
+                    if want.lower() not in got:
+                        shown = client_elems[k].split("//")[0].strip()
+                        shown = shown if len(shown) <= 58 else shown[:55] + "..."
+                        print(f"FAIL: {contract_name}/{circuit_name} — the circuit instances `{want}` "
+                              f"at position {k + 1} of {circuit_count}, and the client's `to_vec` "
+                              f"supplies `{shown}` there. The two vectors disagree element for "
+                              f"element; a proof built by this client is refused (OBL-C198).")
+                        failures += 1
+                        failed_circuits.add((contract_name, circuit_name))
 
         # ORDER, as a WARN (OBL-C79). Only meaningful against the longest matching push, and only
         # when there are at least as many pushed values as instances — a count mismatch is already
