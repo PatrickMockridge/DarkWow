@@ -786,7 +786,6 @@ mod tests {
             old_cumulative_commit: pallas::Point::identity(),
             old_cumulative_blind: pallas::Scalar::zero(),
             new_cumulative_commit: pallas::Point::identity(),
-            tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
         let mut data = vec![0x05u8];

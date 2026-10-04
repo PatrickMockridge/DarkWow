@@ -67,9 +67,6 @@ use dwow_sdk::crypto::{
     PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
 };
 use dwow_sdk::pasta::pallas;
-// `tx_commitment_of_call_data` calls `.to_repr()` on the field element the derivation
-// returns; that method is `ff::PrimeField`'s.
-use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::deploy::DeployParamsV1;
 
 use crate::CChainState;
@@ -119,37 +116,7 @@ pub struct ExecutionOutcome {
     pub stats: ExecutionStats,
 }
 
-/// The enclosing transaction's commitment, derived from the call set a job carries.
-///
-/// Returns the canonical repr of the field element `dwow_sdk::crypto::util::tx_commitment`
-/// derives — the same value `TransactionBuilder::build` stores in the core transaction and the
-/// node's verifier recomputes for stage 4 (`src/linear/src/zk_verifier.rs`). One derivation,
-/// one home: `safety.md` RC5.
-///
-/// `job.call_data` carries the whole transaction's call tree (the runtime deserializes it and
-/// selects `job.call_idx` from it), so every job of one transaction derives the same value
-/// here. The runtime hands it to the guest as `get_tx_commitment`, which is how a
-/// `get_metadata` arm publishes a `tx_binding` the node can recompute (`OBL-C198`). It cannot
-/// come from the call data: the commitment *covers* the call data, so a binding carried inside
-/// it would be computed from a value that covers it — a cycle with no fixed point, and a proof
-/// nothing can satisfy.
-///
-/// A decode failure returns zeros rather than panicking. `call_data` is the same buffer the
-/// runtime hands the guest, so a guest that cannot decode it fails the call on its own; a
-/// panic here would add a node crash in place of a rejected call and nothing else.
-fn tx_commitment_of_call_data(call_data: &[u8]) -> [u8; 32] {
-    match dwow_serial::deserialize::<
-        Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::tx::ContractCall>>,
-    >(call_data)
-    {
-        Ok(calls) => {
-            dwow_sdk::crypto::util::tx_commitment(calls.iter().map(|c| &c.data)).to_repr()
-        }
-        Err(_) => [0u8; 32],
-    }
-}
-
-/// Extract the DarkLeaf call tree from a transaction witness for WASM delivery.
+/// Extract the DarkLeaf call tree **and the transaction commitment** from a witness.
 ///
 /// The witness carries the full authenticated core transaction
 /// (`dwow_core::tx::Transaction`, stored per type-system.md §8.2).
@@ -158,9 +125,20 @@ fn tx_commitment_of_call_data(call_data: &[u8]) -> [u8; 32] {
 /// NativeToken receives raw call data — consensus-critical, no child
 /// calls, uses `ix[0]` dispatch.
 ///
+/// The commitment comes back with it because the witness is where it lives: `TransactionBuilder::
+/// build` computes it over the whole call set and stores it on the core transaction, and every
+/// proof binds to that one value. It is deliberately **not** re-derived from the payload the
+/// guest receives. `safety.md` RC5 wants one derivation with one home, and the guest's payload is
+/// not a call set for a native_token call — it is that call's raw data, which does not decode as a
+/// tree at all. Re-deriving it there produced zeros, so every native_token arm published
+/// `poseidon(3, 0, tx_nonce)` while its client published the real value, and no native_token proof
+/// could verify.
+///
 /// Returns `None` if the witness is empty (coinbase tx) or fails to decode
-/// (legacy tx without witness). Callers fall back to raw `call.data`.
-fn extract_wasm_call_tree(witness: &[u8]) -> Option<Vec<u8>> {
+/// (legacy tx without witness). Callers fall back to raw `call.data` and to zeros; neither is a
+/// hole today, because the coinbase carries no proof and a proofless non-coinbase transaction is
+/// rejected downstream on its own.
+fn extract_wasm_call_tree(witness: &[u8]) -> Option<(Vec<u8>, [u8; 32])> {
     if witness.is_empty() {
         tracing::debug!(target: "dwow_chain::execution", "empty witness — using raw call.data (coinbase or legacy)");
         return None;
@@ -169,6 +147,7 @@ fn extract_wasm_call_tree(witness: &[u8]) -> Option<Vec<u8>> {
         Ok(core_tx) => {
             let n_calls = core_tx.calls.len();
             let tree_bytes = dwow_serial::serialize(&core_tx.calls);
+            let tx_commitment = core_tx.tx_commitment;
             tracing::debug!(
                 target: "dwow_chain::execution",
                 "extracted tree from witness: {} calls, {} bytes → WASM",
@@ -184,7 +163,7 @@ fn extract_wasm_call_tree(witness: &[u8]) -> Option<Vec<u8>> {
                     );
                 }
             }
-            Some(tree_bytes)
+            Some((tree_bytes, tx_commitment))
         }
         Err(e) => {
             tracing::debug!(
@@ -285,6 +264,10 @@ pub fn execute_block(
         contract_id: ContractId,
         call_data: Vec<u8>,
         call_idx: u8,
+        /// The enclosing transaction's commitment, as `TransactionBuilder::build` stored it.
+        /// Every `get_metadata` arm that publishes a `tx_binding` derives it from this value
+        /// (`OBL-C198`), so it must be the same field the node's verifier recomputes.
+        tx_commitment: [u8; 32],
     }
 
     let mut jobs: Vec<CallJob> = Vec::new();
@@ -307,7 +290,9 @@ pub fn execute_block(
         // tree for cross-contract child call validation (child_idx).
         // NativeToken receives raw call data — consensus-critical,
         // no child calls, uses ix[0] dispatch.
-        let serialized_tree: Option<Vec<u8>> = extract_wasm_call_tree(&tx.witness);
+        let extracted = extract_wasm_call_tree(&tx.witness);
+        let serialized_tree: Option<Vec<u8>> = extracted.as_ref().map(|(tree, _)| tree.clone());
+        let tx_commitment: [u8; 32] = extracted.map(|(_, commitment)| commitment).unwrap_or([0u8; 32]);
         for (call_idx, call) in tx.contract_calls.iter().enumerate() {
             // Phase 2.1: contract_id is now typed ContractId — no from_bytes needed
             let contract_id = call.contract_id;
@@ -358,6 +343,7 @@ pub fn execute_block(
                 contract_id,
                 call_data,
                 call_idx: u8::try_from(call_idx).unwrap_or(u8::MAX),
+                tx_commitment,
             });
         }
     }
@@ -366,7 +352,9 @@ pub fn execute_block(
     for uncle in uncles.iter() {
         for tx in &uncle.transactions {
             let tx_hash = tx.hash();
-            let serialized_tree: Option<Vec<u8>> = extract_wasm_call_tree(&tx.witness);
+            let extracted = extract_wasm_call_tree(&tx.witness);
+            let serialized_tree: Option<Vec<u8>> = extracted.as_ref().map(|(tree, _)| tree.clone());
+            let tx_commitment: [u8; 32] = extracted.map(|(_, commitment)| commitment).unwrap_or([0u8; 32]);
             for (call_idx, call) in tx.contract_calls.iter().enumerate() {
                 // Phase 2.1: contract_id is now typed ContractId
                 let contract_id = call.contract_id;
@@ -390,6 +378,7 @@ pub fn execute_block(
                     contract_id,
                     call_data,
                     call_idx: u8::try_from(call_idx).unwrap_or(u8::MAX),
+                    tx_commitment,
                 });
             }
         }
@@ -461,7 +450,6 @@ pub fn execute_block(
         };
 
         let tx_hash_bytes = dwow_sdk::tx::TransactionHash(*tx_hash.as_bytes());
-        let tx_commitment = tx_commitment_of_call_data(&job.call_data);
         let mut runtime = match dwow_core::runtime::vm_runtime::Runtime::new(
             &job.wasm_bytes,
             backend.clone(),
@@ -469,7 +457,7 @@ pub fn execute_block(
             current_height,
             difficulty,
             tx_hash_bytes,
-            tx_commitment,
+            job.tx_commitment,
             job.call_idx,
         ) {
             Ok(r) => r,
