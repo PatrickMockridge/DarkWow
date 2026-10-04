@@ -84,23 +84,37 @@ impl BurnRevealed {
     }
 }
 
-/// Create a ZK proof for burning (destroying) a commitment.
-#[allow(clippy::too_many_arguments)]
-pub fn create_burn_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
-    input: &BurnCallInput,
-    value_blind: ScalarBlind,
-    token_blind: BaseBlind,
-    user_data_blind: BaseBlind,
-    secret: SecretKey,
-) -> Result<(Proof, BurnRevealed, SecretKey)> {
-    let public_key = PublicKey::from_secret(secret.clone());
+/// Everything a burn input derives from its secret and its blinds — **except** the
+/// transaction binding.
+///
+/// `OBL-C198`: the binding is a function of the transaction commitment, and the commitment is a
+/// derivation over the call data this input's own params become. So the binding is the one
+/// value that cannot be derived here, and it is deliberately not a field: everything a caller
+/// needs before the proof exists — the nullifier, the commitments, the merkle root, the
+/// signature key — is, and keeps the two halves of the split on one derivation
+/// (`safety.md` RC5).
+struct BurnDerivation {
+    nullifier: Nullifier,
+    signature_secret: SecretKey,
+    signature_public: PublicKey,
+    merkle_root: MerkleNode,
+    user_data_enc: pallas::Base,
+    value_commit: pallas::Point,
+    token_commit: pallas::Base,
+}
 
+/// Derive an input's commitment-independent values. The single home for all of them.
+fn derive_burn(
+    input: &BurnCallInput,
+    secret: &SecretKey,
+    value_blind: &ScalarBlind,
+    token_blind: &BaseBlind,
+    user_data_blind: &BaseBlind,
+) -> BurnDerivation {
     // Reconstruct commitment from the input
     let commitment = CommitmentAttributes {
             version: 0,
-        public_key,
+        public_key: PublicKey::from_secret(secret.clone()),
         value: input.value,
         asset_id: AssetId::from_base(input.asset_id),
         spend_hook: FuncId::from_base(input.spend_hook),
@@ -133,22 +147,52 @@ pub fn create_burn_proof(
         current
     };
 
-    let user_data_enc = poseidon_hash([DRK_POSEIDON_DOMAIN_USER_DATA_ENC, input.user_data, user_data_blind.clone().inner()]);
-    let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
-    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.asset_id, token_blind.clone().inner()]);
+    BurnDerivation {
+        nullifier,
+        signature_secret,
+        signature_public,
+        merkle_root,
+        user_data_enc: poseidon_hash([DRK_POSEIDON_DOMAIN_USER_DATA_ENC, input.user_data, user_data_blind.clone().inner()]),
+        value_commit: pedersen_commitment_u64(input.value, value_blind.clone()),
+        token_commit: poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.asset_id, token_blind.clone().inner()]),
+    }
+}
+
+/// Create a ZK proof for burning (destroying) a commitment.
+///
+/// `tx_commitment` is the enclosing transaction's commitment — what
+/// `dwow_sdk::crypto::util::tx_commitment` derives over the transaction's whole call set. It is
+/// a parameter rather than a field of `input` so that it cannot be defaulted at the point of
+/// use: `BurnCallInput::tx_commitment` is still read by [`BurnCallBuilder::build`], the one-step
+/// wrapper for a caller that already holds the value.
+#[allow(clippy::too_many_arguments)]
+fn create_burn_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &BurnCallInput,
+    d: &BurnDerivation,
+    value_blind: ScalarBlind,
+    token_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+    secret: SecretKey,
+    tx_commitment: pallas::Base,
+) -> Result<(Proof, BurnRevealed)> {
+    let signature_secret = d.signature_secret.clone();
+    let signature_public = d.signature_public.clone();
+
     let tx_binding = poseidon_hash([
         DRK_POSEIDON_DOMAIN_TX_BINDING,
-        input.tx_commitment,
+        tx_commitment,
         input.tx_nonce,
     ]);
 
     let public_inputs = BurnRevealed {
-        nullifier,
-        value_commit,
-        token_commit,
-        merkle_root,
+        nullifier: d.nullifier,
+        value_commit: d.value_commit,
+        token_commit: d.token_commit,
+        merkle_root: d.merkle_root,
         spend_hook: input.spend_hook,
-        user_data_enc,
+        user_data_enc: d.user_data_enc,
         signature_public,
         tx_binding,
         tx_nonce: input.tx_nonce,
@@ -187,7 +231,7 @@ pub fn create_burn_proof(
         Witness::Base(Value::known(*signature_secret.inner())),
         Witness::Base(Value::known(sig_pub_x)),
         Witness::Base(Value::known(sig_pub_y)),
-        Witness::Base(Value::known(input.tx_commitment)),
+        Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
         Witness::Base(Value::known(tx_binding)),
     ];
@@ -200,7 +244,7 @@ pub fn create_burn_proof(
         Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?
     };
 
-    Ok((proof, public_inputs, signature_secret))
+    Ok((proof, public_inputs))
 }
 
 /// Struct holding necessary information to build a `NativeToken::BurnV1`
@@ -252,28 +296,42 @@ pub struct BurnCallDebris {
 }
 
 impl BurnCallBuilder {
-    /// Build the Burn call debris
+    /// Build the Burn call debris. Kept for a caller that already holds its transaction's
+    /// commitment; a caller that does not uses [`Self::prepare`] and [`BurnCallPlan::prove`].
     pub fn build(self) -> Result<BurnCallDebris> {
-        debug!(target: "contract::native_token::client::burn", "Building NativeToken::BurnV1 contract call");
+        // Read before the inputs are consumed. `BurnCallInput::tx_commitment` is a prover
+        // input, not wire data — the binding left `BurnParamsV1` in `OBL-C198` — so this is
+        // the one-step path's way of carrying a value the caller supplied.
+        let tx_commitment = self.inputs.first().map(|i| i.tx_commitment).unwrap_or(pallas::Base::zero());
+        self.prepare()?.prove(tx_commitment)
+    }
+
+    /// Assemble the Burn call's params and stop — **before** the Burn_V2 proofs exist.
+    ///
+    /// `OBL-C198`: the proof binds to the transaction commitment, which is a derivation over
+    /// the transaction's **whole** call set — so the call must exist before its proof can, and
+    /// only the caller knows what else its transaction carries. Nothing in this half depends on
+    /// the commitment: the nullifier, the commitments, the merkle root and the signature key
+    /// are all `derive_burn`'s, and the params carry none of the binding.
+    pub fn prepare(self) -> Result<BurnCallPlan> {
+        debug!(target: "contract::native_token::client::burn", "Preparing NativeToken::BurnV1 contract call");
 
         if self.inputs.is_empty() {
             return Err(ContractError::Custom(1).into());
         }
 
-        let mut proofs = vec![];
-        let mut signature_secrets = vec![];
-        let mut inputs = vec![];
-
-        // Capture tx_binding values before consuming self.inputs
-        let tx_commitment = self.inputs.first().map(|i| i.tx_commitment).unwrap_or(pallas::Base::zero());
         let tx_nonce = self.inputs.first().map(|i| i.tx_nonce).unwrap_or(pallas::Base::zero());
+
+        let mut parts = Vec::with_capacity(self.inputs.len());
+        let mut inputs = Vec::with_capacity(self.inputs.len());
 
         for input in self.inputs.into_iter() {
             let secret = input.secret.clone();
 
-            // Generate burn proof
             // DZ-4: single seeded RNG for all three blinds in deterministic mode
-            // so PI-7 replay produces identical proof bytes.
+            // so PI-7 replay produces identical proof bytes. Generated here, stored in the
+            // plan, and reused by `prove` — a second generation there would derive the
+            // commitments from blinds the proof does not know.
             let (value_blind, token_blind, user_data_blind) =
                 if crate::deterministic_zk_enabled() {
                     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
@@ -284,67 +342,28 @@ impl BurnCallBuilder {
                      BaseBlind::random(&mut OsRng))
                 };
 
-            // create_burn_proof derives the per-burn signature_secret from
-            // (spend_secret, nullifier) — the params MUST use the same derived
-            // signature_public (revealed) as the proof, not the ephemeral input.
-            let (proof, revealed, sig_secret) = create_burn_proof(
-                &self.burn_zkbin,
-                &self.burn_pk,
-                &input,
-                value_blind.clone(),
-                token_blind.clone(),
-                user_data_blind.clone(),
-                secret.clone(),
-            )?;
-
-            proofs.push(proof);
-            signature_secrets.push(sig_secret);
-
-            // Create the Input model for params
-            let commitment = CommitmentAttributes {
-            version: 0,
-                public_key: PublicKey::from_secret(secret.clone()),
-                value: input.value,
-                asset_id: AssetId::from_base(input.asset_id),
-                spend_hook: FuncId::from_base(input.spend_hook),
-                user_data: input.user_data,
-                blind: Blind(input.commitment_blind),
-            }
-            .to_commitment();
-
-            let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
-            let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.asset_id, token_blind.clone().inner()]);
-            let nullifier = Nullifier::new(secret.clone(), commitment.inner());
-
-            // Calculate merkle root
-            let merkle_root = {
-                let position: u64 = input.leaf_position.into();
-                let mut current = MerkleNode::from_base(commitment.inner());
-                for (level, sibling) in input.merkle_path.iter().enumerate() {
-                    let level = level as u8;
-                    current = if position & (1 << level) == 0 {
-                        MerkleNode::combine(level.into(), &current, sibling)
-                    } else {
-                        MerkleNode::combine(level.into(), sibling, &current)
-                    };
-                }
-                current
-            };
-
-            let user_data_enc = poseidon_hash([DRK_POSEIDON_DOMAIN_USER_DATA_ENC, input.user_data, user_data_blind.clone().inner()]);
+            // The derivation runs once, here, and `prove` consumes its result. The params must
+            // carry the derived `signature_public` — not the caller's ephemeral input — and the
+            // proof must be built from the same values.
+            let derivation = derive_burn(&input, &secret, &value_blind, &token_blind, &user_data_blind);
 
             inputs.push(Input {
-                value_commit,
-                token_commit,
-                nullifier,
-                merkle_root,
-                user_data_enc,
+                value_commit: derivation.value_commit,
+                token_commit: derivation.token_commit,
+                nullifier: derivation.nullifier,
+                merkle_root: derivation.merkle_root,
+                user_data_enc: derivation.user_data_enc,
                 spend_hook: FuncId::from_base(input.spend_hook),
-                signature_public: revealed.signature_public,
+                signature_public: derivation.signature_public.clone(),
             });
+
+            parts.push(BurnPart { input, derivation, value_blind, token_blind, user_data_blind });
         }
 
-        Ok(BurnCallDebris {
+        Ok(BurnCallPlan {
+            burn_zkbin: self.burn_zkbin,
+            burn_pk: self.burn_pk,
+            parts,
             params: BurnParamsV1 {
                 inputs,
                 // `tx_binding` left these params in `OBL-C198`; `get_metadata` derives it from
@@ -352,9 +371,58 @@ impl BurnCallBuilder {
                 // be computed from a value that covers it.
                 tx_nonce,
             },
-            proofs,
-            signature_secrets,
         })
+    }
+}
+
+/// The second half of the split `OBL-C198` forced: the burn call's data, and the inputs'
+/// derivations and blinds, held until the caller has assembled the transaction's whole call
+/// set and can derive the commitment over it.
+pub struct BurnCallPlan {
+    burn_zkbin: ZkBinary,
+    burn_pk: ProvingKey,
+    parts: Vec<BurnPart>,
+    params: BurnParamsV1,
+}
+
+/// One input's prepared state — exactly what `prove` needs.
+struct BurnPart {
+    input: BurnCallInput,
+    derivation: BurnDerivation,
+    value_blind: ScalarBlind,
+    token_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+}
+
+impl BurnCallPlan {
+    /// The contract's call parameters.
+    pub fn params(&self) -> &BurnParamsV1 {
+        &self.params
+    }
+
+    /// Prove the burn call, binding every input's proof to `tx_commitment`.
+    pub fn prove(self, tx_commitment: pallas::Base) -> Result<BurnCallDebris> {
+        let mut proofs = Vec::with_capacity(self.parts.len());
+        let mut signature_secrets = Vec::with_capacity(self.parts.len());
+
+        for part in self.parts {
+            let secret = part.input.secret.clone();
+            let (proof, _revealed) = create_burn_proof(
+                &self.burn_zkbin,
+                &self.burn_pk,
+                &part.input,
+                &part.derivation,
+                part.value_blind,
+                part.token_blind,
+                part.user_data_blind,
+                secret,
+                tx_commitment,
+            )?;
+            signature_secrets.push(part.derivation.signature_secret.clone());
+            proofs.push(proof);
+        }
+
+        Ok(BurnCallDebris { params: self.params, proofs, signature_secrets })
     }
 }
 
