@@ -77,7 +77,7 @@ fn test_purse_encode_roundtrip() {
         leaf_pos: MerklePosition::new(0),
         merkle_path: path,
         proof: vec![1, 2, 3],
-        tx_binding: pallas::Base::from(200u64),
+        // `tx_binding` left these structs and the wire in `OBL-C198` (the arm derives it).
         tx_nonce: pallas::Base::from(300u64),
         derived_purse_id: pallas::Base::from(1u64),
     };
@@ -94,7 +94,7 @@ fn test_purse_encode_roundtrip() {
         leaf_pos: MerklePosition::new(1),
         merkle_path: path,
         proof: vec![4, 5, 6],
-        tx_binding: pallas::Base::from(200u64),
+        // `tx_binding` left these structs and the wire in `OBL-C198` (the arm derives it).
         tx_nonce: pallas::Base::from(300u64),
         derived_purse_id: pallas::Base::from(1u64),
     };
