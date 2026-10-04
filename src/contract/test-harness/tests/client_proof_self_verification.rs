@@ -587,3 +587,74 @@ mod attestation_issue3 {
         }
     }
 }
+
+// ============================================================================
+// darktoshi_dice::settle_bet — the circuit whose pair MOVED, and whose vector therefore had to
+// ============================================================================
+
+const DICE_SETTLE_ZKBIN: &[u8] = include_bytes!("../../darktoshi_dice/proof/settle_bet.zk.bin");
+
+/// `OBL-C198`: a `settle_bet` proof made against a non-zero tx pair verifies against the circuit the
+/// contract embeds, with the vector the client publishes.
+///
+/// The assertion is on the pair's **position** as much as on its value, and both are needed.
+/// `settle_bet` is the dice circuit whose pair moved — from 2,3 of 4 to last — so a `to_vec` left
+/// behind by the move produces a proof the host refuses while every *count* still agrees, which is
+/// the shape that cost a session a 907-second run. `verify_zkp` fails on the transposition; the
+/// value assertion fails on a constant, which is what the arm published until this campaign.
+///
+/// This is the local instrument for a 900-second heavyweight run, and it is deliberately not a
+/// substitute for it: it exercises the client and the circuit against each other and never touches
+/// the host's metadata.
+#[test]
+fn dice_settle_bet_proof_verifies_with_a_non_zero_tx_pair() {
+    use dwow_darktoshi_dice_contract::client::settle_bet::{
+        create_settle_bet_v1_proof, SettleBetV1CallData,
+    };
+
+    let zkbin = ZkBinary::decode(DICE_SETTLE_ZKBIN, false).expect("settle_bet.zk.bin decodes");
+    let pk = proving_key(&zkbin);
+
+    let tx_commitment = pallas::Base::from(0xC0FFEEu64);
+    let tx_nonce = pallas::Base::from(9u64);
+
+    let mut input = SettleBetV1CallData::new(
+        pallas::Base::from(1u64),    // player_pub_x
+        pallas::Base::from(2u64),    // player_pub_y
+        pallas::Base::from(1000u64), // bet_value
+        pallas::Base::from(1u64),    // target
+        pallas::Base::from(99u64),   // secret_nonce
+        pallas::Base::from(3u64),    // blind
+        pallas::Base::from(4u64),    // asset_id
+        pallas::Base::from(42u64),   // block_hash
+    );
+    input.tx_commitment = tx_commitment;
+    input.tx_nonce = tx_nonce;
+
+    let (proof, public_inputs) =
+        create_settle_bet_v1_proof(&zkbin, &pk, &input).expect("the client must build a proof");
+    let inputs = public_inputs.to_vec();
+    assert_eq!(inputs.len(), 4, "settle_bet instances four values");
+
+    // The pair is the LAST two: the node reads `pubvals[len-2]`/`pubvals[len-1]`, because nothing
+    // in `src/linear/` indexes this vector — the position is the interface.
+    assert_eq!(inputs[3], tx_nonce, "the last instance is the nonce the proof was made with");
+    assert_eq!(
+        inputs[2],
+        dwow_sdk::crypto::poseidon_hash([
+            pallas::Base::from(3u64),
+            tx_commitment,
+            tx_nonce
+        ]),
+        "the instance before it is poseidon_hash([3, tx_commitment, tx_nonce]) for the pair the \
+         proof was made with — not a constant"
+    );
+
+    match verify_zkp(&proof, DICE_SETTLE_ZKBIN, &inputs) {
+        ZkVerifyResult::Ok => {}
+        other => panic!(
+            "OBL-C198: a settle_bet proof bound to a non-zero tx pair does not verify ({other:?}) — \
+             the client's `to_vec` order and the circuit's `constrain_instance` order disagree."
+        ),
+    }
+}
