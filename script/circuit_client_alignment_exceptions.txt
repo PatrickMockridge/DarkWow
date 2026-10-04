@@ -39,7 +39,7 @@
 # found — named in `CLIENT_ALIASES`, added to the resolver, or written by whichever session owns
 # that contract. It does not leave by being argued sound.
 #
-# THE LIST WAS 48 AND IS 23, AND EVERY ENTRY IS ACCOUNTED FOR. None was removed to make the
+# THE LIST WAS 48 AND IS 17, AND EVERY ENTRY IS ACCOUNTED FOR. None was removed to make the
 # number smaller, and three were ADDED when a worse state than any of these turned out to be
 # counted as checked.
 #
@@ -58,10 +58,14 @@
 #            DOWN: `game_room`'s six identity endpoints resolve to one shared vector, stated in
 #            the source — `client/identity_proof.rs`'s module doc names all six and
 #            `IdentityPublicInputs::to_vec` returns the circuit's five in order. Five of them
-#            were in the state described in the new section below; `close_pot` was declared here.
+#            were in the zero-leg state; `close_pot` was declared here.
 #            UP: the ten circuits whose metadata vector is not a literal at the push site are now
 #            compared on the CLIENT leg instead of being counted as checked, and the three that
-#            have no client `to_vec` either are declared in their own section below.
+#            have no client `to_vec` either are declared in their own section.
+#   23 → 17  `darkbet_exchange`'s six, by the same read as `game_room`'s — a shared client impl
+#            whose module doc names the circuits that share it — and three re-read as having no
+#            client file at all rather than an unmatched one, which moved them to the section
+#            above without changing the count.
 #
 # Measured 2026-10-04. Register row: OBL-C198.
 
@@ -77,18 +81,30 @@ purse/balance : no client module — `src/client/*.rs` is empty and the fixture 
 purse/deposit : no client module — `src/client/*.rs` is empty and the fixture builds this proof
 purse/withdraw : no client module — `src/client/*.rs` is empty and the fixture builds this proof
 
-# ── 4 circuits whose contract HAS clients but none for this circuit ──────────────────────────
+# ── 8 circuits whose contract HAS clients but none for this circuit ──────────────────────────
 #
 # Read, not inferred. `box`'s `src/client/mod.rs` carries no `to_vec` at all, and `attestation`'s
 # `attest_slash` and `commit_fee_schedule` have no client file — the attestation spec builds both
 # proofs itself, which `OBL-C195`'s row records as the reason its own first heavy run pinned a
 # fixture defect rather than a contract one. `native_token/fee`'s public inputs are the vector
 # `create_fee_proof` returns, which is not a method and so not something this resolver can find.
+#
+# The last three were declared on 2026-10-04 in the section that used to follow, as "client exists
+# but was not matched". They were re-read and the reason was simpler than that: `dex` and
+# `stablecoin` have client files for their *other* circuits and none at all for these, so there is
+# no unmatched vector here — the harness builds the proof. `harness/dex.rs:467,478` does it with
+# `empty_witnesses` and **an empty public-input vector** (`&[]`), which is worth naming: a proof
+# built against no public inputs at all is what stage ④'s `pubvals.len() >= 2` guard refuses
+# first, so these two dex endpoints have to be rebuilt rather than reordered when `dex` migrates.
 box/put : no client `to_vec` — `src/client/mod.rs` builds these calls without one
 box/take : no client `to_vec` — `src/client/mod.rs` builds these calls without one
 attestation/attest_slash : no client module for this circuit — the fixture builds its proof (recorded in OBL-C195)
 attestation/commit_fee_schedule : no client module for this circuit — the fixture builds its proof (recorded in OBL-C195)
 native_token/fee : the vector is `create_fee_proof`'s return value, not a `to_vec` method, so the resolver cannot find it
+dex/set_transparency_level : no client file for this circuit — `harness/dex.rs:467` builds it with `empty_witnesses` and an empty public-input vector
+dex/update_config : no client file for this circuit — `harness/dex.rs:478` builds it with `empty_witnesses` and an empty public-input vector
+stablecoin/update_config : no client file for this circuit — `harness/stablecoin.rs:611` builds it from `trivial_config_witnesses_and_inputs()`
+
 
 # ── 3 circuits on which NEITHER leg is readable — declared 2026-10-04 ────────────────────────
 #
@@ -111,43 +127,33 @@ stablecoin/add_collateral : no client `to_vec` AND the metadata push is caller-s
 stablecoin/remove_collateral : no client `to_vec` AND the metadata push is caller-supplied — the fixture builds it (`trivial_position_witnesses_and_inputs`)
 stablecoin/repay_stable : no client `to_vec` AND the metadata push is caller-supplied — the fixture builds it (`trivial_position_witnesses_and_inputs`)
 
-# ── 9 circuits whose client exists but whose file was not matched ────────────────────────────
+# ── THE SECTION THAT WAS HERE IS CLOSED, 2026-10-04 ─────────────────────────────────────────
 #
-# Each contract has client files, none of them named for this circuit, and more than one candidate
-# per circuit — so naming one without reading it would be a guess, and a guess that happens to
-# match on *count* would make the check pass by construction, which is the one failure mode this
-# resolver's own docstring names as the reason it does not pick vectors by length. These need a
-# per-circuit read of which impl builds which circuit's public inputs; they are left declared
-# rather than guessed.
+# Nine circuits were declared here as "client exists but the file was not matched", needing a
+# per-circuit read. All nine are now resolved and no entries remain — three of them by a simpler
+# answer than the one this section guessed (no client file exists at all; they moved to the
+# section above), and six by the read this section asked for.
 #
-# A THIRD SIGNAL WAS TRIED AND IS THE REASON THESE TEN SURVIVED IT: score every count-matching
-# candidate impl by the identifiers its vector shares with the circuit's `constrain_instance`
-# targets. For `drain_protection` and `lottery` that is decisive — the names AND the order agree
-# exactly — and both are now in `CLIENT_ALIASES`. For these ten it is not: every candidate that
-# matches on count also scores **zero**, so the only thing selecting one would be its length. A
-# resolver that took that answer would be choosing the vector that makes the check pass, and the
-# check would then pass for a reason that is not true.
+# The read, for the record, because it is the method that worked and the reason it worked:
+# `darkbet_exchange`'s six order/market endpoints all resolve to `AuthPublicInputs`, and the
+# *source says so* — `client/auth_proof.rs`'s module doc names all six and states the five
+# instances in order. So do `game_room`'s `identity_proof.rs` (six circuits) and
+# `drain_protection`'s `AuthorityPublicInputs` (eight). **A shared client impl documents its
+# sharing**; that doc comment is the signal, and it is a read rather than a mapping.
 #
-# TWO MECHANICAL MAPPINGS WERE ALSO TRIED AND BOTH FAIL, so that "it needs a read" is a
-# measurement and not a preference:
+# THREE MECHANICAL SIGNALS ARE STILL WORTHLESS HERE, recorded so nobody re-tries them:
 #
-#   * The CIRCUIT'S NAME inside the client sources. `grep` for `CancelOrderV2`, `ClosePotV2`
-#     and others across the respective `src/client/` trees returns nothing: a client takes
+#   * COUNT ALONE. Scoring each count-matching candidate by the identifiers it shares with the
+#     circuit is decisive when the names agree (`drain_protection`, `lottery`) and scores **zero**
+#     for every candidate in the cases above — the count is not a mapping, and a resolver that
+#     took it would be choosing the vector that makes the check pass.
+#   * The CIRCUIT'S NAME inside the client sources. `grep` for `CancelOrderV2`, `ClosePotV2` and
+#     others across the respective `src/client/` trees returns nothing: a client takes
 #     `zkbin: &ZkBinary` as a parameter and never names the circuit it is proving.
-#   * The NAMESPACE CONSTANT — `DARKBET_EXCHANGE_ZKAS_CANCEL_ORDER_NS_V2` and its siblings.
-#     It appears in `src/lib.rs` where it is declared and in the entrypoint where
-#     `zkas_db_set` registers it, and in no client.
+#   * The NAMESPACE CONSTANT — `DARKBET_EXCHANGE_ZKAS_CANCEL_ORDER_NS_V2` and its siblings. It
+#     appears in `src/lib.rs` where it is declared and in the entrypoint where `zkas_db_set`
+#     registers it, and in no client.
 #
-# So the client side of this mapping is genuinely absent from the sources, which is why the
-# `CLIENT_ALIASES` table exists and why it is hand-written. Whoever closes the rest should read
-# the impl's `to_vec` against the circuit's instances — the three signals above are the three
-# that look mechanical, and two of them find nothing while the third cannot discriminate here.
-darkbet_exchange/cancel_order : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
-darkbet_exchange/match_orders : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
-darkbet_exchange/place_back : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
-darkbet_exchange/place_lay : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
-darkbet_exchange/remove_liquidity : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
-darkbet_exchange/resolve_market : not resolved — no client file is named for this circuit; the candidates are the shared `AuthPublicInputs` and the four named ones, and separating them needs a read
-dex/set_transparency_level : not resolved — none of the six `*PublicInputs` impls in `src/client/` is named for this circuit
-dex/update_config : not resolved — none of the six `*PublicInputs` impls in `src/client/` is named for this circuit
-stablecoin/update_config : not resolved — none of the six `*PublicInputs` impls in `src/client/` is named for this circuit
+# Whoever migrates a contract and finds a circuit here should read the impl's `to_vec` against
+# the circuit's instances and, first, read the client module's doc comment.
+

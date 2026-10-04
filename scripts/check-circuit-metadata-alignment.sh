@@ -379,6 +379,21 @@ CLIENT_ALIASES = {
     ("game_room", "fold"): ("identity_proof.rs", "IdentityPublicInputs"),
     ("game_room", "raise"): ("identity_proof.rs", "IdentityPublicInputs"),
     ("game_room", "withdraw"): ("identity_proof.rs", "IdentityPublicInputs"),
+    # The same shape again in `darkbet_exchange`, named in the source the same way: `client/
+    # auth_proof.rs`'s module doc says "cancel_order, match_orders, place_back, place_lay,
+    # remove_liquidity, resolve_market all share the same witness/instance layout … instances (5):
+    # pub_x, pub_y, nullifier, tx_binding, tx_nonce". The circuit variables are prefixed by role
+    # (`user_pub_x` for the order endpoints, `provider_pub_x` for `remove_liquidity`,
+    # `oracle_pub_x` for `resolve_market`) and the shared client vector is unprefixed — five
+    # against five, same order, and the pair agrees under the hard rule. The harness confirms the
+    # linkage rather than the doc alone: `create_auth_proof` is called for all six (`:347`
+    # place_back … `:496` remove_liquidity).
+    ("darkbet_exchange", "cancel_order"): ("auth_proof.rs", "AuthPublicInputs"),
+    ("darkbet_exchange", "match_orders"): ("auth_proof.rs", "AuthPublicInputs"),
+    ("darkbet_exchange", "place_back"): ("auth_proof.rs", "AuthPublicInputs"),
+    ("darkbet_exchange", "place_lay"): ("auth_proof.rs", "AuthPublicInputs"),
+    ("darkbet_exchange", "remove_liquidity"): ("auth_proof.rs", "AuthPublicInputs"),
+    ("darkbet_exchange", "resolve_market"): ("auth_proof.rs", "AuthPublicInputs"),
 }
 
 # Files that carry more than one `to_vec` and no alias naming which one belongs to the circuit.
