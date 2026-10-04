@@ -345,7 +345,7 @@ mod tests {
         let params = TransferParamsV1 {
             inputs: vec![input],
             outputs: vec![output],
-            tx_binding: pallas::Base::zero(),
+            // `tx_binding` left this struct and the wire in `OBL-C198`; the arm derives it.
             tx_nonce: pallas::Base::zero(),
         };
         let encoded = serialize(&params);
