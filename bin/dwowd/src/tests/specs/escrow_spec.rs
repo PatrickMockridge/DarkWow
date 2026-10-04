@@ -73,7 +73,7 @@ fn pn_transfer_child(
 /// wrong-box row uses an unfunded escrow. Lifting it needs the harness to carry purse state across
 /// deposits — a unit of its own, recorded in `OBL-C170`.
 fn purse_deposit_child(amount: u64) -> dwow_core::Result<ChildCall> {
-    let purse = PurseHarness::spawn();
+    let purse = PurseHarness::spawn(*PURSE_CONTRACT_ID);
     let r = purse.deposit(amount).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
     Ok(ChildCall { contract_id: *PURSE_CONTRACT_ID, call_data: r.call_data, proofs: vec![r.proof], children: vec![] })
 }

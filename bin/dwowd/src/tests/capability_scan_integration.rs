@@ -784,7 +784,7 @@ fn test_purse_deposit_withdraw_wallet_driven_generic_prover() {
         // (nonce 0 → 1). The wallet later spends it with the same owner secret.
         let chain = HeavyweightPipeline::new().await.expect("HeavyweightPipeline");
         chain.init_genesis().await.expect("init_genesis");
-        let harness = PurseHarness::spawn();
+        let harness = PurseHarness::spawn(*PURSE_CONTRACT_ID);
         let deposit_seed = harness.deposit(100).expect("seed purse deposit");
         let seed_height = chain.block()
             .expect("block")
@@ -1235,7 +1235,7 @@ fn test_purse_deposit_withdraw_accepts_through_accept_block() {
         // ── Real chain: genesis + submit a Purse deposit through accept_block ─
         let chain = HeavyweightPipeline::new().await.expect("HeavyweightPipeline");
         chain.init_genesis().await.expect("init_genesis");
-        let harness = PurseHarness::spawn();
+        let harness = PurseHarness::spawn(*PURSE_CONTRACT_ID);
 
         // deposit(100) — the FIRST op skips the purse_roots gate (latest root is
         // still EMPTY_PURSE_TREE_ROOT) and appends nl = poseidon_hash([5,1,100,0]).
