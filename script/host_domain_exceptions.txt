@@ -1,0 +1,38 @@
+# Adjudications for `scripts/check-host-domain-separation.sh` — the rule that a host-side
+# `poseidon_hash` derivation carries a domain constant, as a circuit's does.
+#
+# Format, one entry per line:
+#
+#   <rel path>:<line> : <reason citing the mechanism, the host read, or a register ID>
+#
+# Keyed on path and line, NOT on a bare path, because one file can carry several derivations with
+# different dispositions. (The circuit-side lists key on path and name instead, since a circuit
+# name is stable where a Rust line can shift — this file has no such stable name, and a stale
+# entry is reported by the checker so the list cannot outlive its sites.)
+#
+# THIS LIST IS A RATCHET, NOT AN AMNESTY, and it is currently EMPTY ON PURPOSE.
+#
+# Measured 2026-10-04 over the contract host code (`entrypoint*.rs`, `entrypoint/*.rs`, `lib.rs`,
+# `model/mod.rs`): 120 undeclared findings — host `poseidon_hash` calls whose FIRST element is not
+# a named domain and not the inline-literal idiom (`Base::from(n)`, `from_raw([n, …])`). The
+# attestation contract's two, `attest_slash_v1` and `commit_fee_schedule_v1`, are FIXED (prefixes
+# `SLASH_ATTESTATION_ID_DOMAIN` and `FEE_SCHEDULE_ID_DOMAIN` in `model/mod.rs`); the other 120 are
+# not adjudicated, and the checker is therefore REPORT-ONLY in `hooks/pre-commit` and in
+# `scripts/run-all-tests.sh`. This is the disposition `check-pubkey-binding.sh` had from 2026-09-22
+# to 2026-09-23, and that `check-circuit-dead-values.sh` has now: a gate that fails on
+# unadjudicated findings is a gate whose authority cannot be defended yet, which is worse than a
+# report.
+#
+# What an entry should say, decided by reading the derivation AND where its value goes:
+#
+#   * a derivation whose first element IS a domain reached through a helper — the gate is looking
+#     at the wrong element; that belongs here as an entry with the mechanism;
+#   * a derivation of a nullifier, a leaf, a commitment or a tx binding — give it the SDK registry
+#     constant (`DRK_POSEIDON_DOMAIN_*`, `src/sdk/src/crypto/constants.rs`), or a local constant in
+#     the contract's `model` when the domain is contract-specific (as `escrow`'s
+#     `CLAIM_BOX_CONTENTS_DOMAIN` is), and the entry should be absent;
+#   * a derivation that mints an id from a caller-chosen public key and a parameter — the same
+#     shape `attest_slash_v1` and `commit_fee_schedule_v1` had, fixed with the derive-and-expose
+#     repair (`OBL-C195`) plus a local domain.
+#
+# Register row: `OBL-C196`.

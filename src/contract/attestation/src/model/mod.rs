@@ -73,6 +73,23 @@ pub(crate) fn read_slice(data: &[u8], offset: usize, len: usize) -> Result<&[u8]
     })
 }
 
+// ============================================================================
+// LOCAL DOMAIN CONSTANTS
+// ============================================================================
+//
+// `attest_slash_v1` and `commit_fee_schedule_v1` (entrypoint.rs) each mint an attestation id from
+// the actor's coordinates and the call's parameters. Both are `poseidon_hash` invocations of the
+// same arity — four field elements — with distinct meanings, so `contract-wasm-type-system.md` §8.1
+// requires each to carry its own domain prefix. The circuit-side domain gate cannot see them: it
+// walks `.zk` circuits, and these derivations are host-side.
+//
+// Twelve and thirteen are the next free values after `escrow::Escrow::CLAIM_BOX_CONTENTS_DOMAIN` and
+// `dao_escrow`'s governance-approval domain (both 11, locally held); like those, they live here
+// rather than in `src/sdk/src/crypto/constants.rs`' registry of `1..=10` so that adding them does
+// not stale all 32 artifacts.
+pub const SLASH_ATTESTATION_ID_DOMAIN: pallas::Base = pallas::Base::from_raw([12, 0, 0, 0]);
+pub const FEE_SCHEDULE_ID_DOMAIN: pallas::Base = pallas::Base::from_raw([13, 0, 0, 0]);
+
 /// Attestation unique identifier (hash of attestation data)
 #[derive(Debug, Clone, Copy, Eq, PartialEq,)]
 pub struct AttestationId(pub pallas::Base);

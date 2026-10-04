@@ -244,6 +244,12 @@ run_gate "circuit pubkey binding"         bash "$SCRIPT_DIR/check-pubkey-binding
 # attestation contract, whose defect the checker was written for, is clean. It becomes a blocking
 # gate in the same move the one above did, and `hooks/pre-commit` reports it in the meantime.
 run_gate "circuit dead values (report-only)" bash "$SCRIPT_DIR/check-circuit-dead-values.sh" --report-only
+# OBL-C196: a host-side `poseidon_hash` derivation carries a domain, like a circuit's. The circuit
+# domain gate walks `.zk` and cannot see Rust; `attestation`'s `attest_slash_v1` and
+# `commit_fee_schedule_v1` minted an id from an un-prefixed, same-arity hash. REPORT-ONLY until the
+# list is adjudicated, as the two above were: measured 2026-10-04 the tree carries 120 undeclared
+# host derivations and each has to be read before a gate can block on it.
+run_gate "host domain separation (report-only)" bash "$SCRIPT_DIR/check-host-domain-separation.sh"
 # OBL-C99: a client builder's params are the params the contract decodes — the wallet's call is the
 # contract's call. A client that declares its own params type is a second encoder for one function,
 # and the two drift: `drain_protection`'s `initialize`, `execute` and `transfer` builders returned

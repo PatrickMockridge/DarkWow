@@ -127,4 +127,21 @@ if [ -x "$DEAD_CHECKER" ]; then
         echo "  script/circuit_dead_value_exceptions.txt and scripts/check-circuit-dead-values.sh."
     fi
 fi
+# OBL-C196: a host-side `poseidon_hash` derivation carries a domain, like a circuit's — the circuit
+# domain gate walks `.zk` and cannot see Rust. `attestation`'s `attest_slash_v1` and
+# `commit_fee_schedule_v1` minted an id from an un-prefixed, same-arity hash; the entrypoint now
+# prefixes `SLASH_ATTESTATION_ID_DOMAIN` and `FEE_SCHEDULE_ID_DOMAIN`. REPORT-ONLY, as the two
+# checks above were: measured 2026-10-04 the tree carries 120 undeclared host derivations, each to
+# be read before this can block.
+HOSTDOM_CHECKER="$REPO_ROOT/scripts/check-host-domain-separation.sh"
+if [ -x "$HOSTDOM_CHECKER" ]; then
+    HOSTDOM_OUT="$(bash "$HOSTDOM_CHECKER" 2>&1 || true)"
+    HOSTDOM_N="$(printf '%s\n' "$HOSTDOM_OUT" | grep -c 'with no DOMAIN constant' || true)"
+    if [ "$HOSTDOM_N" -gt 0 ]; then
+        echo ""
+        echo "REPORT (not blocking): $HOSTDOM_N host poseidon_hash call(s) with no DOMAIN reference"
+        echo "  (OBL-C196). A host derivation earns the same domain discipline as a circuit's. See"
+        echo "  script/host_domain_exceptions.txt and scripts/check-host-domain-separation.sh."
+    fi
+fi
 exit 0

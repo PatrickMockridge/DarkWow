@@ -1115,7 +1115,10 @@ fn update_delegation_v1(cid: ContractId, params: UpdateDelegationParamsV1) -> Re
 fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::attest_slash_v1] Attesting slash event: amount={}, block={}", params.slash_amount, params.block_height);
 
-    // Compute attestation ID: poseidon_hash(relayer_x, relayer_y, slash_amount, withdrawal_id)
+    // Compute attestation ID: poseidon_hash(SLASH_ATTESTATION_ID_DOMAIN, relayer_x, relayer_y,
+    // slash_amount, withdrawal_id). The domain (model.rs) separates this derivation from
+    // `commit_fee_schedule_v1`'s, which hashes four elements of the same arity but a different
+    // meaning — contract-wasm-type-system.md §8.1.
     // Typed rather than panicking: the reason the `#[expect]` gave is false for this
     // value — the derived `Decodable` for `PublicKey` builds the point directly and never
     // calls `from_bytes`, so a decoded key can be the identity.
@@ -1125,6 +1128,7 @@ fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u
         ))
     };
     let attestation_id = poseidon_hash([
+        model::SLASH_ATTESTATION_ID_DOMAIN,
         rx,
         ry,
         pallas::Base::from(params.slash_amount),
@@ -1201,7 +1205,9 @@ fn commit_fee_schedule_v1(cid: ContractId, params: CommitFeeScheduleParamsV1) ->
     msg!("[attestation::commit_fee_schedule_v1] Committing fee schedule: base_fee_bp={}, premium_bp={}",
         params.base_fee_bp, params.guaranteed_premium_bp);
 
-    // Compute attestation ID
+    // Compute attestation ID: poseidon_hash(FEE_SCHEDULE_ID_DOMAIN, attestor_x, attestor_y,
+    // base_fee_bp, guaranteed_premium_bp). The domain (model.rs) separates this derivation from
+    // `attest_slash_v1`'s — same arity, different meaning, contract-wasm-type-system.md §8.1.
     // Typed rather than panicking: the reason the `#[expect]` gave is false for this
     // value — the derived `Decodable` for `PublicKey` builds the point directly and never
     // calls `from_bytes`, so a decoded key can be the identity.
@@ -1211,6 +1217,7 @@ fn commit_fee_schedule_v1(cid: ContractId, params: CommitFeeScheduleParamsV1) ->
         ))
     };
     let attestation_id = poseidon_hash([
+        model::FEE_SCHEDULE_ID_DOMAIN,
         ax,
         ay,
         pallas::Base::from(params.base_fee_bp),
