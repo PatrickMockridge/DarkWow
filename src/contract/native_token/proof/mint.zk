@@ -116,10 +116,12 @@ circuit "Mint_V2" {
     # notes (over-mint by Σ pin).
     effective_plus_pin = base_add(effective_value, total_pin);
     constrain_equal_base(effective_plus_pin, value);
+    # total_pin is public (input #8); effective_value stays hidden.
+    constrain_instance(total_pin);
+    # `OBL-C198`: the tx pair is the last two instances — the node reads that position and
+    # there is no per-circuit index map. It sat before `total_pin`.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    # total_pin is public (input #10); effective_value stays hidden.
-    constrain_instance(total_pin);
     range_check(64, old_cumulative_value);
 }

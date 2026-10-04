@@ -99,9 +99,9 @@ impl crate::circuit::CircuitPublicInputs for TransferMintRevealed {
             self.token_commit,                  // 5: tc
             *cumcom_coords.x(),                 // 6: S_H.x
             *cumcom_coords.y(),                 // 7: S_H.y
-            self.tx_binding,                    // 8: tx_binding
-            self.tx_nonce,                      // 9: tx_nonce
-            pallas::Base::from(self.total_pin), // 10: total_pin
+            pallas::Base::from(self.total_pin), // 8: total_pin
+            self.tx_binding,                    // 9: tx_binding (last pair, OBL-C198)
+            self.tx_nonce,                      // 10: tx_nonce
         ])
     }
 }

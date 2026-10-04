@@ -532,9 +532,9 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Con
                 output.token_commit,            // 5: tc
                 value_x,                        // 6: S_H.x (== vc.x — identity + vc = vc)
                 value_y,                        // 7: S_H.y (== vc.y)
-                tx_binding_of(tp.tx_nonce)?,     // 8: tx_binding (derived, OBL-C198)
-                tp.tx_nonce,                    // 9: tx_nonce
-                pallas::Base::ZERO,             // 10: total_pin (0 for transfers)
+                pallas::Base::ZERO,             // 8: total_pin (0 for transfers)
+                tx_binding_of(tp.tx_nonce)?,     // 9: tx_binding (derived, OBL-C198)
+                tp.tx_nonce,                    // 10: tx_nonce
             ],
         ));
     }
@@ -607,9 +607,9 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contra
             sp.output.token_commit,             // 5: tc
             output_x,                           // 6: S_H.x (== vc.x — identity + vc = vc, non-coinbase mint)
             output_y,                           // 7: S_H.y (== vc.y)
-            tx_binding_of(sp.tx_nonce)?,         // 8: tx_binding (derived, OBL-C198)
-            sp.tx_nonce,                        // 9: tx_nonce
-            pallas::Base::ZERO,                 // 10: total_pin (0 for spend)
+            pallas::Base::ZERO,                 // 8: total_pin (0 for spend)
+            tx_binding_of(sp.tx_nonce)?,         // 9: tx_binding (derived, OBL-C198)
+            sp.tx_nonce,                        // 10: tx_nonce
         ],
     ));
 
