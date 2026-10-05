@@ -51,7 +51,9 @@ pub struct SettlePotPublicInputs {
 
 impl SettlePotPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.room_id2, self.tx_binding, self.tx_nonce, self.pot_id2]
+        // Circuit instances: room_id2, pot_id2, then the pair — last (`OBL-C198`). The pair sat at
+        // 1,2 of 4 with `pot_id2` after it.
+        vec![self.room_id2, self.pot_id2, self.tx_binding, self.tx_nonce]
     }
 }
 

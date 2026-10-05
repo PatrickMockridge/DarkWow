@@ -11,7 +11,10 @@ circuit "DepositV2" {
     derived_account_key = poseidon_hash(DOMAIN_COMMITMENT, room_id, player_pub_x);
     constrain_instance(derived_account_key);
     derived_player_key = poseidon_hash(DOMAIN_COMMITMENT, player_pub_x, player_pub_y);
+    constrain_instance(derived_player_key);
+
+    # The pair is the LAST two instances (`OBL-C198`), as in `create_room.zk`. It sat at 1,2 of 4
+    # with `derived_player_key` after it.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);
-    constrain_instance(derived_player_key);
 }

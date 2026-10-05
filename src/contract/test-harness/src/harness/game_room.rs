@@ -76,6 +76,16 @@ pub struct GameRoomHarness {
     withdraw_pk: ProvingKey,
     create_pot_zkbin: ZkBinary,
     create_pot_pk: ProvingKey,
+    /// The contract's deployed id (`OBL-C198`): the transaction commitment is derived over the
+    /// call set, and a call carries this id, so the harness has to know it.
+    contract_id: dwow_sdk::crypto::ContractId,
+}
+
+/// The transaction commitment over an ordered call set — the same derivation the node recomputes
+/// (`dwow_sdk::crypto::util::tx_commitment`). The order is the one `DarkForest::build_vec` emits:
+/// DFS post-order, children before parents.
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
 }
 
 macro_rules! load_circuit {
@@ -89,7 +99,7 @@ macro_rules! load_circuit {
 }
 
 impl GameRoomHarness {
-    pub fn spawn() -> Self {
+    pub fn spawn(contract_id: dwow_sdk::crypto::ContractId) -> Self {
         dwow_game_room_contract::enable_deterministic_zk();
         let (create_room_zkbin, create_room_pk) = load_circuit!(create_room);
         let (deposit_zkbin, deposit_pk) = load_circuit!(deposit);
@@ -117,13 +127,29 @@ impl GameRoomHarness {
             raise_zkbin, raise_pk,
             withdraw_zkbin, withdraw_pk,
             create_pot_zkbin, create_pot_pk,
+            contract_id,
         }
     }
 
-    pub fn create_room(&self, owner_secret: pallas::Base, asset_id: pallas::Base, block_height: u64, nonce: pallas::Base) -> dwow_core::Result<CreateRoomGRResult> {
+    /// The commitment over `children` followed by this call — the ordered set the node hashes.
+    ///
+    /// This is the *root* form: correct for a call that ends its transaction, which every endpoint
+    /// here is. A call used as a **child** of another cannot use it, because its parent's bytes are
+    /// part of its commitment and come after it in post-order; such a builder needs a plan the
+    /// caller proves against its own commitment.
+    fn commitment_over(
+        &self,
+        children: &[dwow_sdk::tx::ContractCall],
+        call_data: &[u8],
+    ) -> pallas::Base {
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.to_vec() });
+        commitment_of(&calls)
+    }
+
+    pub fn create_room(&self, children: &[dwow_sdk::tx::ContractCall], owner_secret: pallas::Base, asset_id: pallas::Base, block_height: u64, nonce: pallas::Base) -> dwow_core::Result<CreateRoomGRResult> {
         let owner = PublicKey::from_secret(SecretKey::from_base(owner_secret));
-        let input = CreateRoomCallData::new(owner, asset_id, block_height, nonce);
-        let (proof, public_inputs) = create_room_v1_proof(&self.create_room_zkbin, &self.create_room_pk, &input)?;
+        let mut input = CreateRoomCallData::new(owner, asset_id, block_height, nonce);
         let params = CreateRoomParamsV1 {
             owner,
             asset_id,
@@ -140,13 +166,24 @@ impl GameRoomHarness {
         };
         let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode());
-        Ok(CreateRoomGRResult { call_data, public_inputs, proof })
+
+        // `OBL-C198`: the call data comes first because the commitment is a derivation over it, and
+        // the set is `children` followed by this call — DFS post-order, children before parents.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, public_inputs) = create_room_v1_proof(&self.create_room_zkbin, &self.create_room_pk, &input)?;
+        Ok(CreateRoomGRResult { call_data, public_inputs, proof, commitment })
     }
 
-    pub fn create_pot(&self, room_id: pallas::Base, player_secret: pallas::Base, nonce: pallas::Base) -> dwow_core::Result<CreatePotGRResult> {
+    pub fn create_pot(&self, children: &[dwow_sdk::tx::ContractCall], room_id: pallas::Base, player_secret: pallas::Base, nonce: pallas::Base) -> dwow_core::Result<CreatePotGRResult> {
         let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
-        let input = CreatePotCallData::new(room_id, player, player_secret, nonce);
-        let (proof, public_inputs) = create_pot_v1_proof(&self.create_pot_zkbin, &self.create_pot_pk, &input)?;
+        let mut input = CreatePotCallData::new(room_id, player, player_secret, nonce);
+
+        // `OBL-C198`: the params carry a value the proof derives, so the public inputs are taken
+        // first — they are a pure function of the call data — and the call data before the
+        // commitment.
+        let public_inputs = input.compute_public_inputs();
         let params = CreatePotParamsV1 {
             room_id,
             player,
@@ -155,83 +192,125 @@ impl GameRoomHarness {
         };
         let mut call_data = vec![0x0B];
         call_data.extend_from_slice(&params.encode());
-        Ok(CreatePotGRResult { call_data, public_inputs, proof })
+
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, _public_inputs) = create_pot_v1_proof(&self.create_pot_zkbin, &self.create_pot_pk, &input)?;
+        Ok(CreatePotGRResult { call_data, public_inputs, proof, commitment })
     }
 
-    pub fn deposit(&self, room_id: pallas::Base, player_secret: pallas::Base, amount: u64, nonce: pallas::Base) -> dwow_core::Result<DepositGRResult> {
+    pub fn deposit(&self, children: &[dwow_sdk::tx::ContractCall], room_id: pallas::Base, player_secret: pallas::Base, amount: u64, nonce: pallas::Base) -> dwow_core::Result<DepositGRResult> {
         let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
-        let input = DepositCallData::new(room_id, player, amount, nonce);
-        let (proof, public_inputs) = deposit_v1_proof(&self.deposit_zkbin, &self.deposit_pk, &input)?;
+        let mut input = DepositCallData::new(room_id, player, amount, nonce);
         let params = DepositParamsV1 { room_id, player, amount, instance_seed: [0u8; 32] };
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
-        Ok(DepositGRResult { call_data, public_inputs, proof })
+
+        // `OBL-C198`: see `create_room`.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, public_inputs) = deposit_v1_proof(&self.deposit_zkbin, &self.deposit_pk, &input)?;
+        Ok(DepositGRResult { call_data, public_inputs, proof, commitment })
     }
 
-    pub fn withdraw(&self, room_id: pallas::Base, player_secret: pallas::Base, amount: u64) -> dwow_core::Result<WithdrawGRResult> {
+    pub fn withdraw(&self, children: &[dwow_sdk::tx::ContractCall], room_id: pallas::Base, player_secret: pallas::Base, amount: u64) -> dwow_core::Result<WithdrawGRResult> {
         let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
-        let input = IdentityCallData::new(room_id, player, player_secret, 8u64);
-        let (proof, public_inputs) = create_identity_proof(&self.withdraw_zkbin, &self.withdraw_pk, &input)?;
+        let mut input = IdentityCallData::new(room_id, player, player_secret, 8u64);
+
+        // `OBL-C198`: `params` carries a value the proof derives, so the public inputs come first.
+        let public_inputs = input.compute_public_inputs();
         let params = WithdrawParamsV1 { room_id, player, amount, player_nullifier: public_inputs.nullifier };
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
-        Ok(WithdrawGRResult { call_data, public_inputs, proof })
+
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, _public_inputs) = create_identity_proof(&self.withdraw_zkbin, &self.withdraw_pk, &input)?;
+        Ok(WithdrawGRResult { call_data, public_inputs, proof, commitment })
     }
 
-    pub fn place_bet(&self, room_id: pallas::Base, pot_id: pallas::Base, player_secret: pallas::Base, amount: u64, bet_type: BetType, block_height: u64, nonce: pallas::Base) -> dwow_core::Result<PlaceBetGRResult> {
+    pub fn place_bet(&self, children: &[dwow_sdk::tx::ContractCall], room_id: pallas::Base, pot_id: pallas::Base, player_secret: pallas::Base, amount: u64, bet_type: BetType, block_height: u64, nonce: pallas::Base) -> dwow_core::Result<PlaceBetGRResult> {
         let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
-        let input = PlaceBetCallData::new(room_id, pot_id, player, amount, block_height, nonce);
-        let (proof, public_inputs) = place_bet_v1_proof(&self.place_bet_zkbin, &self.place_bet_pk, &input)?;
+        let mut input = PlaceBetCallData::new(room_id, pot_id, player, amount, block_height, nonce);
         let params = PlaceBetParamsV1 { room_id, pot_id, player, amount, bet_type, nonce, block_height: pallas::Base::from(block_height) };
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
-        Ok(PlaceBetGRResult { call_data, public_inputs, proof })
+
+        // `OBL-C198`: see `create_room`.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, public_inputs) = place_bet_v1_proof(&self.place_bet_zkbin, &self.place_bet_pk, &input)?;
+        Ok(PlaceBetGRResult { call_data, public_inputs, proof, commitment })
     }
 
-    pub fn raise(&self, room_id: pallas::Base, player_secret: pallas::Base, amount: u64, nonce: pallas::Base) -> dwow_core::Result<RaiseGRResult> {
+    pub fn raise(&self, children: &[dwow_sdk::tx::ContractCall], room_id: pallas::Base, player_secret: pallas::Base, amount: u64, nonce: pallas::Base) -> dwow_core::Result<RaiseGRResult> {
         let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
-        let input = IdentityCallData::new(room_id, player, player_secret, 9u64);
-        let (proof, public_inputs) = create_identity_proof(&self.raise_zkbin, &self.raise_pk, &input)?;
+        let mut input = IdentityCallData::new(room_id, player, player_secret, 9u64);
+        let public_inputs = input.compute_public_inputs();
         let params = RaiseParamsV1 { room_id, player, amount, nonce, player_nullifier: public_inputs.nullifier };
         let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
-        Ok(RaiseGRResult { call_data, public_inputs, proof })
+
+        // `OBL-C198`: see `create_room`.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, _public_inputs) = create_identity_proof(&self.raise_zkbin, &self.raise_pk, &input)?;
+        Ok(RaiseGRResult { call_data, public_inputs, proof, commitment })
     }
 
-    pub fn call(&self, room_id: pallas::Base, player_secret: pallas::Base, nonce: pallas::Base) -> dwow_core::Result<CallGRResult> {
+    pub fn call(&self, children: &[dwow_sdk::tx::ContractCall], room_id: pallas::Base, player_secret: pallas::Base, nonce: pallas::Base) -> dwow_core::Result<CallGRResult> {
         let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
-        let input = IdentityCallData::new(room_id, player, player_secret, 10u64);
-        let (proof, public_inputs) = create_identity_proof(&self.call_zkbin, &self.call_pk, &input)?;
+        let mut input = IdentityCallData::new(room_id, player, player_secret, 10u64);
+        let public_inputs = input.compute_public_inputs();
         let params = CallParamsV1 { room_id, player, nonce, player_nullifier: public_inputs.nullifier };
         let mut call_data = vec![0x05];
         call_data.extend_from_slice(&params.encode());
-        Ok(CallGRResult { call_data, public_inputs, proof })
+
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, _public_inputs) = create_identity_proof(&self.call_zkbin, &self.call_pk, &input)?;
+        Ok(CallGRResult { call_data, public_inputs, proof, commitment })
     }
 
-    pub fn fold(&self, room_id: pallas::Base, player_secret: pallas::Base) -> dwow_core::Result<FoldGRResult> {
+    pub fn fold(&self, children: &[dwow_sdk::tx::ContractCall], room_id: pallas::Base, player_secret: pallas::Base) -> dwow_core::Result<FoldGRResult> {
         let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
-        let input = IdentityCallData::new(room_id, player, player_secret, 11u64);
-        let (proof, public_inputs) = create_identity_proof(&self.fold_zkbin, &self.fold_pk, &input)?;
+        let mut input = IdentityCallData::new(room_id, player, player_secret, 11u64);
+        let public_inputs = input.compute_public_inputs();
         let params = FoldParamsV1 { room_id, player, player_nullifier: public_inputs.nullifier };
         let mut call_data = vec![0x06];
         call_data.extend_from_slice(&params.encode());
-        Ok(FoldGRResult { call_data, public_inputs, proof })
+
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, _public_inputs) = create_identity_proof(&self.fold_zkbin, &self.fold_pk, &input)?;
+        Ok(FoldGRResult { call_data, public_inputs, proof, commitment })
     }
 
-    pub fn close_pot(&self, room_id: pallas::Base, pot_id: pallas::Base, player_secret: pallas::Base) -> dwow_core::Result<ClosePotGRResult> {
+    pub fn close_pot(&self, children: &[dwow_sdk::tx::ContractCall], room_id: pallas::Base, pot_id: pallas::Base, player_secret: pallas::Base) -> dwow_core::Result<ClosePotGRResult> {
         let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
-        let input = IdentityCallData::new(room_id, player, player_secret, 12u64);
-        let (proof, public_inputs) = create_identity_proof(&self.close_pot_zkbin, &self.close_pot_pk, &input)?;
+        let mut input = IdentityCallData::new(room_id, player, player_secret, 12u64);
+        let public_inputs = input.compute_public_inputs();
         let params = ClosePotParamsV1 { room_id, pot_id, player, player_nullifier: public_inputs.nullifier };
         let mut call_data = vec![0x07];
         call_data.extend_from_slice(&params.encode());
-        Ok(ClosePotGRResult { call_data, public_inputs, proof })
+
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, _public_inputs) = create_identity_proof(&self.close_pot_zkbin, &self.close_pot_pk, &input)?;
+        Ok(ClosePotGRResult { call_data, public_inputs, proof, commitment })
     }
 
-    pub fn settle_pot(&self, caller_secret: pallas::Base, room_id: pallas::Base, pot_id: pallas::Base, winners: Vec<(PublicKey, u64)>, pot_total: u64, nonce: pallas::Base) -> dwow_core::Result<SettlePotGRResult> {
+    pub fn settle_pot(&self, children: &[dwow_sdk::tx::ContractCall], caller_secret: pallas::Base, room_id: pallas::Base, pot_id: pallas::Base, winners: Vec<(PublicKey, u64)>, pot_total: u64, nonce: pallas::Base) -> dwow_core::Result<SettlePotGRResult> {
         let caller = PublicKey::from_secret(SecretKey::from_base(caller_secret));
-        let input = SettlePotCallData::new(room_id, pot_id, caller, pot_total, winners.len() as u64, nonce);
-        let (proof, public_inputs) = settle_pot_v1_proof(&self.settle_pot_zkbin, &self.settle_pot_pk, &input)?;
+        let mut input = SettlePotCallData::new(room_id, pot_id, caller, pot_total, winners.len() as u64, nonce);
         let params = SettlePotParamsV1 {
             caller,
             room_id,
@@ -243,27 +322,44 @@ impl GameRoomHarness {
         };
         let mut call_data = vec![0x08];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
-        Ok(SettlePotGRResult { call_data, public_inputs, proof })
+
+        // `OBL-C198`: see `create_room`.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, public_inputs) = settle_pot_v1_proof(&self.settle_pot_zkbin, &self.settle_pot_pk, &input)?;
+        Ok(SettlePotGRResult { call_data, public_inputs, proof, commitment })
     }
 
-    pub fn contribute_entropy(&self, room_id: pallas::Base, player_secret: pallas::Base, commitment: pallas::Base, reveal: Option<pallas::Base>) -> dwow_core::Result<ContributeEntropyGRResult> {
+    pub fn contribute_entropy(&self, children: &[dwow_sdk::tx::ContractCall], room_id: pallas::Base, player_secret: pallas::Base, commitment: pallas::Base, reveal: Option<pallas::Base>) -> dwow_core::Result<ContributeEntropyGRResult> {
         let player = PublicKey::from_secret(SecretKey::from_base(player_secret));
-        let input = IdentityCallData::new(room_id, player, player_secret, 13u64);
-        let (proof, public_inputs) = create_identity_proof(&self.contribute_entropy_zkbin, &self.contribute_entropy_pk, &input)?;
+        let mut input = IdentityCallData::new(room_id, player, player_secret, 13u64);
+        let public_inputs = input.compute_public_inputs();
         let params = ContributeEntropyParamsV1 { room_id, player, commitment, player_nullifier: public_inputs.nullifier, reveal };
         let mut call_data = vec![0x09];
         call_data.extend_from_slice(&params.encode());
-        Ok(ContributeEntropyGRResult { call_data, public_inputs, proof })
+
+        // `OBL-C198`: see `create_room`.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, _public_inputs) = create_identity_proof(&self.contribute_entropy_zkbin, &self.contribute_entropy_pk, &input)?;
+        Ok(ContributeEntropyGRResult { call_data, public_inputs, proof, commitment })
     }
 
-    pub fn claim(&self, room_id: pallas::Base, pot_id: pallas::Base, winner_secret: pallas::Base, payout_amount: u64, nonce: pallas::Base) -> dwow_core::Result<ClaimGRResult> {
+    pub fn claim(&self, children: &[dwow_sdk::tx::ContractCall], room_id: pallas::Base, pot_id: pallas::Base, winner_secret: pallas::Base, payout_amount: u64, nonce: pallas::Base) -> dwow_core::Result<ClaimGRResult> {
         let winner = PublicKey::from_secret(SecretKey::from_base(winner_secret));
-        let input = ClaimCallData::new(room_id, pot_id, winner, payout_amount, nonce);
-        let (proof, public_inputs) = claim_v1_proof(&self.claim_zkbin, &self.claim_pk, &input)?;
+        let mut input = ClaimCallData::new(room_id, pot_id, winner, payout_amount, nonce);
         let params = ClaimParamsV1 { room_id, pot_id, winner, payout_amount, proof: vec![], nonce };
         let mut call_data = vec![0x0A];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
-        Ok(ClaimGRResult { call_data, public_inputs, proof })
+
+        // `OBL-C198`: see `create_room`.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, public_inputs) = claim_v1_proof(&self.claim_zkbin, &self.claim_pk, &input)?;
+        Ok(ClaimGRResult { call_data, public_inputs, proof, commitment })
     }
 }
 
@@ -315,15 +411,15 @@ impl super::ContractHarness for GameRoomHarness {
     }
 }
 
-pub struct CreateRoomGRResult { pub call_data: Vec<u8>, pub public_inputs: CreateRoomPublicInputs, pub proof: Proof }
-pub struct CreatePotGRResult { pub call_data: Vec<u8>, pub public_inputs: CreatePotPublicInputs, pub proof: Proof }
-pub struct DepositGRResult { pub call_data: Vec<u8>, pub public_inputs: DepositPublicInputs, pub proof: Proof }
-pub struct WithdrawGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof }
-pub struct PlaceBetGRResult { pub call_data: Vec<u8>, pub public_inputs: PlaceBetPublicInputs, pub proof: Proof }
-pub struct RaiseGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof }
-pub struct CallGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof }
-pub struct FoldGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof }
-pub struct ClosePotGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof }
-pub struct SettlePotGRResult { pub call_data: Vec<u8>, pub public_inputs: SettlePotPublicInputs, pub proof: Proof }
-pub struct ContributeEntropyGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof }
-pub struct ClaimGRResult { pub call_data: Vec<u8>, pub public_inputs: ClaimPublicInputs, pub proof: Proof }
+pub struct CreateRoomGRResult { pub call_data: Vec<u8>, pub public_inputs: CreateRoomPublicInputs, pub proof: Proof, pub commitment: pallas::Base }
+pub struct CreatePotGRResult { pub call_data: Vec<u8>, pub public_inputs: CreatePotPublicInputs, pub proof: Proof, pub commitment: pallas::Base }
+pub struct DepositGRResult { pub call_data: Vec<u8>, pub public_inputs: DepositPublicInputs, pub proof: Proof, pub commitment: pallas::Base }
+pub struct WithdrawGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof, pub commitment: pallas::Base }
+pub struct PlaceBetGRResult { pub call_data: Vec<u8>, pub public_inputs: PlaceBetPublicInputs, pub proof: Proof, pub commitment: pallas::Base }
+pub struct RaiseGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof, pub commitment: pallas::Base }
+pub struct CallGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof, pub commitment: pallas::Base }
+pub struct FoldGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof, pub commitment: pallas::Base }
+pub struct ClosePotGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof, pub commitment: pallas::Base }
+pub struct SettlePotGRResult { pub call_data: Vec<u8>, pub public_inputs: SettlePotPublicInputs, pub proof: Proof, pub commitment: pallas::Base }
+pub struct ContributeEntropyGRResult { pub call_data: Vec<u8>, pub public_inputs: IdentityPublicInputs, pub proof: Proof, pub commitment: pallas::Base }
+pub struct ClaimGRResult { pub call_data: Vec<u8>, pub public_inputs: ClaimPublicInputs, pub proof: Proof, pub commitment: pallas::Base }

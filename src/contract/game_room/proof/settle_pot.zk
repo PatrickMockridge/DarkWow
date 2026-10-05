@@ -12,7 +12,10 @@ circuit "SettlePotV2" {
     derived_room_id = poseidon_hash(DOMAIN_COMMITMENT, house_pub_x, house_pub_y, nonce);
     constrain_instance(derived_room_id);
     derived_pot_id = poseidon_hash(DOMAIN_COMMITMENT, room_id, pot_total, house_pub_x);
+    constrain_instance(derived_pot_id);
+
+    # The pair is the LAST two instances (`OBL-C198`), as in `create_room.zk`. It sat at 1,2 of 4
+    # with `derived_pot_id` after it.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);
-    constrain_instance(derived_pot_id);
 }

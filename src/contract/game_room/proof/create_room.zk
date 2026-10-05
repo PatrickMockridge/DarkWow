@@ -9,7 +9,12 @@ witness "CreateRoomV2" {
 circuit "CreateRoomV2" {
     DOMAIN_TX_BINDING = witness_base(3); DOMAIN_COMMITMENT = witness_base(4);
     derived_room_id = poseidon_hash(DOMAIN_COMMITMENT, owner_pub_x, owner_pub_y, asset_id, block_height, nonce);
+    constrain_instance(derived_room_id);
+
+    # The pair is the LAST two instances (`OBL-C198`): the node reads `pubvals[len-2]`/
+    # `pubvals[len-1]` and recomputes `tx_binding` there, because nothing in `src/linear/` indexes
+    # this vector — the position IS the interface. It sat at 0,1 of 3 with `derived_room_id` after
+    # it. The metadata arm's push order and the client's `to_vec` move with it.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);
-    constrain_instance(derived_room_id);
 }

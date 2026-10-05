@@ -11,13 +11,20 @@ use dwow_sdk::crypto::{
 use dwow_sdk::pasta::pallas;
 use std::sync::{Arc, Mutex};
 
-use crate::tests::modules::child_calls::{pn_transfer_child, pn_transfer_payout_child, PnNote};
+use crate::tests::modules::child_calls::{
+    pn_transfer_payout_prepare, pn_transfer_prepare, PnNote,
+};
 use crate::tests::uniform_runner::{
-    ContractTestSpec, EndpointExpectation, EndpointResult, EndpointSpec,
+    ChildCall, ContractTestSpec, EndpointExpectation, EndpointResult, EndpointSpec,
 };
 
 pub fn game_room_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(GameRoomHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its calls will carry, because the transaction
+    // commitment is derived over the call *including* the contract id. `deploy_with_ix` assigns
+    // `derive_contract_id_from_name(name)` — a pure function of the name — so the spec computes
+    // exactly the id the pipeline will use rather than a placeholder.
+    let gr_cid = crate::tests::blockchain::derive_contract_id_from_name("game_room");
+    let harness = Box::leak(Box::new(GameRoomHarness::spawn(gr_cid)));
     let h: &GameRoomHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/game_room/dwow_game_room_contract.wasm");
 
@@ -36,7 +43,8 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
     ContractTestSpec {
         name: "game_room",
         is_genesis: false,
-        contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
+        // `OBL-C198`: the real id, not the stale `[0u8;32]` placeholder.
+        contract_id: gr_cid,
         harness: h,
         wasm_bytes: Some(wasm),
         has_initialize: false,
@@ -80,7 +88,8 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                 let cid = crate::tests::blockchain::derive_contract_id_from_name("game_room");
                 let nonce = pallas::Base::from(1u64);
                 let block_height: u64 = 1;
-                let init = h.create_room(owner_secret, derived_asset_id, block_height, nonce)
+                // `OBL-C198`: no children on this call, so the committed set is the call alone.
+                let init = h.create_room(&[], owner_secret, derived_asset_id, block_height, nonce)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 let call_data = init.call_data;
                 let proof = init.proof;
@@ -104,12 +113,17 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                     let notes = notes.clone();
                     move || {
                         let rid = room_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("room not created".into()))?;
-                        let r = h.deposit(rid, player_secret, amount, pallas::Base::from(2u64))
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        // `OBL-C198`: the child's call data first (no proof), the parent second,
+                        // one commitment over the ordered set, the child proven against it.
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(amount), rid]);
-                        let child = pn_transfer_child(&n[0], amount, blind_seed, pallas::Base::zero())?;
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[0], amount, blind_seed, pallas::Base::zero())?;
+                        let r = h.deposit(&[child_call.clone()], rid, player_secret, amount, pallas::Base::from(2u64))
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -125,7 +139,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                     let pot_id = pot_id.clone();
                     move || {
                         let rid = room_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("room not created".into()))?;
-                        let r = h.create_pot(rid, player_secret, pallas::Base::from(3u64))
+                        let r = h.create_pot(&[], rid, player_secret, pallas::Base::from(3u64))
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *pot_id.lock().unwrap() = Some(r.public_inputs.pot_id);
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
@@ -145,12 +159,17 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let rid = room_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("room not created".into()))?;
                         let pid = pot_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("pot not created".into()))?;
-                        let r = h.place_bet(rid, pid, player_secret, amount, dwow_game_room_contract::model::BetType::Bet, 2, pallas::Base::from(4u64))
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        // `OBL-C198`: child call data first, parent second, one commitment over the
+                        // ordered set, the child proven against it.
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(amount), rid]);
-                        let child = pn_transfer_child(&n[1], amount, blind_seed, pallas::Base::zero())?;
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[1], amount, blind_seed, pallas::Base::zero())?;
+                        let r = h.place_bet(&[child_call.clone()], rid, pid, player_secret, amount, dwow_game_room_contract::model::BetType::Bet, 2, pallas::Base::from(4u64))
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -165,7 +184,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                     let room_id = room_id.clone();
                     move || {
                         let rid = room_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("room not created".into()))?;
-                        let r = h.fold(rid, player_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.fold(&[], rid, player_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -182,7 +201,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let rid = room_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("room not created".into()))?;
                         let pid = pot_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("pot not created".into()))?;
-                        let r = h.close_pot(rid, pid, player_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.close_pot(&[], rid, pid, player_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -199,7 +218,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let rid = room_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("room not created".into()))?;
                         let pid = pot_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("pot not created".into()))?;
-                        let r = h.settle_pot(owner_secret, rid, pid, vec![(player_pub, amount)], amount, pallas::Base::from(5u64))
+                        let r = h.settle_pot(&[], owner_secret, rid, pid, vec![(player_pub, amount)], amount, pallas::Base::from(5u64))
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
@@ -218,12 +237,17 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let rid = room_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("room not created".into()))?;
                         let pid = pot_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("pot not created".into()))?;
-                        let r = h.claim(rid, pid, player_secret, amount, pallas::Base::from(6u64))
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        // `OBL-C198`: child call data first, parent second, one commitment over the
+                        // ordered set, the child proven against it.
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(amount), rid]);
-                        let child = pn_transfer_payout_child(&n[2], amount, amount, blind_seed)?;
+                        let (child_call, child_plan, child_nonce) = pn_transfer_payout_prepare(&n[2], amount, amount, blind_seed)?;
+                        let r = h.claim(&[child_call.clone()], rid, pid, player_secret, amount, pallas::Base::from(6u64))
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -239,11 +263,16 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                     let notes = notes.clone();
                     move || {
                         let rid = room_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("room not created".into()))?;
-                        let r = h.withdraw(rid, player_secret, amount).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        // `OBL-C198`: child call data first, parent second, one commitment over the
+                        // ordered set, the child proven against it.
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(amount), rid]);
-                        let child = pn_transfer_child(&n[3], amount, blind_seed, pallas::Base::zero())?;
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[3], amount, blind_seed, pallas::Base::zero())?;
+                        let r = h.withdraw(&[child_call.clone()], rid, player_secret, amount).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -258,7 +287,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                     let room_id = room_id.clone();
                     move || {
                         let rid = room_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("room not created".into()))?;
-                        let r = h.raise(rid, player_secret, amount, pallas::Base::from(7u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.raise(&[], rid, player_secret, amount, pallas::Base::from(7u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -273,7 +302,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                     let room_id = room_id.clone();
                     move || {
                         let rid = room_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("room not created".into()))?;
-                        let r = h.call(rid, player_secret, pallas::Base::from(8u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.call(&[], rid, player_secret, pallas::Base::from(8u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -288,7 +317,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
                     let room_id = room_id.clone();
                     move || {
                         let rid = room_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("room not created".into()))?;
-                        let r = h.contribute_entropy(rid, player_secret, pallas::Base::from(9u64), None)
+                        let r = h.contribute_entropy(&[], rid, player_secret, pallas::Base::from(9u64), None)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }

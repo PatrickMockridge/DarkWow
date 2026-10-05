@@ -49,7 +49,8 @@ pub struct CreateRoomPublicInputs {
 
 impl CreateRoomPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.tx_binding, self.tx_nonce, self.room_id]
+        // Circuit instances: room_id, then the pair — last (`OBL-C198`). It sat at 0,1 of 3.
+        vec![self.room_id, self.tx_binding, self.tx_nonce]
     }
 }
 

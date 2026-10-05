@@ -304,6 +304,31 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
 /// Circuit constrain_instance order: [tx_binding, tx_nonce, derived_room_id]
 /// derived_room_id = poseidon_hash(DOMAIN_COIN_COMMIT, owner_pub_x, owner_pub_y, asset_id, block_height, nonce)
 #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+/// The transaction binding every arm publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// What stood at the arms was the constant `poseidon_hash([3, 0, 0])`, which bound every proof to
+/// nothing at all: it was identical in every transaction, so a proof lifted from one transaction
+/// verified in another. `identity_get_metadata_v1` serves six circuits and calls this once for all
+/// of them, which is why there are eight call sites and twelve circuits.
+///
+/// The nonce is zero because these calls carry no nonce field, so every proof in one transaction
+/// publishes the same binding — a *linking* of that transaction's own proofs, which
+/// `tx-commitment.md` §The Nullifier Scheme exists to avoid. It is still strictly better than the
+/// constant, and a per-proof nonce on the wire is owed.
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+fn game_room_tx_binding(
+    tx_nonce: pasta::pallas::Base,
+) -> Result<pasta::pallas::Base, ContractError> {
+    Ok(poseidon_hash([
+        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
+        dwow_sdk::wasm::util::get_tx_commitment()?,
+        tx_nonce,
+    ]))
+}
+
 fn create_room_get_metadata_v1(
     params: model::CreateRoomParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
@@ -318,17 +343,13 @@ fn create_room_get_metadata_v1(
         params.nonce,
     ]);
 
-    let tx_binding = poseidon_hash([
-        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
-        pasta::pallas::Base::zero(),
-        pasta::pallas::Base::zero(),
-    ]);
+    let tx_binding = game_room_tx_binding(pasta::pallas::Base::zero())?;
     let tx_nonce_val = pasta::pallas::Base::zero(); // Pattern A
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         GAME_ROOM_ZKAS_CREATE_ROOM_NS_V2.to_string(),
-        vec![tx_binding, tx_nonce_val, derived_room_id],
+        vec![derived_room_id, tx_binding, tx_nonce_val],
     ));
 
     let mut metadata = vec![];
@@ -357,17 +378,13 @@ fn deposit_get_metadata_v1(
         py,
     ]);
 
-    let tx_binding = poseidon_hash([
-        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
-        pasta::pallas::Base::zero(),
-        pasta::pallas::Base::zero(),
-    ]);
+    let tx_binding = game_room_tx_binding(pasta::pallas::Base::zero())?;
     let tx_nonce_val = pasta::pallas::Base::zero(); // Pattern A
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         GAME_ROOM_ZKAS_DEPOSIT_NS_V2.to_string(),
-        vec![derived_account_key, tx_binding, tx_nonce_val, derived_player_key],
+        vec![derived_account_key, derived_player_key, tx_binding, tx_nonce_val],
     ));
 
     let mut metadata = vec![];
@@ -399,17 +416,13 @@ fn place_bet_get_metadata_v1(
         params.block_height,
     ]);
 
-    let tx_binding = poseidon_hash([
-        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
-        pasta::pallas::Base::zero(),
-        pasta::pallas::Base::zero(),
-    ]);
+    let tx_binding = game_room_tx_binding(pasta::pallas::Base::zero())?;
     let tx_nonce_val = pasta::pallas::Base::zero(); // Pattern A
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         GAME_ROOM_ZKAS_PLACE_BET_NS_V2.to_string(),
-        vec![derived_bet_id, tx_binding, tx_nonce_val, derived_commitment],
+        vec![derived_bet_id, derived_commitment, tx_binding, tx_nonce_val],
     ));
 
     let mut metadata = vec![];
@@ -440,17 +453,13 @@ fn settle_pot_get_metadata_v1(
         cx,
     ]);
 
-    let tx_binding = poseidon_hash([
-        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
-        pasta::pallas::Base::zero(),
-        pasta::pallas::Base::zero(),
-    ]);
+    let tx_binding = game_room_tx_binding(pasta::pallas::Base::zero())?;
     let tx_nonce_val = pasta::pallas::Base::zero(); // Pattern A
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         GAME_ROOM_ZKAS_SETTLE_POT_NS_V2.to_string(),
-        vec![derived_room_id, tx_binding, tx_nonce_val, derived_pot_id],
+        vec![derived_room_id, derived_pot_id, tx_binding, tx_nonce_val],
     ));
 
     let mut metadata = vec![];
@@ -476,11 +485,7 @@ fn claim_get_metadata_v1(
         params.nonce,
     ]);
 
-    let tx_binding = poseidon_hash([
-        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
-        pasta::pallas::Base::zero(),
-        pasta::pallas::Base::zero(),
-    ]);
+    let tx_binding = game_room_tx_binding(pasta::pallas::Base::zero())?;
     let tx_nonce_val = pasta::pallas::Base::zero(); // Pattern A
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
@@ -504,11 +509,7 @@ fn identity_get_metadata_v1(
     ns: &str,
 ) -> Result<Vec<u8>, ContractError> {
     let (px, py) = player.xy().expect("pk not identity");
-    let tx_binding = poseidon_hash([
-        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
-        pasta::pallas::Base::zero(),
-        pasta::pallas::Base::zero(),
-    ]);
+    let tx_binding = game_room_tx_binding(pasta::pallas::Base::zero())?;
     let tx_nonce_val = pasta::pallas::Base::zero();
 
     let zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![(
@@ -527,11 +528,7 @@ fn close_pot_get_metadata_v1(
     params: model::ClosePotParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let (px, py) = params.player.xy().expect("pk not identity");
-    let tx_binding = poseidon_hash([
-        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
-        pasta::pallas::Base::zero(),
-        pasta::pallas::Base::zero(),
-    ]);
+    let tx_binding = game_room_tx_binding(pasta::pallas::Base::zero())?;
     let zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![(
         GAME_ROOM_ZKAS_CLOSE_POT_NS_V2.to_string(),
         vec![
@@ -560,11 +557,7 @@ fn create_pot_get_metadata_v1(
         px,
         params.nonce,
     ]);
-    let tx_binding = poseidon_hash([
-        pasta::pallas::Base::from(3u64), // DOMAIN_TX_BINDING
-        pasta::pallas::Base::zero(),
-        pasta::pallas::Base::zero(),
-    ]);
+    let tx_binding = game_room_tx_binding(pasta::pallas::Base::zero())?;
     let zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![(
         GAME_ROOM_ZKAS_CREATE_POT_NS_V2.to_string(),
         vec![

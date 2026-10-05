@@ -12,7 +12,10 @@ circuit "PlaceBetV2" {
     derived_bet_id = poseidon_hash(DOMAIN_COMMITMENT, pot_id, player_pub_x, amount, block_height);
     constrain_instance(derived_bet_id);
     derived_commitment = poseidon_hash(DOMAIN_COMMITMENT, amount, nonce, block_height);
+    constrain_instance(derived_commitment);
+
+    # The pair is the LAST two instances (`OBL-C198`), as in `create_room.zk`. It sat at 1,2 of 4
+    # with `derived_commitment` after it.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding); constrain_instance(tx_nonce);
-    constrain_instance(derived_commitment);
 }

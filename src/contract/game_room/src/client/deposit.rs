@@ -51,7 +51,9 @@ pub struct DepositPublicInputs {
 
 impl DepositPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.account_key, self.tx_binding, self.tx_nonce, self.player_key]
+        // Circuit instances: account_key, player_key, then the pair — last (`OBL-C198`). The pair
+        // sat at 1,2 of 4 with `player_key` after it.
+        vec![self.account_key, self.player_key, self.tx_binding, self.tx_nonce]
     }
 }
 

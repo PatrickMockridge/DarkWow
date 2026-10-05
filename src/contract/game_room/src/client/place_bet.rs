@@ -51,7 +51,9 @@ pub struct PlaceBetPublicInputs {
 
 impl PlaceBetPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.bet_id, self.tx_binding, self.tx_nonce, self.commitment]
+        // Circuit instances: bet_id, commitment, then the pair — last (`OBL-C198`). The pair sat at
+        // 1,2 of 4 with `commitment` after it.
+        vec![self.bet_id, self.commitment, self.tx_binding, self.tx_nonce]
     }
 }
 
