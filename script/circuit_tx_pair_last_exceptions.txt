@@ -26,7 +26,7 @@
 # counts as a PASS and order as a WARN. `OBL-C198` is the register row for the campaign.
 #
 # EVERY NON-CONFORMING CIRCUIT IN THE TREE IS LISTED. Measured 2026-10-05 over 166 circuits:
-# 142 conform and 24 have the pair elsewhere in the vector. The third category the 2026-10-04
+# 143 conform and 23 have the pair elsewhere in the vector. The third category the 2026-10-04
 # census recorded — 1 circuit with **no** pair at all, `bearer_bond`'s `ProveCoverage_V2` — is
 # now empty: it carries the pair (`OBL-C198`, 2026-10-05). There is no fourth category, so this
 # file is the complete census — a circuit that conforms today and is edited into the middle
@@ -39,14 +39,17 @@
 # REPAIRED SINCE, each deleted with its own unit: `darktoshi_dice/settle_bet` on 2026-10-05
 # (the circuit, its arm, its client and its spec in one commit, `233d585434`; its heavyweight
 # spec passed, and that result is quoted in the commit that recorded it), `bearer_bond`'s
-# `prove_coverage` + `redeem` on 2026-10-05 (the per-contract `OBL-C198` unit), and `slot`'s
+# `prove_coverage` + `redeem` on 2026-10-05 (the per-contract `OBL-C198` unit), `slot`'s
 # `settle_bet` on 2026-10-05 — same shape as dice, and its own heavyweight run is green
-# (`test_heavyweight_slot`: `test result: ok. 1 passed; 0 failed; … finished in 427.55s`). The deletion
-# came a commit late for `darktoshi_dice`, which is worth recording because the instrument
-# caught it and a reader should know the report works: `--self-test` proves the checker can
-# find a middle pair, but the *stale* half only prints on a full run, and that migration was
-# committed after a run without it. `slot`'s line went with its own unit, in the commit that
-# moved the circuit.
+# (`test_heavyweight_slot`: `test result: ok. 1 passed; 0 failed; … finished in 427.55s`), and
+# `relayer_endowment`'s `initialize` + `deploy_capital` + `claim_fees` on 2026-10-05 (the
+# per-contract `OBL-C198` unit — all three moved the pair past a derived id, and
+# `deploy_capital`'s pair had been splitting the value commitment's `(x, y)` adjacency). The
+# deletion came a commit late for `darktoshi_dice`, which is worth recording because the
+# instrument caught it and a reader should know the report works: `--self-test` proves the
+# checker can find a middle pair, but the *stale* half only prints on a full run, and that
+# migration was committed after a run without it. `slot`'s and `relayer_endowment`'s lines went
+# with their own units, in the commits that moved the circuits.
 
 src/contract/dao_escrow/proof/init.zk : InitV2 : `OBL-C198` — pair at 1,2 of 4; `endowment_bulla` follows.
 src/contract/dao_escrow/proof/propose_claim.zk : ProposeClaimV2 : `OBL-C198` — pair at 0,1 of 3; `claim_commit` follows.
@@ -67,10 +70,6 @@ src/contract/pool_stake/proof/create_pool.zk : CreatePoolV2 : `OBL-C198` — pai
 src/contract/pool_stake/proof/join_pool.zk : JoinPoolV2 : `OBL-C198` — pair at 2,3 of 5; the value-commitment y coordinate follows.
 src/contract/pool_stake/proof/slash_coverage.zk : SlashCoverageV2 : `OBL-C198` — pair at 0,1 of 3; `derived_slash_id` follows.
 src/contract/promissory_note/proof/redeem.zk : Redeem_V2 : `OBL-C198` — pair at 5,6 of 8; `coin_spend_hook` follows. `promissory_note`'s transfer and burn paths were migrated in the first pass; this circuit and `revoke.zk` were not, and the instrument is what made the difference visible.
-src/contract/relayer_endowment/proof/claim_fees.zk : ClaimFeesV2 : `OBL-C198` — pair at 0,1 of 3; `derived_claim_id` follows.
-src/contract/relayer_endowment/proof/deploy_capital.zk : DeployCapitalV2 : `OBL-C198` — pair at 2,3 of 5; the value-commitment y coordinate follows.
-src/contract/relayer_endowment/proof/initialize.zk : InitializeV2 : `OBL-C198` — pair at 0,1 of 3; `derived_endowment_id` follows.
-src/contract/roulette/proof/settle_bet.zk : SettleBet_V2 : `OBL-C198` — pair at 0,1 of 3; `payout` follows.
 src/contract/stablecoin/proof/init.zk : InitV2 : `OBL-C198` — pair at 0,1 of 3; `deployer_auth` follows.
 src/contract/subscription/proof/subscribe.zk : SubscribeV2 : `OBL-C198` — pair at 0,1 of 3; `derived_id` follows.
 src/contract/subscription/proof/update_usage.zk : UpdateUsageV2 : `OBL-C198` — pair at 0,1 of 3; `derived_id` follows.

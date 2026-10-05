@@ -42,8 +42,10 @@ pub struct SettleBetV1PublicInputs {
 
 impl SettleBetV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        // Circuit instances: tx_binding, tx_nonce, payout
-        vec![self.tx_binding, self.tx_nonce, self.payout]
+        // Circuit instances: payout, tx_binding, tx_nonce — the pair last (`OBL-C198`). It sat at
+        // 0,1 of 3 with `payout` after it; the circuit, the metadata arm and this vector move
+        // together.
+        vec![self.payout, self.tx_binding, self.tx_nonce]
     }
 }
 

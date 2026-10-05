@@ -30,7 +30,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey, SecretKey},
+    crypto::{poseidon_hash, ContractId, PublicKey, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -64,11 +64,24 @@ pub struct RouletteHarness {
     spin_wheel_zkbin: ZkBinary,
     /// SpinWheel_V1 ProvingKey
     spin_wheel_pk: ProvingKey,
+    /// The contract's deployed id (`OBL-C198`): the transaction commitment is derived over the
+    /// call set, and a call carries this id, so the harness has to know it. Taken as a parameter
+    /// rather than defaulted — a wrong id is a wrong commitment, and the proof is refused.
+    contract_id: ContractId,
+}
+
+/// The transaction commitment over an ordered call set — the same derivation the node recomputes
+/// (`dwow_sdk::crypto::util::tx_commitment`), so a proof and the transaction that carries it agree.
+///
+/// The order is the one `DarkForest::build_vec` emits (`TransactionBuilder::build`): DFS
+/// post-order, children before parents.
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
 }
 
 impl RouletteHarness {
     /// Spawn a new Roulette harness with pre-loaded circuits
-    pub fn spawn() -> Self {
+    pub fn spawn(contract_id: ContractId) -> Self {
         let place_bet_bin = include_bytes!("../../../roulette/proof/place_bet.zk.bin");
         let settle_bet_bin = include_bytes!("../../../roulette/proof/settle_bet.zk.bin");
         let house_close_bin = include_bytes!("../../../roulette/proof/house_close.zk.bin");
@@ -101,7 +114,7 @@ impl RouletteHarness {
         let house_close_pk = ProvingKey::build(house_close_zkbin.k, &house_close_circuit).expect("ProvingKey::build failed");
         let spin_wheel_pk = ProvingKey::build(spin_wheel_zkbin.k, &spin_wheel_circuit).expect("ProvingKey::build failed");
 
-        Self { place_bet_zkbin, place_bet_pk, settle_bet_zkbin, settle_bet_pk, house_close_zkbin, house_close_pk, spin_wheel_zkbin, spin_wheel_pk }
+        Self { place_bet_zkbin, place_bet_pk, settle_bet_zkbin, settle_bet_pk, house_close_zkbin, house_close_pk, spin_wheel_zkbin, spin_wheel_pk, contract_id }
     }
 
     /// Initialize a roulette table
@@ -132,6 +145,7 @@ impl RouletteHarness {
     /// bet_type: 0=Straight, 1=Split, 2=Street, 3=Corner, 4=SixLine, 5=Dozen, 6=Column, 7=EvenMoney
     pub fn place_bet(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         table_id: pallas::Base,
         player_pub: PublicKey,
         bet_type: u8,
@@ -139,19 +153,13 @@ impl RouletteHarness {
         amount: u64,
         nonce: pallas::Base,
     ) -> Result<PlaceBetResult, Box<dyn std::error::Error>> {
-        let input = PlaceBetV1CallData::new(
+        let mut input = PlaceBetV1CallData::new(
             table_id,
             player_pub,
             bet_type as u8,
             amount,
             nonce,
         );
-
-        let (proof, public_inputs) = create_place_bet_v1_proof(
-            &self.place_bet_zkbin,
-            &self.place_bet_pk,
-            &input,
-        )?;
 
         // Signature for PlaceBetParamsV1 (simplified - uses poseidon_hash as signature)
         let signature = poseidon_hash([
@@ -176,12 +184,25 @@ impl RouletteHarness {
         // prefix is a `ContractError`, not a silent truncation (§A.4.5).
         call_data.extend_from_slice(&params.encode()?);
 
-        Ok(PlaceBetResult { call_data, bet_id: public_inputs.bet_id, nullifier: public_inputs.nullifier, proof })
+        // `OBL-C198`: ONE commitment over the whole ordered call set — children first, this call
+        // last (DFS post-order) — so this proof and its children's bind to the same value. The
+        // call data comes first because the commitment is a derivation over it.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, public_inputs) = create_place_bet_v1_proof(
+            &self.place_bet_zkbin,
+            &self.place_bet_pk,
+            &input,
+        )?;
+
+        Ok(PlaceBetResult { call_data, bet_id: public_inputs.bet_id, nullifier: public_inputs.nullifier, proof, commitment })
     }
 
     /// Spin the wheel
     pub fn spin_wheel(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         table_id: pallas::Base,
         house_secret: pallas::Base,
         nonce: pallas::Base,
@@ -190,7 +211,7 @@ impl RouletteHarness {
         let (hx, hy) = house_pub.xy().expect("pk not identity");
         let spin_nullifier = poseidon_hash([pallas::Base::from(1u64), table_id, house_secret]);
 
-        let spin_input = SpinWheelCallData {
+        let mut spin_input = SpinWheelCallData {
             table_id,
             house_secret,
             house_pub_x: hx,
@@ -199,12 +220,6 @@ impl RouletteHarness {
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
-
-        let (proof, _public_inputs) = create_spin_wheel_proof(
-            &self.spin_wheel_zkbin,
-            &self.spin_wheel_pk,
-            &spin_input,
-        )?;
 
         let params = SpinWheelParamsV1 {
             table_id,
@@ -217,12 +232,24 @@ impl RouletteHarness {
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(SpinWheelResult { call_data, proof })
+        // `OBL-C198`: see `place_bet`. This endpoint carries no child in the spec, so the set is
+        // the call alone — which is exactly `build_witness`'s single-call transaction.
+        spin_input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = spin_input.tx_commitment;
+
+        let (proof, _public_inputs) = create_spin_wheel_proof(
+            &self.spin_wheel_zkbin,
+            &self.spin_wheel_pk,
+            &spin_input,
+        )?;
+
+        Ok(SpinWheelResult { call_data, proof, commitment })
     }
 
     /// Settle bets
     pub fn settle_bets(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         table_id: pallas::Base,
         bet_ids: Vec<pallas::Base>,
         payout: u64,
@@ -237,7 +264,14 @@ impl RouletteHarness {
         // For simplicity, just create one settle proof
         let bet_id = bet_ids.first().copied().unwrap_or(pallas::Base::zero());
         let won = payout > 0;
-        let input = SettleBetV1CallData::new(table_id, bet_id, won, payout);
+        let mut input = SettleBetV1CallData::new(table_id, bet_id, won, payout);
+
+        let mut call_data = vec![0x03];
+        call_data.extend_from_slice(&params.encode()?);
+
+        // `OBL-C198`: see `place_bet`.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
 
         let (proof, _public_inputs) = create_settle_bet_v1_proof(
             &self.settle_bet_zkbin,
@@ -245,15 +279,13 @@ impl RouletteHarness {
             &input,
         )?;
 
-        let mut call_data = vec![0x03];
-        call_data.extend_from_slice(&params.encode()?);
-
-        Ok(SettleBetsResult { call_data, proof })
+        Ok(SettleBetsResult { call_data, proof, commitment })
     }
 
     /// House close
     pub fn house_close(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         table_id: pallas::Base,
         house_secret: pallas::Base,
     ) -> Result<HouseCloseResult, Box<dyn std::error::Error>> {
@@ -261,7 +293,7 @@ impl RouletteHarness {
         let (hx, hy) = house_pub.xy().expect("pk not identity");
         let close_nullifier = poseidon_hash([pallas::Base::from(2u64), table_id, house_secret]);
 
-        let close_input = HouseCloseCallData {
+        let mut close_input = HouseCloseCallData {
             table_id,
             house_secret,
             house_pub_x: hx,
@@ -270,12 +302,6 @@ impl RouletteHarness {
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
-
-        let (proof, _public_inputs) = create_house_close_proof(
-            &self.house_close_zkbin,
-            &self.house_close_pk,
-            &close_input,
-        )?;
 
         let params = HouseCloseParamsV1 {
             table_id,
@@ -287,7 +313,28 @@ impl RouletteHarness {
         let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(HouseCloseResult { call_data, proof })
+        // `OBL-C198`: see `place_bet`.
+        close_input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = close_input.tx_commitment;
+
+        let (proof, _public_inputs) = create_house_close_proof(
+            &self.house_close_zkbin,
+            &self.house_close_pk,
+            &close_input,
+        )?;
+
+        Ok(HouseCloseResult { call_data, proof, commitment })
+    }
+
+    /// The commitment over `children` followed by this call — the ordered set the node hashes.
+    fn commitment_over(
+        &self,
+        children: &[dwow_sdk::tx::ContractCall],
+        call_data: &[u8],
+    ) -> pallas::Base {
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.to_vec() });
+        commitment_of(&calls)
     }
 }
 
@@ -332,22 +379,28 @@ pub struct PlaceBetResult {
     pub bet_id: pallas::Base,
     pub nullifier: pallas::Base,
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of spin_wheel
 pub struct SpinWheelResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
+    pub commitment: pallas::Base,
 }
 
 /// Result of settle_bets
 pub struct SettleBetsResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
+    pub commitment: pallas::Base,
 }
 
 /// Result of house_close
 pub struct HouseCloseResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
+    pub commitment: pallas::Base,
 }

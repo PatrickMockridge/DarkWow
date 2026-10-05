@@ -726,6 +726,64 @@ fn slot_settle_bet_proof_verifies_with_a_non_zero_tx_pair() {
     }
 }
 
+// ============================================================================
+// roulette::settle_bet — the third of the three, and the shortest vector
+// ============================================================================
+
+const ROULETTE_SETTLE_ZKBIN: &[u8] = include_bytes!("../../roulette/proof/settle_bet.zk.bin");
+
+/// `OBL-C198`: `roulette`'s `settle_bet` had its pair moved from 0,1 of 3 to last on 2026-10-05.
+/// Three instances is the smallest vector this move touches anywhere in the tree, which makes it
+/// the case where a count-only reading is *most* likely to look right — the whole vector is the
+/// pair plus one value, so "3 = 3" holds whether or not the order moved.
+#[test]
+fn roulette_settle_bet_proof_verifies_with_a_non_zero_tx_pair() {
+    use dwow_roulette_contract::client::settle_bet::{
+        create_settle_bet_v1_proof, SettleBetV1CallData,
+    };
+
+    let zkbin = ZkBinary::decode(ROULETTE_SETTLE_ZKBIN, false).expect("settle_bet.zk.bin decodes");
+    let pk = proving_key(&zkbin);
+
+    let tx_commitment = pallas::Base::from(0xFACADEu64);
+    let tx_nonce = pallas::Base::from(13u64);
+
+    let mut input = SettleBetV1CallData::new(
+        pallas::Base::from(1u64),  // table_id
+        pallas::Base::from(2u64),  // bet_id
+        true,                      // won
+        500,                       // payout
+    );
+    input.tx_commitment = tx_commitment;
+    input.tx_nonce = tx_nonce;
+
+    let (proof, public_inputs) =
+        create_settle_bet_v1_proof(&zkbin, &pk, &input).expect("the client must build a proof");
+    let inputs = public_inputs.to_vec();
+    assert_eq!(inputs.len(), 3, "settle_bet instances three values");
+
+    assert_eq!(inputs[2], tx_nonce, "the last instance is the nonce the proof was made with");
+    assert_eq!(
+        inputs[1],
+        dwow_sdk::crypto::poseidon_hash([
+            pallas::Base::from(3u64),
+            tx_commitment,
+            tx_nonce
+        ]),
+        "the instance before it is poseidon_hash([3, tx_commitment, tx_nonce]) for the pair the \
+         proof was made with — not a constant"
+    );
+
+    match verify_zkp(&proof, ROULETTE_SETTLE_ZKBIN, &inputs) {
+        ZkVerifyResult::Ok => {}
+        other => panic!(
+            "OBL-C198: a roulette settle_bet proof bound to a non-zero tx pair does not verify \
+             ({other:?}) — the client's `to_vec` order and the circuit's `constrain_instance` \
+             order disagree."
+        ),
+    }
+}
+
 /// `bearer_bond`'s `ProveCoverage_V2` binary — the circuit whose pair was **added** here, not
 /// merely moved: it carried none before `OBL-C198`.
 const BEARER_BOND_PROVE_COVERAGE_ZKBIN: &[u8] =

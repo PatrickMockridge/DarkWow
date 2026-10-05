@@ -82,6 +82,23 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
+/// The transaction binding each arm publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// What stood in the four arms below was the constant `poseidon_hash([3, 0, 0])`, which bound
+/// every proof to nothing at all: it was identical in every transaction, so a proof lifted from one
+/// transaction verified in another.
+///
+/// The nonce is zero because these calls carry no nonce field, so every proof in one transaction
+/// publishes the same binding — a *linking* of that transaction's own proofs, which
+/// `tx-commitment.md` §The Nullifier Scheme exists to avoid. It is still strictly better than the
+/// constant, and a per-proof nonce on the wire is owed.
+fn roulette_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([pallas::Base::from(3u64), wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 /// Get metadata for ZK proof verification
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
@@ -95,7 +112,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::ROULETTE_CONTRACT_ZKAS_PLACE_BET_NS_V2.to_string(),
-                vec![poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+                vec![roulette_tx_binding(pallas::Base::zero())?, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -106,7 +123,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::ROULETTE_CONTRACT_ZKAS_SPIN_WHEEL_NS_V2.to_string(),
-                vec![params.table_id, params.house_pub_x, params.house_pub_y, params.spin_nullifier, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+                vec![params.table_id, params.house_pub_x, params.house_pub_y, params.spin_nullifier, roulette_tx_binding(pallas::Base::zero())?, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -117,7 +134,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::ROULETTE_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V2.to_string(),
-                vec![params.table_id, params.house_pub_x, params.house_pub_y, params.close_nullifier, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+                vec![params.table_id, params.house_pub_x, params.house_pub_y, params.close_nullifier, roulette_tx_binding(pallas::Base::zero())?, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -135,7 +152,9 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::ROULETTE_CONTRACT_ZKAS_SETTLE_BET_NS_V2.to_string(),
-                vec![poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero(), pallas::Base::from(params.payout)],
+                // Order matches `settle_bet.zk`'s `constrain_instance` calls: `payout`, then the
+                // pair — last (`OBL-C198`). The pair sat at 0,1 of 3 with `payout` after it.
+                vec![pallas::Base::from(params.payout), roulette_tx_binding(pallas::Base::zero())?, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
