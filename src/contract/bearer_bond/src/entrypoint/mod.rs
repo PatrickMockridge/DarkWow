@@ -425,8 +425,11 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
         // cannot recompute it (its preimage holds the fresh blind the client drew).
         vec![
             params.receipt_commitment,
-            vc_x,
-            vc_y,
+            // `OBL-C199`: the *receipt's* value commitment, not `vc_x`/`vc_y` (the stake's). A
+            // receipt has value 0, so this is `value_blind * G_r` — still a fresh point the host
+            // cannot recompute, and the arm published the stake's for as long as it existed.
+            params.receipt_value_commit_x,
+            params.receipt_value_commit_y,
             // `OBL-C199`: the **receipt's** values. These two lines published
             // `params.bond_input.token_commit` / `.spend_hook` — the *stake's* — while the circuit
             // constrains the receipt note's, so `Redeem_V2` could not verify. It was a `replace_all`

@@ -235,6 +235,8 @@ impl UnstakeCallBuilder {
             receipt_asset_id_blind.clone(),
         );
 
+        let (receipt_vc_x, receipt_vc_y) = super::point_coords(receipt_derived.value_commit)?;
+
         let params = UnstakeParamsV1 {
             bond_input,
             current_block: self.input.current_block,
@@ -245,6 +247,10 @@ impl UnstakeCallBuilder {
             // published the stake's, which are different, and the proof failed verification.
             receipt_token_commit: receipt_derived.token_commit,
             receipt_spend_hook: self.output.spend_hook,
+            // The receipt's own value commitment — the arm published the stake's, which is the
+            // same mistake one instance further along.
+            receipt_value_commit_x: receipt_vc_x,
+            receipt_value_commit_y: receipt_vc_y,
         };
         Ok(UnstakeCallPlan {
             burn_zkbin: self.burn_zkbin,

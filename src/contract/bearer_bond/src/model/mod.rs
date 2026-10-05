@@ -1059,6 +1059,9 @@ pub struct EmergencyUnstakeParamsV1 {
     pub receipt_token_commit: pallas::Base,
     /// The receipt's spend hook — see `UnstakeParamsV1::receipt_spend_hook`.
     pub receipt_spend_hook: pallas::Base,
+    /// The receipt's value commitment coordinates — see `UnstakeParamsV1`.
+    pub receipt_value_commit_x: pallas::Base,
+    pub receipt_value_commit_y: pallas::Base,
 }
 
 impl EmergencyUnstakeParamsV1 {
@@ -1068,15 +1071,17 @@ impl EmergencyUnstakeParamsV1 {
         b.extend_from_slice(&self.receipt_commitment.to_repr());
         b.extend_from_slice(&self.receipt_token_commit.to_repr());
         b.extend_from_slice(&self.receipt_spend_hook.to_repr());
+        b.extend_from_slice(&self.receipt_value_commit_x.to_repr());
+        b.extend_from_slice(&self.receipt_value_commit_y.to_repr());
         b.extend_from_slice(&self.coverage_report.encode());
         b
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < BondInput::ENCODED_SIZE + 96 {
+        if data.len() < BondInput::ENCODED_SIZE + 160 {
             return Err(ContractError::IoError(format!(
                 "EmergencyUnstakeParamsV1: expected at least {} bytes, got {}",
-                BondInput::ENCODED_SIZE + 96,
+                BondInput::ENCODED_SIZE + 160,
                 data.len()
             )));
         }
@@ -1105,10 +1110,27 @@ impl EmergencyUnstakeParamsV1 {
             .into_option()
             .ok_or_else(|| ContractError::IoError(
                 "EmergencyUnstakeParamsV1: invalid receipt_spend_hook".into()))?;
-        let coverage_report = CoverageReport::decode(&data[BondInput::ENCODED_SIZE + 96..])?;
+        let receipt_value_commit_x = pallas::Base::from_repr(
+            data[BondInput::ENCODED_SIZE + 96..BondInput::ENCODED_SIZE + 128]
+                .try_into()
+                .map_err(|_| ContractError::IoError(
+                    "EmergencyUnstakeParamsV1: receipt_value_commit_x is not 32 bytes".into()))?)
+            .into_option()
+            .ok_or_else(|| ContractError::IoError(
+                "EmergencyUnstakeParamsV1: invalid receipt_value_commit_x".into()))?;
+        let receipt_value_commit_y = pallas::Base::from_repr(
+            data[BondInput::ENCODED_SIZE + 128..BondInput::ENCODED_SIZE + 160]
+                .try_into()
+                .map_err(|_| ContractError::IoError(
+                    "EmergencyUnstakeParamsV1: receipt_value_commit_y is not 32 bytes".into()))?)
+            .into_option()
+            .ok_or_else(|| ContractError::IoError(
+                "EmergencyUnstakeParamsV1: invalid receipt_value_commit_y".into()))?;
+        let coverage_report = CoverageReport::decode(&data[BondInput::ENCODED_SIZE + 160..])?;
         Ok(EmergencyUnstakeParamsV1 {
             bond_input, coverage_report, receipt_commitment,
             receipt_token_commit, receipt_spend_hook,
+            receipt_value_commit_x, receipt_value_commit_y,
         })
     }
 }
@@ -1183,6 +1205,12 @@ pub struct UnstakeParamsV1 {
     /// The receipt's **spend hook** — also instanced by `Redeem_V2`, and the arm's value was the
     /// stake's for the same reason.
     pub receipt_spend_hook: pallas::Base,
+    /// The receipt's **value commitment**, as its two affine coordinates — the arm published the
+    /// *stake's* here, the same mistake as the token commit and the hook beside it. `value = 0` for
+    /// a receipt, so the commitment is `value_blind * G_r` and carries no value, but it is still a
+    /// fresh random point and the host cannot recompute it.
+    pub receipt_value_commit_x: pallas::Base,
+    pub receipt_value_commit_y: pallas::Base,
 }
 
 impl UnstakeParamsV1 {
@@ -1193,15 +1221,17 @@ impl UnstakeParamsV1 {
         b.extend_from_slice(&self.current_block.to_le_bytes());
         b.extend_from_slice(&self.receipt_token_commit.to_repr());
         b.extend_from_slice(&self.receipt_spend_hook.to_repr());
+        b.extend_from_slice(&self.receipt_value_commit_x.to_repr());
+        b.extend_from_slice(&self.receipt_value_commit_y.to_repr());
         b
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < BondInput::ENCODED_SIZE + 32 + 8 + 64 {
+        if data.len() < BondInput::ENCODED_SIZE + 32 + 8 + 128 {
             return Err(ContractError::IoError(format!(
                 "UnstakeParamsV1: expected at least {} bytes, got {}",
-                BondInput::ENCODED_SIZE + 32 + 8 + 64,
+                BondInput::ENCODED_SIZE + 32 + 8 + 128,
                 data.len()
             )));
         }
@@ -1220,9 +1250,18 @@ impl UnstakeParamsV1 {
             data[BondInput::ENCODED_SIZE + 72..BondInput::ENCODED_SIZE + 104].try_into().unwrap())
             .into_option()
             .ok_or_else(|| ContractError::IoError("UnstakeParamsV1: invalid receipt_spend_hook".into()))?;
+        let receipt_value_commit_x = pallas::Base::from_repr(
+            data[BondInput::ENCODED_SIZE + 104..BondInput::ENCODED_SIZE + 136].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("UnstakeParamsV1: invalid receipt_value_commit_x".into()))?;
+        let receipt_value_commit_y = pallas::Base::from_repr(
+            data[BondInput::ENCODED_SIZE + 136..BondInput::ENCODED_SIZE + 168].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("UnstakeParamsV1: invalid receipt_value_commit_y".into()))?;
         Ok(UnstakeParamsV1 {
             bond_input, current_block, receipt_commitment,
             receipt_token_commit, receipt_spend_hook,
+            receipt_value_commit_x, receipt_value_commit_y,
         })
     }
 }
