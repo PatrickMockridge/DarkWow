@@ -237,15 +237,21 @@ fn verify_claim_child(claim_id: pallas::Base, attestation_id: pallas::Base) -> d
 /// Ported from `insurance_market_spec.rs:411-419`; the parent checks the selector, the contract id
 /// and the decoded `capability_proof.capability_id`, so which capability the child proves is the one
 /// thing the two callers vary.
-fn capability_child(
+/// `OBL-C198`: the child is **prepared** here and proven by the caller, after the parent's call
+/// data exists — the commitment is a derivation over the whole ordered call set, and the child's
+/// proof must bind to the same value its parent does. `identity` grew the split for exactly this.
+fn capability_child_prepare(
     s: &CapSetup,
     credential_secret: pallas::Base,
     capability_id: pallas::Base,
     schema: pallas::Base,
-) -> dwow_core::Result<ChildCall> {
-    let id = IdentityHarness::spawn();
+) -> dwow_core::Result<(
+    dwow_sdk::tx::ContractCall,
+    dwow_contract_test_harness::harness::identity::VerifyCapabilityPlan,
+)> {
+    let id = IdentityHarness::spawn(*IDENTITY_CONTRACT_ID);
     let holder = PublicKey::from_secret(SecretKey::from_base(credential_secret));
-    let v = id.verify_capability(
+    let plan = id.verify_capability_prepare(
         credential_secret, capability_id,
         pallas::Base::from(50u64),
         b"role", pallas::Base::from(100u64),
@@ -254,7 +260,8 @@ fn capability_child(
         PublicKey::from_secret(SecretKey::from_base(s.issuer_secret)),
         holder, schema, 0, EXPIRES_AT, true)
         .map_err(|e| dwow_core::Error::Custom(format!("verify_capability: {e}")))?;
-    Ok(ChildCall { contract_id: *IDENTITY_CONTRACT_ID, call_data: v.call_data, proofs: vec![v.proof], children: vec![] })
+    let call = dwow_sdk::tx::ContractCall { contract_id: *IDENTITY_CONTRACT_ID, data: plan.call_data.clone() };
+    Ok((call, plan))
 }
 
 pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
@@ -551,17 +558,17 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             let capability_secret = pallas::Base::from(777u64);
             let issuer_pub = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
 
-            let id = IdentityHarness::spawn();
+            let id = IdentityHarness::spawn(*IDENTITY_CONTRACT_ID);
             let issuer = id.register_issuer(issuer_pub, b"employer".to_vec(), vec![])
                 .map_err(|e| oh(format!("register_issuer: {e}")))?;
             smol::block_on(chain.block()?.with_call(id_cid, &id, &issuer.call_data, vec![])?.submit())?;
 
-            let cred_a = id.issue_credential(issuer_secret, credential_secret_a,
+            let cred_a = id.issue_credential(&[], issuer_secret, credential_secret_a,
                 b"role", pallas::Base::from(100u64),
                 b"tenure", pallas::Base::from(200u64),
                 attribute_blind, schema_a, 0, EXPIRES_AT)
                 .map_err(|e| oh(format!("issue_credential A: {e}")))?;
-            let cred_b = id.issue_credential(issuer_secret, credential_secret_b,
+            let cred_b = id.issue_credential(&[], issuer_secret, credential_secret_b,
                 b"role", pallas::Base::from(100u64),
                 b"tenure", pallas::Base::from(200u64),
                 attribute_blind, schema_b, 0, EXPIRES_AT)
@@ -916,12 +923,22 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let s = caps.lock().ok().and_then(|g| g.clone())
                             .ok_or_else(|| dwow_core::Error::Custom("setup did not run (caps)".into()))?;
-                        let r = h.accept_job_with_capability(worker_secret, worker_pub, cap_job_id, pallas::Base::from(1u64), cap_proof.clone(), cap_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         // The child proves capability B; the job requires A. Same builder, one
                         // argument different — which is what makes the pair a control rather than two
                         // rows that happen to run.
+                        // `OBL-C198`: prepared first, proven after the parent, over the ordered set
+                        // the node hashes (child first, this call last).
+                        let (child_call, child_plan) = capability_child_prepare(&s, s.credential_secret_b, s.cap_b.inner(), s.schema_b)?;
+                        let r = h.accept_job_with_capability(worker_secret, worker_pub, cap_job_id, pallas::Base::from(1u64), cap_proof.clone(), cap_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let job_call = dwow_sdk::tx::ContractCall {
+                            contract_id: crate::tests::blockchain::derive_contract_id_from_name("labor_market"),
+                            data: r.call_data.clone(),
+                        };
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &job_call]);
+                        let v = child_plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("verify_capability B: {e}")))?;
+                        let child = ChildCall { contract_id: *IDENTITY_CONTRACT_ID, call_data: v.call_data, proofs: vec![v.proof], children: vec![] };
                         Ok(EndpointResult {
-                            children: vec![capability_child(&s, s.credential_secret_b, s.cap_b.inner(), s.schema_b)?],
+                            children: vec![child],
                             call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 })),
@@ -935,9 +952,18 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 move || {
                     let s = caps.lock().ok().and_then(|g| g.clone())
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (caps)".into()))?;
+                    // `OBL-C198`: prepared first, proven after the parent — see the row above.
+                    let (child_call, child_plan) = capability_child_prepare(&s, s.credential_secret_a, s.cap_a.inner(), s.schema_a)?;
                     let r = h.accept_job_with_capability(worker_secret, worker_pub, cap_job_id, pallas::Base::from(1u64), cap_proof.clone(), cap_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let job_call = dwow_sdk::tx::ContractCall {
+                        contract_id: crate::tests::blockchain::derive_contract_id_from_name("labor_market"),
+                        data: r.call_data.clone(),
+                    };
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &job_call]);
+                    let v = child_plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("verify_capability A: {e}")))?;
+                    let child = ChildCall { contract_id: *IDENTITY_CONTRACT_ID, call_data: v.call_data, proofs: vec![v.proof], children: vec![] };
                     Ok(EndpointResult {
-                        children: vec![capability_child(&s, s.credential_secret_a, s.cap_a.inner(), s.schema_a)?],
+                        children: vec![child],
                         call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),

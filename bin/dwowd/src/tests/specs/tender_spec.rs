@@ -145,7 +145,7 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                 let issuer_pub = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                 let oh = |e: String| dwow_core::Error::Custom(e);
 
-                let id = IdentityHarness::spawn();
+                let id = IdentityHarness::spawn(*IDENTITY_CONTRACT_ID);
 
                 let issuer = id
                     .register_issuer(issuer_pub, b"tenderer".to_vec(), vec![])
@@ -155,13 +155,13 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                 // The commitment is fixed by these parts, and `verify_capability` below must supply
                 // the same ones or the proof is about a different credential.
                 let cred_a = id
-                    .issue_credential(issuer_secret, credential_secret_a,
+                    .issue_credential(&[], issuer_secret, credential_secret_a,
                         b"role", pallas::Base::from(100u64),
                         b"tenure", pallas::Base::from(200u64),
                         attribute_blind, schema_a, 0, EXPIRES_AT)
                     .map_err(|e| oh(format!("issue_credential A: {e}")))?;
                 let cred_b = id
-                    .issue_credential(issuer_secret, credential_secret_b,
+                    .issue_credential(&[], issuer_secret, credential_secret_b,
                         b"role", pallas::Base::from(100u64),
                         b"tenure", pallas::Base::from(200u64),
                         attribute_blind, schema_b, 0, EXPIRES_AT)
@@ -348,13 +348,17 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
             mk_ep_rejecting_naming("SubmitBidWithCapabilityV1_WrongCapability", true, &["ContractError(Custom(30))"],
                 Box::new({
                     let shared = shared.clone();
-                    let id = Box::leak(Box::new(IdentityHarness::spawn()));
+                    let id = Box::leak(Box::new(IdentityHarness::spawn(*IDENTITY_CONTRACT_ID)));
                     move || {
                         let s = read_setup(&shared)?;
-                        // The child proves capability B; the tender requires A.
+                        // The child proves capability B; the tender requires A. `OBL-C198`: the
+                        // identity child is prepared first and proven after this call, because its
+                        // commitment covers this call's bytes. The tender harness has not been
+                        // migrated to take a child set, so the commitment is taken here — over the
+                        // ordered set the node hashes, child first.
                         let holder_b = PublicKey::from_secret(SecretKey::from_base(s.credential_secret_b));
-                        let v = id
-                            .verify_capability(s.credential_secret_b, s.cap_b.inner(),
+                        let v_plan = id
+                            .verify_capability_prepare(s.credential_secret_b, s.cap_b.inner(),
                                 pallas::Base::from(50u64),
                                 b"role", pallas::Base::from(100u64),
                                 b"tenure", pallas::Base::from(200u64),
@@ -362,11 +366,9 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                                 PublicKey::from_secret(SecretKey::from_base(s.issuer_secret)),
                                 holder_b, s.schema_b, 0, EXPIRES_AT, true)
                             .map_err(|e| dwow_core::Error::Custom(format!("verify_capability B: {e}")))?;
-                        let child = ChildCall {
+                        let child_call = dwow_sdk::tx::ContractCall {
                             contract_id: *IDENTITY_CONTRACT_ID,
-                            call_data: v.call_data,
-                            proofs: vec![v.proof],
-                            children: vec![],
+                            data: v_plan.call_data.clone(),
                         };
                         let r = h.submit_bid_with_capability(
                             cap_tender_id, b_pk, b_sk, 5000,
@@ -376,6 +378,19 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                             pallas::Base::from(31u64),
                             b"encrypted".to_vec(),
                         ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let tender_call = dwow_sdk::tx::ContractCall {
+                            contract_id: crate::tests::blockchain::derive_contract_id_from_name("tender"),
+                            data: r.call_data.clone(),
+                        };
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &tender_call]);
+                        let v = v_plan.prove(commitment)
+                            .map_err(|e| dwow_core::Error::Custom(format!("verify_capability B: {e}")))?;
+                        let child = ChildCall {
+                            contract_id: *IDENTITY_CONTRACT_ID,
+                            call_data: v.call_data,
+                            proofs: vec![v.proof],
+                            children: vec![],
+                        };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 })),
@@ -383,12 +398,13 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
             // capability the tender actually requires must be ACCEPTED. ──
             mk_ep("SubmitBidWithCapabilityV1_CorrectCapability", true, Box::new({
                 let shared = shared.clone();
-                let id = Box::leak(Box::new(IdentityHarness::spawn()));
+                let id = Box::leak(Box::new(IdentityHarness::spawn(*IDENTITY_CONTRACT_ID)));
                 move || {
                     let s = read_setup(&shared)?;
                     let holder_a = PublicKey::from_secret(SecretKey::from_base(s.credential_secret_a));
-                    let v = id
-                        .verify_capability(s.credential_secret_a, s.cap_a.inner(),
+                    // `OBL-C198`: prepared first, proven after this call — see the row above.
+                    let v_plan = id
+                        .verify_capability_prepare(s.credential_secret_a, s.cap_a.inner(),
                             pallas::Base::from(50u64),
                             b"role", pallas::Base::from(100u64),
                             b"tenure", pallas::Base::from(200u64),
@@ -396,11 +412,9 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                             PublicKey::from_secret(SecretKey::from_base(s.issuer_secret)),
                             holder_a, s.schema_a, 0, EXPIRES_AT, true)
                         .map_err(|e| dwow_core::Error::Custom(format!("verify_capability A: {e}")))?;
-                    let child = ChildCall {
+                    let child_call = dwow_sdk::tx::ContractCall {
                         contract_id: *IDENTITY_CONTRACT_ID,
-                        call_data: v.call_data,
-                        proofs: vec![v.proof],
-                        children: vec![],
+                        data: v_plan.call_data.clone(),
                     };
                     let r = h.submit_bid_with_capability(
                         cap_tender_id, b_pk, b_sk, 5000,
@@ -410,6 +424,19 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(32u64),
                         b"encrypted".to_vec(),
                     ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let tender_call = dwow_sdk::tx::ContractCall {
+                        contract_id: crate::tests::blockchain::derive_contract_id_from_name("tender"),
+                        data: r.call_data.clone(),
+                    };
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &tender_call]);
+                    let v = v_plan.prove(commitment)
+                        .map_err(|e| dwow_core::Error::Custom(format!("verify_capability A: {e}")))?;
+                    let child = ChildCall {
+                        contract_id: *IDENTITY_CONTRACT_ID,
+                        call_data: v.call_data,
+                        proofs: vec![v.proof],
+                        children: vec![],
+                    };
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),

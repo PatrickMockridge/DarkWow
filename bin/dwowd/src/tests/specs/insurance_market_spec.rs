@@ -201,7 +201,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                 let oh = |e: String| dwow_core::Error::Custom(e);
 
                 // ── Identity: an issuer, two credentials (two schemas), two capabilities ──
-                let id = IdentityHarness::spawn();
+                let id = IdentityHarness::spawn(*IDENTITY_CONTRACT_ID);
                 let issuer = id
                     .register_issuer(issuer_pub, b"insurer".to_vec(), vec![])
                     .map_err(|e| oh(format!("register_issuer: {e}")))?;
@@ -210,13 +210,13 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                 // The commitment is fixed by these parts, and `verify_capability` below must supply
                 // the same ones or the proof is about a different credential.
                 let cred_a = id
-                    .issue_credential(issuer_secret, credential_secret_a,
+                    .issue_credential(&[], issuer_secret, credential_secret_a,
                         b"role", pallas::Base::from(100u64),
                         b"tenure", pallas::Base::from(200u64),
                         attribute_blind, schema_a, 0, EXPIRES_AT)
                     .map_err(|e| oh(format!("issue_credential A: {e}")))?;
                 let cred_b = id
-                    .issue_credential(issuer_secret, credential_secret_b,
+                    .issue_credential(&[], issuer_secret, credential_secret_b,
                         b"role", pallas::Base::from(100u64),
                         b"tenure", pallas::Base::from(200u64),
                         attribute_blind, schema_b, 0, EXPIRES_AT)
@@ -355,8 +355,10 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                 // negative row is rejected it cannot be because B's proof was invalid or B unknown:
                 // the child is provably good on-chain, and the only thing left for the parent to
                 // reject is the mismatch.
+                // `OBL-C198`: this submission is a transaction of its own — one identity call — so
+                // the committed set is that call and no children are passed.
                 let b_check = id
-                    .verify_capability(credential_secret_b, cap_b.inner(),
+                    .verify_capability(&[], credential_secret_b, cap_b.inner(),
                         pallas::Base::from(50u64),
                         b"role", pallas::Base::from(100u64),
                         b"tenure", pallas::Base::from(200u64),
@@ -423,7 +425,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                 verify_state: None,
                 generate: Box::new({
                     let shared = shared.clone();
-                    let id = Box::leak(Box::new(IdentityHarness::spawn()));
+                    let id = Box::leak(Box::new(IdentityHarness::spawn(*IDENTITY_CONTRACT_ID)));
                     move || {
                         use dwow_insurance_market_contract::model::UnderwriteWithCapabilityParamsV1;
                         let s = shared.lock().unwrap().clone().ok_or_else(|| {
@@ -439,10 +441,13 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                             &s.note_wrong, BOND_AMOUNT,
                             poseidon_hash([pallas::Base::from(BOND_AMOUNT), s.underwriter_id]),
                         )?;
-                        // The child proves capability B; the market requires A.
+                        // The child proves capability B; the market requires A. `OBL-C198`: the
+                        // identity child is prepared here and proven *after* the parent, because
+                        // its commitment covers this parent's bytes — which is the whole reason
+                        // `identity` has a prepare/prove split.
                         let holder_b = PublicKey::from_secret(SecretKey::from_base(s.credential_secret_b));
-                        let v = id
-                            .verify_capability(s.credential_secret_b, s.cap_b.inner(),
+                        let v_plan = id
+                            .verify_capability_prepare(s.credential_secret_b, s.cap_b.inner(),
                                 pallas::Base::from(50u64),
                                 b"role", pallas::Base::from(100u64),
                                 b"tenure", pallas::Base::from(200u64),
@@ -450,15 +455,9 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                                 PublicKey::from_secret(SecretKey::from_base(s.issuer_secret)),
                                 holder_b, s.schema_b, 0, EXPIRES_AT, true)
                             .map_err(|e| dwow_core::Error::Custom(format!("verify_capability B: {e}")))?;
-                        let child_id = ChildCall {
-                            contract_id: *IDENTITY_CONTRACT_ID,
-                            call_data: v.call_data.clone(),
-                            proofs: vec![v.proof],
-                            children: vec![],
-                        };
                         let child_id_call = dwow_sdk::tx::ContractCall {
                             contract_id: *IDENTITY_CONTRACT_ID,
-                            data: v.call_data,
+                            data: v_plan.call_data.clone(),
                         };
                         let params = UnderwriteWithCapabilityParamsV1 {
                             market_id: s.market_id,
@@ -476,6 +475,16 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                             contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
                             call_data: child_pn_call.data,
                             proofs: debris.proofs,
+                            children: vec![],
+                        };
+                        // Both children are proven against the ONE commitment the parent derived
+                        // over `[pn_child, identity_child, this call]`.
+                        let v = v_plan.prove(r.commitment)
+                            .map_err(|e| dwow_core::Error::Custom(format!("verify_capability B: {e}")))?;
+                        let child_id = ChildCall {
+                            contract_id: *IDENTITY_CONTRACT_ID,
+                            call_data: v.call_data,
+                            proofs: vec![v.proof],
                             children: vec![],
                         };
                         Ok(EndpointResult {
@@ -523,7 +532,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                 })),
                 generate: Box::new({
                     let shared = shared.clone();
-                    let id = Box::leak(Box::new(IdentityHarness::spawn()));
+                    let id = Box::leak(Box::new(IdentityHarness::spawn(*IDENTITY_CONTRACT_ID)));
                     move || {
                         use dwow_insurance_market_contract::model::UnderwriteWithCapabilityParamsV1;
                         let s = shared.lock().unwrap().clone().ok_or_else(|| {
@@ -535,10 +544,11 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                             &s.note_correct, BOND_AMOUNT,
                             poseidon_hash([pallas::Base::from(BOND_AMOUNT), s.underwriter_id]),
                         )?;
-                        // The child proves capability A — the one the market requires.
+                        // The child proves capability A — the one the market requires. `OBL-C198`:
+                        // prepared here, proven after the parent — see the row above.
                         let holder_a = PublicKey::from_secret(SecretKey::from_base(s.credential_secret_a));
-                        let v = id
-                            .verify_capability(s.credential_secret_a, s.cap_a.inner(),
+                        let v_plan = id
+                            .verify_capability_prepare(s.credential_secret_a, s.cap_a.inner(),
                                 pallas::Base::from(50u64),
                                 b"role", pallas::Base::from(100u64),
                                 b"tenure", pallas::Base::from(200u64),
@@ -546,15 +556,9 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                                 PublicKey::from_secret(SecretKey::from_base(s.issuer_secret)),
                                 holder_a, s.schema_a, 0, EXPIRES_AT, true)
                             .map_err(|e| dwow_core::Error::Custom(format!("verify_capability A: {e}")))?;
-                        let child_id = ChildCall {
-                            contract_id: *IDENTITY_CONTRACT_ID,
-                            call_data: v.call_data.clone(),
-                            proofs: vec![v.proof],
-                            children: vec![],
-                        };
                         let child_id_call = dwow_sdk::tx::ContractCall {
                             contract_id: *IDENTITY_CONTRACT_ID,
-                            data: v.call_data,
+                            data: v_plan.call_data.clone(),
                         };
                         let params = UnderwriteWithCapabilityParamsV1 {
                             market_id: s.market_id,
@@ -572,6 +576,15 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                             contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
                             call_data: child_pn_call.data,
                             proofs: debris.proofs,
+                            children: vec![],
+                        };
+                        // Both children bind to the one commitment over the ordered set.
+                        let v = v_plan.prove(r.commitment)
+                            .map_err(|e| dwow_core::Error::Custom(format!("verify_capability A: {e}")))?;
+                        let child_id = ChildCall {
+                            contract_id: *IDENTITY_CONTRACT_ID,
+                            call_data: v.call_data,
+                            proofs: vec![v.proof],
                             children: vec![],
                         };
                         Ok(EndpointResult {
