@@ -30,7 +30,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pedersen_commitment_u64, Blind, MerkleNode, MerkleTree, PublicKey},
+    crypto::{pedersen_commitment_u64, Blind, ContractId, MerkleNode, MerkleTree, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -67,11 +67,26 @@ pub struct EscrowHarness {
     merkle_tree: dwow_sdk::crypto::MerkleTree,
     /// List of created escrow commitments
     created_commitments: Vec<pallas::Base>,
+    /// The deployed id of the escrow contract this harness builds calls for.
+    ///
+    /// A call carries the contract it addresses and the transaction commitment covers the call, so
+    /// a harness that proves must be told which contract it is proving for (`OBL-C198`). It was a
+    /// field on `spawn()`'s caller before, as the `ContractId::from_bytes([0u8; 32])` placeholder.
+    contract_id: ContractId,
+}
+
+/// The commitment a call set's proofs must bind to (`OBL-C198`) — over the **whole ordered set**
+/// the node will hash, children before parents, each call serialized with its contract id. One
+/// helper because every builder needs the same derivation and a second copy is a second value
+/// (`safety.md` RC5).
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
 }
 
 impl EscrowHarness {
-    /// Spawn a new Escrow harness with pre-loaded circuits
-    pub fn spawn() -> Self {
+    /// Spawn a new Escrow harness with pre-loaded circuits, for the contract deployed at
+    /// `contract_id` — see the field's note for why the id cannot be defaulted.
+    pub fn spawn(contract_id: ContractId) -> Self {
         let create_bin = include_bytes!("../../../escrow/proof/create_escrow.zk.bin");
         let fund_bin = include_bytes!("../../../escrow/proof/fund.zk.bin");
         let claim_bin = include_bytes!("../../../escrow/proof/claim.zk.bin");
@@ -119,14 +134,27 @@ impl EscrowHarness {
             refund_pk,
             merkle_tree,
             created_commitments,
+            contract_id,
         }
     }
 }
 
 impl EscrowHarness {
-    /// Create an escrow with ZK proof and return encoded call data
+    /// Create an escrow, binding the proof to the commitment over `children` **and** this call.
+    ///
+    /// Correct when the create *is* the transaction, which is what `test_heavyweight_metadata`
+    /// exercises (`children` empty there), and the only correct form when it has a child.
+    ///
+    /// This is the one endpoint here that cannot be built in a single shot, and the reason is a
+    /// genuine cycle: the spec's child is a box put whose `contents_commit` is a function of the
+    /// escrow id; so the child cannot be built until this call's data is known; the escrow id is a
+    /// function of *this* call's data; and the commitment — which this proof must bind to — is a
+    /// function of the child's data. The order that satisfies all three is: build this call's data
+    /// ([`Self::create_escrow_prepare`]), let the caller build the child around the exposed
+    /// `public_inputs.commitment`, then prove over the whole set ([`Self::create_escrow_prove`]).
     pub fn create_escrow(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         buyer_secret: pallas::Base,
         buyer_pubkey: PublicKey,
         seller_pubkey: PublicKey,
@@ -135,6 +163,25 @@ impl EscrowHarness {
         timeout: u64,
         instance_seed: [u8; 32],
     ) -> Result<CreateEscrowResult, Box<dyn std::error::Error>> {
+        let plan = self.create_escrow_prepare(
+            buyer_secret, buyer_pubkey, seller_pubkey, value, asset_id, timeout, instance_seed,
+        )?;
+        self.create_escrow_prove(plan, children)
+    }
+
+    /// A create call built but not yet proven — see [`Self::create_escrow`] for why this endpoint
+    /// needs the split. `public_inputs.commitment` is the escrow id the caller's child is built
+    /// around, and it is a derivation over the call's own inputs, so it needs no proof.
+    pub fn create_escrow_prepare(
+        &self,
+        buyer_secret: pallas::Base,
+        buyer_pubkey: PublicKey,
+        seller_pubkey: PublicKey,
+        value: u64,
+        asset_id: pallas::Base,
+        timeout: u64,
+        instance_seed: [u8; 32],
+    ) -> Result<CreateEscrowPlan, Box<dyn std::error::Error>> {
         let input = CreateEscrowCallData::new(
             buyer_secret,
             buyer_pubkey,
@@ -144,11 +191,11 @@ impl EscrowHarness {
             timeout,
         );
 
-        let (proof, public_inputs) = create_escrow_proof(
-            &self.create_escrow_zkbin,
-            &self.create_escrow_pk,
-            &input,
-        )?;
+        // The public inputs are a pure function of the call data — `commitment` is derived, not
+        // proven — so they are available before the proof, which is what lets the caller's child be
+        // built and the commitment be taken over the final set.
+        let public_inputs = input.compute_public_inputs();
+        let escrow_id = public_inputs.commitment;
 
         // Build CreateEscrowParamsV1
         let params = CreateEscrowParamsV1 {
@@ -157,29 +204,65 @@ impl EscrowHarness {
             value,
             asset_id,
             timeout,
-            commitment: EscrowId(public_inputs.commitment),
+            commitment: EscrowId(escrow_id),
             merkle_root: MerkleNode::new(pallas::Base::zero()),
             instance_seed,
         };
 
-        // Insert commitment into merkle tree for later fund proof
+        // Kept verbatim from the pre-plan body: it appends to a *clone* of the tree and drops it, so
+        // it changes nothing on `self` — `fund_escrow` builds its own tree from the escrow id. Left
+        // as it was rather than tidied, so that this diff is the migration and nothing else.
         let mut tree = self.merkle_tree.clone();
-        tree.append(MerkleNode::new(public_inputs.commitment));
+        tree.append(MerkleNode::new(escrow_id));
         tree.mark();
 
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(CreateEscrowResult { call_data, proof, public_inputs })
+        Ok(CreateEscrowPlan { input, call_data, public_inputs })
     }
 
-    /// Fund an escrow with ZK proof
+    /// Prove a prepared `create` against the whole ordered call set (`OBL-C198`).
+    pub fn create_escrow_prove(
+        &self,
+        plan: CreateEscrowPlan,
+        children: &[dwow_sdk::tx::ContractCall],
+    ) -> Result<CreateEscrowResult, Box<dyn std::error::Error>> {
+        let CreateEscrowPlan { mut input, call_data, public_inputs } = plan;
+
+        // ONE commitment over the whole ordered call set — children first, this call last (DFS
+        // post-order) — so this proof and its children's bind to the same value.
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) =
+            create_escrow_proof(&self.create_escrow_zkbin, &self.create_escrow_pk, &input)?;
+
+        Ok(CreateEscrowResult { call_data, public_inputs, proof, commitment })
+    }
+
+    /// Fund an escrow, binding the proof to the commitment over `children` **and** this call.
+    /// `FundV1` in this contract's spec carries two children, so the caller passes them.
     pub fn fund_escrow(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         escrow_id: pallas::Base,
         value: u64,
         value_blind: pallas::Scalar,
     ) -> Result<FundEscrowResult, Box<dyn std::error::Error>> {
+        let plan = self.fund_escrow_prepare(escrow_id, value, value_blind)?;
+        self.fund_escrow_prove(plan, children)
+    }
+
+    /// A fund call built but not yet proven (`OBL-C198`).
+    pub fn fund_escrow_prepare(
+        &self,
+        escrow_id: pallas::Base,
+        value: u64,
+        value_blind: pallas::Scalar,
+    ) -> Result<FundEscrowPlan, Box<dyn std::error::Error>> {
         // Build a local merkle tree for the fund proof (escrow_id is the only leaf).
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::new(escrow_id));
@@ -195,16 +278,12 @@ impl EscrowHarness {
             merkle_path,
         );
 
-        let (proof, public_inputs) = create_fund_escrow_proof(
-            &self.fund_zkbin,
-            &self.fund_pk,
-            &input,
-        )?;
-
         // Compute value commitment using Pedersen commitment
         let value_commit = pedersen_commitment_u64(value, Blind(value_blind));
 
-        // Build FundEscrowParamsV1
+        // Build FundEscrowParamsV1 — `merkle_root` is the contract's own derivation, called rather
+        // than re-implemented here.
+        let public_inputs = input.compute_public_inputs().map_err(|e| dwow_core::Error::Custom(format!("{e:?}")))?;
         let params = FundEscrowParamsV1 {
             escrow_id: EscrowId(escrow_id),
             value_commit,
@@ -215,18 +294,53 @@ impl EscrowHarness {
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
-        Ok(FundEscrowResult { call_data, proof, public_inputs })
+        Ok(FundEscrowPlan { input, call_data, public_inputs })
     }
 
-    /// Claim an escrow with ZK proof
+    /// Prove a prepared `fund` against the whole ordered call set (`OBL-C198`).
+    pub fn fund_escrow_prove(
+        &self,
+        plan: FundEscrowPlan,
+        children: &[dwow_sdk::tx::ContractCall],
+    ) -> Result<FundEscrowResult, Box<dyn std::error::Error>> {
+        let FundEscrowPlan { mut input, call_data, public_inputs } = plan;
+
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) =
+            create_fund_escrow_proof(&self.fund_zkbin, &self.fund_pk, &input)?;
+
+        Ok(FundEscrowResult { call_data, public_inputs, proof, commitment })
+    }
+
+    /// Claim an escrow, binding the proof to the commitment over `children` **and** this call.
+    /// `ClaimV1` in this contract's spec carries two children, so the caller passes them.
     pub fn claim_escrow(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         escrow_id: pallas::Base,
         seller_secret: pallas::Base,
         seller_pubkey: PublicKey,
         escrow_seller_commitment: pallas::Base,
         recipient_pubkey: PublicKey,
     ) -> Result<ClaimEscrowResult, Box<dyn std::error::Error>> {
+        let plan = self.claim_escrow_prepare(escrow_id, seller_secret, seller_pubkey, escrow_seller_commitment, recipient_pubkey)?;
+        self.claim_escrow_prove(plan, children)
+    }
+
+    /// A claim call built but not yet proven (`OBL-C198`). The nullifier is a poseidon hash of the
+    /// escrow id and the seller's secret, so the call data is complete before the proof exists.
+    pub fn claim_escrow_prepare(
+        &self,
+        escrow_id: pallas::Base,
+        seller_secret: pallas::Base,
+        seller_pubkey: PublicKey,
+        escrow_seller_commitment: pallas::Base,
+        recipient_pubkey: PublicKey,
+    ) -> Result<ClaimEscrowPlan, Box<dyn std::error::Error>> {
         let input = ClaimEscrowCallData::new(
             escrow_id,
             seller_secret,
@@ -234,14 +348,9 @@ impl EscrowHarness {
             escrow_seller_commitment,
         );
 
-        let (proof, public_inputs) = create_claim_escrow_proof(
-            &self.claim_zkbin,
-            &self.claim_pk,
-            &input,
-        )?;
-
         // Build ClaimEscrowParamsV1 — no `seller_secret`: the circuit proves it as a witness and
         // exposes the nullifier, so the params carry only what a host reads.
+        let public_inputs = input.compute_public_inputs();
         let params = ClaimEscrowParamsV1 {
             escrow_id: EscrowId(escrow_id),
             spent_nullifier: public_inputs.spent_nullifier,
@@ -251,12 +360,34 @@ impl EscrowHarness {
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(ClaimEscrowResult { call_data, proof, public_inputs })
+        Ok(ClaimEscrowPlan { input, call_data, public_inputs })
     }
 
-    /// Refund an escrow with ZK proof (after timeout)
+    /// Prove a prepared `claim` against the whole ordered call set (`OBL-C198`).
+    pub fn claim_escrow_prove(
+        &self,
+        plan: ClaimEscrowPlan,
+        children: &[dwow_sdk::tx::ContractCall],
+    ) -> Result<ClaimEscrowResult, Box<dyn std::error::Error>> {
+        let ClaimEscrowPlan { mut input, call_data, public_inputs } = plan;
+
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) =
+            create_claim_escrow_proof(&self.claim_zkbin, &self.claim_pk, &input)?;
+
+        Ok(ClaimEscrowResult { call_data, public_inputs, proof, commitment })
+    }
+
+    /// Refund an escrow (after timeout), binding the proof to the commitment over `children`
+    /// **and** this call.
+    #[expect(clippy::too_many_arguments, reason = "the circuit's witness list, plus the child set OBL-C198 needs")]
     pub fn refund_escrow(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         escrow_id: pallas::Base,
         timeout: u64,
         current_block: u64,
@@ -266,6 +397,22 @@ impl EscrowHarness {
         escrow_buyer_pub_y: pallas::Base,
         recipient_pubkey: PublicKey,
     ) -> Result<RefundEscrowResult, Box<dyn std::error::Error>> {
+        let plan = self.refund_escrow_prepare(escrow_id, timeout, current_block, buyer_secret, buyer_pubkey, escrow_buyer_pub_x, escrow_buyer_pub_y, recipient_pubkey)?;
+        self.refund_escrow_prove(plan, children)
+    }
+
+    /// A refund call built but not yet proven (`OBL-C198`).
+    pub fn refund_escrow_prepare(
+        &self,
+        escrow_id: pallas::Base,
+        timeout: u64,
+        current_block: u64,
+        buyer_secret: pallas::Base,
+        buyer_pubkey: PublicKey,
+        escrow_buyer_pub_x: pallas::Base,
+        escrow_buyer_pub_y: pallas::Base,
+        recipient_pubkey: PublicKey,
+    ) -> Result<RefundEscrowPlan, Box<dyn std::error::Error>> {
         let input = RefundEscrowCallData::new(
             escrow_id,
             timeout,
@@ -276,13 +423,8 @@ impl EscrowHarness {
             escrow_buyer_pub_y,
         );
 
-        let (proof, public_inputs) = create_refund_escrow_proof(
-            &self.refund_zkbin,
-            &self.refund_pk,
-            &input,
-        )?;
-
         // Build RefundEscrowParamsV1 — no `buyer_secret`, as `claim` above.
+        let public_inputs = input.compute_public_inputs();
         let params = RefundEscrowParamsV1 {
             escrow_id: EscrowId(escrow_id),
             spent_nullifier: public_inputs.spent_nullifier,
@@ -294,7 +436,26 @@ impl EscrowHarness {
         let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(RefundEscrowResult { call_data, proof, public_inputs })
+        Ok(RefundEscrowPlan { input, call_data, public_inputs })
+    }
+
+    /// Prove a prepared `refund` against the whole ordered call set (`OBL-C198`).
+    pub fn refund_escrow_prove(
+        &self,
+        plan: RefundEscrowPlan,
+        children: &[dwow_sdk::tx::ContractCall],
+    ) -> Result<RefundEscrowResult, Box<dyn std::error::Error>> {
+        let RefundEscrowPlan { mut input, call_data, public_inputs } = plan;
+
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) =
+            create_refund_escrow_proof(&self.refund_zkbin, &self.refund_pk, &input)?;
+
+        Ok(RefundEscrowResult { call_data, public_inputs, proof, commitment })
     }
 }
 
@@ -329,6 +490,40 @@ impl super::ContractHarness for EscrowHarness {
 }
 
 // ============================================================================
+// Prepared calls (`OBL-C198`)
+// ============================================================================
+
+/// A `create` call built but not yet proven — see [`EscrowHarness::create_escrow`] for why this
+/// endpoint needs the split. `public_inputs.commitment` is the escrow id the caller's child is
+/// built around.
+pub struct CreateEscrowPlan {
+    input: CreateEscrowCallData,
+    call_data: Vec<u8>,
+    pub public_inputs: CreateEscrowPublicInputs,
+}
+
+/// A `fund` call built but not yet proven (`OBL-C198`).
+pub struct FundEscrowPlan {
+    input: FundEscrowCallData,
+    call_data: Vec<u8>,
+    pub public_inputs: FundEscrowPublicInputs,
+}
+
+/// A `claim` call built but not yet proven (`OBL-C198`).
+pub struct ClaimEscrowPlan {
+    input: ClaimEscrowCallData,
+    call_data: Vec<u8>,
+    pub public_inputs: ClaimEscrowPublicInputs,
+}
+
+/// A `refund` call built but not yet proven (`OBL-C198`).
+pub struct RefundEscrowPlan {
+    input: RefundEscrowCallData,
+    call_data: Vec<u8>,
+    pub public_inputs: RefundEscrowPublicInputs,
+}
+
+// ============================================================================
 // Result Structs
 // ============================================================================
 
@@ -340,6 +535,9 @@ pub struct CreateEscrowResult {
     pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: CreateEscrowPublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of fund_escrow
@@ -350,6 +548,8 @@ pub struct FundEscrowResult {
     pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: FundEscrowPublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of claim_escrow
@@ -360,6 +560,8 @@ pub struct ClaimEscrowResult {
     pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: ClaimEscrowPublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of refund_escrow
@@ -370,4 +572,6 @@ pub struct RefundEscrowResult {
     pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: RefundEscrowPublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }

@@ -47,7 +47,8 @@ pub struct ClaimEscrowPublicInputs {
 
 impl ClaimEscrowPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.escrow_id, self.escrow_seller_commitment, self.tx_binding, self.tx_nonce, self.spent_nullifier]
+        // `OBL-C198`: the pair is the last two instances, matching the reordered circuit.
+        vec![self.escrow_id, self.escrow_seller_commitment, self.spent_nullifier, self.tx_binding, self.tx_nonce]
     }
 }
 

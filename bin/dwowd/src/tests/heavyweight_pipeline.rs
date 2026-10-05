@@ -520,7 +520,10 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
         let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
         chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("metadata")?));
-        let harness = EscrowHarness::spawn();
+        // `OBL-C198`: the harness must know the id its call will carry — the transaction commitment
+        // is derived over the call *including* the contract id, and `deploy_with_ix` below assigns
+        // `derive_contract_id_from_name("escrow")`.
+        let harness = EscrowHarness::spawn(crate::tests::blockchain::derive_contract_id_from_name("escrow"));
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
         let wasm =
@@ -577,8 +580,9 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- create_escrow (ZK proof generation) ---
         println!("  Test: create_escrow");
+        // No children: this call is the whole transaction, so the committed set is the call alone.
         let create = harness.create_escrow(
-            buyer_secret, buyer_pub, seller_pub, 5000, asset_id, 1000, instance_seed,
+            &[], buyer_secret, buyer_pub, seller_pub, 5000, asset_id, 1000, instance_seed,
         )?;
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());

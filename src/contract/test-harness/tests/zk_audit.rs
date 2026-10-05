@@ -61,9 +61,9 @@ fn test_all_harnesses_zk_coverage() {
     // Deployooor has NO ZK circuits — pure WASM contract. Skip circuits() check.
     zk_check!(DexHarness, "dex");
     zk_check!(DrainProtectionHarness, "drain_protection");
-    zk_check!(EscrowHarness, "escrow");
+    zk_check_with_id!(EscrowHarness, "escrow");
     zk_check_with_id!(GameRoomHarness, "game_room");
-    zk_check_with_id!(IdentityHarness, "identity");
+    zk_check!(IdentityHarness, "identity");
     zk_check_with_id!(InsuranceMarketHarness, "insurance_market");
     zk_check!(LaborMarketHarness, "labor_market");
     zk_check!(LotteryHarness, "lottery");

@@ -46,7 +46,8 @@ pub struct CreateEscrowPublicInputs {
 
 impl CreateEscrowPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.commitment, self.tx_binding, self.tx_nonce, self.seller_commitment]
+        // `OBL-C198`: the pair is the last two instances, matching the reordered circuit.
+        vec![self.commitment, self.seller_commitment, self.tx_binding, self.tx_nonce]
     }
 }
 

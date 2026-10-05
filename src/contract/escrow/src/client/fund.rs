@@ -54,9 +54,10 @@ impl FundEscrowPublicInputs {
             self.value_commit_x,
             self.value_commit_y,
             self.escrow_id,
+            // `OBL-C198`: the pair is the last two instances, matching the reordered circuit.
+            self.merkle_root,
             self.tx_binding,
             self.tx_nonce,
-            self.merkle_root,
         ]
     }
 }

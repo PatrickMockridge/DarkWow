@@ -65,7 +65,9 @@ circuit "FundEscrowV2" {
     # Verify escrow_id exists in the escrows Merkle tree
     # Using merkle_root(leaf_pos, path, leaf) opcode
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(merkle_root(merkle_leaf_pos, merkle_path, escrow_id));
+    # `OBL-C198`: the pair is the last two instances — the position the node reads, and there is
+    # no per-circuit index map. It sat before the merkle root until the migration moved it.
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(merkle_root(merkle_leaf_pos, merkle_path, escrow_id));
 }

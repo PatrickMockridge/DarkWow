@@ -49,13 +49,10 @@
 # instrument caught it and a reader should know the report works: `--self-test` proves the
 # checker can find a middle pair, but the *stale* half only prints on a full run, and that
 # migration was committed after a run without it. `slot`'s and `relayer_endowment`'s lines went
-# with their own units, in the commits that moved the circuits.
+# with their own units, in the commits that moved the circuits — as did `escrow`'s five, which were
+# the largest single group here (the pair sat in the *middle* of all five, with a trailing instance
+# after it in each).
 
-src/contract/escrow/proof/cancel.zk : CancelEscrowV2 : `OBL-C198` — pair at 3,4 of 6; `cancel_nullifier` follows.
-src/contract/escrow/proof/claim.zk : ClaimEscrowV2 : `OBL-C198` — pair at 2,3 of 5; `spent_nullifier` follows.
-src/contract/escrow/proof/create_escrow.zk : CreateEscrowV2 : `OBL-C198` — pair at 1,2 of 4; `seller_commitment` follows.
-src/contract/escrow/proof/fund.zk : FundEscrowV2 : `OBL-C198` — pair at 3,4 of 6; the merkle-root instance follows.
-src/contract/escrow/proof/refund.zk : RefundEscrowV2 : `OBL-C198` — pair at 5,6 of 8; `spent_nullifier` follows.
 src/contract/promissory_note/proof/redeem.zk : Redeem_V2 : `OBL-C198` — pair at 5,6 of 8; `coin_spend_hook` follows. `promissory_note`'s transfer and burn paths were migrated in the first pass; this circuit and `revoke.zk` were not, and the instrument is what made the difference visible.
 src/contract/stablecoin/proof/init.zk : InitV2 : `OBL-C198` — pair at 0,1 of 3; `deployer_auth` follows.
 src/contract/subscription/proof/subscribe.zk : SubscribeV2 : `OBL-C198` — pair at 0,1 of 3; `derived_id` follows.

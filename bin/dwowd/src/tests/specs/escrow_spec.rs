@@ -3,86 +3,49 @@
 //! requires one PN transfer_v1 (0x04) child. Claim/Refund validate the child value_commit against
 //! `poseidon_hash([escrow.value, escrow.id])`.
 //!
-//! # `OBL-C198`: what this spec needs before it can migrate, stated here rather than discovered
-//! # mid-run
+//! # `OBL-C198`: every row here is a nested-child case, and the order is the whole point
 //!
-//! Every row here is a **nested-child** case, and they are the campaign's hardest shape. The set
-//! the node hashes is `[child_a, child_b, this escrow call]`, so each child's proof must bind to a
-//! commitment that includes bytes appearing *after* it in DFS post-order.
+//! The set the node hashes is `[child_a, child_b, this escrow call]`, so every proof in the
+//! transaction must bind to the commitment over the *whole* set — a value that includes bytes
+//! appearing after a child in DFS post-order. The three steps therefore run in one order and no
+//! other:
 //!
-//! * the **PN** children can do this already — `modules::child_calls::pn_transfer_prepare` and
-//!   `pn_transfer_payout_prepare` return a plan the caller proves against its own commitment;
-//! * the **Purse** and **Box** children cannot. `harness/purse.rs` and `harness/box.rs` each
-//!   compute `tx_commitment([&self_call])` over their own call alone — correct when that call *is*
-//!   the transaction, which is what their own specs are, and wrong for a child. Both need the
-//!   two-phase form `MultiSigHarness::finalize_prepare` / `FinalizePlan::prove` has
-//!   (`e012f52dce`): a prepared plan holding the call data and the witness inputs, and a
-//!   `prove(commitment)` that takes the caller's value.
+//! 1. the escrow call's data (`*_prepare`), which exposes the derived values a child is built
+//!    around. `CreateEscrowV1` is the hard case and a genuine *cycle*, not merely an ordering: its
+//!    child is a box whose `contents_commit` is a function of the escrow id this very call
+//!    produces, and the commitment is a function of the child's data;
+//! 2. the children's calls — `pn_transfer_prepare`, and the purse/box harnesses'
+//!    `deposit_prepare` / `put_prepare` / `take_prepare`;
+//! 3. ONE commitment over the ordered set (`*_prove`), which the escrow's proof and each child's
+//!    proof all bind to.
 //!
-//! Until then `escrow` cannot be migrated as a unit, and the arms/circuits have not been moved —
-//! moving them first would leave the contract deriving while its own spec could not build a
-//! satisfiable child, which is a red run that says nothing about the migration.
+//! The purse and box two-phase forms were this migration's prerequisite and landed in
+//! `757ca4a2f0`; the escrow harness's own split followed with it.
 
 use dwow_contract_test_harness::harness::{
-    BoxHarness, ContractHarness, EscrowHarness, PromissoryNoteHarness, PurseHarness,
+    BoxHarness, BoxPutPlan, BoxTakePlan, ContractHarness, EscrowHarness, PromissoryNoteHarness,
+    PurseDepositPlan, PurseHarness,
 };
-use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
 use dwow_sdk::crypto::{
-    poseidon_hash, util::fp_mod_fv, pasta_prelude::PrimeField, Blind, MerkleNode, MerkleTree,
-    PublicKey, SecretKey, BOX_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
+    poseidon_hash, pasta_prelude::PrimeField, MerkleNode, MerkleTree, PublicKey, SecretKey,
+    BOX_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
 };
 use dwow_sdk::pasta::pallas;
 use std::sync::{Arc, Mutex};
 
+use crate::tests::modules::child_calls::pn_transfer_prepare;
 use crate::tests::uniform_runner::{
     ChildCall, ContractTestSpec, EndpointResult, EndpointSpec, EndpointExpectation,
 };
 
-fn pn_transfer_child(
-    note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
-    value: u64,
-    blind_seed: pallas::Base,
-) -> dwow_core::Result<ChildCall> {
-    let (note_commitment, pos, path, asset_id, commitment_blind) = note;
-    let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
-    let input = TransferCallInput {
-        value,
-        asset_id: *asset_id,
-        spend_hook: pallas::Base::zero(),
-        user_data: pallas::Base::zero(),
-        commitment_blind: *commitment_blind,
-        leaf_position: *pos,
-        merkle_path: path.clone(),
-        secret: pallas::Base::from(100u64),
-        ephemeral_signature_secret: pallas::Base::from(9u64),
-        tx_commitment: pallas::Base::zero(),
-        tx_nonce: pallas::Base::zero(),
-    };
-    let output = TransferCallOutput {
-        recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
-        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
-        value,
-        asset_id: *asset_id,
-        spend_hook: pallas::Base::zero(),
-        user_data: pallas::Base::zero(),
-        commitment_blind: poseidon_hash([blind_seed, *note_commitment]),
-    };
-    let pn = PromissoryNoteHarness::spawn();
-    let child = pn
-        .transfer_with_value_blinds(vec![input], vec![output], Some(vec![value_blind]))
-        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall {
-        contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
-        call_data: child.call_data,
-        proofs: child.proofs,
-        children: vec![],
-    })
-}
+// `pn_transfer_child` stood here. The PN child now comes from
+// `modules::child_calls::pn_transfer_prepare`, which stops short of the proof so the caller can
+// bind it to the commitment over the whole ordered set (`OBL-C198`); the body was the same helper.
 
-/// A `Purse::DepositV1` child.
+/// A `Purse::DepositV1` child's call data, **unproven** (`OBL-C198`).
 ///
 /// **This can be used ONCE per fixture, and that constrains everything below it.**
-/// `PurseHarness::deposit` builds its params from constants — `os = 42`, `purse_id = 1`,
+/// `PurseHarness::deposit_prepare` builds its params from constants — `os = 42`, `purse_id = 1`,
 /// `state_nonce = 0` — so the child's nullifier is `poseidon(1, 42, 1, 0)` for *every* call, whatever
 /// the amount, and the purse contract refuses the second one with `Duplicate nullifier`. It also builds
 /// its expected root from a fresh single-leaf tree, so it models one link of a purse's state chain
@@ -92,37 +55,38 @@ fn pn_transfer_child(
 /// be funded per run**. That is why the refund row is absent (see the note where it stood) and why the
 /// wrong-box row uses an unfunded escrow. Lifting it needs the harness to carry purse state across
 /// deposits — a unit of its own, recorded in `OBL-C170`.
-fn purse_deposit_child(amount: u64) -> dwow_core::Result<ChildCall> {
-    let purse = PurseHarness::spawn(*PURSE_CONTRACT_ID);
-    let r = purse.deposit(amount).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall { contract_id: *PURSE_CONTRACT_ID, call_data: r.call_data, proofs: vec![r.proof], children: vec![] })
+fn purse_deposit_plan(amount: u64) -> dwow_core::Result<PurseDepositPlan> {
+    PurseHarness::spawn(*PURSE_CONTRACT_ID)
+        .deposit_prepare(amount)
+        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))
 }
 
-/// A `Box::PutV1` child writing a box whose `contents_commit` is `contents`.
+/// A `Box::PutV1` child's call data, **unproven** — a box whose `contents_commit` is `contents`.
 ///
 /// Putting the claim box rides in the **create** row rather than in `setup`, because the commitment
 /// `ClaimV1` requires is derived from the escrow's own id and `setup` runs before the id exists. It needs
 /// no purse deposit, so the one-deposit constraint above does not touch it.
-fn box_put_child(contents: pallas::Base) -> dwow_core::Result<ChildCall> {
-    let bx = BoxHarness::spawn();
-    let r = bx.put_contents(contents).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall { contract_id: *BOX_CONTRACT_ID, call_data: r.call_data, proofs: vec![r.proof], children: vec![] })
+fn box_put_plan(contents: pallas::Base) -> dwow_core::Result<BoxPutPlan> {
+    BoxHarness::spawn().put_prepare(contents).map_err(|e| dwow_core::Error::Custom(format!("{e}")))
 }
 
-/// A `Box::TakeV1` child taking the box whose `contents_commit` is `contents`.
+/// A `Box::TakeV1` child's call data, **unproven** — the box whose `contents_commit` is `contents`.
 ///
 /// It takes the contents as an argument rather than defaulting, because **the escrow now requires a
 /// specific one**: `ClaimV1` compares the child's `contents_commit` against the commitment the escrow
 /// derived for itself, so a take of the fixture's default box would be refused — and that refusal is
 /// one of the rows below.
-fn box_take_child(contents: pallas::Base) -> dwow_core::Result<ChildCall> {
-    let bx = BoxHarness::spawn();
-    let r = bx.take_contents(contents).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall { contract_id: *BOX_CONTRACT_ID, call_data: r.call_data, proofs: vec![r.proof], children: vec![] })
+fn box_take_plan(contents: pallas::Base) -> dwow_core::Result<BoxTakePlan> {
+    BoxHarness::spawn().take_prepare(contents).map_err(|e| dwow_core::Error::Custom(format!("{e}")))
 }
 
 pub fn escrow_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(EscrowHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its calls will carry, because the transaction
+    // commitment is derived over the call *including* the contract id. `deploy_with_ix` assigns
+    // `derive_contract_id_from_name(name)` — a pure function of the name — so the spec computes
+    // exactly the id the pipeline will use rather than a placeholder.
+    let cid = crate::tests::blockchain::derive_contract_id_from_name("escrow");
+    let harness = Box::leak(Box::new(EscrowHarness::spawn(cid)));
     let h: &EscrowHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/escrow/dwow_escrow_contract.wasm");
 
@@ -144,7 +108,7 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
     ContractTestSpec {
         name: "escrow",
         is_genesis: false,
-        contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
+        contract_id: cid,
         harness: h,
         wasm_bytes: Some(wasm),
         has_initialize: false,
@@ -172,7 +136,7 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                 issued.push((token0.commitment.inner(), u64::from(mark0), tree.witness(mark0, 0).expect("w0"), tid, pallas::Base::from(6u64)));
 
                 // Two: one per spending row (`FundV1`, `ClaimV1`). A note is not
-                // reusable — `pn_transfer_child` spends the one it is given — so a shared index surfaces
+                // reusable — `pn_transfer_prepare` spends the one it is given — so a shared index surfaces
                 // as a promissory-note double-spend rather than as whatever the row was about. The count
                 // is exactly the number of rows that fund or claim; `setup` funds nothing, because the
                 // fixture can fund only one escrow and a row must be the one to do it.
@@ -200,19 +164,32 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let escrow_a = escrow_a.clone();
                     move || {
-                        let r = h.create_escrow(buyer_sk, buyer_pk, seller_pk, value, asset_id, timeout, seed)
+                        // `OBL-C198`: this row is the cycle. The child's contents are a function of
+                        // the id *this* call produces, so the parent's data must exist before the
+                        // child can be built, and the commitment — which both proofs bind to — is a
+                        // function of the child's data. Prepare, build the child, prove the set.
+                        let plan = h.create_escrow_prepare(buyer_sk, buyer_pk, seller_pk, value, asset_id, timeout, seed)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         // The claim box is put here, in the same call tree as the escrow's creation,
                         // because its contents are a function of the id this call produces. The box the
                         // `ClaimV1` row then takes is this one, and the commitment it must carry is the
                         // one the escrow derived for itself — a take of any other box is refused.
                         let contents = dwow_escrow_contract::model::Escrow::derive_claim_box_contents(
-                            dwow_escrow_contract::model::EscrowId(r.public_inputs.commitment),
+                            dwow_escrow_contract::model::EscrowId(plan.public_inputs.commitment),
                             value,
                         );
-                        let child_box = box_put_child(contents)?;
+                        let box_plan = box_put_plan(contents)?;
+                        let box_call = dwow_sdk::tx::ContractCall { contract_id: *BOX_CONTRACT_ID, data: box_plan.call_data.clone() };
+                        let r = h.create_escrow_prove(plan, &[box_call.clone()])
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let box_proof = box_plan.prove(r.commitment)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *escrow_a.lock().unwrap() = Some(r.public_inputs.commitment);
-                        Ok(EndpointResult { children: vec![child_box], call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult {
+                            children: vec![ChildCall { contract_id: *BOX_CONTRACT_ID, call_data: box_call.data, proofs: vec![box_proof.proof], children: vec![] }],
+                            call_data: r.call_data,
+                            proofs: vec![r.proof],
+                        })
                     }
                 }),
             },
@@ -227,12 +204,26 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                     let escrow_a = escrow_a.clone();
                     move || {
                         let ea = escrow_a.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("escrow A not created".into()))?;
-                        let r = h.fund_escrow(ea, value, pallas::Scalar::from(100u64))
+                        // `OBL-C198`: parent's data, then the two children's, then ONE commitment
+                        // over the ordered set — DFS post-order, so both children precede the escrow
+                        // call — which all three proofs bind to.
+                        let plan = h.fund_escrow_prepare(ea, value, pallas::Scalar::from(100u64))
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let child_pn = pn_transfer_child(&n[0], value, poseidon_hash([pallas::Base::from(value), ea, pallas::Base::from(1u64)]))?;
-                        let child_purse = purse_deposit_child(value)?;
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(
+                            &n[0], value, poseidon_hash([pallas::Base::from(value), ea, pallas::Base::from(1u64)]), pallas::Base::zero(),
+                        )?;
+                        let purse_plan = purse_deposit_plan(value)?;
+                        let purse_call = dwow_sdk::tx::ContractCall { contract_id: *PURSE_CONTRACT_ID, data: purse_plan.call_data.clone() };
+                        let r = h.fund_escrow_prove(plan, &[child_call.clone(), purse_call.clone()])
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let pn_debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let purse_proof = purse_plan.prove(r.commitment)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child_pn = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: pn_debris.proofs, children: vec![] };
+                        let child_purse = ChildCall { contract_id: *PURSE_CONTRACT_ID, call_data: purse_call.data, proofs: vec![purse_proof.proof], children: vec![] };
                         Ok(EndpointResult { children: vec![child_pn, child_purse], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -255,16 +246,29 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                         let ea = escrow_a.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("escrow A not created".into()))?;
                         let (sx, sy) = seller_pk.xy().expect("pk");
                         let seller_commitment = poseidon_hash([pallas::Base::from(4u64), sx, sy]);
-                        let r = h.claim_escrow(ea, seller_sk, seller_pk, seller_commitment, seller_pk)
+                        // `OBL-C198`: as `FundV1` — parent's data, then both children, then ONE
+                        // commitment over the ordered set that all three proofs bind to.
+                        let plan = h.claim_escrow_prepare(ea, seller_sk, seller_pk, seller_commitment, seller_pk)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let child_pn = pn_transfer_child(&n[1], value, poseidon_hash([pallas::Base::from(value), ea]))?;
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(
+                            &n[1], value, poseidon_hash([pallas::Base::from(value), ea]), pallas::Base::zero(),
+                        )?;
                         let contents = dwow_escrow_contract::model::Escrow::derive_claim_box_contents(
                             dwow_escrow_contract::model::EscrowId(ea),
                             value,
                         );
-                        let child_box = box_take_child(contents)?;
+                        let box_plan = box_take_plan(contents)?;
+                        let box_call = dwow_sdk::tx::ContractCall { contract_id: *BOX_CONTRACT_ID, data: box_plan.call_data.clone() };
+                        let r = h.claim_escrow_prove(plan, &[child_call.clone(), box_call.clone()])
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let pn_debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let box_proof = box_plan.prove(r.commitment)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child_pn = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: pn_debris.proofs, children: vec![] };
+                        let child_box = ChildCall { contract_id: *BOX_CONTRACT_ID, call_data: box_call.data, proofs: vec![box_proof.proof], children: vec![] };
                         Ok(EndpointResult { children: vec![child_pn, child_box], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -273,14 +277,14 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
             // it, and it is the *harness* rather than this contract:
             //
             //   * **`ClaimV1_WrongBox`** — the row that would refuse a take of somebody else's box, which
-            //     is the check `OBL-C169` added. `BoxHarness::take_contents` derives
+            //     is the check `OBL-C169` added. `BoxHarness::take_prepare` derives
             //     `nf = poseidon(1, os=42, box_id=1, state_nonce=1)` — **independent of `contents`** — so
             //     one take is possible per fixture, and the row above has taken it. Measured, not
             //     inferred: the attempt is refused by *box* with `[box::take] Error: Duplicate nullifier`
             //     before this contract's exec runs at all, so the parent's check can never be the one that
             //     fires.
             //   * **`RefundV1`** — the endpoint needs an escrow in `Funded` state, which needs a
-            //     `purse::deposit_v1` child, and `PurseHarness::deposit`'s nullifier is constant too. One
+            //     `purse::deposit_v1` child, and `PurseHarness::deposit_prepare`'s nullifier is constant too. One
             //     funded escrow per fixture, and `ClaimV1` above consumes it.
             //
             // Both rows stood here and are removed rather than left to panic or to be refused by the

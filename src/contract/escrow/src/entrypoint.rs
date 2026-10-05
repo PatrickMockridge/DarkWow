@@ -134,6 +134,23 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 // METADATA (ZK proof verification)
 // ============================================================================
 
+/// The transaction binding this call publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be
+/// computed from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can
+/// satisfy. What stood here was the constant `poseidon_hash([3, 0, 0])`, which bound every proof
+/// to nothing at all.
+///
+/// The nonce is zero because these calls carry no nonce field, so every proof in one transaction
+/// publishes the same binding — a *linking* of that transaction's own proofs, which
+/// `tx-commitment.md` §The Nullifier Scheme exists to avoid. It is still strictly better than
+/// the constant, which was identical across *every* transaction, and a per-proof nonce on the
+/// wire is owed.
+fn tx_binding_of(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([pallas::Base::from(3u64), wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 /// Fetch metadata for ZK proof verification
 fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
@@ -143,26 +160,30 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     msg!("[escrow::get_metadata] Processing function: {:?}", func);
 
+    // One derivation for the one transaction every arm below reads, so the five arms cannot
+    // disagree about it (`safety.md` RC5).
+    let tx_binding = tx_binding_of(pallas::Base::zero())?;
+
     let metadata = match func {
         EscrowFunction::CreateEscrowV1 => {
             let params = CreateEscrowParamsV1::decode(&self_.data[1..])?;
-            escrow_create_get_metadata_v1(cid, call_idx, calls, params)?
+            escrow_create_get_metadata_v1(cid, call_idx, calls, params, tx_binding)?
         }
         EscrowFunction::FundV1 => {
             let params = FundEscrowParamsV1::decode(&self_.data[1..])?;
-            escrow_fund_get_metadata_v1(cid, call_idx, calls, params)?
+            escrow_fund_get_metadata_v1(cid, call_idx, calls, params, tx_binding)?
         }
         EscrowFunction::ClaimV1 => {
             let params = ClaimEscrowParamsV1::decode(&self_.data[1..])?;
-            escrow_claim_get_metadata_v1(cid, call_idx, calls, params)?
+            escrow_claim_get_metadata_v1(cid, call_idx, calls, params, tx_binding)?
         }
         EscrowFunction::RefundV1 => {
             let params = RefundEscrowParamsV1::decode(&self_.data[1..])?;
-            escrow_refund_get_metadata_v1(cid, call_idx, calls, params)?
+            escrow_refund_get_metadata_v1(cid, call_idx, calls, params, tx_binding)?
         }
         EscrowFunction::CancelV1 => {
             let params = CancelEscrowParamsV1::decode(&self_.data[1..])?;
-            escrow_cancel_get_metadata_v1(cid, call_idx, calls, params)?
+            escrow_cancel_get_metadata_v1(cid, call_idx, calls, params, tx_binding)?
         }
         EscrowFunction::InitializeV1 => vec![],
     };
@@ -176,13 +197,15 @@ fn escrow_create_get_metadata_v1(
     _call_idx: usize,
     _calls: Vec<DarkLeaf<ContractCall>>,
     params: CreateEscrowParamsV1,
+    tx_binding: pallas::Base,
 ) -> Result<Vec<u8>, ContractError> {
     // Public inputs for CreateEscrow ZK proof
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
-    // Circuit constrain_instance calls (2):
+    // Circuit constrain_instance calls (4), the pair last:
     //   constrain_instance(C) — commitment = H(buyer_x, buyer_y, H(seller), value, asset_id, timeout)
     //   constrain_instance(seller_commitment) — H(seller_x, seller_y)
+    //   constrain_instance(tx_binding), constrain_instance(tx_nonce)
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (buyer_x, buyer_y) = params.buyer_pubkey.xy().expect("pk not identity");
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
@@ -197,7 +220,8 @@ fn escrow_create_get_metadata_v1(
 
     zk_public_inputs.push((
         ESCROW_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
-        vec![commitment, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero(), seller_commitment],
+        // `OBL-C198`: the pair is the last two instances, and the binding is derived, not echoed.
+        vec![commitment, seller_commitment, tx_binding, pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -211,6 +235,7 @@ fn escrow_fund_get_metadata_v1(
     _call_idx: usize,
     _calls: Vec<DarkLeaf<ContractCall>>,
     params: FundEscrowParamsV1,
+    tx_binding: pallas::Base,
 ) -> Result<Vec<u8>, ContractError> {
     // Public inputs for FundEscrow ZK proof
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -232,9 +257,10 @@ fn escrow_fund_get_metadata_v1(
             *value_coords.x(),
             *value_coords.y(),
             params.escrow_id.inner(),
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
-            pallas::Base::zero(),
+            // `OBL-C198`: the pair is the last two instances, and the binding is derived, not echoed.
             params.merkle_root.inner(),
+            tx_binding,
+            pallas::Base::zero(),
         ],
     ));
 
@@ -249,14 +275,16 @@ fn escrow_claim_get_metadata_v1(
     _call_idx: usize,
     _calls: Vec<DarkLeaf<ContractCall>>,
     params: ClaimEscrowParamsV1,
+    tx_binding: pallas::Base,
 ) -> Result<Vec<u8>, ContractError> {
     // Public inputs for ClaimEscrow ZK proof
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
-    // Circuit constrain_instance calls (3):
+    // Circuit constrain_instance calls (5), the pair last:
     //   constrain_instance(escrow_id)
     //   constrain_instance(escrow_seller_commitment) — H(seller_pub_x, seller_pub_y)
     //   constrain_instance(spent_nullifier)
+    //   constrain_instance(tx_binding), constrain_instance(tx_nonce)
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (seller_x, seller_y) = params.recipient_pubkey.xy().expect("pk not identity");
     let escrow_seller_commitment = poseidon_hash([pallas::Base::from(4u64), seller_x, seller_y]);
@@ -266,9 +294,10 @@ fn escrow_claim_get_metadata_v1(
         vec![
             params.escrow_id.inner(),
             escrow_seller_commitment,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
-            pallas::Base::zero(),
+            // `OBL-C198`: the pair is the last two instances, and the binding is derived, not echoed.
             params.spent_nullifier,
+            tx_binding,
+            pallas::Base::zero(),
         ],
     ));
 
@@ -283,17 +312,19 @@ fn escrow_refund_get_metadata_v1(
     _call_idx: usize,
     _calls: Vec<DarkLeaf<ContractCall>>,
     params: RefundEscrowParamsV1,
+    tx_binding: pallas::Base,
 ) -> Result<Vec<u8>, ContractError> {
     // Public inputs for RefundEscrow ZK proof
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
-    // Circuit constrain_instance calls (6):
+    // Circuit constrain_instance calls (8), the pair last:
     //   constrain_instance(escrow_id)
     //   constrain_instance(timeout)
     //   constrain_instance(current_block)
     //   constrain_instance(input_buyer_pub_x)
     //   constrain_instance(input_buyer_pub_y)
     //   constrain_instance(spent_nullifier)
+    //   constrain_instance(tx_binding), constrain_instance(tx_nonce)
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (buyer_x, buyer_y) = params.recipient_pubkey.xy().expect("pk not identity");
 
@@ -305,9 +336,10 @@ fn escrow_refund_get_metadata_v1(
             pallas::Base::from(params.current_block),
             buyer_x,
             buyer_y,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
-            pallas::Base::zero(),
+            // `OBL-C198`: the pair is the last two instances, and the binding is derived, not echoed.
             params.spent_nullifier,
+            tx_binding,
+            pallas::Base::zero(),
         ],
     ));
 
@@ -322,15 +354,16 @@ fn escrow_cancel_get_metadata_v1(
     _call_idx: usize,
     _calls: Vec<DarkLeaf<ContractCall>>,
     params: CancelEscrowParamsV1,
+    tx_binding: pallas::Base,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
-    // Circuit constrain_instance calls (5):
+    // Circuit constrain_instance calls (6), the pair last:
     //   constrain_instance(escrow_id)
     //   constrain_instance(buyer_pub_x)
     //   constrain_instance(buyer_pub_y)
-    //   constrain_instance(tx_commitment)
     //   constrain_instance(cancel_nullifier)
+    //   constrain_instance(tx_binding), constrain_instance(tx_nonce)
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (buyer_x, buyer_y) = params.buyer_pubkey.xy().expect("pk not identity");
 
@@ -340,9 +373,10 @@ fn escrow_cancel_get_metadata_v1(
             params.escrow_id.inner(),
             buyer_x,
             buyer_y,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), // tx_binding
-            pallas::Base::zero(), // tx_nonce
+            // `OBL-C198`: the pair is the last two instances, and the binding is derived, not echoed.
             params.cancel_nullifier,
+            tx_binding,
+            pallas::Base::zero(),
         ],
     ));
 

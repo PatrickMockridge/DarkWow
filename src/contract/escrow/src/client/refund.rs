@@ -56,9 +56,10 @@ impl RefundEscrowPublicInputs {
             self.current_block,
             self.input_buyer_pub_x,
             self.input_buyer_pub_y,
+            // `OBL-C198`: the pair is the last two instances, matching the reordered circuit.
+            self.spent_nullifier,
             self.tx_binding,
             self.tx_nonce,
-            self.spent_nullifier,
         ]
     }
 }

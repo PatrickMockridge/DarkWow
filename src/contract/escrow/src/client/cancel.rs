@@ -58,9 +58,10 @@ impl CancelEscrowPublicInputs {
             self.escrow_id,
             self.buyer_pub_x,
             self.buyer_pub_y,
+            // `OBL-C198`: the pair is the last two instances, matching the reordered circuit.
+            self.cancel_nullifier,
             self.tx_binding,
             self.tx_nonce,
-            self.cancel_nullifier,
         ]
     }
 }
