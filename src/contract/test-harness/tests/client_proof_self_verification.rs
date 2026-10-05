@@ -878,3 +878,84 @@ fn bearer_bond_prove_coverage_proof_is_bound_to_its_tx_commitment() {
          binding would not be load-bearing"
     );
 }
+
+/// `bearer_bond`'s receipt circuits — `Redeem_V2` is the one that failed the heavyweight run.
+const BEARER_BOND_REDEEM_ZKBIN: &[u8] = include_bytes!("../../bearer_bond/proof/redeem.zk.bin");
+const BEARER_BOND_BURN_ZKBIN: &[u8] = include_bytes!("../../bearer_bond/proof/burn.zk.bin");
+
+/// The **instrument the `unstake` failure needed three runs earlier**: does the vector the arm
+/// publishes for the receipt verify against the receipt proof the client makes, with the values the
+/// params carry?
+///
+/// It exists because a heavyweight run cannot answer that question — it answers it once per ~950
+/// seconds and it cannot bisect. This mirrors `unstake_metadata`'s construction from `plan.params()`
+/// exactly, so a failure here localises the disagreement to the arm/client pair, and a pass says the
+/// mismatch the node saw is somewhere else entirely.
+#[test]
+fn bearer_bond_unstake_receipt_vector_matches_its_own_proof() {
+    use dwow_bearer_bond_contract::client::unstake::{
+        UnstakeCallBuilder, UnstakeCallInput, UnstakeCallOutput,
+    };
+    use dwow_sdk::crypto::MerkleNode;
+
+    let redeem_zkbin = ZkBinary::decode(BEARER_BOND_REDEEM_ZKBIN, false).expect("redeem decodes");
+    let redeem_pk = proving_key(&redeem_zkbin);
+    let burn_zkbin = ZkBinary::decode(BEARER_BOND_BURN_ZKBIN, false).expect("burn decodes");
+    let burn_pk = proving_key(&burn_zkbin);
+
+    let tx_commitment = pallas::Base::from(0xC0FFEEu64);
+    let tx_nonce = pallas::Base::from(9u64);
+
+    let input = UnstakeCallInput {
+        principal: 10000,
+        asset_id: pallas::Base::from(1u64),
+        spend_hook: pallas::Base::zero(),
+        user_data: pallas::Base::zero(),
+        commitment_blind: pallas::Base::from(3u64),
+        maturity_block: 1000,
+        leaf_position: 0,
+        merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
+        secret: pallas::Base::from(42u64),
+        current_block: 1001,
+        tx_commitment,
+        tx_nonce,
+    };
+    let output = UnstakeCallOutput {
+        recipient: pallas::Base::from(10u64),
+        asset_id: pallas::Base::from(1u64),
+        spend_hook: pallas::Base::zero(),
+        user_data: pallas::Base::zero(),
+        commitment_blind: pallas::Base::from(6u64),
+    };
+
+    let plan = UnstakeCallBuilder {
+        input, output, burn_zkbin, burn_pk, redeem_zkbin, redeem_pk,
+    }
+    .prepare()
+    .expect("prepare must succeed");
+    let p = plan.params();
+    let debris = plan.prove(tx_commitment, tx_nonce).expect("prove must succeed");
+
+    let receipt_vector = vec![
+        p.receipt_commitment,
+        p.receipt_value_commit_x,
+        p.receipt_value_commit_y,
+        p.receipt_token_commit,
+        pallas::Base::zero(), // `value` — a receipt carries none
+        p.receipt_spend_hook,
+        dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]),
+        tx_nonce,
+    ];
+    assert_eq!(receipt_vector.len(), 8, "Redeem_V2 instances eight values");
+
+    // `proofs[0]` is the burn proof, `proofs[1]` the receipt — the order `UnstakeCallPlan::prove`
+    // pushes them, and the order `unstake_metadata` publishes them.
+    match verify_zkp(&debris.proofs[1], BEARER_BOND_REDEEM_ZKBIN, &receipt_vector) {
+        ZkVerifyResult::Ok => {}
+        other => panic!(
+            "the unstake receipt vector does not verify against its own proof ({other:?}) — the \
+             arm's construction and the client's proof disagree, and this is the 30-second \
+             instrument that says which, not the 950-second run"
+        ),
+    }
+}
