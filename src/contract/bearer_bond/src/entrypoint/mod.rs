@@ -362,10 +362,10 @@ fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
             params.bond_input.nullifier.inner(),
             vc_x,
             vc_y,
-            params.receipt_token_commit,
+            params.bond_input.token_commit,
             params.bond_input.merkle_root.inner(),
             params.bond_input.user_data_enc,
-            params.receipt_spend_hook,
+            params.bond_input.spend_hook,
             params.bond_input.signature_public,
             tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
             pallas::Base::zero(), // tx_nonce
@@ -402,10 +402,10 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
             params.bond_input.nullifier.inner(),
             vc_x,
             vc_y,
-            params.receipt_token_commit,
+            params.bond_input.token_commit,
             params.bond_input.merkle_root.inner(),
             params.bond_input.user_data_enc,
-            params.receipt_spend_hook,
+            params.bond_input.spend_hook,
             params.bond_input.signature_public,
             tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
             pallas::Base::zero(), // tx_nonce
@@ -427,6 +427,11 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
             params.receipt_commitment,
             vc_x,
             vc_y,
+            // `OBL-C199`: the **receipt's** values. These two lines published
+            // `params.bond_input.token_commit` / `.spend_hook` — the *stake's* — while the circuit
+            // constrains the receipt note's, so `Redeem_V2` could not verify. It was a `replace_all`
+            // in this same session that briefly over-corrected the *Burn* vectors here too, which
+            // is why the two are distinguished by sitting inside a `Redeem_V2` vector at all.
             params.receipt_token_commit,
             value,
             params.receipt_spend_hook,
@@ -465,10 +470,10 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
             params.bond_input.nullifier.inner(),
             vc_x,
             vc_y,
-            params.receipt_token_commit,
+            params.bond_input.token_commit,
             params.bond_input.merkle_root.inner(),
             params.bond_input.user_data_enc,
-            params.receipt_spend_hook,
+            params.bond_input.spend_hook,
             params.bond_input.signature_public,
             tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
             pallas::Base::zero(), // tx_nonce
@@ -484,6 +489,11 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
             params.receipt_commitment, // the receipt's note commitment — carried in the params
             vc_x,                          // value_commit x
             vc_y,                          // value_commit y
+            // `OBL-C199`: the **receipt's** values. These two lines published
+            // `params.bond_input.token_commit` / `.spend_hook` — the *stake's* — while the circuit
+            // constrains the receipt note's, so `Redeem_V2` could not verify. It was a `replace_all`
+            // in this same session that briefly over-corrected the *Burn* vectors here too, which
+            // is why the two are distinguished by sitting inside a `Redeem_V2` vector at all.
             params.receipt_token_commit,
             value,
             params.receipt_spend_hook,
