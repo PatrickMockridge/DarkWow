@@ -22,7 +22,9 @@ circuit "InitV2" {
     # Derive deployer authorization from secret
     deployer_auth = poseidon_hash(DOMAIN_SIGNATURE_SECRET, deployer_secret, contract_salt);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(deployer_auth);
+    # `OBL-C198`: the pair is the last two instances — the position the node reads, and there is no
+    # per-circuit index map. It sat before `deployer_auth` until the migration moved it.
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(deployer_auth);
 }

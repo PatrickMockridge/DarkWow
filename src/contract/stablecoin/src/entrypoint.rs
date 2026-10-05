@@ -149,14 +149,8 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
             // goes through the `else` arm with params carrying the authority.
             governance_pub_x: pallas::Base::zero(),
             governance_pub_y: pallas::Base::zero(),
-            // OBL-C78: the pair a client that leaves both at zero would carry. This branch runs with
-            // no call and verifies no proof, so the value is inert here — it is set to the derived
-            // form rather than to zero so this default agrees with the circuit it mirrors.
-            tx_binding: poseidon_hash([
-                pallas::Base::from(3u64),
-                pallas::Base::zero(),
-                pallas::Base::zero(),
-            ]),
+            // `OBL-C198`: this branch runs with no call and verifies no proof, so the nonce is inert
+            // here — it is zero, matching the circuit it mirrors.
             tx_nonce: pallas::Base::zero(),
         }
     } else {
@@ -244,6 +238,30 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 // METADATA (ZK proof verification)
 // ============================================================================
 
+/// The transaction binding every arm here publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// Four arms published the literal `poseidon_hash([3, 0, 0])`; seven published whatever the caller
+/// had written into `params.zk_public_inputs`, which is a public value checked against a public
+/// value — the caller named the value the arm then published as though the proof had pinned it.
+///
+/// The nonce is zero because no stablecoin call carries a nonce field, so every proof in one
+/// transaction publishes the same binding. That *links* a transaction's own proofs, which
+/// `tx-commitment.md` §The Nullifier Scheme exists to avoid; it is still strictly better than a
+/// constant shared with every transaction, and the per-proof nonce it is owed is owed on the wire.
+/// The pair is instanced last, the position the node reads.
+///
+/// **The seven `zk_public_inputs` arms are a shape no other contract in this tree has**: there the
+/// wire carries the call's instances *minus* the pair, and the arm appends `[binding, nonce]` below.
+/// That is `OBL-C198`'s rule applied to a vector rather than to a field — leaving the caller's two
+/// slots in the wire would have been bytes the host ignores, and every other contract's binding
+/// left the call data entirely.
+fn stablecoin_tx_binding() -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([pallas::Base::from(3u64), wasm::util::get_tx_commitment()?, pallas::Base::zero()]))
+}
+
 /// Fetch metadata for ZK proof verification
 ///
 /// Returns public inputs for ZK proof verification based on the function being called.
@@ -260,15 +278,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p, Err(e) => { msg!("[stablecoin::get_metadata] Error: Failed to deserialize InitializeParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            // Order matches constrain_instance in init.zk:
-            // tx_binding, tx_nonce, deployer_auth
-            //
-            // OBL-C78: the first two come from the call. The client already derived the binding
-            // (`client/initialize.rs`'s `tx_binding()`), so the arm's literal zeros were the only
-            // thing standing between a real init proof and the vector the host expected.
+            // Order matches constrain_instance in init.zk: deployer_auth, tx_binding, tx_nonce —
+            // the pair last (`OBL-C198`), and the binding derived rather than echoed.
+            let tx_binding = stablecoin_tx_binding()?;
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_INIT_NS_V2.to_string(),
-                vec![params.tx_binding, params.tx_nonce, params.deployer_auth],
+                vec![params.deployer_auth, tx_binding, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -284,9 +299,14 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // `OBL-C198`: the wire carries this call's instances **minus** the pair, and the arm
+            // appends the pair it derives — see `stablecoin_tx_binding`.
+            let mut instances = params.zk_public_inputs;
+            instances.push(stablecoin_tx_binding()?);
+            instances.push(pallas::Base::zero());
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V2.to_string(),
-                params.zk_public_inputs,
+                instances,
             ));
 
             let mut metadata = vec![];
@@ -303,9 +323,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // `OBL-C198`: instances minus the pair on the wire; the arm appends the derived pair.
+            let mut instances = params.zk_public_inputs;
+            instances.push(stablecoin_tx_binding()?);
+            instances.push(pallas::Base::zero());
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V2.to_string(),
-                params.zk_public_inputs,
+                instances,
             ));
 
             let mut metadata = vec![];
@@ -322,9 +346,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // `OBL-C198`: instances minus the pair on the wire; the arm appends the derived pair.
+            let mut instances = params.zk_public_inputs;
+            instances.push(stablecoin_tx_binding()?);
+            instances.push(pallas::Base::zero());
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V2.to_string(),
-                params.zk_public_inputs,
+                instances,
             ));
 
             let mut metadata = vec![];
@@ -341,9 +369,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // `OBL-C198`: instances minus the pair on the wire; the arm appends the derived pair.
+            let mut instances = params.zk_public_inputs;
+            instances.push(stablecoin_tx_binding()?);
+            instances.push(pallas::Base::zero());
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V2.to_string(),
-                params.zk_public_inputs,
+                instances,
             ));
 
             let mut metadata = vec![];
@@ -360,9 +392,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // `OBL-C198`: instances minus the pair on the wire; the arm appends the derived pair.
+            let mut instances = params.zk_public_inputs;
+            instances.push(stablecoin_tx_binding()?);
+            instances.push(pallas::Base::zero());
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V2.to_string(),
-                params.zk_public_inputs,
+                instances,
             ));
 
             let mut metadata = vec![];
@@ -379,9 +415,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // `OBL-C198`: instances minus the pair on the wire; the arm appends the derived pair.
+            let mut instances = params.zk_public_inputs;
+            instances.push(stablecoin_tx_binding()?);
+            instances.push(pallas::Base::zero());
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V2.to_string(),
-                params.zk_public_inputs,
+                instances,
             ));
 
             let mut metadata = vec![];
@@ -398,10 +438,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             // Order matches constrain_instance in update_config.zk:
-            // gov_pub_x, gov_pub_y, config_nullifier, tx_binding, tx_nonce
+            // gov_pub_x, gov_pub_y, config_nullifier, tx_binding, tx_nonce — the pair already last,
+            // and the binding derived rather than a literal (`OBL-C198`).
+            let tx_binding = stablecoin_tx_binding()?;
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2.to_string(),
-                vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+                vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier, tx_binding, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -441,7 +483,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     pallas::Base::from(params.outstanding),
                     pallas::Base::from(params.collateral_ratio_bps),
                     pallas::Base::from(params.interest_accrued),
-                    poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
+                    // `OBL-C198`: the pair is last and derived, not the literal `H(3, 0, 0)`.
+                    stablecoin_tx_binding()?,
                     pallas::Base::zero(),
                 ],
             ));
@@ -479,7 +522,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     accumulator_pub_x,
                     accumulator_pub_y,
                     pallas::Base::from(params.old_total_debt),
-                    poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
+                    // `OBL-C198`: the pair is last and derived, not the literal `H(3, 0, 0)`.
+                    stablecoin_tx_binding()?,
                     pallas::Base::zero(),
                 ],
             ));
@@ -498,9 +542,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // `OBL-C198`: instances minus the pair on the wire; the arm appends the derived pair.
+            let mut instances = params.zk_public_inputs;
+            instances.push(stablecoin_tx_binding()?);
+            instances.push(pallas::Base::zero());
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_REDEEM_STABLE_NS_V1.to_string(),
-                params.zk_public_inputs,
+                instances,
             ));
 
             let mut metadata = vec![];
@@ -1236,21 +1284,26 @@ fn process_mint_stable_instruction(
 /// The circuit's `constrain_instance` order is
 /// `[position_nullifier, old_commitment, new_commitment, tx_binding, tx_nonce]`.
 ///
-/// The length is required to be exactly the circuit's instance count. The node already refuses a
-/// proof whose instances do not match the circuit, so a wrong-length vector cannot reach here on a
-/// verified call — the check is what makes the indexing below total rather than trusting that.
+/// The length is required to be exactly the instances the **call** carries. `OBL-C198`: that is the
+/// circuit's instance count *minus* the pair, which the metadata arm appends derived — so the three
+/// entries read below are the ones before the pair and their indices are unchanged. The node already
+/// refuses a proof whose instances do not match the circuit, so a wrong-length vector cannot reach
+/// here on a verified call — the check is what makes the indexing below total rather than trusting
+/// that.
 fn mint_stable_binding(
     params: &MintStableParams,
 ) -> Result<(IntentNullifier, IntentCommitment, IntentCommitment), ContractError> {
     const INSTANCES: usize = 5;
-    if params.zk_public_inputs.len() != INSTANCES {
+    const WIRE: usize = INSTANCES - 2;
+    if params.zk_public_inputs.len() != WIRE {
         msg!(
-            "[stablecoin::MintStable] Error: circuit exposes {} public inputs, call carries {}",
+            "[stablecoin::MintStable] Error: circuit exposes {} public inputs, call carries {} (the pair is derived)",
             INSTANCES,
             params.zk_public_inputs.len()
         );
         return Err(ContractError::IoError(format!(
-            "MintStableV1: expected {INSTANCES} public inputs, got {}",
+            "MintStableV1: expected {} public inputs on the wire (the pair is derived), got {}",
+            WIRE,
             params.zk_public_inputs.len()
         )))
     }
@@ -1543,15 +1596,19 @@ fn process_liquidate_instruction(
 fn liquidate_binding(
     params: &LiquidateParams,
 ) -> Result<(IntentNullifier, IntentCommitment), ContractError> {
+    // `OBL-C198`: the call carries the circuit's instances minus the pair, which the arm appends
+    // derived — see `mint_stable_binding` for the same arithmetic and the same reason.
     const INSTANCES: usize = 5;
-    if params.zk_public_inputs.len() != INSTANCES {
+    const WIRE: usize = INSTANCES - 2;
+    if params.zk_public_inputs.len() != WIRE {
         msg!(
-            "[stablecoin::Liquidate] Error: circuit exposes {} public inputs, call carries {}",
+            "[stablecoin::Liquidate] Error: circuit exposes {} public inputs, call carries {} (the pair is derived)",
             INSTANCES,
             params.zk_public_inputs.len()
         );
         return Err(ContractError::IoError(format!(
-            "LiquidateV1: expected {INSTANCES} public inputs, got {}",
+            "LiquidateV1: expected {} public inputs on the wire (the pair is derived), got {}",
+            WIRE,
             params.zk_public_inputs.len()
         )))
     }

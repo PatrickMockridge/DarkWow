@@ -26,17 +26,17 @@
 //! Provides isolated testing for Stablecoin contract.
 
 use dwow_core::{
-    zk::{Proof, ProvingKey, ZkCircuit},
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, IntentCommitment, BaseBlind, PublicKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, IntentCommitment, BaseBlind, PublicKey},
     pasta::pallas,
 };
 use rand::SeedableRng;
 use dwow_serial::Encodable;
 use dwow_stablecoin_contract::client::{
-    open_position::{OpenPositionCallData, create_open_position_proof},
+    open_position::{OpenPositionCallData, OpenPositionPublicInputs, create_open_position_proof},
     mint_stable::{MintStableCallData, create_mint_stable_proof, MintStablePublicInputs},
     liquidate::{LiquidateCallData, create_liquidate_proof, LiquidatePublicInputs},
     governance_report::{GovernanceReportCallData, create_governance_report_proof, GovernanceReportPublicInputs},
@@ -48,6 +48,25 @@ use dwow_stablecoin_contract::model::{DepositCollateralParams, MintStableParams,
 /// Helper to convert pallas::Base to IntentCommitment
 fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
     IntentCommitment::from_bytes(base.to_repr()).unwrap()
+}
+
+/// The commitment a call set's proofs must bind to (`OBL-C198`) — over the **whole ordered set**
+/// the node will hash, children before parents, each call serialized with its contract id. One
+/// helper because every builder needs the same derivation and a second copy is a second value
+/// (`safety.md` RC5).
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
+}
+
+/// The instances the wire carries for one of this contract's params-carried vectors (`OBL-C198`).
+///
+/// `stablecoin` is the one contract whose params carry the circuit's instance vector, and the
+/// campaign's rule is that the **binding leaves the call data** — so the wire carries the client's
+/// instance vector *minus* its last two entries, and the arm appends
+/// `[H(3, commitment, 0), 0]` itself. One helper rather than a `len() - 2` at every ctor: the
+/// subtraction is the invariant, and it belongs in one place.
+pub fn wire_instances(instances: &[pallas::Base]) -> Vec<pallas::Base> {
+    instances[..instances.len() - 2].to_vec()
 }
 
 /// Witnesses + public inputs for the position-based circuits
@@ -147,6 +166,10 @@ pub struct StablecoinHarness {
     remove_collateral_zkbin: ZkBinary,
     /// RemoveCollateral_V1 ProvingKey
     remove_collateral_pk: ProvingKey,
+    /// The deployed id of the stablecoin contract this harness builds calls for — the commitment
+    /// covers the call *including* the contract id, so a harness that proves must be told it
+    /// (`OBL-C198`).
+    contract_id: ContractId,
     /// RepayStable_V1 ZkBinary
     repay_stable_zkbin: ZkBinary,
     /// RepayStable_V1 ProvingKey
@@ -159,7 +182,7 @@ pub struct StablecoinHarness {
 
 impl StablecoinHarness {
     /// Spawn a new Stablecoin harness with pre-loaded circuits
-    pub fn spawn() -> Self {
+    pub fn spawn(contract_id: ContractId) -> Self {
         let init_bin = include_bytes!("../../../stablecoin/proof/init.zk.bin");
         let open_bin = include_bytes!("../../../stablecoin/proof/open_position.zk.bin");
         let mint_bin = include_bytes!("../../../stablecoin/proof/mint_stable.zk.bin");
@@ -255,6 +278,7 @@ impl StablecoinHarness {
             repay_stable_pk,
             update_config_zkbin,
             update_config_pk,
+            contract_id,
         }
     }
 
@@ -264,7 +288,14 @@ impl StablecoinHarness {
     /// acts on this position (`mint_stable`, `liquidate`) has to reproduce the same commitment, and
     /// the commitment is a function of them. A random draw here made the position a fixture could
     /// not name.
-    pub fn open_position(
+    /// Prepare an `open_position` call: everything except the proof (`OBL-C198`).
+    ///
+    /// The split exists because this contract's rows are **cycles** rather than orderings: the
+    /// spec's child transfer derives its blind seed from the position commitment *this* call
+    /// produces (`poseidon_hash([10000, public_inputs.position_commitment])`), and the commitment
+    /// every proof binds to is a function of the child's data. So the order is: build this call's
+    /// data, let the caller build the child around `public_inputs`, then prove over the set.
+    pub fn open_position_prepare(
         &self,
         owner_secret: pallas::Base,
         collateral_amount: u64,
@@ -272,7 +303,7 @@ impl StablecoinHarness {
         collateral_type: pallas::Base,
         collateral_blind: BaseBlind,
         debt_blind: BaseBlind,
-    ) -> Result<OpenPositionResult, Box<dyn std::error::Error>> {
+    ) -> Result<OpenPositionPlan, Box<dyn std::error::Error>> {
         let input = OpenPositionCallData {
             owner_secret,
             collateral_amount,
@@ -284,11 +315,9 @@ impl StablecoinHarness {
             tx_nonce: pallas::Base::zero(),
         };
 
-        let (proof, public_inputs) = create_open_position_proof(
-            &self.open_position_zkbin,
-            &self.open_position_pk,
-            &input,
-        )?;
+        // The public inputs are a pure function of the call data's own inputs, so they need no
+        // proof. The wire carries them **minus** the pair (`wire_instances`), which the arm appends.
+        let public_inputs = input.compute_public_inputs();
 
         // Build DepositCollateralParams (OpenPositionV1 uses this internally)
         let params = DepositCollateralParams {
@@ -297,11 +326,34 @@ impl StablecoinHarness {
             collateral_type: dwow_stablecoin_contract::model::CollateralType::Xmr,
             proof: vec![],
             fee: 0,
-            zk_public_inputs: public_inputs.to_vec(),
+            zk_public_inputs: wire_instances(&public_inputs.to_vec()),
         };
 
         let mut call_data = vec![0x01]; // OpenPositionV1
         call_data.extend_from_slice(&params.encode());
+
+        Ok(OpenPositionPlan { input, call_data, public_inputs })
+    }
+
+    /// Prove a prepared `open_position` against the whole ordered call set (`OBL-C198`).
+    pub fn open_position_prove(
+        &self,
+        plan: OpenPositionPlan,
+        children: &[dwow_sdk::tx::ContractCall],
+    ) -> Result<OpenPositionResult, Box<dyn std::error::Error>> {
+        let OpenPositionPlan { mut input, call_data, public_inputs } = plan;
+
+        // ONE commitment over the whole ordered call set — children first, this call last.
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_open_position_proof(
+            &self.open_position_zkbin,
+            &self.open_position_pk,
+            &input,
+        )?;
 
         Ok(OpenPositionResult {
             call_data,
@@ -311,7 +363,25 @@ impl StablecoinHarness {
             collateral_commitment: input.collateral_commitment(),
             debt_commitment: input.debt_commitment(),
             proof,
+            commitment,
         })
+    }
+
+    /// Prepare and prove in one call — for a transaction whose children are already known, or none.
+    pub fn open_position(
+        &self,
+        children: &[dwow_sdk::tx::ContractCall],
+        owner_secret: pallas::Base,
+        collateral_amount: u64,
+        debt_amount: u64,
+        collateral_type: pallas::Base,
+        collateral_blind: BaseBlind,
+        debt_blind: BaseBlind,
+    ) -> Result<OpenPositionResult, Box<dyn std::error::Error>> {
+        let plan = self.open_position_prepare(
+            owner_secret, collateral_amount, debt_amount, collateral_type, collateral_blind, debt_blind,
+        )?;
+        self.open_position_prove(plan, children)
     }
 
     /// Mint stablecoin against a position
@@ -320,7 +390,12 @@ impl StablecoinHarness {
     /// of the commitment derivation — the two must agree with the `open_position` that registered
     /// it, or the circuit's `constrain_equal_base(old_position, old_commitment)` is unsatisfiable.
     #[expect(clippy::too_many_arguments, reason = "a proof's witness list is not a design surface")]
-    pub fn mint_stable(
+    /// Prepare a `mint_stable` call: everything except the proof (`OBL-C198`).
+    ///
+    /// The split is here for the same reason as `open_position_prepare`: every mint row in the spec
+    /// derives its child's blind seed from `public_inputs.new_commitment`, so the child cannot be
+    /// built until this call's data exists, and the commitment covers the child.
+    pub fn mint_stable_prepare(
         &self,
         owner_secret: pallas::Base,
         old_collateral: u64,
@@ -330,7 +405,7 @@ impl StablecoinHarness {
         collateral_blind: BaseBlind,
         debt_blind: BaseBlind,
         old_commitment: pallas::Base,
-    ) -> Result<MintStableResult, Box<dyn std::error::Error>> {
+    ) -> Result<MintStablePlan, Box<dyn std::error::Error>> {
         let input = MintStableCallData::new(
             owner_secret,
             old_collateral,
@@ -342,11 +417,7 @@ impl StablecoinHarness {
             old_commitment,
         );
 
-        let (proof, public_inputs) = create_mint_stable_proof(
-            &self.mint_stable_zkbin,
-            &self.mint_stable_pk,
-            &input,
-        )?;
+        let public_inputs = input.compute_public_inputs();
 
         // Build MintStableParams
         let params = MintStableParams {
@@ -354,23 +425,67 @@ impl StablecoinHarness {
             mint_amount,
             proof: vec![],
             fee: 0,
-            zk_public_inputs: public_inputs.to_vec(),
+            zk_public_inputs: wire_instances(&public_inputs.to_vec()),
         };
 
         let mut call_data = vec![0x04]; // MintStableV1
         call_data.extend_from_slice(&params.encode());
 
+        Ok(MintStablePlan { input, call_data, public_inputs })
+    }
+
+    /// Prove a prepared `mint_stable` against the whole ordered call set (`OBL-C198`).
+    pub fn mint_stable_prove(
+        &self,
+        plan: MintStablePlan,
+        children: &[dwow_sdk::tx::ContractCall],
+    ) -> Result<MintStableResult, Box<dyn std::error::Error>> {
+        let MintStablePlan { mut input, call_data, public_inputs } = plan;
+
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_mint_stable_proof(
+            &self.mint_stable_zkbin,
+            &self.mint_stable_pk,
+            &input,
+        )?;
+
         Ok(MintStableResult {
             call_data,
             proof,
             public_inputs,
+            commitment,
         })
+    }
+
+    /// Prepare and prove in one call — for a transaction whose children are already known, or none.
+    #[expect(clippy::too_many_arguments, reason = "a proof's witness list is not a design surface")]
+    pub fn mint_stable(
+        &self,
+        children: &[dwow_sdk::tx::ContractCall],
+        owner_secret: pallas::Base,
+        old_collateral: u64,
+        old_debt: u64,
+        mint_amount: u64,
+        collateral_type: pallas::Base,
+        collateral_blind: BaseBlind,
+        debt_blind: BaseBlind,
+        old_commitment: pallas::Base,
+    ) -> Result<MintStableResult, Box<dyn std::error::Error>> {
+        let plan = self.mint_stable_prepare(
+            owner_secret, old_collateral, old_debt, mint_amount, collateral_type, collateral_blind, debt_blind, old_commitment,
+        )?;
+        self.mint_stable_prove(plan, children)
     }
 
     /// Liquidate an underwater position
     #[expect(clippy::too_many_arguments, reason = "a proof's witness list is not a design surface")]
     pub fn liquidate(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         owner_secret: pallas::Base,
         collateral_amount: u64,
         debt_amount: u64,
@@ -382,7 +497,7 @@ impl StablecoinHarness {
         debt_blind: BaseBlind,
         old_commitment: pallas::Base,
     ) -> Result<LiquidateResult, Box<dyn std::error::Error>> {
-        let input = LiquidateCallData::new(
+        let mut input = LiquidateCallData::new(
             owner_secret,
             collateral_amount,
             debt_amount,
@@ -395,11 +510,8 @@ impl StablecoinHarness {
             old_commitment,
         );
 
-        let (proof, public_inputs) = create_liquidate_proof(
-            &self.liquidate_zkbin,
-            &self.liquidate_pk,
-            &input,
-        )?;
+        // `OBL-C198`: call data, then the commitment over the whole ordered set, then the proof.
+        let public_inputs = input.compute_public_inputs();
 
         // Build LiquidateParams (pooled debt model)
         let params = LiquidateParams {
@@ -411,22 +523,35 @@ impl StablecoinHarness {
             proof: vec![],
             liquidation_reward: liquidator_reward,
             fee: 0,
-            zk_public_inputs: public_inputs.to_vec(),
+            zk_public_inputs: wire_instances(&public_inputs.to_vec()),
         };
 
         let mut call_data = vec![0x06]; // LiquidateV1
         call_data.extend_from_slice(&params.encode());
 
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_liquidate_proof(
+            &self.liquidate_zkbin,
+            &self.liquidate_pk,
+            &input,
+        )?;
+
         Ok(LiquidateResult {
             call_data,
             proof,
             public_inputs,
+            commitment,
         })
     }
 
     /// Governance report for precise collateral/debt ratio
     pub fn governance_report(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         reporter_secret: pallas::Base,
         total_collateral: u64,
         total_debt: u64,
@@ -434,7 +559,7 @@ impl StablecoinHarness {
         rate_per_second: u64,
         time_elapsed: u64,
     ) -> Result<GovernanceReportResult, Box<dyn std::error::Error>> {
-        let input = GovernanceReportCallData::new(
+        let mut input = GovernanceReportCallData::new(
             reporter_secret,
             total_collateral,
             total_debt,
@@ -442,12 +567,6 @@ impl StablecoinHarness {
             rate_per_second,
             time_elapsed,
         );
-
-        let (proof, public_inputs) = create_governance_report_proof(
-            &self.governance_report_zkbin,
-            &self.governance_report_pk,
-            &input,
-        )?;
 
         // Build GovernanceReportParams
         // Use reporter public key from secret
@@ -470,33 +589,43 @@ impl StablecoinHarness {
         let mut call_data = vec![0x08]; // GovernanceReportV1
         call_data.extend_from_slice(&params.encode());
 
+        // `OBL-C198`: the call data first, then the commitment over the whole ordered set, then the
+        // proof. This endpoint's params carry named fields rather than a vector, so there is no pair
+        // in the wire to drop — the arm derives it from the host.
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, public_inputs) = create_governance_report_proof(
+            &self.governance_report_zkbin,
+            &self.governance_report_pk,
+            &input,
+        )?;
+
         Ok(GovernanceReportResult {
             call_data,
             proof,
             public_inputs,
+            commitment,
         })
     }
 
     /// Accrue interest on a position
     pub fn accrue_interest(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         accumulator_secret: pallas::Base,
         old_total_debt: u64,
         rate_per_second: u64,
         time_elapsed: u64,
     ) -> Result<AccrueInterestResult, Box<dyn std::error::Error>> {
-        let input = AccrueInterestCallData::new(
+        let mut input = AccrueInterestCallData::new(
             accumulator_secret,
             old_total_debt,
             rate_per_second,
             time_elapsed,
         );
-
-        let (proof, public_inputs) = create_accrue_interest_proof(
-            &self.accrue_interest_zkbin,
-            &self.accrue_interest_pk,
-            &input,
-        )?;
 
         // Build AccrueInterestParams
         // Use accumulator public key from secret
@@ -517,106 +646,208 @@ impl StablecoinHarness {
         let mut call_data = vec![0x09]; // AccrueInterestV1
         call_data.extend_from_slice(&params.encode());
 
+        // `OBL-C198`: the call data first, then the commitment over the whole ordered set, then the
+        // proof. This endpoint's params carry named fields rather than a vector, so there is no pair
+        // in the wire to drop — the arm derives it from the host.
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, public_inputs) = create_accrue_interest_proof(
+            &self.accrue_interest_zkbin,
+            &self.accrue_interest_pk,
+            &input,
+        )?;
+
         Ok(AccrueInterestResult {
             call_data,
             proof,
             public_inputs,
+            commitment,
         })
     }
 
     /// Initialize the stablecoin contract (function code 0x00)
     pub fn initialize(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         deployer_secret: pallas::Base,
         contract_salt: pallas::Base,
         params: &dwow_stablecoin_contract::model::InitializeParams,
     ) -> Result<InitializeResult, Box<dyn std::error::Error>> {
-        let input = InitV1CallData::new(deployer_secret, contract_salt);
+        let mut input = InitV1CallData::new(deployer_secret, contract_salt);
 
-        let (proof, public_inputs) = create_initialize_proof(
+        // Override deployer_auth from the client's own derivation — `OBL-C198` wants the params and
+        // the proof to agree about it, and no proof is needed to compute it.
+        let mut params = params.clone();
+        params.deployer_auth = input.compute_public_inputs().deployer_auth;
+
+        let mut call_data = vec![0x00];
+        call_data.extend_from_slice(&params.encode());
+
+        // `OBL-C198`: call data, then the commitment over the whole ordered set, then the proof.
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_initialize_proof(
             &self.init_zkbin,
             &self.init_pk,
             &input,
         )?;
 
-        // Override deployer_auth from proof
-        let mut params = params.clone();
-        params.deployer_auth = public_inputs.deployer_auth;
-
-        let mut call_data = vec![0x00];
-        call_data.extend_from_slice(&params.encode());
-
-        Ok(InitializeResult { call_data, proof })
+        Ok(InitializeResult { call_data, proof, commitment })
     }
 
     /// Add collateral with ZK proof (function code 0x02)
     pub fn add_collateral(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         params: &dwow_stablecoin_contract::model::DepositCollateralParams,
     ) -> Result<AddCollateralResult, Box<dyn std::error::Error>> {
-        let (witnesses, public_inputs) = trivial_position_witnesses_and_inputs();
-        let circuit = ZkCircuit::new(witnesses, &self.add_collateral_zkbin);
-        let proof = Proof::create(&self.add_collateral_pk, &[circuit], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-
+        let (mut witnesses, public_inputs) = trivial_position_witnesses_and_inputs();
+        // `OBL-C198`: the wire carries the instances **minus** the pair (`wire_instances`), and the
+        // arm appends the pair it derives — so the fixture's vector loses it too.
+        let wire = wire_instances(&public_inputs);
         let mut p = params.clone();
-        p.zk_public_inputs = public_inputs;
+        p.zk_public_inputs = wire.clone();
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&p.encode());
 
-        Ok(AddCollateralResult { call_data, proof })
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), commitment, pallas::Base::zero()]);
+
+        // The trivial helper's witnesses are the all-zero assignment, so the three slots the circuit
+        // derives the pair from must carry the pair the *arm* will publish — otherwise `Proof::create`
+        // refuses here rather than the endpoint refusing, and this row would be testing the fixture.
+        // Indices are `trivial_position_witnesses_and_inputs`'s: **19** entries, so tx_commitment 16,
+        // tx_nonce 17, tx_binding 18 — the pair is the *last three*, after the four merkle path
+        // elements. (They were written as 15/16/17 first, which overwrote the last path element and
+        // left the pair's slots zero; the proof then verified against a different instance vector than
+        // the arm published, and the L2 verify refused the call for that reason.)
+        witnesses[16] = Witness::Base(Value::known(commitment));
+        witnesses[17] = Witness::Base(Value::known(pallas::Base::zero()));
+        witnesses[18] = Witness::Base(Value::known(tx_binding));
+
+        let mut instances = wire;
+        instances.push(tx_binding);
+        instances.push(pallas::Base::zero());
+
+        let circuit = ZkCircuit::new(witnesses, &self.add_collateral_zkbin);
+        let proof = Proof::create(&self.add_collateral_pk, &[circuit], &instances, rand::rngs::StdRng::seed_from_u64(0))
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        Ok(AddCollateralResult { call_data, proof, commitment })
     }
 
     /// Remove collateral with ZK proof (function code 0x03)
     pub fn remove_collateral(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         params: &dwow_stablecoin_contract::model::WithdrawCollateralParams,
     ) -> Result<RemoveCollateralResult, Box<dyn std::error::Error>> {
-        let (witnesses, public_inputs) = trivial_position_witnesses_and_inputs();
-        let circuit = ZkCircuit::new(witnesses, &self.remove_collateral_zkbin);
-        let proof = Proof::create(&self.remove_collateral_pk, &[circuit], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-
+        let (mut witnesses, public_inputs) = trivial_position_witnesses_and_inputs();
+        // As `add_collateral` above — same helper, same indices.
+        let wire = wire_instances(&public_inputs);
         let mut p = params.clone();
-        p.zk_public_inputs = public_inputs;
+        p.zk_public_inputs = wire.clone();
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&p.encode());
 
-        Ok(RemoveCollateralResult { call_data, proof })
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), commitment, pallas::Base::zero()]);
+
+        witnesses[16] = Witness::Base(Value::known(commitment));
+        witnesses[17] = Witness::Base(Value::known(pallas::Base::zero()));
+        witnesses[18] = Witness::Base(Value::known(tx_binding));
+
+        let mut instances = wire;
+        instances.push(tx_binding);
+        instances.push(pallas::Base::zero());
+
+        let circuit = ZkCircuit::new(witnesses, &self.remove_collateral_zkbin);
+        let proof = Proof::create(&self.remove_collateral_pk, &[circuit], &instances, rand::rngs::StdRng::seed_from_u64(0))
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        Ok(RemoveCollateralResult { call_data, proof, commitment })
     }
 
     /// Repay stable debt with ZK proof (function code 0x05)
     pub fn repay_stable(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         params: &dwow_stablecoin_contract::model::RepayStableParams,
     ) -> Result<RepayStableResult, Box<dyn std::error::Error>> {
-        let (witnesses, public_inputs) = trivial_position_witnesses_and_inputs();
-        let circuit = ZkCircuit::new(witnesses, &self.repay_stable_zkbin);
-        let proof = Proof::create(&self.repay_stable_pk, &[circuit], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-
+        let (mut witnesses, public_inputs) = trivial_position_witnesses_and_inputs();
+        // As `add_collateral` above — same helper, same indices.
+        let wire = wire_instances(&public_inputs);
         let mut p = params.clone();
-        p.zk_public_inputs = public_inputs;
+        p.zk_public_inputs = wire.clone();
         let mut call_data = vec![0x05];
         call_data.extend_from_slice(&p.encode());
 
-        Ok(RepayStableResult { call_data, proof })
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), commitment, pallas::Base::zero()]);
+
+        witnesses[16] = Witness::Base(Value::known(commitment));
+        witnesses[17] = Witness::Base(Value::known(pallas::Base::zero()));
+        witnesses[18] = Witness::Base(Value::known(tx_binding));
+
+        let mut instances = wire;
+        instances.push(tx_binding);
+        instances.push(pallas::Base::zero());
+
+        let circuit = ZkCircuit::new(witnesses, &self.repay_stable_zkbin);
+        let proof = Proof::create(&self.repay_stable_pk, &[circuit], &instances, rand::rngs::StdRng::seed_from_u64(0))
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        Ok(RepayStableResult { call_data, proof, commitment })
     }
 
     /// Update configuration (function code 0x07)
+    ///
+    /// This endpoint's arm publishes `gov_pub_x`, `gov_pub_y` and `config_nullifier` from the params
+    /// and ignores `params.zk_public_inputs` entirely, so the wire's vector plays no part in
+    /// verification — but the *proof* is still made over the arm's order, and the pair it must bind
+    /// to is derived here like every other endpoint (`OBL-C198`).
     pub fn update_config(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         params: &dwow_stablecoin_contract::model::UpdateConfigParams,
     ) -> Result<UpdateConfigResult, Box<dyn std::error::Error>> {
-        let (witnesses, public_inputs) = trivial_config_witnesses_and_inputs();
-        let circuit = ZkCircuit::new(witnesses, &self.update_config_zkbin);
-        let proof = Proof::create(&self.update_config_pk, &[circuit], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let (mut witnesses, public_inputs) = trivial_config_witnesses_and_inputs();
 
         let mut call_data = vec![0x07];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(UpdateConfigResult { call_data, proof })
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), commitment, pallas::Base::zero()]);
+
+        // `trivial_config_witnesses_and_inputs`'s indices: tx_commitment 4, tx_nonce 5,
+        // tx_binding 6 — and its public vector's last two entries are the pair.
+        witnesses[4] = Witness::Base(Value::known(commitment));
+        witnesses[5] = Witness::Base(Value::known(pallas::Base::zero()));
+        witnesses[6] = Witness::Base(Value::known(tx_binding));
+
+        let mut instances = wire_instances(&public_inputs);
+        instances.push(tx_binding);
+        instances.push(pallas::Base::zero());
+
+        let circuit = ZkCircuit::new(witnesses, &self.update_config_zkbin);
+        let proof = Proof::create(&self.update_config_pk, &[circuit], &instances, rand::rngs::StdRng::seed_from_u64(0))
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        Ok(UpdateConfigResult { call_data, proof, commitment })
     }
 }
 
@@ -673,6 +904,27 @@ impl super::ContractHarness for StablecoinHarness {
     }
 }
 
+/// An `open_position` call built but not yet proven (`OBL-C198`). `public_inputs` is what the
+/// caller's child is built around — this contract's rows are cycles, not orderings.
+pub struct OpenPositionPlan {
+    input: OpenPositionCallData,
+    /// The bytes the commitment is taken over, and the bytes that will be submitted. A caller may
+    /// substitute them before proving; doing so asserts a *different* transaction, which is exactly
+    /// what the spec's mismatched-commitment row tests — with `tx_binding` derived over the
+    /// commitment, a proof and the call data it is submitted with must agree, and a fixture that
+    /// wants to submit bytes its proof did not cover has to say so here.
+    pub call_data: Vec<u8>,
+    pub public_inputs: OpenPositionPublicInputs,
+}
+
+/// A `mint_stable` call built but not yet proven (`OBL-C198`) — see [`OpenPositionPlan`], including
+/// why `call_data` is public.
+pub struct MintStablePlan {
+    input: MintStableCallData,
+    pub call_data: Vec<u8>,
+    pub public_inputs: MintStablePublicInputs,
+}
+
 /// Result of open_position
 pub struct OpenPositionResult {
     pub call_data: Vec<u8>,
@@ -682,6 +934,9 @@ pub struct OpenPositionResult {
     pub collateral_commitment: pallas::Base,
     pub debt_commitment: pallas::Base,
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of mint_stable
@@ -689,6 +944,9 @@ pub struct MintStableResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: MintStablePublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of liquidate
@@ -696,6 +954,8 @@ pub struct LiquidateResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: LiquidatePublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of governance_report
@@ -703,6 +963,8 @@ pub struct GovernanceReportResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: GovernanceReportPublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of accrue_interest
@@ -710,34 +972,46 @@ pub struct AccrueInterestResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: AccrueInterestPublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of initialize
 pub struct InitializeResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of add_collateral
 pub struct AddCollateralResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of remove_collateral
 pub struct RemoveCollateralResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of repay_stable
 pub struct RepayStableResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of update_config
 pub struct UpdateConfigResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }

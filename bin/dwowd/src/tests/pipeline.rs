@@ -285,12 +285,9 @@ impl ContractTestingPipeline {
                     // OBL-Z14: authority point for the same secret as token_authority_pub.
                     governance_pub_x: gov_pub.x().expect("pk not identity"),
                     governance_pub_y: gov_pub.y().expect("pk not identity"),
-                    // OBL-C78: the zero pair's derived binding, as `client/initialize.rs` computes it.
-                    tx_binding: dwow_sdk::crypto::poseidon_hash([
-                        dwow_sdk::pasta::pallas::Base::from(3u64),
-                        dwow_sdk::pasta::pallas::Base::zero(),
-                        dwow_sdk::pasta::pallas::Base::zero(),
-                    ]),
+                    // `OBL-C198`: `tx_binding` left the params — it is derived from the transaction
+                    // commitment, which covers the call data. This deploy carries no transaction to
+                    // bind, so the nonce is zero and the arm derives.
                     tx_nonce: dwow_sdk::pasta::pallas::Base::zero(),
                 };
                 dwow_serial::serialize(&params)

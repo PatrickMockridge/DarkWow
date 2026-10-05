@@ -55,4 +55,3 @@
 # *after* the pair.
 
 src/contract/promissory_note/proof/redeem.zk : Redeem_V2 : `OBL-C198` — pair at 5,6 of 8; `coin_spend_hook` follows. `promissory_note`'s transfer and burn paths were migrated in the first pass; this circuit and `revoke.zk` were not, and the instrument is what made the difference visible.
-src/contract/stablecoin/proof/init.zk : InitV2 : `OBL-C198` — pair at 0,1 of 3; `deployer_auth` follows.

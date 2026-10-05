@@ -110,7 +110,7 @@ pub use purse::{PurseHarness, PurseDepositPlan};
 pub use relayer_endowment::RelayerEndowmentHarness;
 pub use roulette::RouletteHarness;
 pub use slot::SlotHarness;
-pub use stablecoin::StablecoinHarness;
+pub use stablecoin::{StablecoinHarness, wire_instances};
 pub use subscription::SubscriptionHarness;
 pub use tender::TenderHarness;
 

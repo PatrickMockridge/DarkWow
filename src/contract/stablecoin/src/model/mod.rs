@@ -228,16 +228,14 @@ pub struct InitializeParams {
     pub governance_pub_x: pallas::Base,
     pub governance_pub_y: pallas::Base,
 
-    /// The transaction binding the init proof is made against:
-    /// `poseidon_hash([3, tx_commitment, tx_nonce])` (`OBL-C78`).
+    /// The tx nonce half of the pair — instanced separately by the circuit.
     ///
-    /// `init.zk` instances it with `tx_nonce` after it, so the metadata has to publish it — and the
-    /// host can only publish what the call carries. This arm published two literal zeros while the
-    /// client (`client/initialize.rs`) already derived the binding, so a real init proof could not
-    /// verify against the vector the host expected. Appended after `governance_pub_y`, so an
-    /// old-format call is refused by the length guard rather than decoded shifted.
-    pub tx_binding: pallas::Base,
-    /// The tx nonce half of the pair above — instanced separately by the circuit.
+    /// `OBL-C198`: the **binding** half left the wire. It is
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])` — a derivation over call data that the
+    /// transaction commitment itself covers — so a binding carried inside the call data would be
+    /// computed from a value that covers it, a cycle with no fixed point. The arm derives it now
+    /// (`entrypoint.rs`). The nonce stays: the prover chooses it and it does not depend on the
+    /// commitment, so it closes no loop.
     pub tx_nonce: pallas::Base,
 }
 
@@ -248,7 +246,7 @@ impl InitializeParams {
     /// Encode to canonical bytes (ρ-calculus: quote).
     pub fn encode(&self) -> Vec<u8> {
         let cp_count = self.collateral_params.len();
-        let cap = 245 + cp_count * 25;
+        let cap = 213 + cp_count * 25;
         let mut buf = Vec::with_capacity(cap);
         buf.push(self.model.clone() as u8);
         buf.extend_from_slice(&self.min_collateralization_ratio.to_le_bytes());
@@ -277,7 +275,6 @@ impl InitializeParams {
         buf.extend_from_slice(&self.promissory_note_contract_id.to_bytes());
         buf.extend_from_slice(&self.governance_pub_x.to_repr());
         buf.extend_from_slice(&self.governance_pub_y.to_repr());
-        buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
@@ -285,9 +282,9 @@ impl InitializeParams {
     /// Decode from canonical bytes (ρ-calculus: eval).
     #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 309 {
+        if data.len() < 277 {
             return Err(ContractError::IoError(format!(
-                "InitializeParams: expected at least 309 bytes, got {}", data.len()
+                "InitializeParams: expected at least 277 bytes, got {}", data.len()
             )));
         }
         let model = StablecoinModel::decode(&data[0..1])?;
@@ -301,10 +298,10 @@ impl InitializeParams {
         let price_deviation_threshold = u64::from_le_bytes(data[57..65].try_into().unwrap());
         let cp_count = data[65] as usize;
         let dm_start = 66 + cp_count * 25;
-        if data.len() < dm_start + 275 {
+        if data.len() < dm_start + 243 {
             return Err(ContractError::IoError(format!(
                 "InitializeParams: expected at least {} bytes for {} collateral_params, got {}",
-                dm_start + 18 + 97 + 64, cp_count, data.len()
+                dm_start + 18 + 97 + 32, cp_count, data.len()
             )));
         }
         let mut collateral_params = Vec::with_capacity(cp_count);
@@ -333,16 +330,14 @@ impl InitializeParams {
             .ok_or_else(|| ContractError::IoError("InitializeParams: invalid governance_pub_x".into()))?;
         let governance_pub_y = Option::<pallas::Base>::from(pallas::Base::from_repr(data[dm_start + 179..dm_start + 211].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("InitializeParams: invalid governance_pub_y".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[dm_start + 211..dm_start + 243].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("InitializeParams: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[dm_start + 243..dm_start + 275].try_into().unwrap()))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[dm_start + 211..dm_start + 243].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("InitializeParams: invalid tx_nonce".into()))?;
         Ok(InitializeParams {
             model, min_collateralization_ratio, liquidation_threshold, liquidation_penalty,
             base_rate, pi_kp, pi_ki, twap_window, price_deviation_threshold,
             collateral_params, dead_man_switch, token_authority_pub, create_token,
             token_symbol, deployer_auth, promissory_note_contract_id,
-            governance_pub_x, governance_pub_y, tx_binding, tx_nonce,
+            governance_pub_x, governance_pub_y, tx_nonce,
         })
     }
 }

@@ -189,14 +189,9 @@ impl InitializeCallBuilder {
             promissory_note_contract_id: self.promissory_note_contract_id,
             governance_pub_x: self.governance_pub_x,
             governance_pub_y: self.governance_pub_y,
-            // OBL-C78: the same derivation `InitV1CallData::tx_binding` computes, so the params the
-            // deployer sends and the proof it builds cannot disagree. This builder has no transaction
-            // to bind, so both halves are zero and the binding is the zero pair's.
-            tx_binding: poseidon_hash([
-                pallas::Base::from(3u64),
-                pallas::Base::zero(),
-                pallas::Base::zero(),
-            ]),
+            // `OBL-C198`: `tx_binding` left the wire — it is derived from the transaction commitment,
+            // which covers the call data, so carrying it inside the call data is a cycle. This
+            // builder has no transaction to bind, so the nonce is zero and the arm derives.
             tx_nonce: pallas::Base::zero(),
         };
 
@@ -222,9 +217,10 @@ pub struct InitV1PublicInputs {
 impl InitV1PublicInputs {
     /// Convert to vector for ZK proof creation
     /// Order must match constrain_instance calls in init.zk:
-    /// constrain_instance(tx_binding), constrain_instance(tx_nonce), constrain_instance(deployer_auth)
+    /// constrain_instance(deployer_auth), constrain_instance(tx_binding), constrain_instance(tx_nonce)
+    /// — the pair last (`OBL-C198`).
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.tx_binding, self.tx_nonce, self.deployer_auth]
+        vec![self.deployer_auth, self.tx_binding, self.tx_nonce]
     }
 }
 

@@ -1,7 +1,6 @@
-use dwow_contract_test_harness::harness::{ContractHarness, PromissoryNoteHarness, StablecoinHarness};
-use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
+use dwow_contract_test_harness::harness::{wire_instances, ContractHarness, PromissoryNoteHarness, StablecoinHarness};
 use dwow_sdk::crypto::{
-    poseidon_hash, util::fp_mod_fv, pasta_prelude::PrimeField, BaseBlind, Blind, MerkleNode, MerkleTree, PublicKey, SecretKey,
+    poseidon_hash, pasta_prelude::PrimeField, BaseBlind, MerkleNode, MerkleTree, PublicKey, SecretKey,
     PROMISSORY_NOTE_CONTRACT_ID,
 };
 use dwow_sdk::pasta::pallas;
@@ -12,6 +11,7 @@ use dwow_stablecoin_contract::{
     CDP_PRICE_FEED_TWAP_WINDOW,
 };
 use std::sync::{Arc, Mutex};
+use crate::tests::modules::child_calls::pn_transfer_prepare;
 use crate::tests::uniform_runner::*;
 use super::helpers::mk_ep;
 
@@ -19,54 +19,23 @@ use super::helpers::mk_ep;
 /// value_commit blind derived from `blind_seed` so it matches the parent's
 /// validate_child_value_commit(amount, blind_seed). `note` is
 /// (coin commitment, leaf pos, merkle path, asset_id, commitment_blind).
-fn pn_transfer_child(
-    note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
-    value: u64,
-    blind_seed: pallas::Base,
-    spend_hook: pallas::Base,
-) -> dwow_core::Result<ChildCall> {
-    let (note_commitment, pos, path, asset_id, commitment_blind) = note;
-    let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
-    let input = TransferCallInput {
-        value,
-        asset_id: *asset_id,
-        spend_hook: pallas::Base::zero(),
-        user_data: pallas::Base::zero(),
-        commitment_blind: *commitment_blind,
-        leaf_position: *pos,
-        merkle_path: path.clone(),
-        secret: pallas::Base::from(100u64),
-        ephemeral_signature_secret: pallas::Base::from(9u64),
-        tx_commitment: pallas::Base::zero(),
-        tx_nonce: pallas::Base::zero(),
-    };
-    let output = TransferCallOutput {
-        recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
-        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
-        value,
-        asset_id: *asset_id,
-        spend_hook,
-        user_data: pallas::Base::zero(),
-        commitment_blind: poseidon_hash([blind_seed, *note_commitment]),
-    };
-    let pn = PromissoryNoteHarness::spawn();
-    let child = pn
-        .transfer_with_value_blinds(vec![input], vec![output], Some(vec![value_blind]))
-        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall {
-        contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
-        call_data: child.call_data,
-        proofs: child.proofs,
-        children: vec![],
-    })
-}
+///
+/// `OBL-C198`: the child is **prepared** by `modules::child_calls::pn_transfer_prepare`, which
+/// stops short of the proof — the commitment is a derivation over the whole ordered call set, so
+/// the child's proof has to bind to the same value its parent does, and that value does not exist
+/// until the parent's call data does (the local `pn_transfer_child` this replaced proved over the
+/// child's own call alone, which was correct only while the parent's proof bound to nothing).
 
 pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(StablecoinHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its calls will carry, because the transaction
+    // commitment is derived over the call *including* the contract id. `deploy_with_ix` assigns
+    // `derive_contract_id_from_name(name)` — a pure function of the name — so the spec computes
+    // exactly the id the pipeline will use rather than a placeholder.
+    let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
+    let harness = Box::leak(Box::new(StablecoinHarness::spawn(cid)));
     let h: &StablecoinHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/stablecoin/dwow_stablecoin_contract.wasm");
     let sk = pallas::Base::from(10u64);
-    let cid = dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp");
 
     // Issued PN capabilities (one per child endpoint), shared between setup and the
     // child-call endpoints: (coin commitment, leaf pos, merkle path, asset_id, commitment_blind).
@@ -112,13 +81,9 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
         promissory_note_contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
         governance_pub_x,
         governance_pub_y,
-        // OBL-C78: the deploy carries no transaction to bind, so both halves are zero and the
-        // binding is the zero pair's — the same value `client/initialize.rs` derives for it.
-        tx_binding: poseidon_hash([
-            pallas::Base::from(3u64),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
-        ]),
+        // `OBL-C198`: `tx_binding` left the params — it is derived from the transaction commitment,
+        // which covers the call data. The deploy carries no transaction to bind, so the nonce is
+        // zero and the arm derives.
         tx_nonce: pallas::Base::zero(),
     }
     .encode();
@@ -200,16 +165,26 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                         // OBL-C83: the blinds are named here rather than drawn inside the
                         // harness, because `MintStableV1` below has to reproduce this exact
                         // position commitment to consume it.
-                        let r = h.open_position(
+                        //
+                        // `OBL-C198`: this row is a cycle — the child's blind seed is derived from
+                        // the position commitment *this* call produces, and the commitment both
+                        // proofs bind to is a function of the child's data. So: prepare, build the
+                        // child around `public_inputs`, then prove the set.
+                        let plan = h.open_position_prepare(
                             sk, 10000, 5000, pallas::Base::from(1u64),
                             BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
                         )
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        *position_commitment.lock().unwrap() = Some(r.position_commitment);
+                        *position_commitment.lock().unwrap() = Some(plan.public_inputs.position_commitment);
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let blind_seed = poseidon_hash([pallas::Base::from(10000u64), r.position_commitment]);
-                        let child = pn_transfer_child(&n[0], 10000, blind_seed, pallas::Base::zero())?;
+                        let blind_seed = poseidon_hash([pallas::Base::from(10000u64), plan.public_inputs.position_commitment]);
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[0], 10000, blind_seed, pallas::Base::zero())?;
+                        let r = h.open_position_prove(plan, &[child_call.clone()])
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -265,7 +240,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                         let position = position_commitment.lock().unwrap()
                             .ok_or_else(|| dwow_core::Error::Custom(
                                 "position commitment not captured".into()))?;
-                        let r = h.mint_stable(sk, 10000, 5000, 1000,
+                        let mut plan = h.mint_stable_prepare(sk, 10000, 5000, 1000,
                             pallas::Base::from(1u64),
                             BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
                             position)
@@ -273,14 +248,21 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
 
                         // One field changed: the commitment the host would record. The vector the
                         // proof commits to is left exactly as the honest call built it.
-                        let recorded = r.public_inputs.new_commitment + pallas::Base::one();
-                        let call_data = {
+                        //
+                        // `OBL-C198`: the pair is now derived over the commitment, which covers the
+                        // call data — so the modified bytes are substituted into the plan *before*
+                        // proving. That is what keeps this row testing the join: the proof covers the
+                        // bytes that are submitted (so it verifies), while the recorded field is still
+                        // not the `new_commitment` the proof established, which is the only thing the
+                        // endpoint may refuse it for.
+                        let recorded = plan.public_inputs.new_commitment + pallas::Base::one();
+                        plan.call_data = {
                             let params = MintStableParams {
                                 mint_commitment: IntentCommitment::from_base(recorded),
                                 mint_amount: 1000,
                                 proof: vec![],
                                 fee: 0,
-                                zk_public_inputs: r.public_inputs.to_vec(),
+                                zk_public_inputs: wire_instances(&plan.public_inputs.to_vec()),
                             };
                             let mut cd = vec![0x04];
                             cd.extend_from_slice(&params.encode());
@@ -294,8 +276,13 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(1000u64), recorded]);
                         let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
-                        let child = pn_transfer_child(&n[3], 1000, blind_seed, cid.inner())?;
-                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![r.proof] })
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[3], 1000, blind_seed, cid.inner())?;
+                        let r = h.mint_stable_prove(plan, &[child_call.clone()])
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -314,17 +301,24 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                         let position = position_commitment.lock().unwrap()
                             .ok_or_else(|| dwow_core::Error::Custom(
                                 "position commitment not captured".into()))?;
-                        let r = h.mint_stable(sk, 10000, 5000, 1000,
+                        // `OBL-C198`: cycle — the child's blind seed comes from this call's own
+                        // `new_commitment`, and the commitment covers the child.
+                        let plan = h.mint_stable_prepare(sk, 10000, 5000, 1000,
                             pallas::Base::from(1u64),
                             BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
                             position)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        *mint_commitment.lock().unwrap() = Some(r.public_inputs.new_commitment);
+                        *mint_commitment.lock().unwrap() = Some(plan.public_inputs.new_commitment);
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let blind_seed = poseidon_hash([pallas::Base::from(1000u64), r.public_inputs.new_commitment]);
+                        let blind_seed = poseidon_hash([pallas::Base::from(1000u64), plan.public_inputs.new_commitment]);
                         let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
-                        let child = pn_transfer_child(&n[3], 1000, blind_seed, cid.inner())?;
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[3], 1000, blind_seed, cid.inner())?;
+                        let r = h.mint_stable_prove(plan, &[child_call.clone()])
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -377,17 +371,23 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                         let previous = mint_commitment.lock().unwrap()
                             .ok_or_else(|| dwow_core::Error::Custom(
                                 "first mint commitment not captured".into()))?;
-                        let r = h.mint_stable(sk, 10000, 6000, 5500,
+                        // `OBL-C198`: cycle, as the mint above.
+                        let plan = h.mint_stable_prepare(sk, 10000, 6000, 5500,
                             pallas::Base::from(1u64),
                             BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
                             previous)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        *mint_commitment_2.lock().unwrap() = Some(r.public_inputs.new_commitment);
+                        *mint_commitment_2.lock().unwrap() = Some(plan.public_inputs.new_commitment);
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let blind_seed = poseidon_hash([pallas::Base::from(5500u64), r.public_inputs.new_commitment]);
+                        let blind_seed = poseidon_hash([pallas::Base::from(5500u64), plan.public_inputs.new_commitment]);
                         let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
-                        let child = pn_transfer_child(&n[5], 5500, blind_seed, cid.inner())?;
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[5], 5500, blind_seed, cid.inner())?;
+                        let r = h.mint_stable_prove(plan, &[child_call.clone()])
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -420,16 +420,22 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                         let previous = mint_commitment_2.lock().unwrap()
                             .ok_or_else(|| dwow_core::Error::Custom(
                                 "second mint commitment not captured".into()))?;
-                        let r = h.mint_stable(sk, 10000, 11500, 500,
+                        // `OBL-C198`: cycle, as the mints above.
+                        let plan = h.mint_stable_prepare(sk, 10000, 11500, 500,
                             pallas::Base::from(1u64),
                             BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64),
                             previous)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let blind_seed = poseidon_hash([pallas::Base::from(500u64), r.public_inputs.new_commitment]);
+                        let blind_seed = poseidon_hash([pallas::Base::from(500u64), plan.public_inputs.new_commitment]);
                         let cid = crate::tests::blockchain::derive_contract_id_from_name("stablecoin");
-                        let child = pn_transfer_child(&n[4], 500, blind_seed, cid.inner())?;
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[4], 500, blind_seed, cid.inner())?;
+                        let r = h.mint_stable_prove(plan, &[child_call.clone()])
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -446,12 +452,17 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                         fee: 0,
                         zk_public_inputs: vec![pallas::Base::from(1u64)],
                     };
-                    let r = h.repay_stable(&params)
-                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let n = notes.lock().unwrap();
                     let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
+                    // Not a cycle: this row's child blind seed is a constant, so the child is built
+                    // before the parent and both bind to the same commitment (`OBL-C198`).
                     let blind_seed = poseidon_hash([pallas::Base::from(500u64), pallas::Base::from(1u64)]);
-                    let child = pn_transfer_child(&n[4], 500, blind_seed, pallas::Base::zero())?;
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[4], 500, blind_seed, pallas::Base::zero())?;
+                    let r = h.repay_stable(&[child_call.clone()], &params)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let debris = child_plan.prove(r.commitment, child_nonce)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -461,12 +472,13 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
             // the run says so verbatim (`GovernanceReport: debt mismatch — reported=500
             // on_chain=6000`), which is what the fixture update is answering.
             mk_ep("GovernanceReportV1", true, Box::new(move || {
-                let r = h.governance_report(sk, 10000, 6000, 0, 10, 3600)
+                // No child: the committed set is this call alone (`OBL-C198`).
+                let r = h.governance_report(&[], sk, 10000, 6000, 0, 10, 3600)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("AccrueInterestV1", true, Box::new(move || {
-                let r = h.accrue_interest(sk, 6000, 10, 3600)
+                let r = h.accrue_interest(&[], sk, 6000, 10, 3600)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
@@ -488,7 +500,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.accrue_interest(pallas::Base::from(11u64), 6000, 10, 3600)
+                    let r = h.accrue_interest(&[], pallas::Base::from(11u64), 6000, 10, 3600)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -506,12 +518,16 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                         fee: 0,
                         zk_public_inputs: vec![pallas::Base::from(1u64), pallas::Base::from(2u64)],
                     };
-                    let r = h.add_collateral(&params)
-                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let n = notes.lock().unwrap();
                     let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
+                    // Not a cycle: this row's child blind seed is a constant (`OBL-C198`).
                     let blind_seed = poseidon_hash([pallas::Base::from(5000u64), pallas::Base::from(1u64)]);
-                    let child = pn_transfer_child(&n[1], 5000, blind_seed, pallas::Base::zero())?;
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[1], 5000, blind_seed, pallas::Base::zero())?;
+                    let r = h.add_collateral(&[child_call.clone()], &params)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let debris = child_plan.prove(r.commitment, child_nonce)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -528,12 +544,16 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                         fee: 0,
                         zk_public_inputs: vec![pallas::Base::from(1u64)],
                     };
-                    let r = h.remove_collateral(&params)
-                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let n = notes.lock().unwrap();
                     let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
+                    // Not a cycle: this row's child blind seed is a constant (`OBL-C198`).
                     let blind_seed = poseidon_hash([pallas::Base::from(1000u64), pallas::Base::from(3u64)]);
-                    let child = pn_transfer_child(&n[2], 1000, blind_seed, pallas::Base::zero())?;
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[2], 1000, blind_seed, pallas::Base::zero())?;
+                    let r = h.remove_collateral(&[child_call.clone()], &params)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let debris = child_plan.prove(r.commitment, child_nonce)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -551,7 +571,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                     gov_pub_y: pallas::Base::zero(),
                     config_nullifier: poseidon_hash([pallas::Base::from(1u64), pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero()]),
                 };
-                let r = h.update_config(&params)
+                let r = h.update_config(&[], &params)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
