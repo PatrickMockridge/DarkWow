@@ -134,6 +134,32 @@ impl CommitmentAttributes {
 /// contract-local `from_base` that accepts zero.
 pub use dwow_sdk::crypto::Nullifier;
 
+/// Read a `Nullifier` off the wire, honouring this contract's pre-spend sentinel.
+///
+/// `BondCommitment::encode` writes `Nullifier::ZERO` — Rule 3's sentinel for a record that is
+/// minted but not yet claimed — as 32 zero bytes. The SDK's `Nullifier::from_bytes` **rejects**
+/// zero by design, and says so itself: *"use `Option<Nullifier>` for unclaimed"*. So a record this
+/// contract could write, it could not read: every `IssueStakeV1` (and every other arm carrying an
+/// unclaimed commitment, including `TransferStakeV1`'s outputs and `PayInterestV1`'s payment) was
+/// refused at `metadata-decode-zkp` with `EMPTY metadata`, and the host's message pointed the
+/// operator at a `msg!` log that held no reason — because the guard was silent. Measured, not
+/// inferred: `[bearer_bond::get_metadata] arm params decode failed for call 0:
+/// IoError("BondCommitment: invalid nullifier: IO error: Nullifier is zero …")`.
+///
+/// The sentinel is the contract's, so honouring it is the contract's job — the wire format is
+/// unchanged at 32 bytes, and a real nullifier still goes through `from_bytes` and keeps its
+/// non-zero, canonical invariant. A non-canonical encoding is refused here just as before.
+fn nullifier_from_wire(bytes: [u8; 32]) -> Result<Nullifier, ContractError> {
+    let raw = pallas::Base::from_repr(bytes).into_option().ok_or_else(|| {
+        ContractError::IoError("Nullifier: non-canonical bytes".to_string())
+    })?;
+    if raw == pallas::Base::zero() {
+        Ok(Nullifier::ZERO)
+    } else {
+        Nullifier::from_bytes(bytes)
+    }
+}
+
 // ============================================================================
 // BOND SERIES INFO
 // ============================================================================
@@ -303,7 +329,7 @@ impl BondCommitment {
             token_commit: pallas::Base::from_repr(data[64..96].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("BondCommitment: invalid token_commit".into()))?,
-            nullifier: Nullifier::from_bytes(data[96..128].try_into().unwrap())
+            nullifier: nullifier_from_wire(data[96..128].try_into().unwrap())
                 .map_err(|e| ContractError::IoError(format!("BondCommitment: invalid nullifier: {}", e)))?,
             merkle_root: MerkleNode::from_bytes(data[128..160].try_into().unwrap())
                 .ok_or_else(|| ContractError::IoError("BondCommitment: invalid merkle_root".into()))?,

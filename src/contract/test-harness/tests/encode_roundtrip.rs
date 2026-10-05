@@ -266,6 +266,17 @@ fn test_bearer_bond_encode_roundtrip() {
             maturity_block: 1000,
         },
     };
+    // …and the case the fixture below could not fail on: an **unclaimed** commitment, whose
+    // nullifier is `Nullifier::ZERO`. `encode` has always written that sentinel; `decode` refused
+    // it, because it read the field with the SDK's `Nullifier::from_bytes`, which rejects zero by
+    // design. So this contract could write a record it could not read, and every `IssueStakeV1`
+    // was refused at `metadata-decode-zkp`. A fixture with only a real nullifier pins the defect
+    // instead of the fix (`AGENTS.md` R1) — which is exactly what the assertion below did, for as
+    // long as it was the only one.
+    let mut unclaimed = issue.clone();
+    unclaimed.commitment.nullifier = BbNullifier::ZERO;
+    assert_roundtrip!(IssueStakeParamsV1, unclaimed);
+
     assert_roundtrip!(IssueStakeParamsV1, issue);
 
     let burn = BurnStakeParamsV1 {

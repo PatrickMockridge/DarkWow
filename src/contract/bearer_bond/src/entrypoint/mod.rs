@@ -164,6 +164,10 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
+    // Read the selector out **before** the match moves `calls`: the arms take `calls` by value, so
+    // a closure that borrowed `self_` to name the selector would keep `calls` borrowed and the move
+    // would not compile. One `u8` copy is cheaper than threading the byte through every arm.
+    let func_byte = self_.data.first().copied().unwrap_or(0xff);
     let func = BearerBondFunction::try_from(self_.data[0])?;
 
     let metadata = match func {
@@ -176,7 +180,17 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         BearerBondFunction::ProveCoverageV1 => prove_coverage_metadata(cid, call_idx, calls),
         BearerBondFunction::VerifyCoverageV1 => Ok(vec![]),
         BearerBondFunction::PayInterestV1 => pay_interest_metadata(cid, call_idx, calls),
-    }?;
+    }
+    .map_err(|e| {
+        // The host reports a rejection as "EMPTY metadata … the reason is in the contract's own
+        // msg! log for this call" (`linear/src/execution.rs:500`). An `Err` here produces exactly
+        // that empty return, because `set_return_data` is never reached — so without this line the
+        // contract's reason is *nowhere*, and the operator is told to read a log that has no entry.
+        // The arm-level `Err(_) => return Ok(vec![])` guards are silent for the same reason; both
+        // are made loud here rather than one at a time.
+        msg!("[bearer_bond::get_metadata] arm failed for call {} (0x{:02x}): {:?}", call_idx, func_byte, e);
+        e
+    })?;
 
     wasm::util::set_return_data(&metadata)
 }
@@ -217,7 +231,7 @@ fn tx_binding_of(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> 
 
 fn issue_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params = match IssueStakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let params = match IssueStakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(e) => { msg!("[bearer_bond::get_metadata] arm params decode failed for call {}: {:?}", call_idx, e); return Ok(vec![]) } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
@@ -257,7 +271,7 @@ fn issue_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<C
 /// Metadata for TransferStakeV1 — Burn_V1 for inputs, BlindOutput_V1 for outputs.
 fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params = match TransferStakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let params = match TransferStakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(e) => { msg!("[bearer_bond::get_metadata] arm params decode failed for call {}: {:?}", call_idx, e); return Ok(vec![]) } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -318,7 +332,7 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 /// presenting a physical bond coupon).
 fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params = match RequestInterestParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let params = match RequestInterestParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(e) => { msg!("[bearer_bond::get_metadata] arm params decode failed for call {}: {:?}", call_idx, e); return Ok(vec![]) } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -356,7 +370,7 @@ fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
 /// Metadata for EmergencyUnstakeV1 — Burn_V1 for input, Redeem_V1 for receipt commitment.
 fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params = match EmergencyUnstakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let params = match EmergencyUnstakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(e) => { msg!("[bearer_bond::get_metadata] arm params decode failed for call {}: {:?}", call_idx, e); return Ok(vec![]) } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -417,7 +431,7 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
 /// Metadata for UnstakeV1 — Burn_V1 for input, Redeem_V1 for receipt commitment.
 fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params = match UnstakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let params = match UnstakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(e) => { msg!("[bearer_bond::get_metadata] arm params decode failed for call {}: {:?}", call_idx, e); return Ok(vec![]) } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -473,7 +487,7 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
 /// Metadata for BurnStakeV1 — Burn_V1 instance(s) for inputs.
 fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params = match BurnStakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let params = match BurnStakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(e) => { msg!("[bearer_bond::get_metadata] arm params decode failed for call {}: {:?}", call_idx, e); return Ok(vec![]) } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -514,7 +528,7 @@ fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 /// total_interest_obligation, coverage_ratio_bps].
 fn prove_coverage_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params = match ProveCoverageParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let params = match ProveCoverageParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(e) => { msg!("[bearer_bond::get_metadata] arm params decode failed for call {}: {:?}", call_idx, e); return Ok(vec![]) } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
@@ -549,7 +563,7 @@ fn prove_coverage_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 /// per payment ensures unlinkable payment addresses.
 fn pay_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params = match PayInterestParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let params = match PayInterestParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(e) => { msg!("[bearer_bond::get_metadata] arm params decode failed for call {}: {:?}", call_idx, e); return Ok(vec![]) } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
