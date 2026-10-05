@@ -141,27 +141,39 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::util::set_return_data(&metadata)
 }
 
+/// The transaction binding every arm publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// What stood at the four arms was the constant `poseidon_hash([3, 0, 0])`, which bound every proof
+/// to nothing at all: it was identical in every transaction, so a proof lifted from one transaction
+/// verified in another.
+///
+/// **This is also the correction of a note that stood here.** The arms used to say the constant was
+/// deliberate because "the client builds the proof before the transaction exists, so the binding
+/// cannot reference it" — true when this was written, and false since the transaction commitment
+/// became computable before the proofs exist (`commitment_of_calls`, `src/tx/mod.rs`). The ordering
+/// that made it true is exactly what the campaign removed.
+///
+/// The nonce is zero because these calls carry no nonce field, so every proof in one transaction
+/// publishes the same binding — a *linking* of that transaction's own proofs, which
+/// `tx-commitment.md` §The Nullifier Scheme exists to avoid. It is still strictly better than the
+/// constant, and a per-proof nonce on the wire is owed.
+fn pool_stake_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([pallas::Base::from(3u64), wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 fn create_pool_get_metadata_v1(
     params: CreatePoolParamsV1,
 ) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Circuit order: tx_binding, tx_nonce, derived_pool_id.
-    //
-    // `tx_binding` was a bare `Base::zero()` here, while `create_pool.zk` constrains its witness to
-    // equal `poseidon_hash(3, tx_commitment, tx_nonce)`. Both cannot hold, so the proof was
-    // unsatisfiable — the CreatePoolV2 rejection this contract's suite died on.
-    //
-    // The value below is the same one the client's `CreatePoolV1CallData::compute_tx_binding`
-    // derives from its `tx_commitment`/`tx_nonce`, which default to zero — so this is a *constant
-    // binding*, consistent on both sides but carrying no transaction identity. That state is
-    // deliberate and recorded in `doc/src/arch/verification-hazop.md`: nothing in this repository
-    // validates `tx_nonce`, and the client builds the proof before the transaction exists, so the
-    // binding cannot reference it. Do not read this as a derivation.
-    let tx_binding =
-        poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
+    // Circuit order: derived_pool_id, then the pair — last (`OBL-C198`). The pair sat at 0,1 with
+    // `derived_pool_id` after it.
+    let tx_binding = pool_stake_tx_binding(pallas::Base::zero())?;
     zk_public_inputs.push((
         POOL_STAKE_ZKAS_CREATE_POOL_NS_V2.to_string(),
-        vec![tx_binding, pallas::Base::zero(), params.derived_pool_id],
+        vec![params.derived_pool_id, tx_binding, pallas::Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -172,20 +184,16 @@ fn join_pool_get_metadata_v1(
     params: JoinPoolParamsV1,
 ) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Circuit order: derived_member_id, vc_x, tx_binding, tx_nonce, vc_y — note `value_commit_y`
-    // is last, after the tx pair, not beside its x.
-    //
-    // The tx pair was `[zero, zero]` against a circuit that constrains `tx_binding` to
-    // `poseidon_hash(3, tx_commitment, tx_nonce)`; see `create_pool_get_metadata_v1` for the full
-    // note and for why this value is a constant rather than a transaction reference.
+    // Circuit order: derived_member_id, vc_x, vc_y, then the pair — last (`OBL-C198`). The pair sat
+    // at 2,3 with the value commitment's y coordinate after it.
     zk_public_inputs.push((
         POOL_STAKE_ZKAS_JOIN_POOL_NS_V2.to_string(),
         vec![
             params.derived_member_id,
             params.value_commit_x,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
-            pallas::Base::zero(),
             params.value_commit_y,
+            pool_stake_tx_binding(pallas::Base::zero())?,
+            pallas::Base::zero(),
         ],
     ));
     let mut metadata = vec![];
@@ -197,17 +205,13 @@ fn allocate_coverage_get_metadata_v1(
     params: AllocateCoverageParamsV1,
 ) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Circuit order: tx_binding(0), tx_nonce(1), derived_allocation_id(2)
+    // Circuit order: derived_allocation_id, then the pair — last (`OBL-C198`).
     zk_public_inputs.push((
         POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V2.to_string(),
-        // Circuit order: tx_binding, tx_nonce, derived_allocation_id. The binding was a bare zero
-        // against a circuit that constrains it to `poseidon_hash(3, tx_commitment, tx_nonce)`; see
-        // `create_pool_get_metadata_v1` for the full note and for what this constant does and does
-        // not mean.
         vec![
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
-            pallas::Base::zero(),
             params.derived_allocation_id,
+            pool_stake_tx_binding(pallas::Base::zero())?,
+            pallas::Base::zero(),
         ],
     ));
     let mut metadata = vec![];
@@ -219,15 +223,13 @@ fn slash_coverage_get_metadata_v1(
     params: SlashCoverageParamsV1,
 ) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Circuit order: tx_binding(0), tx_nonce(1), derived_slash_id(2)
+    // Circuit order: derived_slash_id, then the pair — last (`OBL-C198`).
     zk_public_inputs.push((
         POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V2.to_string(),
-        // Circuit order: tx_binding, tx_nonce, derived_slash_id — same correction as
-        // `create_pool_get_metadata_v1`.
         vec![
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
-            pallas::Base::zero(),
             params.derived_slash_id,
+            pool_stake_tx_binding(pallas::Base::zero())?,
+            pallas::Base::zero(),
         ],
     ));
     let mut metadata = vec![];

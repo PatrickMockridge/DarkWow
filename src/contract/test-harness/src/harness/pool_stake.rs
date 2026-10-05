@@ -56,10 +56,20 @@ pub struct PoolStakeHarness {
     allocate_coverage_pk: ProvingKey,
     slash_coverage_zkbin: ZkBinary,
     slash_coverage_pk: ProvingKey,
+    /// The contract's deployed id (`OBL-C198`): the transaction commitment is derived over the
+    /// call set, and a call carries this id, so the harness has to know it.
+    contract_id: dwow_sdk::crypto::ContractId,
+}
+
+/// The transaction commitment over an ordered call set — the same derivation the node recomputes
+/// (`dwow_sdk::crypto::util::tx_commitment`). The order is the one `DarkForest::build_vec` emits:
+/// DFS post-order, children before parents.
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
 }
 
 impl PoolStakeHarness {
-    pub fn spawn() -> Self {
+    pub fn spawn(contract_id: dwow_sdk::crypto::ContractId) -> Self {
         let create_pool_bin =
             include_bytes!("../../../pool_stake/proof/create_pool.zk.bin");
         let join_pool_bin =
@@ -107,12 +117,30 @@ impl PoolStakeHarness {
             allocate_coverage_pk,
             slash_coverage_zkbin,
             slash_coverage_pk,
+            contract_id,
         }
+    }
+
+    /// The commitment over `children` followed by this call — the ordered set the node hashes.
+    ///
+    /// This is the *root* form: correct for a call that ends its transaction, which every endpoint
+    /// here is. A call used as a **child** of another cannot use it, because its parent's bytes are
+    /// part of its commitment and come after it in post-order; such a builder needs a plan the
+    /// caller proves against its own commitment.
+    fn commitment_over(
+        &self,
+        children: &[dwow_sdk::tx::ContractCall],
+        call_data: &[u8],
+    ) -> pallas::Base {
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.to_vec() });
+        commitment_of(&calls)
     }
 
     /// Create a new staking pool (function code 0x00)
     pub fn create_pool(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         owner_pub: PublicKey,
         max_coverage_ratio: u32,
         operator_fee_bp: u32,
@@ -121,13 +149,11 @@ impl PoolStakeHarness {
             (max_coverage_ratio as u64) ^ ((operator_fee_bp as u64) << 32)
         );
         let nonce = 0u64;
-        let call_data_input = CreatePoolV1CallData::new(owner_pub, pool_config_hash, nonce);
-        let (proof, public_inputs) = create_pool_v1_proof(
-            &self.create_pool_zkbin,
-            &self.create_pool_pk,
-            &call_data_input,
-        )?;
+        let mut call_data_input = CreatePoolV1CallData::new(owner_pub, pool_config_hash, nonce);
 
+        // `OBL-C198`: the public inputs are a pure function of the call data, so they come before
+        // the proof — which is what lets the call data (and the commitment over it) exist first.
+        let public_inputs = call_data_input.compute_public_inputs();
         let params = CreatePoolParamsV1 {
             owner_pub,
             max_coverage_ratio,
@@ -140,13 +166,24 @@ impl PoolStakeHarness {
         let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode());
 
+        // `OBL-C198`: call data first, then the commitment over the ordered set.
+        call_data_input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = call_data_input.tx_commitment;
+
+        let (proof, _public_inputs) = create_pool_v1_proof(
+            &self.create_pool_zkbin,
+            &self.create_pool_pk,
+            &call_data_input,
+        )?;
+
         let pool_id = public_inputs.derived_pool_id;
-        Ok(CreatePoolResult { call_data, proof, public_inputs, pool_id })
+        Ok(CreatePoolResult { call_data, proof, public_inputs, pool_id, commitment })
     }
 
     /// Join an existing pool (function code 0x01)
     pub fn join_pool(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         pool_id: pallas::Base,
         amount: u64,
         relayer_id: [u8; 32],
@@ -155,15 +192,14 @@ impl PoolStakeHarness {
         let asset_id = pallas::Base::from(1u64);
         let nonce = 0u64;
         let value_blind = pallas::Scalar::zero();
-        let call_data_input = JoinPoolV1CallData::new(
+        let mut call_data_input = JoinPoolV1CallData::new(
             pool_id, member_pub, amount, asset_id, nonce, value_blind,
         );
-        let (proof, public_inputs) = join_pool_v1_proof(
-            &self.join_pool_zkbin,
-            &self.join_pool_pk,
-            &call_data_input,
-        )?;
 
+        // `OBL-C198`: see `create_pool` — public inputs first, because they are a pure function of
+        // the call data and the call data is what the commitment is taken over. This one is
+        // fallible where its siblings are not, because it derives the value commitment.
+        let public_inputs = call_data_input.compute_public_inputs()?;
         let params = JoinPoolParamsV1 {
             pool_id,
             amount,
@@ -179,8 +215,17 @@ impl PoolStakeHarness {
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
+        call_data_input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = call_data_input.tx_commitment;
+
+        let (proof, _public_inputs) = join_pool_v1_proof(
+            &self.join_pool_zkbin,
+            &self.join_pool_pk,
+            &call_data_input,
+        )?;
+
         let stake_id = public_inputs.derived_member_id;
-        Ok(JoinPoolResult { call_data, proof, public_inputs, stake_id })
+        Ok(JoinPoolResult { call_data, proof, public_inputs, stake_id, commitment })
     }
 
     /// Leave a pool (function code 0x02) - no ZK proof required
@@ -198,6 +243,7 @@ impl PoolStakeHarness {
     /// Allocate coverage for a withdrawal (function code 0x03)
     pub fn allocate_coverage(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         pool_id: pallas::Base,
         member_pub: PublicKey,
         coverage_amount: u64,
@@ -206,15 +252,12 @@ impl PoolStakeHarness {
         timeout_height: u64,
     ) -> Result<AllocateCoverageResult, Box<dyn std::error::Error>> {
         let nonce = 0u64;
-        let call_data_input = AllocateCoverageV1CallData::new(
+        let mut call_data_input = AllocateCoverageV1CallData::new(
             pool_id, member_pub, coverage_amount, withdrawal_id, nonce,
         );
-        let (proof, public_inputs) = allocate_coverage_v1_proof(
-            &self.allocate_coverage_zkbin,
-            &self.allocate_coverage_pk,
-            &call_data_input,
-        )?;
 
+        // `OBL-C198`: as in `create_pool`.
+        let public_inputs = call_data_input.compute_public_inputs();
         let params = AllocateCoverageParamsV1 {
             pool_id,
             withdrawal_nullifier,
@@ -228,28 +271,35 @@ impl PoolStakeHarness {
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
+        call_data_input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = call_data_input.tx_commitment;
+
+        let (proof, _public_inputs) = allocate_coverage_v1_proof(
+            &self.allocate_coverage_zkbin,
+            &self.allocate_coverage_pk,
+            &call_data_input,
+        )?;
+
         let allocation_id = public_inputs.derived_allocation_id;
-        Ok(AllocateCoverageResult { call_data, proof, public_inputs, allocation_id })
+        Ok(AllocateCoverageResult { call_data, proof, public_inputs, allocation_id, commitment })
     }
 
     /// Slash coverage after failure (function code 0x05)
     pub fn slash_coverage(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         allocation_id: pallas::Base,
         slash_amount: u64,
         owner_pub: PublicKey,
         user_pub: PublicKey,
     ) -> Result<SlashCoverageResult, Box<dyn std::error::Error>> {
         let nonce = 0u64;
-        let call_data_input = SlashCoverageV1CallData::new(
+        let mut call_data_input = SlashCoverageV1CallData::new(
             allocation_id, slash_amount, user_pub, nonce,
         );
-        let (proof, public_inputs) = slash_coverage_v1_proof(
-            &self.slash_coverage_zkbin,
-            &self.slash_coverage_pk,
-            &call_data_input,
-        )?;
 
+        // `OBL-C198`: as in `create_pool`.
+        let public_inputs = call_data_input.compute_public_inputs();
         let params = SlashCoverageParamsV1 {
             allocation_id,
             owner_pub,
@@ -261,8 +311,17 @@ impl PoolStakeHarness {
         let mut call_data = vec![0x05];
         call_data.extend_from_slice(&params.encode());
 
+        call_data_input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = call_data_input.tx_commitment;
+
+        let (proof, _public_inputs) = slash_coverage_v1_proof(
+            &self.slash_coverage_zkbin,
+            &self.slash_coverage_pk,
+            &call_data_input,
+        )?;
+
         let slash_id = public_inputs.derived_slash_id;
-        Ok(SlashCoverageResult { call_data, proof, public_inputs, slash_id })
+        Ok(SlashCoverageResult { call_data, proof, public_inputs, slash_id, commitment })
     }
 }
 
@@ -302,6 +361,9 @@ pub struct CreatePoolResult {
     pub pool_id: pallas::Base,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: CreatePoolV1PublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of join_pool
@@ -310,6 +372,9 @@ pub struct JoinPoolResult {
     pub stake_id: pallas::Base,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: JoinPoolV1PublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of leave_pool
@@ -323,6 +388,9 @@ pub struct AllocateCoverageResult {
     pub allocation_id: pallas::Base,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: AllocateCoverageV1PublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of slash_coverage
@@ -331,4 +399,7 @@ pub struct SlashCoverageResult {
     pub slash_id: pallas::Base,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: SlashCoverageV1PublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }

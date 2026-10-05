@@ -71,7 +71,7 @@ fn test_all_harnesses_zk_coverage() {
     zk_check!(NativeTokenHarness, "native_token");
     zk_check!(OracleHarness, "oracle");
     zk_check_with_id!(OtcSwapHarness, "otc_swap");
-    zk_check!(PoolStakeHarness, "pool_stake");
+    zk_check_with_id!(PoolStakeHarness, "pool_stake");
     zk_check!(PromissoryNoteHarness, "promissory_note");
     zk_check_with_id!(PurseHarness, "purse");
     zk_check!(RelayerEndowmentHarness, "relayer_endowment");

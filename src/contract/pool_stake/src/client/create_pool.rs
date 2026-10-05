@@ -50,12 +50,12 @@ pub struct CreatePoolV1PublicInputs {
 impl CreatePoolV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         // Circuit order (`create_pool.zk`, the `constrain_instance` sequence):
-        //   tx_binding, tx_nonce, derived_pool_id
-        // This was `[derived_pool_id, tx_binding, tx_nonce]` — transposed. The proof is created
-        // against this vector and the verifier uses the host's, so the two disagreed in *position*
-        // and no proof could verify. `check-circuit-metadata-alignment.sh` compares counts and
-        // cannot see it; print the circuit before changing this again.
-        vec![self.tx_binding, self.tx_nonce, self.derived_pool_id]
+        //   derived_pool_id, tx_binding, tx_nonce — the pair last (`OBL-C198`).
+        // The proof is created against this vector and the verifier uses the host's, so the two
+        // must agree in *position* as well as in count. `check-circuit-metadata-alignment.sh`
+        // compares counts and now also compares the pair's position against the circuit; print the
+        // circuit before changing this again.
+        vec![self.derived_pool_id, self.tx_binding, self.tx_nonce]
     }
 }
 

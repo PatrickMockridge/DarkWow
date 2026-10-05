@@ -50,9 +50,9 @@ pub struct SlashCoverageV1PublicInputs {
 
 impl SlashCoverageV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        // Circuit order (`slash_coverage.zk`): tx_binding, tx_nonce, derived_slash_id.
-        // Was `[derived_slash_id, tx_binding, tx_nonce]` — transposed. See `create_pool.rs`.
-        vec![self.tx_binding, self.tx_nonce, self.derived_slash_id]
+        // Circuit order (`slash_coverage.zk`): derived_slash_id, then the pair — last (`OBL-C198`).
+        // See `create_pool.rs`.
+        vec![self.derived_slash_id, self.tx_binding, self.tx_nonce]
     }
 }
 

@@ -58,16 +58,16 @@ pub struct JoinPoolV1PublicInputs {
 impl JoinPoolV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         // Circuit order (`join_pool.zk`, the `constrain_instance` sequence):
-        //   derived_member_id, value_commit_x, tx_binding, tx_nonce, value_commit_y
-        // Note where `value_commit_y` sits — **last**, after the tx pair, not beside its x. This
-        // was `[.., value_commit_x, value_commit_y, tx_binding, tx_nonce]`, transposed against both
-        // the circuit and the host. See `create_pool.rs` for the full note.
+        //   derived_member_id, value_commit_x, value_commit_y, tx_binding, tx_nonce — the pair last
+        //   (`OBL-C198`).
+        // The value commitment's two coordinates are now adjacent and the pair ends the vector; the
+        // pair previously sat between them. See `create_pool.rs` for the full note.
         vec![
             self.derived_member_id,
             self.value_commit_x,
+            self.value_commit_y,
             self.tx_binding,
             self.tx_nonce,
-            self.value_commit_y,
         ]
     }
 }

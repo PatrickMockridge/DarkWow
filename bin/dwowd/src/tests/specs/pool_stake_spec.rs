@@ -22,14 +22,21 @@ use dwow_sdk::crypto::{
 use dwow_sdk::pasta::pallas;
 use std::sync::{Arc, Mutex};
 
-use crate::tests::modules::child_calls::{pn_transfer_child, PnNote};
+use crate::tests::modules::child_calls::{
+    pn_transfer_prepare, PnNote,
+};
 use crate::tests::uniform_runner::{
-    ContractTestSpec, EndpointExpectation, EndpointResult, EndpointSpec,
+    ChildCall, ContractTestSpec, EndpointExpectation, EndpointResult, EndpointSpec,
 };
 use super::helpers::mk_ep;
 
 pub fn pool_stake_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(PoolStakeHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its calls will carry, because the transaction
+    // commitment is derived over the call *including* the contract id. `deploy_with_ix` assigns
+    // `derive_contract_id_from_name(name)` — a pure function of the name — so the spec computes
+    // exactly the id the pipeline will use rather than a placeholder.
+    let ps_cid = crate::tests::blockchain::derive_contract_id_from_name("pool_stake");
+    let harness = Box::leak(Box::new(PoolStakeHarness::spawn(ps_cid)));
     let h: &PoolStakeHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/pool_stake/dwow_pool_stake_contract.wasm");
     let pk = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(10u64)));
@@ -55,7 +62,8 @@ pub fn pool_stake_test_spec() -> ContractTestSpec<'static> {
     let notes: Arc<Mutex<Option<Vec<PnNote>>>> = Arc::new(Mutex::new(None));
 
     ContractTestSpec { name: "pool_stake", is_genesis: false,
-        contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
+        // `OBL-C198`: the real id, not the stale `[0u8;32]` placeholder.
+        contract_id: ps_cid,
         harness: h, wasm_bytes: Some(wasm), has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
         setup: Some(Box::new({
@@ -105,7 +113,8 @@ pub fn pool_stake_test_spec() -> ContractTestSpec<'static> {
             mk_ep("CreatePoolV1", true, Box::new({
                 let created_pool = created_pool.clone();
                 move || {
-                    let r = h.create_pool(pk, 200, 100).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    // `OBL-C198`: no children on this row, so the committed set is the call alone.
+                    let r = h.create_pool(&[], pk, 200, 100).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     *created_pool.lock().unwrap() = Some(r.pool_id);
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }
@@ -123,20 +132,25 @@ pub fn pool_stake_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let pool_id = created_pool.lock().unwrap()
                             .ok_or_else(|| dwow_core::Error::Custom("pool not created".into()))?;
-                        let r = h.join_pool(pool_id, amount, [0u8; 32], mpk)
+                        // `OBL-C198`: the child's call data first (no proof), the parent second,
+                        // one commitment over the ordered set, the child proven against it.
+                        let n = notes.lock().unwrap();
+                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
+                        // The contract's own formula, not a constant: `join_pool` computes
+                        // `value_blind = poseidon_hash([amount, pool_id])` and `pn_transfer_prepare`
+                        // runs the seed through `Blind(fp_mod_fv(..))`.
+                        let blind_seed = poseidon_hash([pallas::Base::from(amount), pool_id]);
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[0], amount, blind_seed, pallas::Base::zero())?;
+                        let r = h.join_pool(&[child_call.clone()], pool_id, amount, [0u8; 32], mpk)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         // The stake id is the proof-bound `derived_member_id`, which the harness
                         // surfaces as `JoinPoolResult::stake_id`. The contract now stores the stake
                         // under that same value, so this is the id LeavePoolV1 must address — the
                         // old spec passed the *pool* id as the stake id and got `StakeNotFound`.
                         *created_stake.lock().unwrap() = Some(r.stake_id);
-                        let n = notes.lock().unwrap();
-                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        // The contract's own formula, not a constant: `join_pool` computes
-                        // `value_blind = poseidon_hash([amount, pool_id])` and
-                        // `pn_transfer_child` runs the seed through `Blind(fp_mod_fv(..))`.
-                        let blind_seed = poseidon_hash([pallas::Base::from(amount), pool_id]);
-                        let child = pn_transfer_child(&n[0], amount, blind_seed, pallas::Base::zero())?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -164,13 +178,22 @@ pub fn pool_stake_test_spec() -> ContractTestSpec<'static> {
                             .ok_or_else(|| dwow_core::Error::Custom("pool not created".into()))?;
                         let stake_id = created_stake.lock().unwrap()
                             .ok_or_else(|| dwow_core::Error::Custom("stake not created".into()))?;
-                        let r = h.leave_pool(stake_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        // `OBL-C198`: this endpoint is not a ZK endpoint and its own call carries no
+                        // proof, but its PN child's proof has to bind all the same — so the
+                        // commitment is taken here, over the set the node will hash: the child
+                        // first, this call last (DFS post-order).
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(amount), pool_id]);
-                        // The leaf blind is derived from the spent note inside `pn_transfer_child`, so
+                        // The leaf blind is derived from the spent note inside `pn_transfer_prepare`, so
                         // this call site no longer chooses it and cannot collide with a sibling's.
-                        let child = pn_transfer_child(&n[1], amount, blind_seed, pallas::Base::zero())?;
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[1], amount, blind_seed, pallas::Base::zero())?;
+                        let r = h.leave_pool(stake_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let leave_call = dwow_sdk::tx::ContractCall { contract_id: ps_cid, data: r.call_data.clone() };
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &leave_call]);
+                        let debris = child_plan.prove(commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                     }
                 }),
@@ -181,7 +204,7 @@ pub fn pool_stake_test_spec() -> ContractTestSpec<'static> {
                 move || {
                     let pool_id = created_pool.lock().unwrap()
                         .ok_or_else(|| dwow_core::Error::Custom("pool not created".into()))?;
-                    let r = h.allocate_coverage(pool_id, mpk, 5000, pallas::Base::from(1u64), [0u8; 32], 1000).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.allocate_coverage(&[], pool_id, mpk, 5000, pallas::Base::from(1u64), [0u8; 32], 1000).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     // The proof-bound `derived_allocation_id`; the contract stores the allocation
                     // under this value, and SlashCoverageV1 must address it by the same one.
                     *created_allocation.lock().unwrap() = Some(r.allocation_id);
@@ -193,7 +216,7 @@ pub fn pool_stake_test_spec() -> ContractTestSpec<'static> {
                 move || {
                     let allocation_id = created_allocation.lock().unwrap()
                         .ok_or_else(|| dwow_core::Error::Custom("allocation not created".into()))?;
-                    let r = h.slash_coverage(allocation_id, 2000, pk, mpk).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.slash_coverage(&[], allocation_id, 2000, pk, mpk).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),

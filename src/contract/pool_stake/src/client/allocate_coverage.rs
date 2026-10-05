@@ -51,10 +51,10 @@ pub struct AllocateCoverageV1PublicInputs {
 
 impl AllocateCoverageV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        // Circuit order (`allocate_coverage.zk`): tx_binding, tx_nonce, derived_allocation_id.
-        // Was `[derived_allocation_id, tx_binding, tx_nonce]` — transposed against the circuit and
-        // the host. See `create_pool.rs` for the full note.
-        vec![self.tx_binding, self.tx_nonce, self.derived_allocation_id]
+        // Circuit order (`allocate_coverage.zk`): derived_allocation_id, then the pair — last
+        // (`OBL-C198`). The pair sat at 0,1 of 3 with `derived_allocation_id` after it; the
+        // circuit, the metadata arm and this vector move together.
+        vec![self.derived_allocation_id, self.tx_binding, self.tx_nonce]
     }
 }
 

@@ -26,7 +26,7 @@
 # counts as a PASS and order as a WARN. `OBL-C198` is the register row for the campaign.
 #
 # EVERY NON-CONFORMING CIRCUIT IN THE TREE IS LISTED. Measured 2026-10-05 over 166 circuits:
-# 148 conform and 18 have the pair elsewhere in the vector. The third category the 2026-10-04
+# 152 conform and 14 have the pair elsewhere in the vector. The third category the 2026-10-04
 # census recorded — 1 circuit with **no** pair at all, `bearer_bond`'s `ProveCoverage_V2` — is
 # now empty: it carries the pair (`OBL-C198`, 2026-10-05). There is no fourth category, so this
 # file is the complete census — a circuit that conforms today and is edited into the middle
@@ -60,10 +60,6 @@ src/contract/game_room/proof/create_room.zk : CreateRoomV2 : `OBL-C198` — pair
 src/contract/game_room/proof/deposit.zk : DepositV2 : `OBL-C198` — pair at 1,2 of 4; `derived_player_key` follows.
 src/contract/game_room/proof/place_bet.zk : PlaceBetV2 : `OBL-C198` — pair at 1,2 of 4; `derived_commitment` follows.
 src/contract/game_room/proof/settle_pot.zk : SettlePotV2 : `OBL-C198` — pair at 1,2 of 4; `derived_pot_id` follows.
-src/contract/pool_stake/proof/allocate_coverage.zk : AllocateCoverageV2 : `OBL-C198` — pair at 0,1 of 3; `derived_allocation_id` follows.
-src/contract/pool_stake/proof/create_pool.zk : CreatePoolV2 : `OBL-C198` — pair at 0,1 of 3; `derived_pool_id` follows.
-src/contract/pool_stake/proof/join_pool.zk : JoinPoolV2 : `OBL-C198` — pair at 2,3 of 5; the value-commitment y coordinate follows.
-src/contract/pool_stake/proof/slash_coverage.zk : SlashCoverageV2 : `OBL-C198` — pair at 0,1 of 3; `derived_slash_id` follows.
 src/contract/promissory_note/proof/redeem.zk : Redeem_V2 : `OBL-C198` — pair at 5,6 of 8; `coin_spend_hook` follows. `promissory_note`'s transfer and burn paths were migrated in the first pass; this circuit and `revoke.zk` were not, and the instrument is what made the difference visible.
 src/contract/stablecoin/proof/init.zk : InitV2 : `OBL-C198` — pair at 0,1 of 3; `deployer_auth` follows.
 src/contract/subscription/proof/subscribe.zk : SubscribeV2 : `OBL-C198` — pair at 0,1 of 3; `derived_id` follows.

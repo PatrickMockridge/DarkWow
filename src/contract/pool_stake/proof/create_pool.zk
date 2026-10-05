@@ -28,8 +28,11 @@ circuit "CreatePoolV2" {
         pool_config_hash,
         nonce
     );
+    constrain_instance(derived_pool_id);
+
+    # The pair is the LAST two instances (`OBL-C198`), as in `allocate_coverage.zk`. It sat at
+    # 0,1 of 3 with `derived_pool_id` after it.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(derived_pool_id);
 }

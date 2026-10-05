@@ -40,8 +40,11 @@ circuit "JoinPoolV2" {
     vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
     value_commit = ec_add(vcv, vcr);
     constrain_instance(ec_get_x(value_commit));
+    constrain_instance(ec_get_y(value_commit));
+
+    # The pair is the LAST two instances (`OBL-C198`), as in `allocate_coverage.zk`. It sat at
+    # 2,3 of 5 with the value commitment's y coordinate after it.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(ec_get_y(value_commit));
 }
