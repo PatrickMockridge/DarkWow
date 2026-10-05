@@ -187,6 +187,20 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::util::set_return_data(&metadata)
 }
 
+/// The transaction binding every arm here publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// What the five arms published before this was whatever the caller had written into the params
+/// (`OBL-C78`'s field), which is a public value checked against a public value.
+///
+/// The nonce stays the call's: the prover chooses it and it does not depend on the commitment, so
+/// it closes no loop. One helper serves all five arms, with the pair instanced last.
+fn tender_tx_binding(tx_nonce: pasta::pallas::Base) -> Result<pasta::pallas::Base, ContractError> {
+    Ok(poseidon_hash([pasta::pallas::Base::from(3u64), wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 fn create_tender_get_metadata_v1(
     cid: ContractId,
     _call_idx: usize,
@@ -212,7 +226,8 @@ fn create_tender_get_metadata_v1(
         vec![
             params.requester_pub_x,
             params.requester_pub_y,
-            params.tx_binding,
+            // `OBL-C198`: the pair is last and the binding is derived, not echoed.
+            tender_tx_binding(params.tx_nonce)?,
             params.tx_nonce,
         ],
     ));
@@ -261,13 +276,13 @@ fn submit_bid_get_metadata_v1(
     zk_public_inputs.push((
         TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V2.to_string(),
         // `submit_bid.zk` constrains six: bidder_pub_x, bidder_pub_y, tender_id, bid_id, tx_binding,
-        // tx_nonce. The pair travels in the call (`OBL-C78`).
+        // tx_nonce. The pair is last and the binding is derived (`OBL-C198`).
         vec![
             params.bidder_pub_x,
             params.bidder_pub_y,
             params.tender_id,
             params.bid_id,
-            params.tx_binding,
+            tender_tx_binding(params.tx_nonce)?,
             params.tx_nonce,
         ],
     ));
@@ -325,7 +340,7 @@ fn submit_bid_with_capability_get_metadata_v1(
     zk_public_inputs.push((
         TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V2.to_string(),
         // `submit_bid_with_capability.zk` constrains eight: the four above, then the capability id, the
-        // predicate result, and the tx pair last (`OBL-C78`).
+        // predicate result, and the tx pair last — the binding derived, not echoed (`OBL-C198`).
         vec![
             params.bidder_pub_x,
             params.bidder_pub_y,
@@ -333,7 +348,7 @@ fn submit_bid_with_capability_get_metadata_v1(
             params.bid_id,
             cap_id,
             params.capability_predicate_result,
-            params.tx_binding,
+            tender_tx_binding(params.tx_nonce)?,
             params.tx_nonce,
         ],
     ));
@@ -382,14 +397,14 @@ fn reveal_bid_get_metadata_v1(
         TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V2.to_string(),
         // `reveal_bid.zk` constrains seven, in this order: tender_id, bid_id, revealed_amount,
         // bidder_pub_x, bidder_pub_y, tx_binding, tx_nonce. The bidder's coordinates come from the
-        // stored bid (the witness is its secret); the tx pair travels in the call (`OBL-C78`).
+        // stored bid (the witness is its secret); the binding is derived (`OBL-C198`).
         vec![
             params.tender_id,
             params.bid_id,
             pasta::pallas::Base::from(params.revealed_amount),
             bid.bidder_pub_x,
             bid.bidder_pub_y,
-            params.tx_binding,
+            tender_tx_binding(params.tx_nonce)?,
             params.tx_nonce,
         ],
     ));
@@ -476,14 +491,14 @@ fn select_winner_get_metadata_v1(
     zk_public_inputs.push((
         TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V2.to_string(),
         // `select_winner.zk` constrains six: tender_id, winner_bid_id, requester_pub_x, requester_pub_y,
-        // tx_binding, tx_nonce. The requester's coordinates come from the stored tender; the tx pair
-        // travels in the call (`OBL-C78`).
+        // tx_binding, tx_nonce. The requester's coordinates come from the stored tender; the binding is
+        // derived (`OBL-C198`).
         vec![
             params.tender_id,
             params.winner_bid_id,
             tender.requester_pub_x,
             tender.requester_pub_y,
-            params.tx_binding,
+            tender_tx_binding(params.tx_nonce)?,
             params.tx_nonce,
         ],
     ));

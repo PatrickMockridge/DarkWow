@@ -30,10 +30,18 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::PublicKey,
+    crypto::{ContractId, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
+
+/// The commitment a call set's proofs must bind to (`OBL-C198`) — over the **whole ordered set**
+/// the node will hash, children before parents, each call serialized with its contract id. One
+/// helper because every builder needs the same derivation and a second copy is a second value
+/// (`safety.md` RC5).
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
+}
 
 use dwow_tender_contract::client::{
     create_tender::{CreateTenderV1CallData, create_tender_v1_proof, CreateTenderV1PublicInputs},
@@ -72,11 +80,15 @@ pub struct TenderHarness {
     submit_bid_with_capability_zkbin: ZkBinary,
     /// SubmitBidWithCapability_V1 ProvingKey
     submit_bid_with_capability_pk: ProvingKey,
+    /// The deployed id of the tender contract this harness builds calls for — the commitment covers
+    /// the call *including* the contract id, so a harness that proves must be told it (`OBL-C198`).
+    contract_id: ContractId,
 }
 
 impl TenderHarness {
-    /// Spawn a new Tender harness with pre-loaded circuits
-    pub fn spawn() -> Self {
+    /// Spawn a new Tender harness with pre-loaded circuits, for the contract deployed at
+    /// `contract_id` — see the field's note for why it cannot be defaulted.
+    pub fn spawn(contract_id: ContractId) -> Self {
         // Deterministic proofs for this harness's callers, so a spec replayed on two chains produces
         // the same blocks. Same call, same place, as the other contracts' harnesses
         // (`harness/darkbet_exchange.rs:99`, `harness/multisig.rs:47`, …).
@@ -135,12 +147,14 @@ impl TenderHarness {
             select_winner_pk,
             submit_bid_with_capability_zkbin,
             submit_bid_with_capability_pk,
+            contract_id,
         }
     }
 
     /// Create a tender (function code 0x00)
     pub fn create_tender(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         requester_public: PublicKey,
         requester_secret: pallas::Base,
         title: String,
@@ -152,13 +166,13 @@ impl TenderHarness {
         reveal_deadline: u64,
         delivery_deadline: u64,
     ) -> Result<CreateTenderResult, Box<dyn std::error::Error>> {
-        let call_data_input =
+        let mut call_data_input =
             CreateTenderV1CallData::new(requester_secret, requester_public);
-        let (proof, public_inputs) = create_tender_v1_proof(
-            &self.create_tender_zkbin,
-            &self.create_tender_pk,
-            &call_data_input,
-        )?;
+        // `OBL-C198`: the call data first, the commitment over the whole ordered set next, the proof
+        // last. The public inputs are a pure function of the call data's own inputs, so they need no
+        // proof; the params' `proof` is **empty**, because the commitment covers the call data and
+        // the real proof rides the transaction's proof vector, which the commitment excludes.
+        let public_inputs = call_data_input.compute_public_inputs();
         let (ix, iy) = requester_public.xy().expect("pk not identity");
         let tender_id = dwow_tender_contract::model::Tender::derive_id(
             ix, iy, &title, specification, attestation_id,
@@ -166,7 +180,7 @@ impl TenderHarness {
             delivery_deadline, requester_secret,
         );
         let params = CreateTenderParamsV1 {
-            proof: proof.as_ref().to_vec(),
+            proof: vec![],
             tender_id,
             requester_pub_x: ix,
             requester_pub_y: iy,
@@ -178,20 +192,30 @@ impl TenderHarness {
             bid_deadline,
             reveal_deadline,
             delivery_deadline,
-            // The pair the proof is bound to (`OBL-C78`). The fixture's call data leaves both zero,
-            // and the client derives the instance from the same pair through the same function, so
-            // the params, the proof and the metadata all describe one value.
-            tx_binding: dwow_tender_contract::client::tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
+            // The nonce stays the call's; the binding is derived by the arm from the host's
+            // commitment (`OBL-C198`).
             tx_nonce: pallas::Base::zero(),
         };
         let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
-        Ok(CreateTenderResult { call_data, proof, public_inputs, tender_id })
+
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        call_data_input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_tender_v1_proof(
+            &self.create_tender_zkbin,
+            &self.create_tender_pk,
+            &call_data_input,
+        )?;
+        Ok(CreateTenderResult { call_data, proof, public_inputs, tender_id, commitment })
     }
 
     /// Submit a bid (function code 0x01)
     pub fn submit_bid(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         tender_id: pallas::Base,
         bidder_public: PublicKey,
         bidder_secret: pallas::Base,
@@ -200,21 +224,19 @@ impl TenderHarness {
         claim_id: pallas::Base,
         encrypted_payload: Vec<u8>,
     ) -> Result<SubmitBidResult, Box<dyn std::error::Error>> {
-        let call_data_input = SubmitBidV1CallData::new(
+        let mut call_data_input = SubmitBidV1CallData::new(
             tender_id,
             bidder_secret,
             pallas::Base::from(amount),
             bid_nonce,
             bidder_public,
         );
-        let (proof, public_inputs) = submit_bid_v1_proof(
-            &self.submit_bid_zkbin,
-            &self.submit_bid_pk,
-            &call_data_input,
-        )?;
+        // `OBL-C198`: call data, then the commitment over the whole ordered set, then the proof —
+        // see `create_tender` above for why the params' `proof` is empty.
+        let public_inputs = call_data_input.compute_public_inputs();
         let (ix, iy) = bidder_public.xy().expect("pk not identity");
         let params = SubmitBidParamsV1 {
-            proof: proof.as_ref().to_vec(),
+            proof: vec![],
             tender_id,
             bid_id: public_inputs.bid_id,
             bidder_pub_x: ix,
@@ -222,57 +244,70 @@ impl TenderHarness {
             amount,
             claim_id,
             encrypted_payload,
-            // The pair the proof is bound to (`OBL-C78`). The fixture's call data leaves both zero,
-            // and the client derives the instance from the same pair through the same function, so
-            // the params, the proof and the metadata all describe one value.
-            tx_binding: dwow_tender_contract::client::tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
             tx_nonce: pallas::Base::zero(),
         };
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
-        Ok(SubmitBidResult { call_data, proof, public_inputs })
+
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        call_data_input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = submit_bid_v1_proof(
+            &self.submit_bid_zkbin,
+            &self.submit_bid_pk,
+            &call_data_input,
+        )?;
+        Ok(SubmitBidResult { call_data, proof, public_inputs, commitment })
     }
 
     /// Reveal a bid (function code 0x02)
     pub fn reveal_bid(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         tender_id: pallas::Base,
         bid_id: pallas::Base,
         bidder_public: PublicKey,
         bidder_secret: pallas::Base,
         revealed_amount: u64,
     ) -> Result<RevealBidResult, Box<dyn std::error::Error>> {
-        let call_data_input = RevealBidV1CallData::new(
+        let mut call_data_input = RevealBidV1CallData::new(
             tender_id,
             bid_id,
             bidder_secret,
             pallas::Base::from(revealed_amount),
             bidder_public,
         );
-        let (proof, public_inputs) = reveal_bid_v1_proof(
-            &self.reveal_bid_zkbin,
-            &self.reveal_bid_pk,
-            &call_data_input,
-        )?;
+        // `OBL-C198`: call data, then the commitment over the whole ordered set, then the proof.
+        let public_inputs = call_data_input.compute_public_inputs();
         let params = RevealBidParamsV1 {
-            proof: proof.as_ref().to_vec(),
+            proof: vec![],
             tender_id,
             bid_id,
             revealed_amount,
-            // The pair the proof is bound to (`OBL-C78`). The fixture's call data leaves both zero,
-            // and the client derives the instance from the same pair through the same function, so
-            // the params, the proof and the metadata all describe one value.
-            tx_binding: dwow_tender_contract::client::tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
             tx_nonce: pallas::Base::zero(),
         };
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
-        Ok(RevealBidResult { call_data, proof, public_inputs })
+
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        call_data_input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = reveal_bid_v1_proof(
+            &self.reveal_bid_zkbin,
+            &self.reveal_bid_pk,
+            &call_data_input,
+        )?;
+        Ok(RevealBidResult { call_data, proof, public_inputs, commitment })
     }
 
     /// Select a winner (function code 0x04)
     pub fn select_winner(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         tender_id: pallas::Base,
         winner_bid_id: pallas::Base,
         requester_public: PublicKey,
@@ -280,21 +315,18 @@ impl TenderHarness {
         winner_public: PublicKey,
         winning_amount: u64,
     ) -> Result<SelectWinnerResult, Box<dyn std::error::Error>> {
-        let call_data_input = SelectWinnerV1CallData::new(
+        let mut call_data_input = SelectWinnerV1CallData::new(
             tender_id,
             winner_bid_id,
             requester_secret,
             requester_public,
         );
-        let (proof, public_inputs) = select_winner_v1_proof(
-            &self.select_winner_zkbin,
-            &self.select_winner_pk,
-            &call_data_input,
-        )?;
+        // `OBL-C198`: call data, then the commitment over the whole ordered set, then the proof.
+        let public_inputs = call_data_input.compute_public_inputs();
         let (wx, wy) = winner_public.xy().expect("pk not identity");
         let (rx, ry) = requester_public.xy().expect("pk not identity");
         let params = SelectWinnerParamsV1 {
-            proof: proof.as_ref().to_vec(),
+            proof: vec![],
             tender_id,
             winner_bid_id,
             requester_pub_x: rx,
@@ -302,20 +334,28 @@ impl TenderHarness {
             winner_pub_x: wx,
             winner_pub_y: wy,
             winning_amount,
-            // The pair the proof is bound to (`OBL-C78`). The fixture's call data leaves both zero,
-            // and the client derives the instance from the same pair through the same function, so
-            // the params, the proof and the metadata all describe one value.
-            tx_binding: dwow_tender_contract::client::tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
             tx_nonce: pallas::Base::zero(),
         };
         let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
-        Ok(SelectWinnerResult { call_data, proof, public_inputs })
+
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        call_data_input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = select_winner_v1_proof(
+            &self.select_winner_zkbin,
+            &self.select_winner_pk,
+            &call_data_input,
+        )?;
+        Ok(SelectWinnerResult { call_data, proof, public_inputs, commitment })
     }
 
     /// Submit a bid with capability (function code 0x08)
     pub fn submit_bid_with_capability(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         tender_id: pallas::Base,
         bidder_public: PublicKey,
         bidder_secret: pallas::Base,
@@ -326,7 +366,7 @@ impl TenderHarness {
         claim_id: pallas::Base,
         encrypted_payload: Vec<u8>,
     ) -> Result<SubmitBidWithCapabilityResult, Box<dyn std::error::Error>> {
-        let call_data_input = SubmitBidWithCapabilityV1CallData::new(
+        let mut call_data_input = SubmitBidWithCapabilityV1CallData::new(
             tender_id,
             bidder_secret,
             pallas::Base::from(amount),
@@ -335,11 +375,8 @@ impl TenderHarness {
             capability_predicate_result,
             bidder_public,
         );
-        let (proof, public_inputs) = submit_bid_with_capability_v1_proof(
-            &self.submit_bid_with_capability_zkbin,
-            &self.submit_bid_with_capability_pk,
-            &call_data_input,
-        )?;
+        // `OBL-C198`: call data, then the commitment over the whole ordered set, then the proof.
+        let public_inputs = call_data_input.compute_public_inputs();
         let (ix, iy) = bidder_public.xy().expect("pk not identity");
         let mut required_cap_bytes = [0u8; 32];
         // Encode required_capability_id as 32 bytes (little-endian)
@@ -350,7 +387,7 @@ impl TenderHarness {
             required_cap_bytes[..len].copy_from_slice(&cap_buf[..len]);
         }
         let params = SubmitBidWithCapabilityParamsV1 {
-            proof: proof.as_ref().to_vec(),
+            proof: vec![],
             tender_id,
             bid_id: public_inputs.bid_id,
             bidder_pub_x: ix,
@@ -360,15 +397,22 @@ impl TenderHarness {
             encrypted_payload,
             required_capability_id: required_cap_bytes,
             capability_predicate_result,
-            // The pair the proof is bound to (`OBL-C78`). The fixture's call data leaves both zero,
-            // and the client derives the instance from the same pair through the same function, so
-            // the params, the proof and the metadata all describe one value.
-            tx_binding: dwow_tender_contract::client::tx_binding_of(&pallas::Base::zero(), &pallas::Base::zero()),
             tx_nonce: pallas::Base::zero(),
         };
         let mut call_data = vec![0x08];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
-        Ok(SubmitBidWithCapabilityResult { call_data, proof, public_inputs })
+
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        call_data_input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = submit_bid_with_capability_v1_proof(
+            &self.submit_bid_with_capability_zkbin,
+            &self.submit_bid_with_capability_pk,
+            &call_data_input,
+        )?;
+        Ok(SubmitBidWithCapabilityResult { call_data, proof, public_inputs, commitment })
     }
 }
 
@@ -416,6 +460,9 @@ pub struct CreateTenderResult {
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: CreateTenderV1PublicInputs,
     pub tender_id: pallas::Base,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of submit_bid
@@ -423,6 +470,8 @@ pub struct SubmitBidResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: SubmitBidV1PublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of reveal_bid
@@ -430,6 +479,8 @@ pub struct RevealBidResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: RevealBidV1PublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of select_winner
@@ -437,6 +488,8 @@ pub struct SelectWinnerResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: SelectWinnerV1PublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of submit_bid_with_capability
@@ -444,4 +497,7 @@ pub struct SubmitBidWithCapabilityResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: SubmitBidWithCapabilityV1PublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }

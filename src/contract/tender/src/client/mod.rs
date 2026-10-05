@@ -165,10 +165,8 @@ impl CreateTenderBuilder {
             bid_deadline: self.bid_deadline.ok_or("bid_deadline not set")?,
             reveal_deadline: self.reveal_deadline.ok_or("reveal_deadline not set")?,
             delivery_deadline: self.delivery_deadline.ok_or("delivery_deadline not set")?,
-            tx_binding: tx_binding_of(
-                &self.tx_commitment.unwrap_or_else(pallas::Base::zero),
-                &self.tx_nonce.unwrap_or_else(pallas::Base::zero),
-            ),
+            // `OBL-C198`: `tx_binding` left the params — it is derived from the transaction
+            // commitment, which covers the call data. The arm derives it; the nonce stays.
             tx_nonce: self.tx_nonce.unwrap_or_else(pallas::Base::zero),
         })
     }
@@ -247,10 +245,8 @@ impl SubmitBidBuilder {
             amount: self.amount.ok_or("amount not set")?,
             claim_id: self.competency_commitment.ok_or("claim_id not set")?,
             encrypted_payload: self.encrypted_payload.unwrap_or_default(),
-            tx_binding: tx_binding_of(
-                &self.tx_commitment.unwrap_or_else(pallas::Base::zero),
-                &self.tx_nonce.unwrap_or_else(pallas::Base::zero),
-            ),
+            // `OBL-C198`: `tx_binding` left the params — it is derived from the transaction
+            // commitment, which covers the call data. The arm derives it; the nonce stays.
             tx_nonce: self.tx_nonce.unwrap_or_else(pallas::Base::zero),
         })
     }
@@ -303,10 +299,8 @@ impl RevealBidBuilder {
             tender_id: self.tender_id.ok_or("tender_id not set")?,
             bid_id: self.bid_id.ok_or("bid_id not set")?,
             revealed_amount: self.revealed_amount.ok_or("revealed_amount not set")?,
-            tx_binding: tx_binding_of(
-                &self.tx_commitment.unwrap_or_else(pallas::Base::zero),
-                &self.tx_nonce.unwrap_or_else(pallas::Base::zero),
-            ),
+            // `OBL-C198`: `tx_binding` left the params — it is derived from the transaction
+            // commitment, which covers the call data. The arm derives it; the nonce stays.
             tx_nonce: self.tx_nonce.unwrap_or_else(pallas::Base::zero),
         })
     }
@@ -415,10 +409,8 @@ impl SelectWinnerBuilder {
             winning_amount: self.winning_amount.ok_or("winning_amount not set")?,
             requester_pub_x: req_x,
             requester_pub_y: req_y,
-            tx_binding: tx_binding_of(
-                &self.tx_commitment.unwrap_or_else(pallas::Base::zero),
-                &self.tx_nonce.unwrap_or_else(pallas::Base::zero),
-            ),
+            // `OBL-C198`: `tx_binding` left the params — it is derived from the transaction
+            // commitment, which covers the call data. The arm derives it; the nonce stays.
             tx_nonce: self.tx_nonce.unwrap_or_else(pallas::Base::zero),
         })
     }

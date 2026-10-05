@@ -594,19 +594,14 @@ pub struct CreateTenderParamsV1 {
     pub reveal_deadline: u64,
     /// Delivery deadline block
     pub delivery_deadline: u64,
-    /// The transaction binding the proof is made against: `poseidon_hash([3, tx_commitment, tx_nonce])`
-    /// (`OBL-C78`).
+    /// The tx nonce half of the pair — instanced separately by the circuit.
     ///
-    /// It is a **public input of the circuit** (`create_tender.zk` instances it, and `tx_nonce` after it),
-    /// so the metadata has to publish it — and the contract can only publish what it is given, so it
-    /// travels in the call. The client derives it from the transaction it is building, the host compares
-    /// the published pair against the proof's instance vector, and a call that carries the wrong pair
-    /// fails verification rather than being silently accepted. This is `box`'s convention
-    /// (`PutParams.tx_binding`, `:111`) and `pool_stake`'s worked template; before this the arm published
-    /// a four-value vector under a circuit that instances six, and `CreateTenderV1` could not verify at
-    /// all — measured, `invalid proof: call[0] namespace 'CreateTenderV2'`.
-    pub tx_binding: pallas::Base,
-    /// The tx nonce half of the pair above — instanced separately by the circuit.
+    /// `OBL-C198`: the **binding** half left the wire. It is
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])` — a derivation over call data that the
+    /// transaction commitment itself covers — so a binding carried inside the call data would be
+    /// computed from a value that covers it, a cycle with no fixed point. The arm derives it now
+    /// (`entrypoint.rs`). The nonce stays: the prover chooses it and it does not depend on the
+    /// commitment, so it closes no loop.
     pub tx_nonce: pallas::Base,
 }
 
@@ -614,15 +609,15 @@ impl dwow_serial::Encodable for CreateTenderParamsV1 { fn encode<W: std::io::Wri
 impl dwow_serial::Decodable for CreateTenderParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CreateTenderParamsV1 {
-    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let tb = self.title.as_bytes(); let pl = SerializedLen::try_from_len(self.proof.len())?; let tn = SerializedLen::try_from_len(tb.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+4+tb.len()+233); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.extend_from_slice(&tn.to_le_bytes()); b.extend_from_slice(tb); b.extend_from_slice(&self.specification.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.extend_from_slice(&self.min_bid.to_le_bytes()); b.extend_from_slice(&self.max_bid.to_le_bytes()); b.extend_from_slice(&self.bid_deadline.to_le_bytes()); b.extend_from_slice(&self.reveal_deadline.to_le_bytes()); b.extend_from_slice(&self.delivery_deadline.to_le_bytes()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let tb = self.title.as_bytes(); let pl = SerializedLen::try_from_len(self.proof.len())?; let tn = SerializedLen::try_from_len(tb.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+4+tb.len()+201); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.extend_from_slice(&tn.to_le_bytes()); b.extend_from_slice(tb); b.extend_from_slice(&self.specification.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.extend_from_slice(&self.min_bid.to_le_bytes()); b.extend_from_slice(&self.max_bid.to_le_bytes()); b.extend_from_slice(&self.bid_deadline.to_le_bytes()); b.extend_from_slice(&self.reveal_deadline.to_le_bytes()); b.extend_from_slice(&self.delivery_deadline.to_le_bytes()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // Minimum: 4(proof_len)+32(tender_id)+32+32+4(title_len)+32+32+8+8+8+8+8 = 210, plus the 64
-        // bytes of the tx pair appended for `OBL-C78` = 274. The pair is **appended** rather than
+        // Minimum: 4(proof_len)+32(tender_id)+32+32+4(title_len)+32+32+8+8+8+8+8 = 210, plus the 32
+        // bytes of the tx nonce appended for `OBL-C198` = 242. The nonce is **appended** rather than
         // inserted, so every field above keeps its position; an old-format call is refused by this
         // guard rather than decoded with a shifted tail.
-        if data.len() < 274 {
+        if data.len() < 242 {
             return Err(ContractError::IoError(format!(
-                "CreateTenderParamsV1: expected at least 274 bytes, got {}",
+                "CreateTenderParamsV1: expected at least 242 bytes, got {}",
                 data.len()
             )));
         }
@@ -693,13 +688,9 @@ impl CreateTenderParamsV1 {
         pos += 8;
         let delivery_deadline = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap());
         pos += 8;
-        if pos + 64 > data.len() {
-            return Err(ContractError::IoError("CreateTenderParamsV1: truncated tx pair".into()));
+        if pos + 32 > data.len() {
+            return Err(ContractError::IoError("CreateTenderParamsV1: truncated tx nonce".into()));
         }
-        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
-            .into_option()
-            .ok_or_else(|| ContractError::IoError("CreateTenderParamsV1: invalid tx_binding".into()))?;
-        pos += 32;
         let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
             .into_option()
             .ok_or_else(|| ContractError::IoError("CreateTenderParamsV1: invalid tx_nonce".into()))?;
@@ -725,7 +716,6 @@ impl CreateTenderParamsV1 {
             bid_deadline,
             reveal_deadline,
             delivery_deadline,
-            tx_binding,
             tx_nonce,
         })
     }
@@ -806,12 +796,10 @@ pub struct SubmitBidParamsV1 {
     pub claim_id: pallas::Base,
     /// Encrypted bid details
     pub encrypted_payload: Vec<u8>,
-    /// The transaction binding the proof is made against: `poseidon_hash([3, tx_commitment, tx_nonce])`
-    /// (`OBL-C78`). `submit_bid.zk` instances this and `tx_nonce` after it — see
-    /// `CreateTenderParamsV1` for the full note. Appended after the payload, so the payload's own
-    /// length prefix keeps its position.
-    pub tx_binding: pallas::Base,
-    /// The tx nonce half of the pair above.
+    /// The tx nonce half of the pair — instanced separately by the circuit.
+    ///
+    /// `OBL-C198`: the **binding** half left the wire; `CreateTenderParamsV1`'s note gives the
+    /// reason at length. The nonce stays.
     pub tx_nonce: pallas::Base,
 }
 
@@ -819,13 +807,13 @@ impl dwow_serial::Encodable for SubmitBidParamsV1 { fn encode<W: std::io::Write>
 impl dwow_serial::Decodable for SubmitBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SubmitBidParamsV1 {
-    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let pn = SerializedLen::try_from_len(self.encrypted_payload.len())?; let mut b = Vec::with_capacity(8+self.proof.len()+self.encrypted_payload.len()+232); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&pn.to_le_bytes()); b.extend_from_slice(&self.encrypted_payload); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let pn = SerializedLen::try_from_len(self.encrypted_payload.len())?; let mut b = Vec::with_capacity(8+self.proof.len()+self.encrypted_payload.len()+200); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&pn.to_le_bytes()); b.extend_from_slice(&self.encrypted_payload); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // 176 (proof_len + the five fixed fields + payload_len) + 64 for the appended tx pair
-        // (`OBL-C78`).
-        if data.len() < 240 {
+        // 176 (proof_len + the five fixed fields + payload_len) + 32 for the appended tx nonce
+        // (`OBL-C198`: the binding left the wire).
+        if data.len() < 208 {
             return Err(ContractError::IoError(format!(
-                "SubmitBidParamsV1: expected at least 240 bytes, got {}",
+                "SubmitBidParamsV1: expected at least 208 bytes, got {}",
                 data.len()
             )));
         }
@@ -872,13 +860,9 @@ impl SubmitBidParamsV1 {
         }
         let encrypted_payload = data[pos..pos+payload_len].to_vec();
         pos += payload_len;
-        if pos + 64 > data.len() {
-            return Err(ContractError::IoError("SubmitBidParamsV1: truncated tx pair".into()));
+        if pos + 32 > data.len() {
+            return Err(ContractError::IoError("SubmitBidParamsV1: truncated tx nonce".into()));
         }
-        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
-            .into_option()
-            .ok_or_else(|| ContractError::IoError("SubmitBidParamsV1: invalid tx_binding".into()))?;
-        pos += 32;
         let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
             .into_option()
             .ok_or_else(|| ContractError::IoError("SubmitBidParamsV1: invalid tx_nonce".into()))?;
@@ -900,7 +884,6 @@ impl SubmitBidParamsV1 {
             amount,
             claim_id,
             encrypted_payload,
-            tx_binding,
             tx_nonce,
         })
     }
@@ -982,11 +965,10 @@ pub struct RevealBidParamsV1 {
     pub bid_id: BidId,
     /// Revealed bid amount
     pub revealed_amount: u64,
-    /// The transaction binding the proof is made against: `poseidon_hash([3, tx_commitment, tx_nonce])`
-    /// (`OBL-C78`). `reveal_bid.zk` instances this and `tx_nonce` after it, so the call must carry them
-    /// for the metadata to publish — see `CreateTenderParamsV1` for the full note.
-    pub tx_binding: pallas::Base,
-    /// The tx nonce half of the pair above.
+    /// The tx nonce half of the pair — instanced separately by the circuit.
+    ///
+    /// `OBL-C198`: the **binding** half left the wire; `CreateTenderParamsV1`'s note gives the
+    /// reason at length. The nonce stays.
     pub tx_nonce: pallas::Base,
 }
 
@@ -994,12 +976,13 @@ impl dwow_serial::Encodable for RevealBidParamsV1 { fn encode<W: std::io::Write>
 impl dwow_serial::Decodable for RevealBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RevealBidParamsV1 {
-    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+136); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.revealed_amount.to_le_bytes()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+104); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.revealed_amount.to_le_bytes()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // 76 (proof_len + the three fixed fields) + 64 for the appended tx pair (`OBL-C78`).
-        if data.len() < 140 {
+        // 76 (proof_len + the three fixed fields) + 32 for the appended tx nonce (`OBL-C198`: the
+        // binding left the wire).
+        if data.len() < 108 {
             return Err(ContractError::IoError(format!(
-                "RevealBidParamsV1: expected at least 140 bytes, got {}",
+                "RevealBidParamsV1: expected at least 108 bytes, got {}",
                 data.len()
             )));
         }
@@ -1023,13 +1006,9 @@ impl RevealBidParamsV1 {
         pos += 32;
         let revealed_amount = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap());
         pos += 8;
-        if pos + 64 > data.len() {
-            return Err(ContractError::IoError("RevealBidParamsV1: truncated tx pair".into()));
+        if pos + 32 > data.len() {
+            return Err(ContractError::IoError("RevealBidParamsV1: truncated tx nonce".into()));
         }
-        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
-            .into_option()
-            .ok_or_else(|| ContractError::IoError("RevealBidParamsV1: invalid tx_binding".into()))?;
-        pos += 32;
         let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
             .into_option()
             .ok_or_else(|| ContractError::IoError("RevealBidParamsV1: invalid tx_nonce".into()))?;
@@ -1042,7 +1021,7 @@ impl RevealBidParamsV1 {
             )));
         }
 
-        Ok(RevealBidParamsV1 { proof, tender_id, bid_id, revealed_amount, tx_binding, tx_nonce })
+        Ok(RevealBidParamsV1 { proof, tender_id, bid_id, revealed_amount, tx_nonce })
     }
 }
 
@@ -1219,11 +1198,10 @@ pub struct SelectWinnerParamsV1 {
     pub winner_pub_y: pallas::Base,
     /// Winning bid amount
     pub winning_amount: u64,
-    /// The transaction binding the proof is made against: `poseidon_hash([3, tx_commitment, tx_nonce])`
-    /// (`OBL-C78`). `select_winner.zk` instances this and `tx_nonce` after it — see
-    /// `CreateTenderParamsV1` for the full note.
-    pub tx_binding: pallas::Base,
-    /// The tx nonce half of the pair above.
+    /// The tx nonce half of the pair — instanced separately by the circuit.
+    ///
+    /// `OBL-C198`: the **binding** half left the wire; `CreateTenderParamsV1`'s note gives the
+    /// reason at length. The nonce stays.
     pub tx_nonce: pallas::Base,
 }
 
@@ -1231,12 +1209,13 @@ impl dwow_serial::Encodable for SelectWinnerParamsV1 { fn encode<W: std::io::Wri
 impl dwow_serial::Decodable for SelectWinnerParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SelectWinnerParamsV1 {
-    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+232); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.winner_bid_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.extend_from_slice(&self.winner_pub_x.to_repr()); b.extend_from_slice(&self.winner_pub_y.to_repr()); b.extend_from_slice(&self.winning_amount.to_le_bytes()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(4+self.proof.len()+200); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.winner_bid_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.extend_from_slice(&self.winner_pub_x.to_repr()); b.extend_from_slice(&self.winner_pub_y.to_repr()); b.extend_from_slice(&self.winning_amount.to_le_bytes()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // 204 (proof_len + the seven fixed fields) + 64 for the appended tx pair (`OBL-C78`).
-        if data.len() < 268 {
+        // 204 (proof_len + the seven fixed fields) + 32 for the appended tx nonce (`OBL-C198`: the
+        // binding left the wire).
+        if data.len() < 236 {
             return Err(ContractError::IoError(format!(
-                "SelectWinnerParamsV1: expected at least 204 bytes, got {}",
+                "SelectWinnerParamsV1: expected at least 236 bytes, got {}",
                 data.len()
             )));
         }
@@ -1278,13 +1257,9 @@ impl SelectWinnerParamsV1 {
         pos += 32;
         let winning_amount = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap());
         pos += 8;
-        if pos + 64 > data.len() {
-            return Err(ContractError::IoError("SelectWinnerParamsV1: truncated tx pair".into()));
+        if pos + 32 > data.len() {
+            return Err(ContractError::IoError("SelectWinnerParamsV1: truncated tx nonce".into()));
         }
-        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
-            .into_option()
-            .ok_or_else(|| ContractError::IoError("SelectWinnerParamsV1: invalid tx_binding".into()))?;
-        pos += 32;
         let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
             .into_option()
             .ok_or_else(|| ContractError::IoError("SelectWinnerParamsV1: invalid tx_nonce".into()))?;
@@ -1306,7 +1281,6 @@ impl SelectWinnerParamsV1 {
             winner_pub_x,
             winner_pub_y,
             winning_amount,
-            tx_binding,
             tx_nonce,
         })
     }
@@ -1892,22 +1866,21 @@ pub struct SubmitBidWithCapabilityParamsV1 {
     pub required_capability_id: [u8; 32],
     /// Capability predicate result (from Identity contract)
     pub capability_predicate_result: pallas::Base,
-    /// The transaction binding the proof is made against: `poseidon_hash([3, tx_commitment, tx_nonce])`
-    /// (`OBL-C78`). `submit_bid_with_capability.zk` instances this and `tx_nonce` after the capability
-    /// values — see `CreateTenderParamsV1` for the full note.
-    pub tx_binding: pallas::Base,
-    /// The tx nonce half of the pair above.
+    /// The tx nonce half of the pair — instanced separately by the circuit.
+    ///
+    /// `OBL-C198`: the **binding** half left the wire; `CreateTenderParamsV1`'s note gives the
+    /// reason at length. The nonce stays.
     pub tx_nonce: pallas::Base,
 }
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl SubmitBidWithCapabilityParamsV1 {
-    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let pn = SerializedLen::try_from_len(self.encrypted_payload.len())?; let mut b = Vec::with_capacity(8+self.proof.len()+self.encrypted_payload.len()+265); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&pn.to_le_bytes()); b.extend_from_slice(&self.encrypted_payload); b.extend_from_slice(&self.required_capability_id); b.extend_from_slice(&self.capability_predicate_result.to_repr()); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let pn = SerializedLen::try_from_len(self.encrypted_payload.len())?; let mut b = Vec::with_capacity(8+self.proof.len()+self.encrypted_payload.len()+233); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&pn.to_le_bytes()); b.extend_from_slice(&self.encrypted_payload); b.extend_from_slice(&self.required_capability_id); b.extend_from_slice(&self.capability_predicate_result.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); Ok(b) }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // 242 + 64 for the appended tx pair (`OBL-C78`).
-        if data.len() < 306 {
+        // 242 + 32 for the appended tx nonce (`OBL-C198`: the binding left the wire).
+        if data.len() < 274 {
             return Err(ContractError::IoError(format!(
-                "SubmitBidWithCapabilityParamsV1: expected at least 242 bytes, got {}",
+                "SubmitBidWithCapabilityParamsV1: expected at least 274 bytes, got {}",
                 data.len()
             )));
         }
@@ -1965,13 +1938,9 @@ impl SubmitBidWithCapabilityParamsV1 {
             .into_option()
             .ok_or_else(|| ContractError::IoError("SubmitBidWithCapabilityParamsV1: invalid capability_predicate_result".into()))?;
         pos += 32;
-        if pos + 64 > data.len() {
-            return Err(ContractError::IoError("SubmitBidWithCapabilityParamsV1: truncated tx pair".into()));
+        if pos + 32 > data.len() {
+            return Err(ContractError::IoError("SubmitBidWithCapabilityParamsV1: truncated tx nonce".into()));
         }
-        let tx_binding = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
-            .into_option()
-            .ok_or_else(|| ContractError::IoError("SubmitBidWithCapabilityParamsV1: invalid tx_binding".into()))?;
-        pos += 32;
         let tx_nonce = pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())
             .into_option()
             .ok_or_else(|| ContractError::IoError("SubmitBidWithCapabilityParamsV1: invalid tx_nonce".into()))?;
@@ -1995,7 +1964,6 @@ impl SubmitBidWithCapabilityParamsV1 {
             encrypted_payload,
             required_capability_id,
             capability_predicate_result,
-            tx_binding,
             tx_nonce,
         })
     }

@@ -79,7 +79,12 @@ struct CapSetup {
 const EXPIRES_AT: u64 = 1_000_000;
 
 pub fn tender_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(TenderHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its calls will carry, because the transaction
+    // commitment is derived over the call *including* the contract id. `deploy_with_ix` assigns
+    // `derive_contract_id_from_name(name)` — a pure function of the name — so the spec computes
+    // exactly the id the pipeline will use rather than a placeholder.
+    let cid = crate::tests::blockchain::derive_contract_id_from_name("tender");
+    let harness = Box::leak(Box::new(TenderHarness::spawn(cid)));
     let h: &TenderHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/tender/dwow_tender_contract.wasm");
     let r_sk = pallas::Base::from(10u64); let r_pk = PublicKey::from_secret(SecretKey::from_base(r_sk));
@@ -123,7 +128,7 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
     let bid_id: Rc<RefCell<Option<pallas::Base>>> = Rc::new(RefCell::new(None));
 
     ContractTestSpec { name: "tender", is_genesis: false,
-        contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
+        contract_id: cid,
         harness: h, wasm_bytes: Some(wasm), has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
         // **The identity setup, copied from `insurance_market_spec.rs:156-240` minus its
@@ -232,7 +237,8 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                 // close, and the fixture cannot tell whether a rejected row advances the height — so
                 // these are the values that work under **both** readings. Rejected: 11 (bid at 10 or
                 // 11, close at 11 or 12).
-                let r = h.create_tender(r_pk, r_sk, "Test Tender".to_string(), pallas::Base::from(1u64), pallas::Base::from(2u64), 100, 10000, 11, 13, 15)
+                // `OBL-C198`: no child — the committed set is this call alone.
+                let r = h.create_tender(&[], r_pk, r_sk, "Test Tender".to_string(), pallas::Base::from(1u64), pallas::Base::from(2u64), 100, 10000, 11, 13, 15)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 *cell.borrow_mut() = Some(r.tender_id);
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
@@ -261,7 +267,7 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
             mk_ep_rejecting_naming("SubmitBidWithCapabilityV1_NoChild", true, &["ContractError(Custom(28))"],
                 Box::new({ let cell = tender_id.clone(); move || {
                     let r = h.submit_bid_with_capability(
-                        read_id(&cell), b_pk, b_sk, 5000,
+                        &[], read_id(&cell), b_pk, b_sk, 5000,
                         pallas::Base::from(5u64),
                         pallas::Base::from(7u64),
                         // The constant the circuit pins the witness to, or the proof itself fails and
@@ -273,7 +279,7 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }})),
             mk_ep("SubmitBidV1", true, Box::new({ let cell = tender_id.clone(); let bids = bid_id.clone(); move || {
-                let r = h.submit_bid(read_id(&cell), b_pk, b_sk, 5000, pallas::Base::from(3u64), pallas::Base::from(4u64), b"encrypted".to_vec())
+                let r = h.submit_bid(&[], read_id(&cell), b_pk, b_sk, 5000, pallas::Base::from(3u64), pallas::Base::from(4u64), b"encrypted".to_vec())
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 *bids.borrow_mut() = Some(r.public_inputs.bid_id);
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
@@ -299,12 +305,12 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                 Ok(EndpointResult { children: vec![], call_data, proofs: vec![] })
             }})),
             mk_ep("RevealBidV1", true, Box::new({ let cell = tender_id.clone(); let bids = bid_id.clone(); move || {
-                let r = h.reveal_bid(read_id(&cell), read_id(&bids), b_pk, b_sk, 5000)
+                let r = h.reveal_bid(&[], read_id(&cell), read_id(&bids), b_pk, b_sk, 5000)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             }})),
             mk_ep("SelectWinnerV1", true, Box::new({ let cell = tender_id.clone(); let bids = bid_id.clone(); move || {
-                let r = h.select_winner(read_id(&cell), read_id(&bids), r_pk, r_sk, b_pk, 5000)
+                let r = h.select_winner(&[], read_id(&cell), read_id(&bids), r_pk, r_sk, b_pk, 5000)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             }})),
@@ -353,9 +359,9 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                         let s = read_setup(&shared)?;
                         // The child proves capability B; the tender requires A. `OBL-C198`: the
                         // identity child is prepared first and proven after this call, because its
-                        // commitment covers this call's bytes. The tender harness has not been
-                        // migrated to take a child set, so the commitment is taken here — over the
-                        // ordered set the node hashes, child first.
+                        // commitment covers this call's bytes — and `OBL-C198` moved that arithmetic
+                        // into the harness, which takes the child set and hands back the commitment
+                        // both proofs bind to.
                         let holder_b = PublicKey::from_secret(SecretKey::from_base(s.credential_secret_b));
                         let v_plan = id
                             .verify_capability_prepare(s.credential_secret_b, s.cap_b.inner(),
@@ -371,19 +377,14 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                             data: v_plan.call_data.clone(),
                         };
                         let r = h.submit_bid_with_capability(
-                            cap_tender_id, b_pk, b_sk, 5000,
+                            &[child_call.clone()], cap_tender_id, b_pk, b_sk, 5000,
                             pallas::Base::from(21u64),
                             s.cap_a.inner(),
                             pallas::Base::one(),
                             pallas::Base::from(31u64),
                             b"encrypted".to_vec(),
                         ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let tender_call = dwow_sdk::tx::ContractCall {
-                            contract_id: crate::tests::blockchain::derive_contract_id_from_name("tender"),
-                            data: r.call_data.clone(),
-                        };
-                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &tender_call]);
-                        let v = v_plan.prove(commitment)
+                        let v = v_plan.prove(r.commitment)
                             .map_err(|e| dwow_core::Error::Custom(format!("verify_capability B: {e}")))?;
                         let child = ChildCall {
                             contract_id: *IDENTITY_CONTRACT_ID,
@@ -417,19 +418,14 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
                         data: v_plan.call_data.clone(),
                     };
                     let r = h.submit_bid_with_capability(
-                        cap_tender_id, b_pk, b_sk, 5000,
+                        &[child_call.clone()], cap_tender_id, b_pk, b_sk, 5000,
                         pallas::Base::from(22u64),
                         s.cap_a.inner(),
                         pallas::Base::one(),
                         pallas::Base::from(32u64),
                         b"encrypted".to_vec(),
                     ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let tender_call = dwow_sdk::tx::ContractCall {
-                        contract_id: crate::tests::blockchain::derive_contract_id_from_name("tender"),
-                        data: r.call_data.clone(),
-                    };
-                    let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &tender_call]);
-                    let v = v_plan.prove(commitment)
+                    let v = v_plan.prove(r.commitment)
                         .map_err(|e| dwow_core::Error::Custom(format!("verify_capability A: {e}")))?;
                     let child = ChildCall {
                         contract_id: *IDENTITY_CONTRACT_ID,

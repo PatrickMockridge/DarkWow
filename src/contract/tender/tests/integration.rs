@@ -222,7 +222,7 @@ fn test_create_tender_params_encoding() {
         delivery_deadline: 200000,
         // Distinctive values, so the round-trip below exercises the pair appended for
         // `OBL-C78` rather than passing on zeros.
-        tx_binding: pallas::Base::from(9000),
+        // `OBL-C198`: `tx_binding` left the params.
         tx_nonce: pallas::Base::from(9001),
     };
 
@@ -255,12 +255,13 @@ fn test_create_tender_params_prefixes_are_not_bytes() {
         delivery_deadline: 555,
         // Distinctive values, so the round-trip below exercises the pair appended for
         // `OBL-C78` rather than passing on zeros.
-        tx_binding: pallas::Base::from(9001),
+        // `OBL-C198`: `tx_binding` left the params.
         tx_nonce: pallas::Base::from(9002),
     };
 
     let encoded = params.encode().unwrap();
-    assert_eq!(encoded.len(), 4 + 700 + 32 + 32 + 32 + 4 + 300 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 64);
+    // `OBL-C198`: the trailer is the tx nonce alone — the binding left the wire.
+    assert_eq!(encoded.len(), 4 + 700 + 32 + 32 + 32 + 4 + 300 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 32);
 
     let decoded = CreateTenderParamsV1::decode(&encoded).unwrap();
     assert_eq!(decoded.proof.len(), 700);
@@ -285,12 +286,13 @@ fn test_submit_bid_params_prefixes_are_not_bytes() {
         encrypted_payload: vec![0xC7; 300],
         // Distinctive values, so the round-trip below exercises the pair appended for
         // `OBL-C78` rather than passing on zeros.
-        tx_binding: pallas::Base::from(9002),
+        // `OBL-C198`: `tx_binding` left the params.
         tx_nonce: pallas::Base::from(9003),
     };
 
     let encoded = params.encode().unwrap();
-    assert_eq!(encoded.len(), 4 + 700 + 168 + 4 + 300 + 64);
+    // `OBL-C198`: the trailer is the tx nonce alone — the binding left the wire.
+    assert_eq!(encoded.len(), 4 + 700 + 168 + 4 + 300 + 32);
 
     let decoded = SubmitBidParamsV1::decode(&encoded).unwrap();
     assert_eq!(decoded.proof.len(), 700);
@@ -325,7 +327,7 @@ fn test_submit_bid_params_encoding() {
         encrypted_payload: vec![1, 2, 3, 4],
         // Distinctive values, so the round-trip below exercises the pair appended for
         // `OBL-C78` rather than passing on zeros.
-        tx_binding: pallas::Base::from(9003),
+        // `OBL-C198`: `tx_binding` left the params.
         tx_nonce: pallas::Base::from(9004),
     };
 
@@ -362,7 +364,7 @@ fn test_reveal_bid_params_encoding() {
         revealed_amount: 5000,
         // Distinctive values, so the round-trip below exercises the pair appended for
         // `OBL-C78` rather than passing on zeros.
-        tx_binding: pallas::Base::from(9004),
+        // `OBL-C198`: `tx_binding` left the params.
         tx_nonce: pallas::Base::from(9005),
     };
 
@@ -430,7 +432,7 @@ fn test_select_winner_params_encoding() {
         winning_amount: 5000,
         // Distinctive values, so the round-trip below exercises the pair appended for
         // `OBL-C78` rather than passing on zeros.
-        tx_binding: pallas::Base::from(9006),
+        // `OBL-C198`: `tx_binding` left the params.
         tx_nonce: pallas::Base::from(9007),
     };
 
