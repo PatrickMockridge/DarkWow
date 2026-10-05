@@ -24,7 +24,7 @@
 //! Insurance Market Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
@@ -177,22 +177,40 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 ///   constrain_instance(underwriter_pub_x);
 ///   constrain_instance(underwriter_pub_y);
 ///   constrain_instance(required_capability_id);
+/// The transaction binding every arm publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// What stood in the four arms was the constant `poseidon_hash([3, 0, 0])`, which bound every
+/// proof to nothing at all: it was identical in every transaction, so a proof lifted from one
+/// transaction verified in another. `purchase_coverage.rs` and `purchase_coverage_with_dag.rs`
+/// carry the same constant and call this helper by its full path.
+///
+/// The nonce is zero because these calls carry no nonce field, so every proof in one transaction
+/// publishes the same binding — a *linking* of that transaction's own proofs, which
+/// `tx-commitment.md` §The Nullifier Scheme exists to avoid. It is still strictly better than the
+/// constant, and a per-proof nonce on the wire is owed.
+pub(crate) fn insurance_market_tx_binding(
+    tx_nonce: pallas::Base,
+) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([pallas::Base::from(3u64), wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 fn underwrite_with_capability_get_metadata_v1(
     params: UnderwriteWithCapabilityParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (ux, uy) = params.underwriter.xy().expect("pk not identity");
-    use dwow_sdk::crypto::poseidon_hash;
-    let tx_binding = poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
     let cap = Option::from(pallas::Base::from_repr(params.capability_secret))
         .ok_or(InsuranceMarketError::InvalidCapability)?;
     zk_public_inputs.push((
         crate::INSURANCE_MARKET_ZKAS_UNDERWRITE_WITH_CAPABILITY_NS_V2.to_string(),
         // The circuit's five instances, in its order: underwriter_pub_x, underwriter_pub_y,
-        // tx_binding, tx_nonce, required_capability_id. The tx pair was missing while the circuit
-        // constrained it; the value in the last position is unchanged.
-        vec![ux, uy, tx_binding, pallas::Base::zero(), cap],
+        // required_capability_id, then the pair — last (`OBL-C198`). The pair sat at 2,3 of 5 with
+        // `required_capability_id` after it.
+        vec![ux, uy, cap, insurance_market_tx_binding(pallas::Base::zero())?, pallas::Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -211,16 +229,14 @@ fn purchase_coverage_with_capability_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (bx, by) = params.buyer.xy().expect("pk not identity");
-    use dwow_sdk::crypto::poseidon_hash;
-    let tx_binding = poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
     let cap = Option::from(pallas::Base::from_repr(params.capability_secret))
         .ok_or(InsuranceMarketError::InvalidCapability)?;
     zk_public_inputs.push((
         crate::INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_CAPABILITY_NS_V2.to_string(),
-        // The circuit's six instances, in its order: buyer_pub_x, buyer_pub_y, tx_binding, tx_nonce,
-        // required_capability_id, buyer_nullifier. The tx pair and the nullifier were all missing
-        // while the circuit constrained them.
-        vec![bx, by, tx_binding, pallas::Base::zero(), cap, params.buyer_nullifier],
+        // The circuit's six instances, in its order: buyer_pub_x, buyer_pub_y,
+        // required_capability_id, buyer_nullifier, then the pair — last (`OBL-C198`). The pair sat
+        // at 2,3 of 6 with the capability id and the nullifier after it.
+        vec![bx, by, cap, params.buyer_nullifier, insurance_market_tx_binding(pallas::Base::zero())?, pallas::Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;

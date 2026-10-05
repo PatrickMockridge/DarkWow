@@ -290,10 +290,10 @@ pub fn purchase_coverage_with_dag_get_metadata_v1(
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
     let (buyer_x, buyer_y) = params.buyer.xy().expect("pk not identity");
     // The circuit's five instances, in its own order: buyer_pub_x, buyer_pub_y, buyer_nullifier,
-    // tx_binding, tx_nonce — the same shape as `purchase_coverage`'s, and the same repair: the tx
-    // pair was missing from this vector while the circuit constrained it.
-    use dwow_sdk::crypto::poseidon_hash;
-    let tx_binding = poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
+    // tx_binding, tx_nonce — the same shape as `purchase_coverage`'s, and the same repair: the pair
+    // already sat last, and only the binding's *value* changed, from the constant
+    // `poseidon_hash([3, 0, 0])` to the host's commitment (`OBL-C198`).
+    let tx_binding = crate::entrypoint::insurance_market_tx_binding(pallas::Base::zero())?;
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
         INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_DAG_NS_V2.to_string(),

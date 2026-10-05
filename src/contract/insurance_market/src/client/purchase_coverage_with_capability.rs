@@ -61,10 +61,10 @@ impl PurchaseCoverageWithCapabilityV1PublicInputs {
         vec![
             self.buyer_pub_x,
             self.buyer_pub_y,
-            self.tx_binding,
-            self.tx_nonce,
             self.required_capability_id,
             self.buyer_nullifier,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }

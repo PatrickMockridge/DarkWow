@@ -34,8 +34,14 @@ circuit "UnderwriteV2" {
 
     constrain_instance(underwriter_pub_x);
     constrain_instance(underwriter_pub_y);
+    constrain_instance(required_capability_id);
+
+    # The pair is the LAST two instances (`OBL-C198`): the node reads `pubvals[len-2]`/
+    # `pubvals[len-1]` and recomputes `tx_binding` there, because nothing in `src/linear/` indexes
+    # this vector — the position IS the interface. It sat at 2,3 of 5 with
+    # `required_capability_id` after it. The metadata arm's push order and the client's `to_vec`
+    # move with it.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(required_capability_id);
 }

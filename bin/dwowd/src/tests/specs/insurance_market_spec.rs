@@ -74,9 +74,27 @@ type PnNote = (pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base);
 /// `value` and `commitment_blind` are the ones the parent re-derives, because
 /// `validate_child_value_commit` checks the *output's* commitment against
 /// `pedersen_commitment_u64(bond_amount, value_blind)`.
-fn pn_transfer_child(note: &PnNote, value: u64, blind_seed: pallas::Base) -> dwow_core::Result<ChildCall> {
+/// `OBL-C198`: the same child, split at the proof. The commitment is a derivation over the whole
+/// ordered call set — this child, the identity capability proof, then the parent — so the child's
+/// blind-output proof can only be made once the parent's call data exists and that value is known.
+/// The unsplit form above proves inline, which is correct only while the parent publishes a
+/// constant; `underwrite_with_capability`'s arm now derives, so this child must bind to the same
+/// value its parent does.
+///
+/// Returns the ordered-set call, the plan to prove once the commitment is known, and the nonce the
+/// plan binds (zero — these calls carry no nonce field).
+fn pn_transfer_prepare(
+    note: &PnNote,
+    value: u64,
+    blind_seed: pallas::Base,
+) -> dwow_core::Result<(
+    dwow_sdk::tx::ContractCall,
+    dwow_promissory_note_contract::client::transfer::TransferCallPlan,
+    pallas::Base,
+)> {
     let (note_commitment, pos, path, asset_id, commitment_blind) = note;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
+    let nonce = pallas::Base::zero();
     let input = TransferCallInput {
         value,
         asset_id: *asset_id,
@@ -88,7 +106,7 @@ fn pn_transfer_child(note: &PnNote, value: u64, blind_seed: pallas::Base) -> dwo
         secret: pallas::Base::from(100u64),
         ephemeral_signature_secret: pallas::Base::from(9u64),
         tx_commitment: pallas::Base::zero(),
-        tx_nonce: pallas::Base::zero(),
+        tx_nonce: nonce,
     };
     let output = TransferCallOutput {
         recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
@@ -100,15 +118,15 @@ fn pn_transfer_child(note: &PnNote, value: u64, blind_seed: pallas::Base) -> dwo
         commitment_blind: poseidon_hash([blind_seed, *note_commitment]),
     };
     let pn = PromissoryNoteHarness::spawn();
-    let child = pn
-        .transfer_with_value_blinds(vec![input], vec![output], Some(vec![value_blind]))
+    let plan = pn
+        .transfer_prepare(vec![input], vec![output], Some(vec![value_blind]))
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall {
-        contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
-        call_data: child.call_data,
-        proofs: child.proofs,
-        children: vec![],
-    })
+    let mut call_data = vec![0x04u8];
+    call_data.extend_from_slice(
+        &plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?,
+    );
+    let call = dwow_sdk::tx::ContractCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, data: call_data };
+    Ok((call, plan, nonce))
 }
 
 /// What the two capability rows need from the fixture, published because the market id is derived
@@ -140,7 +158,12 @@ const COVERAGE_PERIOD: u64 = 1000;
 const EXPIRES_AT: u64 = 1_000_000;
 
 pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(InsuranceMarketHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its call will carry, because the transaction
+    // commitment is derived over the call *including* the contract id. `deploy_with_ix` assigns
+    // `derive_contract_id_from_name(name)` — a pure function of the name — so the spec computes
+    // exactly the id the pipeline will use rather than a placeholder.
+    let im_cid = crate::tests::blockchain::derive_contract_id_from_name("insurance_market");
+    let harness = Box::leak(Box::new(InsuranceMarketHarness::spawn(im_cid)));
     let h: &InsuranceMarketHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/insurance_market/dwow_insurance_market_contract.wasm");
     let pk = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(10u64)));
@@ -150,7 +173,9 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
 
     ContractTestSpec {
         name: "insurance_market", is_genesis: false,
-        contract_id: ContractId::from_bytes([0u8; 32]).expect("temp"),
+        // `OBL-C198`: the real id, not the stale `[0u8;32]` placeholder — the commitment is
+        // derived over the call, and the call carries this id.
+        contract_id: im_cid,
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
@@ -371,7 +396,8 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                     };
                     // Well-formed for its selector, so the rejection comes from the guard's own
                     // child-count check and not from an undecodable payload.
-                    let r = h.underwrite_with_capability(&params, pallas::Base::from(10u64))
+                    // `OBL-C198`: this row carries no child, so the committed set is the call alone.
+                    let r = h.underwrite_with_capability(&[], &params, pallas::Base::from(10u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -403,7 +429,13 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                         let s = shared.lock().unwrap().clone().ok_or_else(|| {
                             dwow_core::Error::Custom("setup did not run".to_string())
                         })?;
-                        let child_pn = pn_transfer_child(
+                        // `OBL-C198`: the PN child's call data first (no proof), the parent second,
+                        // one commitment over the ordered set `[pn_child, identity_child, parent]`.
+                        // The identity child needs no binding of its own *yet*: `identity`'s arm
+                        // publishes the constant `poseidon([3, 0, 0])` and its client computes the
+                        // same, so it agrees with itself whatever this transaction's commitment is.
+                        // When `identity` starts deriving, that child must be split too.
+                        let (child_pn_call, child_pn_plan, child_pn_nonce) = pn_transfer_prepare(
                             &s.note_wrong, BOND_AMOUNT,
                             poseidon_hash([pallas::Base::from(BOND_AMOUNT), s.underwriter_id]),
                         )?;
@@ -420,9 +452,13 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                             .map_err(|e| dwow_core::Error::Custom(format!("verify_capability B: {e}")))?;
                         let child_id = ChildCall {
                             contract_id: *IDENTITY_CONTRACT_ID,
-                            call_data: v.call_data,
+                            call_data: v.call_data.clone(),
                             proofs: vec![v.proof],
                             children: vec![],
+                        };
+                        let child_id_call = dwow_sdk::tx::ContractCall {
+                            contract_id: *IDENTITY_CONTRACT_ID,
+                            data: v.call_data,
                         };
                         let params = UnderwriteWithCapabilityParamsV1 {
                             market_id: s.market_id,
@@ -432,8 +468,16 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                             capability_proof: vec![],
                             capability_secret: s.capability_secret.to_repr(),
                         };
-                        let r = h.underwrite_with_capability(&params, pallas::Base::from(11u64))
+                        let r = h.underwrite_with_capability(&[child_pn_call.clone(), child_id_call], &params, pallas::Base::from(11u64))
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_pn_plan.prove(r.commitment, child_pn_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child_pn = ChildCall {
+                            contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
+                            call_data: child_pn_call.data,
+                            proofs: debris.proofs,
+                            children: vec![],
+                        };
                         Ok(EndpointResult {
                             children: vec![child_pn, child_id],
                             call_data: r.call_data,
@@ -485,7 +529,9 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                         let s = shared.lock().unwrap().clone().ok_or_else(|| {
                             dwow_core::Error::Custom("setup did not run".to_string())
                         })?;
-                        let child_pn = pn_transfer_child(
+                        // `OBL-C198`: as in the row above — PN call data first, parent second, one
+                        // commitment over `[pn_child, identity_child, parent]`.
+                        let (child_pn_call, child_pn_plan, child_pn_nonce) = pn_transfer_prepare(
                             &s.note_correct, BOND_AMOUNT,
                             poseidon_hash([pallas::Base::from(BOND_AMOUNT), s.underwriter_id]),
                         )?;
@@ -502,9 +548,13 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                             .map_err(|e| dwow_core::Error::Custom(format!("verify_capability A: {e}")))?;
                         let child_id = ChildCall {
                             contract_id: *IDENTITY_CONTRACT_ID,
-                            call_data: v.call_data,
+                            call_data: v.call_data.clone(),
                             proofs: vec![v.proof],
                             children: vec![],
+                        };
+                        let child_id_call = dwow_sdk::tx::ContractCall {
+                            contract_id: *IDENTITY_CONTRACT_ID,
+                            data: v.call_data,
                         };
                         let params = UnderwriteWithCapabilityParamsV1 {
                             market_id: s.market_id,
@@ -514,8 +564,16 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                             capability_proof: vec![],
                             capability_secret: s.capability_secret.to_repr(),
                         };
-                        let r = h.underwrite_with_capability(&params, pallas::Base::from(11u64))
+                        let r = h.underwrite_with_capability(&[child_pn_call.clone(), child_id_call], &params, pallas::Base::from(11u64))
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_pn_plan.prove(r.commitment, child_pn_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child_pn = ChildCall {
+                            contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
+                            call_data: child_pn_call.data,
+                            proofs: debris.proofs,
+                            children: vec![],
+                        };
                         Ok(EndpointResult {
                             children: vec![child_pn, child_id],
                             call_data: r.call_data,
@@ -566,8 +624,9 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                         value_commit: pallas::Point::default(),
                         buyer_nullifier: pallas::Base::zero(),
                     };
+                    // `OBL-C198`: no child on this row, so the committed set is the call alone.
                     let r = h.purchase_coverage_v1(
-                        &params, pallas::Base::from(10u64), pallas::Base::zero(),
+                        &[], &params, pallas::Base::from(10u64), pallas::Base::zero(),
                     ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -601,7 +660,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                         value_commit: pallas::Point::default(),
                         buyer_nullifier: pallas::Base::from(99u64),
                     };
-                    let r = h.purchase_coverage(&params).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.purchase_coverage(&[], &params).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
@@ -631,7 +690,9 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                         dag_path_index: 0,
                         required_dag_id: [0u8; 32],
                     };
-                    let r = h.purchase_coverage_dag(&params, pallas::Base::from(10u64))
+                    // `OBL-C198`: no child on this row — it is rejected *for* carrying none — so
+                    // the committed set is the call alone.
+                    let r = h.purchase_coverage_dag(&[], &params, pallas::Base::from(10u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),

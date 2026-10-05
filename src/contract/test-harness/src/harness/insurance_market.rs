@@ -68,11 +68,24 @@ pub struct InsuranceMarketHarness {
     purchase_coverage_dag_zkbin: ZkBinary,
     /// PurchaseCoverageWithDAG ProvingKey
     purchase_coverage_dag_pk: ProvingKey,
+    /// The contract's deployed id (`OBL-C198`): the transaction commitment is derived over the
+    /// call set, and a call carries this id, so the harness has to know it. Taken as a parameter
+    /// rather than defaulted — a wrong id is a wrong commitment, and the proof is refused.
+    contract_id: dwow_sdk::crypto::ContractId,
+}
+
+/// The transaction commitment over an ordered call set — the same derivation the node recomputes
+/// (`dwow_sdk::crypto::util::tx_commitment`), so a proof and the transaction that carries it agree.
+///
+/// The order is the one `DarkForest::build_vec` emits (`TransactionBuilder::build`): DFS
+/// post-order, children before parents.
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> dwow_sdk::pasta::pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
 }
 
 impl InsuranceMarketHarness {
     /// Spawn a new InsuranceMarket harness with pre-loaded circuits
-    pub fn spawn() -> Self {
+    pub fn spawn(contract_id: dwow_sdk::crypto::ContractId) -> Self {
         let underwrite_bin =
             include_bytes!("../../../insurance_market/proof/underwrite_with_capability.zk.bin");
         let purchase_bin =
@@ -123,28 +136,46 @@ impl InsuranceMarketHarness {
             purchase_coverage_v1_pk,
             purchase_coverage_dag_zkbin,
             purchase_coverage_dag_pk,
+            contract_id,
         }
+    }
+
+    /// The commitment over `children` followed by this call — the ordered set the node hashes.
+    fn commitment_over(
+        &self,
+        children: &[dwow_sdk::tx::ContractCall],
+        call_data: &[u8],
+    ) -> dwow_sdk::pasta::pallas::Base {
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.to_vec() });
+        commitment_of(&calls)
     }
 
     /// Underwrite with ZK proof (fn 0x09 = UnderwriteWithCapabilityV1)
     /// NOTE: V1/V2 namespace mismatch — contract metadata uses "UnderwriteV2"
     pub fn underwrite(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         params: &dwow_insurance_market_contract::model::UnderwriteParamsV1,
     ) -> Result<UnderwriteResult> {
         use dwow_sdk::pasta::pallas;
-        let input = UnderwriteWithCapabilityV1CallData::new(
+        let mut input = UnderwriteWithCapabilityV1CallData::new(
             pallas::Scalar::from(1u64), pallas::Base::from(1u64),
             params.underwriter, pallas::Base::from(1u64), pallas::Base::from(1u64),
         );
+
+        // `OBL-C198`: the call data comes first because the commitment is a derivation over it, and
+        // the set is `children` followed by this call — DFS post-order, children before parents.
+        let mut call_data = vec![0x09];
+        call_data.extend_from_slice(&params.encode());
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
         let (proof, public_inputs) = underwrite_with_capability_v1_proof(
             &self.underwrite_zkbin, &self.underwrite_pk, &input,
         )?;
 
-        let mut call_data = vec![0x09];
-        call_data.extend_from_slice(&params.encode());
-
-        Ok(UnderwriteResult { call_data, proof, public_inputs })
+        Ok(UnderwriteResult { call_data, proof, public_inputs, commitment })
     }
 
     /// Underwrite **with capability** (fn `0x09` = `UnderwriteWithCapabilityV1`).
@@ -163,6 +194,7 @@ impl InsuranceMarketHarness {
     /// `[underwriter_pub_x, underwriter_pub_y, tx_binding, tx_nonce, required_capability_id]`.
     pub fn underwrite_with_capability(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         params: &dwow_insurance_market_contract::model::UnderwriteWithCapabilityParamsV1,
         underwriter_secret: dwow_sdk::pasta::pallas::Base,
     ) -> Result<UnderwriteResult> {
@@ -191,25 +223,29 @@ impl InsuranceMarketHarness {
                         "capability_secret is not a pallas::Base".to_string(),
                     )
                 })?;
-        let input = UnderwriteWithCapabilityV1CallData::new(
+        let mut input = UnderwriteWithCapabilityV1CallData::new(
             pallas::Scalar::from(1u64),
             underwriter_secret,
             params.underwriter,
             required_capability_id,
             pallas::Base::from(1u64),
         );
+
+        // `OBL-C198`: see `underwrite` — call data first, then the commitment over the ordered set.
+        let mut call_data = vec![0x09];
+        call_data.extend_from_slice(
+            &params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?,
+        );
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
         let (proof, public_inputs) = underwrite_with_capability_v1_proof(
             &self.underwrite_zkbin,
             &self.underwrite_pk,
             &input,
         )?;
 
-        let mut call_data = vec![0x09];
-        call_data.extend_from_slice(
-            &params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?,
-        );
-
-        Ok(UnderwriteResult { call_data, proof, public_inputs })
+        Ok(UnderwriteResult { call_data, proof, public_inputs, commitment })
     }
 
     /// Register a risk type (fn `0x01` = `RegisterRiskTypeV1`).
@@ -251,21 +287,26 @@ impl InsuranceMarketHarness {
     /// NOTE: V1/V2 namespace mismatch — contract metadata uses "PurchaseCoverageV2"
     pub fn purchase_coverage(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         params: &dwow_insurance_market_contract::model::PurchaseCoverageParamsV1,
     ) -> Result<PurchaseCoverageResult> {
         use dwow_sdk::pasta::pallas;
-        let input = PurchaseCoverageWithCapabilityV1CallData::new(
+        let mut input = PurchaseCoverageWithCapabilityV1CallData::new(
             pallas::Scalar::from(1u64), pallas::Base::from(1u64),
             params.buyer, pallas::Base::from(1u64), pallas::Base::from(1u64),
         );
+
+        // `OBL-C198`: see `underwrite` — call data first, then the commitment over the ordered set.
+        let mut call_data = vec![0x0a];
+        call_data.extend_from_slice(&params.encode());
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
         let (proof, public_inputs) = purchase_coverage_with_capability_v1_proof(
             &self.purchase_coverage_zkbin, &self.purchase_coverage_pk, &input,
         )?;
 
-        let mut call_data = vec![0x0a];
-        call_data.extend_from_slice(&params.encode());
-
-        Ok(PurchaseCoverageResult { call_data, proof, public_inputs })
+        Ok(PurchaseCoverageResult { call_data, proof, public_inputs, commitment })
     }
 
     /// Purchase coverage v1 (function code 0x04)
@@ -282,6 +323,7 @@ impl InsuranceMarketHarness {
     /// returns an error here rather than a proof that fails later for a reason nobody can read.
     pub fn purchase_coverage_v1(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         params: &dwow_insurance_market_contract::model::PurchaseCoverageParamsV1,
         buyer_secret: dwow_sdk::pasta::pallas::Base,
         purchase_nonce: dwow_sdk::pasta::pallas::Base,
@@ -295,19 +337,27 @@ impl InsuranceMarketHarness {
                     .to_string(),
             ))
         }
-        let input = PurchaseCoverageV1CallData::new(buyer_secret, params.buyer, purchase_nonce);
-        let (proof, public_inputs) = purchase_coverage_v1_proof(
-            &self.purchase_coverage_v1_zkbin,
-            &self.purchase_coverage_v1_pk,
-            &input,
-        )?;
+        let mut input = PurchaseCoverageV1CallData::new(buyer_secret, params.buyer, purchase_nonce);
 
+        // `OBL-C198`: the call data is built from `public_inputs`, which are a pure function of the
+        // call data — so they are taken *before* the proof, which is what lets the commitment be
+        // derived over a call that already exists.
+        let public_inputs = input.compute_public_inputs();
         let mut wire = params.clone();
         wire.buyer_nullifier = public_inputs.buyer_nullifier;
         let mut call_data = vec![0x04];
         call_data.extend_from_slice(&wire.encode());
 
-        Ok(PurchaseCoverageV1Result { call_data, proof, public_inputs })
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, _public_inputs) = purchase_coverage_v1_proof(
+            &self.purchase_coverage_v1_zkbin,
+            &self.purchase_coverage_v1_pk,
+            &input,
+        )?;
+
+        Ok(PurchaseCoverageV1Result { call_data, proof, public_inputs, commitment })
     }
 
     /// Purchase coverage with DAG (function code 0x0b)
@@ -320,6 +370,7 @@ impl InsuranceMarketHarness {
     /// `buyer_secret` must be the discrete log of `params.buyer`.
     pub fn purchase_coverage_dag(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         params: &dwow_insurance_market_contract::model::PurchaseCoverageWithDAGParamsV1,
         buyer_secret: dwow_sdk::pasta::pallas::Base,
     ) -> Result<PurchaseCoverageDagResult> {
@@ -332,20 +383,27 @@ impl InsuranceMarketHarness {
                     .to_string(),
             ))
         }
-        let input = PurchaseCoverageWithDAGV1CallData::new(buyer_secret, params.buyer);
-        let (proof, public_inputs) = purchase_coverage_with_dag_v1_proof(
-            &self.purchase_coverage_dag_zkbin,
-            &self.purchase_coverage_dag_pk,
-            &input,
-        )?;
+        let mut input = PurchaseCoverageWithDAGV1CallData::new(buyer_secret, params.buyer);
 
+        // `OBL-C198`: as in `purchase_coverage_v1` — the public inputs are a pure function of the
+        // call data, so they come before the proof and the call data before the commitment.
+        let public_inputs = input.compute_public_inputs();
         let mut wire = params.clone();
         wire.buyer_nullifier = public_inputs.buyer_nullifier;
         let mut call_data = vec![0x0b];
         call_data
             .extend_from_slice(&wire.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
-        Ok(PurchaseCoverageDagResult { call_data, proof, public_inputs })
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, _public_inputs) = purchase_coverage_with_dag_v1_proof(
+            &self.purchase_coverage_dag_zkbin,
+            &self.purchase_coverage_dag_pk,
+            &input,
+        )?;
+
+        Ok(PurchaseCoverageDagResult { call_data, proof, public_inputs, commitment })
     }
 }
 
@@ -384,6 +442,9 @@ pub struct UnderwriteResult {
     pub call_data: Vec<u8>,
     pub proof: Proof,
     pub public_inputs: UnderwriteWithCapabilityV1PublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: dwow_sdk::pasta::pallas::Base,
 }
 
 /// Result of purchase_coverage
@@ -391,6 +452,7 @@ pub struct PurchaseCoverageResult {
     pub call_data: Vec<u8>,
     pub proof: Proof,
     pub public_inputs: PurchaseCoverageWithCapabilityV1PublicInputs,
+    pub commitment: dwow_sdk::pasta::pallas::Base,
 }
 
 /// Result of register_risk_type
@@ -412,9 +474,11 @@ pub struct PurchaseCoverageV1Result {
     /// The five instances the proof was created over. A caller cannot choose them: the harness derives
     /// the nullifier and writes it onto the wire, so this is the only place the value is legible.
     pub public_inputs: PurchaseCoverageV1PublicInputs,
+    pub commitment: dwow_sdk::pasta::pallas::Base,
 }
 pub struct PurchaseCoverageDagResult {
     pub call_data: Vec<u8>,
     pub proof: Proof,
     pub public_inputs: PurchaseCoverageWithDAGV1PublicInputs,
+    pub commitment: dwow_sdk::pasta::pallas::Base,
 }

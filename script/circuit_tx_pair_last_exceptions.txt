@@ -26,7 +26,7 @@
 # counts as a PASS and order as a WARN. `OBL-C198` is the register row for the campaign.
 #
 # EVERY NON-CONFORMING CIRCUIT IN THE TREE IS LISTED. Measured 2026-10-05 over 166 circuits:
-# 143 conform and 23 have the pair elsewhere in the vector. The third category the 2026-10-04
+# 145 conform and 21 have the pair elsewhere in the vector. The third category the 2026-10-04
 # census recorded — 1 circuit with **no** pair at all, `bearer_bond`'s `ProveCoverage_V2` — is
 # now empty: it carries the pair (`OBL-C198`, 2026-10-05). There is no fourth category, so this
 # file is the complete census — a circuit that conforms today and is edited into the middle
@@ -63,8 +63,6 @@ src/contract/game_room/proof/create_room.zk : CreateRoomV2 : `OBL-C198` — pair
 src/contract/game_room/proof/deposit.zk : DepositV2 : `OBL-C198` — pair at 1,2 of 4; `derived_player_key` follows.
 src/contract/game_room/proof/place_bet.zk : PlaceBetV2 : `OBL-C198` — pair at 1,2 of 4; `derived_commitment` follows.
 src/contract/game_room/proof/settle_pot.zk : SettlePotV2 : `OBL-C198` — pair at 1,2 of 4; `derived_pot_id` follows.
-src/contract/insurance_market/proof/purchase_coverage_with_capability.zk : PurchaseCoverageWithCapabilityV2 : `OBL-C198` — pair at 2,3 of 6; `required_capability_id` and `buyer_nullifier` follow.
-src/contract/insurance_market/proof/underwrite_with_capability.zk : UnderwriteV2 : `OBL-C198` — pair at 2,3 of 5; `required_capability_id` follows.
 src/contract/pool_stake/proof/allocate_coverage.zk : AllocateCoverageV2 : `OBL-C198` — pair at 0,1 of 3; `derived_allocation_id` follows.
 src/contract/pool_stake/proof/create_pool.zk : CreatePoolV2 : `OBL-C198` — pair at 0,1 of 3; `derived_pool_id` follows.
 src/contract/pool_stake/proof/join_pool.zk : JoinPoolV2 : `OBL-C198` — pair at 2,3 of 5; the value-commitment y coordinate follows.

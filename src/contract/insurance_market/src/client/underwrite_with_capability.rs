@@ -56,9 +56,9 @@ impl UnderwriteWithCapabilityV1PublicInputs {
         vec![
             self.underwriter_pub_x,
             self.underwriter_pub_y,
+            self.required_capability_id,
             self.tx_binding,
             self.tx_nonce,
-            self.required_capability_id,
         ]
     }
 }
