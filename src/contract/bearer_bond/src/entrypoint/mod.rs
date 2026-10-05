@@ -362,10 +362,10 @@ fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
             params.bond_input.nullifier.inner(),
             vc_x,
             vc_y,
-            params.bond_input.token_commit,
+            params.receipt_token_commit,
             params.bond_input.merkle_root.inner(),
             params.bond_input.user_data_enc,
-            params.bond_input.spend_hook,
+            params.receipt_spend_hook,
             params.bond_input.signature_public,
             tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
             pallas::Base::zero(), // tx_nonce
@@ -402,10 +402,10 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
             params.bond_input.nullifier.inner(),
             vc_x,
             vc_y,
-            params.bond_input.token_commit,
+            params.receipt_token_commit,
             params.bond_input.merkle_root.inner(),
             params.bond_input.user_data_enc,
-            params.bond_input.spend_hook,
+            params.receipt_spend_hook,
             params.bond_input.signature_public,
             tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
             pallas::Base::zero(), // tx_nonce
@@ -427,9 +427,9 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
             params.receipt_commitment,
             vc_x,
             vc_y,
-            params.bond_input.token_commit,
+            params.receipt_token_commit,
             value,
-            params.bond_input.spend_hook,
+            params.receipt_spend_hook,
             tx_binding_of(pallas::Base::zero())?,
             pallas::Base::zero(),
         ],
@@ -465,10 +465,10 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
             params.bond_input.nullifier.inner(),
             vc_x,
             vc_y,
-            params.bond_input.token_commit,
+            params.receipt_token_commit,
             params.bond_input.merkle_root.inner(),
             params.bond_input.user_data_enc,
-            params.bond_input.spend_hook,
+            params.receipt_spend_hook,
             params.bond_input.signature_public,
             tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
             pallas::Base::zero(), // tx_nonce
@@ -484,9 +484,9 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
             params.receipt_commitment, // the receipt's note commitment — carried in the params
             vc_x,                          // value_commit x
             vc_y,                          // value_commit y
-            params.bond_input.token_commit,
+            params.receipt_token_commit,
             value,
-            params.bond_input.spend_hook,
+            params.receipt_spend_hook,
             // `OBL-C198`: the tx pair is the last two instances (matching the reordered circuit).
             tx_binding_of(pallas::Base::zero())?,
             pallas::Base::zero(),

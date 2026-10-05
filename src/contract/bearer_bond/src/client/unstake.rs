@@ -241,6 +241,10 @@ impl UnstakeCallBuilder {
             // The receipt's note commitment, a proof-independent derivation over the output
             // (OBL-Z15) — the value the metadata pushes where `Redeem_V2` exposes `coin`.
             receipt_commitment: receipt_derived.commitment,
+            // `OBL-C199`: the receipt is a note of its own, so these are its values — the arm
+            // published the stake's, which are different, and the proof failed verification.
+            receipt_token_commit: receipt_derived.token_commit,
+            receipt_spend_hook: self.output.spend_hook,
         };
         Ok(UnstakeCallPlan {
             burn_zkbin: self.burn_zkbin,

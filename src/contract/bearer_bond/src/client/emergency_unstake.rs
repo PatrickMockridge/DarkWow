@@ -206,6 +206,9 @@ impl EmergencyUnstakeCallBuilder {
             // The receipt's note commitment, a proof-independent derivation over the output
             // (OBL-Z15) — see the note in `unstake.rs`.
             receipt_commitment: receipt_derived.commitment,
+            // `OBL-C199`: the receipt is a note of its own — see `unstake.rs`.
+            receipt_token_commit: receipt_derived.token_commit,
+            receipt_spend_hook: self.output.spend_hook,
         };
         Ok(EmergencyUnstakeCallPlan {
             burn_zkbin: self.burn_zkbin,
