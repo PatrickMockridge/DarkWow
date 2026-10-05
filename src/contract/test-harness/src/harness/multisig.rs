@@ -212,6 +212,88 @@ impl MultiSigHarness {
 
         Ok(FinalizeResult { call_data, proof })
     }
+
+    /// A `finalize` call built but not yet proven (`OBL-C198`).
+    ///
+    /// [`Self::finalize`] binds its proof to `tx_commitment([&call])` — the call **alone** — which
+    /// is correct when the multisig call is the whole transaction, as it is in this contract's own
+    /// spec. When it is a **child** of another call the node hashes the whole ordered set instead,
+    /// so the child's `tx_binding` has to be derived over a call that does not exist yet when the
+    /// child is built: the parent's. `finalize_prepare` therefore stops before the proof and hands
+    /// the caller the call data; the caller assembles the set, takes the commitment and calls
+    /// [`FinalizePlan::prove`].
+    ///
+    /// This is additive on purpose. Rewriting `finalize` to take a child set would change every
+    /// caller in `multisig_spec.rs`, where the bind-over-self form is already right.
+    pub fn finalize_prepare(
+        &self,
+        group_id: pallas::Base,
+        message_hash: pallas::Base,
+        approvals: Vec<Nullifier>,
+    ) -> Result<FinalizePlan> {
+        let approval_commit = poseidon_hash([pallas::Base::from(4u64), group_id, message_hash]);
+        let tx_nonce = pallas::Base::from(300u64);
+
+        let params = dwow_multisig_contract::model::FinalizeParamsV1 {
+            group_id: dwow_multisig_contract::model::GroupId(group_id),
+            message_hash, approval_commit, approvals,
+            proof: vec![], tx_nonce,
+        };
+        let mut call_data = vec![0x03u8];
+        call_data.extend_from_slice(&params.encode()?);
+
+        Ok(FinalizePlan {
+            witnesses_head: vec![
+                Witness::Base(Value::known(group_id)),
+                Witness::Base(Value::known(message_hash)),
+                Witness::Base(Value::known(approval_commit)),
+            ],
+            public_head: vec![group_id, message_hash, approval_commit],
+            tx_nonce,
+            call_data,
+            finalize_zkbin: self.finalize_zkbin.clone(),
+            finalize_pk: self.finalize_pk.clone(),
+        })
+    }
+}
+
+/// A prepared multisig `finalize`, proved against a caller-supplied commitment — see
+/// [`MultiSigHarness::finalize_prepare`] for why a child needs this and a whole transaction does
+/// not.
+pub struct FinalizePlan {
+    witnesses_head: Vec<Witness>,
+    public_head: Vec<pallas::Base>,
+    tx_nonce: pallas::Base,
+    /// The call data the commitment must cover. The caller needs it to build the `ContractCall`
+    /// this plan signs for.
+    pub call_data: Vec<u8>,
+    finalize_zkbin: ZkBinary,
+    finalize_pk: ProvingKey,
+}
+
+impl FinalizePlan {
+    /// Prove against `tx_commitment` — the commitment over the whole ordered call set the node
+    /// will hash, not just this call.
+    pub fn prove(self, tx_commitment: pallas::Base) -> Result<FinalizeResult> {
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, self.tx_nonce]);
+
+        let mut witnesses = self.witnesses_head;
+        witnesses.push(Witness::Base(Value::known(tx_commitment)));
+        witnesses.push(Witness::Base(Value::known(self.tx_nonce)));
+
+        // constrain_instance order: group_id, message_hash, approval_commit, tx_binding, tx_nonce
+        let mut public_inputs = self.public_head;
+        public_inputs.push(tx_binding);
+        public_inputs.push(self.tx_nonce);
+
+        let proof = if dwow_multisig_contract::deterministic_zk_enabled() {
+            Proof::create(&self.finalize_pk, &[ZkCircuit::new(witnesses, &self.finalize_zkbin)], &public_inputs, rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            Proof::create(&self.finalize_pk, &[ZkCircuit::new(witnesses, &self.finalize_zkbin)], &public_inputs, OsRng)
+        }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
+
+        Ok(FinalizeResult { call_data: self.call_data, proof })
+    }
 }
 
 impl super::ContractHarness for MultiSigHarness {
