@@ -2,6 +2,26 @@
 //! children; ClaimV1 requires PN transfer_v1 (0x04) + Box take_v1 (0x02) children; RefundV1
 //! requires one PN transfer_v1 (0x04) child. Claim/Refund validate the child value_commit against
 //! `poseidon_hash([escrow.value, escrow.id])`.
+//!
+//! # `OBL-C198`: what this spec needs before it can migrate, stated here rather than discovered
+//! # mid-run
+//!
+//! Every row here is a **nested-child** case, and they are the campaign's hardest shape. The set
+//! the node hashes is `[child_a, child_b, this escrow call]`, so each child's proof must bind to a
+//! commitment that includes bytes appearing *after* it in DFS post-order.
+//!
+//! * the **PN** children can do this already — `modules::child_calls::pn_transfer_prepare` and
+//!   `pn_transfer_payout_prepare` return a plan the caller proves against its own commitment;
+//! * the **Purse** and **Box** children cannot. `harness/purse.rs` and `harness/box.rs` each
+//!   compute `tx_commitment([&self_call])` over their own call alone — correct when that call *is*
+//!   the transaction, which is what their own specs are, and wrong for a child. Both need the
+//!   two-phase form `MultiSigHarness::finalize_prepare` / `FinalizePlan::prove` has
+//!   (`e012f52dce`): a prepared plan holding the call data and the witness inputs, and a
+//!   `prove(commitment)` that takes the caller's value.
+//!
+//! Until then `escrow` cannot be migrated as a unit, and the arms/circuits have not been moved —
+//! moving them first would leave the contract deriving while its own spec could not build a
+//! satisfiable child, which is a red run that says nothing about the migration.
 
 use dwow_contract_test_harness::harness::{
     BoxHarness, ContractHarness, EscrowHarness, PromissoryNoteHarness, PurseHarness,
