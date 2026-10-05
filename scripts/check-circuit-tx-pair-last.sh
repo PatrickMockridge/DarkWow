@@ -12,18 +12,28 @@
 # order comparison cannot. That check compares the circuit's variable names to the arm's Rust
 # expressions and is a heuristic, so it warns. Here there is nothing to guess.
 #
-# Measured 2026-10-04 over the whole corpus (166 circuits in `src/contract/*/proof/*.zk`):
+# THE CENSUS IS NOT WRITTEN HERE, ON PURPOSE. It was, as three counted lines, and within a day of
+# the campaign starting all three were wrong — the conforming count, the list of contracts, and
+# the claim that one circuit has no pair at all. A number in a header is a second home for a fact
+# its own output states, and this file's is a file that moves every week. The live census is the
+# run's own `COVERAGE: walked N of N` and `DECLARED:` lines, and the accounting is the header of
+# `script/circuit_tx_pair_last_exceptions.txt`. What is stated here is only the shape:
 #
-#   * 136 place the pair last and conform
-#   * 30 place it elsewhere — escrow 5, game_room 4, pool_stake 4, dao_escrow 3,
-#     relayer_endowment 3, subscription 3, insurance_market 2, and one each in `bearer_bond`,
-#     `darktoshi_dice`, `promissory_note`, `roulette`, `slot`, `stablecoin`
-#   * 1 — `bearer_bond`'s `ProveCoverage_V2` — has no pair at all
+#   * every circuit of every contract places `tx_binding` immediately before `tx_nonce`, both
+#     last — the conforming state;
+#   * or it does not, and it is declared in that file with the register row that schedules its
+#     repair;
+#   * or it has no pair at all, which is not a third category but the same one: a circuit that
+#     cannot be covered by stage 4 until it carries the pair.
 #
-# The 31 are the census in `circuit_tx_pair_last_exceptions.txt`, each naming the register row
-# that schedules its repair. The rule is TOTAL: every circuit instances both values, so there is
-# no third category and the file is complete. A circuit edited into the middle shape fails here
-# immediately.
+# THE CORPUS IS 166, and the boundary is worth stating because two sibling gates walk 178.
+# `src/contract/*/proof/*.zk` is what the chain verifies. The other twelve are `proofs/core`
+# (10) and `bin/darkirc/proof/` (2), and **nothing in the chain consumes them**: no Rust or TOML
+# under `src/` or `bin/` names that path, and no contract `.zk` includes one. Measured
+# 2026-10-05 — 0 references — so they are neither nested inside a contract circuit nor verified on
+# their own. The plan for this campaign said to "confirm that before exempting them"; there is
+# nothing to exempt, because nothing in the chain sees them. A reader who wonders why this gate
+# walks 166 where the derivation gate walks 178 has the answer here.
 #
 # WHAT A PASS MEANS, and what it does not. That every circuit walked places the pair last, or is
 # declared below. It is a structural check over source text. It does not know whether the
