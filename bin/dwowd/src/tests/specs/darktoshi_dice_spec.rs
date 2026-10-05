@@ -4,11 +4,12 @@
 //! derives the roll from block-hash entropy (no child); SettleBetV1 pays out (payout child — 0 on a
 //! house win); HouseCloseV1 collects an abandoned bet (child).
 //!
-//! `OBL-C198`: the PN children are built by the local `pn_transfer_prepare` /
-//! `pn_transfer_payout_prepare` below rather than by `modules::child_calls`, because those helpers
-//! prove inline and a child's proof now has to bind to the same transaction commitment its parent
-//! does — which is only known once the parent's call data exists. Both bodies are the shared
-//! helpers' with the proof split off.
+//! `OBL-C198`: the PN children are built by `modules::child_calls`' `pn_transfer_prepare` /
+//! `pn_transfer_payout_prepare`, which stop short of the proof. A child's proof now has to bind to
+//! the same transaction commitment its parent does, and that value is only known once the parent's
+//! call data exists — so the call data, the child, the commitment and the proof are resolved in
+//! that order. The unsplit `pn_transfer_child` / `pn_transfer_payout_child` beside them are for
+//! callers whose parent does not derive.
 //!
 //! NOTE: the dice state machine makes SettleBetV1 and HouseCloseV1 mutually exclusive on the same
 //! bet (both consume the `Revealed` state). A single linear run can only green one of them. We green
@@ -23,148 +24,18 @@
 //! green for a reason it did not name.
 
 use dwow_contract_test_harness::harness::{DarkToshiDiceHarness, PromissoryNoteHarness};
-use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
 use dwow_sdk::crypto::{
-    pasta_prelude::PrimeField, poseidon_hash, util::fp_mod_fv, Blind, MerkleNode, MerkleTree,
-    PublicKey, ScalarBlind, SecretKey, PROMISSORY_NOTE_CONTRACT_ID,
+    poseidon_hash, MerkleNode, MerkleTree, PublicKey, SecretKey, PROMISSORY_NOTE_CONTRACT_ID,
 };
 use dwow_sdk::pasta::pallas;
 use std::sync::{Arc, Mutex};
 
-use crate::tests::modules::child_calls::PnNote;
+use crate::tests::modules::child_calls::{
+    pn_transfer_payout_prepare, pn_transfer_prepare, PnNote,
+};
 use crate::tests::uniform_runner::{
     ChildCall, ContractTestSpec, EndpointExpectation, EndpointResult, EndpointSpec,
 };
-
-/// `OBL-C198`: build a PN TransferV1 (0x04) child call's **data and plan, without proving** — the
-/// commitment is a derivation over the whole call set, so this proof is made only after the
-/// parent's call data exists and the commitment over the set is known. Returns the ordered-set
-/// call, the plan to prove once that commitment is known, and the nonce the plan binds.
-///
-/// The body is `modules::child_calls::pn_transfer_child`'s, split at the proof. That helper proves
-/// inline, which is correct only while no parent derives its `tx_binding` from the host: once the
-/// parent does, the child's proof has to bind to the same commitment the parent's does.
-fn pn_transfer_prepare(
-    note: &PnNote,
-    value: u64,
-    blind_seed: pallas::Base,
-    output_spend_hook: pallas::Base,
-) -> dwow_core::Result<(
-    dwow_sdk::tx::ContractCall,
-    dwow_promissory_note_contract::client::transfer::TransferCallPlan,
-    pallas::Base,
-)> {
-    let (note_commitment, pos, path, asset_id, commitment_blind) = note;
-    let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
-    let nonce = pallas::Base::zero();
-
-    let input = TransferCallInput {
-        value,
-        asset_id: *asset_id,
-        spend_hook: pallas::Base::zero(),
-        user_data: pallas::Base::zero(),
-        commitment_blind: *commitment_blind,
-        leaf_position: *pos,
-        merkle_path: path.clone(),
-        secret: pallas::Base::from(100u64),
-        ephemeral_signature_secret: pallas::Base::from(9u64),
-        tx_commitment: pallas::Base::zero(),
-        tx_nonce: nonce,
-    };
-    let output = TransferCallOutput {
-        recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
-        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
-        value,
-        asset_id: *asset_id,
-        spend_hook: output_spend_hook,
-        user_data: pallas::Base::zero(),
-        commitment_blind: poseidon_hash([blind_seed, *note_commitment]),
-    };
-
-    let pn = PromissoryNoteHarness::spawn();
-    let plan = pn
-        .transfer_prepare(vec![input], vec![output], Some(vec![value_blind]))
-        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    let mut call_data = vec![0x04u8];
-    call_data.extend_from_slice(
-        &plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?,
-    );
-    let call = dwow_sdk::tx::ContractCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, data: call_data };
-    Ok((call, plan, nonce))
-}
-
-/// As `pn_transfer_prepare`, for the payout+change child: `payout` out, the rest back as change.
-/// The change output's value blind MUST be zero — `transfer_with_value_blinds` maps `value_blinds`
-/// positionally (input `i` and output `i` share `value_blinds[i]`), so Pedersen conservation over
-/// the two outputs holds only when it is. The *leaf* blinds are derived from the spent note plus
-/// the output index, exactly as `modules::child_calls::pn_transfer_payout_child` derives them
-/// (`OBL-C192`).
-fn pn_transfer_payout_prepare(
-    note: &PnNote,
-    locked_value: u64,
-    payout: u64,
-    blind_seed: pallas::Base,
-) -> dwow_core::Result<(
-    dwow_sdk::tx::ContractCall,
-    dwow_promissory_note_contract::client::transfer::TransferCallPlan,
-    pallas::Base,
-)> {
-    let (note_commitment, pos, path, asset_id, commitment_blind) = note;
-    let change = locked_value - payout;
-    let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
-    let nonce = pallas::Base::zero();
-
-    let input = TransferCallInput {
-        value: locked_value,
-        asset_id: *asset_id,
-        spend_hook: pallas::Base::zero(),
-        user_data: pallas::Base::zero(),
-        commitment_blind: *commitment_blind,
-        leaf_position: *pos,
-        merkle_path: path.clone(),
-        secret: pallas::Base::from(100u64),
-        ephemeral_signature_secret: pallas::Base::from(9u64),
-        tx_commitment: pallas::Base::zero(),
-        tx_nonce: nonce,
-    };
-
-    let recipient = poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]);
-    let recipient_pub = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64)));
-
-    let mut outputs = vec![TransferCallOutput {
-        recipient,
-        recipient_pub,
-        value: payout,
-        asset_id: *asset_id,
-        spend_hook: pallas::Base::zero(),
-        user_data: pallas::Base::zero(),
-        commitment_blind: poseidon_hash([blind_seed, *note_commitment, pallas::Base::from(0u64)]),
-    }];
-    let mut blinds = vec![value_blind];
-    if change > 0 {
-        outputs.push(TransferCallOutput {
-            recipient,
-            recipient_pub,
-            value: change,
-            asset_id: *asset_id,
-            spend_hook: pallas::Base::zero(),
-            user_data: pallas::Base::zero(),
-            commitment_blind: poseidon_hash([blind_seed, *note_commitment, pallas::Base::from(1u64)]),
-        });
-        blinds.push(ScalarBlind::from_u64(0));
-    }
-
-    let pn = PromissoryNoteHarness::spawn();
-    let plan = pn
-        .transfer_prepare(vec![input], outputs, Some(blinds))
-        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    let mut call_data = vec![0x04u8];
-    call_data.extend_from_slice(
-        &plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?,
-    );
-    let call = dwow_sdk::tx::ContractCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, data: call_data };
-    Ok((call, plan, nonce))
-}
 
 pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
     // `OBL-C198`: the harness must know the id its call will carry, because the transaction

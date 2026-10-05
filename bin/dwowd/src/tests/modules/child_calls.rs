@@ -211,3 +211,139 @@ pub fn pn_transfer_payout_child(
         children: vec![],
     })
 }
+
+// ============================================================================
+// `OBL-C198`: the same two children, split at the proof
+// ============================================================================
+//
+// `pn_transfer_child` and `pn_transfer_payout_child` above build the call **and** prove it, which
+// was correct while every parent arm published the constant `poseidon_hash([3, 0, 0])`: the child
+// bound to that same constant and the two agreed. Once a parent DERIVES its `tx_binding` from the
+// host's commitment, the child's proof has to bind to the same value — and that value is a
+// derivation over the whole ordered call set, which does not exist until the parent's call data
+// does. So the two phases are separated here rather than in each spec: `*_prepare` returns the
+// ordered-set call, the plan, and the nonce; the caller proves the plan once it has the
+// commitment. The bodies are the helpers' above with the proof lifted out — one copy, so the two
+// cannot drift (`safety.md` RC5).
+
+/// As [`pn_transfer_child`], without the proof. Returns the ordered-set call, the plan to prove
+/// once the commitment over the whole set is known, and the nonce the plan binds.
+pub fn pn_transfer_prepare(
+    note: &PnNote,
+    value: u64,
+    blind_seed: pallas::Base,
+    output_spend_hook: pallas::Base,
+) -> dwow_core::Result<(
+    dwow_sdk::tx::ContractCall,
+    dwow_promissory_note_contract::client::transfer::TransferCallPlan,
+    pallas::Base,
+)> {
+    let (note_commitment, pos, path, asset_id, commitment_blind) = note;
+    let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
+    let nonce = pallas::Base::zero();
+
+    let input = TransferCallInput {
+        value,
+        asset_id: *asset_id,
+        spend_hook: pallas::Base::zero(),
+        user_data: pallas::Base::zero(),
+        commitment_blind: *commitment_blind,
+        leaf_position: *pos,
+        merkle_path: path.clone(),
+        secret: pallas::Base::from(100u64),
+        ephemeral_signature_secret: pallas::Base::from(9u64),
+        tx_commitment: pallas::Base::zero(),
+        tx_nonce: nonce,
+    };
+    let output = TransferCallOutput {
+        recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
+        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
+        value,
+        asset_id: *asset_id,
+        spend_hook: output_spend_hook,
+        user_data: pallas::Base::zero(),
+        commitment_blind: poseidon_hash([blind_seed, *note_commitment]),
+    };
+
+    let pn = PromissoryNoteHarness::spawn();
+    let plan = pn
+        .transfer_prepare(vec![input], vec![output], Some(vec![value_blind]))
+        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+    let mut call_data = vec![0x04u8];
+    call_data.extend_from_slice(
+        &plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?,
+    );
+    let call = dwow_sdk::tx::ContractCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, data: call_data };
+    Ok((call, plan, nonce))
+}
+
+/// As [`pn_transfer_payout_child`], without the proof — see [`pn_transfer_prepare`] for why the
+/// split exists. The change output's value blind MUST be zero (the positional mapping the helper
+/// above documents), and the leaf blinds are derived from the spent note plus the output index
+/// (`OBL-C192`), exactly as that helper derives them.
+pub fn pn_transfer_payout_prepare(
+    note: &PnNote,
+    locked_value: u64,
+    payout: u64,
+    blind_seed: pallas::Base,
+) -> dwow_core::Result<(
+    dwow_sdk::tx::ContractCall,
+    dwow_promissory_note_contract::client::transfer::TransferCallPlan,
+    pallas::Base,
+)> {
+    let (note_commitment, pos, path, asset_id, commitment_blind) = note;
+    let change = locked_value - payout;
+    let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
+    let nonce = pallas::Base::zero();
+
+    let input = TransferCallInput {
+        value: locked_value,
+        asset_id: *asset_id,
+        spend_hook: pallas::Base::zero(),
+        user_data: pallas::Base::zero(),
+        commitment_blind: *commitment_blind,
+        leaf_position: *pos,
+        merkle_path: path.clone(),
+        secret: pallas::Base::from(100u64),
+        ephemeral_signature_secret: pallas::Base::from(9u64),
+        tx_commitment: pallas::Base::zero(),
+        tx_nonce: nonce,
+    };
+
+    let recipient = poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]);
+    let recipient_pub = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64)));
+
+    let mut outputs = vec![TransferCallOutput {
+        recipient,
+        recipient_pub,
+        value: payout,
+        asset_id: *asset_id,
+        spend_hook: pallas::Base::zero(),
+        user_data: pallas::Base::zero(),
+        commitment_blind: poseidon_hash([blind_seed, *note_commitment, pallas::Base::from(0u64)]),
+    }];
+    let mut blinds = vec![value_blind];
+    if change > 0 {
+        outputs.push(TransferCallOutput {
+            recipient,
+            recipient_pub,
+            value: change,
+            asset_id: *asset_id,
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            commitment_blind: poseidon_hash([blind_seed, *note_commitment, pallas::Base::from(1u64)]),
+        });
+        blinds.push(ScalarBlind::from_u64(0));
+    }
+
+    let pn = PromissoryNoteHarness::spawn();
+    let plan = pn
+        .transfer_prepare(vec![input], outputs, Some(blinds))
+        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+    let mut call_data = vec![0x04u8];
+    call_data.extend_from_slice(
+        &plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?,
+    );
+    let call = dwow_sdk::tx::ContractCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, data: call_data };
+    Ok((call, plan, nonce))
+}
