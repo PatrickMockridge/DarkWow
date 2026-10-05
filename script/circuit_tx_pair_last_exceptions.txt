@@ -30,13 +30,20 @@
 # `ProveCoverage_V2`) has no pair at all. There is no fourth category, so this file is the
 # complete census — a circuit that conforms today and is edited into the middle shape fails
 # the check, which is the point.
+#
+# REPAIRED SINCE, each deleted with its own unit: `darktoshi_dice/settle_bet` on 2026-10-05
+# (the circuit, its arm, its client and its spec in one commit, `233d585434`). The deletion
+# came a commit late, which is worth recording because the instrument caught it and a reader
+# should know the report works: `--self-test` proves the checker can find a middle pair, but
+# the *stale* half only prints on a full run with `ALL=1`, and the migration was committed
+# after a run without it. Two more lines — `bearer_bond`'s `prove_coverage` and `redeem` —
+# belong to that contract's session and go with its own unit.
 
 src/contract/bearer_bond/proof/prove_coverage.zk : ProveCoverage_V2 : `OBL-C198` — has no tx pair at all (it instances no tx_binding and no tx_nonce). The node reads the pair from the end of every vector, so this circuit cannot be covered by stage 4 until it carries one; it is exercised by a spec, which is what makes the omission visible rather than silent.
 src/contract/bearer_bond/proof/redeem.zk : Redeem_V2 : `OBL-C198` — pair at 5,6 of 8; `coin_spend_hook` follows. Reorder opens the per-contract unit (circuit + arm + `to_public_inputs`).
 src/contract/dao_escrow/proof/init.zk : InitV2 : `OBL-C198` — pair at 1,2 of 4; `endowment_bulla` follows.
 src/contract/dao_escrow/proof/propose_claim.zk : ProposeClaimV2 : `OBL-C198` — pair at 0,1 of 3; `claim_commit` follows.
 src/contract/dao_escrow/proof/vote_claim.zk : VoteClaimV2 : `OBL-C198` — pair at 0,1 of 3; `vote_nullifier` follows.
-src/contract/darktoshi_dice/proof/settle_bet.zk : SettleBet_V2 : `OBL-C198` — pair at 1,2 of 4; `roll_hash` follows.
 src/contract/escrow/proof/cancel.zk : CancelEscrowV2 : `OBL-C198` — pair at 3,4 of 6; `cancel_nullifier` follows.
 src/contract/escrow/proof/claim.zk : ClaimEscrowV2 : `OBL-C198` — pair at 2,3 of 5; `spent_nullifier` follows.
 src/contract/escrow/proof/create_escrow.zk : CreateEscrowV2 : `OBL-C198` — pair at 1,2 of 4; `seller_commitment` follows.
