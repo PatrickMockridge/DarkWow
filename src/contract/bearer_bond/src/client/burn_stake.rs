@@ -100,8 +100,11 @@ pub struct BurnStakeCallInput {
     pub merkle_path: Vec<MerkleNode>,
     /// Caller's secret key
     pub secret: pallas::Base,
-    /// Ephemeral signature secret — MUST be fresh per transaction
-    pub ephemeral_signature_secret: pallas::Base,
+    // The signature secret is **derived**, not an input: see `BurnStakeDerived::signature_secret`.
+    // A caller-supplied field stood here and was passed straight to the witness, which `burn.zk`
+    // forbids (`constrain_equal_base(derived_signature_secret, signature_secret)`) — so the field
+    // let a caller set a value the circuit would reject, and removing it is what makes the API say
+    // what the circuit enforces.
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -229,6 +232,16 @@ pub struct BurnStakeDerived {
     /// The note commitment — `Burn_V2`'s `coin`, recomputed in-circuit and instanced, and the
     /// commitment-set key the exec looks up. See `BondInput::commitment`.
     pub commitment: pallas::Base,
+    /// The per-burn signature secret, **derived** rather than chosen.
+    ///
+    /// `burn.zk` constrains `poseidon_hash(DOMAIN_SIGNATURE_SECRET, spend_secret, nullifier) ==
+    /// signature_secret`, so the witness is not free: a caller-supplied value makes the circuit
+    /// unsatisfiable, and an unsatisfied circuit still emits proof bytes — which is why this
+    /// surfaced as `invalid proof: call[0] namespace 'Burn_V2'` at the node rather than as a prover
+    /// error. That constraint is deliberate (HAZOP H2/H26: without it a prover signs with an
+    /// arbitrary secret unbound to the coin), so the caller's `ephemeral_signature_secret` was never
+    /// the caller's to pick; the client derives it from the same secret the nullifier is built from.
+    pub signature_secret: pallas::Base,
 }
 
 /// Derive, do not prove — see `BurnStakeDerived`.
@@ -250,6 +263,9 @@ pub fn derive_burn_stake(
     }
     .to_commitment();
     let nullifier = Nullifier::new(SecretKey::from_base(input.secret), commitment);
+    // `burn.zk` binds this to (`spend_secret`, `nullifier`) — see `BurnStakeDerived`.
+    let signature_secret =
+        poseidon_hash([pallas::Base::from(7), input.secret, nullifier.inner()]);
     let merkle_root = {
         let position: u64 = input.leaf_position;
         let mut current = MerkleNode::from_base(commitment);
@@ -269,8 +285,9 @@ pub fn derive_burn_stake(
         token_commit: poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]),
         merkle_root,
         user_data_enc: poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]),
-        signature_public: poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]),
+        signature_public: poseidon_hash([pallas::Base::from(7), signature_secret]),
         commitment,
+        signature_secret,
     }
 }
 
@@ -320,7 +337,8 @@ fn create_burn_stake_proof(
         Witness::MerklePath(Value::known(
             input.merkle_path.clone().try_into().unwrap(),
         )),
-        Witness::Base(Value::known(input.ephemeral_signature_secret)),
+        // Derived, not `input.ephemeral_signature_secret` — see `BurnStakeDerived`.
+        Witness::Base(Value::known(derived.signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
         Witness::Base(Value::known(poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING, input.tx_commitment, input.tx_nonce]))), // tx_binding

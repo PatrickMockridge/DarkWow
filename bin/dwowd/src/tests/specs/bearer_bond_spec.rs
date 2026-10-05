@@ -25,6 +25,32 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
     let h: &BearerBondHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/bearer_bond/dwow_bearer_bond_contract.wasm");
 
+    // One `IssueStakeV1` row per consuming endpoint — see the note inside `endpoints`. A closure
+    // rather than five near-identical copies: `h` is a shared reference and therefore `Copy`, and
+    // the only thing that varies is the blind that makes each minted bond distinct.
+    let issue_row = move |blind: u64| {
+        mk_ep("IssueStakeV1", true, Box::new(move || {
+            use dwow_bearer_bond_contract::client::issue_stake::IssueStakeCallInput;
+            let input = IssueStakeCallInput {
+                principal: 10000, maturity_block: 1000, min_claim: 1,
+                issuer_contract: ContractId::from_bytes([1u8; 32]).unwrap(),
+                asset_id: pallas::Base::from(1u64),
+                // The holder's key as every *spending* client computes it: `issue_stake` takes
+                // `staker` literally while the burn family derives `poseidon_hash([7, secret])`, so
+                // a different constant here mints a bond whose note commitment nothing can
+                // reproduce — and that commitment is the bond's identity.
+                staker: dwow_sdk::crypto::poseidon_hash([
+                    pallas::Base::from(7u64), pallas::Base::from(42u64),
+                ]),
+                spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+                commitment_blind: pallas::Base::from(blind),
+                tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
+            };
+            let r = h.issue_stake_solo(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+            Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
+        }))
+    };
+
     ContractTestSpec {
         name: "bearer_bond", is_genesis: false,
         contract_id: bearer_bond_cid,
@@ -51,26 +77,13 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
             })),
-            mk_ep("IssueStakeV1", true, Box::new(move || {
-                use dwow_bearer_bond_contract::client::issue_stake::IssueStakeCallInput;
-                let input = IssueStakeCallInput {
-                    principal: 10000, maturity_block: 1000, min_claim: 1,
-                    issuer_contract: ContractId::from_bytes([1u8;32]).unwrap(),
-                    // `OBL-C199`: the holder's public key, computed the way every *spending* client
-                    // computes it (`poseidon_hash([7, secret])`) with the same secret the bond is
-                    // later spent with. `issue_stake` takes `staker` literally while the burn family
-                    // derives it, so a fixture that passed an unrelated constant here minted a bond
-                    // whose note commitment no later call could reproduce — and the commitment is
-                    // now the bond's identity, so the two must be the same value.
-                    asset_id: pallas::Base::from(1u64),
-                    staker: dwow_sdk::crypto::poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(42u64)]),
-                    spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    commitment_blind: pallas::Base::from(3u64),
-                    tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
-                };
-                let r = h.issue_stake_solo(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
-            })),
+            // `OBL-C199`: **every consuming endpoint needs its own bond.** One `IssueStakeV1` mints
+            // one commitment, and a nullifier can be spent once — so a spec that issued a single
+            // bond and then burned, transferred, requested against, unstaked and emergency-unstaked
+            // it in turn fails at the second with `DuplicateNullifier` (code 13). `commitment_blind`
+            // is what distinguishes one bond from another here, so the same constant in an issuing
+            // row and its consuming row is what makes them the same bond.
+            issue_row(3),
             mk_ep("BurnStakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::burn_stake::BurnStakeCallInput;
                 let input = BurnStakeCallInput {
@@ -79,21 +92,20 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     commitment_blind: pallas::Base::from(3u64), maturity_block: 1000,
                     leaf_position: 0, merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
                     secret: pallas::Base::from(42u64),
-                    ephemeral_signature_secret: pallas::Base::from(8u64),
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let r = h.burn_stake_solo(vec![input]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
+            issue_row(4),
             mk_ep("TransferStakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::transfer_stake::{TransferStakeCallInput, TransferStakeCallOutput};
                 let input = TransferStakeCallInput {
                     principal: 10000, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    commitment_blind: pallas::Base::from(3u64), last_claim_block: 10,
+                    commitment_blind: pallas::Base::from(4u64), last_claim_block: 10,
                     maturity_block: 1000, leaf_position: 0, merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
                     secret: pallas::Base::from(42u64),
-                    ephemeral_signature_secret: pallas::Base::from(9u64),
                     issuer_contract: ContractId::from_bytes([1u8;32]).unwrap(),
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
@@ -107,31 +119,31 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let r = h.transfer_stake_solo(vec![input], vec![output]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
+            issue_row(5),
             mk_ep("RequestInterestV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::request_interest::RequestInterestCallInput;
                 let input = RequestInterestCallInput {
                     principal: 10000, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    commitment_blind: pallas::Base::from(3u64), last_claim_block: 10,
+                    commitment_blind: pallas::Base::from(5u64), last_claim_block: 10,
                     maturity_block: 1000, claim_block: 100, min_claim: 1,
                     leaf_position: 0, merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
                     secret: pallas::Base::from(42u64),
-                    ephemeral_signature_secret: pallas::Base::from(10u64),
                     payment_key: pallas::Base::from(42u64),
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let r = h.request_interest_solo(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
+            issue_row(6),
             mk_ep("UnstakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::unstake::{UnstakeCallInput, UnstakeCallOutput};
                 let input = UnstakeCallInput {
                     principal: 10000, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    commitment_blind: pallas::Base::from(3u64), maturity_block: 1000,
+                    commitment_blind: pallas::Base::from(6u64), maturity_block: 1000,
                     leaf_position: 0, merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
                     secret: pallas::Base::from(42u64),
-                    ephemeral_signature_secret: pallas::Base::from(11u64),
                     current_block: 1001,
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
@@ -143,6 +155,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let r = h.unstake_solo(input, output).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
+            issue_row(7),
             mk_ep("EmergencyUnstakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::emergency_unstake::{EmergencyUnstakeCallInput, EmergencyUnstakeCallOutput};
                 use dwow_bearer_bond_contract::model::CoverageReport;
@@ -154,10 +167,9 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let input = EmergencyUnstakeCallInput {
                     principal: 10000, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
-                    commitment_blind: pallas::Base::from(3u64), maturity_block: 1000,
+                    commitment_blind: pallas::Base::from(7u64), maturity_block: 1000,
                     leaf_position: 0, merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
                     secret: pallas::Base::from(42u64),
-                    ephemeral_signature_secret: pallas::Base::from(12u64),
                     coverage_report: report,
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };

@@ -121,8 +121,7 @@ pub struct RequestInterestCallInput {
     pub merkle_path: Vec<MerkleNode>,
     /// Caller's secret key
     pub secret: pallas::Base,
-    /// Ephemeral signature secret (Schnorr) — MUST be fresh per transaction
-    pub ephemeral_signature_secret: pallas::Base,
+    // Derived, not an input — see `BurnStakeDerived::signature_secret`.
     /// Fresh one-time key for the issuer to pay to
     pub payment_key: pallas::Base,
     pub tx_commitment: pallas::Base,
@@ -233,6 +232,9 @@ pub struct RequestInterestDerived {
     pub signature_public: pallas::Base,
     /// The note commitment — see `BondInput::commitment`.
     pub commitment: pallas::Base,
+    /// Derived, not chosen — `burn.zk` binds it to (`spend_secret`, `nullifier`). See
+    /// `BurnStakeDerived::signature_secret`.
+    pub signature_secret: pallas::Base,
 }
 
 /// Derive, do not prove — see `RequestInterestDerived`. The blinds are parameters rather than drawn
@@ -256,6 +258,8 @@ pub fn derive_request_interest(
     }
     .to_commitment();
     let nullifier = Nullifier::new(SecretKey::from_base(input.secret), commitment);
+    let signature_secret =
+        poseidon_hash([pallas::Base::from(7), input.secret, nullifier.inner()]);
     let merkle_root = {
         let position: u64 = input.leaf_position;
         let mut current = MerkleNode::from_base(commitment);
@@ -275,8 +279,9 @@ pub fn derive_request_interest(
         token_commit: poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]),
         merkle_root,
         user_data_enc: poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]),
-        signature_public: poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]),
+        signature_public: poseidon_hash([pallas::Base::from(7), signature_secret]),
         commitment,
+        signature_secret,
     }
 }
 
@@ -330,7 +335,8 @@ fn create_request_interest_proof(
         Witness::MerklePath(Value::known(
             input.merkle_path.clone().try_into().unwrap(),
         )),
-        Witness::Base(Value::known(input.ephemeral_signature_secret)),
+        // Derived — see `BurnStakeDerived::signature_secret`.
+        Witness::Base(Value::known(derived.signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
         Witness::Base(Value::known(poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING, input.tx_commitment, input.tx_nonce]))), // tx_binding
