@@ -63,13 +63,13 @@ fn test_all_harnesses_zk_coverage() {
     zk_check!(DrainProtectionHarness, "drain_protection");
     zk_check!(EscrowHarness, "escrow");
     zk_check_with_id!(GameRoomHarness, "game_room");
-    zk_check!(IdentityHarness, "identity");
+    zk_check_with_id!(IdentityHarness, "identity");
     zk_check_with_id!(InsuranceMarketHarness, "insurance_market");
     zk_check!(LaborMarketHarness, "labor_market");
     zk_check!(LotteryHarness, "lottery");
     zk_check!(MultiSigHarness, "multisig");
     zk_check!(NativeTokenHarness, "native_token");
-    zk_check!(OracleHarness, "oracle");
+    zk_check_with_id!(OracleHarness, "oracle");
     zk_check_with_id!(OtcSwapHarness, "otc_swap");
     zk_check_with_id!(PoolStakeHarness, "pool_stake");
     zk_check!(PromissoryNoteHarness, "promissory_note");

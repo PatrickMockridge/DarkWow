@@ -80,7 +80,6 @@ fn test_register_oracle_params_encoding() {
         oracle_commitment: pallas::Base::from(7),
         name: "BTC/USD Price Feed".to_string(),
         data_type: "price".to_string(),
-        tx_binding: pallas::Base::zero(),
         tx_nonce: pallas::Base::zero(),
     };
 
@@ -100,7 +99,6 @@ fn test_push_value_params_encoding() {
         oracle_commitment: pallas::Base::from(7),
         value: pallas::Base::from(50000),
         nullifier: pallas::Base::from(9),
-        tx_binding: pallas::Base::zero(),
         tx_nonce: pallas::Base::zero(),
     };
 
@@ -121,7 +119,6 @@ fn test_attest_value_params_encoding() {
         predicate: 0, // Matches
         threshold: pallas::Base::from(50000),
         nullifier: pallas::Base::from(9),
-        tx_binding: pallas::Base::zero(),
         tx_nonce: pallas::Base::zero(),
     };
 

@@ -11,7 +11,9 @@ use crate::tests::uniform_runner::{
 };
 
 pub fn oracle_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(OracleHarness::spawn()));
+    // `OBL-C198`: the harness needs the id its calls carry, because the commitment covers it.
+    // `oracle` is a genesis contract, so the id is the constant rather than a derivation.
+    let harness = Box::leak(Box::new(OracleHarness::spawn(*ORACLE_CONTRACT_ID)));
     let h: &OracleHarness = harness;
 
     let oracle_secret = pallas::Base::from(10u64);
@@ -39,7 +41,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("oracle must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
-                    let r = h.register_oracle(oracle_secret,
+                    let r = h.register_oracle(&[], oracle_secret,
                         oracle_id, "price_feed".to_string(), "u64".to_string())
                         .map_err(modules::error_bridge::bridge)?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
@@ -52,7 +54,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("value must be updated".into())); } Ok(()) } })),
                 generate: Box::new(move || {
-                    let r = h.push_value(oracle_id, oracle_secret, pallas::Base::from(42u64))
+                    let r = h.push_value(&[], oracle_id, oracle_secret, pallas::Base::from(42u64))
                         .map_err(modules::error_bridge::bridge)?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -64,7 +66,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("attestation must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
-                    let r = h.attest_value(oracle_id, pallas::Base::from(100u64),
+                    let r = h.attest_value(&[], oracle_id, pallas::Base::from(100u64),
                         oracle_secret, pallas::Base::from(0u64), pallas::Base::from(42u64),
                         pallas::Base::from(42u64))
                         .map_err(modules::error_bridge::bridge)?;
@@ -78,7 +80,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("commitment must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
-                    let r = h.push_value_commitment(oracle_id, oracle_secret,
+                    let r = h.push_value_commitment(&[], oracle_id, oracle_secret,
                         pallas::Base::from(42u64), pallas::Base::from(99u64))
                         .map_err(modules::error_bridge::bridge)?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
@@ -91,7 +93,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("result must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
-                    let r = h.aggregate(oracle_id, oracle_secret,
+                    let r = h.aggregate(&[], oracle_id, oracle_secret,
                         [pallas::Base::from(10u64); 4], [pallas::Base::from(1u64); 4],
                         pallas::Base::from(4u64), pallas::Base::from(10u64),
                         pallas::Base::from(0u64), pallas::Base::from(100u64))
@@ -105,7 +107,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("active flag must be set".into())); } Ok(()) } })),
                 generate: Box::new(move || {
-                    let r = h.set_oracle_active(oracle_id, oracle_secret, true)
+                    let r = h.set_oracle_active(&[], oracle_id, oracle_secret, true)
                         .map_err(modules::error_bridge::bridge)?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -123,7 +125,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.push_value(oracle_id, pallas::Base::from(11u64), pallas::Base::from(42u64))
+                    let r = h.push_value(&[], oracle_id, pallas::Base::from(11u64), pallas::Base::from(42u64))
                         .map_err(modules::error_bridge::bridge)?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -140,7 +142,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.push_value(oracle_id, oracle_secret, pallas::Base::from(42u64))
+                    let r = h.push_value(&[], oracle_id, oracle_secret, pallas::Base::from(42u64))
                         .map_err(modules::error_bridge::bridge)?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),

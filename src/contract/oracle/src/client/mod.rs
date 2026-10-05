@@ -35,12 +35,16 @@ use dwow_sdk::pasta::pallas;
 use crate::model::{OracleId, SetOracleActiveParamsV1};
 
 /// Builder for setting oracle active state
+///
+/// `OBL-C198`: it no longer takes a `tx_binding`. It used to — the caller passed the value and
+/// `build()` copied it into the params, which the metadata arm then republished as though the proof
+/// had pinned it. A caller-supplied binding pins nothing, so the arm derives it now and the caller
+/// has no way to name it.
 pub struct SetOracleActiveV1Builder {
     oracle_id: OracleId,
     proof: Vec<u8>,
     oracle_commitment: pallas::Base,
     is_active: bool,
-    tx_binding: pallas::Base,
     tx_nonce: pallas::Base,
 }
 
@@ -50,7 +54,6 @@ impl SetOracleActiveV1Builder {
         proof: Vec<u8>,
         oracle_commitment: pallas::Base,
         is_active: bool,
-        tx_binding: pallas::Base,
         tx_nonce: pallas::Base,
     ) -> Self {
         Self {
@@ -58,7 +61,6 @@ impl SetOracleActiveV1Builder {
             proof,
             oracle_commitment,
             is_active,
-            tx_binding,
             tx_nonce,
         }
     }
@@ -69,7 +71,6 @@ impl SetOracleActiveV1Builder {
             oracle_id: self.oracle_id,
             oracle_commitment: self.oracle_commitment,
             is_active: self.is_active,
-            tx_binding: self.tx_binding,
             tx_nonce: self.tx_nonce,
         }
     }

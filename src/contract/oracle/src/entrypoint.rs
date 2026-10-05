@@ -50,7 +50,7 @@
 //! caller-supplied copy of a *public* key against the stored one, let anyone deactivate any feed.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas::Base, ContractCall,
@@ -129,6 +129,28 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 // METADATA (ZK proof verification)
 // ============================================================================
 
+/// The transaction binding every arm publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// Each arm below read `params.tx_binding`, which the **caller supplied** — so the value pinned
+/// nothing to the transaction and was republished as though it did, which is `OBL-C152`'s
+/// public-value-checked-against-a-public-value shape one layer out from an echo.
+///
+/// The nonce stays the call's own. These calls carry one, so unlike the other contracts in this
+/// campaign a per-proof nonce is available rather than owed, and the binding is not shared between
+/// a transaction's proofs.
+/// `domain` is the **circuit's own** `DOMAIN_TX_BINDING`, and it is a parameter rather than a
+/// constant in here because oracle does not use one value: `register_oracle.zk` derives with
+/// `witness_base(1)` and the other five with `witness_base(3)`, and their clients agree with them
+/// respectively. A helper that hardcoded 3 would publish `poseidon(3, …)` for a circuit that
+/// constrains `poseidon(1, …)`, which is a proof the verifier refuses — and the two sides are in
+/// different files, so it is only visible by reading both.
+pub fn oracle_tx_binding(domain: Base, tx_nonce: Base) -> Result<Base, ContractError> {
+    Ok(poseidon_hash([domain, wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
@@ -155,7 +177,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             // Circuit constrain_instance: oracle_id, oracle_commitment, tx_binding, tx_nonce
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V2.to_string(),
-                vec![params.oracle_id.inner(), params.oracle_commitment, params.tx_binding, params.tx_nonce],
+                vec![params.oracle_id.inner(), params.oracle_commitment, oracle_tx_binding(Base::from(1u64), params.tx_nonce)?, params.tx_nonce],
             ));
         }
         OracleFunction::PushValueV1 => {
@@ -171,7 +193,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.oracle_commitment,
                     params.value,
                     params.nullifier,
-                    params.tx_binding,
+                    oracle_tx_binding(Base::from(3u64), params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             ));
@@ -191,7 +213,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     Base::from(params.predicate as u64),
                     params.threshold,
                     params.nullifier,
-                    params.tx_binding,
+                    oracle_tx_binding(Base::from(3u64), params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             ));
@@ -209,7 +231,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.oracle_commitment,
                     params.commitment,
                     params.nullifier,
-                    params.tx_binding,
+                    oracle_tx_binding(Base::from(3u64), params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             ));
@@ -229,7 +251,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.min_result,
                     params.max_result,
                     params.nullifier,
-                    params.tx_binding,
+                    oracle_tx_binding(Base::from(3u64), params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             ));
@@ -246,7 +268,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.oracle_id.inner(),
                     params.oracle_commitment,
                     Base::from(params.is_active as u64),
-                    params.tx_binding,
+                    oracle_tx_binding(Base::from(3u64), params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             ));
