@@ -220,10 +220,22 @@ fn every_deployed_genesis_manifest_resolves_its_own_proof_circuits() {
 
     // The control: the count is the number of ZK functions in the seven deployed manifests, so a
     // parser that silently stopped finding functions would be caught rather than pass vacuously.
+    //
+    // **Re-measured 2026-10-05: 32 → 34, and the drift predates this unit.** The count is a
+    // measurement of the tree, and the tree moved: `attestation`'s `OBL-C196` repair made
+    // `expire_attestation` and its sibling proof-bearing, and the seven genesis manifests have
+    // gained proof-bearing functions since the 32 was recorded. This unit is `bearer_bond`, which
+    // is **not** genesis (`is_genesis: false`), so it contributes **zero** here — the drift is
+    // recorded, not attributed to the change that happened to notice it. The old message said "a
+    // different count means the parser stopped seeing them, not that the contracts changed", which
+    // is the wrong way round: the contracts *do* change, and that is why the number must be
+    // re-measured rather than trusted.
     assert_eq!(
-        checked, 32,
-        "the seven deployed genesis manifests declare 32 proof-bearing functions; a different \
-         count means the parser above stopped seeing them, not that the contracts changed"
+        checked, 34,
+        "the seven deployed genesis manifests declare 34 proof-bearing functions (re-measured \
+         2026-10-05; 32 when this control was written). A different count means either the parser \
+         stopped finding functions or a genesis manifest's declarations moved — the latter is \
+         legitimate, so re-measure before assuming the former"
     );
 }
 
@@ -465,10 +477,21 @@ fn every_contract_manifest_agrees_with_its_own_circuits() {
     // `OBL-C157` is about: this file's tests are compiled by a workspace test run, and the per-crate
     // checks the campaign ran were `--lib` or named single tests. A `cargo check --tests` over every
     // crate is what would have caught it, and is worth having.
+    //
+    // **Re-measured 2026-10-05: 666 → 676, and only two of the ten are this unit's.**
+    // `bearer_bond`'s manifest repair adds exactly two (A) sites: `issue_stake` and `pay_interest`
+    // each build a `BlindOutput_V2` proof and declared none. `request_interest`'s declaration was
+    // **wrong rather than missing** (`Redeem_V2` where its client proves `Burn_V2`), and correcting
+    // a value is not a new site — which is why this unit moves the count by two and not three. The
+    // remaining eight are the `OBL-C198` per-contract pass moving other contracts' declarations
+    // (each migrated contract that gains a `requires_proof`, a `[[circuits]]` entry or a built
+    // circuit moves (A), (B) or (C)); the control was **already red at HEAD** before this unit, so
+    // this is a re-measurement of drift, not a consequence of the change that records it.
     assert_eq!(
-        sites, 666,
-        "the four checks walk 666 sites over those manifests (re-measured 2026-09-28; 673 on \
-         2026-09-24, before the dao_escrow re-wire retired five circuits and seven endpoints); a \
-         different count means a parser stopped seeing them, or the tree moved"
+        sites, 676,
+        "the four checks walk 676 sites over those manifests (re-measured 2026-10-05; 666 on \
+         2026-09-28 after the dao_escrow re-wire, 673 on 2026-09-24 before it). A different count \
+         means a parser stopped seeing sites, or a manifest's declarations moved — the latter is \
+         legitimate for the OBL-C198 pass, so re-measure before assuming the former"
     );
 }

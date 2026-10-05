@@ -8,6 +8,8 @@ dependencies = ["promissory_note", "native_token_v1"]
 [[functions]]
 name = "issue_stake"
 code = 0
+requires_proof = true
+proof_circuit = "BlindOutput_V2"
 
 [[functions]]
 name = "transfer_stake"
@@ -19,7 +21,7 @@ proof_circuit = "BlindOutput_V2"
 name = "request_interest"
 code = 2
 requires_proof = true
-proof_circuit = "Redeem_V2"
+proof_circuit = "Burn_V2"
 
 [[functions]]
 name = "emergency_unstake"
@@ -52,6 +54,8 @@ code = 7
 [[functions]]
 name = "pay_interest"
 code = 8
+requires_proof = true
+proof_circuit = "BlindOutput_V2"
 
 [[capabilities]]
 discriminant = 0
