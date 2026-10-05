@@ -114,44 +114,78 @@ pub struct IssueStakeCallBuilder {
 }
 
 impl IssueStakeCallBuilder {
-    /// Build the IssueStake call debris.
-    pub fn build(self) -> Result<IssueStakeCallDebris> {
-        debug!(target: "contract::bearer_bond::client::issue_stake", "Building BearerBond::IssueStakeV1 contract call");
+    /// `OBL-C198`: draw the blinds, derive, and assemble the call's data — stopping **before** the
+    /// proof. The commitment covers the finished call data, so the call must exist first; `prove` is
+    /// the second half.
+    pub fn prepare(self) -> Result<IssueStakeCallPlan> {
+        debug!(target: "contract::bearer_bond::client::issue_stake", "Preparing BearerBond::IssueStakeV1 contract call");
 
         let value_blind = ScalarBlind::random(&mut OsRng);
         let asset_id_blind = BaseBlind::random(&mut OsRng);
+        let derived = derive_issue_stake(&self.input, value_blind.clone(), asset_id_blind.clone());
 
-        let (proof, revealed) = create_issue_stake_proof(
+        let params = IssueStakeParamsV1 {
+            min_claim: self.input.min_claim,
+            issuer_contract: self.input.issuer_contract,
+            asset_id: self.input.asset_id,
+            commitment: BondCommitment {
+                value_commit: derived.value_commit,
+                commitment: derived.commitment,
+                token_commit: derived.token_commit,
+                nullifier: crate::model::Nullifier::ZERO,
+                merkle_root: MerkleNode::from_base(pallas::Base::zero()),
+                user_data_enc: pallas::Base::zero(),
+                spend_hook: self.input.spend_hook,
+                signature_public: self.input.staker,
+                last_claim_block: 0,
+                maturity_block: self.input.maturity_block,
+                issuer_contract: self.input.issuer_contract,
+            },
+        };
+        Ok(IssueStakeCallPlan {
+            blind_output_zkbin: self.blind_output_zkbin,
+            blind_output_pk: self.blind_output_pk,
+            part: IssueStakePart { input: self.input, value_blind, asset_id_blind },
+            params,
+        })
+    }
+
+    /// Build the call and prove it in one step, with the commitment the input carries.
+    pub fn build(self) -> Result<IssueStakeCallDebris> {
+        let (c, n) = (self.input.tx_commitment, self.input.tx_nonce);
+        self.prepare()?.prove(c, n)
+    }
+}
+
+/// A `BlindOutput_V1` issue-stake call whose data is assembled and whose proof is not yet made.
+pub struct IssueStakeCallPlan {
+    blind_output_zkbin: ZkBinary,
+    blind_output_pk: ProvingKey,
+    part: IssueStakePart,
+    params: IssueStakeParamsV1,
+}
+struct IssueStakePart {
+    input: IssueStakeCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+}
+
+impl IssueStakeCallPlan {
+    /// The contract's call parameters.
+    pub fn params(&self) -> IssueStakeParamsV1 { self.params.clone() }
+
+    /// Prove the call, binding to `tx_commitment`.
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<IssueStakeCallDebris> {
+        self.part.input.tx_commitment = tx_commitment;
+        self.part.input.tx_nonce = tx_nonce;
+        let (proof, _revealed) = create_issue_stake_proof(
             &self.blind_output_zkbin,
             &self.blind_output_pk,
-            &self.input,
-            value_blind.clone(),
-            asset_id_blind.clone(),
+            &self.part.input,
+            self.part.value_blind,
+            self.part.asset_id_blind,
         )?;
-
-        let commitment = BondCommitment {
-            value_commit: revealed.value_commit,
-            commitment: revealed.commitment,
-            token_commit: revealed.token_commit,
-            nullifier: crate::model::Nullifier::ZERO,
-            merkle_root: MerkleNode::from_base(pallas::Base::zero()),
-            user_data_enc: pallas::Base::zero(),
-            spend_hook: self.input.spend_hook,
-            signature_public: self.input.staker,
-            last_claim_block: 0,
-            maturity_block: self.input.maturity_block,
-            issuer_contract: self.input.issuer_contract,
-        };
-
-        Ok(IssueStakeCallDebris {
-            params: IssueStakeParamsV1 {
-                min_claim: self.input.min_claim,
-                issuer_contract: self.input.issuer_contract,
-                asset_id: self.input.asset_id,
-                commitment,
-            },
-            proofs: vec![proof],
-        })
+        Ok(IssueStakeCallDebris { params: self.params, proofs: vec![proof] })
     }
 }
 
@@ -160,13 +194,22 @@ impl IssueStakeCallBuilder {
 /// Witness order must match BlindOutput_V1 circuit:
 /// coin_public, coin_value, coin_asset_id, coin_spend_hook,
 /// coin_user_data, commitment_blind, value_blind, asset_id_blind
-pub fn create_issue_stake_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
+/// The commitment-independent values a `BlindOutput_V1` proof reveals. `OBL-C198`: the tx pair is
+/// **not** here — it is bound at prove time from the transaction commitment, so `prepare` can build
+/// the call data without it. This is the single derivation `create_issue_stake_proof` also uses
+/// (`safety.md` RC5).
+pub struct IssueStakeDerived {
+    pub commitment: pallas::Base,
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+}
+
+/// Derive, do not prove — see `IssueStakeDerived`.
+pub fn derive_issue_stake(
     input: &IssueStakeCallInput,
     value_blind: ScalarBlind,
     asset_id_blind: BaseBlind,
-) -> Result<(Proof, IssueStakeRevealed)> {
+) -> IssueStakeDerived {
     let attrs = CommitmentAttributes {
         public_key: input.staker,
         value: input.principal,
@@ -176,17 +219,31 @@ pub fn create_issue_stake_proof(
         blind: input.commitment_blind,
         maturity_block: input.maturity_block,
     };
-    let commitment = attrs.to_commitment();
+    IssueStakeDerived {
+        commitment: attrs.to_commitment(),
+        value_commit: pedersen_commitment_u64(input.principal, value_blind),
+        token_commit: poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]),
+    }
+}
 
-    let value_commit = pedersen_commitment_u64(input.principal, value_blind.clone());
-    let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
+pub fn create_issue_stake_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &IssueStakeCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+) -> Result<(Proof, IssueStakeRevealed)> {
+    let derived = derive_issue_stake(input, value_blind.clone(), asset_id_blind.clone());
+    let commitment = derived.commitment;
+    let value_commit = derived.value_commit;
+    let token_commit = derived.token_commit;
 
     let public_inputs = IssueStakeRevealed {
         commitment,
         value_commit,
         token_commit,
         spend_hook: input.spend_hook,
-        tx_binding: poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]),
+        tx_binding: poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING, input.tx_commitment, input.tx_nonce]),
         tx_nonce: input.tx_nonce,
     };
 
@@ -201,7 +258,7 @@ pub fn create_issue_stake_proof(
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]))), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING, input.tx_commitment, input.tx_nonce]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

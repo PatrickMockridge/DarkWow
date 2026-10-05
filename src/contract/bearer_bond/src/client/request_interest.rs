@@ -146,32 +146,130 @@ pub struct RequestInterestCallBuilder {
 
 impl RequestInterestCallBuilder {
     /// Build the RequestInterest call debris.
-    pub fn build(self) -> Result<RequestInterestCallDebris> {
-        debug!(target: "contract::bearer_bond::client::request_interest", "Building BearerBond::RequestInterestV1 contract call");
+    /// `OBL-C198`: draw the blinds, derive, and assemble the call's data — stopping **before** the
+    /// proof. The commitment covers the finished call data, so the call must exist first.
+    pub fn prepare(self) -> Result<RequestInterestCallPlan> {
+        debug!(target: "contract::bearer_bond::client::request_interest", "Preparing BearerBond::RequestInterestV1 contract call");
 
-        let (proof, revealed) = create_request_interest_proof(
+        let value_blind = ScalarBlind::random(&mut OsRng);
+        let asset_id_blind = BaseBlind::random(&mut OsRng);
+        let user_data_blind = BaseBlind::random(&mut OsRng);
+        let derived = derive_request_interest(&self.input, value_blind.clone(), asset_id_blind.clone(), user_data_blind.clone());
+
+        let params = RequestInterestParamsV1 {
+            bond_input: BondInput {
+                value_commit: derived.value_commit,
+                token_commit: derived.token_commit,
+                nullifier: derived.nullifier,
+                merkle_root: derived.merkle_root,
+                user_data_enc: derived.user_data_enc,
+                spend_hook: self.input.spend_hook,
+                signature_public: derived.signature_public,
+            },
+            claim_block: self.input.claim_block,
+            payment_key: self.input.payment_key,
+            min_claim: self.input.min_claim,
+        };
+        Ok(RequestInterestCallPlan {
+            burn_zkbin: self.burn_zkbin,
+            burn_pk: self.burn_pk,
+            part: RequestInterestPart { input: self.input, value_blind, asset_id_blind, user_data_blind },
+            params,
+        })
+    }
+
+    /// Build the call and prove it in one step, with the commitment the input carries.
+    pub fn build(self) -> Result<RequestInterestCallDebris> {
+        let (c, n) = (self.input.tx_commitment, self.input.tx_nonce);
+        self.prepare()?.prove(c, n)
+    }
+}
+
+/// A request-interest call whose data is assembled and whose proof is not yet made (`OBL-C198`).
+pub struct RequestInterestCallPlan {
+    burn_zkbin: ZkBinary,
+    burn_pk: ProvingKey,
+    part: RequestInterestPart,
+    params: RequestInterestParamsV1,
+}
+struct RequestInterestPart {
+    input: RequestInterestCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+}
+
+impl RequestInterestCallPlan {
+    /// The contract's call parameters.
+    pub fn params(&self) -> RequestInterestParamsV1 { self.params.clone() }
+
+    /// Prove the call, binding to `tx_commitment`.
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<RequestInterestCallDebris> {
+        self.part.input.tx_commitment = tx_commitment;
+        self.part.input.tx_nonce = tx_nonce;
+        let (proof, _revealed) = create_request_interest_proof(
             &self.burn_zkbin,
             &self.burn_pk,
-            &self.input,
+            &self.part.input,
+            self.part.value_blind,
+            self.part.asset_id_blind,
+            self.part.user_data_blind,
         )?;
+        Ok(RequestInterestCallDebris { params: self.params, proofs: vec![proof] })
+    }
+}
 
-        Ok(RequestInterestCallDebris {
-            params: RequestInterestParamsV1 {
-                bond_input: BondInput {
-                    value_commit: revealed.value_commit,
-                    token_commit: revealed.token_commit,
-                    nullifier: revealed.nullifier,
-                    merkle_root: revealed.merkle_root,
-                    user_data_enc: revealed.user_data_enc,
-                    spend_hook: revealed.spend_hook,
-                    signature_public: revealed.signature_public,
-                },
-                claim_block: self.input.claim_block,
-                payment_key: self.input.payment_key,
-                min_claim: self.input.min_claim,
-            },
-            proofs: vec![proof],
-        })
+/// The commitment-independent values a request-interest `Burn_V1` proof reveals (`OBL-C198`).
+pub struct RequestInterestDerived {
+    pub nullifier: Nullifier,
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+    pub merkle_root: MerkleNode,
+    pub user_data_enc: pallas::Base,
+    pub signature_public: pallas::Base,
+}
+
+/// Derive, do not prove — see `RequestInterestDerived`. The blinds are parameters rather than drawn
+/// here (`OBL-C198`): the call data must be built, and the commitment derived over it, before any
+/// proof exists, so the blinds are drawn once in `prepare` and reused by `prove`.
+pub fn derive_request_interest(
+    input: &RequestInterestCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+) -> RequestInterestDerived {
+    let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
+    let commitment = CommitmentAttributes {
+        public_key,
+        value: input.principal,
+        asset_id: input.asset_id,
+        spend_hook: input.spend_hook,
+        user_data: input.user_data,
+        blind: input.commitment_blind,
+        maturity_block: input.maturity_block,
+    }
+    .to_commitment();
+    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), commitment);
+    let merkle_root = {
+        let position: u64 = input.leaf_position;
+        let mut current = MerkleNode::from_base(commitment);
+        for (level, sibling) in input.merkle_path.iter().enumerate() {
+            let level = level as u8;
+            current = if position & (1 << level) == 0 {
+                MerkleNode::combine(level.into(), &current, sibling)
+            } else {
+                MerkleNode::combine(level.into(), sibling, &current)
+            };
+        }
+        current
+    };
+    RequestInterestDerived {
+        nullifier,
+        value_commit: pedersen_commitment_u64(input.principal, value_blind),
+        token_commit: poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]),
+        merkle_root,
+        user_data_enc: poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]),
+        signature_public: poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]),
     }
 }
 
@@ -189,54 +287,21 @@ fn create_request_interest_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
     input: &RequestInterestCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+    user_data_blind: BaseBlind,
 ) -> Result<(Proof, RequestInterestRevealed)> {
-    let value_blind = ScalarBlind::random(&mut OsRng);
-    let asset_id_blind = BaseBlind::random(&mut OsRng);
-    let user_data_blind = BaseBlind::random(&mut OsRng);
-
-    let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
-
-    let commitment = CommitmentAttributes {
-        public_key,
-        value: input.principal,
-        asset_id: input.asset_id,
-        spend_hook: input.spend_hook,
-        user_data: input.user_data,
-        blind: input.commitment_blind,
-        maturity_block: input.maturity_block,
-    }
-    .to_commitment();
-
-    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), commitment);
-
-    let merkle_root = {
-        let position: u64 = input.leaf_position;
-        let mut current = MerkleNode::from_base(commitment);
-        for (level, sibling) in input.merkle_path.iter().enumerate() {
-            let level = level as u8;
-            current = if position & (1 << level) == 0 {
-                MerkleNode::combine(level.into(), &current, sibling)
-            } else {
-                MerkleNode::combine(level.into(), sibling, &current)
-            };
-        }
-        current
-    };
-
-    let value_commit = pedersen_commitment_u64(input.principal, value_blind.clone());
-    let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
-    let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
-    let signature_public = poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]);
+    let derived = derive_request_interest(input, value_blind.clone(), asset_id_blind.clone(), user_data_blind.clone());
 
     let public_inputs = RequestInterestRevealed {
-        nullifier,
-        value_commit,
-        token_commit,
-        merkle_root,
-        user_data_enc,
+        nullifier: derived.nullifier,
+        value_commit: derived.value_commit,
+        token_commit: derived.token_commit,
+        merkle_root: derived.merkle_root,
+        user_data_enc: derived.user_data_enc,
         spend_hook: input.spend_hook,
-        signature_public,
-        tx_binding: poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]),
+        signature_public: derived.signature_public,
+        tx_binding: poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING, input.tx_commitment, input.tx_nonce]),
         tx_nonce: input.tx_nonce,
     };
 
@@ -260,7 +325,7 @@ fn create_request_interest_proof(
         Witness::Base(Value::known(input.ephemeral_signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]))), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING, input.tx_commitment, input.tx_nonce]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

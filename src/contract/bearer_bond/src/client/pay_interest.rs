@@ -121,42 +121,105 @@ pub struct PayInterestCallBuilder {
 
 impl PayInterestCallBuilder {
     /// Build the PayInterest call debris.
-    pub fn build(self) -> Result<PayInterestCallDebris> {
-        debug!(target: "contract::bearer_bond::client::pay_interest", "Building BearerBond::PayInterestV1 contract call");
+    /// `OBL-C198`: draw the blinds, derive, and assemble the call's data — stopping **before** the
+    /// proof. The commitment covers the finished call data, so the call must exist first.
+    pub fn prepare(self) -> Result<PayInterestCallPlan> {
+        debug!(target: "contract::bearer_bond::client::pay_interest", "Preparing BearerBond::PayInterestV1 contract call");
 
         let value_blind = ScalarBlind::random(&mut OsRng);
         let asset_id_blind = BaseBlind::random(&mut OsRng);
+        let derived = derive_pay_interest(&self.input, value_blind.clone(), asset_id_blind.clone());
 
-        let (proof, revealed) = create_pay_interest_proof(
+        let params = PayInterestParamsV1 {
+            bond_token_commit: self.input.bond_token_commit,
+            claim_block: self.input.claim_block,
+            interest_commitment: crate::model::BondCommitment {
+                value_commit: derived.value_commit,
+                commitment: derived.commitment,
+                token_commit: derived.token_commit,
+                nullifier: crate::model::Nullifier::ZERO,
+                merkle_root: dwow_sdk::crypto::MerkleNode::from_base(pallas::Base::zero()),
+                user_data_enc: pallas::Base::zero(),
+                spend_hook: self.input.spend_hook,
+                signature_public: self.input.payment_key,
+                last_claim_block: 0,
+                maturity_block: 0,
+                issuer_contract: dwow_sdk::crypto::ContractId::from_base(pallas::Base::zero()),
+            },
+        };
+        Ok(PayInterestCallPlan {
+            blind_output_zkbin: self.blind_output_zkbin,
+            blind_output_pk: self.blind_output_pk,
+            part: PayInterestPart { input: self.input, value_blind, asset_id_blind },
+            params,
+        })
+    }
+
+    /// Build the call and prove it in one step, with the commitment the input carries.
+    pub fn build(self) -> Result<PayInterestCallDebris> {
+        let (c, n) = (self.input.tx_commitment, self.input.tx_nonce);
+        self.prepare()?.prove(c, n)
+    }
+}
+
+/// A pay-interest call whose data is assembled and whose proof is not yet made (`OBL-C198`).
+pub struct PayInterestCallPlan {
+    blind_output_zkbin: ZkBinary,
+    blind_output_pk: ProvingKey,
+    part: PayInterestPart,
+    params: PayInterestParamsV1,
+}
+struct PayInterestPart {
+    input: PayInterestCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+}
+
+impl PayInterestCallPlan {
+    /// The contract's call parameters.
+    pub fn params(&self) -> PayInterestParamsV1 { self.params.clone() }
+
+    /// Prove the call, binding to `tx_commitment`.
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<PayInterestCallDebris> {
+        self.part.input.tx_commitment = tx_commitment;
+        self.part.input.tx_nonce = tx_nonce;
+        let (proof, _revealed) = create_pay_interest_proof(
             &self.blind_output_zkbin,
             &self.blind_output_pk,
-            &self.input,
-            value_blind.clone(),
-            asset_id_blind.clone(),
+            &self.part.input,
+            self.part.value_blind,
+            self.part.asset_id_blind,
         )?;
+        Ok(PayInterestCallDebris { params: self.params, proofs: vec![proof] })
+    }
+}
 
-        let interest_commitment = crate::model::BondCommitment {
-            value_commit: revealed.value_commit,
-            commitment: revealed.commitment,
-            token_commit: revealed.token_commit,
-            nullifier: crate::model::Nullifier::ZERO,
-            merkle_root: dwow_sdk::crypto::MerkleNode::from_base(pallas::Base::zero()),
-            user_data_enc: pallas::Base::zero(),
-            spend_hook: self.input.spend_hook,
-            signature_public: self.input.payment_key,
-            last_claim_block: 0,
-            maturity_block: 0,
-            issuer_contract: dwow_sdk::crypto::ContractId::from_base(pallas::Base::zero()),
-        };
+/// The commitment-independent values a `BlindOutput_V1` pay-interest proof reveals (`OBL-C198`).
+pub struct PayInterestDerived {
+    pub commitment: pallas::Base,
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+}
 
-        Ok(PayInterestCallDebris {
-            params: PayInterestParamsV1 {
-                bond_token_commit: self.input.bond_token_commit,
-                claim_block: self.input.claim_block,
-                interest_commitment,
-            },
-            proofs: vec![proof],
-        })
+/// Derive, do not prove — see `PayInterestDerived`.
+pub fn derive_pay_interest(
+    input: &PayInterestCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+) -> PayInterestDerived {
+    let attrs = CommitmentAttributes {
+        public_key: input.payment_key,
+        value: input.interest_amount,
+        asset_id: input.asset_id,
+        spend_hook: input.spend_hook,
+        user_data: input.user_data,
+        blind: input.commitment_blind,
+        maturity_block: 0, // Payment commitments don't have maturity
+    };
+    PayInterestDerived {
+        commitment: attrs.to_commitment(),
+        value_commit: pedersen_commitment_u64(input.interest_amount, value_blind),
+        token_commit: poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]),
     }
 }
 
@@ -176,26 +239,14 @@ fn create_pay_interest_proof(
     value_blind: ScalarBlind,
     asset_id_blind: BaseBlind,
 ) -> Result<(Proof, PayInterestRevealed)> {
-    let attrs = CommitmentAttributes {
-        public_key: input.payment_key,
-        value: input.interest_amount,
-        asset_id: input.asset_id,
-        spend_hook: input.spend_hook,
-        user_data: input.user_data,
-        blind: input.commitment_blind,
-        maturity_block: 0, // Payment commitments don't have maturity
-    };
-    let commitment = attrs.to_commitment();
-
-    let value_commit = pedersen_commitment_u64(input.interest_amount, value_blind.clone());
-    let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
+    let derived = derive_pay_interest(input, value_blind.clone(), asset_id_blind.clone());
 
     let public_inputs = PayInterestRevealed {
-        commitment,
-        value_commit,
-        token_commit,
+        commitment: derived.commitment,
+        value_commit: derived.value_commit,
+        token_commit: derived.token_commit,
         spend_hook: input.spend_hook,
-        tx_binding: poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]),
+        tx_binding: poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING, input.tx_commitment, input.tx_nonce]),
         tx_nonce: input.tx_nonce,
     };
 
@@ -210,7 +261,7 @@ fn create_pay_interest_proof(
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]))), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING, input.tx_commitment, input.tx_nonce]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

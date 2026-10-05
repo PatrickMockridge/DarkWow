@@ -1,4 +1,4 @@
-# ProveCoverage_V1: Coverage Ratio Proof for Bearer Bond Governance
+# ProveCoverage_V2: Coverage Ratio Proof for Bearer Bond Governance
 # Proves that the issuer's reserves cover outstanding stake obligations.
 #
 # The ratio is pinned exactly, in basis points, and EXPOSED:
@@ -28,7 +28,8 @@
 #     `is_coverage_voided` and forces an emergency unstake. The bound is `+ 1`, not `+ BPS`.
 #   * the instancing. `constrain_instance` covered `tx_binding`/`tx_nonce` only, so the ratio the
 #     report is *about* was never in the proof: the host read `params.coverage_ratio_bps` from call
-#     data and nothing checked it. See the WEAKENED FROM note at the foot of the circuit.
+#     data and nothing checked it. The four report values are now instanced (see the foot of the
+#     circuit); the tx pair, which this circuit also did not bind, is instanced there too.
 k = 11;
 field = "pallas";
 
@@ -48,6 +49,10 @@ witness "ProveCoverage_V2" {
     Base total_interest_obligation,
     # coverage_ratio_bps = floor(reserve_amount * 10000 / (total_outstanding + total_interest_obligation))
     Base coverage_ratio_bps,
+    # `OBL-C198`: the transaction pair, appended so every existing witness keeps its index.
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "ProveCoverage_V2" {
@@ -102,20 +107,17 @@ circuit "ProveCoverage_V2" {
     constrain_instance(total_interest_obligation);
     constrain_instance(coverage_ratio_bps);
 
-    # WEAKENED FROM: `constrain_instance(tx_binding); constrain_instance(tx_nonce);`
+    # `OBL-C198`: the tx pair is the last two instances — the node reads that position to recompute
+    # the binding from the enclosing transaction, and there is no per-circuit index map, so the
+    # position IS the convention.
     #
-    # The circuit used to compute `tx_binding = poseidon_hash(3, tx_commitment, tx_nonce)` and
-    # expose it. Those two instances are removed because they cannot be satisfied: the verifier
-    # takes a proof's public inputs from the contract's `metadata()` function, whose only source is
-    # `ProveCoverageParamsV1` — and that struct carries no `tx_commitment`/`tx_nonce`, so the host
-    # can never reconstruct the poseidon output the circuit commits to. A 3-instance circuit was
-    # therefore not provable at all, which is why nothing exercised it.
-    #
-    # The tx binding this removes is not a binding this contract has: all three other bearer_bond
-    # metadata functions (`entrypoint/mod.rs:251,309,347,362,401,454`) pass literal zeros for
-    # `tx_binding`/`tx_nonce`, so bearer_bond's proofs are bound to no transaction whatsoever. That
-    # is a contract-wide gap, it is recorded in `doc/src/arch/verification-hazop.md`, and it is
-    # wider than this function. Wire it by adding `tx_binding`/`tx_nonce` to the params and to all
-    # four circuits together, the way `dex` does it (`CreateSwapParams`), not by restoring two
-    # instances here against a host that supplies zeros.
+    # This circuit carried **none** until now (this replaces the WEAKENED FROM note the old version
+    # carried). It was weakened because the pair came from `ProveCoverageParamsV1`, which carried no
+    # `tx_commitment`/`tx_nonce`. The pair no longer comes from the params: the host derives the
+    # commitment over the call set (`get_tx_commitment`), and the arm publishes the binding it
+    # derives, so the circuit carries the pair again as its three sibling circuits already did.
+    DOMAIN_TX_BINDING = witness_base(3);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
 }

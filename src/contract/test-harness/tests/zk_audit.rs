@@ -51,7 +51,7 @@ fn test_all_harnesses_zk_coverage() {
     zk_check_with_id!(AttestationHarness, "attestation");
     zk_check!(AuctionHarness, "auction");
     zk_check!(BaccaratHarness, "baccarat");
-    zk_check!(BearerBondHarness, "bearer_bond");
+    zk_check_with_id!(BearerBondHarness, "bearer_bond");
     zk_check_with_id!(BettingStakeHarness, "betting_stake");
     zk_check!(BoxHarness, "box");
     zk_check!(BridgeHarness, "bridge");

@@ -46,6 +46,7 @@ use dwow_core::zk::{
     ZkVerifyResult,
 };
 use dwow_core::zkas::ZkBinary;
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::pasta::{group::ff::Field, pallas};
 use rand::rngs::OsRng;
 
@@ -70,7 +71,8 @@ fn honest_ratio(reserve: u64, outstanding: u64, interest: u64) -> u64 {
 }
 
 /// Prove **and verify**. Witness order is `ProveCoverage_V2`'s: reserve, outstanding, interest
-/// obligation, ratio; the public inputs are the same four values in the same order.
+/// obligation, ratio, then the tx pair (`OBL-C198` — the all-zero pair, as an unwired binding);
+/// the public inputs are those four values then `tx_binding`, `tx_nonce`.
 ///
 /// The verification step is not decoration. An unsatisfied circuit still produces proof bytes —
 /// `Proof::create` runs the synthesis and commits; it does not check satisfaction, which is what
@@ -78,14 +80,24 @@ fn honest_ratio(reserve: u64, outstanding: u64, interest: u64) -> u64 {
 /// negative case below, and did, before this was written.
 fn attempt(pk: &ProvingKey, w: [pallas::Base; 4]) -> Result<(), String> {
     let zkbin = prove_coverage_zkbin();
-    let witnesses = w
-        .iter()
-        .map(|x| Witness::Base(Value::known(*x)))
-        .collect::<Vec<_>>();
+    // The zero pair and its binding — `poseidon_hash(3, 0, 0)`, the same value the entrypoint's
+    // `tx_binding_of(zero)` derives. These tests exercise the four ratio values, not the binding.
+    let tx_binding =
+        poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
+    let witnesses = vec![
+        Witness::Base(Value::known(w[0])),
+        Witness::Base(Value::known(w[1])),
+        Witness::Base(Value::known(w[2])),
+        Witness::Base(Value::known(w[3])),
+        Witness::Base(Value::known(pallas::Base::zero())), // tx_commitment
+        Witness::Base(Value::known(pallas::Base::zero())), // tx_nonce
+        Witness::Base(Value::known(tx_binding)),
+    ];
+    let inputs = [w[0], w[1], w[2], w[3], tx_binding, pallas::Base::zero()];
     let circuit = ZkCircuit::new(witnesses, &zkbin);
     let proof =
-        Proof::create(pk, &[circuit], &w, OsRng).map_err(|e| format!("synthesis: {e:?}"))?;
-    match verify_zkp(&proof, ZKBIN_BYTES, &w) {
+        Proof::create(pk, &[circuit], &inputs, OsRng).map_err(|e| format!("synthesis: {e:?}"))?;
+    match verify_zkp(&proof, ZKBIN_BYTES, &inputs) {
         ZkVerifyResult::Ok => Ok(()),
         other => Err(format!("verification: {other:?}")),
     }

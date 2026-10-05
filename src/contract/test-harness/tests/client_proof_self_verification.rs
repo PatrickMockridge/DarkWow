@@ -658,3 +658,165 @@ fn dice_settle_bet_proof_verifies_with_a_non_zero_tx_pair() {
         ),
     }
 }
+
+// ============================================================================
+// slot::settle_bet — the same control, for the same move, one contract over
+// ============================================================================
+
+const SLOT_SETTLE_ZKBIN: &[u8] = include_bytes!("../../slot/proof/settle_bet.zk.bin");
+
+/// `OBL-C198`: `slot`'s `settle_bet` had its pair moved from 1,2 of 4 to last on 2026-10-05, so it
+/// gets the same control as `darktoshi_dice`'s — the two are the campaign's worked examples for a
+/// circuit whose pair moved with a *value* instance after it, and a `to_vec` left behind fails
+/// here in seconds rather than in a long run. The assertions are on the pair's position, because a
+/// count-only move leaves every number agreeing.
+#[test]
+fn slot_settle_bet_proof_verifies_with_a_non_zero_tx_pair() {
+    use dwow_slot_contract::client::settle_bet::{
+        create_settle_bet_v1_proof, SettleBetV1CallData,
+    };
+
+    let zkbin = ZkBinary::decode(SLOT_SETTLE_ZKBIN, false).expect("settle_bet.zk.bin decodes");
+    let pk = proving_key(&zkbin);
+
+    let tx_commitment = pallas::Base::from(0xBEEFu64);
+    let tx_nonce = pallas::Base::from(11u64);
+
+    let player_secret = pallas::Base::from(3u64);
+    let player_pub = PublicKey::from_secret(SecretKey::from_base(player_secret));
+
+    let mut input = SettleBetV1CallData::new(
+        player_pub,
+        1000,                            // bet_value
+        1,                               // paylines
+        pallas::Base::from(99u64),       // secret_nonce
+        pallas::Base::from(3u64),        // blind
+        pallas::Base::from(1u64),        // asset_id
+        [1u64, 2u64, 3u64],              // positions
+        1,                               // match_count
+        500,                             // payout
+    );
+    input.tx_commitment = tx_commitment;
+    input.tx_nonce = tx_nonce;
+
+    let (proof, public_inputs) =
+        create_settle_bet_v1_proof(&zkbin, &pk, &input).expect("the client must build a proof");
+    let inputs = public_inputs.to_vec();
+    assert_eq!(inputs.len(), 4, "settle_bet instances four values");
+
+    assert_eq!(inputs[3], tx_nonce, "the last instance is the nonce the proof was made with");
+    assert_eq!(
+        inputs[2],
+        dwow_sdk::crypto::poseidon_hash([
+            pallas::Base::from(3u64),
+            tx_commitment,
+            tx_nonce
+        ]),
+        "the instance before it is poseidon_hash([3, tx_commitment, tx_nonce]) for the pair the \
+         proof was made with — not a constant"
+    );
+
+    match verify_zkp(&proof, SLOT_SETTLE_ZKBIN, &inputs) {
+        ZkVerifyResult::Ok => {}
+        other => panic!(
+            "OBL-C198: a slot settle_bet proof bound to a non-zero tx pair does not verify \
+             ({other:?}) — the client's `to_vec` order and the circuit's `constrain_instance` \
+             order disagree."
+        ),
+    }
+}
+
+/// `bearer_bond`'s `ProveCoverage_V2` binary — the circuit whose pair was **added** here, not
+/// merely moved: it carried none before `OBL-C198`.
+const BEARER_BOND_PROVE_COVERAGE_ZKBIN: &[u8] =
+    include_bytes!("../../bearer_bond/proof/prove_coverage.zk.bin");
+
+/// A `ProveCoverage_V2` proof is bound to the transaction commitment it was made with, and the
+/// binding is the **last two** instances (`OBL-C198`).
+///
+/// Two assertions, because they fail for different reasons. The **position** assertion fails if a
+/// `to_vec` is left behind by the pair-last move — the value is right, the slot is wrong, and the
+/// host reads `pubvals[len-2]`/`pubvals[len-1]`. The **value** assertion fails if the binding is
+/// the constant `poseidon_hash([3, 0, 0])` the arm published before this campaign, rather than a
+/// function of the commitment. The two-sided half then proves the binding is *load-bearing*: a
+/// proof made over one commitment must not verify under a different one, which is the property the
+/// whole of `OBL-C198` exists to give.
+///
+/// This is the local instrument for a ~900-second heavyweight run, and not a substitute for it: it
+/// exercises the client and the circuit against each other and never touches the host's metadata.
+#[test]
+fn bearer_bond_prove_coverage_proof_is_bound_to_its_tx_commitment() {
+    use dwow_bearer_bond_contract::client::prove_coverage::{
+        ProveCoverageCallBuilder, ProveCoverageCallInput, ProveCoverageRevealed,
+    };
+
+    let zkbin = ZkBinary::decode(BEARER_BOND_PROVE_COVERAGE_ZKBIN, false)
+        .expect("prove_coverage.zk.bin decodes");
+    let pk = proving_key(&zkbin);
+
+    let tx_commitment = pallas::Base::from(0xC0FFEEu64);
+    let tx_nonce = pallas::Base::from(9u64);
+
+    let input = ProveCoverageCallInput {
+        series_asset_id: pallas::Base::from(1u64),
+        total_outstanding: 500,
+        total_interest_obligation: 50,
+        reserve_amount: 100,
+        report_block: 500,
+        tx_commitment,
+        tx_nonce,
+    };
+    let debris = ProveCoverageCallBuilder {
+        input,
+        prove_coverage_zkbin: zkbin.clone(),
+        prove_coverage_pk: pk,
+    }
+    .build()
+    .expect("the client must build a proof");
+
+    // 100 * 10000 / (500 + 50) = 1818 bps — the ratio the builder derives.
+    let revealed = |commitment: pallas::Base, nonce: pallas::Base| ProveCoverageRevealed {
+        reserve_amount: pallas::Base::from(100u64),
+        total_outstanding: pallas::Base::from(500u64),
+        total_interest_obligation: pallas::Base::from(50u64),
+        coverage_ratio_bps: pallas::Base::from(1818u64),
+        tx_binding: dwow_sdk::crypto::poseidon_hash([
+            pallas::Base::from(3u64),
+            commitment,
+            nonce,
+        ]),
+        tx_nonce: nonce,
+    };
+
+    let own = revealed(tx_commitment, tx_nonce).to_vec();
+    assert_eq!(own.len(), 6, "prove_coverage instances six values");
+    assert_eq!(own[5], tx_nonce, "the last instance is the nonce the proof was made with");
+    assert_eq!(
+        own[4],
+        dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]),
+        "the instance before it is poseidon_hash([3, tx_commitment, tx_nonce]) for the pair the \
+         proof was made with — not a constant"
+    );
+
+    match verify_zkp(&debris.proofs[0], BEARER_BOND_PROVE_COVERAGE_ZKBIN, &own) {
+        ZkVerifyResult::Ok => {}
+        other => panic!(
+            "OBL-C198: a prove_coverage proof bound to a non-zero tx pair does not verify \
+             ({other:?}) — the client's `to_vec` order and the circuit's `constrain_instance` \
+             order disagree."
+        ),
+    }
+
+    // The negative control (R8): the same proof, verified against a *different* commitment's
+    // instances, must be refused. If it verified, the binding would not be binding.
+    let other_commitment = pallas::Base::from(0xDEADBEEFu64);
+    let other = revealed(other_commitment, tx_nonce).to_vec();
+    assert!(
+        !matches!(
+            verify_zkp(&debris.proofs[0], BEARER_BOND_PROVE_COVERAGE_ZKBIN, &other),
+            ZkVerifyResult::Ok
+        ),
+        "a prove_coverage proof made over one tx_commitment must not verify under another — the \
+         binding would not be load-bearing"
+    );
+}

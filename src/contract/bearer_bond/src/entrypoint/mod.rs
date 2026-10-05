@@ -40,7 +40,7 @@
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine, PrimeField},
-        poseidon_hash, ContractId,
+        constants::DRK_POSEIDON_DOMAIN_TX_BINDING, poseidon_hash, ContractId,
     },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -200,6 +200,21 @@ fn point_coords(pt: pallas::Point) -> Result<(pallas::Base, pallas::Base), Contr
 // ============================================================================
 
 /// Metadata for IssueStakeV1 — BlindOutput_V1 instance(s) for output commitments.
+/// The transaction binding every bearer_bond proof publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`), not the call data: the commitment is a
+/// derivation over the call data, so a binding carried inside it would be computed from a value that
+/// covers it — a cycle with no fixed point. What stood here was the literal `poseidon_hash(3, 0, 0)`,
+/// identical across every transaction and every proof. The nonce is zero because no bearer_bond
+/// param carries one.
+fn tx_binding_of(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        dwow_sdk::wasm::util::get_tx_commitment()?,
+        tx_nonce,
+    ]))
+}
+
 fn issue_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match IssueStakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
@@ -224,7 +239,7 @@ fn issue_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<C
             vc_y,
             params.commitment.token_commit,
             params.commitment.spend_hook,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
+            tx_binding_of(pallas::Base::zero())?,
             pallas::Base::zero(),
         ],
     ));
@@ -263,7 +278,7 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
                 input.user_data_enc,
                 input.spend_hook,
                 input.signature_public,
-                poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), // tx_binding (all-zero pair)
+                tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
                 pallas::Base::zero(), // tx_nonce
             ],
         ));
@@ -281,7 +296,7 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
                 vc_y,
                 output.token_commit,
                 output.spend_hook,
-                poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
+                tx_binding_of(pallas::Base::zero())?,
                 pallas::Base::zero(),
             ],
         ));
@@ -323,7 +338,7 @@ fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
             params.bond_input.user_data_enc,
             params.bond_input.spend_hook,
             params.bond_input.signature_public,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), // tx_binding (all-zero pair)
+            tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
             pallas::Base::zero(), // tx_nonce
         ],
     ));
@@ -361,7 +376,7 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
             params.bond_input.user_data_enc,
             params.bond_input.spend_hook,
             params.bond_input.signature_public,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), // tx_binding (all-zero pair)
+            tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
             pallas::Base::zero(), // tx_nonce
         ],
     ));
@@ -370,10 +385,9 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
     let value = pallas::Base::zero();
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2.to_string(),
-        // Redeem_V2 order: coin, vc_x, vc_y, token_commit, value, tx_binding, tx_nonce,
-        // spend_hook — the tx pair *before* the hook, which is where the circuit exposes them and
-        // where the client's `UnstakeReceiptRevealed::to_vec` now puts them too (it had
-        // `spend_hook` first, a third order again; OBL-Z15).
+        // `OBL-C198`: Redeem_V2 order is coin, vc_x, vc_y, token_commit, value, spend_hook,
+        // tx_binding, tx_nonce — the pair is the last two instances, matching the reordered circuit
+        // and the client's `to_vec`.
         //
         // The first value is the *receipt's* commitment — a different note from `bond_input`, which
         // is the stake being consumed. The params carry it as `receipt_commitment` because the host
@@ -384,9 +398,9 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
             vc_y,
             params.bond_input.token_commit,
             value,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
-            pallas::Base::zero(),
             params.bond_input.spend_hook,
+            tx_binding_of(pallas::Base::zero())?,
+            pallas::Base::zero(),
         ],
     ));
 
@@ -423,7 +437,7 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
             params.bond_input.user_data_enc,
             params.bond_input.spend_hook,
             params.bond_input.signature_public,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), // tx_binding (all-zero pair)
+            tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
             pallas::Base::zero(), // tx_nonce
         ],
     ));
@@ -439,9 +453,10 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
             vc_y,                          // value_commit y
             params.bond_input.token_commit,
             value,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
-            pallas::Base::zero(),
             params.bond_input.spend_hook,
+            // `OBL-C198`: the tx pair is the last two instances (matching the reordered circuit).
+            tx_binding_of(pallas::Base::zero())?,
+            pallas::Base::zero(),
         ],
     ));
 
@@ -478,7 +493,7 @@ fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
                 input.user_data_enc,
                 input.spend_hook,
                 input.signature_public,
-                poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), // tx_binding (all-zero pair)
+                tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
                 pallas::Base::zero(), // tx_nonce
             ],
         ));
@@ -511,6 +526,11 @@ fn prove_coverage_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
             pallas::Base::from(params.total_outstanding),
             pallas::Base::from(params.total_interest_obligation),
             pallas::Base::from(params.coverage_ratio_bps),
+            // `OBL-C198`: the pair is the last two instances. `prove_coverage.zk` carried none —
+            // it was weakened because the host could not reconstruct the pair — so the circuit and
+            // this arm gain it together.
+            tx_binding_of(pallas::Base::zero())?,
+            pallas::Base::zero(),
         ],
     ));
 
@@ -547,7 +567,7 @@ fn pay_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
             vc_y,
             params.interest_commitment.token_commit,
             params.interest_commitment.spend_hook,
-            poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
+            tx_binding_of(pallas::Base::zero())?,
             pallas::Base::zero(),
         ],
     ));

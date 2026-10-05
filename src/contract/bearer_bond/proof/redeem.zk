@@ -69,7 +69,9 @@ circuit "Redeem_V2" {
 
     # Reveal spend_hook so parent contracts verify receipt coin binding
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+
+    # `OBL-C198`: the tx pair is the last two instances; it sat before the spend hook.
+    constrain_instance(coin_spend_hook);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(coin_spend_hook);
 }

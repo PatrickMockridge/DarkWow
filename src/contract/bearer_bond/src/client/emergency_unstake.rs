@@ -163,71 +163,132 @@ pub struct EmergencyUnstakeCallBuilder {
 }
 
 impl EmergencyUnstakeCallBuilder {
-    pub fn build(self) -> Result<EmergencyUnstakeCallDebris> {
-        debug!(target: "contract::bearer_bond::client::emergency_unstake", "Building BearerBond::EmergencyUnstakeV1 contract call");
-
-        let mut proofs = vec![];
+    /// `OBL-C198`: draw the blinds, derive, and assemble the call's data — stopping **before** the
+    /// proofs. The commitment covers the finished call data, so the call must exist first; `prove`
+    /// is the second half.
+    pub fn prepare(self) -> Result<EmergencyUnstakeCallPlan> {
+        debug!(target: "contract::bearer_bond::client::emergency_unstake", "Preparing BearerBond::EmergencyUnstakeV1 contract call");
 
         let value_blind = ScalarBlind::random(&mut OsRng);
         let asset_id_blind = BaseBlind::random(&mut OsRng);
         let user_data_blind = BaseBlind::random(&mut OsRng);
-
-        let (burn_proof, burn_revealed) = create_emergency_unstake_burn_proof(
-            &self.burn_zkbin,
-            &self.burn_pk,
+        let burn_derived = derive_emergency_unstake_burn(
             &self.input,
             value_blind.clone(),
             asset_id_blind.clone(),
             user_data_blind.clone(),
-        )?;
-
-        proofs.push(burn_proof);
+        );
 
         let bond_input = BondInput {
-            value_commit: burn_revealed.value_commit,
-            token_commit: burn_revealed.token_commit,
-            nullifier: burn_revealed.nullifier,
-            merkle_root: burn_revealed.merkle_root,
-            user_data_enc: burn_revealed.user_data_enc,
+            value_commit: burn_derived.value_commit,
+            token_commit: burn_derived.token_commit,
+            nullifier: burn_derived.nullifier,
+            merkle_root: burn_derived.merkle_root,
+            user_data_enc: burn_derived.user_data_enc,
             spend_hook: self.input.spend_hook,
-            signature_public: burn_revealed.signature_public,
+            signature_public: burn_derived.signature_public,
         };
 
-        // Build Redeem_V1 proof for the zero-value receipt commitment
         let receipt_value_blind = ScalarBlind::random(&mut OsRng);
         let receipt_asset_id_blind = BaseBlind::random(&mut OsRng);
-
-        let (receipt_proof, receipt_revealed) = create_emergency_unstake_receipt_proof(
-            &self.redeem_zkbin,
-            &self.redeem_pk,
+        let receipt_derived = derive_emergency_unstake_receipt(
             &self.output,
+            receipt_value_blind.clone(),
+            receipt_asset_id_blind.clone(),
+        );
+
+        let params = EmergencyUnstakeParamsV1 {
+            bond_input,
+            coverage_report: self.input.coverage_report.clone(),
+            // The receipt's note commitment, a proof-independent derivation over the output
+            // (OBL-Z15) — see the note in `unstake.rs`.
+            receipt_commitment: receipt_derived.commitment,
+        };
+        Ok(EmergencyUnstakeCallPlan {
+            burn_zkbin: self.burn_zkbin,
+            burn_pk: self.burn_pk,
+            redeem_zkbin: self.redeem_zkbin,
+            redeem_pk: self.redeem_pk,
+            input: self.input,
+            output: self.output,
+            value_blind,
+            asset_id_blind,
+            user_data_blind,
             receipt_value_blind,
             receipt_asset_id_blind,
-        )?;
-
-        proofs.push(receipt_proof);
-
-        Ok(EmergencyUnstakeCallDebris {
-            params: EmergencyUnstakeParamsV1 {
-                bond_input,
-                coverage_report: self.input.coverage_report,
-                // The receipt's note commitment, from the proof just built — see the note in
-                // `unstake.rs` and OBL-Z15.
-                receipt_commitment: receipt_revealed.commitment,
-            },
-            proofs,
+            params,
         })
+    }
+
+    /// Build the call and prove it in one step, with the commitment the input carries.
+    pub fn build(self) -> Result<EmergencyUnstakeCallDebris> {
+        let (c, n) = (self.input.tx_commitment, self.input.tx_nonce);
+        self.prepare()?.prove(c, n)
     }
 }
 
-fn create_emergency_unstake_burn_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
+/// An emergency-unstake call whose data is assembled and whose proofs are not yet made (`OBL-C198`).
+pub struct EmergencyUnstakeCallPlan {
+    burn_zkbin: ZkBinary,
+    burn_pk: ProvingKey,
+    redeem_zkbin: ZkBinary,
+    redeem_pk: ProvingKey,
+    input: EmergencyUnstakeCallInput,
+    output: EmergencyUnstakeCallOutput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+    receipt_value_blind: ScalarBlind,
+    receipt_asset_id_blind: BaseBlind,
+    params: EmergencyUnstakeParamsV1,
+}
+
+impl EmergencyUnstakeCallPlan {
+    /// The contract's call parameters.
+    pub fn params(&self) -> EmergencyUnstakeParamsV1 { self.params.clone() }
+
+    /// Prove the burn and the receipt, binding each to `tx_commitment`.
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<EmergencyUnstakeCallDebris> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (burn_proof, _burn_revealed) = create_emergency_unstake_burn_proof(
+            &self.burn_zkbin,
+            &self.burn_pk,
+            &self.input,
+            self.value_blind,
+            self.asset_id_blind,
+            self.user_data_blind,
+        )?;
+        let (receipt_proof, _receipt_revealed) = create_emergency_unstake_receipt_proof(
+            &self.redeem_zkbin,
+            &self.redeem_pk,
+            &self.output,
+            self.receipt_value_blind,
+            self.receipt_asset_id_blind,
+            tx_commitment,
+            tx_nonce,
+        )?;
+        Ok(EmergencyUnstakeCallDebris { params: self.params, proofs: vec![burn_proof, receipt_proof] })
+    }
+}
+
+/// The commitment-independent values an emergency-unstake `Burn_V1` proof reveals (`OBL-C198`).
+pub struct EmergencyUnstakeBurnDerived {
+    pub nullifier: Nullifier,
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+    pub merkle_root: MerkleNode,
+    pub user_data_enc: pallas::Base,
+    pub signature_public: pallas::Base,
+}
+
+/// Derive, do not prove — see `EmergencyUnstakeBurnDerived`.
+pub fn derive_emergency_unstake_burn(
     input: &EmergencyUnstakeCallInput,
     value_blind: ScalarBlind,
     asset_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
-) -> Result<(Proof, EmergencyUnstakeBurnRevealed)> {
+) -> EmergencyUnstakeBurnDerived {
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
     let commitment = CommitmentAttributes {
@@ -257,20 +318,69 @@ fn create_emergency_unstake_burn_proof(
         current
     };
 
-    let value_commit = pedersen_commitment_u64(input.principal, value_blind.clone());
-    let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
-    let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
-    let signature_public = poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]);
+    EmergencyUnstakeBurnDerived {
+        nullifier,
+        value_commit: pedersen_commitment_u64(input.principal, value_blind),
+        token_commit: poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]),
+        merkle_root,
+        user_data_enc: poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]),
+        signature_public: poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]),
+    }
+}
+
+/// The commitment-independent values an emergency-unstake `Redeem_V2` receipt proof reveals
+/// (`OBL-C198`).
+pub struct EmergencyUnstakeReceiptDerived {
+    pub commitment: pallas::Base,
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+}
+
+/// Derive, do not prove — see `EmergencyUnstakeReceiptDerived`.
+pub fn derive_emergency_unstake_receipt(
+    output: &EmergencyUnstakeCallOutput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+) -> EmergencyUnstakeReceiptDerived {
+    let attrs = CommitmentAttributes {
+        public_key: output.recipient,
+        value: 0,
+        asset_id: output.asset_id,
+        spend_hook: output.spend_hook,
+        user_data: output.user_data,
+        blind: output.commitment_blind,
+        maturity_block: 0,
+    };
+    EmergencyUnstakeReceiptDerived {
+        commitment: attrs.to_commitment(),
+        value_commit: pedersen_commitment_u64(0, value_blind),
+        token_commit: poseidon_hash([pallas::Base::from(2), output.asset_id, asset_id_blind.inner()]),
+    }
+}
+
+fn create_emergency_unstake_burn_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &EmergencyUnstakeCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+) -> Result<(Proof, EmergencyUnstakeBurnRevealed)> {
+    let derived = derive_emergency_unstake_burn(input, value_blind.clone(), asset_id_blind.clone(), user_data_blind.clone());
 
     let public_inputs = EmergencyUnstakeBurnRevealed {
-        nullifier,
-        value_commit,
-        token_commit,
-        merkle_root,
-        user_data_enc,
+        nullifier: derived.nullifier,
+        value_commit: derived.value_commit,
+        token_commit: derived.token_commit,
+        merkle_root: derived.merkle_root,
+        user_data_enc: derived.user_data_enc,
         spend_hook: input.spend_hook,
-        signature_public,
-        tx_binding: poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]),
+        signature_public: derived.signature_public,
+        tx_binding: poseidon_hash([
+            dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING,
+            input.tx_commitment,
+            input.tx_nonce,
+        ]),
         tx_nonce: input.tx_nonce,
     };
 
@@ -294,7 +404,11 @@ fn create_emergency_unstake_burn_proof(
         Witness::Base(Value::known(input.ephemeral_signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]))), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([
+            dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING,
+            input.tx_commitment,
+            input.tx_nonce,
+        ]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
@@ -309,32 +423,22 @@ fn create_emergency_unstake_receipt_proof(
     output: &EmergencyUnstakeCallOutput,
     value_blind: ScalarBlind,
     asset_id_blind: BaseBlind,
+    tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
 ) -> Result<(Proof, EmergencyUnstakeReceiptRevealed)> {
     let value = pallas::Base::zero();
-    let attrs = CommitmentAttributes {
-        public_key: output.recipient,
-        value: 0,
-        asset_id: output.asset_id,
-        spend_hook: output.spend_hook,
-        user_data: output.user_data,
-        blind: output.commitment_blind,
-        maturity_block: 0,
-    };
-    let commitment = attrs.to_commitment();
+    let derived = derive_emergency_unstake_receipt(output, value_blind.clone(), asset_id_blind.clone());
 
-    let value_commit = pedersen_commitment_u64(0, value_blind.clone());
-    let token_commit = poseidon_hash([pallas::Base::from(2), output.asset_id, asset_id_blind.inner()]);
-
+    // `OBL-C198`: the pair is bound here, from the transaction commitment the caller set.
+    let tx_binding = poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING, tx_commitment, tx_nonce]);
     let public_inputs = EmergencyUnstakeReceiptRevealed {
-        commitment,
-        value_commit,
-        token_commit,
+        commitment: derived.commitment,
+        value_commit: derived.value_commit,
+        token_commit: derived.token_commit,
         value,
         spend_hook: output.spend_hook,
-        // All-zero tx pair, as in the witnesses below and as in the metadata this proof is verified
-        // against — see the note in `transfer_stake.rs`.
-        tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]),
-        tx_nonce: pallas::Base::zero(),
+        tx_binding,
+        tx_nonce,
     };
 
     let prover_witnesses = vec![
@@ -346,9 +450,9 @@ fn create_emergency_unstake_receipt_proof(
         Witness::Base(Value::known(output.commitment_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_commitment
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_nonce
-        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]))), // tx_binding
+        Witness::Base(Value::known(tx_commitment)), // tx_commitment
+        Witness::Base(Value::known(tx_nonce)), // tx_nonce
+        Witness::Base(Value::known(tx_binding)), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

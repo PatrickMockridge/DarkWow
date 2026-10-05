@@ -57,6 +57,9 @@ pub struct ProveCoverageRevealed {
     pub total_outstanding: pallas::Base,
     pub total_interest_obligation: pallas::Base,
     pub coverage_ratio_bps: pallas::Base,
+    /// `OBL-C198`: the tx pair, the last two instances.
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ProveCoverageRevealed {
@@ -66,6 +69,8 @@ impl ProveCoverageRevealed {
             self.total_outstanding,
             self.total_interest_obligation,
             self.coverage_ratio_bps,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -82,6 +87,9 @@ pub struct ProveCoverageCallInput {
     pub reserve_amount: u64,
     /// Block height of this report
     pub report_block: u64,
+    /// `OBL-C198`: the transaction commitment the proof binds (set by the caller before proving).
+    pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 /// `coverage_ratio_bps = (reserve_amount * 10000) / total_obligation`, integer division, where
@@ -124,9 +132,11 @@ pub struct ProveCoverageCallBuilder {
 }
 
 impl ProveCoverageCallBuilder {
-    /// Build the ProveCoverage call debris.
-    pub fn build(self) -> Result<ProveCoverageCallDebris> {
-        debug!(target: "contract::bearer_bond::client::prove_coverage", "Building BearerBond::ProveCoverageV1 contract call");
+    /// `OBL-C198`: assemble the call's data and stop, **before** the proof. The commitment is a
+    /// derivation over the finished call data, so the call must exist first; `prove` is the second
+    /// half. `ProveCoverage_V2` draws no blinds, so this plan carries only the input and the ratio.
+    pub fn prepare(self) -> Result<ProveCoverageCallPlan> {
+        debug!(target: "contract::bearer_bond::client::prove_coverage", "Preparing BearerBond::ProveCoverageV1 contract call");
 
         let coverage_ratio_bps = coverage_ratio_bps(
             self.input.reserve_amount,
@@ -140,25 +150,56 @@ impl ProveCoverageCallBuilder {
             ))
         })?;
 
+        let params = ProveCoverageParamsV1 {
+            series_asset_id: self.input.series_asset_id,
+            total_outstanding: self.input.total_outstanding,
+            total_interest_obligation: self.input.total_interest_obligation,
+            reserve_amount: self.input.reserve_amount,
+            coverage_ratio_bps,
+            report_block: self.input.report_block,
+            proof: vec![],
+        };
+        Ok(ProveCoverageCallPlan {
+            prove_coverage_zkbin: self.prove_coverage_zkbin,
+            prove_coverage_pk: self.prove_coverage_pk,
+            input: self.input,
+            coverage_ratio_bps,
+            params,
+        })
+    }
+
+    /// Build the call and prove it in one step, with the commitment the input carries. Kept for
+    /// callers that already know theirs; a caller that does not uses `prepare`/`prove`.
+    pub fn build(self) -> Result<ProveCoverageCallDebris> {
+        let (c, n) = (self.input.tx_commitment, self.input.tx_nonce);
+        self.prepare()?.prove(c, n)
+    }
+}
+
+/// A ProveCoverage call whose data is assembled and whose proof is not yet made (`OBL-C198`).
+pub struct ProveCoverageCallPlan {
+    prove_coverage_zkbin: ZkBinary,
+    prove_coverage_pk: ProvingKey,
+    input: ProveCoverageCallInput,
+    coverage_ratio_bps: u64,
+    params: ProveCoverageParamsV1,
+}
+
+impl ProveCoverageCallPlan {
+    /// The contract's call parameters.
+    pub fn params(&self) -> ProveCoverageParamsV1 { self.params.clone() }
+
+    /// Prove the call, binding to `tx_commitment`.
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<ProveCoverageCallDebris> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
         let (proof, _revealed) = create_prove_coverage_proof(
             &self.prove_coverage_zkbin,
             &self.prove_coverage_pk,
             &self.input,
-            coverage_ratio_bps,
+            self.coverage_ratio_bps,
         )?;
-
-        Ok(ProveCoverageCallDebris {
-            params: ProveCoverageParamsV1 {
-                series_asset_id: self.input.series_asset_id,
-                total_outstanding: self.input.total_outstanding,
-                total_interest_obligation: self.input.total_interest_obligation,
-                reserve_amount: self.input.reserve_amount,
-                coverage_ratio_bps,
-                report_block: self.input.report_block,
-                proof: vec![],
-            },
-            proofs: vec![proof],
-        })
+        Ok(ProveCoverageCallDebris { params: self.params, proofs: vec![proof] })
     }
 }
 
@@ -172,11 +213,19 @@ fn create_prove_coverage_proof(
     input: &ProveCoverageCallInput,
     coverage_ratio_bps: u64,
 ) -> Result<(Proof, ProveCoverageRevealed)> {
+    // `OBL-C198`: the binding derives from the commitment the caller set on the input.
+    let tx_binding = dwow_sdk::crypto::poseidon_hash([
+        dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING,
+        input.tx_commitment,
+        input.tx_nonce,
+    ]);
     let public_inputs = ProveCoverageRevealed {
         reserve_amount: pallas::Base::from(input.reserve_amount),
         total_outstanding: pallas::Base::from(input.total_outstanding),
         total_interest_obligation: pallas::Base::from(input.total_interest_obligation),
         coverage_ratio_bps: pallas::Base::from(coverage_ratio_bps),
+        tx_binding,
+        tx_nonce: input.tx_nonce,
     };
 
     let prover_witnesses = vec![
@@ -184,6 +233,9 @@ fn create_prove_coverage_proof(
         Witness::Base(Value::known(pallas::Base::from(input.total_outstanding))),
         Witness::Base(Value::known(pallas::Base::from(input.total_interest_obligation))),
         Witness::Base(Value::known(pallas::Base::from(coverage_ratio_bps))),
+        Witness::Base(Value::known(input.tx_commitment)),
+        Witness::Base(Value::known(input.tx_nonce)),
+        Witness::Base(Value::known(tx_binding)),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

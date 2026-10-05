@@ -123,8 +123,11 @@ pub struct BurnStakeCallBuilder {
 
 impl BurnStakeCallBuilder {
     /// Build the BurnStake call debris.
-    pub fn build(self) -> Result<BurnStakeCallDebris> {
-        debug!(target: "contract::bearer_bond::client::burn_stake", "Building BearerBond::BurnStakeV1 contract call");
+    /// `OBL-C198`: draw each input's blinds, derive, and assemble the call's data — stopping
+    /// **before** the proofs. The commitment covers the finished call data, so the call must exist
+    /// first; `prove` is the second half.
+    pub fn prepare(self) -> Result<BurnStakeCallPlan> {
+        debug!(target: "contract::bearer_bond::client::burn_stake", "Preparing BearerBond::BurnStakeV1 contract call");
 
         if self.inputs.is_empty() {
             return Err(dwow_sdk::error::ContractError::Custom(
@@ -133,40 +136,133 @@ impl BurnStakeCallBuilder {
             .into());
         }
 
-        let mut proofs = vec![];
+        let mut parts = vec![];
         let mut inputs = vec![];
 
         for input in self.inputs.into_iter() {
             let value_blind = ScalarBlind::random(&mut OsRng);
             let asset_id_blind = BaseBlind::random(&mut OsRng);
             let user_data_blind = BaseBlind::random(&mut OsRng);
+            let derived = derive_burn_stake(&input, value_blind.clone(), asset_id_blind.clone(), user_data_blind.clone());
 
-            let (proof, revealed) = create_burn_stake_proof(
+            inputs.push(BondInput {
+                value_commit: derived.value_commit,
+                token_commit: derived.token_commit,
+                nullifier: derived.nullifier,
+                merkle_root: derived.merkle_root,
+                user_data_enc: derived.user_data_enc,
+                spend_hook: input.spend_hook,
+                signature_public: derived.signature_public,
+            });
+            parts.push(BurnStakePart { input, value_blind, asset_id_blind, user_data_blind });
+        }
+
+        Ok(BurnStakeCallPlan { burn_zkbin: self.burn_zkbin, burn_pk: self.burn_pk, parts, inputs })
+    }
+
+    /// Build the calls and prove them in one step, with the commitment the inputs carry.
+    pub fn build(self) -> Result<BurnStakeCallDebris> {
+        let (c, n) = self
+            .inputs
+            .first()
+            .map(|i| (i.tx_commitment, i.tx_nonce))
+            .unwrap_or((pallas::Base::zero(), pallas::Base::zero()));
+        self.prepare()?.prove(c, n)
+    }
+}
+
+/// A Burn call whose data is assembled and whose proofs are not yet made (`OBL-C198`).
+pub struct BurnStakeCallPlan {
+    burn_zkbin: ZkBinary,
+    burn_pk: ProvingKey,
+    parts: Vec<BurnStakePart>,
+    inputs: Vec<BondInput>,
+}
+struct BurnStakePart {
+    input: BurnStakeCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+}
+
+impl BurnStakeCallPlan {
+    /// The contract's call parameters.
+    pub fn params(&self) -> BurnStakeParamsV1 {
+        BurnStakeParamsV1 { inputs: self.inputs.clone() }
+    }
+
+    /// Prove every input, binding each to `tx_commitment`.
+    pub fn prove(self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<BurnStakeCallDebris> {
+        let params = self.params();
+        let mut proofs = vec![];
+        for part in self.parts.into_iter() {
+            let mut input = part.input;
+            input.tx_commitment = tx_commitment;
+            input.tx_nonce = tx_nonce;
+            let (proof, _revealed) = create_burn_stake_proof(
                 &self.burn_zkbin,
                 &self.burn_pk,
                 &input,
-                value_blind.clone(),
-                asset_id_blind.clone(),
-                user_data_blind.clone(),
+                part.value_blind,
+                part.asset_id_blind,
+                part.user_data_blind,
             )?;
-
             proofs.push(proof);
-
-            inputs.push(BondInput {
-                value_commit: revealed.value_commit,
-                token_commit: revealed.token_commit,
-                nullifier: revealed.nullifier,
-                merkle_root: revealed.merkle_root,
-                user_data_enc: revealed.user_data_enc,
-                spend_hook: input.spend_hook,
-                signature_public: revealed.signature_public,
-            });
         }
+        Ok(BurnStakeCallDebris { params, proofs })
+    }
+}
 
-        Ok(BurnStakeCallDebris {
-            params: BurnStakeParamsV1 { inputs },
-            proofs,
-        })
+/// The commitment-independent values a `Burn_V1` proof reveals (`OBL-C198`: no tx pair — it is
+/// bound at prove time from the transaction commitment). The single derivation the proof fn uses.
+pub struct BurnStakeDerived {
+    pub nullifier: Nullifier,
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+    pub merkle_root: MerkleNode,
+    pub user_data_enc: pallas::Base,
+    pub signature_public: pallas::Base,
+}
+
+/// Derive, do not prove — see `BurnStakeDerived`.
+pub fn derive_burn_stake(
+    input: &BurnStakeCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+) -> BurnStakeDerived {
+    let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
+    let commitment = CommitmentAttributes {
+        public_key,
+        value: input.principal,
+        asset_id: input.asset_id,
+        spend_hook: input.spend_hook,
+        user_data: input.user_data,
+        blind: input.commitment_blind,
+        maturity_block: input.maturity_block,
+    }
+    .to_commitment();
+    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), commitment);
+    let merkle_root = {
+        let position: u64 = input.leaf_position;
+        let mut current = MerkleNode::from_base(commitment);
+        for (level, sibling) in input.merkle_path.iter().enumerate() {
+            let level = level as u8;
+            current = if position & (1 << level) == 0 {
+                MerkleNode::combine(level.into(), &current, sibling)
+            } else {
+                MerkleNode::combine(level.into(), sibling, &current)
+            };
+        }
+        current
+    };
+    BurnStakeDerived {
+        nullifier,
+        value_commit: pedersen_commitment_u64(input.principal, value_blind),
+        token_commit: poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]),
+        merkle_root,
+        user_data_enc: poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]),
+        signature_public: poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]),
     }
 }
 
@@ -184,49 +280,17 @@ fn create_burn_stake_proof(
     asset_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
 ) -> Result<(Proof, BurnStakeRevealed)> {
-    let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
-
-    let commitment = CommitmentAttributes {
-        public_key,
-        value: input.principal,
-        asset_id: input.asset_id,
-        spend_hook: input.spend_hook,
-        user_data: input.user_data,
-        blind: input.commitment_blind,
-        maturity_block: input.maturity_block,
-    }
-    .to_commitment();
-
-    let nullifier = Nullifier::new(SecretKey::from_base(input.secret), commitment);
-
-    let merkle_root = {
-        let position: u64 = input.leaf_position;
-        let mut current = MerkleNode::from_base(commitment);
-        for (level, sibling) in input.merkle_path.iter().enumerate() {
-            let level = level as u8;
-            current = if position & (1 << level) == 0 {
-                MerkleNode::combine(level.into(), &current, sibling)
-            } else {
-                MerkleNode::combine(level.into(), sibling, &current)
-            };
-        }
-        current
-    };
-
-    let value_commit = pedersen_commitment_u64(input.principal, value_blind.clone());
-    let token_commit = poseidon_hash([pallas::Base::from(2), input.asset_id, asset_id_blind.inner()]);
-    let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
-    let signature_public = poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]);
+    let derived = derive_burn_stake(input, value_blind.clone(), asset_id_blind.clone(), user_data_blind.clone());
 
     let public_inputs = BurnStakeRevealed {
-        nullifier,
-        value_commit,
-        token_commit,
-        merkle_root,
-        user_data_enc,
+        nullifier: derived.nullifier,
+        value_commit: derived.value_commit,
+        token_commit: derived.token_commit,
+        merkle_root: derived.merkle_root,
+        user_data_enc: derived.user_data_enc,
         spend_hook: input.spend_hook,
-        signature_public,
-        tx_binding: poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]),
+        signature_public: derived.signature_public,
+        tx_binding: poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING, input.tx_commitment, input.tx_nonce]),
         tx_nonce: input.tx_nonce,
     };
 
@@ -250,7 +314,7 @@ fn create_burn_stake_proof(
         Witness::Base(Value::known(input.ephemeral_signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), input.tx_commitment, input.tx_nonce]))), // tx_binding
+        Witness::Base(Value::known(poseidon_hash([dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING, input.tx_commitment, input.tx_nonce]))), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

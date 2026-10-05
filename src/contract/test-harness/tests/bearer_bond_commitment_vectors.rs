@@ -196,9 +196,10 @@ fn blind_output_rejects_token_commit_in_place_of_the_note_commitment() {
 
 #[test]
 fn redeem_verifies_against_the_receipt_vector() {
-    // Redeem_V2's order is [coin, vc_x, vc_y, token_commit, value, tx_binding, tx_nonce,
-    // spend_hook] — the tx pair *before* the hook. The client's vector used to put the hook first
-    // and the metadata disagreed with both.
+    // Redeem_V2's order is [coin, vc_x, vc_y, token_commit, value, spend_hook, tx_binding,
+    // tx_nonce] — the tx pair is the last two instances, after the hook (`OBL-C198`). The client's
+    // vector, the circuit and the metadata each ordered these three differently (OBL-Z15) before
+    // the pair-last move put all three on the circuit's order.
     let z = zkbin(REDEEM_BYTES);
     let pk = proving_key(&z);
 
@@ -225,9 +226,9 @@ fn redeem_verifies_against_the_receipt_vector() {
         vc_y,
         token_commit,
         pallas::Base::from(value),
+        spend_hook,
         tx_binding(),
         pallas::Base::zero(),
-        spend_hook,
     ];
     let witnesses = vec![
         Witness::Base(Value::known(recipient)),
