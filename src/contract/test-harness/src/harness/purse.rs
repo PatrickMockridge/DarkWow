@@ -52,8 +52,30 @@ impl PurseHarness {
         let a = pt.to_affine(); let c = a.coordinates().into_option().ok_or(dwow_core::Error::Custom("identity point".into()))?; Ok((*c.x(), *c.y()))
     }
 
+    /// The deposit a whole transaction is — the form purse's own spec uses.
+    ///
+    /// Binding over this call **alone** is correct here and only here: when the deposit *is* the
+    /// transaction, the node's ordered call set is `[self]`. A deposit used as a **child** must
+    /// not use this — see [`Self::deposit_prepare`].
     pub fn deposit(&self, amount: u64) -> Result<PurseDepositResult> {
-        let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);let dss=pallas::Base::from(7u64);
+        let plan = self.deposit_prepare(amount)?;
+        let tc = commitment_of(&self.contract_id, &plan.call_data);
+        plan.prove(tc)
+    }
+
+    /// A `deposit` call built but not yet proven, for use as a **child** (`OBL-C198`).
+    ///
+    /// [`Self::deposit`] binds its proof to the commitment over this call alone. A child cannot:
+    /// the node hashes the whole ordered call set in DFS post-order, and the parent's bytes come
+    /// *after* the child's, so the value the child must bind to does not exist yet when the child
+    /// is built. This stops before the proof and hands the caller the call data; the caller
+    /// assembles the set, takes the commitment, and calls [`PurseDepositPlan::prove`].
+    ///
+    /// Additive on purpose, exactly as `MultiSigHarness::finalize_prepare` is: rewriting
+    /// `deposit` to take a child set would change every caller in purse's own spec, where binding
+    /// over the call alone is already right.
+    pub fn deposit_prepare(&self, amount: u64) -> Result<PurseDepositPlan> {
+        let dnl=pallas::Base::from(1u64);let dml=pallas::Base::from(5u64);let dss=pallas::Base::from(7u64);
         let os=pallas::Base::from(42u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
         // The purse identity the circuit publishes: `poseidon(4, owner_pub, asset_id, purse_id)` — the
         // derivation `balance.zk` constrains and `balance()` below computes, so a parent that knows
@@ -93,19 +115,24 @@ impl PurseHarness {
         let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
         let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;
         cd.extend_from_slice(&note_bytes);
-        // `OBL-C198`: the proof is built LAST, over the finished call data. `tx_binding` derives
-        // from a commitment that covers these very bytes, and the commitment excludes proofs,
-        // which is what makes the order solvable. What stood here was `tc = 200`, a literal.
-        let tc: pallas::Base = commitment_of(&self.contract_id, &cd);
-        let tb=poseidon_hash([dtb,tc,tn]);
-        let w=vec![Witness::Base(Value::known(pid)),Witness::Base(Value::known(pallas::Base::from(ob))),Witness::Scalar(Value::known(obl.inner())),Witness::Base(Value::known(pallas::Base::from(amount))),Witness::Scalar(Value::known(dbl.inner())),Witness::Base(Value::known(pallas::Base::from(nb))),Witness::Scalar(Value::known(nbl.inner())),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(ocx)),Witness::Base(Value::known(ocy)),Witness::Base(Value::known(ncx)),Witness::Base(Value::known(ncy)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb)),Witness::Base(Value::known(tid)),Witness::Base(Value::known(dpi))];
-        let pi=vec![nf,er_base,ocx,ocy,ncx,ncy,nl,dpi,tb,tn];let c=ZkCircuit::new(w,&self.deposit_zkbin);
-        let proof = if dwow_purse_contract::deterministic_zk_enabled() {
-            Proof::create(&self.deposit_pk, &[c], &pi, rand::rngs::StdRng::seed_from_u64(0))
-        } else {
-            Proof::create(&self.deposit_pk, &[c], &pi, rand::rngs::OsRng)
-        }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
-        Ok(PurseDepositResult{call_data:cd,proof})
+        // `OBL-C198`: the call data is finished here and the proof is built later, over it.
+        // `tx_binding` derives from a commitment that covers these very bytes, and the commitment
+        // excludes proofs, which is what makes the order solvable. What stood here was
+        // `tc = 200`, a literal.
+        //
+        // The pair is last among the *instances*, but the witness vector follows `deposit.zk`'s
+        // own declaration order, in which `tid` and `dpi` are declared *after* the pair. So the
+        // head stops before the pair and `witnesses_tail` carries the two that follow it;
+        // `prove` splices the pair back between them, which is the order the circuit reads.
+        Ok(PurseDepositPlan{
+            witnesses_head: vec![Witness::Base(Value::known(pid)),Witness::Base(Value::known(pallas::Base::from(ob))),Witness::Scalar(Value::known(obl.inner())),Witness::Base(Value::known(pallas::Base::from(amount))),Witness::Scalar(Value::known(dbl.inner())),Witness::Base(Value::known(pallas::Base::from(nb))),Witness::Scalar(Value::known(nbl.inner())),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(ocx)),Witness::Base(Value::known(ocy)),Witness::Base(Value::known(ncx)),Witness::Base(Value::known(ncy)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?))],
+            witnesses_tail: vec![Witness::Base(Value::known(tid)),Witness::Base(Value::known(dpi))],
+            public_head: vec![nf,er_base,ocx,ocy,ncx,ncy,nl,dpi],
+            tx_nonce: tn,
+            call_data: cd,
+            deposit_zkbin: self.deposit_zkbin.clone(),
+            deposit_pk: self.deposit_pk.clone(),
+        })
     }
 
     pub fn withdraw(&self, amount: u64) -> Result<PurseWithdrawResult> {
@@ -205,6 +232,48 @@ impl PurseHarness {
             Proof::create(&self.balance_pk, &[c], &pi, rand::rngs::OsRng)
         }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         Ok(PurseBalanceResult{call_data:cd,proof})
+    }
+}
+
+/// A prepared purse `deposit`, proved against a caller-supplied commitment — see
+/// [`PurseHarness::deposit_prepare`] for why a child needs this and a whole transaction does not.
+pub struct PurseDepositPlan {
+    witnesses_head: Vec<Witness>,
+    /// The witnesses `deposit.zk` declares *after* the pair. `prove` splices the pair back between
+    /// the head and these — the declaration order is not the instance order.
+    witnesses_tail: Vec<Witness>,
+    public_head: Vec<pallas::Base>,
+    tx_nonce: pallas::Base,
+    /// The call data the commitment must cover. The caller needs it to build the `ContractCall`
+    /// this plan signs for.
+    pub call_data: Vec<u8>,
+    deposit_zkbin: ZkBinary,
+    deposit_pk: ProvingKey,
+}
+
+impl PurseDepositPlan {
+    /// Prove against `tx_commitment` — the commitment over the whole ordered call set the node
+    /// will hash, not just this call.
+    pub fn prove(self, tx_commitment: pallas::Base) -> Result<PurseDepositResult> {
+        // `DOMAIN_TX_BINDING` = 3, the constant the arm and every other builder use.
+        let tx_binding=poseidon_hash([pallas::Base::from(3u64),tx_commitment,self.tx_nonce]);
+        let mut w=self.witnesses_head;
+        w.push(Witness::Base(Value::known(tx_commitment)));
+        w.push(Witness::Base(Value::known(self.tx_nonce)));
+        w.push(Witness::Base(Value::known(tx_binding)));
+        w.extend(self.witnesses_tail);
+        // constrain_instance order: nf, er_base, ocx, ocy, ncx, ncy, nl, dpi, tx_binding, tx_nonce —
+        // the pair is last, which is the convention the node reads.
+        let mut pi=self.public_head;
+        pi.push(tx_binding);
+        pi.push(self.tx_nonce);
+        let c=ZkCircuit::new(w,&self.deposit_zkbin);
+        let proof = if dwow_purse_contract::deterministic_zk_enabled() {
+            Proof::create(&self.deposit_pk, &[c], &pi, rand::rngs::StdRng::seed_from_u64(0))
+        } else {
+            Proof::create(&self.deposit_pk, &[c], &pi, rand::rngs::OsRng)
+        }.map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
+        Ok(PurseDepositResult{call_data:self.call_data,proof})
     }
 }
 
