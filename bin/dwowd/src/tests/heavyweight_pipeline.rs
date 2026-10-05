@@ -955,7 +955,7 @@ fn test_recruitment_pipeline_call_data() -> std::result::Result<(), Box<dyn std:
         chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("recruitment_pipeline")?));
 
         // Deploy Identity
-        let id_harness = IdentityHarness::spawn();
+        let id_harness = IdentityHarness::spawn(*dwow_sdk::crypto::IDENTITY_CONTRACT_ID);
         println!("Identity harness: {:?}", id_harness.circuits());
         let _id_contract_id = *dwow_sdk::crypto::IDENTITY_CONTRACT_ID;  // deployed at genesis
 
@@ -1018,6 +1018,8 @@ fn test_recruitment_pipeline_call_data() -> std::result::Result<(), Box<dyn std:
         let schema_hash = pallas::Base::from(55u64);
 
         let issue_result = id_harness.issue_credential(
+            // `OBL-C198`: no children — this pipeline builds a single-call transaction.
+            &[],
             issuer_secret,
             worker_secret,
             b"role",                     // attribute_1's *name* — the commitment covers name and value

@@ -99,6 +99,16 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
+/// The transaction binding both arms publish — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// One helper serves both arms because they published one constant between them.
+pub fn identity_tx_binding(tx_nonce: Base) -> Result<Base, ContractError> {
+    Ok(poseidon_hash([Base::from(3u64), wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
@@ -114,11 +124,19 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
 
-    // V2 tx_binding = poseidon_hash(DOMAIN_TX_BINDING=3, tx_commitment=0, tx_nonce=0).
-    // Both tx_commitment and tx_nonce are zero in the client (no replay protection yet),
-    // so tx_binding is a deterministic constant. MUST match the client computation
-    // and the circuit's constrain_instance(tx_binding).
-    let tx_binding = poseidon_hash([Base::from(3u64), Base::zero(), Base::zero()]);
+    // `OBL-C198`: `tx_binding = poseidon_hash(DOMAIN_TX_BINDING=3, tx_commitment, tx_nonce)`,
+    // where the commitment comes from the host and the nonce is the call's. What stood here was
+    // the **constant** `poseidon_hash([3, 0, 0])` — "both tx_commitment and tx_nonce are zero in
+    // the client (no replay protection yet), so tx_binding is a deterministic constant" — which
+    // was true and bound every proof to nothing: the value was identical in every transaction, so
+    // a proof lifted from one transaction verified in another.
+    //
+    // It has to leave the call data to be fixable at all: the commitment is a derivation over the
+    // call data, so a binding carried inside it would be computed from a value that covers it — a
+    // cycle with no fixed point. The nonce stays zero (these calls carry no nonce field), which
+    // *links* one transaction's proofs and is owed a per-proof nonce; still strictly more than a
+    // constant shared with every other transaction.
+    let tx_binding = identity_tx_binding(Base::zero())?;
 
     match func {
         IdentityFunction::IssueCredentialV1 => {

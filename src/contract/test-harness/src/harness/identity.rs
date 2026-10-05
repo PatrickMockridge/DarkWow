@@ -52,11 +52,21 @@ pub struct IdentityHarness {
     issue_credential_pk: ProvingKey,
     verify_capability_zkbin: ZkBinary,
     verify_capability_pk: ProvingKey,
+    /// The contract's deployed id (`OBL-C198`): the transaction commitment is derived over the
+    /// call set, and a call carries this id, so the harness has to know it.
+    contract_id: dwow_sdk::crypto::ContractId,
+}
+
+/// The transaction commitment over an ordered call set — the same derivation the node recomputes
+/// (`dwow_sdk::crypto::util::tx_commitment`). The order is the one `DarkForest::build_vec` emits:
+/// DFS post-order, children before parents.
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
 }
 
 impl IdentityHarness {
     /// Spawn a new Identity harness with 2 pre-loaded circuits
-    pub fn spawn() -> Self {
+    pub fn spawn(contract_id: dwow_sdk::crypto::ContractId) -> Self {
         let issue_bin = include_bytes!("../../../identity/proof/issue_credential.zk.bin");
         let verify_bin = include_bytes!("../../../identity/proof/verify_capability.zk.bin");
 
@@ -78,7 +88,25 @@ impl IdentityHarness {
         Self {
             issue_credential_zkbin, issue_credential_pk,
             verify_capability_zkbin, verify_capability_pk,
+            contract_id,
         }
+    }
+
+    /// The commitment over `children` followed by this call — the ordered set the node hashes.
+    ///
+    /// This is the *root* form, for a call that ends its transaction. **Identity is most often the
+    /// opposite**: four specs use its proofs as a *child* of another contract's call
+    /// (`insurance_market`, `labor_market`, `tender`, and `heavyweight_pipeline`), and a child's
+    /// commitment includes its parent's bytes, which come after it in post-order. Those callers use
+    /// `*_prepare` and prove against their own commitment.
+    fn commitment_over(
+        &self,
+        children: &[dwow_sdk::tx::ContractCall],
+        call_data: &[u8],
+    ) -> pallas::Base {
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.to_vec() });
+        commitment_of(&calls)
     }
 
     /// Initialize the identity contract
@@ -89,8 +117,12 @@ impl IdentityHarness {
         Ok(InitializeResult { call_data })
     }
 
-    /// Issue a credential to a holder
-    pub fn issue_credential(
+    /// Prepare an issue-credential call: everything except the proof.
+    ///
+    /// See [`Self::commitment_over`] for why this exists beside the root form: identity's proofs
+    /// are used as **children** of other contracts' calls, and a child's commitment includes its
+    /// parent's bytes — which no builder for the child can compute.
+    pub fn issue_credential_prepare(
         &self,
         issuer_secret: pallas::Base,
         credential_secret: pallas::Base,
@@ -102,7 +134,7 @@ impl IdentityHarness {
         schema_hash: pallas::Base,
         issued_at: u64,
         expires_at: u64,
-    ) -> Result<IssueCredentialResult> {
+    ) -> Result<IssueCredentialPlan> {
         let issuer_public = PublicKey::from_secret(SecretKey::from_bytes(issuer_secret.to_repr()).unwrap());
         let holder_public = PublicKey::from_secret(SecretKey::from_bytes(credential_secret.to_repr()).unwrap());
         // The same mapping the client, the circuits and the host use — one definition, in the model.
@@ -118,10 +150,10 @@ impl IdentityHarness {
             attribute_blind, issuer_public, holder_public, schema_hash, issued_at, expires_at,
         );
 
-        let (proof, public_inputs) = create_issue_credential_proof(
-            &self.issue_credential_zkbin, &self.issue_credential_pk, &input,
-        )?;
-
+        // The commitment and the nullifier are derived from the preimage, so they do not depend on
+        // the transaction and can be settled before it is known — which is what lets the call data
+        // (and the commitment over it) exist first.
+        let public_inputs = input.compute_public_inputs();
         let credential_nullifier = input.compute_nullifier();
 
         let params = IssueCredentialParams {
@@ -137,12 +169,42 @@ impl IdentityHarness {
 
         let mut call_data = vec![0x01]; // IssueCredentialV1
         call_data.extend_from_slice(&params.encode()?);
-        Ok(IssueCredentialResult { call_data, public_inputs, proof })
+
+        Ok(IssueCredentialPlan {
+            input,
+            call_data,
+            issue_credential_zkbin: self.issue_credential_zkbin.clone(),
+            issue_credential_pk: self.issue_credential_pk.clone(),
+        })
     }
 
-    /// Verify a capability with ZK proof
+    /// Issue a credential to a holder — the root form, for a call that ends its transaction.
+    pub fn issue_credential(
+        &self,
+        children: &[dwow_sdk::tx::ContractCall],
+        issuer_secret: pallas::Base,
+        credential_secret: pallas::Base,
+        attribute_1_name: &[u8],
+        attribute_1: pallas::Base,
+        attribute_2_name: &[u8],
+        attribute_2: pallas::Base,
+        attribute_blind: pallas::Base,
+        schema_hash: pallas::Base,
+        issued_at: u64,
+        expires_at: u64,
+    ) -> Result<IssueCredentialResult> {
+        let plan = self.issue_credential_prepare(
+            issuer_secret, credential_secret, attribute_1_name, attribute_1, attribute_2_name,
+            attribute_2, attribute_blind, schema_hash, issued_at, expires_at,
+        )?;
+        let commitment = self.commitment_over(children, &plan.call_data);
+        plan.prove(commitment)
+    }
+
+    /// Prepare a verify-capability call: everything except the proof — see
+    /// [`Self::issue_credential_prepare`] for why the split exists.
     #[allow(clippy::too_many_arguments)]
-    pub fn verify_capability(
+    pub fn verify_capability_prepare(
         &self,
         credential_secret: pallas::Base,
         capability_id: pallas::Base,
@@ -159,7 +221,7 @@ impl IdentityHarness {
         issued_at: u64,
         expires_at: u64,
         predicate_result: bool,
-    ) -> Result<VerifyCapabilityResult> {
+    ) -> Result<VerifyCapabilityPlan> {
         // The commitment is derived from the preimage by the client, so the harness supplies the
         // credential's parts and never a commitment of its own — which is what the caller of a real
         // capability proof has.
@@ -173,10 +235,7 @@ impl IdentityHarness {
             credential_secret, a1_name, attribute_1, threshold, a2_name, attribute_2, attribute_blind,
             issuer_public, holder_public, schema_hash, issued_at, expires_at, predicate_result,
         );
-
-        let (proof, public_inputs) = create_verify_capability_proof(
-            &self.verify_capability_zkbin, &self.verify_capability_pk, &input,
-        )?;
+        let public_inputs = input.compute_public_inputs();
 
         let params = VerifyCapabilityParams {
             capability_proof: dwow_identity_contract::model::CapabilityProof {
@@ -215,7 +274,44 @@ impl IdentityHarness {
 
         let mut call_data = vec![0x06]; // VerifyCapabilityV1
         call_data.extend_from_slice(&params.encode()?);
-        Ok(VerifyCapabilityResult { call_data, public_inputs, proof })
+
+        Ok(VerifyCapabilityPlan {
+            input,
+            call_data,
+            verify_capability_zkbin: self.verify_capability_zkbin.clone(),
+            verify_capability_pk: self.verify_capability_pk.clone(),
+        })
+    }
+
+    /// Verify a capability — the root form, for a call that ends its transaction. The four specs
+    /// that use this as a **child** call [`Self::verify_capability_prepare`] instead.
+    #[allow(clippy::too_many_arguments)]
+    pub fn verify_capability(
+        &self,
+        children: &[dwow_sdk::tx::ContractCall],
+        credential_secret: pallas::Base,
+        capability_id: pallas::Base,
+        threshold: pallas::Base,
+        attribute_1_name: &[u8],
+        attribute_1: pallas::Base,
+        attribute_2_name: &[u8],
+        attribute_2: pallas::Base,
+        attribute_blind: pallas::Base,
+        capability_secret: pallas::Base,
+        issuer_public: PublicKey,
+        holder_public: PublicKey,
+        schema_hash: pallas::Base,
+        issued_at: u64,
+        expires_at: u64,
+        predicate_result: bool,
+    ) -> Result<VerifyCapabilityResult> {
+        let plan = self.verify_capability_prepare(
+            credential_secret, capability_id, threshold, attribute_1_name, attribute_1,
+            attribute_2_name, attribute_2, attribute_blind, capability_secret, issuer_public,
+            holder_public, schema_hash, issued_at, expires_at, predicate_result,
+        )?;
+        let commitment = self.commitment_over(children, &plan.call_data);
+        plan.prove(commitment)
     }
 
     // ========================================================================
@@ -339,8 +435,54 @@ impl super::ContractHarness for IdentityHarness {
 
 /// Result structs
 pub struct InitializeResult { pub call_data: Vec<u8> }
-pub struct IssueCredentialResult { pub call_data: Vec<u8>, pub public_inputs: IssueCredentialPublicInputs, pub proof: dwow_core::zk::Proof }
-pub struct VerifyCapabilityResult { pub call_data: Vec<u8>, pub public_inputs: VerifyCapabilityPublicInputs, pub proof: dwow_core::zk::Proof }
+pub struct IssueCredentialResult { pub call_data: Vec<u8>, pub public_inputs: IssueCredentialPublicInputs, pub proof: dwow_core::zk::Proof, pub commitment: pallas::Base }
+pub struct VerifyCapabilityResult { pub call_data: Vec<u8>, pub public_inputs: VerifyCapabilityPublicInputs, pub proof: dwow_core::zk::Proof, pub commitment: pallas::Base }
+
+/// An issue-credential call built but not yet proven (`OBL-C198`) — see
+/// [`IdentityHarness::issue_credential_prepare`] for why a child needs this and a whole
+/// transaction does not.
+pub struct IssueCredentialPlan {
+    input: IssueCredentialCallData,
+    /// The call data the commitment must cover. The caller needs it to build the `ContractCall`
+    /// this plan signs for.
+    pub call_data: Vec<u8>,
+    issue_credential_zkbin: ZkBinary,
+    issue_credential_pk: ProvingKey,
+}
+
+impl IssueCredentialPlan {
+    /// Prove against `tx_commitment` — the commitment over the whole ordered call set the node
+    /// will hash, not just this call.
+    pub fn prove(self, tx_commitment: pallas::Base) -> Result<IssueCredentialResult> {
+        let mut input = self.input;
+        input.tx_commitment = tx_commitment;
+        let (proof, public_inputs) =
+            create_issue_credential_proof(&self.issue_credential_zkbin, &self.issue_credential_pk, &input)?;
+        Ok(IssueCredentialResult { call_data: self.call_data, public_inputs, proof, commitment: tx_commitment })
+    }
+}
+
+/// A verify-capability call built but not yet proven (`OBL-C198`) — see
+/// [`IdentityHarness::verify_capability_prepare`].
+pub struct VerifyCapabilityPlan {
+    input: VerifyCapabilityCallData,
+    /// The call data the commitment must cover.
+    pub call_data: Vec<u8>,
+    verify_capability_zkbin: ZkBinary,
+    verify_capability_pk: ProvingKey,
+}
+
+impl VerifyCapabilityPlan {
+    /// Prove against `tx_commitment` — the commitment over the whole ordered call set the node
+    /// will hash, not just this call.
+    pub fn prove(self, tx_commitment: pallas::Base) -> Result<VerifyCapabilityResult> {
+        let mut input = self.input;
+        input.tx_commitment = tx_commitment;
+        let (proof, public_inputs) =
+            create_verify_capability_proof(&self.verify_capability_zkbin, &self.verify_capability_pk, &input)?;
+        Ok(VerifyCapabilityResult { call_data: self.call_data, public_inputs, proof, commitment: tx_commitment })
+    }
+}
 pub struct RegisterCapabilityHarnessResult { pub call_data: Vec<u8>, pub capability_id: CapabilityId }
 pub struct IssueCapabilityHarnessResult { pub call_data: Vec<u8> }
 pub struct RevokeCapabilityHarnessResult { pub call_data: Vec<u8> }

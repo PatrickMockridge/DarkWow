@@ -11,7 +11,9 @@ use crate::tests::uniform_runner::{
 };
 
 pub fn identity_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(IdentityHarness::spawn()));
+    // `OBL-C198`: the harness needs the id its calls carry, because the commitment covers it.
+    // `identity` is a genesis contract, so the id is the constant rather than a derivation.
+    let harness = Box::leak(Box::new(IdentityHarness::spawn(*IDENTITY_CONTRACT_ID)));
     let h: &IdentityHarness = harness;
 
     // Deterministic inputs (all pallas::Base — Copy)
@@ -26,7 +28,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
     // The attributes are *named*: the commitment covers `poseidon(10, name, value)` per slot, and
     // the capability below requires `role`, so the credential's first slot must be `role` or the
     // host's comparison rejects the proof.
-    let issue_result = h.issue_credential(issuer_secret, credential_secret,
+    let issue_result = h.issue_credential(&[], issuer_secret, credential_secret,
         b"role", pallas::Base::from(100u64),
         b"tenure", pallas::Base::from(200u64),
         pallas::Base::from(300u64), schema_hash, 0, 100000)
@@ -91,7 +93,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = credential_nullifier.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("credential must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
-                    let r = h.issue_credential(issuer_secret, credential_secret,
+                    let r = h.issue_credential(&[], issuer_secret, credential_secret,
                         b"role", pallas::Base::from(100u64),
                         b"tenure", pallas::Base::from(200u64),
                         pallas::Base::from(300u64), schema_hash, 0, 100000)?;
@@ -132,7 +134,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                         // them: the verify circuit reconstructs the commitment from these, so a
                         // fixture that disagreed with the issuance would not prove at all.
                         let holder_pub = PublicKey::from_secret(SecretKey::from_base(credential_secret));
-                        let r = h.verify_capability(credential_secret, cap_id,
+                        let r = h.verify_capability(&[], credential_secret, cap_id,
                             pallas::Base::from(50u64),
                             b"role", pallas::Base::from(100u64),
                             b"tenure", pallas::Base::from(200u64),
