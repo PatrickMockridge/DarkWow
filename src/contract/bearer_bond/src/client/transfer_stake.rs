@@ -57,6 +57,8 @@ use super::point_coords;
 /// nullifier, value_commit_x, value_commit_y, token_commit, merkle_root,
 /// user_data_enc, spend_hook, signature_public
 pub struct TransferBurnRevealed {
+    /// `OBL-C199`: the note commitment is the **first** instance, as it is in `BlindOutput_V2`.
+    pub commitment: pallas::Base,
     pub nullifier: Nullifier,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
@@ -72,6 +74,7 @@ impl TransferBurnRevealed {
     pub fn to_vec(&self) -> Result<Vec<pallas::Base>> {
         let (vc_x, vc_y) = point_coords(self.value_commit)?;
         Ok(vec![
+            self.commitment,
             self.nullifier.inner(),
             vc_x,
             vc_y,
@@ -252,6 +255,7 @@ impl TransferStakeCallBuilder {
                 user_data_enc: derived.user_data_enc,
                 spend_hook: input.spend_hook,
                 signature_public: derived.signature_public,
+                commitment: derived.commitment,
             });
 
             input_parts.push(TransferBurnPart { input, value_blind, asset_id_blind, user_data_blind });
@@ -267,6 +271,7 @@ impl TransferStakeCallBuilder {
                 value_commit: derived.value_commit,
                 commitment: derived.commitment,
                 token_commit: derived.token_commit,
+                series_asset_id: output.asset_id,
                 nullifier: Nullifier::ZERO,
                 merkle_root: MerkleNode::from_base(pallas::Base::zero()),
                 user_data_enc: pallas::Base::zero(),
@@ -401,6 +406,8 @@ pub struct TransferBurnDerived {
     pub merkle_root: MerkleNode,
     pub user_data_enc: pallas::Base,
     pub signature_public: pallas::Base,
+    /// The note commitment — see `BondInput::commitment`.
+    pub commitment: pallas::Base,
 }
 
 /// Derive, do not prove — see `TransferBurnDerived`.
@@ -446,6 +453,7 @@ pub fn derive_transfer_burn(
         merkle_root,
         user_data_enc: poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]),
         signature_public: poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]),
+        commitment,
     }
 }
 
@@ -499,6 +507,7 @@ fn create_transfer_burn_proof(
     let derived = derive_transfer_burn(input, value_blind.clone(), asset_id_blind.clone(), user_data_blind.clone());
 
     let public_inputs = TransferBurnRevealed {
+        commitment: derived.commitment,
         nullifier: derived.nullifier,
         value_commit: derived.value_commit,
         token_commit: derived.token_commit,

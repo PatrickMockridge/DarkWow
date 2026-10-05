@@ -49,12 +49,16 @@ fn test_function_enum_all_opcodes() {
     assert!(matches!(BearerBondFunction::try_from(6u8).unwrap(), BearerBondFunction::ProveCoverageV1));
     assert!(matches!(BearerBondFunction::try_from(7u8).unwrap(), BearerBondFunction::VerifyCoverageV1));
     assert!(matches!(BearerBondFunction::try_from(8u8).unwrap(), BearerBondFunction::PayInterestV1));
+    assert!(matches!(BearerBondFunction::try_from(9u8).unwrap(), BearerBondFunction::RegisterSeriesV1));
 }
 
 #[test]
 fn test_function_enum_invalid() {
     assert!(BearerBondFunction::try_from(0xFF).is_err());
-    assert!(BearerBondFunction::try_from(9u8).is_err());
+    // 0x0a is the first unassigned selector: 0x00–0x09 are the ten endpoints, `RegisterSeriesV1`
+    // having taken 0x09. This asserted `9u8` while 9 was the first gap, so it moved with the enum
+    // rather than being deleted — an invalid-selector control is worth keeping.
+    assert!(BearerBondFunction::try_from(10u8).is_err());
 }
 
 // ============================================================================

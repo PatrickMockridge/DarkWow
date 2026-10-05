@@ -63,6 +63,8 @@ use super::point_coords;
 /// nullifier, value_commit_x, value_commit_y, token_commit, merkle_root,
 /// user_data_enc, spend_hook, signature_public
 pub struct RequestInterestRevealed {
+    /// `OBL-C199`: the note commitment is the **first** instance, as it is in `BlindOutput_V2`.
+    pub commitment: pallas::Base,
     pub nullifier: Nullifier,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
@@ -78,6 +80,7 @@ impl RequestInterestRevealed {
     pub fn to_vec(&self) -> Result<Vec<pallas::Base>> {
         let (vc_x, vc_y) = point_coords(self.value_commit)?;
         Ok(vec![
+            self.commitment,
             self.nullifier.inner(),
             vc_x,
             vc_y,
@@ -165,6 +168,7 @@ impl RequestInterestCallBuilder {
                 user_data_enc: derived.user_data_enc,
                 spend_hook: self.input.spend_hook,
                 signature_public: derived.signature_public,
+                commitment: derived.commitment,
             },
             claim_block: self.input.claim_block,
             payment_key: self.input.payment_key,
@@ -227,6 +231,8 @@ pub struct RequestInterestDerived {
     pub merkle_root: MerkleNode,
     pub user_data_enc: pallas::Base,
     pub signature_public: pallas::Base,
+    /// The note commitment — see `BondInput::commitment`.
+    pub commitment: pallas::Base,
 }
 
 /// Derive, do not prove — see `RequestInterestDerived`. The blinds are parameters rather than drawn
@@ -270,6 +276,7 @@ pub fn derive_request_interest(
         merkle_root,
         user_data_enc: poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]),
         signature_public: poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]),
+        commitment,
     }
 }
 
@@ -294,6 +301,7 @@ fn create_request_interest_proof(
     let derived = derive_request_interest(input, value_blind.clone(), asset_id_blind.clone(), user_data_blind.clone());
 
     let public_inputs = RequestInterestRevealed {
+        commitment: derived.commitment,
         nullifier: derived.nullifier,
         value_commit: derived.value_commit,
         token_commit: derived.token_commit,

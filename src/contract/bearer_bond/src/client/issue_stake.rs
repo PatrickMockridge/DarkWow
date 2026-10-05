@@ -132,6 +132,7 @@ impl IssueStakeCallBuilder {
                 value_commit: derived.value_commit,
                 commitment: derived.commitment,
                 token_commit: derived.token_commit,
+                series_asset_id: self.input.asset_id,
                 nullifier: crate::model::Nullifier::ZERO,
                 merkle_root: MerkleNode::from_base(pallas::Base::zero()),
                 user_data_enc: pallas::Base::zero(),

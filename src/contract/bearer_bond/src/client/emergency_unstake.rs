@@ -48,6 +48,8 @@ use super::point_coords;
 
 /// Public inputs revealed after Burn_V1 proof (emergency unstake input side).
 pub struct EmergencyUnstakeBurnRevealed {
+    /// `OBL-C199`: the note commitment is the **first** instance, as it is in `BlindOutput_V2`.
+    pub commitment: pallas::Base,
     pub nullifier: Nullifier,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
@@ -63,6 +65,7 @@ impl EmergencyUnstakeBurnRevealed {
     pub fn to_vec(&self) -> Result<Vec<pallas::Base>> {
         let (vc_x, vc_y) = point_coords(self.value_commit)?;
         Ok(vec![
+            self.commitment,
             self.nullifier.inner(),
             vc_x,
             vc_y,
@@ -187,6 +190,7 @@ impl EmergencyUnstakeCallBuilder {
             user_data_enc: burn_derived.user_data_enc,
             spend_hook: self.input.spend_hook,
             signature_public: burn_derived.signature_public,
+            commitment: burn_derived.commitment,
         };
 
         let receipt_value_blind = ScalarBlind::random(&mut OsRng);
@@ -280,6 +284,8 @@ pub struct EmergencyUnstakeBurnDerived {
     pub merkle_root: MerkleNode,
     pub user_data_enc: pallas::Base,
     pub signature_public: pallas::Base,
+    /// The note commitment — see `BondInput::commitment`.
+    pub commitment: pallas::Base,
 }
 
 /// Derive, do not prove — see `EmergencyUnstakeBurnDerived`.
@@ -325,6 +331,7 @@ pub fn derive_emergency_unstake_burn(
         merkle_root,
         user_data_enc: poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]),
         signature_public: poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]),
+        commitment,
     }
 }
 
@@ -369,6 +376,7 @@ fn create_emergency_unstake_burn_proof(
     let derived = derive_emergency_unstake_burn(input, value_blind.clone(), asset_id_blind.clone(), user_data_blind.clone());
 
     let public_inputs = EmergencyUnstakeBurnRevealed {
+        commitment: derived.commitment,
         nullifier: derived.nullifier,
         value_commit: derived.value_commit,
         token_commit: derived.token_commit,

@@ -359,6 +359,16 @@ pub struct BondCommitment {
     pub commitment: pallas::Base,
     /// Commitment of the stake pool series asset_id (Poseidon hash)
     pub token_commit: pallas::Base,
+    /// The **series** this bond belongs to — the `asset_id` its `BondSeriesInfo` is stored under.
+    ///
+    /// `OBL-C199`: the record has to carry it, because nothing else can supply it. `issue_stake_v1`
+    /// writes the series under `params.asset_id` while every later endpoint read it under
+    /// `stake_commitment.token_commit.to_repr()` — a different value, so the series was written
+    /// under one key and read under another. `token_commit` cannot be repaired into the right value
+    /// either: it is `poseidon_hash(2, asset_id, asset_id_blind)` with a per-proof blind. And a
+    /// bond's `CommitmentAttributes` do not include the asset id, so it is not recoverable from the
+    /// note commitment. Carrying it here is what makes "this bond's series" answerable at all.
+    pub series_asset_id: pallas::Base,
     /// Nullifier — proves the commitment has not been spent
     pub nullifier: Nullifier,
     /// Merkle root at the time the commitment was created
@@ -378,13 +388,14 @@ pub struct BondCommitment {
 }
 
 impl BondCommitment {
-    pub const ENCODED_SIZE: usize = 304;
+    pub const ENCODED_SIZE: usize = 336;
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(304);
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.value_commit.to_bytes());
         b.extend_from_slice(&self.commitment.to_repr());
         b.extend_from_slice(&self.token_commit.to_repr());
+        b.extend_from_slice(&self.series_asset_id.to_repr());
         b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.merkle_root.to_bytes());
         b.extend_from_slice(&self.user_data_enc.to_repr());
@@ -398,9 +409,10 @@ impl BondCommitment {
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 304 {
+        if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
-                "BondCommitment: expected 304 bytes, got {}",
+                "BondCommitment: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
                 data.len()
             )));
         }
@@ -413,22 +425,25 @@ impl BondCommitment {
             token_commit: pallas::Base::from_repr(data[64..96].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("BondCommitment: invalid token_commit".into()))?,
-            nullifier: nullifier_from_wire(data[96..128].try_into().unwrap())
+            series_asset_id: pallas::Base::from_repr(data[96..128].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("BondCommitment: invalid series_asset_id".into()))?,
+            nullifier: nullifier_from_wire(data[128..160].try_into().unwrap())
                 .map_err(|e| ContractError::IoError(format!("BondCommitment: invalid nullifier: {}", e)))?,
-            merkle_root: MerkleNode::from_bytes(data[128..160].try_into().unwrap())
+            merkle_root: MerkleNode::from_bytes(data[160..192].try_into().unwrap())
                 .ok_or_else(|| ContractError::IoError("BondCommitment: invalid merkle_root".into()))?,
-            user_data_enc: pallas::Base::from_repr(data[160..192].try_into().unwrap())
+            user_data_enc: pallas::Base::from_repr(data[192..224].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("BondCommitment: invalid user_data_enc".into()))?,
-            spend_hook: pallas::Base::from_repr(data[192..224].try_into().unwrap())
+            spend_hook: pallas::Base::from_repr(data[224..256].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("BondCommitment: invalid spend_hook".into()))?,
-            signature_public: pallas::Base::from_repr(data[224..256].try_into().unwrap())
+            signature_public: pallas::Base::from_repr(data[256..288].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("BondCommitment: invalid signature_public".into()))?,
-            last_claim_block: u64::from_le_bytes(data[256..264].try_into().unwrap()),
-            maturity_block: u64::from_le_bytes(data[264..272].try_into().unwrap()),
-            issuer_contract: ContractId::from_bytes(data[272..304].try_into().unwrap())?,
+            last_claim_block: u64::from_le_bytes(data[288..296].try_into().unwrap()),
+            maturity_block: u64::from_le_bytes(data[296..304].try_into().unwrap()),
+            issuer_contract: ContractId::from_bytes(data[304..336].try_into().unwrap())?,
         })
     }
 }
@@ -439,6 +454,7 @@ impl Default for BondCommitment {
             value_commit: pallas::Point::identity(),
             commitment: pallas::Base::zero(),
             token_commit: pallas::Base::zero(),
+            series_asset_id: pallas::Base::zero(),
             nullifier: Nullifier::ZERO,
             merkle_root: MerkleNode::from_base(pallas::Base::zero()),
             user_data_enc: pallas::Base::zero(),
@@ -586,13 +602,28 @@ pub struct BondInput {
     pub spend_hook: pallas::Base,
     /// Signature public key
     pub signature_public: pallas::Base,
+    /// The note commitment this input spends — `BlindOutput_V1`'s `coin`.
+    ///
+    /// It is here because it is the only value that is stable across proofs *and* available to both
+    /// ends of a bond's life. `token_commit` was the commitment-set key and could not be: it is
+    /// `poseidon_hash(2, asset_id, asset_id_blind)` with a blind drawn fresh in every client's
+    /// `prepare()`, so the same bond produced a different key on every call and no second call
+    /// could find the row the first one wrote — the lookup answered `StakeNotFound`. The nullifier
+    /// is deterministic but the **issuer cannot compute it at issue time** (it needs the staker's
+    /// secret), so a freshly minted commitment has none to store.
+    ///
+    /// `Burn_V2` recomputes this from its witnesses and `constrain_instance`s it, and the metadata
+    /// arm publishes the value the params name — so the verifier forces the commitment the caller
+    /// names to be the commitment the proof is about. Without that instancing the exec would be
+    /// trusting a params field for identity, which is `OBL-C152`'s public-vs-public shape.
+    pub commitment: pallas::Base,
 }
 
 impl BondInput {
-    pub const ENCODED_SIZE: usize = 224;
+    pub const ENCODED_SIZE: usize = 256;
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(224);
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.value_commit.to_bytes());
         b.extend_from_slice(&self.token_commit.to_repr());
         b.extend_from_slice(&self.nullifier.to_bytes());
@@ -600,14 +631,16 @@ impl BondInput {
         b.extend_from_slice(&self.user_data_enc.to_repr());
         b.extend_from_slice(&self.spend_hook.to_repr());
         b.extend_from_slice(&self.signature_public.to_repr());
+        b.extend_from_slice(&self.commitment.to_repr());
         b
     }
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 224 {
+        if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
-                "BondInput: expected 224 bytes, got {}",
+                "BondInput: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
                 data.len()
             )));
         }
@@ -630,6 +663,9 @@ impl BondInput {
             signature_public: pallas::Base::from_repr(data[192..224].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("BondInput: invalid signature_public".into()))?,
+            commitment: pallas::Base::from_repr(data[224..256].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("BondInput: invalid commitment".into()))?,
         })
     }
 }
@@ -873,7 +909,7 @@ impl RequestInterestParamsV1 {
 #[derive(Debug, Clone)]
 pub struct RequestInterestUpdateV1 {
     /// Token commit of the bond being claimed against
-    pub bond_token_commit: pallas::Base,
+    pub bond_commitment: pallas::Base,
     /// Block height of the claim
     pub claim_block: u64,
     /// The claim record to store
@@ -885,7 +921,7 @@ impl RequestInterestUpdateV1 {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(81);
-        b.extend_from_slice(&self.bond_token_commit.to_repr());
+        b.extend_from_slice(&self.bond_commitment.to_repr());
         b.extend_from_slice(&self.claim_block.to_le_bytes());
         b.extend_from_slice(&self.claim.encode());
         b
@@ -900,9 +936,9 @@ impl RequestInterestUpdateV1 {
             )));
         }
         Ok(RequestInterestUpdateV1 {
-            bond_token_commit: pallas::Base::from_repr(data[0..32].try_into().unwrap())
+            bond_commitment: pallas::Base::from_repr(data[0..32].try_into().unwrap())
                 .into_option()
-                .ok_or_else(|| ContractError::IoError("RequestInterestUpdateV1: invalid bond_token_commit".into()))?,
+                .ok_or_else(|| ContractError::IoError("RequestInterestUpdateV1: invalid bond_commitment".into()))?,
             claim_block: u64::from_le_bytes(data[32..40].try_into().unwrap()),
             claim: RequestedClaim::decode(&data[40..81])?,
         })
@@ -922,7 +958,7 @@ impl RequestInterestUpdateV1 {
 #[derive(Debug, Clone)]
 pub struct PayInterestParamsV1 {
     /// Token commit identifying the bond
-    pub bond_token_commit: pallas::Base,
+    pub bond_commitment: pallas::Base,
     /// Block height of the claim being paid
     pub claim_block: u64,
     /// Payment commitment (BlindOutput_V1 to holder's payment_key)
@@ -932,7 +968,7 @@ pub struct PayInterestParamsV1 {
 impl PayInterestParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(40 + BondCommitment::ENCODED_SIZE);
-        b.extend_from_slice(&self.bond_token_commit.to_repr());
+        b.extend_from_slice(&self.bond_commitment.to_repr());
         b.extend_from_slice(&self.claim_block.to_le_bytes());
         b.extend_from_slice(&self.interest_commitment.encode());
         b
@@ -947,12 +983,12 @@ impl PayInterestParamsV1 {
                 data.len()
             )));
         }
-        let bond_token_commit = pallas::Base::from_repr(data[0..32].try_into().unwrap())
+        let bond_commitment = pallas::Base::from_repr(data[0..32].try_into().unwrap())
             .into_option()
-            .ok_or_else(|| ContractError::IoError("PayInterestParamsV1: invalid bond_token_commit".into()))?;
+            .ok_or_else(|| ContractError::IoError("PayInterestParamsV1: invalid bond_commitment".into()))?;
         let claim_block = u64::from_le_bytes(data[32..40].try_into().unwrap());
         let interest_commitment = BondCommitment::decode(&data[40..])?;
-        Ok(PayInterestParamsV1 { bond_token_commit, claim_block, interest_commitment })
+        Ok(PayInterestParamsV1 { bond_commitment, claim_block, interest_commitment })
     }
 }
 
@@ -964,7 +1000,7 @@ pub struct PayInterestUpdateV1 {
     /// Payment commitment (BlindOutput_V1)
     pub interest_commitment: BondCommitment,
     /// Token commit of the bond
-    pub bond_token_commit: pallas::Base,
+    pub bond_commitment: pallas::Base,
     /// Block height of the claim
     pub claim_block: u64,
     /// Full claim record with status pre-set to Paid (set in exec, written in apply)
@@ -978,7 +1014,7 @@ impl PayInterestUpdateV1 {
         let mut b = Vec::with_capacity(625);
         b.extend_from_slice(&self.updated_commitment.encode());
         b.extend_from_slice(&self.interest_commitment.encode());
-        b.extend_from_slice(&self.bond_token_commit.to_repr());
+        b.extend_from_slice(&self.bond_commitment.to_repr());
         b.extend_from_slice(&self.claim_block.to_le_bytes());
         b.extend_from_slice(&self.claim.encode());
         b
@@ -995,9 +1031,9 @@ impl PayInterestUpdateV1 {
         Ok(PayInterestUpdateV1 {
             updated_commitment: BondCommitment::decode(&data[0..272])?,
             interest_commitment: BondCommitment::decode(&data[272..544])?,
-            bond_token_commit: pallas::Base::from_repr(data[544..576].try_into().unwrap())
+            bond_commitment: pallas::Base::from_repr(data[544..576].try_into().unwrap())
                 .into_option()
-                .ok_or_else(|| ContractError::IoError("PayInterestUpdateV1: invalid bond_token_commit".into()))?,
+                .ok_or_else(|| ContractError::IoError("PayInterestUpdateV1: invalid bond_commitment".into()))?,
             claim_block: u64::from_le_bytes(data[576..584].try_into().unwrap()),
             claim: RequestedClaim::decode(&data[584..625])?,
         })

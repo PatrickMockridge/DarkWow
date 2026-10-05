@@ -82,7 +82,7 @@ impl PayInterestRevealed {
 /// Input for building a PayInterest call (issuer-side).
 pub struct PayInterestCallInput {
     /// Token commit of the bond being paid against
-    pub bond_token_commit: pallas::Base,
+    pub bond_commitment: pallas::Base,
     /// Block height of the claim being paid
     pub claim_block: u64,
     /// Interest amount to pay (must match the claim's interest_amount)
@@ -131,12 +131,13 @@ impl PayInterestCallBuilder {
         let derived = derive_pay_interest(&self.input, value_blind.clone(), asset_id_blind.clone());
 
         let params = PayInterestParamsV1 {
-            bond_token_commit: self.input.bond_token_commit,
+            bond_commitment: self.input.bond_commitment,
             claim_block: self.input.claim_block,
             interest_commitment: crate::model::BondCommitment {
                 value_commit: derived.value_commit,
                 commitment: derived.commitment,
                 token_commit: derived.token_commit,
+                series_asset_id: self.input.asset_id,
                 nullifier: crate::model::Nullifier::ZERO,
                 merkle_root: dwow_sdk::crypto::MerkleNode::from_base(pallas::Base::zero()),
                 user_data_enc: pallas::Base::zero(),

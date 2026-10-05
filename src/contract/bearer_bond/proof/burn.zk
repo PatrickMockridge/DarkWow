@@ -49,7 +49,7 @@ circuit "Burn_V2" {
     pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, spend_secret);
 
     # Coin hash using derived public key (single field element, not EC point)
-    coin = poseidon_hash(DOMAIN_COMMITMENT, 
+    coin = poseidon_hash(DOMAIN_COMMITMENT,
         pub,
         value,
         asset_id,
@@ -57,6 +57,17 @@ circuit "Burn_V2" {
         user_data,
         commitment_blind,
     );
+
+    # `OBL-C199`: the note commitment is the FIRST instance, as it is in `BlindOutput_V2`.
+    #
+    # It has to be published, and that is the whole point of instancing it here rather than
+    # trusting the call data: `coin` is the bond's stable identity — the only value the issuer can
+    # write at issue time that the holder can still name at spend time — and the commitment set is
+    # keyed by it. Publishing the value the contract looks up, beside the derivation the proof
+    # makes, is what forces them to be the same value: a caller cannot name one bond's commitment
+    # in the call data while proving a different bond here, because the host verifies the proof
+    # against the instances this circuit constrains.
+    constrain_instance(coin);
 
     # Nullifier - breaks the link between mint and burn
     # nullifier = poseidon_hash(DOMAIN_NULLIFIER, spend_secret, coin)

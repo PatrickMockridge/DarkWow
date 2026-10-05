@@ -292,6 +292,11 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
         zk_public_inputs.push((
             BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
             vec![
+                // `OBL-C199`: the note commitment is the first instance, as `Burn_V2` now
+                // constrains. The exec looks the bond up by this same field, so the host's
+                // comparison against the proof's instance is what stops a caller naming one bond's
+                // commitment while proving another.
+                input.commitment,
                 input.nullifier.inner(),
                 vc_x,
                 vc_y,
@@ -352,6 +357,8 @@ fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
         vec![
+            // `OBL-C199`: first instance, as `Burn_V2` constrains — see the transfer arm.
+            params.bond_input.commitment,
             params.bond_input.nullifier.inner(),
             vc_x,
             vc_y,
@@ -390,6 +397,8 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
         vec![
+            // `OBL-C199`: first instance, as `Burn_V2` constrains — see the transfer arm.
+            params.bond_input.commitment,
             params.bond_input.nullifier.inner(),
             vc_x,
             vc_y,
@@ -451,6 +460,8 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
     zk_public_inputs.push((
         BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
         vec![
+            // `OBL-C199`: first instance, as `Burn_V2` constrains — see the transfer arm.
+            params.bond_input.commitment,
             params.bond_input.nullifier.inner(),
             vc_x,
             vc_y,
@@ -507,6 +518,11 @@ fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
         zk_public_inputs.push((
             BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
             vec![
+                // `OBL-C199`: the note commitment is the first instance, as `Burn_V2` now
+                // constrains. The exec looks the bond up by this same field, so the host's
+                // comparison against the proof's instance is what stops a caller naming one bond's
+                // commitment while proving another.
+                input.commitment,
                 input.nullifier.inner(),
                 vc_x,
                 vc_y,
@@ -781,7 +797,7 @@ fn issue_stake_v1(
     }
 
     let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
-    if wasm::db::db_contains_key(commitment_set, &params.commitment.token_commit.to_repr())? {
+    if wasm::db::db_contains_key(commitment_set, &params.commitment.commitment.to_repr())? {
         msg!("[issue_stake_v1] Error: Stake commitment already exists");
         return Err(BearerBondError::StakeAlreadyExists.into());
     }
@@ -815,7 +831,7 @@ fn transfer_stake_v1(
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for input in &params.inputs {
-        if !wasm::db::db_contains_key(commitment_set, &input.token_commit.to_repr())? {
+        if !wasm::db::db_contains_key(commitment_set, &input.commitment.to_repr())? {
             msg!("[transfer_stake_v1] Error: Input stake commitment not found");
             return Err(BearerBondError::StakeNotFound.into());
         }
@@ -826,7 +842,7 @@ fn transfer_stake_v1(
     }
 
     for output in &params.outputs {
-        if wasm::db::db_contains_key(commitment_set, &output.token_commit.to_repr())? {
+        if wasm::db::db_contains_key(commitment_set, &output.commitment.to_repr())? {
             msg!("[transfer_stake_v1] Error: Output stake commitment already exists");
             return Err(BearerBondError::StakeAlreadyExists.into());
         }
@@ -871,7 +887,7 @@ fn request_interest_v1(
     let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
 
     // Look up the existing stake commitment to get last_claim_block
-    let commitment_bytes = wasm::db::db_get(commitment_set, &params.bond_input.token_commit.to_repr())?
+    let commitment_bytes = wasm::db::db_get(commitment_set, &params.bond_input.commitment.to_repr())?
         .ok_or(BearerBondError::StakeNotFound)?;
     let stake_commitment = BondCommitment::decode(&commitment_bytes)?;
 
@@ -887,7 +903,7 @@ fn request_interest_v1(
 
     // Read the bond series info to get interest rate
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
-    let series_key = stake_commitment.token_commit.to_repr();
+    let series_key = stake_commitment.series_asset_id.to_repr();
     let series_bytes = match wasm::db::db_get(bonds_info_db, &series_key) {
         Ok(Some(b)) => b,
         _ => {
@@ -922,7 +938,7 @@ fn request_interest_v1(
     }
 
     // Check no pending claim already exists for this bond
-    let claim_key = [&params.bond_input.token_commit.to_repr()[..], &params.claim_block.to_le_bytes()[..]].concat();
+    let claim_key = [&params.bond_input.commitment.to_repr()[..], &params.claim_block.to_le_bytes()[..]].concat();
     if wasm::db::db_contains_key(bonds_info_db, &claim_key)? {
         msg!("[request_interest_v1] Error: Interest claim request already exists");
         return Err(BearerBondError::ClaimAlreadyExists.into());
@@ -936,7 +952,10 @@ fn request_interest_v1(
     };
 
     let update = RequestInterestUpdateV1 {
-        bond_token_commit: params.bond_input.token_commit,
+        // `OBL-C199`: the claim is keyed by the bond's **note commitment** — the identity that is
+        // stable across proofs. It was `token_commit`, whose blind is drawn fresh per proof, so a
+        // holder could never find the claim it had just made.
+        bond_commitment: params.bond_input.commitment,
         claim_block: params.claim_block,
         claim,
     };
@@ -958,7 +977,7 @@ fn pay_interest_v1(
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
 
     // Look up the pending claim
-    let claim_key = [&params.bond_token_commit.to_repr()[..], &params.claim_block.to_le_bytes()[..]].concat();
+    let claim_key = [&params.bond_commitment.to_repr()[..], &params.claim_block.to_le_bytes()[..]].concat();
     let claim_bytes = wasm::db::db_get(bonds_info_db, &claim_key)?
         .ok_or(BearerBondError::ClaimNotFound)?;
     let claim = RequestedClaim::decode(&claim_bytes)?;
@@ -972,12 +991,12 @@ fn pay_interest_v1(
     // Verify the issuer has sufficient reserves (ringfencing enforcement)
     // Scan bonds_info for the latest coverage report for this series
     let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
-    let commitment_bytes = wasm::db::db_get(commitment_set, &params.bond_token_commit.to_repr())?
+    let commitment_bytes = wasm::db::db_get(commitment_set, &params.bond_commitment.to_repr())?
         .ok_or(BearerBondError::StakeNotFound)?;
     let stake_commitment = BondCommitment::decode(&commitment_bytes)?;
 
     // Check series is still active
-    let series_key = stake_commitment.token_commit.to_repr();
+    let series_key = stake_commitment.series_asset_id.to_repr();
     let series_bytes = wasm::db::db_get(bonds_info_db, &series_key)?
         .ok_or(BearerBondError::StakeNotFound)?;
     let series_info = BondSeriesInfo::decode(&series_bytes)?;
@@ -991,7 +1010,7 @@ fn pay_interest_v1(
     // The issuer must have proven reserves >= obligations before paying.
     // In a full implementation this scans bonds_info for the latest CoverageReport
     // for this series. For now we verify a report exists.
-    let coverage_scan_key = [&stake_commitment.token_commit.to_repr()[..], &0u64.to_le_bytes()[..]].concat();
+    let coverage_scan_key = [&stake_commitment.series_asset_id.to_repr()[..], &0u64.to_le_bytes()[..]].concat();
     if !wasm::db::db_contains_key(bonds_info_db, &coverage_scan_key)? {
         // Try higher block numbers — the coverage report key is (series_asset_id, report_block)
         // For now, check if ANY coverage-related key exists by attempting the lookup
@@ -1012,7 +1031,7 @@ fn pay_interest_v1(
     let update = PayInterestUpdateV1 {
         updated_commitment,
         interest_commitment: params.interest_commitment,
-        bond_token_commit: params.bond_token_commit,
+        bond_commitment: params.bond_commitment,
         claim_block: params.claim_block,
         claim: paid_claim,
     };
@@ -1040,7 +1059,7 @@ fn emergency_unstake_v1(
     let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
-    if !wasm::db::db_contains_key(commitment_set, &params.bond_input.token_commit.to_repr())? {
+    if !wasm::db::db_contains_key(commitment_set, &params.bond_input.commitment.to_repr())? {
         msg!("[emergency_unstake_v1] Error: Stake commitment not found");
         return Err(BearerBondError::StakeNotFound.into());
     }
@@ -1084,7 +1103,7 @@ fn unstake_v1(
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     // Look up the stake commitment to verify maturity
-    let commitment_bytes = wasm::db::db_get(commitment_set, &params.bond_input.token_commit.to_repr())?
+    let commitment_bytes = wasm::db::db_get(commitment_set, &params.bond_input.commitment.to_repr())?
         .ok_or(BearerBondError::StakeNotFound)?;
     let stake_commitment = BondCommitment::decode(&commitment_bytes)?;
 
@@ -1142,7 +1161,7 @@ fn burn_stake_v1(
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for input in &params.inputs {
-        if !wasm::db::db_contains_key(commitment_set, &input.token_commit.to_repr())? {
+        if !wasm::db::db_contains_key(commitment_set, &input.commitment.to_repr())? {
             msg!("[burn_stake_v1] Error: Stake commitment not found");
             return Err(BearerBondError::StakeNotFound.into());
         }
@@ -1265,7 +1284,11 @@ fn verify_coverage_v1(
 fn apply_issue_stake(cid: ContractId, update: IssueStakeUpdateV1) -> ContractResult {
     let commitment_set = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COMMITMENT_SET_TREE)?;
     for commitment in &update.commitments {
-        wasm::db::db_set(commitment_set, &commitment.token_commit.to_repr(), &commitment.encode())?;
+        // `OBL-C199`: the bond is stored under its **note commitment**, the one value stable across
+        // proofs and known at both ends of its life. It was `token_commit`, which carries a blind
+        // drawn fresh per proof — so the row was written under one value and every later call
+        // looked it up under another, and the lookup answered `StakeNotFound`.
+        wasm::db::db_set(commitment_set, &commitment.commitment.to_repr(), &commitment.encode())?;
     }
     // TODO(#12): Increment series_info.total_staked in the bonds_info tree.
     // Currently total_staked is never updated after series creation, causing
@@ -1287,7 +1310,11 @@ fn apply_transfer_stake(cid: ContractId, update: TransferStakeUpdateV1) -> Contr
         wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
     for commitment in &update.commitments {
-        wasm::db::db_set(commitment_set, &commitment.token_commit.to_repr(), &commitment.encode())?;
+        // `OBL-C199`: the bond is stored under its **note commitment**, the one value stable across
+        // proofs and known at both ends of its life. It was `token_commit`, which carries a blind
+        // drawn fresh per proof — so the row was written under one value and every later call
+        // looked it up under another, and the lookup answered `StakeNotFound`.
+        wasm::db::db_set(commitment_set, &commitment.commitment.to_repr(), &commitment.encode())?;
     }
     Ok(())
 }
@@ -1300,11 +1327,11 @@ fn apply_request_interest(cid: ContractId, update: RequestInterestUpdateV1) -> C
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
 
     // Store the claim record keyed by (token_commit, claim_block)
-    let claim_key = [&update.bond_token_commit.to_repr()[..], &update.claim_block.to_le_bytes()[..]].concat();
+    let claim_key = [&update.bond_commitment.to_repr()[..], &update.claim_block.to_le_bytes()[..]].concat();
     wasm::db::db_set(bonds_info_db, &claim_key, &update.claim.encode())?;
 
     msg!("[apply_request_interest] Claim stored: bond={:?}, block={}, amount={}, status=Pending",
-        update.bond_token_commit, update.claim_block, update.claim.interest_amount);
+        update.bond_commitment, update.claim_block, update.claim.interest_amount);
     Ok(())
 }
 
@@ -1319,23 +1346,23 @@ fn apply_pay_interest(cid: ContractId, update: PayInterestUpdateV1) -> ContractR
     // Update the stake commitment with new last_claim_block
     wasm::db::db_set(
         commitment_set,
-        &update.updated_commitment.token_commit.to_repr(),
+        &update.updated_commitment.commitment.to_repr(),
         &update.updated_commitment.encode(),
     )?;
 
     // Store the interest payment commitment
     wasm::db::db_set(
         commitment_set,
-        &update.interest_commitment.token_commit.to_repr(),
+        &update.interest_commitment.commitment.to_repr(),
         &update.interest_commitment.encode(),
     )?;
 
     // Write the claim with pre-set Paid status (computed in pay_interest_v1 exec phase)
-    let claim_key = [&update.bond_token_commit.to_repr()[..], &update.claim_block.to_le_bytes()[..]].concat();
+    let claim_key = [&update.bond_commitment.to_repr()[..], &update.claim_block.to_le_bytes()[..]].concat();
     wasm::db::db_set(bonds_info_db, &claim_key, &update.claim.encode())?;
 
     msg!("[apply_pay_interest] Payment applied: bond={:?}, block={}, status=Paid",
-        update.bond_token_commit, update.claim_block);
+        update.bond_commitment, update.claim_block);
     Ok(())
 }
 
@@ -1350,7 +1377,7 @@ fn apply_emergency_unstake(cid: ContractId, update: EmergencyUnstakeUpdateV1) ->
     for nullifier in &update.nullifiers {
         wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
-    wasm::db::db_set(commitment_set, &update.receipt_commitment.token_commit.to_repr(), &update.receipt_commitment.encode())?;
+    wasm::db::db_set(commitment_set, &update.receipt_commitment.commitment.to_repr(), &update.receipt_commitment.encode())?;
     Ok(())
 }
 
@@ -1365,7 +1392,7 @@ fn apply_unstake(cid: ContractId, update: UnstakeUpdateV1) -> ContractResult {
     for nullifier in &update.nullifiers {
         wasm::db::db_mark_spent(nullifiers_db, &nullifier.to_bytes())?;
     }
-    wasm::db::db_set(commitment_set, &update.receipt_commitment.token_commit.to_repr(), &update.receipt_commitment.encode())?;
+    wasm::db::db_set(commitment_set, &update.receipt_commitment.commitment.to_repr(), &update.receipt_commitment.encode())?;
     Ok(())
 }
 
