@@ -35,7 +35,7 @@ use dwow_subscription_contract::model::{
     DaoControlParamsV1, Plan, Subscription, SubscriptionId,
 };
 use std::sync::{Arc, Mutex};
-use crate::tests::modules::child_calls::{pn_transfer_child, PnNote};
+use crate::tests::modules::child_calls::{pn_transfer_prepare, PnNote};
 use crate::tests::uniform_runner::*;
 use super::helpers::mk_ep;
 
@@ -78,7 +78,12 @@ struct Fixture {
 }
 
 pub fn subscription_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(SubscriptionHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its calls will carry, because the transaction
+    // commitment is derived over the call *including* the contract id. `deploy_with_ix` assigns
+    // `derive_contract_id_from_name(name)` — a pure function of the name — so the spec computes
+    // exactly the id the pipeline will use rather than a placeholder.
+    let cid = crate::tests::blockchain::derive_contract_id_from_name("subscription");
+    let harness = Box::leak(Box::new(SubscriptionHarness::spawn(cid)));
     let h: &SubscriptionHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/subscription/dwow_subscription_contract.wasm");
     let sub_secret = SUB_SECRET;
@@ -86,7 +91,7 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
     let fixture: Arc<Mutex<Fixture>> = Arc::new(Mutex::new(Fixture::default()));
     ContractTestSpec {
         name: "subscription", is_genesis: false,
-        contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
+        contract_id: cid,
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
@@ -208,8 +213,12 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
                         let vc = pedersen_commitment_u64(PLAN_PRICE, value_blind.clone());
                         #[expect(clippy::unwrap_used, reason = "a Pedersen commitment is never the identity point")]
                         let (vc_x, vc_y) = { let a = vc.to_affine(); let c = a.coordinates().unwrap(); (*c.x(), *c.y()) };
-                        let child = pn_transfer_child(note, PLAN_PRICE, blind_seed, pallas::Base::zero())?;
-                        let r = h.subscribe(sub_secret, ACCESS_NONCE, vec![MerkleNode::new(pallas::Base::from(0u64))], value_blind.inner(), pallas::Base::from(2u64), pallas::Base::from(3u64), 1000, pallas::Base::from(4u64), 0, vec![MerkleNode::new(pallas::Base::from(0u64))], 0, vec![MerkleNode::new(pallas::Base::from(0u64))], id.inner(), sub_pub, PLAN_ID, PLAN_PRICE, asset_id, PLAN_DURATION, pallas::Base::from(6u64), 100, vc_x, vc_y, pallas::Base::from(9u64), pallas::Base::from(10u64), pallas::Base::from(11u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        // `OBL-C198`: the child's call first, then the parent's proof over the ordered
+                        // set, then the child's proof bound to the same commitment.
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(note, PLAN_PRICE, blind_seed, pallas::Base::zero())?;
+                        let r = h.subscribe(&[child_call.clone()], sub_secret, ACCESS_NONCE, vec![MerkleNode::new(pallas::Base::from(0u64))], value_blind.inner(), pallas::Base::from(2u64), pallas::Base::from(3u64), 1000, pallas::Base::from(4u64), 0, vec![MerkleNode::new(pallas::Base::from(0u64))], 0, vec![MerkleNode::new(pallas::Base::from(0u64))], id.inner(), sub_pub, PLAN_ID, PLAN_PRICE, asset_id, PLAN_DURATION, pallas::Base::from(6u64), 100, vc_x, vc_y, pallas::Base::from(9u64), pallas::Base::from(10u64), pallas::Base::from(11u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -227,7 +236,7 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
                     #[expect(clippy::unwrap_used, reason = "PublicKey rejects identity, so x()/y() is always Some")]
                     let (px, py) = (sub_pub.x().unwrap(), sub_pub.y().unwrap());
                     let capability = SubscriptionHarness::access_capability(px, py, PLAN_ID, id.inner(), lock, ACCESS_NONCE);
-                    let r = h.verify_access(sub_secret, ACCESS_NONCE, 1, 0, vec![MerkleNode::new(pallas::Base::from(0u64))], pallas::Base::from(2u64), pallas::Base::from(3u64), capability, id.inner(), 100, px, py, PLAN_ID, lock, 10, 3600, 5, 100, 5, pallas::Base::from(6u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.verify_access(&[], sub_secret, ACCESS_NONCE, 1, 0, vec![MerkleNode::new(pallas::Base::from(0u64))], pallas::Base::from(2u64), pallas::Base::from(3u64), capability, id.inner(), 100, px, py, PLAN_ID, lock, 10, 3600, 5, 100, 5, pallas::Base::from(6u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -250,7 +259,7 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
                         #[expect(clippy::unwrap_used, reason = "PublicKey rejects identity, so x()/y() is always Some")]
                         let (px, py) = (sub_pub.x().unwrap(), sub_pub.y().unwrap());
                         let capability = SubscriptionHarness::access_capability(px, py, PLAN_ID + 1, id.inner(), lock, ACCESS_NONCE);
-                        let r = h.verify_access(sub_secret, ACCESS_NONCE, 1, 0, vec![MerkleNode::new(pallas::Base::from(0u64))], pallas::Base::from(2u64), pallas::Base::from(3u64), capability, id.inner(), 100, px, py, PLAN_ID + 1, lock, 10, 3600, 5, 100, 5, pallas::Base::from(6u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.verify_access(&[], sub_secret, ACCESS_NONCE, 1, 0, vec![MerkleNode::new(pallas::Base::from(0u64))], pallas::Base::from(2u64), pallas::Base::from(3u64), capability, id.inner(), 100, px, py, PLAN_ID + 1, lock, 10, 3600, 5, 100, 5, pallas::Base::from(6u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -266,7 +275,7 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
                     #[expect(clippy::unwrap_used, reason = "PublicKey rejects identity, so x()/y() is always Some")]
                     let (px, py) = (sub_pub.x().unwrap(), sub_pub.y().unwrap());
                     let block = f.height.ok_or_else(|| dwow_core::Error::Custom("subscribe height unknown".into()))?;
-                    let r = h.update_usage(id.inner(), px, py, pallas::Base::from(block), pallas::Base::from(7u64), sub_secret, block, vec![pallas::Base::from(0u64)]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.update_usage(&[], id.inner(), px, py, pallas::Base::from(block), pallas::Base::from(7u64), sub_secret, block, vec![pallas::Base::from(0u64)]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -292,7 +301,7 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
                         #[expect(clippy::unwrap_used, reason = "PublicKey rejects identity, so x()/y() is always Some")]
                         let (px, py) = (sub_pub.x().unwrap(), sub_pub.y().unwrap());
                         let block = f.height.ok_or_else(|| dwow_core::Error::Custom("subscribe height unknown".into()))?;
-                        let r = h.update_usage(id.inner(), px, py, pallas::Base::from(block + 1), pallas::Base::from(8u64), sub_secret, block + 1, vec![pallas::Base::from(0u64)]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.update_usage(&[], id.inner(), px, py, pallas::Base::from(block + 1), pallas::Base::from(8u64), sub_secret, block + 1, vec![pallas::Base::from(0u64)]).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -314,8 +323,12 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
                     let lock = f.height.ok_or_else(|| dwow_core::Error::Custom("subscribe height unknown".into()))? + PLAN_DURATION;
                     let note2 = f.note2.as_ref().ok_or_else(|| dwow_core::Error::Custom("second note not issued".into()))?;
                     let blind_seed = poseidon_hash([pallas::Base::from(PLAN_PRICE), id.inner()]);
-                    let child = pn_transfer_child(note2, PLAN_PRICE, blind_seed, pallas::Base::zero())?;
-                    let r = h.renew(id.inner(), sub_secret, lock, pallas::Point::identity()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    // `OBL-C198`: as the `SubscribeV1` row — child's call, parent's proof over the set,
+                    // then the child's proof bound to the same commitment.
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(note2, PLAN_PRICE, blind_seed, pallas::Base::zero())?;
+                    let r = h.renew(&[child_call.clone()], id.inner(), sub_secret, lock, pallas::Point::identity()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let debris = child_plan.prove(r.commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -336,7 +349,7 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
                     let asset_id = f.asset_id.ok_or_else(|| dwow_core::Error::Custom("asset not known".into()))?;
                     let id = subscription_id(&sub_pub, asset_id);
                     let block = f.height.ok_or_else(|| dwow_core::Error::Custom("subscribe height unknown".into()))?;
-                    let r = h.cancel(id.inner(), sub_secret, block, sub_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.cancel(&[], id.inner(), sub_secret, block, sub_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }
                 }),

@@ -134,6 +134,22 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 // METADATA (ZK proof verification)
 // ============================================================================
 
+/// The transaction binding every arm here publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// What the five arms published before this was whatever the caller had put in the params
+/// (`OBL-C78`'s field), which is a public value checked against a public value: it bound the proof
+/// to a number the caller chose, and a proof lifted from one transaction verified in another.
+///
+/// The nonce stays the call's: it is a prover input that does not depend on the commitment, so it
+/// closes no loop. One helper serves all five arms, with the pair instanced last — the position the
+/// node reads.
+fn subscription_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([pallas::Base::from(3u64), wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 /// Fetch metadata for ZK proof verification
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
@@ -154,17 +170,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     let _ = wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
-            // SubscribeV2 circuit: [tx_binding, tx_nonce, derived_id] — all three from the call,
-            // because the circuit derives each from its witnesses and the host can only publish what
-            // it is given (OBL-C78). The first two were literal zeros before that row was worked, and
-            // no satisfiable proof can match those, so `SubscribeV1` could not verify at all. The
-            // third is `OBL-C75`'s: the circuit now *instances* the id it derives, so the value
+            // SubscribeV2 circuit: [derived_id, tx_binding, tx_nonce] — the pair last, the position
+            // the node reads, and the binding derived rather than echoed (`OBL-C198`).
+            //
+            // The id is `OBL-C75`'s: the circuit *instances* the id it derives, so the value
             // published here — the call's own commitment, which the host also keys the record by —
             // verifies only if it is that derivation. The two halves are one fact: the id the host
             // keys on is the id the circuit derives.
+            let tx_binding = subscription_tx_binding(params.tx_nonce)?;
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V2.to_string(),
-                vec![params.tx_binding, params.tx_nonce, params.commitment.inner()],
+                vec![params.commitment.inner(), tx_binding, params.tx_nonce],
             ));
         }
         SubscriptionFunction::VerifyAccessV1 => {
@@ -175,15 +191,16 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     let _ = wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
-            // VerifyAccessV2 circuit: [tx_binding, tx_nonce, capability] — the first two have the
-            // same shape and the same reason as `SubscribeV1` above (OBL-C78); the third is
-            // `OBL-C84`'s, and it is the value the verifier compares against the stored record. The
-            // arm publishes the call's own `capability`, which is what the circuit instances as
-            // `derived_capability` — so a proof whose capability differs from this call's cannot
-            // verify, and `verify_access_v1` then compares it against the record the call names.
+            // VerifyAccessV2 circuit: [capability, tx_binding, tx_nonce] — the pair last
+            // (`OBL-C198`). The capability is `OBL-C84`'s, and it is the value the verifier compares
+            // against the stored record. The arm publishes the call's own `capability`, which is what
+            // the circuit instances as `derived_capability` — so a proof whose capability differs from
+            // this call's cannot verify, and `verify_access_v1` then compares it against the record
+            // the call names.
+            let tx_binding = subscription_tx_binding(params.tx_nonce)?;
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V2.to_string(),
-                vec![params.tx_binding, params.tx_nonce, params.capability],
+                vec![params.capability, tx_binding, params.tx_nonce],
             ));
         }
         SubscriptionFunction::UpdateUsageV1 => {
@@ -199,12 +216,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 pallas::Base::from(params.current_block),
                 params.nonce,
             );
-            // Circuit constrain_instance order: [tx_binding, tx_nonce, derived_id]. `derived_id` was
-            // already derived here; the first two were literals, which no satisfiable proof can
-            // match (OBL-C78).
+            // Circuit constrain_instance order: [derived_id, tx_binding, tx_nonce] — the pair last
+            // (`OBL-C198`), and the binding derived rather than echoed.
+            let tx_binding = subscription_tx_binding(params.tx_nonce)?;
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V2.to_string(),
-                vec![params.tx_binding, params.tx_nonce, derived_id],
+                vec![derived_id, tx_binding, params.tx_nonce],
             ));
         }
         SubscriptionFunction::CancelV1 => {
@@ -215,15 +232,15 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     let _ = wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
-            // CancelV2 circuit: [subscription_id, spent_nullifier, tx_binding, tx_nonce] — all four
-            // from the call. Every one of them was a literal zero before, including the two the
-            // params carried, so this arm could not match its own circuit for any input (OBL-C78).
+            // CancelV2 circuit: [subscription_id, spent_nullifier, tx_binding, tx_nonce] — the pair
+            // already last, and now derived rather than echoed (`OBL-C198`).
+            let tx_binding = subscription_tx_binding(params.tx_nonce)?;
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_CANCEL_NS_V2.to_string(),
                 vec![
                     params.subscription_id.inner(),
                     params.spent_nullifier,
-                    params.tx_binding,
+                    tx_binding,
                     params.tx_nonce,
                 ],
             ));
@@ -237,13 +254,14 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 }
             };
             // RenewV2 circuit: [subscription_id, spent_nullifier, tx_binding, tx_nonce] — same shape
-            // and same reason as `CancelV1` above (OBL-C78).
+            // as `CancelV1` above, and now derived rather than echoed (`OBL-C198`).
+            let tx_binding = subscription_tx_binding(params.tx_nonce)?;
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_RENEW_NS_V2.to_string(),
                 vec![
                     params.subscription_id.inner(),
                     params.spent_nullifier,
-                    params.tx_binding,
+                    tx_binding,
                     params.tx_nonce,
                 ],
             ));

@@ -58,8 +58,6 @@ circuit "SubscribeV2" {
     computed_y = ec_get_y(value_commit_computed);
     constrain_equal_base(computed_x, value_commit_x);
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
-    constrain_instance(tx_binding);
-    constrain_instance(tx_nonce);
     constrain_equal_base(computed_y, value_commit_y);
 
     # OBL-C75: the id the record is keyed by is the id this circuit derives.
@@ -71,4 +69,8 @@ circuit "SubscribeV2" {
     # the verifier accepts it only if it is this hash of these witnesses, so a client cannot key a
     # subscription under an id the circuit would not derive.
     constrain_instance(derived_id);
+    # `OBL-C198`: the pair is the last two instances — the position the node reads, and there is no
+    # per-circuit index map. It sat before `derived_id` until the migration moved it.
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
 }

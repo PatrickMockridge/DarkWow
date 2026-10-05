@@ -59,11 +59,10 @@ pub struct SubscribePublicInputs {
 impl SubscribePublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         // `SubscribeV2`'s `constrain_instance` order, matching the metadata arm's:
-        // `[tx_binding, tx_nonce, derived_id]`. The comment here used to say the circuit had no
-        // instances at all; it kept returning the pair after the circuit gained them, and the id is
-        // `OBL-C75`'s instance — the value the host keys the record by, which the circuit now derives
-        // rather than accepting from the caller.
-        vec![self.tx_binding, self.tx_nonce, self.subscription_id]
+        // `[derived_id, tx_binding, tx_nonce]` — the pair last (`OBL-C198`). The id is `OBL-C75`'s
+        // instance: the value the host keys the record by, which the circuit derives rather than
+        // accepting from the caller.
+        vec![self.subscription_id, self.tx_binding, self.tx_nonce]
     }
 }
 

@@ -31,7 +31,9 @@ circuit "UpdateUsageV2" {
         nonce
     );
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(derived_id);
+    # `OBL-C198`: the pair is the last two instances — the position the node reads, and there is no
+    # per-circuit index map. It sat before `derived_id` until the migration moved it.
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(derived_id);
 }

@@ -42,8 +42,6 @@ circuit "VerifyAccessV2" {
         nonce
     );
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
-    constrain_instance(tx_binding);
-    constrain_instance(tx_nonce);
     constrain_equal_base(derived_capability, expected_capability);
 
     # OBL-C84: the capability must be one the *verifier* receives.
@@ -61,4 +59,8 @@ circuit "VerifyAccessV2" {
     # plan, id and expiry — so the caller must hold the secret behind the key the subscription was
     # opened with.
     constrain_instance(derived_capability);
+    # `OBL-C198`: the pair is the last two instances — the position the node reads, and there is no
+    # per-circuit index map. It sat before `derived_capability` until the migration moved it.
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
 }

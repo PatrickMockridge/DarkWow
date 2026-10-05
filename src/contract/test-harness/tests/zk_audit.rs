@@ -78,6 +78,6 @@ fn test_all_harnesses_zk_coverage() {
     zk_check_with_id!(RouletteHarness, "roulette");
     zk_check_with_id!(SlotHarness, "slot");
     zk_check!(StablecoinHarness, "stablecoin");
-    zk_check!(SubscriptionHarness, "subscription");
+    zk_check_with_id!(SubscriptionHarness, "subscription");
     zk_check!(TenderHarness, "tender");
 }

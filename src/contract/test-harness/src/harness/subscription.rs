@@ -30,7 +30,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, MerkleNode, PublicKey},
+    crypto::{pasta_prelude::*, ContractId, MerkleNode, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -76,6 +76,18 @@ pub struct SubscriptionHarness {
     renew_zkbin: ZkBinary,
     /// RenewV1 ProvingKey
     renew_pk: ProvingKey,
+    /// The deployed id of the subscription contract this harness builds calls for — the commitment
+    /// covers the call *including* the contract id, so a harness that proves must be told it
+    /// (`OBL-C198`).
+    contract_id: ContractId,
+}
+
+/// The commitment a call set's proofs must bind to (`OBL-C198`) — over the **whole ordered set**
+/// the node will hash, children before parents, each call serialized with its contract id. One
+/// helper because every builder needs the same derivation and a second copy is a second value
+/// (`safety.md` RC5).
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
 }
 
 impl SubscriptionHarness {
@@ -105,8 +117,9 @@ impl SubscriptionHarness {
         )
     }
 
-    /// Spawn a new Subscription harness with pre-loaded circuits
-    pub fn spawn() -> Self {
+    /// Spawn a new Subscription harness with pre-loaded circuits, for the contract deployed at
+    /// `contract_id` — see the field's note for why it cannot be defaulted.
+    pub fn spawn(contract_id: ContractId) -> Self {
         let subscribe_bin = include_bytes!("../../../subscription/proof/subscribe.zk.bin");
         let verify_bin = include_bytes!("../../../subscription/proof/verify_access.zk.bin");
         let update_bin = include_bytes!("../../../subscription/proof/update_usage.zk.bin");
@@ -161,13 +174,19 @@ impl SubscriptionHarness {
             cancel_pk,
             renew_zkbin,
             renew_pk,
+            contract_id,
         }
     }
 
-    /// Subscribe to a plan (function code 0x01)
+    /// Subscribe to a plan (function code 0x01).
+    ///
+    /// `children` are the calls that precede this one in the transaction (DFS post-order) — this
+    /// endpoint carries a promissory-note transfer in the spec — and the commitment the proof binds
+    /// to is taken over them and this call together (`OBL-C198`).
     #[allow(clippy::too_many_arguments)]
     pub fn subscribe(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         subscriber_secret: pallas::Base,
         nonce: pallas::Base,
         plan_merkle_proof: Vec<MerkleNode>,
@@ -199,7 +218,7 @@ impl SubscriptionHarness {
         let dao_proof_values: Vec<pallas::Base> =
             dao_path.iter().map(|n| n.inner()).collect();
 
-        let input = SubscribeCallData::new(
+        let mut input = SubscribeCallData::new(
             subscriber_secret,
             nonce,
             plan_merkle_proof,
@@ -227,11 +246,10 @@ impl SubscriptionHarness {
             dao_escrow_merkle_root,
         );
 
-        let (proof, public_inputs) = create_subscribe_proof(
-            &self.subscribe_zkbin,
-            &self.subscribe_pk,
-            &input,
-        )?;
+        // `OBL-C198`: the call data first, the commitment over the whole ordered set next, and the
+        // proof last — the reverse order cannot bind to a real transaction. The public inputs the
+        // params are built from are a pure function of the call data, so they need no proof.
+        let public_inputs = input.compute_public_inputs();
 
         let params = SubscribeParamsV1 {
             plan_id: public_inputs.plan_id,
@@ -246,22 +264,35 @@ impl SubscriptionHarness {
             dao_merkle_proof: Some(dao_proof_values),
             dao_leaf_pos: Some(dao_leaf_pos),
             instance_seed: [0u8; 32],
-            // The pair the proof above was built against (`OBL-C78`). Taken from `public_inputs`
-            // rather than recomputed, so the fixture cannot disagree with the client.
-            tx_binding: public_inputs.tx_binding,
+            // `tx_binding` left the params in `OBL-C198`; the nonce stays, taken from the client's
+            // own derivation rather than chosen here.
             tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
-        Ok(SubscribeResult { call_data, proof, public_inputs })
+        // ONE commitment over the whole ordered call set — children first, this call last (DFS
+        // post-order) — so this proof and its children's bind to the same value.
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_subscribe_proof(
+            &self.subscribe_zkbin,
+            &self.subscribe_pk,
+            &input,
+        )?;
+
+        Ok(SubscribeResult { call_data, proof, public_inputs, commitment })
     }
 
-    /// Verify access to a subscription (function code 0x04)
+    /// Verify access to a subscription (function code 0x04) — `children` as `subscribe` above.
     #[allow(clippy::too_many_arguments)]
     pub fn verify_access(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         subscriber_secret: pallas::Base,
         nonce: pallas::Base,
         permissions_claimed: u8,
@@ -283,7 +314,7 @@ impl SubscriptionHarness {
         uses_remaining: u64,
         subscription_state_root: pallas::Base,
     ) -> Result<VerifyAccessResult, Box<dyn std::error::Error>> {
-        let input = VerifyAccessCallData::new(
+        let mut input = VerifyAccessCallData::new(
             subscriber_secret,
             nonce,
             permissions_claimed,
@@ -306,29 +337,39 @@ impl SubscriptionHarness {
             subscription_state_root,
         );
 
-        let (proof, public_inputs) = create_verify_access_proof(
-            &self.verify_access_zkbin,
-            &self.verify_access_pk,
-            &input,
-        )?;
+        // `OBL-C198`: call data, then the commitment over the whole ordered set, then the proof.
+        let public_inputs = input.compute_public_inputs();
 
         let params = VerifyAccessParamsV1 {
             subscription_id: SubscriptionId(public_inputs.subscription_id),
             capability: public_inputs.expected_capability,
             nonce,
-            tx_binding: public_inputs.tx_binding,
+            // `tx_binding` left the params in `OBL-C198`; the nonce stays.
             tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(VerifyAccessResult { call_data, proof, public_inputs })
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_verify_access_proof(
+            &self.verify_access_zkbin,
+            &self.verify_access_pk,
+            &input,
+        )?;
+
+        Ok(VerifyAccessResult { call_data, proof, public_inputs, commitment })
     }
 
-    /// Update usage tracking for a subscription (function code 0x06)
+    /// Update usage tracking for a subscription (function code 0x06) — `children` as `subscribe`
+    /// above.
     pub fn update_usage(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         subscription_id: pallas::Base,
         subscriber_pub_x: pallas::Base,
         subscriber_pub_y: pallas::Base,
@@ -338,7 +379,7 @@ impl SubscriptionHarness {
         current_block: u64,
         merkle_proof: Vec<pallas::Base>,
     ) -> Result<UpdateUsageResult, Box<dyn std::error::Error>> {
-        let input = UpdateUsageCallData::new(
+        let mut input = UpdateUsageCallData::new(
             subscription_id,
             subscriber_pub_x,
             subscriber_pub_y,
@@ -346,11 +387,8 @@ impl SubscriptionHarness {
             nonce,
         );
 
-        let (proof, public_inputs) = create_update_usage_proof(
-            &self.update_usage_zkbin,
-            &self.update_usage_pk,
-            &input,
-        )?;
+        // `OBL-C198`: call data, then the commitment over the whole ordered set, then the proof.
+        let public_inputs = input.compute_public_inputs();
 
         let params = UpdateUsageParamsV1 {
             subscription_id: SubscriptionId(subscription_id),
@@ -367,14 +405,25 @@ impl SubscriptionHarness {
                 subscriber_secret,
             ),
             merkle_proof,
-            tx_binding: public_inputs.tx_binding,
+            // `tx_binding` left the params in `OBL-C198`; the nonce stays.
             tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x06];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
-        Ok(UpdateUsageResult { call_data, proof, public_inputs })
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_update_usage_proof(
+            &self.update_usage_zkbin,
+            &self.update_usage_pk,
+            &input,
+        )?;
+
+        Ok(UpdateUsageResult { call_data, proof, public_inputs, commitment })
     }
 
     /// Cancel a subscription (function code 0x02)
@@ -389,14 +438,16 @@ impl SubscriptionHarness {
     /// verify for a reason the endpoint did not name.
     pub fn cancel(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         subscription_id: pallas::Base,
         subscriber_secret: pallas::Base,
         current_block: u64,
         recipient_pubkey: PublicKey,
     ) -> Result<CancelResult, Box<dyn std::error::Error>> {
-        let input = CancelCallData::new(subscription_id, subscriber_secret, current_block, recipient_pubkey);
-        let (proof, public_inputs) =
-            create_cancel_proof(&self.cancel_zkbin, &self.cancel_pk, &input)?;
+        let mut input = CancelCallData::new(subscription_id, subscriber_secret, current_block, recipient_pubkey);
+        // `OBL-C198`: the call data first, the commitment over the whole ordered set next, the proof
+        // last. `public_inputs` is a pure function of the call data's own inputs.
+        let public_inputs = input.compute_public_inputs();
 
         let params = CancelParamsV1 {
             subscription_id: SubscriptionId(subscription_id),
@@ -404,14 +455,22 @@ impl SubscriptionHarness {
             spent_nullifier: public_inputs.spent_nullifier,
             current_block,
             recipient_pubkey,
-            tx_binding: public_inputs.tx_binding,
+            // `tx_binding` left the params in `OBL-C198`; the nonce stays.
             tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(CancelResult { call_data, proof })
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) =
+            create_cancel_proof(&self.cancel_zkbin, &self.cancel_pk, &input)?;
+
+        Ok(CancelResult { call_data, proof, commitment })
     }
 
     /// Renew a subscription (function code 0x03)
@@ -420,6 +479,7 @@ impl SubscriptionHarness {
     /// nullifier the client derives rather than the caller asserting.
     pub fn renew(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         subscription_id: pallas::Base,
         subscriber_secret: pallas::Base,
         new_lock_until_block: u64,
@@ -427,8 +487,9 @@ impl SubscriptionHarness {
     ) -> Result<RenewResult, Box<dyn std::error::Error>> {
         let mut input = RenewCallData::new(subscription_id, subscriber_secret, new_lock_until_block, value_commit);
         input.merkle_proof = vec![];
-        let (proof, public_inputs) =
-            create_renew_proof(&self.renew_zkbin, &self.renew_pk, &input)?;
+        // `OBL-C198`: the call data first, the commitment over the whole ordered set next, the proof
+        // last.
+        let public_inputs = input.compute_public_inputs();
 
         let params = RenewParamsV1 {
             subscription_id: SubscriptionId(subscription_id),
@@ -437,14 +498,22 @@ impl SubscriptionHarness {
             spent_nullifier: public_inputs.spent_nullifier,
             value_commit,
             merkle_proof: input.merkle_proof.clone(),
-            tx_binding: public_inputs.tx_binding,
+            // `tx_binding` left the params in `OBL-C198`; the nonce stays.
             tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
-        Ok(RenewResult { call_data, proof })
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) =
+            create_renew_proof(&self.renew_zkbin, &self.renew_pk, &input)?;
+
+        Ok(RenewResult { call_data, proof, commitment })
     }
 }
 
@@ -485,6 +554,9 @@ pub struct SubscribeResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: SubscribePublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of verify_access
@@ -492,6 +564,8 @@ pub struct VerifyAccessResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: VerifyAccessPublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of update_usage
@@ -499,16 +573,23 @@ pub struct UpdateUsageResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: UpdateUsagePublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of cancel
 pub struct CancelResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of renew
 pub struct RenewResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }

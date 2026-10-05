@@ -44,7 +44,9 @@ pub struct UpdateUsagePublicInputs {
 
 impl UpdateUsagePublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.tx_binding, self.tx_nonce, self.derived_id]
+        // `UpdateUsageV2`'s `constrain_instance` order: `[derived_id, tx_binding, tx_nonce]` — the
+        // pair last (`OBL-C198`).
+        vec![self.derived_id, self.tx_binding, self.tx_nonce]
     }
 }
 

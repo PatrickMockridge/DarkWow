@@ -51,10 +51,8 @@
 # migration was committed after a run without it. `slot`'s and `relayer_endowment`'s lines went
 # with their own units, in the commits that moved the circuits — as did `escrow`'s five, which were
 # the largest single group here (the pair sat in the *middle* of all five, with a trailing instance
-# after it in each).
+# after it in each), and `subscription`'s three, whose three circuits each instanced a derived id
+# *after* the pair.
 
 src/contract/promissory_note/proof/redeem.zk : Redeem_V2 : `OBL-C198` — pair at 5,6 of 8; `coin_spend_hook` follows. `promissory_note`'s transfer and burn paths were migrated in the first pass; this circuit and `revoke.zk` were not, and the instrument is what made the difference visible.
 src/contract/stablecoin/proof/init.zk : InitV2 : `OBL-C198` — pair at 0,1 of 3; `deployer_auth` follows.
-src/contract/subscription/proof/subscribe.zk : SubscribeV2 : `OBL-C198` — pair at 0,1 of 3; `derived_id` follows.
-src/contract/subscription/proof/update_usage.zk : UpdateUsageV2 : `OBL-C198` — pair at 0,1 of 3; `derived_id` follows.
-src/contract/subscription/proof/verify_access.zk : VerifyAccessV2 : `OBL-C198` — pair at 0,1 of 3; `derived_capability` follows.
