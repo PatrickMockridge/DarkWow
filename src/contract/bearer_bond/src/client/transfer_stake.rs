@@ -38,7 +38,7 @@ use dwow_core::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, ContractId, MerkleNode, ScalarBlind, SecretKey,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, ContractId, MerkleNode, ScalarBlind, SecretKey,
     },
     pasta::pallas,
 };
@@ -260,8 +260,26 @@ impl TransferStakeCallBuilder {
             input_parts.push(TransferBurnPart { input, value_blind, asset_id_blind, user_data_blind });
         }
 
-        for output in self.outputs.into_iter() {
-            let value_blind = ScalarBlind::random(&mut OsRng);
+        // `Σ inputs.value_commit == Σ outputs.value_commit` is a **point** equality, so it holds
+        // only when the values *and* the blinds balance — and every blind was drawn independently,
+        // so the transfer could never satisfy its own conservation check: it answered
+        // `ValueMismatch` (code 14) on every attempt. The final output's blind closes the sum
+        // instead, which with one input and one output means it equals the input's blind; this is
+        // the usual "last output balances" rule and it is the client's job, not the check's.
+        let sum_in: pallas::Scalar = input_parts
+            .iter()
+            .fold(pallas::Scalar::from(0u64), |acc, p| acc + p.value_blind.inner());
+        let num_outputs = self.outputs.len();
+        let mut sum_out = pallas::Scalar::from(0u64);
+
+        for (idx, output) in self.outputs.into_iter().enumerate() {
+            let value_blind = if idx + 1 == num_outputs {
+                Blind(sum_in - sum_out)
+            } else {
+                let b = ScalarBlind::random(&mut OsRng);
+                sum_out += b.inner();
+                b
+            };
             let asset_id_blind = BaseBlind::random(&mut OsRng);
 
             let derived = derive_transfer_blind_output(&output, value_blind.clone(), asset_id_blind.clone());

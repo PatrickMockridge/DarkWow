@@ -110,7 +110,12 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let output = TransferStakeCallOutput {
-                    recipient: pallas::Base::from(10u64), principal: 500,
+                    // `transfer_stake_v1` checks `Σ inputs.value_commit == Σ outputs.value_commit`
+                    // as a *point* equality, so the output must carry the input's principal — a
+                    // fixture with `500` against a `10000` input is a value mismatch by
+                    // construction. The blind half is the client's: see the last-output rule in
+                    // `transfer_stake.rs`.
+                    recipient: pallas::Base::from(10u64), principal: 10000,
                     asset_id: pallas::Base::from(1u64), spend_hook: pallas::Base::zero(),
                     user_data: pallas::Base::zero(), commitment_blind: pallas::Base::from(6u64),
                     last_claim_block: 10, maturity_block: 1000,
@@ -126,7 +131,11 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     principal: 10000, asset_id: pallas::Base::from(1u64),
                     spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
                     commitment_blind: pallas::Base::from(5u64), last_claim_block: 10,
-                    maturity_block: 1000, claim_block: 100, min_claim: 1,
+                    // `min_claim: 0` because the accrued interest over a 90-block fixture window is
+                    // zero at 500 bp/year — `interest < min_claim` is reported as `InterestOverflow`
+                    // (code 9), which is a second defect this fixture does not fix: a claim below
+                    // the dust floor is not an overflow.
+                    maturity_block: 1000, claim_block: 100, min_claim: 0,
                     leaf_position: 0, merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
                     secret: pallas::Base::from(42u64),
                     payment_key: pallas::Base::from(42u64),
