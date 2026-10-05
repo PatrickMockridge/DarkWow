@@ -200,8 +200,8 @@ fn test_multisig_encode_roundtrip() {
         };
         let encoded = EncodeResult::unwrap_encode(short.encode());
         assert_eq!(
-            encoded.len(), 196 + proof_len,
-            "the layout minimum is 196, not 200 — an encoder whose capacity hint disagrees with its \
+            encoded.len(), 164 + proof_len,
+            "the layout minimum is 164, not 196 — an encoder whose capacity hint disagrees with its \
              own layout is how the decoder's guard drifted in the first place"
         );
         assert!(
@@ -256,6 +256,7 @@ fn test_bearer_bond_encode_roundtrip() {
             value_commit: dummy_point(),
             commitment: pallas::Base::from(7u64),
             token_commit: pallas::Base::from(1u64),
+            series_asset_id: pallas::Base::from(1u64),
             nullifier: bb_nf,
             merkle_root: dummy_merkle_node(),
             user_data_enc: pallas::Base::zero(),
@@ -288,6 +289,7 @@ fn test_bearer_bond_encode_roundtrip() {
             user_data_enc: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(),
             signature_public: pallas::Base::from(42u64),
+            commitment: pallas::Base::from(9u64),
         }],
     };
     assert_roundtrip!(BurnStakeParamsV1, burn);
