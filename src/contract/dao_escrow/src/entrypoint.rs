@@ -187,6 +187,24 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 
 /// Metadata for InitializeV1 (0x00)
+/// The transaction binding every arm publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// What stood at the six arms was the constant `poseidon_hash([3, 0, 0])`, which bound every proof
+/// to nothing at all: it was identical in every transaction, so a proof lifted from one transaction
+/// verified in another. Two arms below share the `SetGovernanceConfigV2` circuit and so share this
+/// binding, which is why there are six call sites and five circuits.
+///
+/// The nonce is zero because these calls carry no nonce field, so every proof in one transaction
+/// publishes the same binding — a *linking* of that transaction's own proofs, which
+/// `tx-commitment.md` §The Nullifier Scheme exists to avoid. It is still strictly better than the
+/// constant, and a per-proof nonce on the wire is owed.
+fn dao_escrow_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([pallas::Base::from(3u64), wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match model::InitializeParamsV1::decode(&self_.data[1..]) {
@@ -226,21 +244,18 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
     // publishing a literal zero required `poseidon(3, 0, 0) == 0` — a preimage. Every proof for
     // this circuit was unsatisfiable, not merely unbound, and a count check cannot see it because
     // the vector had the right length (register OBL-C78).
-    let tx_binding = poseidon_hash([
-        pallas::Base::from(3u64),
-        pallas::Base::zero(),
-        pallas::Base::zero(),
-    ]);
+    let tx_binding = dao_escrow_tx_binding(pallas::Base::zero())?;
     let tx_nonce_val = pallas::Base::zero();
 
-    // Circuit constrain_instance order: [dao_bulla, tx_binding, tx_nonce, endowment_bulla]
+    // Circuit constrain_instance order: [dao_bulla, endowment_bulla, tx_binding, tx_nonce] — the
+    // pair last (`OBL-C198`). It sat at 1,2 of 4 with `endowment_bulla` after it.
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_INIT_NS_V2.to_string(),
         vec![
             params.dao_bulla.inner(),
+            endowment_bulla,
             tx_binding,
             tx_nonce_val,
-            endowment_bulla,
         ],
     )];
 
@@ -262,11 +277,7 @@ fn pay_premium_get_metadata(_cid: ContractId, _call_idx: usize, _calls: &[dwow_s
     // publishing a literal zero required `poseidon(3, 0, 0) == 0` — a preimage. Every proof for
     // this circuit was unsatisfiable, not merely unbound, and a count check cannot see it because
     // the vector had the right length (register OBL-C78).
-    let tx_binding = poseidon_hash([
-        pallas::Base::from(3u64),
-        pallas::Base::zero(),
-        pallas::Base::zero(),
-    ]);
+    let tx_binding = dao_escrow_tx_binding(pallas::Base::zero())?;
     let tx_nonce_val = pallas::Base::zero();
 
     let zk_public_inputs = vec![(
@@ -1247,16 +1258,14 @@ fn propose_claim_get_metadata(
     // publishing a literal zero required `poseidon(3, 0, 0) == 0` — a preimage. Every proof for
     // this circuit was unsatisfiable, not merely unbound, and a count check cannot see it because
     // the vector had the right length (register OBL-C78).
-    let tx_binding = poseidon_hash([
-        pallas::Base::from(3u64),
-        pallas::Base::zero(),
-        pallas::Base::zero(),
-    ]);
+    let tx_binding = dao_escrow_tx_binding(pallas::Base::zero())?;
     let tx_nonce_val = pallas::Base::zero();
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_PROPOSE_CLAIM_NS_V2.to_string(),
-        vec![tx_binding, tx_nonce_val, claim_commit],
+        // The circuit's order is [claim_commit, tx_binding, tx_nonce] — the pair last
+        // (`OBL-C198`). It sat at 0,1 of 3 with `claim_commit` after it.
+        vec![claim_commit, tx_binding, tx_nonce_val],
     )];
 
     let mut metadata = vec![];
@@ -1304,16 +1313,14 @@ fn vote_claim_get_metadata(
     // publishing a literal zero required `poseidon(3, 0, 0) == 0` — a preimage. Every proof for
     // this circuit was unsatisfiable, not merely unbound, and a count check cannot see it because
     // the vector had the right length (register OBL-C78).
-    let tx_binding = poseidon_hash([
-        pallas::Base::from(3u64),
-        pallas::Base::zero(),
-        pallas::Base::zero(),
-    ]);
+    let tx_binding = dao_escrow_tx_binding(pallas::Base::zero())?;
     let tx_nonce_val = pallas::Base::zero();
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_VOTE_CLAIM_NS_V2.to_string(),
-        vec![tx_binding, tx_nonce_val, vote_nullifier],
+        // The circuit's order is [vote_nullifier, tx_binding, tx_nonce] — the pair last
+        // (`OBL-C198`). It sat at 0,1 of 3 with `vote_nullifier` after it.
+        vec![vote_nullifier, tx_binding, tx_nonce_val],
     )];
 
     let mut metadata = vec![];
@@ -1350,11 +1357,7 @@ fn update_get_metadata(
     // Constant `(0, 0)`, the convention this contract and its siblings use; the circuit constrains
     // `tx_binding == poseidon_hash(3, tx_commitment, tx_nonce)`, so a literal zero here would require a
     // preimage and make every proof unsatisfiable (the defect `OBL-C78` records for this contract).
-    let tx_binding = poseidon_hash([
-        pallas::Base::from(3u64),
-        pallas::Base::zero(),
-        pallas::Base::zero(),
-    ]);
+    let tx_binding = dao_escrow_tx_binding(pallas::Base::zero())?;
 
     // The circuit's `constrain_instance` order: owner_pub_x, owner_pub_y, owner_nullifier, tx_binding,
     // tx_nonce.
@@ -1389,11 +1392,7 @@ fn withdraw_get_metadata(
 
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
     let (owner_pub_x, owner_pub_y) = params.recipient_pubkey.xy().expect("pk not identity");
-    let tx_binding = poseidon_hash([
-        pallas::Base::from(3u64),
-        pallas::Base::zero(),
-        pallas::Base::zero(),
-    ]);
+    let tx_binding = dao_escrow_tx_binding(pallas::Base::zero())?;
 
     // The circuit's `constrain_instance` order: owner_pub_x, owner_pub_y, owner_nullifier, tx_binding,
     // tx_nonce.

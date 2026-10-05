@@ -963,7 +963,11 @@ fn test_recruitment_pipeline_call_data() -> std::result::Result<(), Box<dyn std:
         println!("  LaborMarket deployed");
 
         // Deploy DAO Escrow
-        let dao_harness = DaoEscrowHarness::spawn();
+        // `OBL-C198`: the harness needs the id its call will carry, because the transaction
+        // commitment is derived over the call *including* the contract id — and `deploy` assigns
+        // `derive_contract_id_from_name`, so the spec can name it before deploying.
+        let dao_cid = crate::tests::blockchain::derive_contract_id_from_name("dao_escrow");
+        let dao_harness = DaoEscrowHarness::spawn(dao_cid);
         println!("DAO-Escrow harness: {:?}", dao_harness.circuits());
         let dao_wasm = include_bytes!("../../../../src/contract/dao_escrow/dwow_dao_escrow_contract.wasm");
         let _dao_contract_id = chain.deploy(&dao_harness, "dao_escrow", dao_wasm).await?;
@@ -984,6 +988,9 @@ fn test_recruitment_pipeline_call_data() -> std::result::Result<(), Box<dyn std:
         let endowment_asset_id = pallas::Base::from(2u64);
         let bulla_blind = pallas::Base::from(3u64);
         let init_result = dao_harness.initialize(
+            // `OBL-C198`: no children — this pipeline builds a single-call transaction, which is
+            // exactly what `commitment_over(&[], this call)` covers.
+            &[],
             nullifier_k,
             dao_bulla,
             owner_secret,
@@ -1703,7 +1710,12 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("relayer_lifecycle")?));
 
         let bridge_harness = BridgeHarness::spawn();
-        let relayer_harness = RelayerEndowmentHarness::spawn();
+        // `OBL-C198`: the harness needs the deployed id to derive the commitment its proofs bind
+        // to, and it is spawned before the deploy — so the id comes from the same derivation the
+        // deploy uses, not from the deploy's return value.
+        let relayer_harness = RelayerEndowmentHarness::spawn(
+            crate::tests::blockchain::derive_contract_id_from_name("relayer_endowment"),
+        );
 
         println!("Harnesses spawned:");
         println!("  Bridge circuits: {:?}", bridge_harness.circuits());

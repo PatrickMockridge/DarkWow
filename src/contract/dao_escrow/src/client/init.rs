@@ -47,11 +47,14 @@ pub struct InitV1PublicInputs {
 
 impl InitV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
+        // Circuit instances: dao_bulla, endowment_bulla, then the pair — last (`OBL-C198`). The
+        // pair sat at 1,2 of 4 with `endowment_bulla` after it; the circuit, the metadata arm and
+        // this vector move together.
         vec![
             self.dao_bulla,
+            self.endowment_bulla,
             self.tx_binding,
             self.tx_nonce,
-            self.endowment_bulla,
         ]
     }
 }

@@ -168,6 +168,60 @@ fn pn_transfer_child(
     })
 }
 
+/// `OBL-C198`: the same child, split at the proof. The commitment is a derivation over the whole
+/// ordered call set, so this child's blind-output proof can only be made once its parent's call
+/// data exists and the commitment over the set is known. The unsplit form above proves inline,
+/// which is correct only while the parent publishes a constant; `dao_escrow`'s arms now derive, so
+/// every child here must bind to the same value its parent does.
+///
+/// Returns the ordered-set call, the plan to prove once the commitment is known, and the nonce the
+/// plan binds (zero — this contract's calls carry no nonce field).
+fn pn_transfer_prepare(
+    pn: &PromissoryNoteHarness,
+    note: &PnNote,
+    value: u64,
+    blind_seed: pallas::Base,
+) -> dwow_core::Result<(
+    dwow_sdk::tx::ContractCall,
+    dwow_promissory_note_contract::client::transfer::TransferCallPlan,
+    pallas::Base,
+)> {
+    let (note_commitment, pos, path, asset_id, commitment_blind) = note;
+    let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
+    let nonce = pallas::Base::zero();
+    let input = TransferCallInput {
+        value,
+        asset_id: *asset_id,
+        spend_hook: pallas::Base::zero(),
+        user_data: pallas::Base::zero(),
+        commitment_blind: *commitment_blind,
+        leaf_position: *pos,
+        merkle_path: path.clone(),
+        secret: PN_ISSUE_SECRET,
+        ephemeral_signature_secret: pallas::Base::from(9u64),
+        tx_commitment: pallas::Base::zero(),
+        tx_nonce: nonce,
+    };
+    let output = TransferCallOutput {
+        recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
+        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
+        value,
+        asset_id: *asset_id,
+        spend_hook: pallas::Base::zero(),
+        user_data: pallas::Base::zero(),
+        commitment_blind: poseidon_hash([blind_seed, *note_commitment]),
+    };
+    let plan = pn
+        .transfer_prepare(vec![input], vec![output], Some(vec![value_blind]))
+        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+    let mut call_data = vec![0x04u8];
+    call_data.extend_from_slice(
+        &plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?,
+    );
+    let call = dwow_sdk::tx::ContractCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, data: call_data };
+    Ok((call, plan, nonce))
+}
+
 /// The blind **every spend path in this contract** derives for its child:
 /// `poseidon_hash([value, endowment_bulla])` — the fixture's copy of the contract's own seed, and
 /// **the record and the amount, deliberately not the call**.
@@ -258,7 +312,12 @@ struct Shared {
 }
 
 pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(DaoEscrowHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its call will carry, because the transaction
+    // commitment is derived over the call *including* the contract id. `deploy_with_ix` assigns
+    // `derive_contract_id_from_name(name)` — a pure function of the name — so the spec computes
+    // exactly the id the pipeline will use rather than a placeholder.
+    let de_cid = crate::tests::blockchain::derive_contract_id_from_name("dao_escrow");
+    let harness = Box::leak(Box::new(DaoEscrowHarness::spawn(de_cid)));
     let h: &DaoEscrowHarness = harness;
     // Leaked like the contract's harness, and for a reason that shows up in the wall clock: every
     // `spawn` rebuilds the multisig contract's proving keys, and this spec calls `create_group`, `sign`
@@ -365,7 +424,8 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
 
     ContractTestSpec {
         name: "dao_escrow", is_genesis: false,
-        contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
+        // `OBL-C198`: the real id, not the stale `[0u8;32]` placeholder.
+        contract_id: de_cid,
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: true,
         initialize: Some(Box::new(move || {
@@ -377,7 +437,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
             //
             // The floor is zero: no row here pays a premium, so `min_premium` has no reader in this
             // fixture (`PayPremiumV1` is the deferred endpoint).
-            let r = h.initialize(nullifier_k, dao_bulla, owner_secret, endowment_asset_id, bulla_blind, DaoEscrowMode::Escrow, 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+            let r = h.initialize(&[], nullifier_k, dao_bulla, owner_secret, endowment_asset_id, bulla_blind, DaoEscrowMode::Escrow, 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
             Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
         })),
         needs_coinbase_coordination: false,
@@ -551,8 +611,10 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().withdraw_owner.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, child_blind(PN_VALUE_WITHDRAW_OWNER, endowment_bulla))?;
-                    let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_OWNER, owner_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(pn, &note, PN_VALUE_WITHDRAW_OWNER, child_blind(PN_VALUE_WITHDRAW_OWNER, endowment_bulla))?;
+                    let r = h.withdraw(&[child_call.clone()], endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_OWNER, owner_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let debris = child_plan.prove(r.commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -584,8 +646,10 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().withdraw_owner_again.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_OWNER, child_blind(PN_VALUE_WITHDRAW_OWNER, endowment_bulla))?;
-                    let r = h.withdraw(endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_OWNER, owner_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(pn, &note, PN_VALUE_WITHDRAW_OWNER, child_blind(PN_VALUE_WITHDRAW_OWNER, endowment_bulla))?;
+                    let r = h.withdraw(&[child_call.clone()], endowment_bulla, owner_pub, PN_VALUE_WITHDRAW_OWNER, owner_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let debris = child_plan.prove(r.commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -604,8 +668,10 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let stranger_secret = pallas::Base::from(4321u64);
                     let stranger_pub = PublicKey::from_secret(SecretKey::from_base(stranger_secret));
                     let note = notes.lock().unwrap().withdraw_no_approval.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_WITHDRAW_NO_APPROVAL, child_blind(PN_VALUE_WITHDRAW_NO_APPROVAL, endowment_bulla))?;
-                    let r = h.withdraw(endowment_bulla, stranger_pub, PN_VALUE_WITHDRAW_NO_APPROVAL, stranger_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(pn, &note, PN_VALUE_WITHDRAW_NO_APPROVAL, child_blind(PN_VALUE_WITHDRAW_NO_APPROVAL, endowment_bulla))?;
+                    let r = h.withdraw(&[child_call.clone()], endowment_bulla, stranger_pub, PN_VALUE_WITHDRAW_NO_APPROVAL, stranger_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let debris = child_plan.prove(r.commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -621,8 +687,15 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().endowment_no_auth.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_ENDOWMENT_NO_AUTH, child_blind(PN_VALUE_ENDOWMENT_NO_AUTH, endowment_bulla))?;
+                    // `OBL-C198`: the child's call data first (no proof), then the parent's — this
+                    // endpoint carries no proof of its own — and the commitment, taken here over
+                    // the ordered set the node hashes.
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(pn, &note, PN_VALUE_ENDOWMENT_NO_AUTH, child_blind(PN_VALUE_ENDOWMENT_NO_AUTH, endowment_bulla))?;
                     let r = h.endowment_withdraw(endowment_bulla, claim_id, owner_pub, PN_VALUE_ENDOWMENT_NO_AUTH).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let parent_call = dwow_sdk::tx::ContractCall { contract_id: de_cid, data: r.call_data.clone() };
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call]);
+                    let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                 }
             })),
@@ -640,8 +713,14 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().treasury_spend.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_TREASURY_SPEND, child_blind(PN_VALUE_TREASURY_SPEND, endowment_bulla))?;
+                    // `OBL-C198`: child call data first, then the parent's — no proof of its own — then the
+                    // commitment over the ordered set the node hashes.
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(pn, &note, PN_VALUE_TREASURY_SPEND, child_blind(PN_VALUE_TREASURY_SPEND, endowment_bulla))?;
                     let r = h.treasury_spend(endowment_bulla, owner_pub, PN_VALUE_TREASURY_SPEND).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let parent_call = dwow_sdk::tx::ContractCall { contract_id: de_cid, data: r.call_data.clone() };
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call]);
+                    let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                 }
             })),
@@ -667,7 +746,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.update(endowment_bulla, owner_secret, owner_pub, None)
+                    let r = h.update(&[], endowment_bulla, owner_secret, owner_pub, None)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -684,7 +763,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.update(endowment_bulla, owner_secret, owner_pub, Some(DaoEscrowHarness::governance_group()))
+                    let r = h.update(&[], endowment_bulla, owner_secret, owner_pub, Some(DaoEscrowHarness::governance_group()))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -699,11 +778,15 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let gov = gov.clone();
                     move || {
                         let approvals = gov.lock().unwrap().propose.clone();
-                        let r = h.propose_claim(nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_CLAIM, pallas::Base::from(50u64), owner_pub, pallas::Base::from(10u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let f = ms.finalize(DaoEscrowHarness::governance_group(), msg_propose, approvals)
+                        let ms_plan = ms.finalize_prepare(DaoEscrowHarness::governance_group(), msg_propose, approvals)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_call = dwow_sdk::tx::ContractCall { contract_id: *MULTISIG_CONTRACT_ID, data: ms_plan.call_data.clone() };
+                        // `OBL-C198`: the child's call data first, then the parent's — which binds its proof to
+                        // the commitment over `[ms_child, this call]` — then the child is proven against it.
+                        let r = h.propose_claim(&[ms_call.clone()], nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_CLAIM, pallas::Base::from(50u64), owner_pub, pallas::Base::from(10u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_debris = ms_plan.prove(r.commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
-                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] }],
+                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: ms_debris.call_data, proofs: vec![ms_debris.proof], children: vec![] }],
                             call_data: r.call_data, proofs: vec![r.proof],
                         })
                     }
@@ -732,15 +815,26 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 move || {
                     let approvals = gov.lock().unwrap().endowment_withdraw.clone();
                     let note = notes.lock().unwrap().endowment_approved.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_ENDOWMENT_APPROVED, child_blind(PN_VALUE_ENDOWMENT_APPROVED, endowment_bulla))?;
+                    // `OBL-C198`: TWO children, and each proof has to bind to the one commitment
+                    // the node derives over the whole ordered set — `[pn_child, multisig_child,
+                    // this call]`, in the order the tree emits them. So both call data are built
+                    // first (neither proof yet), the commitment is taken, and only then are the
+                    // two children proven against it. The parent carries no proof of its own.
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(pn, &note, PN_VALUE_ENDOWMENT_APPROVED, child_blind(PN_VALUE_ENDOWMENT_APPROVED, endowment_bulla))?;
                     let r = h.endowment_withdraw(endowment_bulla, claim_id, owner_pub, PN_VALUE_ENDOWMENT_APPROVED)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let f = ms.finalize(DaoEscrowHarness::governance_group(), action_endowment_withdraw, approvals)
+                    let ms_plan = ms.finalize_prepare(DaoEscrowHarness::governance_group(), action_endowment_withdraw, approvals)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let ms_call = dwow_sdk::tx::ContractCall { contract_id: *MULTISIG_CONTRACT_ID, data: ms_plan.call_data.clone() };
+                    let parent_call = dwow_sdk::tx::ContractCall { contract_id: de_cid, data: r.call_data.clone() };
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &ms_call, &parent_call]);
+                    let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let ms_debris = ms_plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                     Ok(EndpointResult {
                         children: vec![
                             child,
-                            ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] },
+                            ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: ms_debris.call_data, proofs: vec![ms_debris.proof], children: vec![] },
                         ],
                         call_data: r.call_data, proofs: vec![],
                     })
@@ -784,15 +878,23 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let note = notes.lock().unwrap().endowment_approved_again.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
                     // The seed the *endpoint still uses* — two terms, no nullifier. Unlike `withdraw_v1`
                     // this site was not repaired, so the row states the seed the contract derives.
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_ENDOWMENT_APPROVED, child_blind(PN_VALUE_ENDOWMENT_APPROVED, endowment_bulla))?;
+                    // `OBL-C198`: as in `EndowmentWithdrawV1_Approved` — both calls' data first, one
+                    // commitment over `[pn_child, multisig_child, this call]`, then both proofs.
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(pn, &note, PN_VALUE_ENDOWMENT_APPROVED, child_blind(PN_VALUE_ENDOWMENT_APPROVED, endowment_bulla))?;
                     let r = h.endowment_withdraw(endowment_bulla, claim_id, second_recipient_pub, PN_VALUE_ENDOWMENT_APPROVED)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let f = ms.finalize(DaoEscrowHarness::governance_group(), action_endowment_withdraw_2, approvals)
+                    let ms_plan = ms.finalize_prepare(DaoEscrowHarness::governance_group(), action_endowment_withdraw_2, approvals)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let ms_call = dwow_sdk::tx::ContractCall { contract_id: *MULTISIG_CONTRACT_ID, data: ms_plan.call_data.clone() };
+                    let parent_call = dwow_sdk::tx::ContractCall { contract_id: de_cid, data: r.call_data.clone() };
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &ms_call, &parent_call]);
+                    let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let ms_debris = ms_plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                     Ok(EndpointResult {
                         children: vec![
                             child,
-                            ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] },
+                            ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: ms_debris.call_data, proofs: vec![ms_debris.proof], children: vec![] },
                         ],
                         call_data: r.call_data, proofs: vec![],
                     })
@@ -818,12 +920,18 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().execute_claim.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_EXECUTE_CLAIM, child_blind(PN_VALUE_EXECUTE_CLAIM, endowment_bulla))?;
+                    // `OBL-C198`: child call data first, then the parent's — no proof of its own —
+                    // then the commitment over the set the node hashes.
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(pn, &note, PN_VALUE_EXECUTE_CLAIM, child_blind(PN_VALUE_EXECUTE_CLAIM, endowment_bulla))?;
                     // `proposal_id` is the claim's own id: `propose_claim_v1` files the proposal under
                     // `claim_id` and `execute_claim_v1` looks it up by `proposal_id`, so a fixture that
                     // passed a distinct id would record `ProposalNotFound` and prove nothing about the
                     // state check.
                     let r = h.execute_claim(endowment_bulla, claim_id, owner_pub, PN_VALUE_EXECUTE_CLAIM).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let parent_call = dwow_sdk::tx::ContractCall { contract_id: de_cid, data: r.call_data.clone() };
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call]);
+                    let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                 }
             })),
@@ -839,11 +947,18 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let gov = gov.clone();
                 move || {
                     let approvals = gov.lock().unwrap().cancel_claim.clone();
-                    let r = h.cancel_claim(endowment_bulla, claim_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let f = ms.finalize(DaoEscrowHarness::governance_group(), action_cancel_claim, approvals)
+                    // `OBL-C198`: the multisig child's call data first (no proof), then the
+                    // parent's — no proof of its own — then the commitment over the set the node
+                    // hashes, and only then the child's proof.
+                    let ms_plan = ms.finalize_prepare(DaoEscrowHarness::governance_group(), action_cancel_claim, approvals)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let ms_call = dwow_sdk::tx::ContractCall { contract_id: *MULTISIG_CONTRACT_ID, data: ms_plan.call_data.clone() };
+                    let r = h.cancel_claim(endowment_bulla, claim_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let parent_call = dwow_sdk::tx::ContractCall { contract_id: de_cid, data: r.call_data.clone() };
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&ms_call, &parent_call]);
+                    let ms_debris = ms_plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult {
-                        children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] }],
+                        children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: ms_debris.call_data, proofs: vec![ms_debris.proof], children: vec![] }],
                         call_data: r.call_data, proofs: vec![],
                     })
                 }
@@ -878,11 +993,15 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let gov = gov.clone();
                     move || {
                         let approvals = gov.lock().unwrap().propose_2.clone();
-                        let r = h.propose_claim(nullifier_k, endowment_bulla, CLAIM_ID_LIFECYCLE, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_APPROVED, pallas::Base::from(50u64), owner_pub, pallas::Base::from(11u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let f = ms.finalize(DaoEscrowHarness::governance_group(), msg_propose_2, approvals)
+                        let ms_plan = ms.finalize_prepare(DaoEscrowHarness::governance_group(), msg_propose_2, approvals)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_call = dwow_sdk::tx::ContractCall { contract_id: *MULTISIG_CONTRACT_ID, data: ms_plan.call_data.clone() };
+                        // `OBL-C198`: the child's call data first, then the parent's — which binds its proof to
+                        // the commitment over `[ms_child, this call]` — then the child is proven against it.
+                        let r = h.propose_claim(&[ms_call.clone()], nullifier_k, endowment_bulla, CLAIM_ID_LIFECYCLE, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_APPROVED, pallas::Base::from(50u64), owner_pub, pallas::Base::from(11u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_debris = ms_plan.prove(r.commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
-                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] }],
+                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: ms_debris.call_data, proofs: vec![ms_debris.proof], children: vec![] }],
                             call_data: r.call_data, proofs: vec![r.proof],
                         })
                     }
@@ -922,7 +1041,14 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                             predicate_result: [0u8; 32],
                             proof: vec![],
                         };
+                        // `OBL-C198`: the child's call data first, then the parent's — which binds
+                        // its proof to the commitment over `[ms_child, this call]` — then the child
+                        // is proven against that same value.
+                        let ms_plan = ms.finalize_prepare(DaoEscrowHarness::governance_group(), action_vote, approvals)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_call = dwow_sdk::tx::ContractCall { contract_id: *MULTISIG_CONTRACT_ID, data: ms_plan.call_data.clone() };
                         let r = h.vote_claim(
+                            &[ms_call.clone()],
                             nullifier_k,
                             pallas::Point::identity(),
                             pallas::Point::identity(),
@@ -937,10 +1063,9 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                             voter_pub,
                             cap_proof,
                         ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let f = ms.finalize(DaoEscrowHarness::governance_group(), action_vote, approvals)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_debris = ms_plan.prove(r.commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
-                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] }],
+                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: ms_debris.call_data, proofs: vec![ms_debris.proof], children: vec![] }],
                             call_data: r.call_data, proofs: vec![r.proof],
                         })
                     }
@@ -958,8 +1083,14 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let notes = notes.clone();
                 move || {
                     let note = notes.lock().unwrap().execute_approved.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
-                    let child = pn_transfer_child(pn, &note, PN_VALUE_EXECUTE_APPROVED, child_blind(PN_VALUE_EXECUTE_APPROVED, endowment_bulla))?;
+                    // `OBL-C198`: child call data first, then the parent's — no proof of its own — then the
+                    // commitment over the ordered set the node hashes.
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(pn, &note, PN_VALUE_EXECUTE_APPROVED, child_blind(PN_VALUE_EXECUTE_APPROVED, endowment_bulla))?;
                     let r = h.execute_claim(endowment_bulla, CLAIM_ID_LIFECYCLE, owner_pub, PN_VALUE_EXECUTE_APPROVED).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let parent_call = dwow_sdk::tx::ContractCall { contract_id: de_cid, data: r.call_data.clone() };
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call]);
+                    let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                     Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                 }
             })),
@@ -982,7 +1113,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     // the value does not make you this endowment's owner.
                     let stranger_secret = pallas::Base::from(4321u64);
                     let stranger_pub = PublicKey::from_secret(SecretKey::from_base(stranger_secret));
-                    let r = h.update(endowment_bulla, stranger_secret, stranger_pub, Some(DaoEscrowHarness::governance_group()))
+                    let r = h.update(&[], endowment_bulla, stranger_secret, stranger_pub, Some(DaoEscrowHarness::governance_group()))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -999,7 +1130,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.update(endowment_bulla, owner_secret, owner_pub, None)
+                    let r = h.update(&[], endowment_bulla, owner_secret, owner_pub, None)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -1011,7 +1142,9 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.propose_claim(nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_CLAIM, pallas::Base::from(50u64), owner_pub, pallas::Base::from(10u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    // `OBL-C198`: this row carries no child — it asserts the child-count rejection —
+                    // so the committed set is the call alone.
+                    let r = h.propose_claim(&[], nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_CLAIM, pallas::Base::from(50u64), owner_pub, pallas::Base::from(10u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
@@ -1025,11 +1158,15 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let gov = gov.clone();
                     move || {
                         let g = gov.lock().unwrap().clone();
-                        let r = h.propose_claim(nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_CLAIM, pallas::Base::from(50u64), owner_pub, pallas::Base::from(10u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let f = ms.finalize(g.foreign_group, msg_propose, g.foreign)
+                        let ms_plan = ms.finalize_prepare(g.foreign_group, msg_propose, g.foreign)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_call = dwow_sdk::tx::ContractCall { contract_id: *MULTISIG_CONTRACT_ID, data: ms_plan.call_data.clone() };
+                        // `OBL-C198`: the child's call data first, then the parent's — which binds its proof to
+                        // the commitment over `[ms_child, this call]` — then the child is proven against it.
+                        let r = h.propose_claim(&[ms_call.clone()], nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_CLAIM, pallas::Base::from(50u64), owner_pub, pallas::Base::from(10u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_debris = ms_plan.prove(r.commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
-                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] }],
+                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: ms_debris.call_data, proofs: vec![ms_debris.proof], children: vec![] }],
                             call_data: r.call_data, proofs: vec![r.proof],
                         })
                     }
@@ -1045,11 +1182,15 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     let gov = gov.clone();
                     move || {
                         let approvals = gov.lock().unwrap().wrong_message.clone();
-                        let r = h.propose_claim(nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_CLAIM, pallas::Base::from(50u64), owner_pub, pallas::Base::from(10u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let f = ms.finalize(DaoEscrowHarness::governance_group(), msg_wrong, approvals)
+                        let ms_plan = ms.finalize_prepare(DaoEscrowHarness::governance_group(), msg_wrong, approvals)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_call = dwow_sdk::tx::ContractCall { contract_id: *MULTISIG_CONTRACT_ID, data: ms_plan.call_data.clone() };
+                        // `OBL-C198`: the child's call data first, then the parent's — which binds its proof to
+                        // the commitment over `[ms_child, this call]` — then the child is proven against it.
+                        let r = h.propose_claim(&[ms_call.clone()], nullifier_k, endowment_bulla, claim_id, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_CLAIM, pallas::Base::from(50u64), owner_pub, pallas::Base::from(10u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_debris = ms_plan.prove(r.commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
-                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] }],
+                            children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: ms_debris.call_data, proofs: vec![ms_debris.proof], children: vec![] }],
                             call_data: r.call_data, proofs: vec![r.proof],
                         })
                     }

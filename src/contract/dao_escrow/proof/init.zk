@@ -36,8 +36,13 @@ circuit "InitV2" {
     );
 
     constrain_instance(dao_bulla);
+    constrain_instance(endowment_bulla);
+
+    # The pair is the LAST two instances (`OBL-C198`): the node reads `pubvals[len-2]`/
+    # `pubvals[len-1]` and recomputes `tx_binding` there, because nothing in `src/linear/` indexes
+    # this vector — the position IS the interface. It sat at 1,2 of 4 with `endowment_bulla` after
+    # it. The metadata arm's push order and the client's `to_vec` move with it.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(endowment_bulla);
 }

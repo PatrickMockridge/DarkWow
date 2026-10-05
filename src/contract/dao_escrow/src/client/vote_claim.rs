@@ -46,7 +46,8 @@ pub struct VoteClaimV1PublicInputs {
 
 impl VoteClaimV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.tx_binding, self.tx_nonce, self.vote_nullifier]
+        // Circuit instances: vote_nullifier, then the pair — last (`OBL-C198`). It sat at 0,1 of 3.
+        vec![self.vote_nullifier, self.tx_binding, self.tx_nonce]
     }
 }
 

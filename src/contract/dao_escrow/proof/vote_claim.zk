@@ -42,8 +42,11 @@ circuit "VoteClaimV2" {
         voter_pub_y,
     );
 
+    constrain_instance(vote_nullifier);
+
+    # The pair is the LAST two instances (`OBL-C198`), as in `init.zk`: the node reads
+    # `pubvals[len-2]`/`pubvals[len-1]`. It sat at 0,1 of 3 with `vote_nullifier` after it.
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(vote_nullifier);
 }

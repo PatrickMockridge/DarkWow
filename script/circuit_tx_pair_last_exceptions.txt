@@ -26,7 +26,7 @@
 # counts as a PASS and order as a WARN. `OBL-C198` is the register row for the campaign.
 #
 # EVERY NON-CONFORMING CIRCUIT IN THE TREE IS LISTED. Measured 2026-10-05 over 166 circuits:
-# 145 conform and 21 have the pair elsewhere in the vector. The third category the 2026-10-04
+# 148 conform and 18 have the pair elsewhere in the vector. The third category the 2026-10-04
 # census recorded — 1 circuit with **no** pair at all, `bearer_bond`'s `ProveCoverage_V2` — is
 # now empty: it carries the pair (`OBL-C198`, 2026-10-05). There is no fourth category, so this
 # file is the complete census — a circuit that conforms today and is edited into the middle
@@ -51,9 +51,6 @@
 # migration was committed after a run without it. `slot`'s and `relayer_endowment`'s lines went
 # with their own units, in the commits that moved the circuits.
 
-src/contract/dao_escrow/proof/init.zk : InitV2 : `OBL-C198` — pair at 1,2 of 4; `endowment_bulla` follows.
-src/contract/dao_escrow/proof/propose_claim.zk : ProposeClaimV2 : `OBL-C198` — pair at 0,1 of 3; `claim_commit` follows.
-src/contract/dao_escrow/proof/vote_claim.zk : VoteClaimV2 : `OBL-C198` — pair at 0,1 of 3; `vote_nullifier` follows.
 src/contract/escrow/proof/cancel.zk : CancelEscrowV2 : `OBL-C198` — pair at 3,4 of 6; `cancel_nullifier` follows.
 src/contract/escrow/proof/claim.zk : ClaimEscrowV2 : `OBL-C198` — pair at 2,3 of 5; `spent_nullifier` follows.
 src/contract/escrow/proof/create_escrow.zk : CreateEscrowV2 : `OBL-C198` — pair at 1,2 of 4; `seller_commitment` follows.

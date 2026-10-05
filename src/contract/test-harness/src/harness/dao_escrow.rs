@@ -72,11 +72,24 @@ pub struct DaoEscrowHarness {
     set_governance_config_zkbin: ZkBinary,
     /// SetGovernanceConfig_V1 ProvingKey
     set_governance_config_pk: ProvingKey,
+    /// The contract's deployed id (`OBL-C198`): the transaction commitment is derived over the
+    /// call set, and a call carries this id, so the harness has to know it. Taken as a parameter
+    /// rather than defaulted — a wrong id is a wrong commitment, and the proof is refused.
+    contract_id: dwow_sdk::crypto::ContractId,
+}
+
+/// The transaction commitment over an ordered call set — the same derivation the node recomputes
+/// (`dwow_sdk::crypto::util::tx_commitment`), so a proof and the transaction that carries it agree.
+///
+/// The order is the one `DarkForest::build_vec` emits (`TransactionBuilder::build`): DFS
+/// post-order, children before parents.
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
 }
 
 impl DaoEscrowHarness {
     /// Spawn a new DaoEscrow harness with pre-loaded circuits
-    pub fn spawn() -> Self {
+    pub fn spawn(contract_id: dwow_sdk::crypto::ContractId) -> Self {
         let init_bin = include_bytes!("../../../dao_escrow/proof/init.zk.bin");
         let pay_premium_bin = include_bytes!("../../../dao_escrow/proof/pay_premium.zk.bin");
         let propose_claim_bin = include_bytes!("../../../dao_escrow/proof/propose_claim.zk.bin");
@@ -117,7 +130,19 @@ impl DaoEscrowHarness {
             vote_claim_pk,
             set_governance_config_zkbin,
             set_governance_config_pk,
+            contract_id,
         }
+    }
+
+    /// The commitment over `children` followed by this call — the ordered set the node hashes.
+    fn commitment_over(
+        &self,
+        children: &[dwow_sdk::tx::ContractCall],
+        call_data: &[u8],
+    ) -> pallas::Base {
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.to_vec() });
+        commitment_of(&calls)
     }
 
     /// Initialize a new DAO-Escrow
@@ -130,6 +155,7 @@ impl DaoEscrowHarness {
     #[allow(clippy::too_many_arguments)]
     pub fn initialize(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         nullifier_k: pallas::Scalar,
         dao_bulla: pallas::Base,
         owner_secret: pallas::Base,
@@ -138,14 +164,13 @@ impl DaoEscrowHarness {
         mode: DaoEscrowMode,
         min_premium: u64,
     ) -> Result<InitializeResult> {
-        let input = InitV1CallData::new(
+        let mut input = InitV1CallData::new(
             nullifier_k,
             dao_bulla,
             owner_secret,
             endowment_asset_id,
             bulla_blind,
         );
-        let (proof, public_inputs) = init_v1_proof(&self.init_zkbin, &self.init_pk, &input)?;
 
         // Derive owner public key from secret
         let owner_pub = PublicKey::from_secret(SecretKey::from_bytes(owner_secret.to_repr()).unwrap());
@@ -170,13 +195,21 @@ impl DaoEscrowHarness {
         let mut call_data = vec![0x00]; // InitializeV1
         call_data.extend_from_slice(&params.encode());
 
-        Ok(InitializeResult { call_data, public_inputs, proof })
+        // `OBL-C198`: the call data comes first because the commitment is a derivation over it, and
+        // the set is `children` followed by this call — DFS post-order, children before parents.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, public_inputs) = init_v1_proof(&self.init_zkbin, &self.init_pk, &input)?;
+
+        Ok(InitializeResult { call_data, public_inputs, proof, commitment })
     }
 
     /// Pay premium to join DAO-Escrow as member
     #[allow(clippy::too_many_arguments)]
     pub fn pay_premium(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         nullifier_k: pallas::Scalar,
         dao_escrow_bulla: pallas::Base,
         current_block: u64,
@@ -190,7 +223,7 @@ impl DaoEscrowHarness {
         mpc_secret_2: pallas::Base,
         mpc_secret_3: pallas::Base,
     ) -> Result<PayPremiumResult> {
-        let input = PayPremiumV1CallData::new(
+        let mut input = PayPremiumV1CallData::new(
             nullifier_k,
             dao_escrow_bulla,
             current_block,
@@ -204,8 +237,6 @@ impl DaoEscrowHarness {
             mpc_secret_2,
             mpc_secret_3,
         );
-        let (proof, public_inputs) =
-            pay_premium_v1_proof(&self.pay_premium_zkbin, &self.pay_premium_pk, &input)?;
 
         // Derive member public key from secret
         let member_pub =
@@ -244,7 +275,14 @@ impl DaoEscrowHarness {
         let mut call_data = vec![0x02]; // PayPremiumV1
         call_data.extend_from_slice(&params.encode());
 
-        Ok(PayPremiumResult { call_data, public_inputs, proof })
+        // `OBL-C198`: see `initialize` — call data first, then the commitment over the ordered set.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, public_inputs) =
+            pay_premium_v1_proof(&self.pay_premium_zkbin, &self.pay_premium_pk, &input)?;
+
+        Ok(PayPremiumResult { call_data, public_inputs, proof, commitment })
     }
 
     /// Build InitializeParamsV1 call data without ZK proof (for testing when proof fails)
@@ -280,14 +318,13 @@ impl DaoEscrowHarness {
     /// contract's metadata arm and the prover's instance vector from disagreeing (`OBL-C156`'s class).
     pub fn withdraw(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         dao_escrow_bulla: pallas::Base,
         recipient_pubkey: PublicKey,
         value: u64,
         owner_secret: pallas::Base,
     ) -> Result<WithdrawResult> {
-        let input = UpdateV1CallData::new(owner_secret, recipient_pubkey, dao_escrow_bulla);
-        let (proof, _public_inputs) =
-            update_v1_proof(&self.set_governance_config_zkbin, &self.set_governance_config_pk, &input)?;
+        let mut input = UpdateV1CallData::new(owner_secret, recipient_pubkey, dao_escrow_bulla);
         let owner_nullifier = input.compute_public_inputs().owner_nullifier;
 
         let params = WithdrawParamsV1 {
@@ -299,7 +336,17 @@ impl DaoEscrowHarness {
         let mut call_data = vec![0x03]; // WithdrawV1
         // `WithdrawParamsV1::encode` is infallible — four fixed-size fields and no length prefix.
         call_data.extend_from_slice(&params.encode());
-        Ok(WithdrawResult { call_data, proof })
+
+        // `OBL-C198`: the public inputs above are a pure function of the call data, so they come
+        // before the proof — which is what lets the call data (and the commitment over it) exist
+        // first.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, _public_inputs) =
+            update_v1_proof(&self.set_governance_config_zkbin, &self.set_governance_config_pk, &input)?;
+
+        Ok(WithdrawResult { call_data, proof, commitment })
     }
 
     /// Endowment withdraw (EndowmentWithdrawV1 - 0x04)
@@ -362,6 +409,7 @@ impl DaoEscrowHarness {
     #[allow(clippy::too_many_arguments)]
     pub fn propose_claim(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         nullifier_k: pallas::Scalar,
         dao_escrow_bulla: pallas::Base,
         claim_id: pallas::Base,
@@ -373,7 +421,7 @@ impl DaoEscrowHarness {
         recipient_pubkey: PublicKey,
         proposal_blind: pallas::Base,
     ) -> Result<ProposeClaimResult> {
-        let input = ProposeClaimV1CallData::new(
+        let mut input = ProposeClaimV1CallData::new(
             nullifier_k,
             dao_escrow_bulla,
             claim_id,
@@ -385,8 +433,6 @@ impl DaoEscrowHarness {
             recipient_pubkey,
             proposal_blind,
         );
-        let (proof, public_inputs) =
-            propose_claim_v1_proof(&self.propose_claim_zkbin, &self.propose_claim_pk, &input)?;
 
         let params = ProposeClaimParamsV1 {
             dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
@@ -404,12 +450,20 @@ impl DaoEscrowHarness {
         // and its length prefix having left the struct.
         call_data.extend_from_slice(&params.encode());
 
-        Ok(ProposeClaimResult { call_data, public_inputs, proof })
+        // `OBL-C198`: see `initialize`.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, public_inputs) =
+            propose_claim_v1_proof(&self.propose_claim_zkbin, &self.propose_claim_pk, &input)?;
+
+        Ok(ProposeClaimResult { call_data, public_inputs, proof, commitment })
     }
 
     /// Vote on a claim with ZK proof (VoteClaimV1 - 0x08)
     pub fn vote_claim(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         nullifier_k: pallas::Scalar,
         vote_commit_value: pallas::Point,
         vote_commit_random: pallas::Point,
@@ -424,7 +478,7 @@ impl DaoEscrowHarness {
         voter_pubkey: PublicKey,
         capability_proof: CapabilityProof,
     ) -> Result<VoteClaimHarnessResult> {
-        let input = VoteClaimV1CallData::new(
+        let mut input = VoteClaimV1CallData::new(
             nullifier_k,
             vote_commit_value,
             vote_commit_random,
@@ -436,8 +490,6 @@ impl DaoEscrowHarness {
             vote_yes,
             vote_blind,
         );
-        let (proof, public_inputs) =
-            vote_claim_v1_proof(&self.vote_claim_zkbin, &self.vote_claim_pk, &input)?;
 
         let params = VoteClaimParamsV1 {
             dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
@@ -450,7 +502,14 @@ impl DaoEscrowHarness {
         let mut call_data = vec![0x08]; // VoteClaimV1
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
-        Ok(VoteClaimHarnessResult { call_data, public_inputs, proof })
+        // `OBL-C198`: see `initialize`.
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, public_inputs) =
+            vote_claim_v1_proof(&self.vote_claim_zkbin, &self.vote_claim_pk, &input)?;
+
+        Ok(VoteClaimHarnessResult { call_data, public_inputs, proof, commitment })
     }
 
     // Two ZK builders were removed here — `verify_member_capability` (0x0b) and `resolve_dispute`
@@ -552,18 +611,17 @@ impl DaoEscrowHarness {
     /// caller, because it is witness-derived and the contract records it to make the proof one-shot.
     pub fn update(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         dao_escrow_bulla: pallas::Base,
         owner_secret: pallas::Base,
         owner_pubkey: PublicKey,
         multisig_group_id: Option<pallas::Base>,
     ) -> Result<UpdateResult> {
-        let input = UpdateV1CallData::new(owner_secret, owner_pubkey, dao_escrow_bulla);
-        let (proof, public_inputs) = update_v1_proof(
-            &self.set_governance_config_zkbin,
-            &self.set_governance_config_pk,
-            &input,
-        )?;
+        let mut input = UpdateV1CallData::new(owner_secret, owner_pubkey, dao_escrow_bulla);
 
+        // `OBL-C198`: the public inputs are a pure function of the call data, so they come before
+        // the proof — which is what lets the call data (and the commitment over it) exist first.
+        let public_inputs = input.compute_public_inputs();
         let params = UpdateParamsV1 {
             bulla: DaoEscrowBulla(dao_escrow_bulla),
             multisig_group_id,
@@ -573,7 +631,16 @@ impl DaoEscrowHarness {
         let mut call_data = vec![0x01]; // UpdateV1 — the selector is part of the payload
         call_data.extend_from_slice(&params.encode());
 
-        Ok(UpdateResult { call_data, proof, public_inputs })
+        input.tx_commitment = self.commitment_over(children, &call_data);
+        let commitment = input.tx_commitment;
+
+        let (proof, _public_inputs) = update_v1_proof(
+            &self.set_governance_config_zkbin,
+            &self.set_governance_config_pk,
+            &input,
+        )?;
+
+        Ok(UpdateResult { call_data, proof, public_inputs, commitment })
     }
 }
 
@@ -584,6 +651,9 @@ pub struct UpdateResult {
     /// The five instances the proof was created over. A caller cannot choose them: the nullifier is
     /// witness-derived and the contract records it, so this is the only place the value is legible.
     pub public_inputs: UpdateV1PublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of DAO-Escrow withdraw
@@ -591,6 +661,9 @@ pub struct WithdrawResult {
     pub call_data: Vec<u8>,
     /// The `SetGovernanceConfigV2` ownership proof, which the endpoint now requires.
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of DAO-Escrow endowment withdraw
@@ -650,6 +723,9 @@ pub struct InitializeResult {
     pub call_data: Vec<u8>,
     pub public_inputs: InitV1PublicInputs,
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of paying premium to join DAO-Escrow
@@ -657,6 +733,9 @@ pub struct PayPremiumResult {
     pub call_data: Vec<u8>,
     pub public_inputs: PayPremiumV1PublicInputs,
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 // ============================================================================
@@ -668,6 +747,9 @@ pub struct ProposeClaimResult {
     pub call_data: Vec<u8>,
     pub public_inputs: ProposeClaimV1PublicInputs,
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of voting on a claim
@@ -675,6 +757,9 @@ pub struct VoteClaimHarnessResult {
     pub call_data: Vec<u8>,
     pub public_inputs: VoteClaimV1PublicInputs,
     pub proof: dwow_core::zk::Proof,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
+    /// prove a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 // ============================================================================

@@ -55,7 +55,7 @@ fn test_all_harnesses_zk_coverage() {
     zk_check_with_id!(BettingStakeHarness, "betting_stake");
     zk_check!(BoxHarness, "box");
     zk_check!(BridgeHarness, "bridge");
-    zk_check!(DaoEscrowHarness, "dao_escrow");
+    zk_check_with_id!(DaoEscrowHarness, "dao_escrow");
     zk_check!(DarkbetExchangeHarness, "darkbet_exchange");
     zk_check_with_id!(DarkToshiDiceHarness, "darktoshi_dice");
     // Deployooor has NO ZK circuits — pure WASM contract. Skip circuits() check.

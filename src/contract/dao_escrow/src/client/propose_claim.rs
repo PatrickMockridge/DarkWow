@@ -46,7 +46,8 @@ pub struct ProposeClaimV1PublicInputs {
 
 impl ProposeClaimV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.tx_binding, self.tx_nonce, self.claim_commit]
+        // Circuit instances: claim_commit, then the pair — last (`OBL-C198`). It sat at 0,1 of 3.
+        vec![self.claim_commit, self.tx_binding, self.tx_nonce]
     }
 }
 

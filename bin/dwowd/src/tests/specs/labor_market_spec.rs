@@ -264,7 +264,9 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
     // this fixture's `setup` runs twice — once per chain — while the rows build children from both.
     // The DAO-Escrow harness is here because this fixture deploys and drives a second contract (see the
     // `DisputeV1` rows), which no other fixture in the tree does.
-    let dao: &'static DaoEscrowHarness = Box::leak(Box::new(DaoEscrowHarness::spawn()));
+    // `OBL-C198`: the harness needs the id its calls carry, because the commitment covers it.
+    let dao_cid_h = crate::tests::blockchain::derive_contract_id_from_name("dao_escrow");
+    let dao: &'static DaoEscrowHarness = Box::leak(Box::new(DaoEscrowHarness::spawn(dao_cid_h)));
     let ms: &'static MultiSigHarness = Box::leak(Box::new(MultiSigHarness::spawn()));
     let wasm = include_bytes!("../../../../../src/contract/labor_market/dwow_labor_market_contract.wasm");
     let employer_secret = pallas::Base::from(10u64);
@@ -655,13 +657,15 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 approvals.push(s.nullifier);
             }
 
+            // `OBL-C198`: single-call transactions here, so the committed set is the call alone.
             let dao_init = dao.initialize(
+                &[],
                 nullifier_k, dao_bulla, owner_secret, endowment_asset_id, bulla_blind,
                 DaoEscrowMode::Escrow, 0,
             ).map_err(|e| oh(format!("dao initialize: {e}")))?;
             smol::block_on(chain.block()?.with_call(dao_cid, dao, &dao_init.call_data, vec![dao_init.proof])?.submit())?;
 
-            let set_group = dao.update(endowment_bulla, owner_secret, owner_pub, Some(group_id))
+            let set_group = dao.update(&[], endowment_bulla, owner_secret, owner_pub, Some(group_id))
                 .map_err(|e| oh(format!("dao update (governance setter): {e}")))?;
             smol::block_on(chain.block()?.with_call(dao_cid, dao, &set_group.call_data, vec![set_group.proof])?.submit())?;
 
@@ -1132,7 +1136,17 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     let r = h.dispute(cap_job_id, worker_secret, pallas::Base::from(99u64), endowment_bulla, worker_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let f = ms.finalize(DaoEscrowHarness::governance_group(), msg_propose, appr)
                         .map_err(|e| dwow_core::Error::Custom(format!("finalize: {e}")))?;
+                    // `OBL-C198`, AND THIS ROW IS THE CAMPAIGN'S HARD CASE, stated rather than left
+                    // to be discovered: the dao call here is a **nested child**. The set the node
+                    // hashes is `[ms_child, dao_call, this labor_market call]`, and a proof must
+                    // bind to a commitment over that whole set — which no builder for a *child* can
+                    // compute, because its parent's bytes come after it. Passing `&[]` binds this
+                    // proof to `[dao_call]` alone, so the row is expected to be red until the dao
+                    // harness grows a form the caller supplies the commitment to. It was already
+                    // red before this change for the same reason one level up: `ms.finalize` binds
+                    // over `[ms_call]`, while multisig's arm derives over the whole set.
                     let pc = dao.propose_claim(
+                        &[],
                         nullifier_k, endowment_bulla, dispute_claim_id, dao_capability_id,
                         dao_capability_secret, dao_proposer_secret, 10_000,
                         pallas::Base::from(50u64), owner_pub, dispute_proposal_blind,
