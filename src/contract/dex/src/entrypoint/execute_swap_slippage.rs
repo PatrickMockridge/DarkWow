@@ -65,7 +65,8 @@ pub(crate) fn dex_execute_swap_slippage_get_metadata_v1(
 
     zk_public_inputs.push((
         DEX_CONTRACT_ZKAS_EXECUTE_SWAP_SLIPPAGE_NS_V2.to_string(),
-        vec![alice_nullifier, bob_nullifier, swap_id, params.tx_binding, params.tx_nonce],
+        // `OBL-C198`: the pair is last and the binding is derived, not echoed.
+        vec![alice_nullifier, bob_nullifier, swap_id, super::dex_tx_binding(params.tx_nonce)?, params.tx_nonce],
     ));
 
     let mut metadata = vec![];

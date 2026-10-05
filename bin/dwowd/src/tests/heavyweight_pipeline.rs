@@ -294,10 +294,14 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
         chain.init_genesis().await?;
         chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("dex")?));
 
-        // Deploy the DEX contract (non-genesis, derived cid).
-        let dex_harness = DexHarness::spawn();
+        // Deploy the DEX contract (non-genesis, derived cid). `OBL-C198`: the harness is spawned
+        // with the id it will carry — the commitment covers the call *including* the contract id —
+        // and `deploy` assigns exactly that id, which the assertion below pins.
+        let dex_cid = crate::tests::blockchain::derive_contract_id_from_name("dex");
+        let dex_harness = DexHarness::spawn(dex_cid);
         let dex_wasm = include_bytes!("../../../../src/contract/dex/dwow_dex_contract.wasm");
-        let dex_cid = chain.deploy(&dex_harness, "dex", dex_wasm).await?;
+        let deployed = chain.deploy(&dex_harness, "dex", dex_wasm).await?;
+        assert_eq!(deployed, dex_cid, "the harness's id must be the deployed one");
 
         // Promissory Note is genesis-deployed.
         let pn_harness = PromissoryNoteHarness::spawn();
@@ -360,7 +364,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
         // ---- CreateSwap: Alice offers token X (1000), requests token Y (500) ----
         let sig = SecretKey::from_bytes([1u8; 32]).unwrap();
         let create = dex_harness.create_swap(
-            alice_secret, alice.asset_id, 1000, bob.asset_id, 500, sig.clone(),
+            &[], alice_secret, alice.asset_id, 1000, bob.asset_id, 500, sig.clone(),
         )?;
         let alice_lock = create.public_inputs.lock_commitment;
         let swap_id = create.public_inputs.swap_id;
@@ -372,7 +376,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
 
         // ---- AcceptSwap: Bob accepts (locks the request side) ----
         let accept = dex_harness.accept_swap(
-            swap_id, alice_lock, bob_secret, bob.asset_id, 500, sig.clone(),
+            &[], swap_id, alice_lock, bob_secret, bob.asset_id, 500, sig.clone(),
         )?;
         let bob_lock = accept.public_inputs.acceptor_lock_commitment;
         chain
@@ -382,12 +386,13 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
             .await?;
 
         // ---- ExecuteSwap: bundle 2 PN TransferV1 child calls (Alice→Bob, Bob→Alice) ----
+        //
+        // `OBL-C198`: the children are **prepared** here and proven after this call. The node hashes
+        // the whole ordered set — `[child0, child1, this call]` — so every proof in the transaction
+        // must bind to one commitment, and that value is a function of the children's bytes, which
+        // therefore have to exist before the parent's proof does. Proving a child over its own call
+        // alone (the `transfer` form this used) binds it to a value the node never computes.
         let transfer_func_id = FuncRef { contract_id: pn_cid, func_code: 0x04 }.to_func_id().inner();
-        let execute = dex_harness.execute_swap(
-            alice_secret, alice.asset_id, 1000, alice_lock,
-            bob_secret, bob.asset_id, 500, bob_lock,
-            499, transfer_func_id, transfer_func_id,
-        )?;
 
         let alice_input = TransferCallInput {
             value: 1000,
@@ -411,7 +416,13 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
             user_data: pallas::Base::zero(),
             commitment_blind: pallas::Base::from(41),
         };
-        let child0 = pn_harness.transfer(vec![alice_input], vec![bob_output])?;
+        let pn_child_call = |plan: &dwow_promissory_note_contract::client::transfer::TransferCallPlan| {
+            let mut data = vec![0x04u8];
+            data.extend_from_slice(&plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+            Ok::<_, dwow_core::Error>(dwow_sdk::tx::ContractCall { contract_id: pn_cid, data })
+        };
+        let child0_plan = pn_harness.transfer_prepare(vec![alice_input], vec![bob_output], None)?;
+        let child0_call = pn_child_call(&child0_plan)?;
 
         let bob_input = TransferCallInput {
             value: 500,
@@ -435,7 +446,20 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
             user_data: pallas::Base::zero(),
             commitment_blind: pallas::Base::from(42),
         };
-        let child1 = pn_harness.transfer(vec![bob_input], vec![alice_output])?;
+        let child1_plan = pn_harness.transfer_prepare(vec![bob_input], vec![alice_output], None)?;
+        let child1_call = pn_child_call(&child1_plan)?;
+
+        let execute = dex_harness.execute_swap(
+            &[child0_call.clone(), child1_call.clone()],
+            alice_secret, alice.asset_id, 1000, alice_lock,
+            bob_secret, bob.asset_id, 500, bob_lock,
+            499, transfer_func_id, transfer_func_id,
+        )?;
+
+        // The children's proofs bind to the same commitment the dex proof does — the nonce is the
+        // one their inputs carry, which this fixture leaves at zero.
+        let child0_debris = child0_plan.prove(execute.commitment, pallas::Base::zero())?;
+        let child1_debris = child1_plan.prove(execute.commitment, pallas::Base::zero())?;
 
         let before = chain.height();
         let after = chain
@@ -445,8 +469,8 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
                 &execute.call_data,
                 vec![execute.proof.clone()],
                 vec![
-                    ChildCall { contract_id: pn_cid, call_data: child0.call_data.clone(), proofs: child0.proofs.clone(), children: vec![] },
-                    ChildCall { contract_id: pn_cid, call_data: child1.call_data.clone(), proofs: child1.proofs.clone(), children: vec![] },
+                    ChildCall { contract_id: pn_cid, call_data: child0_call.data.clone(), proofs: child0_debris.proofs.clone(), children: vec![] },
+                    ChildCall { contract_id: pn_cid, call_data: child1_call.data.clone(), proofs: child1_debris.proofs.clone(), children: vec![] },
                 ],
             )?
             .submit()

@@ -86,7 +86,8 @@ pub(crate) fn dex_accept_swap_get_metadata_v1(
 
     zk_public_inputs.push((
         DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V2.to_string(),
-        vec![lock_commitment, nullifier, sig_x, sig_y, params.tx_binding, params.tx_nonce],
+        // `OBL-C198`: the pair is last and the binding is derived, not echoed.
+        vec![lock_commitment, nullifier, sig_x, sig_y, super::dex_tx_binding(params.tx_nonce)?, params.tx_nonce],
     ));
 
     // Serialize metadata for ZK verification

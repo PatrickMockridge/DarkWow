@@ -58,6 +58,26 @@ use crate::{
     PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
+/// The transaction binding every arm here publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// What the eight arms published before this was whatever the caller had written into the params,
+/// which is a public value checked against a public value.
+///
+/// The nonce stays the call's: the prover chooses it and it does not depend on the commitment, so
+/// it closes no loop. One helper serves all eight arms, with the pair instanced last.
+pub(crate) fn dex_tx_binding(
+    tx_nonce: dwow_sdk::pasta::pallas::Base,
+) -> Result<dwow_sdk::pasta::pallas::Base, dwow_sdk::error::ContractError> {
+    Ok(dwow_sdk::crypto::poseidon_hash([
+        dwow_sdk::pasta::pallas::Base::from(3u64),
+        wasm::util::get_tx_commitment()?,
+        tx_nonce,
+    ]))
+}
+
 // ============================================================================
 // DATABASE KEYS
 // ============================================================================

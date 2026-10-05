@@ -73,7 +73,8 @@ pub(crate) fn dex_execute_swap_fee_get_metadata_v1(
             bob_nullifier,
             swap_id,
             pallas::Base::from(params.fee),
-            params.tx_binding,
+            // `OBL-C198`: the pair is last and the binding is derived, not echoed.
+            super::dex_tx_binding(params.tx_nonce)?,
             params.tx_nonce,
         ],
     ));

@@ -69,7 +69,12 @@ fn dex_vs_swap(swap_id: pallas::Base) -> Option<Box<dyn Fn(&HeavyweightPipeline)
 }
 
 pub fn dex_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(DexHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its calls will carry, because the transaction
+    // commitment is derived over the call *including* the contract id. `deploy_with_ix` assigns
+    // `derive_contract_id_from_name(name)` — a pure function of the name — so the spec computes
+    // exactly the id the pipeline will use rather than a placeholder.
+    let cid = crate::tests::blockchain::derive_contract_id_from_name("dex");
+    let harness = Box::leak(Box::new(DexHarness::spawn(cid)));
     let h: &DexHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/dex/dwow_dex_contract.wasm");
     let s = pallas::Base::from(100u64);
@@ -106,7 +111,7 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
     ContractTestSpec {
         name: "dex",
         is_genesis: false,
-        contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
+        contract_id: cid,
         harness: h,
         wasm_bytes: Some(wasm),
         has_initialize: false,
@@ -167,10 +172,10 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                     (bob_lock_c, 700u64, true),
                     (bob_lock_d, 800u64, false),
                 ] {
-                    let create = h.create_swap(s, ot, 1000, rt, bob_amount, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let create = h.create_swap(&[], s, ot, 1000, rt, bob_amount, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(chain.block()?.with_call(cid, h, &create.call_data, vec![create.proof.clone()])?.submit())?;
                     if accept {
-                        let a = h.accept_swap(create.public_inputs.swap_id, alice_lock, s, rt, bob_amount, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let a = h.accept_swap(&[], create.public_inputs.swap_id, alice_lock, s, rt, bob_amount, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         smol::block_on(chain.block()?.with_call(cid, h, &a.call_data, vec![a.proof.clone()])?.submit())?;
                     }
                     let _ = bob_lock;
@@ -187,12 +192,12 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: dex_vs_swap(swap_id_e),
                 generate: Box::new(move || {
-                    let r = h.create_swap(s, ot, 1000, rt, 500, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.create_swap(&[], s, ot, 1000, rt, 500, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             mk_ep("AcceptSwapV1", true, Box::new(move || {
-                let r = h.accept_swap(swap_id_e, alice_lock, s, rt, 500, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.accept_swap(&[], swap_id_e, alice_lock, s, rt, 500, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             EndpointSpec {
@@ -204,7 +209,7 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h.execute_swap(s, ot, 1000, alice_lock, s, rt, 500, bob_lock_e, 499, otc_func_id, otc_func_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.execute_swap(&[], s, ot, 1000, alice_lock, s, rt, 500, bob_lock_e, 499, otc_func_id, otc_func_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let c0 = pn_transfer_child(&n[0], 1000)?;
@@ -214,7 +219,7 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                 }),
             },
             mk_ep("CancelSwapV1", true, Box::new(move || {
-                let r = h.cancel_swap(swap_id_d, alice_lock, s, ot, 1000, rt, 800).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.cancel_swap(&[], swap_id_d, alice_lock, s, ot, 1000, rt, 800).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             EndpointSpec {
@@ -226,7 +231,7 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h.execute_swap_fee(s, ot, pallas::Base::from(1000u64), alice_lock, s, rt, pallas::Base::from(600u64), bob_lock_b, pallas::Base::from(599u64), pallas::Base::from(30u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.execute_swap_fee(&[], s, ot, pallas::Base::from(1000u64), alice_lock, s, rt, pallas::Base::from(600u64), bob_lock_b, pallas::Base::from(599u64), pallas::Base::from(30u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let c0 = pn_transfer_child(&n[2], 1000)?;
@@ -244,7 +249,7 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h.execute_swap_slippage(s, ot, pallas::Base::from(1000u64), alice_lock, s, rt, pallas::Base::from(700u64), bob_lock_c, pallas::Base::from(699u64), pallas::Base::from(50u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.execute_swap_slippage(&[], s, ot, pallas::Base::from(1000u64), alice_lock, s, rt, pallas::Base::from(700u64), bob_lock_c, pallas::Base::from(699u64), pallas::Base::from(50u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let c0 = pn_transfer_child(&n[4], 1000)?;

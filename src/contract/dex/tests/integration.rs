@@ -108,7 +108,7 @@ fn test_create_swap_params_encoding() {
         signature_public: make_pubkey(1),
         fee: 100,
         open_execution: false,
-        tx_binding: pallas::Base::zero(),
+        // `OBL-C198`: `tx_binding` left the params.
         tx_nonce: pallas::Base::zero(),
     };
 
@@ -131,7 +131,7 @@ fn test_accept_swap_params_encoding() {
         signature_public: make_pubkey(2),
         fee: 50,
         immediate_execute: false,
-        tx_binding: pallas::Base::zero(),
+        // `OBL-C198`: `tx_binding` left the params.
         tx_nonce: pallas::Base::zero(),
     };
 
@@ -155,7 +155,7 @@ fn test_execute_swap_params_encoding() {
         bob_nullifier: Nullifier::from_bytes(make_bytes32(1)).unwrap(),
         proof: vec![1, 2, 3],
         fee: 25,
-        tx_binding: pallas::Base::zero(),
+        // `OBL-C198`: `tx_binding` left the params.
         tx_nonce: pallas::Base::zero(),
     };
 
@@ -174,7 +174,7 @@ fn test_cancel_swap_params_encoding() {
         nullifier: Nullifier::from_bytes(make_bytes32(1)).unwrap(),
         proof: vec![4, 5, 6],
         fee: 10,
-        tx_binding: pallas::Base::zero(),
+        // `OBL-C198`: `tx_binding` left the params.
         tx_nonce: pallas::Base::zero(),
     };
 
@@ -193,7 +193,7 @@ fn test_update_config_params_encoding() {
         gov_pub_x: pallas::Base::zero(),
         gov_pub_y: pallas::Base::zero(),
         gov_nullifier: pallas::Base::zero(),
-        tx_binding: pallas::Base::zero(),
+        // `OBL-C198`: `tx_binding` left the params.
         tx_nonce: pallas::Base::zero(),
     };
 

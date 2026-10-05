@@ -30,11 +30,19 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{SecretKey, Nullifier, pasta_prelude::PrimeField},
+    crypto::{ContractId, SecretKey, Nullifier, pasta_prelude::PrimeField},
     pasta::pallas,
 };
 use dwow_promissory_note_contract::model::CapCommitment;
 use dwow_serial::Encodable;
+
+/// The commitment a call set's proofs must bind to (`OBL-C198`) — over the **whole ordered set**
+/// the node will hash, children before parents, each call serialized with its contract id. One
+/// helper because every builder needs the same derivation and a second copy is a second value
+/// (`safety.md` RC5).
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
+}
 
 /// Helper to convert pallas::Base to CapCommitment
 fn to_cap_commitment(base: pallas::Base) -> CapCommitment {
@@ -102,16 +110,20 @@ pub struct DexHarness {
     update_config_zkbin: ZkBinary,
     /// UpdateConfig_V1 ProvingKey
     update_config_pk: ProvingKey,
+    /// The deployed id of the dex contract this harness builds calls for — the commitment covers the
+    /// call *including* the contract id, so a harness that proves must be told it (`OBL-C198`).
+    contract_id: ContractId,
 }
 
 impl DexHarness {
-    /// Spawn a new DEX harness (alias for new())
-    pub fn spawn() -> Self {
-        Self::new()
+    /// Spawn a new DEX harness for the contract deployed at `contract_id` (alias for `new`) — see the
+    /// field's note for why the id cannot be defaulted.
+    pub fn spawn(contract_id: ContractId) -> Self {
+        Self::new(contract_id)
     }
 
     /// Create a new DEX harness with pre-loaded circuits
-    pub fn new() -> Self {
+    pub fn new(contract_id: ContractId) -> Self {
         // Load circuit binaries
         let create_bin = include_bytes!("../../../dex/proof/create_swap.zk.bin");
         let accept_bin = include_bytes!("../../../dex/proof/accept_swap.zk.bin");
@@ -191,12 +203,14 @@ impl DexHarness {
             set_transparency_level_pk,
             update_config_zkbin,
             update_config_pk,
+            contract_id,
         }
     }
 
     /// Create a swap proposal with ZK proof and return encoded call data
     pub fn create_swap(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         secret: pallas::Base,
         offer_token: pallas::Base,
         offer_amount: u64,
@@ -204,7 +218,7 @@ impl DexHarness {
         request_amount: u64,
         ephemeral_signature_secret: SecretKey,
     ) -> Result<CreateSwapResult, Box<dyn std::error::Error>> {
-        let input = CreateSwapCallData::new_deterministic(
+        let mut input = CreateSwapCallData::new_deterministic(
             secret,
             offer_token,
             offer_amount,
@@ -213,11 +227,10 @@ impl DexHarness {
             ephemeral_signature_secret,
         );
 
-        let (proof, public_inputs) = create_create_swap_proof(
-            &self.create_swap_zkbin,
-            &self.create_swap_pk,
-            &input,
-        )?;
+        // `OBL-C198`: the call data first, the commitment over the whole ordered set next, the proof
+        // last — the reverse order cannot bind to a real transaction. The public inputs are a pure
+        // function of the call data's own inputs, so they need no proof.
+        let public_inputs = input.compute_public_inputs();
 
         // Build CreateSwapParams
         let params = CreateSwapParams {
@@ -231,23 +244,35 @@ impl DexHarness {
             signature_public: input.signature_public,
             fee: 0,
             open_execution: false,
-            tx_binding: public_inputs.tx_binding,
             tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x01]; // CreateSwapV1
         call_data.extend_from_slice(&params.encode());
 
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_create_swap_proof(
+            &self.create_swap_zkbin,
+            &self.create_swap_pk,
+            &input,
+        )?;
+
         Ok(CreateSwapResult {
             call_data,
             proof,
             public_inputs,
+            commitment,
         })
     }
 
     /// Accept a swap with ZK proof
     pub fn accept_swap(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         swap_id: pallas::Base,
         proposer_lock_commitment: pallas::Base,
         secret: pallas::Base,
@@ -255,7 +280,7 @@ impl DexHarness {
         offer_amount: u64,
         ephemeral_signature_secret: SecretKey,
     ) -> Result<AcceptSwapResult, Box<dyn std::error::Error>> {
-        let input = AcceptSwapCallData::new_deterministic(
+        let mut input = AcceptSwapCallData::new_deterministic(
             swap_id,
             proposer_lock_commitment,
             secret,
@@ -264,11 +289,9 @@ impl DexHarness {
             ephemeral_signature_secret,
         );
 
-        let (proof, public_inputs) = create_accept_swap_proof(
-            &self.accept_swap_zkbin,
-            &self.accept_swap_pk,
-            &input,
-        )?;
+        // `OBL-C198`: the call data first, the commitment over the whole ordered set next, the proof
+        // last — see `create_swap`.
+        let public_inputs = input.compute_public_inputs();
 
         // Build AcceptSwapParams
         let params = AcceptSwapParams {
@@ -278,12 +301,22 @@ impl DexHarness {
             signature_public: input.signature_public,
             fee: 0,
             immediate_execute: false,
-            tx_binding: public_inputs.tx_binding,
             tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x02]; // AcceptSwapV1
         call_data.extend_from_slice(&params.encode());
+
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_accept_swap_proof(
+            &self.accept_swap_zkbin,
+            &self.accept_swap_pk,
+            &input,
+        )?;
 
         Ok(AcceptSwapResult {
             call_data,
@@ -292,12 +325,14 @@ impl DexHarness {
             secret,
             proof,
             public_inputs,
+            commitment,
         })
     }
 
     /// Execute a swap with ZK proof
     pub fn execute_swap(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         alice_secret: pallas::Base,
         alice_token: pallas::Base,
         alice_amount: u64,
@@ -310,7 +345,7 @@ impl DexHarness {
         alice_otc_func_id: pallas::Base,
         bob_otc_func_id: pallas::Base,
     ) -> Result<ExecuteSwapResult, Box<dyn std::error::Error>> {
-        let input = ExecuteSwapCallData::new_deterministic(
+        let mut input = ExecuteSwapCallData::new_deterministic(
             alice_secret,
             alice_token,
             alice_amount,
@@ -324,11 +359,9 @@ impl DexHarness {
             bob_otc_func_id,
         );
 
-        let (proof, public_inputs) = create_execute_swap_proof(
-            &self.execute_swap_zkbin,
-            &self.execute_swap_pk,
-            &input,
-        )?;
+        // `OBL-C198`: the call data first, the commitment over the whole ordered set next, the proof
+        // last — see `create_swap`.
+        let public_inputs = input.compute_public_inputs();
 
         // Build ExecuteSwapParams
         let params = ExecuteSwapParams {
@@ -341,23 +374,35 @@ impl DexHarness {
             bob_nullifier: to_nullifier(public_inputs.bob_nullifier),
             proof: vec![], // Placeholder
             fee: 0,
-            tx_binding: public_inputs.tx_binding,
             tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x03]; // ExecuteSwapV1
         call_data.extend_from_slice(&params.encode());
 
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_execute_swap_proof(
+            &self.execute_swap_zkbin,
+            &self.execute_swap_pk,
+            &input,
+        )?;
+
         Ok(ExecuteSwapResult {
             call_data,
             proof,
             public_inputs,
+            commitment,
         })
     }
 
     /// Cancel a swap with ZK proof
     pub fn cancel_swap(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         swap_id: pallas::Base,
         lock_commitment: pallas::Base,
         secret: pallas::Base,
@@ -366,7 +411,7 @@ impl DexHarness {
         request_token: pallas::Base,
         request_amount: u64,
     ) -> Result<CancelSwapResult, Box<dyn std::error::Error>> {
-        let input = CancelSwapCallData::new(
+        let mut input = CancelSwapCallData::new(
             swap_id,
             lock_commitment,
             secret,
@@ -376,11 +421,9 @@ impl DexHarness {
             request_amount,
         );
 
-        let (proof, public_inputs) = create_cancel_swap_proof(
-            &self.cancel_swap_zkbin,
-            &self.cancel_swap_pk,
-            &input,
-        )?;
+        // `OBL-C198`: the call data first, the commitment over the whole ordered set next, the proof
+        // last — see `create_swap`.
+        let public_inputs = input.compute_public_inputs();
 
         // Build CancelSwapParams
         let params = CancelSwapParams {
@@ -389,17 +432,28 @@ impl DexHarness {
             nullifier: to_nullifier(public_inputs.nullifier),
             proof: vec![], // Placeholder
             fee: 0,
-            tx_binding: public_inputs.tx_binding,
             tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x04]; // CancelSwapV1
         call_data.extend_from_slice(&params.encode());
 
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_cancel_swap_proof(
+            &self.cancel_swap_zkbin,
+            &self.cancel_swap_pk,
+            &input,
+        )?;
+
         Ok(CancelSwapResult {
             call_data,
             proof,
             public_inputs,
+            commitment,
         })
     }
 
@@ -407,6 +461,7 @@ impl DexHarness {
     #[allow(clippy::too_many_arguments)]
     pub fn execute_swap_fee(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         alice_secret: pallas::Base,
         alice_token: pallas::Base,
         alice_amount: pallas::Base,
@@ -418,25 +473,37 @@ impl DexHarness {
         fill_amount: pallas::Base,
         fee_bps: pallas::Base,
     ) -> Result<ExecuteSwapFeeResult, Box<dyn std::error::Error>> {
-        let input = ExecuteSwapFeeCallData::new(
+        let mut input = ExecuteSwapFeeCallData::new(
             alice_secret, alice_token, alice_amount, alice_lock,
             bob_secret, bob_token, bob_amount, bob_lock, fill_amount, fee_bps,
         );
-        let (proof, public_inputs) = create_execute_swap_fee_proof(
-            &self.execute_swap_fee_zkbin, &self.execute_swap_fee_pk, &input,
-        )?;
+        // `OBL-C198`: the public inputs first (this fixture writes them as the call data — see the
+        // note in the harness's history), then the commitment over the whole ordered set, then the
+        // proof. The pair the client derives is the stale `H(3, 0, 0)` in those bytes; the arm
+        // publishes the derived one, which is what the proof is bound to.
+        let public_inputs = input.compute_public_inputs();
 
         let mut call_data = vec![0x07];
         call_data.extend_from_slice(&public_inputs.to_vec().iter()
             .flat_map(|x| x.to_repr().to_vec()).collect::<Vec<u8>>());
 
-        Ok(ExecuteSwapFeeResult { call_data, proof, public_inputs })
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_execute_swap_fee_proof(
+            &self.execute_swap_fee_zkbin, &self.execute_swap_fee_pk, &input,
+        )?;
+
+        Ok(ExecuteSwapFeeResult { call_data, proof, public_inputs, commitment })
     }
 
     /// Execute swap with slippage protection (function code 0x08)
     #[allow(clippy::too_many_arguments)]
     pub fn execute_swap_slippage(
         &self,
+        children: &[dwow_sdk::tx::ContractCall],
         alice_secret: pallas::Base,
         alice_token: pallas::Base,
         alice_amount: pallas::Base,
@@ -448,19 +515,27 @@ impl DexHarness {
         fill_amount: pallas::Base,
         slippage_bps: pallas::Base,
     ) -> Result<ExecuteSwapSlippageResult, Box<dyn std::error::Error>> {
-        let input = ExecuteSwapSlippageCallData::new(
+        let mut input = ExecuteSwapSlippageCallData::new(
             alice_secret, alice_token, alice_amount, alice_lock,
             bob_secret, bob_token, bob_amount, bob_lock, fill_amount, slippage_bps,
         );
-        let (proof, public_inputs) = create_execute_swap_slippage_proof(
-            &self.execute_swap_slippage_zkbin, &self.execute_swap_slippage_pk, &input,
-        )?;
+        // `OBL-C198`: as `execute_swap_fee` above.
+        let public_inputs = input.compute_public_inputs();
 
         let mut call_data = vec![0x08];
         call_data.extend_from_slice(&public_inputs.to_vec().iter()
             .flat_map(|x| x.to_repr().to_vec()).collect::<Vec<u8>>());
 
-        Ok(ExecuteSwapSlippageResult { call_data, proof, public_inputs })
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        let commitment = commitment_of(&calls);
+        input.tx_commitment = commitment;
+
+        let (proof, _public_inputs) = create_execute_swap_slippage_proof(
+            &self.execute_swap_slippage_zkbin, &self.execute_swap_slippage_pk, &input,
+        )?;
+
+        Ok(ExecuteSwapSlippageResult { call_data, proof, public_inputs, commitment })
     }
 
     /// Set transparency level (function code 0x06)
@@ -486,11 +561,10 @@ impl DexHarness {
     }
 }
 
-impl Default for DexHarness {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// `impl Default for DexHarness` stood here, delegating to `new()`. `OBL-C198` gave `new` the
+// contract id it must be told — the commitment covers the call including the id — and a `Default`
+// has no honest id to supply, so the impl is removed rather than given a zero placeholder that
+// would prove against the wrong contract.
 
 impl super::ContractHarness for DexHarness {
     fn name(&self) -> &str {
@@ -544,6 +618,9 @@ pub struct CreateSwapResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: CreateSwapPublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`), so a caller can prove
+    /// a child against the same value.
+    pub commitment: pallas::Base,
 }
 
 /// Result of accept_swap
@@ -554,6 +631,8 @@ pub struct AcceptSwapResult {
     pub secret: pallas::Base,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: AcceptSwapPublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of execute_swap
@@ -561,6 +640,8 @@ pub struct ExecuteSwapResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: ExecuteSwapPublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of cancel_swap
@@ -568,6 +649,8 @@ pub struct CancelSwapResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: CancelSwapPublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of execute_swap_fee
@@ -575,6 +658,8 @@ pub struct ExecuteSwapFeeResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: ExecuteSwapFeePublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 /// Result of execute_swap_slippage
@@ -582,6 +667,8 @@ pub struct ExecuteSwapSlippageResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: ExecuteSwapSlippagePublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
 }
 
 pub struct SetTransparencyLevelResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
