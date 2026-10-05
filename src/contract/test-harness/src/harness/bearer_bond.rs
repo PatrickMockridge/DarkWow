@@ -49,6 +49,7 @@ use dwow_bearer_bond_contract::client::{
     },
     unstake::{UnstakeCallBuilder, UnstakeCallInput, UnstakeCallOutput, UnstakeCallPlan},
 };
+use dwow_bearer_bond_contract::model::RegisterSeriesParamsV1;
 
 /// The commitment over an ordered call set (`OBL-C198`). The order is DFS post-order — children
 /// before the parent — because that is the order the host hashes, and **one** commitment is taken
@@ -126,6 +127,34 @@ impl BearerBondHarness {
             contract_id: self.contract_id,
             data: call_data.to_vec(),
         }])
+    }
+
+    // ========================================================================
+    // RegisterSeriesV1 — selector 0x09 (plaintext, no proof)
+    // ========================================================================
+
+    /// Register a bond series. **This must be the first call on a fresh chain**: `IssueStakeV1`
+    /// requires the `BondSeriesInfo` record this creates and nothing else creates one, so before
+    /// this endpoint `IssueStakeV1` — and every endpoint that inherits a stake — answered
+    /// `StakeNotFound` (code 1) forever.
+    ///
+    /// Plaintext, so there is no commitment to bind and no plan/prove split.
+    pub fn register_series(
+        &self,
+        series_asset_id: pallas::Base,
+        interest_rate_bps: u64,
+        maturity_block: u64,
+        issuer_contract: ContractId,
+    ) -> Result<RegisterSeriesResult, Box<dyn std::error::Error>> {
+        let params = RegisterSeriesParamsV1 {
+            series_asset_id,
+            interest_rate_bps,
+            maturity_block,
+            issuer_contract,
+        };
+        let mut call_data = vec![0x09]; // RegisterSeriesV1
+        call_data.extend_from_slice(&params.encode());
+        Ok(RegisterSeriesResult { call_data })
     }
 
     // ========================================================================
@@ -519,6 +548,11 @@ impl super::ContractHarness for BearerBondHarness {
             _ => None,
         }
     }
+}
+
+/// Result of register_series — plaintext, so `call_data` only.
+pub struct RegisterSeriesResult {
+    pub call_data: Vec<u8>,
 }
 
 /// Result of issue_stake

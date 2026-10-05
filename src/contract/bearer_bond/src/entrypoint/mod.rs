@@ -36,6 +36,7 @@
 //! | 7 | ProveCoverageV1 | 0x06 | Issuer/Holder | Submit ZK proof of solvency |
 //! | 8 | VerifyCoverageV1 | 0x07 | Holder | Read latest coverage report for a series |
 //! | 9 | PayInterestV1 | 0x08 | Issuer | Pay a pending interest claim with fresh payment commitment |
+//! | 10 | RegisterSeriesV1 | 0x09 | Anyone | Create the bond series record `IssueStakeV1` mints into (first call on a fresh chain) |
 
 use dwow_sdk::{
     crypto::{
@@ -57,7 +58,8 @@ use crate::{
         CoverageReport, EmergencyUnstakeParamsV1, EmergencyUnstakeUpdateV1,
         IssueStakeParamsV1, IssueStakeUpdateV1,
         PayInterestParamsV1, PayInterestUpdateV1,
-        ProveCoverageParamsV1, ProveCoverageUpdateV1, RequestedClaim, ClaimStatus,
+        ProveCoverageParamsV1, ProveCoverageUpdateV1, RegisterSeriesParamsV1,
+        RegisterSeriesUpdateV1, RequestedClaim, ClaimStatus,
         RequestInterestParamsV1, RequestInterestUpdateV1, SeriesStatus,
         TransferStakeParamsV1, TransferStakeUpdateV1,
         UnstakeParamsV1, UnstakeUpdateV1,
@@ -180,6 +182,12 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         BearerBondFunction::ProveCoverageV1 => prove_coverage_metadata(cid, call_idx, calls),
         BearerBondFunction::VerifyCoverageV1 => Ok(vec![]),
         BearerBondFunction::PayInterestV1 => pay_interest_metadata(cid, call_idx, calls),
+        // `RegisterSeriesV1` is a plaintext registry write: no proof, no instances. It still has to
+        // return an **encoded empty** metadata, not a bare `vec![]` — an empty buffer is the
+        // documented rejection signal, and the host refuses the call on it (`linear/execution.rs`
+        // reports it as `EMPTY metadata`). That is `OBL-C77`'s shape exactly, and returning
+        // `Ok(vec![])` here reproduced it on the first run.
+        BearerBondFunction::RegisterSeriesV1 => register_series_metadata(),
     }
     .map_err(|e| {
         // The host reports a rejection as "EMPTY metadata … the reason is in the contract's own
@@ -523,6 +531,23 @@ fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 // METADATA: PROVE COVERAGE
 // ============================================================================
 
+/// Metadata for `RegisterSeriesV1` — no proof and no instances, but **encoded**.
+///
+/// The two empty vectors are the point rather than a formality. `get_metadata`'s contract is that
+/// it returns a *decodable* buffer; an empty one is not "nothing to publish", it is the host's
+/// rejection signal (`contract-standards.md` §3, and `linear/execution.rs` reports it as `EMPTY
+/// metadata … rejected by design`). So `Ok(vec![])` here would make a perfectly callable endpoint
+/// uncallable — which is `OBL-C77`'s class verbatim, and this arm did exactly that on its first
+/// run before the host refused block 2.
+fn register_series_metadata() -> Result<Vec<u8>, ContractError> {
+    let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    let signature_pubkeys: Vec<pallas::Base> = vec![];
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
 /// Metadata for ProveCoverageV1 — ProveCoverage_V1 circuit with the report's four numbers as
 /// public inputs, in the circuit's instance order: [reserve_amount, total_outstanding,
 /// total_interest_obligation, coverage_ratio_bps].
@@ -612,6 +637,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         BearerBondFunction::ProveCoverageV1 => prove_coverage_v1(cid, call_idx, calls),
         BearerBondFunction::VerifyCoverageV1 => verify_coverage_v1(cid, call_idx, calls),
         BearerBondFunction::PayInterestV1 => pay_interest_v1(cid, call_idx, calls),
+        BearerBondFunction::RegisterSeriesV1 => register_series_v1(cid, call_idx, calls),
     }
 }
 
@@ -656,7 +682,73 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update = PayInterestUpdateV1::decode(&update_data[1..])?;
             apply_pay_interest(cid, update)
         }
+        BearerBondFunction::RegisterSeriesV1 => {
+            let update = RegisterSeriesUpdateV1::decode(&update_data[1..])?;
+            apply_register_series(cid, update)
+        }
     }
+}
+
+// ============================================================================
+// EXECUTION: REGISTER SERIES
+// ============================================================================
+
+/// Create the `BondSeriesInfo` record every other state-changing endpoint reads.
+///
+/// This is the contract's literal entry point: `issue_stake_v1` requires the series to exist and
+/// nothing else creates it, so before this endpoint a fresh chain could not issue a stake at all
+/// (`StakeNotFound`, code 1) and no endpoint downstream of one was reachable.
+///
+/// What is *not* established (R7): the call is plaintext, so registration is first-come — any
+/// caller may claim an unused `series_asset_id` and become that series' issuer for its whole life,
+/// because `issue_stake_v1` authorises against the stored `issuer_contract`. There is no registry
+/// of legitimate issuers to check against, so this is stated rather than guarded; a caller that
+/// wants a specific issuer to hold a series must register it before anyone else does.
+fn register_series_v1(
+    cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
+) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let params = RegisterSeriesParamsV1::decode(&self_.data[1..])?;
+
+    // A zero rate makes `interest` identically zero for the series' life, which is a bond that
+    // cannot pay — refuse it here rather than let it become a series nobody can distinguish.
+    if params.interest_rate_bps == 0 {
+        msg!("[register_series_v1] Error: interest rate must be non-zero");
+        return Err(BearerBondError::InvalidInterestRate.into());
+    }
+
+    let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
+    let series_key = params.series_asset_id.to_repr();
+    if wasm::db::db_contains_key(bonds_info_db, &series_key)? {
+        msg!("[register_series_v1] Error: series already registered for this asset id");
+        return Err(BearerBondError::SeriesAlreadyExists.into());
+    }
+
+    let update = RegisterSeriesUpdateV1 {
+        series: BondSeriesInfo {
+            series_asset_id: params.series_asset_id,
+            interest_rate_bps: params.interest_rate_bps,
+            maturity_block: params.maturity_block,
+            status: SeriesStatus::Active,
+            issuer_contract: params.issuer_contract,
+            total_staked: 0,
+        },
+    };
+    let mut return_data = vec![BearerBondFunction::RegisterSeriesV1 as u8];
+    return_data.extend_from_slice(&update.encode());
+    wasm::util::set_return_data(&return_data)
+}
+
+fn apply_register_series(cid: ContractId, update: RegisterSeriesUpdateV1) -> ContractResult {
+    let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
+    let series_key = update.series.series_asset_id.to_repr();
+    wasm::db::db_set(bonds_info_db, &series_key, &update.series.encode())?;
+    msg!(
+        "[apply_register_series] Series registered: asset_id={:?}, issuer={:?}, rate={} bps, maturity={}",
+        update.series.series_asset_id, update.series.issuer_contract,
+        update.series.interest_rate_bps, update.series.maturity_block
+    );
+    Ok(())
 }
 
 // ============================================================================

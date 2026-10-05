@@ -79,6 +79,10 @@ pub enum BearerBondFunction {
     VerifyCoverageV1 = 0x07,
     /// Issuer pays a pending interest claim with fresh payment commitment
     PayInterestV1 = 0x08,
+    /// Create the bond series record an `IssueStakeV1` call mints into. Without it there is no
+    /// series, and `IssueStakeV1` answers `StakeNotFound` on a fresh chain — so this is the
+    /// contract's entry point in the literal sense: nothing else can be the first call.
+    RegisterSeriesV1 = 0x09,
 }
 
 impl TryFrom<u8> for BearerBondFunction {
@@ -95,6 +99,7 @@ impl TryFrom<u8> for BearerBondFunction {
             0x06 => Ok(Self::ProveCoverageV1),
             0x07 => Ok(Self::VerifyCoverageV1),
             0x08 => Ok(Self::PayInterestV1),
+            0x09 => Ok(Self::RegisterSeriesV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }

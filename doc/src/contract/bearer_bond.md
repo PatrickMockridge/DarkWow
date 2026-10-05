@@ -19,6 +19,17 @@ If coverage falls below 100%, the terms void and holders can exit early.
 | `0x06` | ProveCoverageV1 | Issuer/Holder | Submit ZK proof that reserves cover principal + interest obligations | ProveCoverage_V1 |
 | `0x07` | VerifyCoverageV1 | Holder | Read latest coverage report from `bonds_info` tree (read-only, no state change) | *(none)* |
 | `0x08` | PayInterestV1 | Issuer | Pay a pending interest claim. Creates fresh payment commitment (BlindOutput_V1) to holder's payment key. Updates `last_claim_block`, marks claim Paid. | BlindOutput_V1 |
+| `0x09` | RegisterSeriesV1 | Anyone | **Create the bond series record every other state-changing endpoint reads.** Keyed by `series_asset_id`; sets the series' `interest_rate_bps`, `maturity_block` and `issuer_contract`. Must be the first call on a fresh chain — `IssueStakeV1` requires the record it writes. | *(none)* |
+
+> **`RegisterSeriesV1` exists because the read had no matching write.** `issue_stake_v1` requires
+> `bonds_info[asset_id]` to exist and compares its `issuer_contract` against the caller's, while
+> nothing in this contract ever created one — `BondSeriesInfo` was constructed only in its own
+> `decode`, and `apply_prove_coverage` re-stores an existing series rather than making one. So on a
+> fresh chain `IssueStakeV1` — the row above calling itself *"Create staking pool"* — answered
+> `StakeNotFound` (error code 1), and every endpoint downstream of a stake inherited that. The
+> registration is plaintext and first-come: a caller claims an unused `series_asset_id` and becomes
+> its issuer for the series' life. There is no registry of legitimate issuers to check against, so
+> the consequence is stated rather than guarded.
 
 ### Parameters
 

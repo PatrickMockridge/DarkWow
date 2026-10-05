@@ -23,6 +23,23 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
         setup: None,
         deploy_ix: None,
         endpoints: vec![
+            mk_ep("RegisterSeriesV1", false, Box::new(move || {
+                // **First, and it has to be.** `IssueStakeV1` requires the `BondSeriesInfo` record
+                // this creates and nothing else creates one, so without this row the contract's own
+                // entry point answers `StakeNotFound` (code 1) and no endpoint after it is
+                // reachable. Plaintext, so no proof: the runner is told `is_zk: false`.
+                //
+                // The three values are the ones `IssueStakeV1` below depends on: the series is keyed
+                // by `asset_id` (`1`), and `issue_stake_v1` authorises against the stored
+                // `issuer_contract`, so it names the same `[1u8; 32]` contract id that call passes.
+                let r = h.register_series(
+                    pallas::Base::from(1u64),
+                    500u64,
+                    100_000u64,
+                    ContractId::from_bytes([1u8; 32]).unwrap(),
+                ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+            })),
             mk_ep("IssueStakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::issue_stake::IssueStakeCallInput;
                 let input = IssueStakeCallInput {

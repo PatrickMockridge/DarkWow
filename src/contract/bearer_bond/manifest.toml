@@ -57,6 +57,10 @@ code = 8
 requires_proof = true
 proof_circuit = "BlindOutput_V2"
 
+[[functions]]
+name = "register_series"
+code = 9
+
 [[capabilities]]
 discriminant = 0
 name = "bond_holder"

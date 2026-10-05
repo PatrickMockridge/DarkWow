@@ -127,6 +127,12 @@ pub enum BearerBondError {
 
     #[error("Insufficient reserves to pay interest claim — reserve {reserve}, obligation {obligation}")]
     InsufficientReservesForPayment { reserve: u64, obligation: u64 },
+
+    #[error("Bond series already registered for this asset id")]
+    SeriesAlreadyExists,
+
+    #[error("Invalid bond series parameters")]
+    InvalidSeriesParams,
 }
 
 impl BearerBondError {
@@ -166,6 +172,10 @@ impl BearerBondError {
             BearerBondError::ClaimAlreadyPaid => 32,
             BearerBondError::ClaimPaymentKeyMismatch => 33,
             BearerBondError::InsufficientReservesForPayment { .. } => 34,
+            // Codes 6 and 23 were never allocated; `RegisterSeriesV1` takes them rather than
+            // renumbering the wire-visible codes above it.
+            BearerBondError::SeriesAlreadyExists => 6,
+            BearerBondError::InvalidSeriesParams => 23,
         }
     }
 }

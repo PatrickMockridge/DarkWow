@@ -243,6 +243,90 @@ impl BondSeriesInfo {
     }
 }
 
+// ============================================================================
+// REGISTER SERIES
+// ============================================================================
+
+/// Parameters for `RegisterSeriesV1` — the call that creates the `BondSeriesInfo` record every
+/// other state-changing endpoint reads.
+///
+/// It exists because the read was never matched by a write: `issue_stake_v1` requires
+/// `bonds_info[asset_id]` to exist and compares its `issuer_contract` against the caller's, while
+/// nothing in the contract ever created one — so on a fresh chain `IssueStakeV1`, and therefore
+/// every endpoint that inherits a stake, was unreachable with `StakeNotFound` (code 1). The
+/// endpoint that the contract's own selector table calls *"Create staking pool"* required the pool
+/// to already exist.
+#[derive(Debug, Clone)]
+pub struct RegisterSeriesParamsV1 {
+    /// Token ID of the staking pool series — the key the record is stored under.
+    pub series_asset_id: pallas::Base,
+    /// Annual interest rate in basis points (e.g. 500 = 5%). Must be non-zero.
+    pub interest_rate_bps: u64,
+    /// Block height when the series matures.
+    pub maturity_block: u64,
+    /// The contract authorised to mint stakes into this series — `issue_stake_v1` compares the
+    /// caller's `issuer_contract` against this, so it is the series' authority for its whole life.
+    pub issuer_contract: ContractId,
+}
+
+impl RegisterSeriesParamsV1 {
+    pub const ENCODED_SIZE: usize = 80;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.series_asset_id.to_repr());
+        b.extend_from_slice(&self.interest_rate_bps.to_le_bytes());
+        b.extend_from_slice(&self.maturity_block.to_le_bytes());
+        b.extend_from_slice(&self.issuer_contract.to_bytes());
+        b
+    }
+
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "RegisterSeriesParamsV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        Ok(RegisterSeriesParamsV1 {
+            series_asset_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("RegisterSeriesParamsV1: invalid series_asset_id".into()))?,
+            interest_rate_bps: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            maturity_block: u64::from_le_bytes(data[40..48].try_into().unwrap()),
+            issuer_contract: ContractId::from_bytes(data[48..80].try_into().unwrap())?,
+        })
+    }
+}
+
+/// State update for `RegisterSeriesV1` — the record `apply` stores.
+#[derive(Debug, Clone)]
+pub struct RegisterSeriesUpdateV1 {
+    pub series: BondSeriesInfo,
+}
+
+impl RegisterSeriesUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(BondSeriesInfo::ENCODED_SIZE);
+        b.extend_from_slice(&self.series.encode());
+        b
+    }
+
+    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != BondSeriesInfo::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "RegisterSeriesUpdateV1: expected {} bytes, got {}",
+                BondSeriesInfo::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        Ok(RegisterSeriesUpdateV1 { series: BondSeriesInfo::decode(data)? })
+    }
+}
+
 impl SeriesStatus {
     pub fn encode(&self) -> Vec<u8> { vec![*self as u8] }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
