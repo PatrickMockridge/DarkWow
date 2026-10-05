@@ -45,8 +45,11 @@ pub struct SettleBetV1PublicInputs {
 }
 
 impl SettleBetV1PublicInputs {
+    /// Order matches `settle_bet.zk`'s `constrain_instance` calls: `spin_id`, `payout`, then the
+    /// pair — last (`OBL-C198`). The pair sat at 1,2 of 4 with `payout` after it; the circuit, the
+    /// metadata arm and this vector move together.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.spin_id, self.tx_binding, self.tx_nonce, self.payout]
+        vec![self.spin_id, self.payout, self.tx_binding, self.tx_nonce]
     }
 }
 

@@ -127,6 +127,23 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> GenericResult<()> {
     wasm::util::set_return_data(&metadata)
 }
 
+/// The transaction binding each arm publishes — the deriving side of `OBL-C198`.
+///
+/// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
+/// commitment is a derivation over the call data, so a binding carried inside it would be computed
+/// from a value that covers it — a cycle with no fixed point, i.e. a proof nothing can satisfy.
+/// What stood in the three arms below was the constant `poseidon_hash([3, 0, 0])`, which bound
+/// every proof to nothing at all: it was identical in every transaction, so a proof lifted from one
+/// transaction verified in another.
+///
+/// The nonce is zero because these calls carry no nonce field, so every proof in one transaction
+/// publishes the same binding — a *linking* of that transaction's own proofs, which
+/// `tx-commitment.md` §The Nullifier Scheme exists to avoid. It is still strictly better than the
+/// constant, and a per-proof nonce on the wire is owed.
+fn slot_tx_binding(tx_nonce: Base) -> Result<Base, ContractError> {
+    Ok(poseidon_hash([Base::from(3u64), wasm::util::get_tx_commitment()?, tx_nonce]))
+}
+
 fn slot_commit_bet_get_metadata_v1(
     params: CommitSpinParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
@@ -152,7 +169,7 @@ fn slot_commit_bet_get_metadata_v1(
     let (vc_x, vc_y) = (*vc_coords.x(), *vc_coords.y());
     zk_public_inputs.push((
         SLOT_CONTRACT_ZKAS_COMMIT_NS_V2.to_string(),
-        vec![spin_id, vc_x, vc_y, poseidon_hash([Base::from(3u64), Base::zero(), Base::zero()]), Base::zero()],
+        vec![spin_id, vc_x, vc_y, slot_tx_binding(Base::zero())?, Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -167,7 +184,7 @@ fn slot_reveal_spin_get_metadata_v1(
     let secret_nonce_commit = poseidon_hash([Base::from(7), params.secret_nonce]);
     zk_public_inputs.push((
         SLOT_CONTRACT_ZKAS_REVEAL_NS_V2.to_string(),
-        vec![params.spin_id, secret_nonce_commit, poseidon_hash([Base::from(3u64), Base::zero(), Base::zero()]), Base::zero()],
+        vec![params.spin_id, secret_nonce_commit, slot_tx_binding(Base::zero())?, Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -180,7 +197,9 @@ fn slot_settle_bet_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
     zk_public_inputs.push((
         SLOT_CONTRACT_ZKAS_SETTLE_NS_V2.to_string(),
-        vec![params.spin_id, poseidon_hash([Base::from(3u64), Base::zero(), Base::zero()]), Base::zero(), Base::from(params.payout)],
+        // Order matches `settle_bet.zk`'s `constrain_instance` calls: `spin_id`, `payout`, then
+        // the pair — last (`OBL-C198`). The pair sat at 1,2 of 4 with `payout` after it.
+        vec![params.spin_id, Base::from(params.payout), slot_tx_binding(Base::zero())?, Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;

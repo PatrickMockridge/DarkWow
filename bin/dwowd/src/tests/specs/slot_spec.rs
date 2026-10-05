@@ -4,7 +4,14 @@
 //! RevealSpinV1 draws reel positions from block-hash entropy (no child — its
 //! `verify_state` reads `Spin.result` and computes the payout); SettleSpinV1 pays the
 //! outcome-dependent payout (payout+change child); CancelSpinV1 sweeps the house take
-//! (payout+change child). Uses the shared `modules::child_calls` helpers.
+//! (payout+change child).
+//!
+//! `OBL-C198`: the PN children are built by `modules::child_calls`' `*_prepare` forms, which stop
+//! short of the proof. Every proof in a transaction binds to one commitment derived over the whole
+//! ordered call set, and that value does not exist until the parent's call data does — so the
+//! child's leaf blind, which is seeded from the parent's derived `spin_id`, and the commitment
+//! that covers the child's call data are resolved in that order: call data, child, commitment,
+//! proof.
 
 use dwow_contract_test_harness::harness::{PromissoryNoteHarness, SlotHarness};
 use dwow_slot_contract::model::{
@@ -19,14 +26,19 @@ use dwow_sdk::pasta::pallas;
 use std::sync::{Arc, Mutex};
 
 use crate::tests::modules::child_calls::{
-    pn_transfer_child, pn_transfer_payout_child, PnNote,
+    pn_transfer_payout_prepare, pn_transfer_prepare, PnNote,
 };
 use crate::tests::uniform_runner::{
-    ContractTestSpec, EndpointExpectation, EndpointResult, EndpointSpec,
+    ChildCall, ContractTestSpec, EndpointExpectation, EndpointResult, EndpointSpec,
 };
 
 pub fn slot_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(SlotHarness::spawn()));
+    // `OBL-C198`: the harness must know the id its call will carry, because the transaction
+    // commitment is derived over the call *including* the contract id. `deploy_with_ix` assigns
+    // `derive_contract_id_from_name(name)` — a pure function of the name — so the spec computes
+    // exactly the id the pipeline will use rather than a placeholder.
+    let slot_cid = crate::tests::blockchain::derive_contract_id_from_name("slot");
+    let harness = Box::leak(Box::new(SlotHarness::spawn(slot_cid)));
     let h: &SlotHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/slot/dwow_slot_contract.wasm");
 
@@ -61,7 +73,9 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
     ContractTestSpec {
         name: "slot",
         is_genesis: false,
-        contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
+        // `OBL-C198`: the real id, not the stale `[0u8;32]` placeholder — the commitment is
+        // derived over the call, and the call carries this id.
+        contract_id: slot_cid,
         harness: h,
         wasm_bytes: Some(wasm),
         has_initialize: false,
@@ -109,17 +123,27 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                 smol::block_on(chain.block()?.with_call(cid, h, &init.call_data, vec![])?.submit())?;
 
                 // Pre-create spin B (abandoned) for CancelSpinV1.
-                let r_b = h.commit_spin(player_pub, bet_value, paylines_played, secret_nonce_b, blind_b, house_edge, confirmation_depth, asset_id, value_blind)
+                // `OBL-C198`: the parent's call data first (no proof), the child built around the
+                // `spin_id` it derives, then ONE commitment over the ordered set with both proofs
+                // bound to it — the child's leaf blind is seeded from `spin_id`, so it cannot be
+                // built before the parent's data exists.
+                let plan_b = h.commit_spin_prepare(player_pub, bet_value, paylines_played, secret_nonce_b, blind_b, house_edge, confirmation_depth, asset_id, value_blind)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let spin_id_b = plan_b.public_inputs.spin_id;
                 let n = notes.lock().unwrap();
                 let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                let blind_seed_b = poseidon_hash([pallas::Base::from(bet_value), r_b.public_inputs.spin_id]);
-                let child_b = pn_transfer_child(&n[2], bet_value, blind_seed_b, pallas::Base::zero())?;
+                let blind_seed_b = poseidon_hash([pallas::Base::from(bet_value), spin_id_b]);
+                let (child_call_b, child_plan_b, child_nonce_b) = pn_transfer_prepare(&n[2], bet_value, blind_seed_b, pallas::Base::zero())?;
+                let r_b = h.commit_spin_prove(plan_b, &[child_call_b.clone()])
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let debris_b = child_plan_b.prove(r_b.commitment, child_nonce_b)
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let child_b = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call_b.data, proofs: debris_b.proofs, children: vec![] };
                 smol::block_on(chain.block()?.with_call_tree(
                     cid, &r_b.call_data, vec![r_b.proof.clone()],
                     vec![child_b],
                 )?.with_fee_collect()?.submit())?;
-                *spin_b.lock().unwrap() = Some(r_b.public_inputs.spin_id);
+                *spin_b.lock().unwrap() = Some(spin_id_b);
                 Ok(())
             }
         })),
@@ -135,13 +159,24 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                     let notes = notes.clone();
                     let spin_a = spin_a.clone();
                     move || {
-                        let r = h.commit_spin(player_pub, bet_value, paylines_played, secret_nonce_a, blind_a, house_edge, confirmation_depth, asset_id, value_blind)
+                        // `OBL-C198`: this endpoint's child is seeded from `spin_id`, which only
+                        // this call's data determines, and the commitment is a function of the
+                        // child's data. So: the parent's call data first (no proof), the child
+                        // built around the `spin_id` it derives, then ONE commitment over the
+                        // ordered set with both proofs bound to it.
+                        let plan = h.commit_spin_prepare(player_pub, bet_value, paylines_played, secret_nonce_a, blind_a, house_edge, confirmation_depth, asset_id, value_blind)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        *spin_a.lock().unwrap() = Some(r.public_inputs.spin_id);
+                        let spin_id = plan.public_inputs.spin_id;
+                        *spin_a.lock().unwrap() = Some(spin_id);
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let blind_seed = poseidon_hash([pallas::Base::from(bet_value), r.public_inputs.spin_id]);
-                        let child = pn_transfer_child(&n[1], bet_value, blind_seed, pallas::Base::zero())?;
+                        let blind_seed = poseidon_hash([pallas::Base::from(bet_value), spin_id]);
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[1], bet_value, blind_seed, pallas::Base::zero())?;
+                        let r = h.commit_spin_prove(plan, &[child_call.clone()])
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -176,7 +211,9 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                     let spin_a = spin_a.clone();
                     move || {
                         let id = spin_a.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("spin A not committed".into()))?;
-                        let r = h.reveal_spin(id, secret_nonce_a)
+                        // `OBL-C198`: no child on this endpoint, so the committed set is the call
+                        // alone — which is exactly `build_witness`'s single-call transaction.
+                        let r = h.reveal_spin(&[], id, secret_nonce_a)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
@@ -203,12 +240,17 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                         let p3 = [pos.get(0).copied().unwrap_or(0), pos.get(1).copied().unwrap_or(0), pos.get(2).copied().unwrap_or(0)];
                         let result = SpinResult::new(pos.clone());
                         let wins = calculate_wins(&result, &reels, std::slice::from_ref(&payline), &paytable);
-                        let r = h.settle_bet(player_pub, bet_value, paylines_played, secret_nonce_a, blind_a, asset_id, p3, wins.len() as u64, p)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        // `OBL-C198`: the child's call data first (no proof), the parent second,
+                        // one commitment over the ordered set, the child proven against it.
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(p), id]);
-                        let child = pn_transfer_payout_child(&n[3], 100_000, p, blind_seed)?;
+                        let (child_call, child_plan, child_nonce) = pn_transfer_payout_prepare(&n[3], 100_000, p, blind_seed)?;
+                        let r = h.settle_bet(&[child_call.clone()], player_pub, bet_value, paylines_played, secret_nonce_a, blind_a, asset_id, p3, wins.len() as u64, p)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -229,7 +271,16 @@ pub fn slot_test_spec() -> ContractTestSpec<'static> {
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let house_take = calculate_house_take(bet_value, house_edge);
                         let blind_seed = poseidon_hash([pallas::Base::from(house_take), id]);
-                        let child = pn_transfer_payout_child(&n[4], bet_value, house_take, blind_seed)?;
+                        // `OBL-C198`: this endpoint's own call carries no proof (it is not a ZK
+                        // endpoint), but its PN child's proof has to bind to the transaction all
+                        // the same — so the commitment is taken here, over the set the node will
+                        // hash: the child first, this call last (DFS post-order).
+                        let (child_call, child_plan, child_nonce) = pn_transfer_payout_prepare(&n[4], bet_value, house_take, blind_seed)?;
+                        let cancel_call = dwow_sdk::tx::ContractCall { contract_id: slot_cid, data: r.call_data.clone() };
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &cancel_call]);
+                        let debris = child_plan.prove(commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                     }
                 }),
