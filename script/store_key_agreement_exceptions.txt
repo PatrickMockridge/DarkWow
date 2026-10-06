@@ -1,0 +1,28 @@
+# Adjudications for `scripts/check-store-key-agreement.sh` — the rule that a state record's writer
+# and its readers agree about the key.
+#
+# Format, one entry per line:
+#
+#   <rel path> : <tree constant> : <normalised read key> : <reason citing the mechanism>
+#
+# Content-keyed on path, tree and key — NOT on line numbers — so a file that shifts underneath an
+# entry keeps its adjudication, the same choice `circuit_tx_pair_last_exceptions.txt` and
+# `circuit_dead_value_exceptions.txt` made and for the same reason. A declared entry that no longer
+# matches a finding is reported by the checker, so this list cannot outlive its sites.
+#
+# THE LIST IS A RATCHET, NOT AN AMNESTY. Every entry here is a read whose key does not textually
+# match any write in the same file, and each one is either (a) a real writer/reader disagreement —
+# the class `OBL-C199` records, four instances of which the `bearer_bond` migration found one at a
+# time across separate ~950-second runs — or (b) a legitimate asymmetry that the reason must say so.
+# An entry whose reason is "unclear" belongs in neither column: it is an open question, and the
+# honest thing is to leave the gate reporting it.
+#
+# EMPTY ON PURPOSE, AND THAT IS THE MEASUREMENT. The gate's first full run over 24 contract
+# entrypoint files reported 26 undeclared findings. None has been adjudicated: doing so means reading
+# each pair, and pre-declaring them wholesale would be the amnesty this header warns against. Those
+# 26 are the worklist — the run prints them with both sides of each pair.
+#
+# WHY THIS GATE EXISTS AT ALL, in one line: four of the sixteen defects the `bearer_bond` migration
+# reached were a `db_set` and a `db_get` disagreeing about a key, both sides compiled, each side was
+# coherent alone, and the symptom was a silent `NotFound` for a record that had been written
+# correctly. No shape gate — counts, order, phase direction, domain presence — can see that.
