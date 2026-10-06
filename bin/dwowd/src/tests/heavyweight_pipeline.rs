@@ -1857,7 +1857,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         assert!(!init.call_data.is_empty(), "initialize call_data must not be empty");
         println!("  Initialize call_data={}B", init.call_data.len());
 
-        let deploy = relayer_harness.deploy_capital(
+        let deploy = relayer_harness.deploy_capital_solo(
             backer_pub, 10000,
             pallas::Base::from(2u64), pallas::Scalar::from(3u64),
             relayer_pub, 500,

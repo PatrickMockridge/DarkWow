@@ -46,7 +46,18 @@ pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
                 name: "DeployCapitalV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.deploy_capital(pk, 1000,
+                    // **This row cannot pass yet, and it is not a defect in the contract.**
+                    // `deploy_capital_v1` requires one `promissory_note::transfer_v1` child, and
+                    // this spec passes none — the run fails `Expected 1 child call
+                    // (promissory_note::transfer_v1), got 0` (error code 10). Wiring it needs the
+                    // two-phase form on both sides, because the commitment is a derivation over the
+                    // **whole ordered call set**: `pn_transfer_prepare` (the peer's helper in
+                    // `modules::child_calls`) builds the child's data without proving it, the
+                    // parent's is built here, one commitment is taken over [child, parent], and
+                    // both are then proven against that value. `deploy_capital_solo` is the
+                    // no-child convenience and is deliberately what is called until that lands, so
+                    // the failure stays where it belongs rather than being hidden.
+                    let r = h.deploy_capital_solo(pk, 1000,
                         pallas::Base::from(1u64),
                         pallas::Scalar::from(100u64), r_pk, 1000u32)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

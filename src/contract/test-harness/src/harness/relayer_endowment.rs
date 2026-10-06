@@ -189,7 +189,7 @@ impl RelayerEndowmentHarness {
     /// instances from it. This passed `pallas::Point::identity()` — which has no affine
     /// coordinates, so the metadata's `coords.is_none()` guard fired and it answered with an
     /// empty buffer, the documented rejection signal. The proof could never have been checked.
-    pub fn deploy_capital(
+    pub fn deploy_capital_prepare(
         &self,
         backer_public: PublicKey,
         deploy_amount: u64,
@@ -197,7 +197,7 @@ impl RelayerEndowmentHarness {
         value_blind: pallas::Scalar,
         relayer_pub: PublicKey,
         backer_cut_bp: u32,
-    ) -> Result<DeployCapitalResult, Box<dyn std::error::Error>> {
+    ) -> Result<DeployCapitalCallPlan, Box<dyn std::error::Error>> {
         let nonce = self.verifying_height()?;
 
         let params = DeployCapitalParamsV1 {
@@ -211,12 +211,13 @@ impl RelayerEndowmentHarness {
             instance_seed: [0u8; 32],
         };
 
-        // `OBL-C198`: the call data and the commitment over it come **before** the proof.
+        // `OBL-C198`: the call data exists before the proof, and the commitment is taken over the
+        // **whole call set** by the caller — `deploy_capital_v1` requires a promissory_note child,
+        // so the commitment this proof binds cannot be derived here.
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
-        let commitment = self.commitment(&call_data);
 
-        let mut input = DeployCapitalV1CallData::new(
+        let input = DeployCapitalV1CallData::new(
             relayer_pub,
             backer_public,
             backer_cut_bp,
@@ -225,14 +226,46 @@ impl RelayerEndowmentHarness {
             nonce,
             value_blind,
         );
-        input.tx_commitment = commitment;
-        let (proof, public_inputs) = deploy_capital_v1_proof(
-            &self.deploy_capital_zkbin,
-            &self.deploy_capital_pk,
-            &input,
-        )?;
+        Ok(DeployCapitalCallPlan {
+            zkbin: self.deploy_capital_zkbin.clone(),
+            pk: self.deploy_capital_pk.clone(),
+            input,
+            call_data,
+        })
+    }
 
-        Ok(DeployCapitalResult { call_data, proof, public_inputs })
+    /// Prove a prepared DeployCapital call against `commitment`/`nonce`.
+    pub fn deploy_capital_prove(
+        &self,
+        plan: DeployCapitalCallPlan,
+        commitment: pallas::Base,
+        tx_nonce: pallas::Base,
+    ) -> Result<DeployCapitalResult, Box<dyn std::error::Error>> {
+        let mut input = plan.input;
+        input.tx_commitment = commitment;
+        input.tx_nonce = tx_nonce;
+        let (proof, public_inputs) = deploy_capital_v1_proof(&plan.zkbin, &plan.pk, &input)?;
+        Ok(DeployCapitalResult { call_data: plan.call_data, proof, public_inputs })
+    }
+
+    /// Prepare **and** prove a DeployCapital call for a transaction in which it is the only call —
+    /// correct only because `deploy_capital_v1` requires a child and this fixture gives it none.
+    /// A caller with children must use [`Self::deploy_capital_prepare`], assemble the ordered set,
+    /// derive over it with `dwow_sdk::crypto::util::tx_commitment`, then [`Self::deploy_capital_prove`].
+    pub fn deploy_capital_solo(
+        &self,
+        backer_public: PublicKey,
+        deploy_amount: u64,
+        asset_id: pallas::Base,
+        value_blind: pallas::Scalar,
+        relayer_pub: PublicKey,
+        backer_cut_bp: u32,
+    ) -> Result<DeployCapitalResult, Box<dyn std::error::Error>> {
+        let plan = self.deploy_capital_prepare(
+            backer_public, deploy_amount, asset_id, value_blind, relayer_pub, backer_cut_bp,
+        )?;
+        let commitment = self.commitment(&plan.call_data);
+        self.deploy_capital_prove(plan, commitment, pallas::Base::zero())
     }
 
     /// Claim accumulated fees from a deployment with ZK proof
@@ -318,6 +351,18 @@ pub struct InitializeResult {
     pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: InitializeV1PublicInputs,
+}
+
+/// A DeployCapital call whose data is assembled and whose proof is not yet made (`OBL-C198`).
+///
+/// Needed rather than a convenience because `deploy_capital_v1` requires a promissory_note child:
+/// the commitment is a derivation over the whole ordered call set, so only the caller knows the
+/// value this proof must bind to.
+pub struct DeployCapitalCallPlan {
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+    input: DeployCapitalV1CallData,
+    pub call_data: Vec<u8>,
 }
 
 /// Result of deploy_capital
