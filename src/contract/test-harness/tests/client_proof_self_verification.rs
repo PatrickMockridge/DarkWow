@@ -934,6 +934,11 @@ fn bearer_bond_unstake_receipt_vector_matches_its_own_proof() {
     .prepare()
     .expect("prepare must succeed");
     let p = plan.params();
+    // `unstake_metadata` never sees this struct — it decodes the params **from the call data**. So
+    // the vector the node compares against is built from the *decoded* copy, and a codec that
+    // disagrees with itself puts different values in it. Round-trip before building the vector.
+    let p = dwow_bearer_bond_contract::model::UnstakeParamsV1::decode(&p.encode())
+        .expect("UnstakeParamsV1 must round-trip its own encoding");
     let debris = plan.prove(tx_commitment, tx_nonce).expect("prove must succeed");
 
     let receipt_vector = vec![
