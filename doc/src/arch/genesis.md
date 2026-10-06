@@ -330,9 +330,15 @@ bytes and the compiled contract WASM; it does not depend on wall-clock time
 (`timestamp = 0`).
 
 `genesis_hash.txt` is regenerated only as part of a deliberate genesis re-roll: run
-`CREATE_GENESIS=true` (i.e. `darkwow node --role genesis`) into a FRESH datadir, copy the
-`Computed hash:` value the node logs, and rebuild. A datadir that already holds a height ≥ 1
-chain cannot be re-rolled in place — `init_linear` refuses.
+`CREATE_GENESIS=true` (i.e. `darkwow node --role genesis`) into a FRESH datadir, copy the hash
+from the line the node logs — `Genesis block created at height 1: hash={}` (`bin/dwowd/src/lib.rs`,
+`init_genesis`) — and rebuild. A datadir that already holds a height ≥ 1 chain cannot be re-rolled
+in place — `init_linear` refuses.
+
+The other instrument is `bin/dwowd/src/tests/genesis.rs`'s pin module, which deploys the same nine
+contracts through the same WASM VM and computes the hash without a datadir; `genesis_pin_is_current`
+**prints the value this build computes** when the pin is stale, which is the value to record. The two
+must agree — the module is the fast one, the node run is the operator path.
 
 ## Cumulative Supply Bootstrap
 
