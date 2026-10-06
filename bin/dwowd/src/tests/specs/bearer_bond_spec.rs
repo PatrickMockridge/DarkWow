@@ -28,7 +28,17 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
     // One `IssueStakeV1` row per consuming endpoint — see the note inside `endpoints`. A closure
     // rather than five near-identical copies: `h` is a shared reference and therefore `Copy`, and
     // the only thing that varies is the blind that makes each minted bond distinct.
+    // `OBL-C199`: a bond's note commitment is derived, not a constant, and later rows must **name**
+    // it rather than recompute it — `pay_interest_v1` looks a claim up by (`bond_commitment`,
+    // `claim_block`) and the claim was written under the commitment `issue_row` minted. Keyed by
+    // blind because the issue rows after 5 run before `PayInterestV1` and a single cell would be
+    // overwritten. A hardcoded value here answers `ClaimNotFound`.
+    let issued: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<u64, pallas::Base>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let issued_for_pay = issued.clone();
+
     let issue_row = move |blind: u64| {
+        let issued = issued.clone();
         mk_ep("IssueStakeV1", true, Box::new(move || {
             use dwow_bearer_bond_contract::client::issue_stake::IssueStakeCallInput;
             let input = IssueStakeCallInput {
@@ -47,6 +57,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
             };
             let r = h.issue_stake_solo(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+            issued.lock().unwrap_or_else(|e| e.into_inner()).insert(blind, r.commitment);
             Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
         }))
     };
@@ -193,7 +204,16 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
             mk_ep("PayInterestV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::pay_interest::PayInterestCallInput;
                 let input = PayInterestCallInput {
-                    bond_commitment: pallas::Base::from(99u64),
+                    // The bond `RequestInterestV1` declared its claim against — `issue_row(5)`'s,
+                    // read from the cell that row wrote. `claim_block` matches the claim's too
+                    // (both `100`): the exec looks the record up by the **pair**, so either value
+                    // being wrong answers `ClaimNotFound` (code 30).
+                    bond_commitment: issued_for_pay
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .get(&5)
+                        .copied()
+                        .expect("issue_row(5) must run before PayInterestV1 and record its bond"),
                     claim_block: 100, interest_amount: 50,
                     asset_id: pallas::Base::from(1u64),
                     payment_key: pallas::Base::from(42u64),

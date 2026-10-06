@@ -183,9 +183,18 @@ impl BearerBondHarness {
         nonce: pallas::Base,
     ) -> Result<IssueStakeResult, Box<dyn std::error::Error>> {
         let mut call_data = vec![0x00]; // IssueStakeV1
-        call_data.extend_from_slice(&plan.params().encode());
+        let params = plan.params();
+        call_data.extend_from_slice(&params.encode());
         let debris = plan.prove(commitment, nonce)?;
-        Ok(IssueStakeResult { call_data, proofs: debris.proofs })
+        Ok(IssueStakeResult {
+            call_data,
+            proofs: debris.proofs,
+            // The bond's identity, which a later endpoint needs by value and cannot recompute:
+            // `pay_interest_v1` looks a claim up by (`bond_commitment`, `claim_block`), and the
+            // claim was written under the commitment this call minted. A spec that hardcodes a
+            // constant here gets `ClaimNotFound`.
+            commitment: params.commitment.commitment,
+        })
     }
 
     /// Issue stake as the **only** call in its transaction. The shortcut is the name: the
@@ -559,6 +568,8 @@ pub struct RegisterSeriesResult {
 pub struct IssueStakeResult {
     pub call_data: Vec<u8>,
     pub proofs: Vec<Proof>,
+    /// The note commitment this call minted — the bond's identity, which later endpoints must name.
+    pub commitment: pallas::Base,
 }
 
 /// Result of burn_stake
