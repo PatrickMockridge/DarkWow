@@ -904,7 +904,11 @@ fn bearer_bond_unstake_receipt_vector_matches_its_own_proof() {
     let burn_pk = proving_key(&burn_zkbin);
 
     let tx_commitment = pallas::Base::from(0xC0FFEEu64);
-    let tx_nonce = pallas::Base::from(9u64);
+    // **Zero**, because that is what the arm publishes and this instrument mirrors the arm:
+    // `receipt_redeem_public_inputs` takes the binding as an argument but writes the nonce itself,
+    // and every bearer_bond arm passes `pallas::Base::zero()` — the contract has no nonce. A
+    // non-zero nonce here describes a proof the arm could never publish.
+    let tx_nonce = pallas::Base::zero();
 
     let input = UnstakeCallInput {
         principal: 10000,
@@ -941,16 +945,26 @@ fn bearer_bond_unstake_receipt_vector_matches_its_own_proof() {
         .expect("UnstakeParamsV1 must round-trip its own encoding");
     let debris = plan.prove(tx_commitment, tx_nonce).expect("prove must succeed");
 
-    let receipt_vector = vec![
+    // **The arm's own construction, not a copy of it.** This test previously built the vector
+    // itself, and its doc comment claimed that mirrored `unstake_metadata`; it did not, and that is
+    // precisely why it passed while the arm published the *stake's* `value_commit` coordinates and
+    // the node rejected the proof four runs running. `receipt_redeem_public_inputs` is the single
+    // construction both arms now call, so an arm and this test cannot disagree — which is what makes
+    // this a control that can fail.
+    let (ns, receipt_vector) = dwow_bearer_bond_contract::model::receipt_redeem_public_inputs(
+        dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2,
         p.receipt_commitment,
         p.receipt_value_commit_x,
         p.receipt_value_commit_y,
         p.receipt_token_commit,
-        pallas::Base::zero(), // `value` — a receipt carries none
         p.receipt_spend_hook,
-        dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]),
-        tx_nonce,
-    ];
+        dwow_sdk::crypto::poseidon_hash([
+            pallas::Base::from(3u64),
+            tx_commitment,
+            tx_nonce,
+        ]),
+    );
+    assert_eq!(ns, "Redeem_V2", "the construction must name the receipt circuit");
     assert_eq!(receipt_vector.len(), 8, "Redeem_V2 instances eight values");
 
     // `proofs[0]` is the burn proof, `proofs[1]` the receipt — the order `UnstakeCallPlan::prove`
@@ -963,4 +977,26 @@ fn bearer_bond_unstake_receipt_vector_matches_its_own_proof() {
              instrument that says which, not the 950-second run"
         ),
     }
+
+    // The control, and it is the **pre-fix arm's construction exactly**: the stake's `token_commit`
+    // and `spend_hook` where the receipt's belong. `unstake_metadata` published those for as long as
+    // it existed and four heavyweight runs failed on it; if this passes, the instrument below has
+    // stopped being able to fail and the assertion above means nothing.
+    let (_, pre_fix) = dwow_bearer_bond_contract::model::receipt_redeem_public_inputs(
+        dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2,
+        p.receipt_commitment,
+        p.receipt_value_commit_x,
+        p.receipt_value_commit_y,
+        p.bond_input.token_commit, // the stake's — the defect
+        p.bond_input.spend_hook,   // the stake's — the defect
+        dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]),
+    );
+    assert!(
+        !matches!(
+            verify_zkp(&debris.proofs[1], BEARER_BOND_REDEEM_ZKBIN, &pre_fix),
+            ZkVerifyResult::Ok
+        ),
+        "the instrument cannot fail: it accepts the stake's token commit and spend hook where the \
+         receipt's belong, which is the construction that failed four heavyweight runs"
+    );
 }

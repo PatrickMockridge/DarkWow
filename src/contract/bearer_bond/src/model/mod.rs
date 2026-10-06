@@ -336,6 +336,50 @@ impl SeriesStatus {
 }
 
 // ============================================================================
+// THE RECEIPT'S `Redeem_V2` INSTANCE VECTOR — ONE CONSTRUCTION
+// ============================================================================
+
+/// The `(namespace, instances)` a `Redeem_V2` receipt proof is verified against, built **once**.
+///
+/// Both `unstake_metadata` and `emergency_unstake_metadata` call this, and so can a test. That is
+/// the point rather than a convenience: the defect this exists to prevent was found by a heavyweight
+/// run, four times over, because the two arms were fixed one at a time and one was missed — and the
+/// test that was supposed to catch it built its own vector and therefore could not. One construction
+/// means an arm and its test cannot disagree.
+///
+/// `tx_binding` is a **parameter** rather than a host read. `get_tx_commitment()` is a WASM import
+/// and unavailable off-chain, so a construction that read it could not be called from a test at all;
+/// the arm passes `tx_binding_of(zero)?` and a test passes a value it chose.
+///
+/// Every value here is the **receipt's**. That is the whole hazard: `Redeem_V2` describes a note the
+/// client built from fresh blinds, so its `coin`, value commitment, token commit and spend hook are
+/// all values the host cannot recompute, and the arm must publish the receipt's — not the stake's,
+/// which are in scope in both arms and are the same *names*.
+pub fn receipt_redeem_public_inputs(
+    namespace: &str,
+    receipt_commitment: pallas::Base,
+    receipt_value_commit_x: pallas::Base,
+    receipt_value_commit_y: pallas::Base,
+    receipt_token_commit: pallas::Base,
+    receipt_spend_hook: pallas::Base,
+    tx_binding: pallas::Base,
+) -> (String, Vec<pallas::Base>) {
+    (
+        namespace.to_string(),
+        vec![
+            receipt_commitment,
+            receipt_value_commit_x,
+            receipt_value_commit_y,
+            receipt_token_commit,
+            pallas::Base::zero(), // value — a receipt carries none
+            receipt_spend_hook,
+            tx_binding,
+            pallas::Base::zero(), // tx_nonce
+        ],
+    )
+}
+
+// ============================================================================
 // STAKE COMMITMENT
 // ============================================================================
 

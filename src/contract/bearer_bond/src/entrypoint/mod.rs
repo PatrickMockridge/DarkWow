@@ -413,34 +413,18 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
     ));
 
     // Redeem_V1 proof for the receipt commitment (value=0)
-    let value = pallas::Base::zero();
-    zk_public_inputs.push((
-        BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2.to_string(),
-        // `OBL-C198`: Redeem_V2 order is coin, vc_x, vc_y, token_commit, value, spend_hook,
-        // tx_binding, tx_nonce — the pair is the last two instances, matching the reordered circuit
-        // and the client's `to_vec`.
-        //
-        // The first value is the *receipt's* commitment — a different note from `bond_input`, which
-        // is the stake being consumed. The params carry it as `receipt_commitment` because the host
-        // cannot recompute it (its preimage holds the fresh blind the client drew).
-        vec![
-            params.receipt_commitment,
-            // `OBL-C199`: the *receipt's* value commitment, not `vc_x`/`vc_y` (the stake's). A
-            // receipt has value 0, so this is `value_blind * G_r` — still a fresh point the host
-            // cannot recompute, and the arm published the stake's for as long as it existed.
-            params.receipt_value_commit_x,
-            params.receipt_value_commit_y,
-            // `OBL-C199`: the **receipt's** values. These two lines published
-            // `params.bond_input.token_commit` / `.spend_hook` — the *stake's* — while the circuit
-            // constrains the receipt note's, so `Redeem_V2` could not verify. It was a `replace_all`
-            // in this same session that briefly over-corrected the *Burn* vectors here too, which
-            // is why the two are distinguished by sitting inside a `Redeem_V2` vector at all.
-            params.receipt_token_commit,
-            value,
-            params.receipt_spend_hook,
-            tx_binding_of(pallas::Base::zero())?,
-            pallas::Base::zero(),
-        ],
+    //
+    // `OBL-C199`: the same one construction the `unstake` arm uses — see
+    // `crate::model::receipt_redeem_public_inputs`. This arm was correct while `unstake_metadata`
+    // was not, which is exactly the divergence a single construction removes.
+    zk_public_inputs.push(crate::model::receipt_redeem_public_inputs(
+        BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2,
+        params.receipt_commitment,
+        params.receipt_value_commit_x,
+        params.receipt_value_commit_y,
+        params.receipt_token_commit,
+        params.receipt_spend_hook,
+        tx_binding_of(pallas::Base::zero())?,
     ));
 
     let mut metadata = vec![];
@@ -484,26 +468,19 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
     ));
 
     // Redeem_V1 proof for the receipt commitment (value=0)
-    let value = pallas::Base::zero();
-
-    zk_public_inputs.push((
-        BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2.to_string(),
-        vec![
-            params.receipt_commitment, // the receipt's note commitment — carried in the params
-            vc_x,                          // value_commit x
-            vc_y,                          // value_commit y
-            // `OBL-C199`: the **receipt's** values. These two lines published
-            // `params.bond_input.token_commit` / `.spend_hook` — the *stake's* — while the circuit
-            // constrains the receipt note's, so `Redeem_V2` could not verify. It was a `replace_all`
-            // in this same session that briefly over-corrected the *Burn* vectors here too, which
-            // is why the two are distinguished by sitting inside a `Redeem_V2` vector at all.
-            params.receipt_token_commit,
-            value,
-            params.receipt_spend_hook,
-            // `OBL-C198`: the tx pair is the last two instances (matching the reordered circuit).
-            tx_binding_of(pallas::Base::zero())?,
-            pallas::Base::zero(),
-        ],
+    //
+    // `OBL-C199`: built by `receipt_redeem_public_inputs`, which is the **one** construction the
+    // emergency arm and the test share. This push used to be inline, and that is how the two arms
+    // came to differ: fixed one at a time, with a `replace_all` that matched only one of them
+    // because its sibling carries no trailing comment on those lines.
+    zk_public_inputs.push(crate::model::receipt_redeem_public_inputs(
+        BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2,
+        params.receipt_commitment,
+        params.receipt_value_commit_x,
+        params.receipt_value_commit_y,
+        params.receipt_token_commit,
+        params.receipt_spend_hook,
+        tx_binding_of(pallas::Base::zero())?,
     ));
 
     let mut metadata = vec![];
