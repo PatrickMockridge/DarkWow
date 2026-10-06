@@ -51,9 +51,35 @@
 //! | `PayInterestCallBuilder` | PayInterestV1 | BlindOutput_V1 |
 
 use dwow_sdk::{
-    crypto::ContractId,
+    crypto::{BaseBlind, ContractId, ScalarBlind},
     pasta::pallas,
 };
+use rand::rngs::OsRng;
+use rand::SeedableRng;
+
+/// Draw a Pedersen scalar blind — **deterministically** when the test flag is set.
+///
+/// Every client here draws its own blinds; other contracts' harnesses pass theirs in, which is why
+/// the `deterministic-zk` convention elsewhere only had to cover the proof's RNG. Without this the
+/// same spec run on two chains produced different call data and the determinism replay (PI-7)
+/// compared block hashes that had no reason to match. One helper, so a client cannot draw from
+/// `OsRng` in the deterministic path by accident.
+pub(crate) fn draw_scalar_blind() -> ScalarBlind {
+    if crate::deterministic_zk_enabled() {
+        ScalarBlind::random(&mut rand::rngs::StdRng::seed_from_u64(0))
+    } else {
+        ScalarBlind::random(&mut OsRng)
+    }
+}
+
+/// Draw a base-field blind — see [`draw_scalar_blind`].
+pub(crate) fn draw_base_blind() -> BaseBlind {
+    if crate::deterministic_zk_enabled() {
+        BaseBlind::random(&mut rand::rngs::StdRng::seed_from_u64(0))
+    } else {
+        BaseBlind::random(&mut OsRng)
+    }
+}
 
 /// ZK circuit binary constants
 pub mod zkbins;

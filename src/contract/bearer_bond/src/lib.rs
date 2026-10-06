@@ -57,6 +57,38 @@
 
 pub use dwow_sdk::error::ContractError;
 
+/// Thread-safe flag for deterministic ZK proof generation — the `heavyweight-spec.md` §7.4 DZ-4
+/// convention, copied from `purse/src/lib.rs` rather than invented.
+///
+/// Set by tests before genesis to eliminate `OsRng` from proof generation *and*, here, from the
+/// **blinds** the clients draw in `prepare()`. Other contracts do not need the second half because
+/// their harnesses pass each blind in; bearer_bond's clients draw their own, so a spec that ran on
+/// two chains produced different call data on each and the determinism replay (PI-7) failed on
+/// block hashes that had no reason to match.
+#[cfg(feature = "deterministic-zk")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "deterministic-zk")]
+static DETERMINISTIC_ZK: AtomicBool = AtomicBool::new(false);
+
+/// Enable deterministic ZK proof generation and blind derivation for testing.
+#[cfg(feature = "deterministic-zk")]
+pub fn enable_deterministic_zk() {
+    DETERMINISTIC_ZK.store(true, Ordering::SeqCst);
+}
+
+/// Returns true if deterministic mode is enabled. Always `false` unless the `deterministic-zk`
+/// feature is on (test builds only).
+pub fn deterministic_zk_enabled() -> bool {
+    #[cfg(feature = "deterministic-zk")]
+    {
+        DETERMINISTIC_ZK.load(Ordering::SeqCst)
+    }
+    #[cfg(not(feature = "deterministic-zk"))]
+    {
+        false
+    }
+}
+
 /// Functions available in the Bearer Bond contract
 #[repr(u8)]
 #[derive(Debug)]

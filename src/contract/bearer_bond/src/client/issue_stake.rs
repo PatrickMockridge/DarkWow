@@ -120,8 +120,8 @@ impl IssueStakeCallBuilder {
     pub fn prepare(self) -> Result<IssueStakeCallPlan> {
         debug!(target: "contract::bearer_bond::client::issue_stake", "Preparing BearerBond::IssueStakeV1 contract call");
 
-        let value_blind = ScalarBlind::random(&mut OsRng);
-        let asset_id_blind = BaseBlind::random(&mut OsRng);
+        let value_blind = super::draw_scalar_blind();
+        let asset_id_blind = super::draw_base_blind();
         let derived = derive_issue_stake(&self.input, value_blind.clone(), asset_id_blind.clone());
 
         let params = IssueStakeParamsV1 {

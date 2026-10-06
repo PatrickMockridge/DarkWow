@@ -153,9 +153,9 @@ impl RequestInterestCallBuilder {
     pub fn prepare(self) -> Result<RequestInterestCallPlan> {
         debug!(target: "contract::bearer_bond::client::request_interest", "Preparing BearerBond::RequestInterestV1 contract call");
 
-        let value_blind = ScalarBlind::random(&mut OsRng);
-        let asset_id_blind = BaseBlind::random(&mut OsRng);
-        let user_data_blind = BaseBlind::random(&mut OsRng);
+        let value_blind = super::draw_scalar_blind();
+        let asset_id_blind = super::draw_base_blind();
+        let user_data_blind = super::draw_base_blind();
         let derived = derive_request_interest(&self.input, value_blind.clone(), asset_id_blind.clone(), user_data_blind.clone());
 
         let params = RequestInterestParamsV1 {

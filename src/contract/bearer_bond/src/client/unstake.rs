@@ -206,9 +206,9 @@ impl UnstakeCallBuilder {
     pub fn prepare(self) -> Result<UnstakeCallPlan> {
         debug!(target: "contract::bearer_bond::client::unstake", "Preparing BearerBond::UnstakeV1 contract call");
 
-        let value_blind = ScalarBlind::random(&mut OsRng);
-        let asset_id_blind = BaseBlind::random(&mut OsRng);
-        let user_data_blind = BaseBlind::random(&mut OsRng);
+        let value_blind = super::draw_scalar_blind();
+        let asset_id_blind = super::draw_base_blind();
+        let user_data_blind = super::draw_base_blind();
         let burn_derived = derive_unstake_burn(
             &self.input,
             value_blind.clone(),
@@ -227,8 +227,8 @@ impl UnstakeCallBuilder {
             commitment: burn_derived.commitment,
         };
 
-        let receipt_value_blind = ScalarBlind::random(&mut OsRng);
-        let receipt_asset_id_blind = BaseBlind::random(&mut OsRng);
+        let receipt_value_blind = super::draw_scalar_blind();
+        let receipt_asset_id_blind = super::draw_base_blind();
         let receipt_derived = derive_unstake_receipt(
             &self.output,
             receipt_value_blind.clone(),

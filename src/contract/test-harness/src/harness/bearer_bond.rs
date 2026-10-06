@@ -81,6 +81,10 @@ pub struct BearerBondHarness {
 
 impl BearerBondHarness {
     pub fn spawn(contract_id: ContractId) -> Self {
+        // Determinism (heavyweight-spec.md §7.4 DZ-4): the clients draw their own blinds, so the
+        // flag has to cover them or the two chains in the determinism replay produce different call
+        // data and PI-7 compares block hashes that had no reason to match.
+        dwow_bearer_bond_contract::enable_deterministic_zk();
         let blind_output_bin = include_bytes!("../../../bearer_bond/proof/blind_output.zk.bin");
         let burn_bin = include_bytes!("../../../bearer_bond/proof/burn.zk.bin");
         let redeem_bin = include_bytes!("../../../bearer_bond/proof/redeem.zk.bin");

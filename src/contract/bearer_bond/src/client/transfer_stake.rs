@@ -235,9 +235,9 @@ impl TransferStakeCallBuilder {
         let mut output_notes = vec![];
 
         for input in self.inputs.into_iter() {
-            let value_blind = ScalarBlind::random(&mut OsRng);
-            let asset_id_blind = BaseBlind::random(&mut OsRng);
-            let user_data_blind = BaseBlind::random(&mut OsRng);
+            let value_blind = super::draw_scalar_blind();
+            let asset_id_blind = super::draw_base_blind();
+            let user_data_blind = super::draw_base_blind();
 
             let derived = derive_transfer_burn(
                 &input,
@@ -276,11 +276,11 @@ impl TransferStakeCallBuilder {
             let value_blind = if idx + 1 == num_outputs {
                 Blind(sum_in - sum_out)
             } else {
-                let b = ScalarBlind::random(&mut OsRng);
+                let b = super::draw_scalar_blind();
                 sum_out += b.inner();
                 b
             };
-            let asset_id_blind = BaseBlind::random(&mut OsRng);
+            let asset_id_blind = super::draw_base_blind();
 
             let derived = derive_transfer_blind_output(&output, value_blind.clone(), asset_id_blind.clone());
 
