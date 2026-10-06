@@ -252,7 +252,7 @@ mod tests {
             token_auth_parent: pallas::Base::from(0),
             token_commit: pallas::Base::from(5),
             spend_hook: FuncId::none(),
-            tx_binding: pallas::Base::zero(),
+            // `OBL-C198`: `tx_binding` left the params — the arm derives it.
             tx_nonce: pallas::Base::zero(),
         };
         let encoded = serialize(&params);
@@ -279,7 +279,7 @@ mod tests {
             token_registry_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             issue_public: pallas::Base::from(3),
             spend_hook: FuncId::none(),
-            tx_binding: pallas::Base::zero(),
+            // `OBL-C198`: `tx_binding` left the params — the arm derives it.
             tx_nonce: pallas::Base::zero(),
         };
         let encoded = serialize(&params);
@@ -301,7 +301,7 @@ mod tests {
         };
         let params = RevokeParamsV1 {
             inputs: vec![input],
-            tx_binding: pallas::Base::zero(),
+            // `OBL-C198`: `tx_binding` left the params — the arm derives it.
             tx_nonce: pallas::Base::zero(),
         };
         let encoded = serialize(&params);

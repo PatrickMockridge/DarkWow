@@ -72,6 +72,24 @@ pub struct PromissoryNoteHarness {
     redeem_pk: ProvingKey,
 }
 
+/// The commitment this harness's calls bind to (`OBL-C198`).
+///
+/// PN's own spec rows never pass children, so the transaction the runner builds is a one-call
+/// transaction and the node hashes exactly this call — selector byte included, which is the part
+/// that is easy to get wrong: hashing `params.encode()` alone yields a different value and every PN
+/// proof is refused with no localising message.
+///
+/// The harness uses the *static* genesis id rather than a `contract_id` field, because PN is
+/// genesis: `PROMISSORY_NOTE_CONTRACT_ID` is the compile-time constant every call site already
+/// passes (`promissory_note_spec.rs:112`, `child_calls.rs:107`, `heavyweight_pipeline.rs:308`), so
+/// there is no derived id for the harness to be told and no call site has to change.
+fn own_call_commitment(call_data: &[u8]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment([&dwow_sdk::tx::ContractCall {
+        contract_id: *dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID,
+        data: call_data.to_vec(),
+    }])
+}
+
 impl PromissoryNoteHarness {
     /// Spawn a new PromissoryNote harness with pre-loaded circuits
     pub fn spawn() -> Self {
@@ -166,17 +184,21 @@ impl PromissoryNoteHarness {
             commitment_blind,
         };
 
-        let token_debris = RegisterTypeCallBuilder {
+        // `OBL-C198`: prepare the call data, take the commitment over it, then prove — the order
+        // that binds the proof to the transaction the node will hash (`own_call_commitment`).
+        let plan = RegisterTypeCallBuilder {
             input: token_input,
             register_type_zkbin: self.register_type_zkbin.clone(),
             register_type_pk: self.register_type_pk.clone(),
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
-        .build()?;
+        .prepare()?;
 
         let mut call_data = vec![0x00u8]; // RegisterTypeV1
-        call_data.extend_from_slice(&token_debris.params.encode());
+        call_data.extend_from_slice(&plan.params().encode());
+
+        let token_debris = plan.prove(own_call_commitment(&call_data), pallas::Base::zero())?;
 
         Ok(RegisterTypeResult {
             call_data,
@@ -224,17 +246,20 @@ impl PromissoryNoteHarness {
             commitment_blind,
         };
 
-        let debris = IssueCallBuilder {
+        // `OBL-C198`: prepare, take the commitment over the finished call data, then prove.
+        let plan = IssueCallBuilder {
             input: issue_input,
             issue_zkbin: self.issue_zkbin.clone(),
             issue_pk: self.issue_pk.clone(),
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
-        .build()?;
+        .prepare()?;
 
         let mut call_data = vec![0x02u8]; // IssueV1
-        call_data.extend_from_slice(&debris.params.encode());
+        call_data.extend_from_slice(&plan.params().encode());
+
+        let debris = plan.prove(own_call_commitment(&call_data), pallas::Base::zero())?;
 
         Ok(IssueResult {
             call_data,
@@ -262,7 +287,12 @@ impl PromissoryNoteHarness {
         outputs: Vec<TransferCallOutput>,
         value_blinds: Option<Vec<dwow_sdk::crypto::ScalarBlind>>,
     ) -> Result<TransferResult> {
-        let debris = TransferCallBuilder {
+        // The nonce the call will carry, read before `inputs` moves into the builder. A caller with
+        // no inputs gets the builder's own error rather than an index panic.
+        let tx_nonce = inputs.first().map(|i| i.tx_nonce).unwrap_or_else(pallas::Base::zero);
+
+        // `OBL-C198`: prepare, take the commitment over the finished call data, then prove.
+        let plan = TransferCallBuilder {
             inputs,
             outputs,
             revoke_zkbin: self.revoke_zkbin.clone(),
@@ -271,10 +301,12 @@ impl PromissoryNoteHarness {
             transfer_pk: self.transfer_pk.clone(),
             value_blinds,
         }
-        .build()?;
+        .prepare()?;
 
         let mut call_data = vec![0x04u8]; // TransferV1
-        call_data.extend_from_slice(&debris.params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        call_data.extend_from_slice(&plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+
+        let debris = plan.prove(own_call_commitment(&call_data), tx_nonce)?;
 
         Ok(TransferResult {
             call_data,
@@ -339,7 +371,9 @@ impl PromissoryNoteHarness {
             recipient_pub,
             asset_id, spend_hook, user_data, commitment_blind,
         };
-        let debris = RedeemCallBuilder {
+        // `OBL-C198`: prepare (which also builds the AEAD note), take the commitment over the
+        // finished call data, then prove.
+        let plan = RedeemCallBuilder {
             input, output,
             burn_zkbin: self.revoke_zkbin.clone(),
             burn_pk: self.revoke_pk.clone(),
@@ -348,10 +382,13 @@ impl PromissoryNoteHarness {
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
-        .build()
+        .prepare()
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
         let mut call_data = vec![0x01u8]; // RedeemV1
-        call_data.extend_from_slice(&debris.params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        call_data.extend_from_slice(&plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        let debris = plan
+            .prove(own_call_commitment(&call_data), pallas::Base::zero())
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
         Ok(RedeemResult { call_data, proofs: debris.proofs, nullifier: debris.params.input.nullifier })
     }
 
@@ -379,15 +416,19 @@ impl PromissoryNoteHarness {
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
-        let debris = RevokeCallBuilder {
+        // `OBL-C198`: prepare, take the commitment over the finished call data, then prove.
+        let plan = RevokeCallBuilder {
             inputs: vec![input],
             revoke_zkbin: self.revoke_zkbin.clone(),
             revoke_pk: self.revoke_pk.clone(),
         }
-        .build()
+        .prepare()
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
         let mut call_data = vec![0x03u8]; // RevokeV1
-        call_data.extend_from_slice(&debris.params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        call_data.extend_from_slice(&plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        let debris = plan
+            .prove(own_call_commitment(&call_data), pallas::Base::zero())
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
         Ok(RevokeResult { call_data, proofs: debris.proofs, nullifier: debris.params.inputs[0].nullifier })
     }
 
@@ -396,7 +437,11 @@ impl PromissoryNoteHarness {
         inputs: Vec<TransferCallInput>,
         outputs: Vec<TransferCallOutput>,
     ) -> Result<OtcSwapResult> {
-        let debris = TransferCallBuilder {
+        // The nonce the call will carry, read before `inputs` moves into the builder.
+        let tx_nonce = inputs.first().map(|i| i.tx_nonce).unwrap_or_else(pallas::Base::zero);
+
+        // `OBL-C198`: prepare, take the commitment over the finished call data, then prove.
+        let plan = TransferCallBuilder {
             inputs,
             outputs,
             revoke_zkbin: self.revoke_zkbin.clone(),
@@ -405,10 +450,12 @@ impl PromissoryNoteHarness {
             transfer_pk: self.transfer_pk.clone(),
             value_blinds: None,
         }
-        .build()?;
+        .prepare()?;
 
         let mut call_data = vec![0x05u8]; // OtcSwapV1
-        call_data.extend_from_slice(&debris.params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        call_data.extend_from_slice(&plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+
+        let debris = plan.prove(own_call_commitment(&call_data), tx_nonce)?;
 
         Ok(OtcSwapResult {
             call_data,

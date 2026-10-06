@@ -60,7 +60,10 @@ circuit "Redeem_V2" {
 
     # Reveal spend_hook
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(coin_spend_hook);
+    # `OBL-C198`: the pair is the last two instances — the position the node reads, and there is no
+    # per-circuit index map. It sat before `coin_spend_hook` until the migration moved it, and this
+    # was the campaign's last pair-position row.
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(coin_spend_hook);
 }

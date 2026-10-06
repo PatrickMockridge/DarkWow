@@ -131,7 +131,24 @@ pub struct RegisterTypeCallBuilder {
 
 impl RegisterTypeCallBuilder {
     /// Build the RegisterType call debris
+    /// Build the call and prove it in one step, with the commitment the builder carries.
+    ///
+    /// Kept for callers that already know theirs. A caller that does not — because the commitment is
+    /// a derivation over the finished call set — uses [`Self::prepare`] and then
+    /// [`RegisterTypeCallPlan::prove`] once the whole transaction is assembled (`OBL-C198`).
     pub fn build(self) -> Result<RegisterTypeCallDebris> {
+        let commitment = self.tx_commitment;
+        let nonce = self.tx_nonce;
+        self.prepare()?.prove(commitment, nonce)
+    }
+
+    /// Assemble the params and stop — **before** the proof exists (`OBL-C198`).
+    ///
+    /// The split is exact because the params no longer carry `tx_binding`: they do not depend on
+    /// `tx_commitment` at all. The *proof* does — its instance vector carries the pair last — so this
+    /// returns everything the proof needs except the commitment, and
+    /// [`RegisterTypeCallPlan::prove`] takes it.
+    pub fn prepare(self) -> Result<RegisterTypeCallPlan> {
         debug!(target: "contract::promissory_note::client::register_type", "Building PromissoryNote::RegisterTypeV1 contract call");
 
         // Generate blinds
@@ -173,12 +190,19 @@ impl RegisterTypeCallBuilder {
             commitment,
             value_commit,
             spend_hook: self.input.spend_hook,
-            // V2 circuit: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce). Domain = 3.
-            tx_binding: poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]),
+            // V2 circuit: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce),
+            // domain = 3. This is the *instance vector*, not the params — the pair rides it, and
+            // `prove` fills these two from the commitment it is given (`OBL-C198`). The earlier
+            // `replace_all` that removed the params' binding also removed this initializer's, which
+            // the compiler caught as `missing field tx_binding in initializer of
+            // RegisterTypeRevealed`.
+            tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
         };
 
-        let prover_witnesses = vec![
+        // The three witnesses the circuit derives the pair from are **not** here: `prove` appends
+        // them, because they depend on a commitment this plan does not yet know (`OBL-C198`).
+        let witnesses_head = vec![
             Witness::Base(Value::known(self.input.token_auth_parent)),
             Witness::Base(Value::known(self.input.token_user_data)),
             Witness::Base(Value::known(self.input.token_blind)),
@@ -189,12 +213,70 @@ impl RegisterTypeCallBuilder {
             Witness::Base(Value::known(self.input.user_data)),
             Witness::Base(Value::known(self.input.commitment_blind)),
             Witness::Scalar(Value::known(value_blind.inner())),
-            Witness::Base(Value::known(self.tx_commitment)),
-            Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]))), // V2: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce), domain = 3
         ];
 
-        let circuit = ZkCircuit::new(prover_witnesses, &self.register_type_zkbin);
+        let params = RegisterTypeParamsV1 {
+            commitment,
+            value_commit,
+            asset_id: AssetId::from_base(asset_id),
+            token_auth_parent: self.input.token_auth_parent,
+            token_commit,
+            spend_hook: FuncId::from_base(self.input.spend_hook),
+            // `OBL-C198`: `tx_binding` left the params — the arm derives it from the host.
+            tx_nonce: self.tx_nonce,
+        };
+
+        let mut public_inputs = public_inputs;
+        public_inputs.tx_binding = pallas::Base::zero();
+        public_inputs.tx_nonce = self.tx_nonce;
+
+        Ok(RegisterTypeCallPlan {
+            params,
+            public_inputs,
+            witnesses_head,
+            register_type_zkbin: self.register_type_zkbin,
+            register_type_pk: self.register_type_pk,
+        })
+    }
+}
+
+/// A `RegisterTypeV1` call assembled but not yet proven (`OBL-C198`) — see
+/// [`RegisterTypeCallBuilder::prepare`] for why the split exists.
+pub struct RegisterTypeCallPlan {
+    params: RegisterTypeParamsV1,
+    public_inputs: RegisterTypeRevealed,
+    witnesses_head: Vec<Witness>,
+    register_type_zkbin: ZkBinary,
+    register_type_pk: ProvingKey,
+}
+
+impl RegisterTypeCallPlan {
+    /// The params — what the caller encodes into the call data the commitment is taken over.
+    pub fn params(&self) -> RegisterTypeParamsV1 {
+        self.params.clone()
+    }
+
+    /// Prove against `tx_commitment` — the commitment over the whole ordered call set the node will
+    /// hash, not just this call.
+    pub fn prove(
+        self,
+        tx_commitment: pallas::Base,
+        tx_nonce: pallas::Base,
+    ) -> Result<RegisterTypeCallDebris> {
+        // V2 circuit: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce),
+        // domain = 3.
+        let tx_binding = poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]);
+
+        let mut witnesses = self.witnesses_head;
+        witnesses.push(Witness::Base(Value::known(tx_commitment)));
+        witnesses.push(Witness::Base(Value::known(tx_nonce)));
+        witnesses.push(Witness::Base(Value::known(tx_binding)));
+
+        let mut public_inputs = self.public_inputs;
+        public_inputs.tx_binding = tx_binding;
+        public_inputs.tx_nonce = tx_nonce;
+
+        let circuit = ZkCircuit::new(witnesses, &self.register_type_zkbin);
         #[cfg(not(target_arch = "wasm32"))]
         let proof = if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
@@ -205,19 +287,6 @@ impl RegisterTypeCallBuilder {
         #[cfg(target_arch = "wasm32")]
         let proof = Proof::create(&self.register_type_pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
-        Ok(RegisterTypeCallDebris {
-            params: RegisterTypeParamsV1 {
-                commitment,
-                value_commit,
-                asset_id: AssetId::from_base(asset_id),
-                token_auth_parent: self.input.token_auth_parent,
-                token_commit,
-                spend_hook: FuncId::from_base(self.input.spend_hook),
-                // V2 circuit: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce). Domain = 3.
-            tx_binding: poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]),
-                tx_nonce: self.tx_nonce,
-            },
-            proofs: vec![proof],
-        })
+        Ok(RegisterTypeCallDebris { params: self.params, proofs: vec![proof] })
     }
 }

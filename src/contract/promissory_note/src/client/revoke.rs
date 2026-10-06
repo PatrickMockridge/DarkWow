@@ -138,7 +138,21 @@ pub struct RevokeCallBuilder {
 
 impl RevokeCallBuilder {
     /// Build the Revoke call debris
+    /// Build the call and prove it in one step, with the pair the first input carries.
+    ///
+    /// Kept for callers that already know theirs. A caller that does not — because the commitment is
+    /// a derivation over the finished call set — uses [`Self::prepare`] and then
+    /// [`RevokeCallPlan::prove`] (`OBL-C198`).
     pub fn build(self) -> Result<RevokeCallDebris> {
+        let commitment = self.inputs[0].tx_commitment;
+        let nonce = self.inputs[0].tx_nonce;
+        self.prepare()?.prove(commitment, nonce)
+    }
+
+    /// Assemble the params and stop — **before** the proofs exist (`OBL-C198`). The params do not
+    /// carry `tx_binding`, so they do not depend on the commitment; the proofs do, and
+    /// [`RevokeCallPlan::prove`] takes it.
+    pub fn prepare(self) -> Result<RevokeCallPlan> {
         debug!(target: "contract::promissory_note::client::revoke", "Building PromissoryNote::RevokeV1 contract call");
 
         if self.inputs.is_empty() {
@@ -148,16 +162,13 @@ impl RevokeCallBuilder {
             .into());
         }
 
-        let mut proofs = vec![];
+        let mut planned = vec![];
         let mut inputs = vec![];
 
-        // tx_binding/tx_nonce must match what the proof derived (create_revoke_proof uses
-        // input.tx_commitment/tx_nonce); all inputs in one tx share the same binding.
-        let tx_commitment = self.inputs[0].tx_commitment;
+        // All inputs in one tx share the same nonce, and it is the params' only pair half.
         let tx_nonce = self.inputs[0].tx_nonce;
 
         for input in self.inputs.into_iter() {
-            // Generate revoke proof
             let (value_blind, asset_id_blind, user_data_blind) =
                 if crate::deterministic_zk_enabled() {
                 let mut rng = rand::rngs::StdRng::seed_from_u64(0);
@@ -168,46 +179,113 @@ impl RevokeCallBuilder {
                  BaseBlind::random(&mut OsRng))
             };
 
-            let (proof, revealed) = create_revoke_proof(
-                &self.revoke_zkbin,
-                &self.revoke_pk,
-                &input,
-                value_blind,
-                asset_id_blind,
-                user_data_blind,
-            )?;
-
-            proofs.push(proof);
+            let derived = derive_revoke(&input, &value_blind, &asset_id_blind, &user_data_blind);
 
             // Create the Input model for params
             inputs.push(Input {
-                value_commit: revealed.value_commit,
-                token_commit: revealed.token_commit,
-                nullifier: revealed.nullifier,
-                merkle_root: revealed.merkle_root,
-                user_data_enc: revealed.user_data_enc,
+                value_commit: derived.value_commit,
+                token_commit: derived.token_commit,
+                nullifier: derived.nullifier,
+                merkle_root: derived.merkle_root,
+                user_data_enc: derived.user_data_enc,
                 spend_hook: FuncId::from_base(input.spend_hook),
-                signature_public: revealed.signature_public,
+                signature_public: derived.signature_public,
             });
+            planned.push(PlannedRevokeInput { input, value_blind, asset_id_blind, user_data_blind, derived });
         }
 
-        Ok(RevokeCallDebris {
-            params: RevokeParamsV1 { inputs, tx_binding: poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]), tx_nonce },
-            proofs,
+        Ok(RevokeCallPlan {
+            revoke_zkbin: self.revoke_zkbin,
+            revoke_pk: self.revoke_pk,
+            planned,
+            inputs,
+            tx_nonce,
         })
+    }
+}
+
+/// A `RevokeV1` call assembled but not yet proven (`OBL-C198`) — see
+/// [`RevokeCallBuilder::prepare`] for why the split exists.
+pub struct RevokeCallPlan {
+    revoke_zkbin: ZkBinary,
+    revoke_pk: ProvingKey,
+    planned: Vec<PlannedRevokeInput>,
+    inputs: Vec<Input>,
+    tx_nonce: pallas::Base,
+}
+
+/// One planned input: the call input, the blinds its witnesses need, and its derivation.
+struct PlannedRevokeInput {
+    input: RevokeCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+    derived: RevokeDerived,
+}
+
+impl RevokeCallPlan {
+    /// The params — what the caller encodes into the call data the commitment is taken over.
+    pub fn params(&self) -> RevokeParamsV1 {
+        RevokeParamsV1 { inputs: self.inputs.clone(), tx_nonce: self.tx_nonce }
+    }
+
+    /// Prove against `tx_commitment` — the commitment over the whole ordered call set the node will
+    /// hash, not just this call. The pair is injected into each input, which is where
+    /// `create_revoke_proof` reads it (`transfer.rs` does the same).
+    pub fn prove(self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<RevokeCallDebris> {
+        // The params are read before `self.planned` is consumed below (`params()` borrows `self`).
+        let params = self.params();
+        let mut proofs = vec![];
+        // `self.planned` is consumed, so each input moves into the proof rather than being cloned —
+        // `RevokeCallInput` has no `Clone` and does not need one (`TransferCallInput` does, which is
+        // why `TransferCallPlan::prove` clones).
+        for p in self.planned {
+            let mut input = p.input;
+            input.tx_commitment = tx_commitment;
+            input.tx_nonce = tx_nonce;
+            let (proof, _revealed) = prove_revoke(
+                &self.revoke_zkbin,
+                &self.revoke_pk,
+                &input,
+                &p.value_blind,
+                &p.asset_id_blind,
+                &p.user_data_blind,
+                &p.derived,
+                tx_commitment,
+                tx_nonce,
+            )?;
+            proofs.push(proof);
+        }
+        Ok(RevokeCallDebris { params, proofs })
     }
 }
 
 /// Create a ZK proof for revokeing (destroying) a commitment.
 /// Value commitment: Pedersen (additively homomorphic).
-pub fn create_revoke_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
+/// What a revoke derivation produces that does **not** depend on the transaction commitment
+/// (`OBL-C198`). The pair is the only input-dependent value, and it is injected at prove time.
+pub struct RevokeDerived {
+    pub nullifier: Nullifier,
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+    pub merkle_root: MerkleNode,
+    pub user_data_enc: pallas::Base,
+    pub signature_secret: pallas::Base,
+    pub signature_public: pallas::Base,
+    /// Kept because the witness vector carries it as a `Uint32`/`MerklePath` rather than a field.
+    leaf_position: u32,
+    merkle_path: [MerkleNode; 32],
+}
+
+/// The revoke derivation, lifted out of the proof so a caller can learn the params before it knows
+/// the commitment they will be hashed into (`OBL-C198`). One copy: the proof below calls this too
+/// (`safety.md` RC5).
+pub fn derive_revoke(
     input: &RevokeCallInput,
-    value_blind: ScalarBlind,
-    asset_id_blind: BaseBlind,
-    user_data_blind: BaseBlind,
-) -> Result<(Proof, RevokeRevealed)> {
+    value_blind: &ScalarBlind,
+    asset_id_blind: &BaseBlind,
+    user_data_blind: &BaseBlind,
+) -> RevokeDerived {
     // Derive public key from secret using Poseidon (Schnorr-style).
     // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
@@ -256,18 +334,6 @@ pub fn create_revoke_proof(
     let signature_secret = poseidon_hash([pallas::Base::from(7), input.secret, nullifier.inner()]);
     let signature_public = poseidon_hash([pallas::Base::from(7), signature_secret]);
 
-    let public_inputs = RevokeRevealed {
-        nullifier,
-        value_commit,
-        token_commit,
-        merkle_root,
-        user_data_enc,
-        spend_hook: input.spend_hook,
-        signature_public,
-        tx_binding: poseidon_hash([pallas::Base::from(3), input.tx_commitment, input.tx_nonce]),
-        tx_nonce: input.tx_nonce,
-    };
-
     #[expect(clippy::unwrap_used, reason = "leaf position fits u32")]
     let leaf_position: u32 = u64::from(input.leaf_position).try_into().unwrap();
     #[expect(clippy::unwrap_used, reason = "merkle path length equals fixed tree depth")]
@@ -279,6 +345,43 @@ pub fn create_revoke_proof(
         }
         path.try_into().unwrap()
     };
+
+    RevokeDerived {
+        nullifier, value_commit, token_commit, merkle_root, user_data_enc,
+        signature_secret, signature_public, leaf_position, merkle_path,
+    }
+}
+
+/// Prove a derivation against a caller-supplied pair (`OBL-C198`).
+#[expect(clippy::too_many_arguments, reason = "the derivation's inputs, plus the pair")]
+pub fn prove_revoke(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &RevokeCallInput,
+    value_blind: &ScalarBlind,
+    asset_id_blind: &BaseBlind,
+    user_data_blind: &BaseBlind,
+    derived: &RevokeDerived,
+    tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
+) -> Result<(Proof, RevokeRevealed)> {
+    let RevokeDerived {
+        nullifier, value_commit, token_commit, merkle_root, user_data_enc,
+        signature_secret, signature_public, leaf_position, ref merkle_path,
+    } = *derived;
+
+    let public_inputs = RevokeRevealed {
+        nullifier,
+        value_commit,
+        token_commit,
+        merkle_root,
+        user_data_enc,
+        spend_hook: input.spend_hook,
+        signature_public,
+        tx_binding: poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]),
+        tx_nonce,
+    };
+
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.secret)),
         Witness::Base(Value::known(pallas::Base::from(input.value))),
@@ -290,14 +393,14 @@ pub fn create_revoke_proof(
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(leaf_position)),
-        Witness::MerklePath(Value::known(merkle_path)),
+        Witness::MerklePath(Value::known(merkle_path.to_vec().try_into().map_err(|_| crate::error::ContractError::IoError("Revoke: merkle path".into()))?)),
         // Per-revoke signature_secret = poseidon_hash(spend_secret, nullifier).
         // Cryptographically bound to spend_secret (fixes H2) but unique per revoke
         // since each nullifier is unique — signature_public is unlinkable.
         Witness::Base(Value::known(signature_secret)),
-        Witness::Base(Value::known(input.tx_commitment)),
-        Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3), input.tx_commitment, input.tx_nonce]))), // V2: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce), domain = 3
+        Witness::Base(Value::known(tx_commitment)),
+        Witness::Base(Value::known(tx_nonce)),
+        Witness::Base(Value::known(public_inputs.tx_binding)), // V2: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce), domain = 3
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
@@ -312,4 +415,22 @@ pub fn create_revoke_proof(
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
     Ok((proof, public_inputs))
+}
+
+pub fn create_revoke_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &RevokeCallInput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+) -> Result<(Proof, RevokeRevealed)> {
+    // One derivation, in one place: the proof below and `RevokeCallPlan::prove` both call this
+    // (`safety.md` RC5). The pair is read from the input here, which is the shape callers that
+    // already know their commitment use (`OBL-C198`).
+    let derived = derive_revoke(input, &value_blind, &asset_id_blind, &user_data_blind);
+    prove_revoke(
+        zkbin, pk, input, &value_blind, &asset_id_blind, &user_data_blind, &derived,
+        input.tx_commitment, input.tx_nonce,
+    )
 }

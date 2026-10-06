@@ -316,7 +316,7 @@ fn register_type_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
             vc_x,
             vc_y,
             zk_spend_hook,
-            params.tx_binding,
+            tx_binding_of(params.tx_nonce)?,
             params.tx_nonce,
         ],
     ));
@@ -362,7 +362,7 @@ fn issue_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
             vc_y,
             zk_asset_id,
             zk_spend_hook,
-            params.tx_binding,
+            tx_binding_of(params.tx_nonce)?,
             params.tx_nonce,
         ],
     ));
@@ -412,7 +412,7 @@ fn revoke_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
                 input.user_data_enc,
                 zk_spend_hook,
                 input.signature_public,
-                params.tx_binding,
+                tx_binding_of(params.tx_nonce)?,
                 params.tx_nonce,
             ],
         ));
@@ -1039,14 +1039,19 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
             params.input.user_data_enc,
             zk_spend_hook,
             params.input.signature_public,
-            params.tx_binding,
+            tx_binding_of(params.tx_nonce)?,
             params.tx_nonce,
         ],
     ));
 
     // Redeem_V1 proof for the receipt commitment (value=0).
     // Public input order: commitment, vc_x, vc_y, token_commit, value,
-    //                      tx_binding, tx_nonce, spend_hook
+    //                      spend_hook, tx_binding, tx_nonce
+    //
+    // `OBL-C198`: the pair is the last two instances, matching the reordered `redeem.zk`. This arm
+    // was the third vector of the three and the last to move — the circuit and the client `to_vec`
+    // were reordered first, and the heavy run is what caught the difference (the alignment gate
+    // compares the arm's *count* and its order only as a heuristic).
     let value = pallas::Base::zero();
     let (rvc_x, rvc_y) = point_coords(params.output.value_commit)?;
 
@@ -1057,7 +1062,7 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V2.to_string(),
         vec![zk_commitment, rvc_x, rvc_y, params.output.token_commit,
-             value, params.tx_binding, params.tx_nonce, zk_spend_hook],
+             value, zk_spend_hook, tx_binding_of(params.tx_nonce)?, params.tx_nonce],
     ));
 
     let mut metadata = vec![];
@@ -1179,7 +1184,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
                 input.user_data_enc,
                 zk_spend_hook,
                 input.signature_public,
-                params.tx_binding,
+                tx_binding_of(params.tx_nonce)?,
                 params.tx_nonce,
             ],
         ));

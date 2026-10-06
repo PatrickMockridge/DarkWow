@@ -366,9 +366,14 @@ pub struct RegisterTypeParamsV1 {
     pub token_commit: pallas::Base,
     /// Spend hook for the initial commitment
     pub spend_hook: FuncId,
-    /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
-    pub tx_binding: pallas::Base,
-    /// Transaction nonce
+    /// Transaction nonce — instanced separately by the circuit.
+    ///
+    /// `OBL-C198`: the **binding** half left the wire. It is
+    /// `poseidon_hash([3, tx_commitment, tx_nonce])` — a derivation over call data that the
+    /// transaction commitment itself covers — so a binding carried inside the call data would be
+    /// computed from a value that covers it, a cycle with no fixed point. The arm derives it now
+    /// through `entrypoint::tx_binding_of`. The nonce stays: the prover chooses it and it does not
+    /// depend on the commitment, so it closes no loop.
     pub tx_nonce: pallas::Base,
 }
 
@@ -377,7 +382,7 @@ impl dwow_serial::Decodable for RegisterTypeParamsV1 { fn decode<D: std::io::Rea
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RegisterTypeParamsV1 {
-    pub const ENCODED_SIZE: usize = 256;
+    pub const ENCODED_SIZE: usize = 224;
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
@@ -387,7 +392,6 @@ impl RegisterTypeParamsV1 {
         buf.extend_from_slice(&self.token_auth_parent.to_repr());
         buf.extend_from_slice(&self.token_commit.to_repr());
         buf.extend_from_slice(&self.spend_hook.to_bytes());
-        buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
@@ -409,11 +413,9 @@ impl RegisterTypeParamsV1 {
             .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid token_commit".into()))?;
         let spend_hook = FuncId::from_bytes(read_field::<32>(data, 160)?)
             .map_err(|_| ContractError::IoError("RegisterTypeParamsV1: invalid spend_hook".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 192)?))
-            .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 224)?))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 192)?))
             .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid tx_nonce".into()))?;
-        Ok(RegisterTypeParamsV1 { commitment, value_commit, asset_id, token_auth_parent, token_commit, spend_hook, tx_binding, tx_nonce })
+        Ok(RegisterTypeParamsV1 { commitment, value_commit, asset_id, token_auth_parent, token_commit, spend_hook, tx_nonce })
     }
 }
 
@@ -477,9 +479,11 @@ pub struct IssueParamsV1 {
     pub issue_public: pallas::Base,
     /// Spend hook for the newly minted commitment
     pub spend_hook: FuncId,
-    /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
-    pub tx_binding: pallas::Base,
-    /// Transaction nonce
+    /// Transaction nonce — instanced separately by the circuit.
+    ///
+    /// `OBL-C198`: the **binding** half left the wire (see `RegisterTypeParamsV1`'s note for the
+    /// reason at length — it is derived from the transaction commitment, which covers the call
+    /// data). The arm derives it through `entrypoint::tx_binding_of`. The nonce stays.
     pub tx_nonce: pallas::Base,
 }
 
@@ -488,7 +492,7 @@ impl dwow_serial::Decodable for IssueParamsV1 { fn decode<D: std::io::Read>(d: &
 
 #[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl IssueParamsV1 {
-    pub const ENCODED_SIZE: usize = 256;
+    pub const ENCODED_SIZE: usize = 224;
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
@@ -498,7 +502,6 @@ impl IssueParamsV1 {
         buf.extend_from_slice(&self.token_registry_root.to_bytes());
         buf.extend_from_slice(&self.issue_public.to_repr());
         buf.extend_from_slice(&self.spend_hook.to_bytes());
-        buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
@@ -520,11 +523,9 @@ impl IssueParamsV1 {
             .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid issue_public".into()))?;
         let spend_hook = FuncId::from_bytes(read_field::<32>(data, 160)?)
             .map_err(|_| ContractError::IoError("IssueParamsV1: invalid spend_hook".into()))?;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 192)?))
-            .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 224)?))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 192)?))
             .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid tx_nonce".into()))?;
-        Ok(IssueParamsV1 { commitment, value_commit, asset_id, token_registry_root, issue_public, spend_hook, tx_binding, tx_nonce })
+        Ok(IssueParamsV1 { commitment, value_commit, asset_id, token_registry_root, issue_public, spend_hook, tx_nonce })
     }
 }
 
@@ -570,9 +571,11 @@ impl IssueUpdateV1 {
 pub struct RevokeParamsV1 {
     /// Anonymous inputs being burned
     pub inputs: Vec<Input>,
-    /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
-    pub tx_binding: pallas::Base,
-    /// Transaction nonce
+    /// Transaction nonce — instanced separately by the circuit.
+    ///
+    /// `OBL-C198`: the **binding** half left the wire (see `RegisterTypeParamsV1`'s note for the
+    /// reason at length — it is derived from the transaction commitment, which covers the call
+    /// data). The arm derives it through `entrypoint::tx_binding_of`. The nonce stays.
     pub tx_nonce: pallas::Base,
 }
 
@@ -583,17 +586,19 @@ impl dwow_serial::Decodable for RevokeParamsV1 { fn decode<D: std::io::Read>(d: 
 impl RevokeParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let n = SerializedLen::try_from_len(self.inputs.len())?;
-        let cap = 4 + self.inputs.len() * Input::ENCODED_SIZE + 64;
+        let cap = 4 + self.inputs.len() * Input::ENCODED_SIZE + 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&n.to_le_bytes());
         for input in &self.inputs { buf.extend_from_slice(&input.encode()); }
-        buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 68 { return Err(ContractError::IoError("RevokeParamsV1: too short".into())); }
+        // `4` (input count) + `32` (tx nonce). It read 68 while the params also carried the 32-byte
+        // `tx_binding`, which left the wire in `OBL-C198` — so a call at the new minimum was refused
+        // by this guard before the pair guard could be reached.
+        if data.len() < 36 { return Err(ContractError::IoError("RevokeParamsV1: too short".into())); }
         let count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
         let mut pos = 4;
         let mut inputs = Vec::with_capacity(count);
@@ -604,12 +609,10 @@ impl RevokeParamsV1 {
             inputs.push(Input::decode(read_slice(data, pos, Input::ENCODED_SIZE)?)?);
             pos += Input::ENCODED_SIZE;
         }
-        if data.len() < pos + 64 { return Err(ContractError::IoError("RevokeParamsV1: missing trailing fields".into())); }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
-            .ok_or_else(|| ContractError::IoError("RevokeParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+        if data.len() < pos + 32 { return Err(ContractError::IoError("RevokeParamsV1: missing trailing field".into())); }
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("RevokeParamsV1: invalid tx_nonce".into()))?;
-        Ok(RevokeParamsV1 { inputs, tx_binding, tx_nonce })
+        Ok(RevokeParamsV1 { inputs, tx_nonce })
     }
 }
 
@@ -807,9 +810,11 @@ pub struct RedeemParamsV1 {
     pub input: Input,
     /// Receipt commitment (blind output proof, value = 0)
     pub output: Output,
-    /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
-    pub tx_binding: pallas::Base,
-    /// Transaction nonce
+    /// Transaction nonce — instanced separately by the circuit.
+    ///
+    /// `OBL-C198`: the **binding** half left the wire (see `RegisterTypeParamsV1`'s note for the
+    /// reason at length — it is derived from the transaction commitment, which covers the call
+    /// data). The arm derives it through `entrypoint::tx_binding_of`. The nonce stays.
     pub tx_nonce: pallas::Base,
 }
 
@@ -824,7 +829,6 @@ impl RedeemParamsV1 {
         let mut buf = Vec::with_capacity(input_bytes.len() + output_bytes.len() + 64);
         buf.extend_from_slice(&input_bytes);
         buf.extend_from_slice(&output_bytes);
-        buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(buf)
     }
@@ -835,14 +839,12 @@ impl RedeemParamsV1 {
         let output = Output::decode(data.get(pos..).ok_or_else(|| ContractError::IoError("payload truncated".to_string()))?)?;
         let output_bytes = output.encode()?;
         let pos = pos + output_bytes.len();
-        if data.len() < pos + 64 {
-            return Err(ContractError::IoError(format!("RedeemParamsV1: expected at least {} bytes, got {}", pos + 64, data.len())));
+        if data.len() < pos + 32 {
+            return Err(ContractError::IoError(format!("RedeemParamsV1: expected at least {} bytes, got {}", pos + 32, data.len())));
         }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
-            .ok_or_else(|| ContractError::IoError("RedeemParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("RedeemParamsV1: invalid tx_nonce".into()))?;
-        Ok(RedeemParamsV1 { input, output, tx_binding, tx_nonce })
+        Ok(RedeemParamsV1 { input, output, tx_nonce })
     }
 }
 
@@ -887,9 +889,11 @@ impl RedeemUpdateV1 {
 pub struct OtcSwapParamsV1 {
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
-    /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
-    pub tx_binding: pallas::Base,
-    /// Transaction nonce
+    /// Transaction nonce — instanced separately by the circuit.
+    ///
+    /// `OBL-C198`: the **binding** half left the wire (see `RegisterTypeParamsV1`'s note for the
+    /// reason at length — it is derived from the transaction commitment, which covers the call
+    /// data). The arm derives it through `entrypoint::tx_binding_of`. The nonce stays.
     pub tx_nonce: pallas::Base,
 }
 
@@ -913,14 +917,15 @@ impl OtcSwapParamsV1 {
             buf.extend_from_slice(&SerializedLen::try_from_len(ob.len())?.to_le_bytes());
             buf.extend_from_slice(ob);
         }
-        buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         Ok(buf)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        // 4(input count) + 4(output count) + 32(tx_binding) + 32(tx_nonce) = 72
-        if data.len() < 72 { return Err(ContractError::IoError("OtcSwapParamsV1: too short".into())); }
+        // 4(input count) + 4(output count) + 32(tx_nonce) = 40. It read 72 while the params also
+        // carried the 32-byte `tx_binding`, which left the wire in `OBL-C198`; `TransferParamsV1`'s
+        // decoder made exactly this correction and says so — this is the copy that was missed.
+        if data.len() < 40 { return Err(ContractError::IoError("OtcSwapParamsV1: too short".into())); }
         let input_count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
         let mut pos = 4;
         let mut inputs = Vec::with_capacity(input_count);
@@ -943,12 +948,10 @@ impl OtcSwapParamsV1 {
             outputs.push(Output::decode(read_slice(data, pos, out_len)?)?);
             pos += out_len;
         }
-        if data.len() < pos + 64 { return Err(ContractError::IoError("OtcSwapParamsV1: missing trailing fields".into())); }
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
-            .ok_or_else(|| ContractError::IoError("OtcSwapParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?))
+        if data.len() < pos + 32 { return Err(ContractError::IoError("OtcSwapParamsV1: missing trailing field".into())); }
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?))
             .ok_or_else(|| ContractError::IoError("OtcSwapParamsV1: invalid tx_nonce".into()))?;
-        Ok(OtcSwapParamsV1 { inputs, outputs, tx_binding, tx_nonce })
+        Ok(OtcSwapParamsV1 { inputs, outputs, tx_nonce })
     }
 }
 

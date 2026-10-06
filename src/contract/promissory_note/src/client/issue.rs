@@ -110,7 +110,21 @@ pub struct IssueCallBuilder {
 
 impl IssueCallBuilder {
     /// Build the Issue call debris
+    /// Build the call and prove it in one step, with the commitment the builder carries.
+    ///
+    /// Kept for callers that already know theirs. A caller that does not — because the commitment is
+    /// a derivation over the finished call set — uses [`Self::prepare`] and then
+    /// [`IssueCallPlan::prove`] once the whole transaction is assembled (`OBL-C198`).
     pub fn build(self) -> Result<IssueCallDebris> {
+        let commitment = self.tx_commitment;
+        let nonce = self.tx_nonce;
+        self.prepare()?.prove(commitment, nonce)
+    }
+
+    /// Assemble the params and stop — **before** the proof exists (`OBL-C198`). The params no longer
+    /// carry `tx_binding`, so they do not depend on `tx_commitment`; the proof does, and
+    /// [`IssueCallPlan::prove`] takes it.
+    pub fn prepare(self) -> Result<IssueCallPlan> {
         debug!(target: "contract::promissory_note::client::issue", "Building PromissoryNote::IssueV1 contract call");
 
         // Derive issue_public from backing secret.
@@ -176,9 +190,7 @@ impl IssueCallBuilder {
             Witness::Base(Value::known(self.input.commitment_blind)),
             // Value commitment blind
             Witness::Scalar(Value::known(value_blind.inner())),
-            Witness::Base(Value::known(self.tx_commitment)),
-            Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]))), // V2: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce), domain = 3
+            // The three the circuit derives the pair from are appended by `prove` (`OBL-C198`).
         ];
 
         let public_inputs = IssueRevealed {
@@ -188,11 +200,65 @@ impl IssueCallBuilder {
             value_commit,
             asset_id: self.input.asset_id,
             spend_hook: self.input.spend_hook,
-            tx_binding: poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]),
+            // Filled by `prove` — see this struct's `tx_binding` note.
+            tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
         };
 
-        let circuit = ZkCircuit::new(prover_witnesses, &self.issue_zkbin);
+        let params = IssueParamsV1 {
+            commitment,
+            value_commit,
+            asset_id: AssetId::from_base(self.input.asset_id),
+            token_registry_root,
+            issue_public,
+            spend_hook: FuncId::from_base(self.input.spend_hook),
+            // `OBL-C198`: `tx_binding` left the params — the arm derives it from the host.
+            tx_nonce: self.tx_nonce,
+        };
+
+        Ok(IssueCallPlan { params, public_inputs, prover_witnesses, issue_zkbin: self.issue_zkbin, issue_pk: self.issue_pk })
+    }
+}
+
+/// An `IssueV1` call assembled but not yet proven (`OBL-C198`) — see
+/// [`IssueCallBuilder::prepare`] for why the split exists.
+pub struct IssueCallPlan {
+    params: IssueParamsV1,
+    public_inputs: IssueRevealed,
+    /// The witnesses the circuit declares **before** the pair; `prove` appends the three it derives
+    /// the pair from, which depend on a commitment this plan does not yet know.
+    prover_witnesses: Vec<Witness>,
+    issue_zkbin: ZkBinary,
+    issue_pk: ProvingKey,
+}
+
+impl IssueCallPlan {
+    /// The params — what the caller encodes into the call data the commitment is taken over.
+    pub fn params(&self) -> IssueParamsV1 {
+        self.params.clone()
+    }
+
+    /// Prove against `tx_commitment` — the commitment over the whole ordered call set the node will
+    /// hash, not just this call.
+    pub fn prove(
+        self,
+        tx_commitment: pallas::Base,
+        tx_nonce: pallas::Base,
+    ) -> Result<IssueCallDebris> {
+        // V2 circuit: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce),
+        // domain = 3.
+        let tx_binding = poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]);
+
+        let mut witnesses = self.prover_witnesses;
+        witnesses.push(Witness::Base(Value::known(tx_commitment)));
+        witnesses.push(Witness::Base(Value::known(tx_nonce)));
+        witnesses.push(Witness::Base(Value::known(tx_binding)));
+
+        let mut public_inputs = self.public_inputs;
+        public_inputs.tx_binding = tx_binding;
+        public_inputs.tx_nonce = tx_nonce;
+
+        let circuit = ZkCircuit::new(witnesses, &self.issue_zkbin);
         #[cfg(not(target_arch = "wasm32"))]
         let proof = if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
@@ -203,19 +269,7 @@ impl IssueCallBuilder {
         #[cfg(target_arch = "wasm32")]
         let proof = Proof::create(&self.issue_pk, &[circuit], &public_inputs.to_vec()?, &mut OsRng)?;
 
-        Ok(IssueCallDebris {
-            params: IssueParamsV1 {
-                commitment,
-                value_commit,
-                asset_id: AssetId::from_base(self.input.asset_id),
-                token_registry_root,
-                issue_public,
-                spend_hook: FuncId::from_base(self.input.spend_hook),
-                tx_binding: poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]),
-                tx_nonce: self.tx_nonce,
-            },
-            proofs: vec![proof],
-        })
+        Ok(IssueCallDebris { params: self.params, proofs: vec![proof] })
     }
 }
 

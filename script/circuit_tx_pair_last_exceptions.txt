@@ -54,4 +54,7 @@
 # after it in each), and `subscription`'s three, whose three circuits each instanced a derived id
 # *after* the pair.
 
-src/contract/promissory_note/proof/redeem.zk : Redeem_V2 : `OBL-C198` — pair at 5,6 of 8; `coin_spend_hook` follows. `promissory_note`'s transfer and burn paths were migrated in the first pass; this circuit and `revoke.zk` were not, and the instrument is what made the difference visible.
+# EMPTY. Every circuit in the tree now places the pair last — see the run's own `COVERAGE:` line.
+# `promissory_note`'s `redeem.zk` was the last entry, and it went with that contract's unit. The
+# checker still fails on a pair anywhere but last; this file exists so a *declared* exception is a
+# deliberate act rather than silence.

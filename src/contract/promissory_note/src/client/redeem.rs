@@ -128,9 +128,11 @@ impl RedeemReceiptRevealed {
             vc_y,
             self.token_commit,
             self.value,
+            // `OBL-C198`: the pair is the last two instances, matching the reordered circuit — the
+            // spend hook now precedes them.
+            self.spend_hook,
             self.tx_binding,
             self.tx_nonce,
-            self.spend_hook,
         ])
     }
 }
@@ -212,12 +214,24 @@ pub struct RedeemCallBuilder {
 impl RedeemCallBuilder {
     /// Build the Redeem call debris — a burn proof for the input and a
     /// Redeem_V1 proof for the zero-value receipt.
+    /// Build the call and prove it in one step, with the pair the builder carries.
+    ///
+    /// A caller that does not know its commitment — because it is a derivation over the finished
+    /// call set — uses [`Self::prepare`] and then [`RedeemCallPlan::prove`] (`OBL-C198`).
     pub fn build(self) -> Result<RedeemCallDebris> {
+        let commitment = self.tx_commitment;
+        let nonce = self.tx_nonce;
+        self.prepare()?.prove(commitment, nonce)
+    }
+
+    /// Assemble the params — including the AEAD note — and stop, **before** either proof exists
+    /// (`OBL-C198`). The params do not carry `tx_binding`, so nothing here depends on the
+    /// commitment; the two proofs do, and [`RedeemCallPlan::prove`] takes it.
+    pub fn prepare(self) -> Result<RedeemCallPlan> {
         debug!(target: "contract::promissory_note::client::redeem", "Building PromissoryNote::RedeemV1 contract call");
 
-        let mut proofs = vec![];
-
-        // Build burn proof for the input commitment being redeemed
+        // Two separate seeded draws, kept exactly as `build` made them: collapsing them would move
+        // every deterministic-zk value this path produces.
         let (value_blind, asset_id_blind, user_data_blind) =
             if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
@@ -228,30 +242,18 @@ impl RedeemCallBuilder {
              BaseBlind::random(&mut OsRng))
         };
 
-        let (burn_proof, burn_revealed) = create_redeem_burn_proof(
-            &self.burn_zkbin,
-            &self.burn_pk,
-            &self.input,
-            value_blind,
-            asset_id_blind,
-            user_data_blind,
-            self.tx_commitment,
-            self.tx_nonce,
-        )?;
-
-        proofs.push(burn_proof);
+        let burn_derived = derive_redeem_burn(&self.input, &value_blind, &asset_id_blind, &user_data_blind);
 
         let input = Input {
-            value_commit: burn_revealed.value_commit,
-            token_commit: burn_revealed.token_commit,
-            nullifier: burn_revealed.nullifier,
-            merkle_root: burn_revealed.merkle_root,
-            user_data_enc: burn_revealed.user_data_enc,
+            value_commit: burn_derived.value_commit,
+            token_commit: burn_derived.token_commit,
+            nullifier: burn_derived.nullifier,
+            merkle_root: burn_derived.merkle_root,
+            user_data_enc: burn_derived.user_data_enc,
             spend_hook: FuncId::from_base(self.input.spend_hook),
-            signature_public: burn_revealed.signature_public,
+            signature_public: burn_derived.signature_public,
         };
 
-        // Build Redeem_V1 proof for the zero-value receipt commitment
         let (receipt_value_blind, receipt_asset_id_blind) =
             if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
@@ -260,17 +262,7 @@ impl RedeemCallBuilder {
             (ScalarBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng))
         };
 
-        let (output_proof, output_revealed) = create_redeem_receipt_proof(
-            &self.redeem_zkbin,
-            &self.redeem_pk,
-            &self.output,
-            receipt_value_blind.clone(),
-            receipt_asset_id_blind.clone(),
-            self.tx_commitment,
-            self.tx_nonce,
-        )?;
-
-        proofs.push(output_proof);
+        let receipt_derived = derive_redeem_receipt(&self.output, &receipt_value_blind, &receipt_asset_id_blind);
 
         // Build note for the receipt so the redeemer can discover it via trial-decryption
         let note = PromissoryNote {
@@ -282,7 +274,7 @@ impl RedeemCallBuilder {
             value_blind: receipt_value_blind.inner(),
             token_blind: receipt_asset_id_blind.inner(),
             memo: vec![],
-            commitment: output_revealed.commitment.inner(),
+            commitment: receipt_derived.commitment.inner(),
         };
 
         let encrypted_note = if crate::deterministic_zk_enabled() {
@@ -297,18 +289,86 @@ impl RedeemCallBuilder {
         }))?;
 
         let output = Output {
-            value_commit: output_revealed.value_commit,
-            token_commit: output_revealed.token_commit,
-            commitment: output_revealed.commitment,
+            value_commit: receipt_derived.value_commit,
+            token_commit: receipt_derived.token_commit,
+            commitment: receipt_derived.commitment,
             note: encrypted_note,
             spend_hook: FuncId::from_base(self.output.spend_hook),
         };
 
-        Ok(RedeemCallDebris {
+        Ok(RedeemCallPlan {
+            burn_zkbin: self.burn_zkbin,
+            burn_pk: self.burn_pk,
+            redeem_zkbin: self.redeem_zkbin,
+            redeem_pk: self.redeem_pk,
+            input: self.input,
+            output: self.output,
+            value_blind, asset_id_blind, user_data_blind, burn_derived,
+            receipt_value_blind, receipt_asset_id_blind, receipt_derived,
             params: RedeemParamsV1 { input, output,
-                tx_binding: poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]), tx_nonce: self.tx_nonce },
-            proofs,
+                // `OBL-C198`: `tx_binding` left the params — the arm derives it from the host.
+                tx_nonce: self.tx_nonce },
         })
+    }
+}
+
+/// A `RedeemV1` call assembled but not yet proven (`OBL-C198`) — see
+/// [`RedeemCallBuilder::prepare`] for why the split exists.
+pub struct RedeemCallPlan {
+    burn_zkbin: ZkBinary,
+    burn_pk: ProvingKey,
+    redeem_zkbin: ZkBinary,
+    redeem_pk: ProvingKey,
+    input: RedeemCallInput,
+    output: RedeemCallOutput,
+    value_blind: ScalarBlind,
+    asset_id_blind: BaseBlind,
+    user_data_blind: BaseBlind,
+    burn_derived: RedeemRevokeDerived,
+    receipt_value_blind: ScalarBlind,
+    receipt_asset_id_blind: BaseBlind,
+    receipt_derived: RedeemReceiptDerived,
+    params: RedeemParamsV1,
+}
+
+impl RedeemCallPlan {
+    /// The params — what the caller encodes into the call data the commitment is taken over.
+    pub fn params(&self) -> RedeemParamsV1 {
+        self.params.clone()
+    }
+
+    /// Prove against `tx_commitment` — the commitment over the whole ordered call set the node will
+    /// hash, not just this call. `tx_nonce` must be the nonce the params carry, because the arm
+    /// publishes that one and the proof's instance must agree with it.
+    pub fn prove(self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<RedeemCallDebris> {
+        let mut proofs = vec![];
+
+        let (burn_proof, _burn_revealed) = create_redeem_burn_proof(
+            &self.burn_zkbin,
+            &self.burn_pk,
+            &self.input,
+            &self.value_blind,
+            &self.asset_id_blind,
+            &self.user_data_blind,
+            &self.burn_derived,
+            tx_commitment,
+            tx_nonce,
+        )?;
+        proofs.push(burn_proof);
+
+        let (output_proof, _output_revealed) = create_redeem_receipt_proof(
+            &self.redeem_zkbin,
+            &self.redeem_pk,
+            &self.output,
+            &self.receipt_value_blind,
+            &self.receipt_asset_id_blind,
+            &self.receipt_derived,
+            tx_commitment,
+            tx_nonce,
+        )?;
+        proofs.push(output_proof);
+
+        Ok(RedeemCallDebris { params: self.params, proofs })
     }
 }
 
@@ -316,18 +376,28 @@ impl RedeemCallBuilder {
 // PROOF CREATION
 // ============================================================================
 
-/// Create a burn proof for the input commitment being redeemed.
-/// Reuses the existing Burn_V1 circuit.
-fn create_redeem_burn_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
+/// What a redeem burn derivation produces that does **not** depend on the transaction commitment
+/// (`OBL-C198`). `tx_binding` is the only pair-dependent value and is injected at prove time.
+pub struct RedeemRevokeDerived {
+    pub nullifier: Nullifier,
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+    pub merkle_root: MerkleNode,
+    pub user_data_enc: pallas::Base,
+    pub signature_secret: pallas::Base,
+    pub signature_public: pallas::Base,
+    leaf_position: u32,
+    merkle_path: [MerkleNode; 32],
+}
+
+/// The burn derivation, lifted out of the proof so a caller can learn the params before it knows
+/// the commitment they will be hashed into (`OBL-C198`). `prove_redeem_burn` calls this too.
+pub fn derive_redeem_burn(
     input: &RedeemCallInput,
-    value_blind: ScalarBlind,
-    asset_id_blind: BaseBlind,
-    user_data_blind: BaseBlind,
-    tx_commitment: pallas::Base,
-    tx_nonce: pallas::Base,
-) -> Result<(Proof, RedeemRevokeRevealed)> {
+    value_blind: &ScalarBlind,
+    asset_id_blind: &BaseBlind,
+    user_data_blind: &BaseBlind,
+) -> RedeemRevokeDerived {
     // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
     let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
@@ -366,24 +436,45 @@ fn create_redeem_burn_proof(
     // signature_public = H(7, signature_secret) — matches revoke.rs / revoke.zk.
     let signature_secret = poseidon_hash([pallas::Base::from(7), input.secret, nullifier.inner()]);
     let signature_public = poseidon_hash([pallas::Base::from(7), signature_secret]);
-    let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
-
-    let public_inputs = RedeemRevokeRevealed {
-        nullifier,
-        value_commit,
-        token_commit,
-        merkle_root,
-        user_data_enc,
-        spend_hook: input.spend_hook,
-        signature_public,
-        tx_binding,
-        tx_nonce,
-    };
 
     #[expect(clippy::unwrap_used, reason = "leaf position fits u32")]
     let leaf_position: u32 = u64::from(input.leaf_position).try_into().unwrap();
     #[expect(clippy::unwrap_used, reason = "merkle path length equals fixed tree depth")]
     let merkle_path = input.merkle_path.clone().try_into().unwrap();
+
+    RedeemRevokeDerived {
+        nullifier, value_commit, token_commit, merkle_root, user_data_enc,
+        signature_secret, signature_public, leaf_position, merkle_path,
+    }
+}
+
+/// Create a burn proof for the input commitment being redeemed.
+/// Reuses the existing Burn_V1 circuit.
+fn create_redeem_burn_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &RedeemCallInput,
+    value_blind: &ScalarBlind,
+    asset_id_blind: &BaseBlind,
+    user_data_blind: &BaseBlind,
+    derived: &RedeemRevokeDerived,
+    tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
+) -> Result<(Proof, RedeemRevokeRevealed)> {
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
+
+    let public_inputs = RedeemRevokeRevealed {
+        nullifier: derived.nullifier,
+        value_commit: derived.value_commit,
+        token_commit: derived.token_commit,
+        merkle_root: derived.merkle_root,
+        user_data_enc: derived.user_data_enc,
+        spend_hook: input.spend_hook,
+        signature_public: derived.signature_public,
+        tx_binding,
+        tx_nonce,
+    };
+
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.secret)),
         Witness::Base(Value::known(pallas::Base::from(input.value))),
@@ -394,9 +485,9 @@ fn create_redeem_burn_proof(
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(asset_id_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
-        Witness::Uint32(Value::known(leaf_position)),
-        Witness::MerklePath(Value::known(merkle_path)),
-        Witness::Base(Value::known(signature_secret)),
+        Witness::Uint32(Value::known(derived.leaf_position)),
+        Witness::MerklePath(Value::known(derived.merkle_path.clone())),
+        Witness::Base(Value::known(derived.signature_secret)),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_nonce)),
         Witness::Base(Value::known(tx_binding)), // tx_binding (shadowed, recomputed in-circuit)
@@ -416,23 +507,23 @@ fn create_redeem_burn_proof(
     Ok((proof, public_inputs))
 }
 
-/// Create a Redeem_V1 proof for the zero-value receipt commitment.
-///
-/// Witness order must match Redeem_V1 circuit:
-///   commitment_public, value, commitment_asset_id, commitment_spend_hook,
-///   commitment_user_data, commitment_blind, value_blind, asset_id_blind
-///
-/// Public input order: commitment, vc_x, vc_y, token_commit, value
-/// value = 0 proves the receipt has no monetary value.
-fn create_redeem_receipt_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
+/// What a redeem receipt derivation produces that does **not** depend on the transaction commitment
+/// (`OBL-C198`). `commitment` is here because the AEAD note is encrypted over it and the note is
+/// built before the proof exists.
+pub struct RedeemReceiptDerived {
+    pub commitment: CapCommitment,
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+    pub value: pallas::Base,
+}
+
+/// The receipt derivation, lifted out of the proof so the note and the params can be built before
+/// the commitment is known (`OBL-C198`). `create_redeem_receipt_proof` calls this too.
+pub fn derive_redeem_receipt(
     output: &RedeemCallOutput,
-    value_blind: ScalarBlind,
-    asset_id_blind: BaseBlind,
-    tx_commitment: pallas::Base,
-    tx_nonce: pallas::Base,
-) -> Result<(Proof, RedeemReceiptRevealed)> {
+    value_blind: &ScalarBlind,
+    asset_id_blind: &BaseBlind,
+) -> RedeemReceiptDerived {
     let value = pallas::Base::zero();
     let attrs = CapAttrs {
         public_key: output.recipient,
@@ -448,13 +539,34 @@ fn create_redeem_receipt_proof(
     // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
     let token_commit = poseidon_hash([pallas::Base::from(2), output.asset_id, asset_id_blind.inner()]);
 
+    RedeemReceiptDerived { commitment, value_commit, token_commit, value }
+}
+
+/// Create a Redeem_V1 proof for the zero-value receipt commitment.
+///
+/// Witness order must match Redeem_V1 circuit:
+///   commitment_public, value, commitment_asset_id, commitment_spend_hook,
+///   commitment_user_data, commitment_blind, value_blind, asset_id_blind
+///
+/// Public input order: commitment, vc_x, vc_y, token_commit, value
+/// value = 0 proves the receipt has no monetary value.
+fn create_redeem_receipt_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    output: &RedeemCallOutput,
+    value_blind: &ScalarBlind,
+    asset_id_blind: &BaseBlind,
+    derived: &RedeemReceiptDerived,
+    tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
+) -> Result<(Proof, RedeemReceiptRevealed)> {
     let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
 
     let public_inputs = RedeemReceiptRevealed {
-        commitment,
-        value_commit,
-        token_commit,
-        value,
+        commitment: derived.commitment,
+        value_commit: derived.value_commit,
+        token_commit: derived.token_commit,
+        value: derived.value,
         spend_hook: output.spend_hook,
         tx_binding,
         tx_nonce,
@@ -464,7 +576,7 @@ fn create_redeem_receipt_proof(
     //                commitment_user_data, commitment_blind, value_blind, asset_id_blind
     let prover_witnesses = vec![
         Witness::Base(Value::known(output.recipient)),
-        Witness::Base(Value::known(value)),
+        Witness::Base(Value::known(derived.value)),
         Witness::Base(Value::known(output.asset_id)),
         Witness::Base(Value::known(output.spend_hook)),
         Witness::Base(Value::known(output.user_data)),
