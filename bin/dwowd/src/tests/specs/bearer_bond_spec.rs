@@ -206,11 +206,19 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
             // code 24). The row sat after the payer, so the report did not exist yet.
             mk_ep("ProveCoverageV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::prove_coverage::ProveCoverageCallInput;
-                // reserve 100 over obligation 500 + 50 = 550 → 1818 bps, derived by the builder.
+                // reserve 1000 over obligation 500 + 50 = 550 → 18181 bps, derived by the builder.
+                //
+                // It was `reserve_amount: 100` — 1818 bps — and `prove_coverage_v1` **voids** a
+                // series whose ratio is below 10000 (`is_coverage_voided` is `<`, so exactly
+                // 10000 is adequate). So the report the row made voided the very series the next
+                // row then paid a claim against, and `PayInterestV1` answered `SeriesVoided` (21).
+                // Under-collateralisation is a real state and `EmergencyUnstakeV1` exists for it,
+                // but it cannot be the state this row leaves the series in if anything after it is
+                // to work.
                 let input = ProveCoverageCallInput {
                     series_asset_id: pallas::Base::from(1u64),
                     total_outstanding: 500, total_interest_obligation: 50,
-                    reserve_amount: 100, report_block: 500,
+                    reserve_amount: 1000, report_block: 500,
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let r = h.prove_coverage_solo(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

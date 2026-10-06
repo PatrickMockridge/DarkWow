@@ -1052,10 +1052,20 @@ pub struct PayInterestUpdateV1 {
 }
 
 impl PayInterestUpdateV1 {
-    pub const ENCODED_SIZE: usize = 625;
+    /// `2 × BondCommitment + 32 + 8 + RequestedClaim`.
+    ///
+    /// The constant and the five offsets below were **stale to the point of rejecting their own
+    /// encoding**: they sliced 272 bytes per commitment where `BondCommitment::encode` writes
+    /// `ENCODED_SIZE` (336 now, 304 before this session's work — never 272), so `encode` produced 753
+    /// bytes and `decode` demanded exactly 625 and refused anything else. `OBL-C150`'s class, and the
+    /// reason `apply_pay_interest` failed on the first run that ever reached it: the exec phase
+    /// passed, `process_update` rejected the update, and — because a contract `Err` crossing the
+    /// wasm boundary carries a **code**, not a message — the host reported the catch-all
+    /// `ContractError(IoError("Unknown"))` and named neither the type nor the length.
+    pub const ENCODED_SIZE: usize = 336 + 336 + 32 + 8 + 41;
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(625);
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.updated_commitment.encode());
         b.extend_from_slice(&self.interest_commitment.encode());
         b.extend_from_slice(&self.bond_commitment.to_repr());
@@ -1066,20 +1076,21 @@ impl PayInterestUpdateV1 {
 
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 625 {
+        if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
-                "PayInterestUpdateV1: expected 625 bytes, got {}",
+                "PayInterestUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
                 data.len()
             )));
         }
         Ok(PayInterestUpdateV1 {
-            updated_commitment: BondCommitment::decode(&data[0..272])?,
-            interest_commitment: BondCommitment::decode(&data[272..544])?,
-            bond_commitment: pallas::Base::from_repr(data[544..576].try_into().unwrap())
+            updated_commitment: BondCommitment::decode(&data[0..336])?,
+            interest_commitment: BondCommitment::decode(&data[336..672])?,
+            bond_commitment: pallas::Base::from_repr(data[672..704].try_into().unwrap())
                 .into_option()
                 .ok_or_else(|| ContractError::IoError("PayInterestUpdateV1: invalid bond_commitment".into()))?,
-            claim_block: u64::from_le_bytes(data[576..584].try_into().unwrap()),
-            claim: RequestedClaim::decode(&data[584..625])?,
+            claim_block: u64::from_le_bytes(data[704..712].try_into().unwrap()),
+            claim: RequestedClaim::decode(&data[712..753])?,
         })
     }
 }
