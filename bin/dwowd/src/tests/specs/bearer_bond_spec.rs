@@ -201,6 +201,21 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let r = h.emergency_unstake_solo(input, output).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
+            // **Before `PayInterestV1`, and it has to be.** `pay_interest_v1` is ringfenced: it
+            // refuses a claim against a series with no verified coverage (`CoverageNotVerified`,
+            // code 24). The row sat after the payer, so the report did not exist yet.
+            mk_ep("ProveCoverageV1", true, Box::new(move || {
+                use dwow_bearer_bond_contract::client::prove_coverage::ProveCoverageCallInput;
+                // reserve 100 over obligation 500 + 50 = 550 → 1818 bps, derived by the builder.
+                let input = ProveCoverageCallInput {
+                    series_asset_id: pallas::Base::from(1u64),
+                    total_outstanding: 500, total_interest_obligation: 50,
+                    reserve_amount: 100, report_block: 500,
+                    tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
+                };
+                let r = h.prove_coverage_solo(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
+            })),
             mk_ep("PayInterestV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::pay_interest::PayInterestCallInput;
                 let input = PayInterestCallInput {
@@ -222,18 +237,6 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let r = h.pay_interest_solo(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
-            })),
-            mk_ep("ProveCoverageV1", true, Box::new(move || {
-                use dwow_bearer_bond_contract::client::prove_coverage::ProveCoverageCallInput;
-                // reserve 100 over obligation 500 + 50 = 550 → 1818 bps, derived by the builder.
-                let input = ProveCoverageCallInput {
-                    series_asset_id: pallas::Base::from(1u64),
-                    total_outstanding: 500, total_interest_obligation: 50,
-                    reserve_amount: 100, report_block: 500,
-                    tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
-                };
-                let r = h.prove_coverage_solo(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
             })),
         ],

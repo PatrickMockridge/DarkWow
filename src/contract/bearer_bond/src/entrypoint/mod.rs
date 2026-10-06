@@ -1409,6 +1409,17 @@ fn apply_prove_coverage(cid: ContractId, update: ProveCoverageUpdateV1) -> Contr
     let key = [&update.report.series_asset_id.to_repr()[..], &update.report.report_block.to_le_bytes()[..]].concat();
     wasm::db::db_set(bonds_info_db, &key, &update.report.encode())?;
 
+    // …and under `series ‖ 0` as the series' **latest-report slot** (`OBL-C199`, a writer and a
+    // reader disagreeing about a key — the same class as the series key itself). `pay_interest_v1`
+    // asks whether the series has *any* verified coverage and looks it up at `series ‖ 0`; the
+    // report is stored at `series ‖ report_block`. The two could never meet, so `pay_interest_v1`
+    // answered `CoverageNotVerified` (code 24) for every series that had a real report — a block
+    // height of exactly 0 being the only value that would have matched, and block heights start
+    // at 1. The store has no prefix scan, so a designated slot is how "the series has a report"
+    // is expressed; the per-block record above stays, keyed as before.
+    let latest_key = [&update.report.series_asset_id.to_repr()[..], &0u64.to_le_bytes()[..]].concat();
+    wasm::db::db_set(bonds_info_db, &latest_key, &update.report.encode())?;
+
     // The auto-void decision and the series read both happen in exec now (OBL-C72); apply re-stores
     // the record exec prepared. This also removes the silent-failure path the old `if let Ok(..)`
     // chain had: a corrupt or missing series was indistinguishable from "not voided".
