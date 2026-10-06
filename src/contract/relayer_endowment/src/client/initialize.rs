@@ -46,15 +46,15 @@ impl InitializeV1PublicInputs {
     /// The instances in `constrain_instance` order, which is what `Proof::create`
     /// and `verify_proof` index the instance column by.
     ///
-    /// `initialize.zk` constrains `tx_binding`, then `tx_nonce`, then
-    /// `derived_endowment_id` — and the contract's `…_initialize_get_metadata_v1`
-    /// publishes them in that same order. This vector used to be
-    /// `[endowment_id, tx_binding, tx_nonce]`, which is not that order; it is the
-    /// order the *circuit's own witness block* is written in, which is a different
-    /// list. A proof built from it fails verify with `invalid proof`, naming neither
-    /// the ordering nor the circuit.
+    /// `OBL-C198`: `initialize.zk` now constrains `derived_endowment_id`, then `tx_binding`, then
+    /// `tx_nonce` — the tx pair is the **last two**, which is the position the node reads to
+    /// recompute the binding from the enclosing transaction. The contract's
+    /// `…_initialize_get_metadata_v1` publishes the same order. Before the reorder the circuit
+    /// instanced the pair *first* and this vector had to match that; the two move together, which
+    /// is why the comment here and the circuit's footer both name the pair-last convention rather
+    /// than each other.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.tx_binding, self.tx_nonce, self.endowment_id]
+        vec![self.endowment_id, self.tx_binding, self.tx_nonce]
     }
 }
 

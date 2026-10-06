@@ -52,13 +52,16 @@ pub struct DeployCapitalV1PublicInputs {
 }
 
 impl DeployCapitalV1PublicInputs {
-    /// The instances in `constrain_instance` order. `deploy_capital.zk` constrains
-    /// `derived_deployment_id`, the commitment's `x`, `tx_binding`, `tx_nonce`, then
-    /// the commitment's `y` — the value commitment is **split by the binding pair**,
-    /// not written as an `(x, y)` adjacency. The contract's
-    /// `…_deploy_capital_get_metadata_v1` publishes the same order.
+    /// The instances in `constrain_instance` order. `OBL-C198`: `deploy_capital.zk` constrains
+    /// `derived_deployment_id`, the commitment's `x`, the commitment's `y`, then the tx pair —
+    /// the pair is the **last two**, which is the position the node reads to recompute the
+    /// binding from the enclosing transaction. The value commitment is an `(x, y)` adjacency
+    /// again; it used to be **split by the binding pair**, and the client, the circuit and the
+    /// arm all move together. The contract's `…_deploy_capital_get_metadata_v1` publishes the
+    /// same order.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_deployment_id, self.value_commit_x, self.tx_binding, self.tx_nonce, self.value_commit_y]
+        // `OBL-C198`: the tx pair is the last two instances — the node reads that position.
+        vec![self.derived_deployment_id, self.value_commit_x, self.value_commit_y, self.tx_binding, self.tx_nonce]
     }
 }
 

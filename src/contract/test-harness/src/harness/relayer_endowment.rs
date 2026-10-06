@@ -33,7 +33,7 @@ use dwow_sdk::{
     blockchain::BlockHeight,
     crypto::{
         pasta_prelude::{Curve, Group, PrimeField},
-        pedersen_commitment_u64, Blind, PublicKey,
+        pedersen_commitment_u64, Blind, ContractId, PublicKey,
     },
     pasta::pallas,
 };
@@ -47,6 +47,14 @@ use dwow_relayer_endowment_contract::client::{
 use dwow_relayer_endowment_contract::model::{
     InitializeParamsV1, DeployCapitalParamsV1, ClaimFeesParamsV1,
 };
+
+/// The commitment over an ordered call set (`OBL-C198`). The order is DFS post-order — children
+/// before the parent — and **one** commitment is taken for the whole transaction, so a child's
+/// proof and its parent's bind to the same value. It is derived over the call *including* the
+/// contract id, which is why the harness is given the deployed id rather than a placeholder.
+fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
+}
 
 /// RelayerEndowment Harness for isolated testing
 pub struct RelayerEndowmentHarness {
@@ -66,11 +74,15 @@ pub struct RelayerEndowmentHarness {
     /// through `ContractHarness::set_next_block_height`. All three of this contract's circuits
     /// bind it into a public input, so every proof here is made against it.
     next_block_height: std::cell::Cell<Option<u64>>,
+    /// The contract's deployed id (`OBL-C198`): the commitment is over the call set, and a call
+    /// carries the contract it addresses, so a prover must know this id to derive the commitment
+    /// its proof binds to. The spec supplies it.
+    contract_id: ContractId,
 }
 
 impl RelayerEndowmentHarness {
     /// Spawn a new RelayerEndowment harness with pre-loaded circuits
-    pub fn spawn() -> Self {
+    pub fn spawn(contract_id: ContractId) -> Self {
         let init_bin = include_bytes!("../../../relayer_endowment/proof/initialize.zk.bin");
         let deploy_bin = include_bytes!("../../../relayer_endowment/proof/deploy_capital.zk.bin");
         let claim_bin = include_bytes!("../../../relayer_endowment/proof/claim_fees.zk.bin");
@@ -104,7 +116,19 @@ impl RelayerEndowmentHarness {
             claim_fees_zkbin,
             claim_fees_pk,
             next_block_height: std::cell::Cell::new(None),
+            contract_id,
         }
+    }
+
+    /// The commitment for a single-call endpoint of this harness — the call, and the node's own
+    /// derivation over it (`OBL-C198`). Every endpoint here is childless in its spec, so the
+    /// single-call form is correct; a caller whose transaction carries children must assemble the
+    /// whole ordered set and derive over it with `dwow_sdk::crypto::util::tx_commitment`.
+    fn commitment(&self, call_data: &[u8]) -> pallas::Base {
+        commitment_of(&[dwow_sdk::tx::ContractCall {
+            contract_id: self.contract_id,
+            data: call_data.to_vec(),
+        }])
     }
 
     /// The height the call being generated will be validated at.
@@ -133,13 +157,6 @@ impl RelayerEndowmentHarness {
         default_backer_cut_bp: u32,
     ) -> Result<InitializeResult, Box<dyn std::error::Error>> {
         let nonce = self.verifying_height()?;
-        let input = InitializeV1CallData::new(relayer_public, default_backer_cut_bp, nonce);
-
-        let (proof, public_inputs) = initialize_v1_proof(
-            &self.initialize_zkbin,
-            &self.initialize_pk,
-            &input,
-        )?;
 
         let params = InitializeParamsV1 {
             default_backer_cut_bp,
@@ -147,8 +164,20 @@ impl RelayerEndowmentHarness {
             instance_seed: [0u8; 32],
         };
 
+        // `OBL-C198`: the call data and the commitment over it come **before** the proof. The
+        // params carry no tx pair, so the call is complete without it; the commitment it is hashed
+        // into is what the proof binds to.
         let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode());
+        let commitment = self.commitment(&call_data);
+
+        let mut input = InitializeV1CallData::new(relayer_public, default_backer_cut_bp, nonce);
+        input.tx_commitment = commitment;
+        let (proof, public_inputs) = initialize_v1_proof(
+            &self.initialize_zkbin,
+            &self.initialize_pk,
+            &input,
+        )?;
 
         Ok(InitializeResult { call_data, proof, public_inputs })
     }
@@ -170,21 +199,6 @@ impl RelayerEndowmentHarness {
         backer_cut_bp: u32,
     ) -> Result<DeployCapitalResult, Box<dyn std::error::Error>> {
         let nonce = self.verifying_height()?;
-        let input = DeployCapitalV1CallData::new(
-            relayer_pub,
-            backer_public,
-            backer_cut_bp,
-            deploy_amount,
-            asset_id,
-            nonce,
-            value_blind,
-        );
-
-        let (proof, public_inputs) = deploy_capital_v1_proof(
-            &self.deploy_capital_zkbin,
-            &self.deploy_capital_pk,
-            &input,
-        )?;
 
         let params = DeployCapitalParamsV1 {
             relayer_pub,
@@ -197,8 +211,26 @@ impl RelayerEndowmentHarness {
             instance_seed: [0u8; 32],
         };
 
+        // `OBL-C198`: the call data and the commitment over it come **before** the proof.
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
+        let commitment = self.commitment(&call_data);
+
+        let mut input = DeployCapitalV1CallData::new(
+            relayer_pub,
+            backer_public,
+            backer_cut_bp,
+            deploy_amount,
+            asset_id,
+            nonce,
+            value_blind,
+        );
+        input.tx_commitment = commitment;
+        let (proof, public_inputs) = deploy_capital_v1_proof(
+            &self.deploy_capital_zkbin,
+            &self.deploy_capital_pk,
+            &input,
+        )?;
 
         Ok(DeployCapitalResult { call_data, proof, public_inputs })
     }
@@ -217,14 +249,8 @@ impl RelayerEndowmentHarness {
         fee_share: u64,
     ) -> Result<ClaimFeesResult, Box<dyn std::error::Error>> {
         let nonce = self.verifying_height()?;
-        let input = ClaimFeesV1CallData::new(deployment_id, backer_public, fee_share, nonce);
 
-        let (proof, public_inputs) = claim_fees_v1_proof(
-            &self.claim_fees_zkbin,
-            &self.claim_fees_pk,
-            &input,
-        )?;
-
+        let mut input = ClaimFeesV1CallData::new(deployment_id, backer_public, fee_share, nonce);
         let (backer_pub_x, backer_pub_y) = input.backer_pub_xy();
         let params = ClaimFeesParamsV1 {
             deployment_id,
@@ -233,8 +259,16 @@ impl RelayerEndowmentHarness {
             fee_share,
         };
 
+        // `OBL-C198`: the call data and the commitment over it come **before** the proof.
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
+        input.tx_commitment = self.commitment(&call_data);
+
+        let (proof, public_inputs) = claim_fees_v1_proof(
+            &self.claim_fees_zkbin,
+            &self.claim_fees_pk,
+            &input,
+        )?;
 
         Ok(ClaimFeesResult { call_data, proof, public_inputs })
     }

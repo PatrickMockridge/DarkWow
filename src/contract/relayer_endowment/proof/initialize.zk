@@ -29,7 +29,11 @@ circuit "InitializeV2" {
         nonce
     );
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+
+    # `OBL-C198`: the tx pair is the last two instances — the node reads that position to
+    # recompute the binding from the enclosing transaction, and there is no per-circuit index
+    # map, so the position IS the convention. It sat before `derived_endowment_id`.
+    constrain_instance(derived_endowment_id);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(derived_endowment_id);
 }

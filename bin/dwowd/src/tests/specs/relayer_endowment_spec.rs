@@ -10,7 +10,12 @@ use crate::tests::uniform_runner::{
 };
 
 pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(RelayerEndowmentHarness::spawn()));
+    // `OBL-C198`: the proof binds to a commitment derived over the call set, and a call carries the
+    // contract it addresses — so the harness must be given the deployed id rather than a
+    // placeholder, exactly as the node's `get_metadata` arm derives over the same bytes.
+    let relayer_endowment_cid =
+        crate::tests::blockchain::derive_contract_id_from_name("relayer_endowment");
+    let harness = Box::leak(Box::new(RelayerEndowmentHarness::spawn(relayer_endowment_cid)));
     let h: &RelayerEndowmentHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/relayer_endowment/dwow_relayer_endowment_contract.wasm");
     let pk = PublicKey::from_secret(SecretKey::from_bytes([1u8; 32]).unwrap());
@@ -18,7 +23,7 @@ pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
 
     ContractTestSpec {
         name: "relayer_endowment", is_genesis: false,
-        contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
+        contract_id: relayer_endowment_cid,
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,

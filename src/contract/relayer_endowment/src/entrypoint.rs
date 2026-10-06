@@ -24,7 +24,10 @@
 //! Relayer Endowment Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, PublicKey},
+    crypto::{
+        constants::DRK_POSEIDON_DOMAIN_TX_BINDING, pasta_prelude::PrimeField, poseidon_hash,
+        ContractId, PublicKey,
+    },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
@@ -221,6 +224,18 @@ fn plaintext_call_get_metadata(
     Ok(metadata)
 }
 
+/// `OBL-C198`: the binding the node recomputes from the **enclosing transaction**, derived rather
+/// than published. The arm publishes the value it derives here, so a proof whose circuit instance
+/// disagrees with the transaction it rides in is refused. `get_tx_commitment` is the runtime's own
+/// derivation over the call set — one derivation, one home (`safety.md` RC5).
+fn tx_binding_of(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        wasm::util::get_tx_commitment()?,
+        tx_nonce,
+    ]))
+}
+
 fn relayer_endowment_initialize_get_metadata_v1(
     _cid: ContractId,
     params: InitializeParamsV1,
@@ -229,10 +244,10 @@ fn relayer_endowment_initialize_get_metadata_v1(
     let nonce = wasm::util::get_verifying_block_height()?.get();
     let endowment_id =
         derive_endowment_id(&params.signature_public, params.default_backer_cut_bp, nonce);
-    // Circuit order: tx_binding(0), tx_nonce(1), derived_endowment_id(2)
+    // Circuit order: derived_endowment_id(0), tx_binding(1), tx_nonce(2)
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_INIT_NS_V2.to_string(),
-        vec![derive_tx_binding(pallas::Base::zero(), pallas::Base::zero()), pallas::Base::zero(), endowment_id],
+        vec![endowment_id, tx_binding_of(pallas::Base::zero())?, pallas::Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -258,10 +273,10 @@ fn relayer_endowment_deploy_capital_get_metadata_v1(
         return Ok(vec![]);
     } else {
     let vc_coords = coords.unwrap();
-    // Circuit order: deployment_id(0), vc_x(1), tx_binding(2), tx_nonce(3), vc_y(4)
+    // Circuit order: deployment_id(0), vc_x(1), vc_y(2), tx_binding(3), tx_nonce(4)
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V2.to_string(),
-        vec![deployment_id, *vc_coords.x(), derive_tx_binding(pallas::Base::zero(), pallas::Base::zero()), pallas::Base::zero(), *vc_coords.y()],
+        vec![deployment_id, *vc_coords.x(), *vc_coords.y(), tx_binding_of(pallas::Base::zero())?, pallas::Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -291,10 +306,10 @@ fn relayer_endowment_claim_fees_get_metadata_v1(
         params.fee_share,
         nonce,
     );
-    // Circuit order: tx_binding(0), tx_nonce(1), derived_claim_id(2)
+    // Circuit order: derived_claim_id(0), tx_binding(1), tx_nonce(2)
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V2.to_string(),
-        vec![derive_tx_binding(pallas::Base::zero(), pallas::Base::zero()), pallas::Base::zero(), claim_id],
+        vec![claim_id, tx_binding_of(pallas::Base::zero())?, pallas::Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;

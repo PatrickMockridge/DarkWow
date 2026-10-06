@@ -43,11 +43,13 @@ pub struct ClaimFeesV1PublicInputs {
 }
 
 impl ClaimFeesV1PublicInputs {
-    /// The instances in `constrain_instance` order. `claim_fees.zk` constrains
-    /// `tx_binding`, then `tx_nonce`, then `derived_claim_id` — the same order the
-    /// contract's `…_claim_fees_get_metadata_v1` publishes.
+    /// The instances in `constrain_instance` order. `OBL-C198`: `claim_fees.zk` constrains
+    /// `derived_claim_id`, then the tx pair — the pair is the **last two**, which is the position
+    /// the node reads to recompute the binding from the enclosing transaction. The contract's
+    /// `…_claim_fees_get_metadata_v1` publishes the same order.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.tx_binding, self.tx_nonce, self.derived_claim_id]
+        // `OBL-C198`: the tx pair is the last two instances — the node reads that position.
+        vec![self.derived_claim_id, self.tx_binding, self.tx_nonce]
     }
 }
 
