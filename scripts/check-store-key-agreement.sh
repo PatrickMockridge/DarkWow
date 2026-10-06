@@ -51,7 +51,10 @@ for arg in "$@"; do
     case "$arg" in
         --strict) STRICT=1 ;;
         --self-test) SELF_TEST=1 ;;
-        *) echo "usage: $0 [--strict] [--self-test]" >&2; exit 2 ;;
+        # The default already is report-only; the flag exists so the umbrella's wiring reads the same
+        # as its siblings' (`check-circuit-dead-values.sh --report-only`).
+        --report-only) STRICT=0 ;;
+        *) echo "usage: $0 [--strict] [--report-only] [--self-test]" >&2; exit 2 ;;
     esac
 done
 

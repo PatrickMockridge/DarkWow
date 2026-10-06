@@ -145,6 +145,8 @@ run_gate "control: the dead-value gate can fail" \
     bash "$SCRIPT_DIR/check-circuit-dead-values.sh" --self-test
 run_gate "control: host domain separation can fail" \
     bash "$SCRIPT_DIR/check-host-domain-separation.sh" --self-test
+run_gate "control: store key agreement can fail" \
+    bash "$SCRIPT_DIR/check-store-key-agreement.sh" --self-test
 
 # Static circuit audits first — they are seconds, and they need no build.
 #
@@ -278,6 +280,13 @@ run_gate "circuit dead values (report-only)" bash "$SCRIPT_DIR/check-circuit-dea
 # list is adjudicated, as the two above were: measured 2026-10-04 the tree carries 120 undeclared
 # host derivations and each has to be read before a gate can block on it.
 run_gate "host domain separation (report-only)" bash "$SCRIPT_DIR/check-host-domain-separation.sh"
+# OBL-C199: a state record's writer and its readers agree about the key. The gate that would have
+# caught four of the sixteen defects bearer_bond's migration reached — each a `db_set` and a
+# `db_get` disagreeing about a key, both sides compiling, each coherent alone, and the symptom a
+# silent `NotFound` for a record that was written correctly. REPORT-ONLY until the list is
+# adjudicated: measured 2026-10-06 the tree carries 26 undeclared read keys, and each has to be read
+# before a gate can block on it. `bearer_bond`, whose four instances are fixed, is clean.
+run_gate "store key agreement (report-only)" bash "$SCRIPT_DIR/check-store-key-agreement.sh"
 # OBL-C198: a circuit's last two `constrain_instance` targets are `tx_binding` then `tx_nonce`.
 # Stage 4 of the tx_binding chain is one comparison — the node recomputes
 # `poseidon(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` over the enclosing transaction and
