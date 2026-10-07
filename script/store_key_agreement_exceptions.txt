@@ -22,6 +22,18 @@
 # each pair, and pre-declaring them wholesale would be the amnesty this header warns against. Those
 # 26 are the worklist — the run prints them with both sides of each pair.
 #
+# TRIAGED 2026-10-07, and the count is still the worklist: reading the 27 findings the run then
+# printed found **two real** and one measured false-positive class, which is what turned the gate
+# from a suspicion into evidence. `stablecoin` read `b"last_interest_accrued"` — written nowhere in
+# the repository — inside `if let Some(...)`, so its `HAZOP CRIT-1` defense-in-depth check never
+# ran; it is fixed (read `CDP_ACCUMULATED_FEES_KEY`), and the fix **cleared this gate's finding for
+# it**, which is the gate agreeing with the repair rather than with itself. `bridge` reads
+# `b"current_timestamp"`, also written nowhere, and defaults to `Ok(0)` — recorded, not repaired
+# (bridge is deferred). Both are `OBL-C199` instances at their purest: not a disagreement, a reader
+# with no writer at all. The rest are mostly one field reached through two names — `identity`'s
+# `params.issuer_pub` and `update.issuer_id` are one key, set at `:849` — which a source scan cannot
+# follow. So a finding is a LEAD, not a verdict: read both sides before declaring anything.
+#
 # WHY THIS GATE EXISTS AT ALL, in one line: four of the sixteen defects the `bearer_bond` migration
 # reached were a `db_set` and a `db_get` disagreeing about a key, both sides compiled, each side was
 # coherent alone, and the symptom was a silent `NotFound` for a record that had been written

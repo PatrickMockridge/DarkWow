@@ -1754,19 +1754,24 @@ fn process_governance_report_instruction(
 
     // Verify interest_accrued against on-chain state.
     // HAZOP CRIT-1: The ZK circuit does not constrain interest_accrued as a public input.
-    // This entrypoint check is the defense-in-depth: the reported value MUST match
-    // the on-chain accumulated interest tracked in the config DB.
-    let accrue_db_key = b"last_interest_accrued";
-    if let Some(stored_interest_bytes) = wasm::db::db_get(config_db, accrue_db_key)? {
-        let stored_interest = u64::from_le_bytes(
-            stored_interest_bytes.as_slice().try_into()
-                .map_err(|_| ContractError::IoError("Failed to read stored interest".to_string()))?,
-        );
-        if params.interest_accrued != stored_interest {
-            msg!("[stablecoin::process_instruction] GovernanceReport: interest_accrued mismatch — reported={} stored={}",
-                params.interest_accrued, stored_interest);
-            return Err(StablecoinError::ConfigError("Reported interest_accrued does not match on-chain state".to_string()).into())
-        }
+    // This entrypoint check is the defense-in-depth: the reported value MUST match the on-chain
+    // accumulated interest, which `apply_accrue_interest_update` stores under
+    // `CDP_ACCUMULATED_FEES_KEY`. It read the literal `b"last_interest_accrued"` — a key **no
+    // endpoint writes**, so `db_get` returned `None`, the `if let Some` never entered, and the
+    // check this comment describes never ran: a dead defense, invisible because a check that
+    // cannot fire and a check that finds nothing look the same from outside. Fetch it as the
+    // siblings above fetch theirs, and require it, so a missing record is an error rather than a
+    // silently skipped check.
+    let accrued_interest_bytes = wasm::db::db_get(config_db, CDP_ACCUMULATED_FEES_KEY)?
+        .ok_or_else(|| ContractError::IoError("Accumulated interest not found".to_string()))?;
+    let on_chain_interest = u64::from_le_bytes(
+        accrued_interest_bytes.as_slice().try_into()
+            .map_err(|_| ContractError::IoError("Failed to read accumulated interest".to_string()))?,
+    );
+    if params.interest_accrued != on_chain_interest {
+        msg!("[stablecoin::process_instruction] GovernanceReport: interest_accrued mismatch — reported={} on_chain={}",
+            params.interest_accrued, on_chain_interest);
+        return Err(StablecoinError::ConfigError("Reported interest_accrued does not match on-chain state".to_string()).into())
     }
 
     // Compute outstanding circulation
