@@ -1,0 +1,30 @@
+# Adjudications for `scripts/check-codec-size-derivation.sh` — the rule that a fixed-size composite
+# derives its `ENCODED_SIZE` instead of restating the total as a lone integer.
+#
+# Format, one entry per line:
+#
+#   <rel path> : <type name> : <reason citing the mechanism>
+#
+# Content-keyed on path and type — NOT on line numbers — so a file that shifts underneath an entry
+# keeps its adjudication, the choice every sibling checker made and for the same reason. A declared
+# entry that no longer matches a finding is reported by the checker, so this list cannot outlive its
+# sites.
+#
+# THE LIST IS A RATCHET, NOT AN AMNESTY. Every entry is a fixed-size composite whose `ENCODED_SIZE`
+# is a single bare integer, and each one is either (a) a total that has already gone stale — the
+# defect class `OBL-C150` records, which `PayInterestUpdateV1` is the demonstration of — or (b) a
+# site deliberately kept as a lone integer with a reason that says why. "Unclear" is neither column.
+#
+# EMPTY ON PURPOSE, AND THAT IS THE MEASUREMENT. The gate's first full run over 31 contract model
+# files reported 21 sites, and every one was hand-summed from its own `encode` body and found
+# *arithmetically correct* (`RequestInterestUpdateV1 = 32 + 8 + RequestedClaim(41) = 81`,
+# `IssueParamsV1 = 6×32 + CapCommitment(32) = 224`, and so on). So the 21 are a drift register, not a
+# defect list: each is the shape that went stale in `PayInterestUpdateV1`, not yet stale. They are
+# the worklist, and the run prints them.
+#
+# WHY THIS GATE EXISTS AT ALL, in one line: `PayInterestUpdateV1` carried `ENCODED_SIZE = 625` while
+# its `encode` wrote two `BondCommitment`s of 336 each, so `encode` produced 753 bytes and `decode`
+# demanded 625 and refused its own output — live for the whole life of the constant, invisible because
+# a contract `Err` crosses the wasm boundary as a **code**, not a message, and surfaced only when the
+# endpoint behind it became reachable. The gate's rule flags that pre-fix site (`git show 3a4ba64641^`)
+# and is silent on the repaired one.

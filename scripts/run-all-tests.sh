@@ -147,6 +147,8 @@ run_gate "control: host domain separation can fail" \
     bash "$SCRIPT_DIR/check-host-domain-separation.sh" --self-test
 run_gate "control: store key agreement can fail" \
     bash "$SCRIPT_DIR/check-store-key-agreement.sh" --self-test
+run_gate "control: codec size derivation can fail" \
+    bash "$SCRIPT_DIR/check-codec-size-derivation.sh" --self-test
 
 # Static circuit audits first — they are seconds, and they need no build.
 #
@@ -287,6 +289,16 @@ run_gate "host domain separation (report-only)" bash "$SCRIPT_DIR/check-host-dom
 # adjudicated: measured 2026-10-06 the tree carries 26 undeclared read keys, and each has to be read
 # before a gate can block on it. `bearer_bond`, whose four instances are fixed, is clean.
 run_gate "store key agreement (report-only)" bash "$SCRIPT_DIR/check-store-key-agreement.sh"
+# OBL-C150: a fixed-size composite's `ENCODED_SIZE` is derived, not a lone integer restating a
+# total whose parts are free to move. `PayInterestUpdateV1` was exactly this — `= 625` while its
+# two `BondCommitment`s encoded to 336 each — and the gate's rule flags it on the pre-fix tree
+# (`git show 3a4ba64641^`, checked 2026-10-07) and is silent on the repaired one, which is the
+# control that the rule points at the real class rather than at a style. REPORT-ONLY: measured
+# 2026-10-07 the tree carries 21 such sites, every one of them currently *arithmetically correct*
+# (each was hand-summed from its own `encode` body), so this is a drift register, not a defect
+# list — the value is that the shape is the one that went stale, and 21 is small enough to keep at
+# zero deliberately.
+run_gate "codec size derivation (report-only)" bash "$SCRIPT_DIR/check-codec-size-derivation.sh"
 # OBL-C198: a circuit's last two `constrain_instance` targets are `tx_binding` then `tx_nonce`.
 # Stage 4 of the tx_binding chain is one comparison — the node recomputes
 # `poseidon(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` over the enclosing transaction and
