@@ -883,6 +883,86 @@ fn bearer_bond_prove_coverage_proof_is_bound_to_its_tx_commitment() {
 const BEARER_BOND_REDEEM_ZKBIN: &[u8] = include_bytes!("../../bearer_bond/proof/redeem.zk.bin");
 const BEARER_BOND_BURN_ZKBIN: &[u8] = include_bytes!("../../bearer_bond/proof/burn.zk.bin");
 
+/// The prove+verify the `Burn_V2` family had **none** of, over the one construction all five of its
+/// arms now share.
+///
+/// `bearer_bond_commitment_vectors.rs` pins `blind_output.zk` and `redeem.zk` and has never touched
+/// `burn.zk`, so the circuit five endpoints rest on was the only one of the four with no
+/// client-versus-circuit check at all — the gap that let an unsatisfiable `signature_secret`
+/// constraint sit in it until a heavyweight run reached the arm that used it.
+///
+/// It tests `model::burn_public_inputs`, which is what `burn_stake`, `transfer_stake`'s inputs,
+/// `request_interest`, `unstake` and `emergency_unstake` all call — so a divergence between an arm
+/// and the circuit is no longer possible to introduce in one of the five without the other four.
+#[test]
+fn bearer_bond_burn_vector_matches_its_own_proof() {
+    use dwow_bearer_bond_contract::client::burn_stake::{BurnStakeCallBuilder, BurnStakeCallInput};
+    use dwow_bearer_bond_contract::model::{burn_public_inputs, BurnStakeParamsV1};
+    use dwow_sdk::crypto::MerkleNode;
+
+    let burn_zkbin = ZkBinary::decode(BEARER_BOND_BURN_ZKBIN, false).expect("burn decodes");
+    let burn_pk = proving_key(&burn_zkbin);
+
+    let tx_commitment = pallas::Base::from(0xBEEFu64);
+    // Zero, as every bearer_bond arm publishes: the contract has no nonce, and
+    // `burn_public_inputs` writes that zero itself.
+    let tx_nonce = pallas::Base::zero();
+
+    let input = BurnStakeCallInput {
+        principal: 10000,
+        asset_id: pallas::Base::from(1u64),
+        spend_hook: pallas::Base::zero(),
+        user_data: pallas::Base::zero(),
+        commitment_blind: pallas::Base::from(3u64),
+        maturity_block: 1000,
+        leaf_position: 0,
+        merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
+        secret: pallas::Base::from(42u64),
+        tx_commitment,
+        tx_nonce,
+    };
+
+    let plan = BurnStakeCallBuilder { inputs: vec![input], burn_zkbin, burn_pk }
+        .prepare()
+        .expect("prepare must succeed");
+    // Through the codec, because the arm's vector is built from the **decoded** params.
+    let p = BurnStakeParamsV1::decode(&plan.params().encode()).expect("params must round-trip");
+    let debris = plan.prove(tx_commitment, tx_nonce).expect("prove must succeed");
+
+    let tx_binding =
+        dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
+    let (ns, vector) =
+        burn_public_inputs("Burn_V2", &p.inputs[0], tx_binding).expect("the construction must build");
+    assert_eq!(ns, "Burn_V2", "the construction must name the burn circuit");
+    assert_eq!(vector.len(), 11, "Burn_V2 instances eleven values");
+
+    match verify_zkp(&debris.proofs[0], BEARER_BOND_BURN_ZKBIN, &vector) {
+        ZkVerifyResult::Ok => {}
+        other => panic!(
+            "the burn vector does not verify against its own proof ({other:?}) — the arm's \
+             construction and the client's proof disagree, and this is the instrument the burn \
+             family had none of"
+        ),
+    }
+
+    // The control: a different tx binding must not verify. Without it the assertion above is a
+    // claim that the instrument works rather than a demonstration of it.
+    let (_, wrong_binding) =
+        burn_public_inputs("Burn_V2", &p.inputs[0], dwow_sdk::crypto::poseidon_hash([
+            pallas::Base::from(3u64),
+            pallas::Base::from(0xDEADu64),
+            tx_nonce,
+        ]))
+        .expect("the construction must build");
+    assert!(
+        !matches!(
+            verify_zkp(&debris.proofs[0], BEARER_BOND_BURN_ZKBIN, &wrong_binding),
+            ZkVerifyResult::Ok
+        ),
+        "the instrument cannot fail: a burn proof made over one tx binding accepted another"
+    );
+}
+
 /// The **instrument the `unstake` failure needed three runs earlier**: does the vector the arm
 /// publishes for the receipt verify against the receipt proof the client makes, with the values the
 /// params carry?

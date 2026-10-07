@@ -50,9 +50,9 @@
 //! - BurnStakeV1 (0x05): Issuer retires staking pool.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::{Group, PrimeField}, ContractId, MerkleNode},
+    crypto::{pasta_prelude::{CurveAffine, Group, PrimeField}, ContractId, MerkleNode},
     error::ContractError,
-    pasta::{group::GroupEncoding, pallas},
+    pasta::{group::{Curve, GroupEncoding}, pallas},
 };
 
 // ============================================================================
@@ -333,6 +333,52 @@ impl SeriesStatus {
         if data.is_empty() { return Err(ContractError::IoError("SeriesStatus: empty data".into())); }
         SeriesStatus::try_from(data[0])
     }
+}
+
+// ============================================================================
+// THE `Burn_V2` INSTANCE VECTOR — ONE CONSTRUCTION FOR FIVE ARMS
+// ============================================================================
+
+/// The `(namespace, instances)` a `Burn_V2` proof is verified against, built **once**.
+///
+/// Five arms publish this vector — `burn_stake`, `transfer_stake`'s inputs, `request_interest`,
+/// `unstake` and `emergency_unstake` — and each wrote it inline. That is the arrangement
+/// `receipt_redeem_public_inputs` exists to replace, and it is worth doing here for the same
+/// measured reason: an inline vector in five places is five chances for one of them to diverge
+/// from the circuit, and the divergence is invisible until an end-to-end run reaches the arm.
+///
+/// `tx_binding` is a **parameter** rather than a host read — `get_tx_commitment()` is a WASM import
+/// and unavailable off-chain — which is what lets a test drive the arm's own construction.
+///
+/// The order is `Burn_V2`'s `constrain_instance` order: the note commitment first (as
+/// `blind_output.zk` also places it), then the nullifier, the value commitment's coordinates, the
+/// token commitment, the merkle root, the encrypted user data, the spend hook, the signature, and
+/// the tx pair last.
+pub fn burn_public_inputs(
+    namespace: &str,
+    input: &BondInput,
+    tx_binding: pallas::Base,
+) -> Result<(String, Vec<pallas::Base>), ContractError> {
+    let affine = input.value_commit.to_affine();
+    let coords = affine.coordinates().into_option().ok_or_else(|| {
+        ContractError::IoError("Burn_V2 instances: value_commit is the identity point".to_string())
+    })?;
+    Ok((
+        namespace.to_string(),
+        vec![
+            input.commitment,
+            input.nullifier.inner(),
+            *coords.x(),
+            *coords.y(),
+            input.token_commit,
+            input.merkle_root.inner(),
+            input.user_data_enc,
+            input.spend_hook,
+            input.signature_public,
+            tx_binding,
+            pallas::Base::zero(), // tx_nonce — the contract has no nonce
+        ],
+    ))
 }
 
 // ============================================================================

@@ -287,28 +287,13 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 
     // Burn proofs (one per input)
     for input in &params.inputs {
-        let (vc_x, vc_y) = point_coords(input.value_commit)?;
-
-        zk_public_inputs.push((
-            BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
-            vec![
-                // `OBL-C199`: the note commitment is the first instance, as `Burn_V2` now
-                // constrains. The exec looks the bond up by this same field, so the host's
-                // comparison against the proof's instance is what stops a caller naming one bond's
-                // commitment while proving another.
-                input.commitment,
-                input.nullifier.inner(),
-                vc_x,
-                vc_y,
-                input.token_commit,
-                input.merkle_root.inner(),
-                input.user_data_enc,
-                input.spend_hook,
-                input.signature_public,
-                tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
-                pallas::Base::zero(), // tx_nonce
-            ],
-        ));
+        // `OBL-C199`: the vector is built by `burn_public_inputs`, which is the **one**
+        // construction all five `Burn_V2` arms and the prove+verify test share.
+        zk_public_inputs.push(crate::model::burn_public_inputs(
+            BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2,
+            input,
+            tx_binding_of(pallas::Base::zero())?,
+        )?);
     }
 
     // BlindOutput proofs (one per output)
@@ -352,25 +337,15 @@ fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     // Burn_V1 proof for bond ownership (nullifier NOT written to tree)
-    let (vc_x, vc_y) = point_coords(params.bond_input.value_commit)?;
+    // The Burn vector's value-commit coordinates are extracted by `burn_public_inputs`, which
+    // rejects the identity point the same way this line did — the check moved with the construction
+    // rather than being dropped.
 
-    zk_public_inputs.push((
-        BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
-        vec![
-            // `OBL-C199`: first instance, as `Burn_V2` constrains — see the transfer arm.
-            params.bond_input.commitment,
-            params.bond_input.nullifier.inner(),
-            vc_x,
-            vc_y,
-            params.bond_input.token_commit,
-            params.bond_input.merkle_root.inner(),
-            params.bond_input.user_data_enc,
-            params.bond_input.spend_hook,
-            params.bond_input.signature_public,
-            tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
-            pallas::Base::zero(), // tx_nonce
-        ],
-    ));
+    zk_public_inputs.push(crate::model::burn_public_inputs(
+        BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2,
+        &params.bond_input,
+        tx_binding_of(pallas::Base::zero())?,
+    )?);
 
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -392,25 +367,15 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     // Burn proof for the input stake commitment
-    let (vc_x, vc_y) = point_coords(params.bond_input.value_commit)?;
+    // The Burn vector's value-commit coordinates are extracted by `burn_public_inputs`, which
+    // rejects the identity point the same way this line did — the check moved with the construction
+    // rather than being dropped.
 
-    zk_public_inputs.push((
-        BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
-        vec![
-            // `OBL-C199`: first instance, as `Burn_V2` constrains — see the transfer arm.
-            params.bond_input.commitment,
-            params.bond_input.nullifier.inner(),
-            vc_x,
-            vc_y,
-            params.bond_input.token_commit,
-            params.bond_input.merkle_root.inner(),
-            params.bond_input.user_data_enc,
-            params.bond_input.spend_hook,
-            params.bond_input.signature_public,
-            tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
-            pallas::Base::zero(), // tx_nonce
-        ],
-    ));
+    zk_public_inputs.push(crate::model::burn_public_inputs(
+        BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2,
+        &params.bond_input,
+        tx_binding_of(pallas::Base::zero())?,
+    )?);
 
     // Redeem_V1 proof for the receipt commitment (value=0)
     //
@@ -447,25 +412,15 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     // Burn proof for the input stake commitment
-    let (vc_x, vc_y) = point_coords(params.bond_input.value_commit)?;
+    // The Burn vector's value-commit coordinates are extracted by `burn_public_inputs`, which
+    // rejects the identity point the same way this line did — the check moved with the construction
+    // rather than being dropped.
 
-    zk_public_inputs.push((
-        BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
-        vec![
-            // `OBL-C199`: first instance, as `Burn_V2` constrains — see the transfer arm.
-            params.bond_input.commitment,
-            params.bond_input.nullifier.inner(),
-            vc_x,
-            vc_y,
-            params.bond_input.token_commit,
-            params.bond_input.merkle_root.inner(),
-            params.bond_input.user_data_enc,
-            params.bond_input.spend_hook,
-            params.bond_input.signature_public,
-            tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
-            pallas::Base::zero(), // tx_nonce
-        ],
-    ));
+    zk_public_inputs.push(crate::model::burn_public_inputs(
+        BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2,
+        &params.bond_input,
+        tx_binding_of(pallas::Base::zero())?,
+    )?);
 
     // Redeem_V1 proof for the receipt commitment (value=0)
     //
@@ -503,28 +458,11 @@ fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     for input in &params.inputs {
-        let (vc_x, vc_y) = point_coords(input.value_commit)?;
-
-        zk_public_inputs.push((
-            BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
-            vec![
-                // `OBL-C199`: the note commitment is the first instance, as `Burn_V2` now
-                // constrains. The exec looks the bond up by this same field, so the host's
-                // comparison against the proof's instance is what stops a caller naming one bond's
-                // commitment while proving another.
-                input.commitment,
-                input.nullifier.inner(),
-                vc_x,
-                vc_y,
-                input.token_commit,
-                input.merkle_root.inner(),
-                input.user_data_enc,
-                input.spend_hook,
-                input.signature_public,
-                tx_binding_of(pallas::Base::zero())?, // tx_binding (derived from the host commitment, OBL-C198)
-                pallas::Base::zero(), // tx_nonce
-            ],
-        ));
+        zk_public_inputs.push(crate::model::burn_public_inputs(
+            BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2,
+            input,
+            tx_binding_of(pallas::Base::zero())?,
+        )?);
     }
 
     let mut metadata = vec![];
