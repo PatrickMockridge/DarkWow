@@ -1752,27 +1752,28 @@ fn process_governance_report_instruction(
         return Err(StablecoinError::ConfigError("Reported redeemed does not match on-chain state".to_string()).into())
     }
 
-    // Verify interest_accrued against on-chain state.
-    // HAZOP CRIT-1: The ZK circuit does not constrain interest_accrued as a public input.
-    // This entrypoint check is the defense-in-depth: the reported value MUST match the on-chain
-    // accumulated interest, which `apply_accrue_interest_update` stores under
-    // `CDP_ACCUMULATED_FEES_KEY`. It read the literal `b"last_interest_accrued"` — a key **no
-    // endpoint writes**, so `db_get` returned `None`, the `if let Some` never entered, and the
-    // check this comment describes never ran: a dead defense, invisible because a check that
-    // cannot fire and a check that finds nothing look the same from outside. Fetch it as the
-    // siblings above fetch theirs, and require it, so a missing record is an error rather than a
-    // silently skipped check.
-    let accrued_interest_bytes = wasm::db::db_get(config_db, CDP_ACCUMULATED_FEES_KEY)?
-        .ok_or_else(|| ContractError::IoError("Accumulated interest not found".to_string()))?;
-    let on_chain_interest = u64::from_le_bytes(
-        accrued_interest_bytes.as_slice().try_into()
-            .map_err(|_| ContractError::IoError("Failed to read accumulated interest".to_string()))?,
-    );
-    if params.interest_accrued != on_chain_interest {
-        msg!("[stablecoin::process_instruction] GovernanceReport: interest_accrued mismatch — reported={} on_chain={}",
-            params.interest_accrued, on_chain_interest);
-        return Err(StablecoinError::ConfigError("Reported interest_accrued does not match on-chain state".to_string()).into())
-    }
+    // `interest_accrued` is NOT compared against on-chain state, and the equality that did so was
+    // removed on 2026-10-07: its two operands are not the same quantity (OBL-C204).
+    //
+    // The check read `CDP_ACCUMULATED_FEES_KEY`, which `apply_accrue_interest_update` maintains as a
+    // **running total** (`new_accumulated_fees = accumulated_fees + interest_amount`, `:1930`). The
+    // value it was compared against is a **window**, and the circuit pins it to one: the bounds here
+    // above `constrain_instance(interest_accrued)` (`proof/governance_report.zk:122-145`) enforce
+    // `interest_accrued = floor(total_debt × rate_per_second × time_elapsed ÷ DENOM)` exactly.
+    //
+    // A running total equals one window only after exactly one accrual at the reporter's own rate
+    // and interval. After two, the ledger is the sum and the honest window is the last term — so the
+    // equality refused honest reports. It could never refuse a dishonest one: `total_debt` is pinned
+    // to on-chain state (`:1745`) but `rate_per_second` and `time_elapsed` are free witnesses the
+    // circuit only ever multiplies, so an adversary who knows the ledger solves `rate × time` to
+    // reproduce it. A constraint that rejects the honest and admits the dishonest is worse than
+    // none.
+    //
+    // The comment that stood here said "The ZK circuit does not constrain interest_accrued as a
+    // public input". It does, and has since the upper bound at `:138` was added; the premise was
+    // false, and this check stood in for a hole that was not there — which is why nothing noticed it
+    // was dead. What *is* unaudited — that the report's interest is consistent with the reporter's
+    // own witnesses and with nothing on-chain — is recorded as OBL-C204, not guarded here.
 
     // Compute outstanding circulation
     let outstanding = on_chain_debt.saturating_sub(on_chain_redeemed);

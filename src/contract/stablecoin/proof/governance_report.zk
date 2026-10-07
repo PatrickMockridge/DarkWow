@@ -137,7 +137,12 @@ circuit "GovernanceReportV2" {
     interest_upper = base_mul(interest_plus_one, DENOM);
     less_than_strict(debt_rate_time, interest_upper);
 
-    # `interest_accrued` is a public input because the host compares it against the config DB.
+    # `interest_accrued` is a public input so that the value the two bounds above pin is visible on
+    # the wire. It is *not* checked against the config DB: that equality pitted this window against
+    # `accumulated_fees`, which is a running total (`entrypoint.rs:1930`), and was removed on
+    # 2026-10-07 (OBL-C204). It was never satisfiable by an honest reporter after more than one
+    # accrual, and always satisfiable by a dishonest one, whose `rate_per_second` and `time_elapsed`
+    # are free witnesses.
     # `report_timestamp` used to be exposed beside it and nothing read it: not validated, not
     # stored, and not part of the interest arithmetic. The report's date is the block it landed
     # in, which the apply phase fills from the chain. Removing an expose removes a public input

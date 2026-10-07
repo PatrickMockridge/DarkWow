@@ -115,8 +115,14 @@ impl GovernanceReportCallData {
         rate_per_second: u64,
         time_elapsed: u64,
     ) -> Self {
-        // Compute interest: debt * rate * time / denominator
+        // Compute interest over the reporting *window*: debt * rate * time / denominator
         // denominator = 365 * 86400 * 10000 = 315360000000
+        //
+        // This is a window, not a ledger, and the circuit requires it exactly — the two bounds in
+        // `governance_report.zk` pin `interest_accrued = floor(debt × rate × time ÷ DENOM)`. It is
+        // not the on-chain `accumulated_fees`, which is a running total across every accrual. The
+        // host equality that conflated the two was removed on 2026-10-07 (OBL-C204); do not rebuild
+        // it here.
         let denominator = 315_360_000_000u64;
         let interest_accrued = (total_debt as u128)
             .saturating_mul(rate_per_second as u128)

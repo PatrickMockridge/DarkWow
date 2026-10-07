@@ -477,8 +477,46 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
+            // OBL-C204 control — the interest equality that was removed on 2026-10-07, exercised
+            // where its two operands disagree. That check compared the report's `interest_accrued`
+            // (a *window*, pinned by the circuit to `debt × rate × time ÷ DENOM`) against
+            // `accumulated_fees`, a running total. Two accruals separate them: the ledger reaches
+            // 120 while the honest window for the *last* term is 61. Before the removal this
+            // endpoint was refused (`GovernanceReport: interest_accrued mismatch — reported=61
+            // on_chain=120`); after it, this endpoint must be ACCEPTED, and this row is what says
+            // so. **One accrual does not suffice** — with a single accrual the ledger and the
+            // honest window coincide, which is exactly why the spec's original single
+            // report-at-zero never showed the defect.
+            //
+            // The collateral is the sibling report's 10000 and is deliberately untouched: it is
+            // proven-good at this point in the sequence, and the host checks it exactly
+            // (`entrypoint.rs:1737`), so deriving a new value here would be arithmetic this fixture
+            // cannot demonstrate.
+            mk_ep("AccrueInterestV1ControlA", true, Box::new(move || {
+                // floor(6000 × 1000 × 3_153_600 ÷ 315_360_000_000) = 60 → debt 6060, fees 60
+                let r = h.accrue_interest(&[], sk, 6000, 1000, 3_153_600)
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+            })),
+            mk_ep("AccrueInterestV1ControlB", true, Box::new(move || {
+                // floor(6060 × 1000 × 3_153_600 ÷ 315_360_000_000) = 60 → debt 6120, fees 120
+                let r = h.accrue_interest(&[], sk, 6060, 1000, 3_153_600)
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+            })),
+            mk_ep("GovernanceReportV1InterestControl", true, Box::new(move || {
+                // Honest: debt 6120 (6000 + 60 + 60), and the window `floor(6120 × 1000 ×
+                // 3_153_600 ÷ 315_360_000_000) = 61` — the ledger's 120 is *not* what an honest
+                // reporter states.
+                let r = h.governance_report(&[], sk, 10000, 6120, 0, 1000, 3_153_600)
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+            })),
             mk_ep("AccrueInterestV1", true, Box::new(move || {
-                let r = h.accrue_interest(&[], sk, 6000, 10, 3600)
+                // `old_total_debt` is the two control accruals' 6120, not the 6000 the mints left:
+                // the exec compares it against on-chain state. This accrual's interest is
+                // `floor(6120 × 10 × 3600 ÷ 315_360_000_000) = 0`, so the debt is unchanged.
+                let r = h.accrue_interest(&[], sk, 6120, 10, 3600)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
@@ -500,7 +538,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: None,
                 generate: Box::new(move || {
-                    let r = h.accrue_interest(&[], pallas::Base::from(11u64), 6000, 10, 3600)
+                    let r = h.accrue_interest(&[], pallas::Base::from(11u64), 6120, 10, 3600)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
