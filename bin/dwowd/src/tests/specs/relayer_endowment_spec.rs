@@ -2,6 +2,7 @@
 //! Harness: PARTIAL (3/8, real proofs). Tier: UNDERPOWERED.
 
 use dwow_contract_test_harness::harness::{ContractHarness, PromissoryNoteHarness, RelayerEndowmentHarness};
+use dwow_relayer_endowment_contract::model::FeeAllocation;
 use dwow_sdk::crypto::{
     poseidon_hash, pasta_prelude::PrimeField, MerkleNode, MerkleTree, PublicKey, SecretKey,
     PROMISSORY_NOTE_CONTRACT_ID,
@@ -201,6 +202,30 @@ pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
                         };
                         *deployment_id.lock().unwrap_or_else(|e| e.into_inner()) = Some(r.public_inputs.derived_deployment_id);
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                    }
+                }),
+            },
+            EndpointSpec {
+                // **Before `ClaimFeesV1`, and it is the claim's own precondition.**
+                // `deployment.accumulated_fees` is written only inside
+                // `process_settle_fees_instruction`, so without this row the claim answers `NoFees`
+                // (code 5) — permanently, and naming neither the settlement nor the deployment.
+                // Plaintext: the manifest marks `settle_fees` so, and there is no `settle_fees.zk`.
+                name: "SettleFeesV1", is_zk: false, expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None, verify_state: None,
+                generate: Box::new({
+                    let deployment_id = deployment_id.clone();
+                    move || {
+                        let id = deployment_id
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .expect("DeployCapitalV1 must run before SettleFeesV1 and record its id");
+                        // The allocation is the deployment and the fee; `total_fees` must equal the
+                        // sum of the allocations or the exec refuses it
+                        // (`InvalidParams("allocation sum != total_fees")`).
+                        let r = h.settle_fees(pk, 100, vec![FeeAllocation { deployment_id: id, fee_amount: 100 }])
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                     }
                 }),
             },

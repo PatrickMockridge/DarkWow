@@ -45,7 +45,8 @@ use dwow_relayer_endowment_contract::client::{
     claim_fees::{ClaimFeesV1CallData, claim_fees_v1_proof, ClaimFeesV1PublicInputs},
 };
 use dwow_relayer_endowment_contract::model::{
-    InitializeParamsV1, DeployCapitalParamsV1, ClaimFeesParamsV1,
+    InitializeParamsV1, DeployCapitalParamsV1, ClaimFeesParamsV1, FeeAllocation,
+    SettleFeesParamsV1,
 };
 
 /// The commitment over an ordered call set (`OBL-C198`). The order is DFS post-order — children
@@ -268,6 +269,35 @@ impl RelayerEndowmentHarness {
         self.deploy_capital_prove(plan, commitment, pallas::Base::zero())
     }
 
+    /// Settle fees onto a deployment (function code 0x04, **plaintext** — the manifest marks it so
+    /// and there is no `settle_fees.zk`).
+    ///
+    /// It is here because `ClaimFeesV1` has a precondition nothing else supplies:
+    /// `deployment.accumulated_fees` is written in exactly two places, both inside
+    /// `process_settle_fees_instruction`, so a claim against a deployment that has never been
+    /// settled is `NoFees` (code 5) — forever, and for a reason that names neither the settlement
+    /// nor the deployment. Without this row `ClaimFeesV1` is unreachable, not merely unfixtured.
+    pub fn settle_fees(
+        &self,
+        relayer_pub: PublicKey,
+        total_fees: u64,
+        allocations: Vec<FeeAllocation>,
+    ) -> Result<SettleFeesResult, Box<dyn std::error::Error>> {
+        let params = SettleFeesParamsV1 {
+            relayer_pub,
+            total_fees,
+            allocations,
+            // The relayer settles its own fees; a real one carries a transaction signature, which
+            // the harness does not model (no `settle_fees.zk` exists to verify it against).
+            signature_public: relayer_pub,
+        };
+        let mut call_data = vec![0x04]; // SettleFeesV1
+        call_data.extend_from_slice(
+            &params.encode().map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?,
+        );
+        Ok(SettleFeesResult { call_data })
+    }
+
     /// Claim accumulated fees from a deployment with ZK proof
     ///
     /// The params carry the backer's public key **coordinates as bytes**, because the contract's
@@ -351,6 +381,11 @@ pub struct InitializeResult {
     pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: InitializeV1PublicInputs,
+}
+
+/// Result of settle_fees — plaintext, so `call_data` only.
+pub struct SettleFeesResult {
+    pub call_data: Vec<u8>,
 }
 
 /// A DeployCapital call whose data is assembled and whose proof is not yet made (`OBL-C198`).
