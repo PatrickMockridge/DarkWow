@@ -3,7 +3,10 @@
 #
 # Format, one entry per line:
 #
-#   <rel path> : <tree constant> : <normalised read key> : <reason citing the mechanism>
+#   <rel path> | <tree constant> | <normalised read key> | <reason citing the mechanism>
+#
+# `|`-delimited, not `:`-delimited: a key can contain `::` (e.g. `IntentCommitment::from_base(...)`),
+# which a `:`-split truncates. A key cannot contain a `|`; the reason is the free-text tail and may.
 #
 # Content-keyed on path, tree and key — NOT on line numbers — so a file that shifts underneath an
 # entry keeps its adjudication, the same choice `circuit_tx_pair_last_exceptions.txt` and
@@ -17,24 +20,45 @@
 # An entry whose reason is "unclear" belongs in neither column: it is an open question, and the
 # honest thing is to leave the gate reporting it.
 #
-# EMPTY ON PURPOSE, AND THAT IS THE MEASUREMENT. The gate's first full run over 24 contract
-# entrypoint files reported 26 undeclared findings. None has been adjudicated: doing so means reading
-# each pair, and pre-declaring them wholesale would be the amnesty this header warns against. Those
-# 26 are the worklist — the run prints them with both sides of each pair.
-#
-# TRIAGED 2026-10-07, and the count is still the worklist: reading the 27 findings the run then
-# printed found **two real** and one measured false-positive class, which is what turned the gate
-# from a suspicion into evidence. `stablecoin` read `b"last_interest_accrued"` — written nowhere in
-# the repository — inside `if let Some(...)`, so its `HAZOP CRIT-1` defense-in-depth check never
-# ran; it is fixed (read `CDP_ACCUMULATED_FEES_KEY`), and the fix **cleared this gate's finding for
-# it**, which is the gate agreeing with the repair rather than with itself. `bridge` reads
-# `b"current_timestamp"`, also written nowhere, and defaults to `Ok(0)` — recorded, not repaired
-# (bridge is deferred). Both are `OBL-C199` instances at their purest: not a disagreement, a reader
-# with no writer at all. The rest are mostly one field reached through two names — `identity`'s
-# `params.issuer_pub` and `update.issuer_id` are one key, set at `:849` — which a source scan cannot
-# follow. So a finding is a LEAD, not a verdict: read both sides before declaring anything.
-#
-# WHY THIS GATE EXISTS AT ALL, in one line: four of the sixteen defects the `bearer_bond` migration
-# reached were a `db_set` and a `db_get` disagreeing about a key, both sides compiled, each side was
-# coherent alone, and the symptom was a silent `NotFound` for a record that had been written
-# correctly. No shape gate — counts, order, phase direction, domain presence — can see that.
+# TRIAGED 2026-10-07 — all 28 sites read, and the gate is now BLOCKING. The first run reported 26
+# undeclared; triaging found exactly one live defect — `stablecoin`'s `b"last_interest_accrued"`,
+# written nowhere and read inside `if let Some(...)`, so a `HAZOP CRIT-1` defense-in-depth check
+# never ran (fixed; it cleared the gate's own finding, 27 → 26). Two were genuine NO-WRITERs:
+# that one, and `bridge`'s `b"current_timestamp"` (recorded in `OBL-C199`, deferred contract). Every
+# other one is a false positive of a shallow textual gate — one field reached through two names
+# (`escrow.commitment`/`escrow_id`), a stored field vs a derived id (`stake.table_id` vs the init
+# `poseidon_hash`), or the record's own identity field (`fund.id` vs `params.fund_id`). None was a
+# defect. Triaging also found **two defects in the gate itself**, both fixed with self-test cases:
+# `db_mark_spent` was filed as a *read* though the SDK defines it `db_set(db, key, &[1])` (so any
+# nullifier tree looked writer-less — that hid `dao_escrow`'s, `labor_market`'s ×2, `oracle`'s and
+# `stablecoin`'s ×2 behind a skip), and the `params.`/`update.` prefix strip was anchored at `^`, so
+# the same field inside a call argument never matched (that hid both `relayer_endowment` ones).
+
+src/contract/attestation/src/entrypoint.rs | ATTESTATION_CONTRACT_DELEGATIONS_TREE | parent_id | A parent delegation is itself a delegation record, written at :1429 under its own `delegation_id`; the caller passes that id as `parent_id`, so the read is satisfiable against that write. The linkage is a client convention the contract neither derives nor enforces — benign asymmetry, not a disagreement.
+src/contract/auction/src/entrypoint.rs | AUCTION_CONTRACT_BIDS_TREE | prev_bid_id | `prev_bid_id` is the pattern binding of `auction.highest_bid_id` (:456); the writer stores it as `update.prev_bid_id` → `prev_id` (:811-812). One value, two binding names, neither a `let`.
+src/contract/auction/src/entrypoint.rs | AUCTION_CONTRACT_BIDS_TREE | wbid_id | `wbid_id` is the pattern binding of `auction.highest_bid_id` (:540); written as `update.winner_bid_id` (:827). One value, two names.
+src/contract/betting_stake/src/entrypoint.rs | BETTING_STAKE_REGISTRY_TREE | stake.table_id | The registry is keyed by the table id; `stake.table_id` is that id carried on the stake record (`update.table_id = params.table_id`). The write side prints as the init derivation `poseidon_hash([4, betting_contract_id, nonce])` because the gate folds three write sites to the init local.
+src/contract/bridge/src/entrypoint.rs | BRIDGE_CONTRACT_INFO_TREE | b"current_timestamp" | **NO WRITER ANYWHERE** — not the contract, not the host. `get_current_timestamp` returns `Ok(0)` on absence, so every Deposit/Withdrawal is stamped 0. A known defect, tracked in `OBL-C199`, in a deferred contract; declared so the gate reports only *new* disagreements and not this recorded one. Remove this line when bridge is repaired.
+src/contract/dao_escrow/src/entrypoint.rs | DAO_ESCROW_CONTRACT_BULLAS_TREE | endowment_bulla | The write key `update.bulla` is set from the same local `endowment_bulla` (:411-431).
+src/contract/drain_protection/src/entrypoint.rs | DRAIN_PROTECTION_CONTRACT_FUNDS_TREE | fund_id | Read `params.fund_id`; write `update.fund.id`, where `fund.id = params.fund_id` (init literal :529) or is the record fetched under that key (lock/unlock/config). One value through two names.
+src/contract/escrow/src/entrypoint.rs | ESCROW_CONTRACT_ESCROWS_TREE | commitment | Create stores `escrow.id = params.commitment` (:453); the readers of the same value name it `escrow_id`.
+src/contract/escrow/src/entrypoint.rs | ESCROW_CONTRACT_ESCROWS_TREE | escrow_id | The escrow's `id` is its commitment; `CreateEscrowParamsV1` names it `commitment`, the other arms name it `escrow_id` (model `id: EscrowId`, "Escrow identifier (commitment)"). One value, two field names.
+src/contract/identity/src/entrypoint.rs | IDENTITY_CONTRACT_ISSUERS_TREE | compute_issuer_key(&issuer_pub)? | `update.issuer_id = params.issuer_pub` (:849), and `compute_issuer_key` is pure. One value.
+src/contract/identity/src/entrypoint.rs | IDENTITY_CONTRACT_CREDENTIALS_TREE | capability_proof.nullifier | `CapabilityProof.nullifier` is documented as the credential's nullifier; both clients derive `poseidon_hash([1, credential_secret, commitment])`, the value the credential is stored under.
+src/contract/identity/src/entrypoint.rs | IDENTITY_CONTRACT_CREDENTIALS_TREE | credential_nullifier | `IssueCapabilityParams.credential_nullifier` is the credential's nullifier; the harness passes the same value it stores as the credential's nullifier.
+src/contract/labor_market/src/entrypoint.rs | LABOR_CONTRACT_NULLIFIERS_TREE | spent_nullifier | Read `params.spent_nullifier`; written as `nullifier` from `update.spent_nullifier = Some(params.spent_nullifier)` (:1352-1354).
+src/contract/labor_market/src/entrypoint.rs | LABOR_CONTRACT_SPENT_FLAGS_TREE | spent_nullifier | Read `params.spent_nullifier`; written as `flag` from `update.spent_flag` (:1356-1358). The same value, marked on a second tree.
+src/contract/oracle/src/entrypoint.rs | ORACLE_CONTRACT_NULLIFIERS_TREE | nf | `nf` is the pattern binding of the operation's `nullifier` (:321); written as `update.nullifier`.
+src/contract/otc_swap/src/entrypoint.rs | OTC_SWAP_CONTRACT_SWAPS_TREE | commitment | Create stores `swap.id = params.commitment` (:391).
+src/contract/otc_swap/src/entrypoint.rs | OTC_SWAP_CONTRACT_SWAPS_TREE | swap_id | The swap's `id` is its commitment; `CreateSwapParamsV1` names it `commitment`, others `swap_id` (model `id: SwapId`, "Swap identifier (commitment hash)").
+src/contract/pool_stake/src/entrypoint.rs | POOL_STAKE_REGISTRY_TREE | allocation.pool_id | The registry is keyed by `derived_pool_id` (= `pool.pool_id`); `allocation.pool_id` was assigned from it at creation (:716).
+src/contract/pool_stake/src/entrypoint.rs | POOL_STAKE_REGISTRY_TREE | stake.pool_id | Same: `stake.pool_id = update.pool.pool_id = derived_pool_id`.
+src/contract/pool_stake/src/entrypoint.rs | POOL_STAKE_MEMBERS_TREE | member_id | Every members write keys by the record's own `stake_id`; a read at `member_id` returns a stake whose `stake_id == member_id`.
+src/contract/relayer_endowment/src/entrypoint.rs | RELAYER_ENDOWMENT_DEPLOYMENTS_TREE | alloc.deployment_id | Each deployment is re-stored under its own `deployment_id`, which equals the `alloc.deployment_id` it was read by.
+src/contract/relayer_endowment/src/entrypoint.rs | RELAYER_ENDOWMENT_DEPLOYMENTS_TREE | deployment_id | Read `params.deployment_id`; written as `update.deployment.deployment_id`, the record's own id.
+src/contract/roulette/src/entrypoint.rs | ROULETTE_CONTRACT_BETS_TREE | bet_id | `bet_id` is a `Bet::new` poseidon id; the writer stores it as `update.bet.bet_id`, and the client passes the same derived id. One value through a derivation duplicated across model and client.
+src/contract/stablecoin/src/entrypoint.rs | STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE | n[..] | The local `n` is the nullifier marked spent at :903.
+src/contract/stablecoin/src/entrypoint.rs | STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE | withdrawal_nullifier | Read `params.withdrawal_nullifier`; written as `update.position_nullifier`, set from it (:1081, :1100).
+src/contract/stablecoin/src/entrypoint.rs | STABLECOIN_CONTRACT_POSITIONS_TREE | IntentCommitment::from_base(zk_public_inputs[1] | The position is read at its current (old) commitment, zk public input 1; every write keys by a position commitment. The mint arm reads zk[1] and writes zk[2] in one call, and the read value is always a previously-written key.
+src/contract/subscription/src/entrypoint.rs | SUBSCRIPTION_CONTRACT_PLANS_TREE | old_subscription.plan_id.to_le_bytes | The plan key; `old_subscription.plan_id` was set from the plan found under `params.plan_id`.
+src/contract/subscription/src/entrypoint.rs | SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE | commitment | The subscription's id (`subscription.id = params.commitment`, :454); written as `subscription.id` / `subscription_id` / `sub_id`, all the same id.

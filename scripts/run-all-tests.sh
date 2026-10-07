@@ -285,10 +285,13 @@ run_gate "host domain separation (report-only)" bash "$SCRIPT_DIR/check-host-dom
 # OBL-C199: a state record's writer and its readers agree about the key. The gate that would have
 # caught four of the sixteen defects bearer_bond's migration reached — each a `db_set` and a
 # `db_get` disagreeing about a key, both sides compiling, each coherent alone, and the symptom a
-# silent `NotFound` for a record that was written correctly. REPORT-ONLY until the list is
-# adjudicated: measured 2026-10-06 the tree carries 26 undeclared read keys, and each has to be read
-# before a gate can block on it. `bearer_bond`, whose four instances are fixed, is clean.
-run_gate "store key agreement (report-only)" bash "$SCRIPT_DIR/check-store-key-agreement.sh"
+# silent `NotFound` for a record that was written correctly. BLOCKING as of 2026-10-07: all 28 sites
+# were read and adjudicated in `script/store_key_agreement_exceptions.txt` — one live defect
+# (`stablecoin`'s dead `HAZOP CRIT-1` check), one recorded no-writer (`bridge`, deferred), the rest
+# false positives of a shallow textual gate — and triaging fixed two defects in the gate itself
+# (`db_mark_spent` filed as a read; the `params.`/`update.` strip anchored at `^`). `--strict` fails
+# on any *new* undeclared key, which is the whole point of a ratchet.
+run_gate "store key agreement" bash "$SCRIPT_DIR/check-store-key-agreement.sh" --strict
 # OBL-C150: a fixed-size composite's `ENCODED_SIZE` is derived, not a lone integer restating a
 # total whose parts are free to move. `PayInterestUpdateV1` was exactly this — `= 625` while its
 # two `BondCommitment`s encoded to 336 each — and the gate's rule flags it on the pre-fix tree

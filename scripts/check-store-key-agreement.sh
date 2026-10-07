@@ -30,12 +30,13 @@
 # height read from the host). Those need a state-machine test, not a source scan. This gate finds
 # the textual disagreement, which is the shape all four measured instances took.
 #
-# REPORT-ONLY ON THE FIRST RUN. The census below is a measurement, not a clean bill: the tree has
-# never been looked at this way and legitimate asymmetries exist (a read keyed by a prefix of the
-# written key, a record written by one tree and read through another). Populating
-# `script/store_key_agreement_exceptions.txt` with the ones that are intended is what turns this
-# into a ratchet; until then it prints and exits 0, and `--strict` fails on any undeclared finding
-# for a caller that wants that today.
+# ADJUDICATED AND BLOCKING AS OF 2026-10-07. It began report-only, because the tree had never been
+# looked at this way and legitimate asymmetries are indistinguishable from a disagreement in source
+# alone. All 28 sites have since been read and are declared in
+# `script/store_key_agreement_exceptions.txt`, so the umbrella now runs it `--strict` and a *new*
+# undeclared read key fails the build. That adjudication also found two defects in this gate, both
+# fixed above with self-test cases — a mis-classified `db_mark_spent`, and a `^`-anchored prefix
+# strip — each of which had been *hiding* findings rather than producing them.
 #
 # Exit 0: no undeclared finding (or report-only). Exit 1: `--strict` and an undeclared finding.
 # Exit 2: `--self-test` failed, or the exceptions file is malformed.
@@ -72,7 +73,7 @@ NORM = [
     # reads `params.X`, prepares an update carrying `X`, and `apply` writes `update.X`. Comparing
     # those as-written reports every exec/apply pair in the tree as a disagreement, which is 72
     # findings of pure noise on the first run and would have made the gate unusable.
-    (re.compile(r"^(params|update|self|input|output)\."), ""),
+    (re.compile(r"\b(params|update|self|input|output)\."), ""),
     # `db_set`/`db_get` keys are the most common case of a key that legitimately differs by a
     # prefix: a record stored under `commitment ‖ block` and scanned under `commitment ‖ 0`.
     (re.compile(r"\.to_repr\(?\)?"), ""),
@@ -96,7 +97,12 @@ def norm(expr: str) -> str:
 LET_RE = re.compile(r"let\s+(?:mut\s+)?(\w+)\s*(?::[^=]+)?=\s*(.+?);")
 DB_LOOKUP_RE = re.compile(r"let\s+(\w+)\s*=\s*wasm::db::db_lookup\([^,]+,\s*([A-Z0-9_]+)\)")
 WRITE_RE = re.compile(r"wasm::db::db_set\(\s*(\w+)\s*,\s*&?([^,]+?)\s*,")
-READ_RE = re.compile(r"wasm::db::(db_get|db_contains_key|db_mark_spent)\(\s*(\w+)\s*,\s*&?([^,)]+?)\s*[,)]")
+READ_RE = re.compile(r"wasm::db::(db_get|db_contains_key)\(\s*(\w+)\s*,\s*&?([^,)]+?)\s*[,)]")
+# `db_mark_spent` is a **write**, not a read: the SDK defines it as `db_set(db, key, &[1])`
+# (`src/sdk/src/wasm/db.rs:185`). Classifying it as a reader made every nullifier tree look
+# writer-less — its only writer is the mark — which is a false positive of exactly the shape this
+# gate exists to catch, produced by the gate itself. `dao_escrow`'s nullifier tree was one.
+MARK_SPENT_RE = re.compile(r"wasm::db::db_mark_spent\(\s*(\w+)\s*,\s*&?([^,)]+?)\s*[,)]")
 
 def resolve(expr: str, lets: dict) -> str:
     e = norm(expr)
@@ -119,6 +125,9 @@ def scan(path: str):
         dbs[m.group(1)] = m.group(2)
     writes, reads = {}, {}
     for m in WRITE_RE.finditer(src):
+        var, key = m.group(1), m.group(2)
+        writes.setdefault(var, set()).add(resolve(key, lets))
+    for m in MARK_SPENT_RE.finditer(src):
         var, key = m.group(1), m.group(2)
         writes.setdefault(var, set()).add(resolve(key, lets))
     for m in READ_RE.finditer(src):
@@ -164,11 +173,39 @@ fn f(cid: ContractId) -> Result<()> {
 }
 '''
 
+# Two more fixtures pin the two defects the gate itself had, each found while triaging the worklist:
+# a `db_mark_spent` write was filed as a read, so a nullifier tree looked writer-less; and the
+# `params.`/`update.` prefix strip was anchored at `^`, so the same field inside a call argument
+# never matched. Each must be a NON-finding, or the fixes are unverified.
+SELF_MARK_SPENT = '''
+fn f(cid: ContractId) -> Result<()> {
+    let nullifiers_db = wasm::db::db_lookup(cid, NULLIFIERS_TREE)?;
+    wasm::db::db_mark_spent(nullifiers_db, &update.vote_nullifier.to_repr())?;
+
+    let vote_nullifier = params.vote_nullifier;
+    if wasm::db::db_contains_key(nullifiers_db, &vote_nullifier.to_repr())? { return Err(e) }
+    Ok(())
+}
+'''
+SELF_ANCHOR = '''
+fn f(cid: ContractId) -> Result<()> {
+    let registry_db = wasm::db::db_lookup(cid, REGISTRY_TREE)?;
+    wasm::db::db_set(registry_db, &compute_key(&update.relayer_pub), &b)?;
+
+    if wasm::db::db_get(registry_db, &compute_key(&params.relayer_pub))?.is_none() { return Err(e) }
+    Ok(())
+}
+'''
+
 if self_test:
     import tempfile
     ok = True
+    cases = (("left.rs", SELF_LEFT, True),
+             ("right.rs", SELF_RIGHT, False),
+             ("mark_spent.rs", SELF_MARK_SPENT, False),
+             ("anchor.rs", SELF_ANCHOR, False))
     with tempfile.TemporaryDirectory() as d:
-        for name, body, expect_finding in (("left.rs", SELF_LEFT, True), ("right.rs", SELF_RIGHT, False)):
+        for name, body, expect_finding in cases:
             p = os.path.join(d, name)
             open(p, "w").write(body)
             found = findings_for(p)
@@ -177,7 +214,9 @@ if self_test:
                 ok = False
     if not ok:
         sys.exit(2)
-    print("PASS --self-test: a writer/reader key disagreement is reported, and the same pair made to agree is not")
+    print("PASS --self-test: a key disagreement is reported; the pair made to agree is not; a "
+          "`db_mark_spent` writer is not mistaken for a reader-only tree; and a field reached through "
+          "`params.`/`update.` inside a call argument is normalised")
     sys.exit(0)
 
 # --- the corpus ---------------------------------------------------------------------------------
@@ -202,9 +241,12 @@ if os.path.exists(EXC):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        parts = [p.strip() for p in line.split(":", 3)]
+        # `|`-delimited, not `:`-delimited: a key can contain `::` (a path such as
+        # `IntentCommitment::from_base(...)`), which a `:`-split would truncate. A key cannot contain
+        # a `|`; the reason is the free-text tail and may.
+        parts = [p.strip() for p in line.split("|", 3)]
         if len(parts) < 4:
-            print(f"FAIL: {EXC}:{n} is malformed — expected `path : tree : key : reason`", file=sys.stderr)
+            print(f"FAIL: {EXC}:{n} is malformed — expected `path | tree | key | reason`", file=sys.stderr)
             sys.exit(2)
         declared.add((parts[0], parts[1], parts[2]))
 
