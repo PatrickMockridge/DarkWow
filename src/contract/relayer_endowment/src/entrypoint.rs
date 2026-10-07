@@ -445,6 +445,24 @@ fn process_initialize_instruction(
     // Use signature_public from params as the relayer's public key
     let relayer_pub = params.signature_public;
 
+    // **A relayer's endowment is created once.** There was no check here, and a second
+    // `InitializeV1` for the same relayer silently **overwrote** the account: `apply_initialize_update`
+    // stores a fresh `RelayerEndowmentAccount` with `total_deployed`, `active_deployments` and
+    // `accumulated_fees` all zero, while the deployments it was tracking still exist in the
+    // deployments tree — so the account and its own records disagree from the second call onward.
+    //
+    // Found by running, and by the `§3.6` nullifier-replay control firing: it re-submits the first
+    // ZK endpoint and requires a refusal, and this one was accepted. That control exists for exactly
+    // this shape — an instruction whose replay the contract does not refuse — and the failure it
+    // reports is `nullifier replay MUST be rejected … second submission with identical call_data
+    // succeeded`, which names the instruction by position rather than by name.
+    let registry_db = wasm::db::db_lookup(_cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
+    let registry_key = compute_relayer_key(&relayer_pub);
+    if wasm::db::db_contains_key(registry_db, &registry_key)? {
+        msg!("[relayer_endowment::initialize] Error: endowment already exists for this relayer");
+        return Err(RelayerEndowmentError::RelayerAlreadyRegistered.into());
+    }
+
     let update = InitializeUpdateV1 {
         instance_seed: params.instance_seed,
         relayer_pub,
