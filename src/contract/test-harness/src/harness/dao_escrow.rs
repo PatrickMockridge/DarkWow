@@ -460,6 +460,57 @@ impl DaoEscrowHarness {
         Ok(ProposeClaimResult { call_data, public_inputs, proof, commitment })
     }
 
+    /// Assemble a `propose_claim` call and **stop before the proof**, so a caller can bind it to a
+    /// frame this call is not the last member of — see [`ProposeClaimPlan`] for the case that needs
+    /// it. Everything here is `propose_claim`'s front half, verbatim: the same params, the same call
+    /// data, the same `ProposeClaimV1CallData` — only `tx_commitment` is left for the caller.
+    #[allow(clippy::too_many_arguments)]
+    pub fn propose_claim_prepare(
+        &self,
+        nullifier_k: pallas::Scalar,
+        dao_escrow_bulla: pallas::Base,
+        claim_id: pallas::Base,
+        capability_id: pallas::Base,
+        capability_secret: pallas::Base,
+        proposer_secret: pallas::Base,
+        value: u64,
+        description_hash: pallas::Base,
+        recipient_pubkey: PublicKey,
+        proposal_blind: pallas::Base,
+    ) -> Result<ProposeClaimPlan> {
+        let input = ProposeClaimV1CallData::new(
+            nullifier_k,
+            dao_escrow_bulla,
+            claim_id,
+            capability_id,
+            capability_secret,
+            proposer_secret,
+            value,
+            description_hash,
+            recipient_pubkey,
+            proposal_blind,
+        );
+
+        let params = ProposeClaimParamsV1 {
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
+            claim_id: ClaimId(claim_id),
+            value,
+            recipient_pubkey,
+            // The same blind the proof is built with (`OBL-C153`) — see `propose_claim`.
+            claim_blind: proposal_blind,
+        };
+
+        let mut call_data = vec![0x07]; // ProposeClaimV1
+        call_data.extend_from_slice(&params.encode());
+
+        Ok(ProposeClaimPlan {
+            input,
+            call_data,
+            propose_claim_zkbin: self.propose_claim_zkbin.clone(),
+            propose_claim_pk: self.propose_claim_pk.clone(),
+        })
+    }
+
     /// Vote on a claim with ZK proof (VoteClaimV1 - 0x08)
     pub fn vote_claim(
         &self,
@@ -750,6 +801,40 @@ pub struct ProposeClaimResult {
     /// The commitment every proof in this transaction binds to (`OBL-C198`), so the caller can
     /// prove a child against the same value.
     pub commitment: pallas::Base,
+}
+
+/// A prepared `propose_claim`, proved against a caller-supplied commitment — the shape
+/// [`MultiSigHarness::finalize_prepare`] established, and needed here for the case that one cannot
+/// serve: a call that is a **child with a parent after it**.
+///
+/// `propose_claim` takes its children and hashes `[…children, this call]`, which is the whole frame
+/// only when this call is the last one in it. In `labor_market`'s `DisputeV1` row it is not: the
+/// frame is `[multisig finalize, this call, the labor_market call]`, so the commitment it must bind
+/// cannot be computed at all from what it is given — the root's bytes do not exist yet. A plan lets
+/// the caller assemble the frame (preparing every call first, since a proof is not part of a call's
+/// bytes) and then prove each one against it.
+pub struct ProposeClaimPlan {
+    input: ProposeClaimV1CallData,
+    /// The call data the commitment must cover — selector `0x07` and the encoded params.
+    pub call_data: Vec<u8>,
+    propose_claim_zkbin: ZkBinary,
+    propose_claim_pk: ProvingKey,
+}
+
+impl ProposeClaimPlan {
+    /// Prove against `tx_commitment` — the commitment over the whole ordered call set the node will
+    /// hash, not just this call.
+    pub fn prove(mut self, tx_commitment: pallas::Base) -> Result<ProposeClaimResult> {
+        self.input.tx_commitment = tx_commitment;
+        let (proof, public_inputs) =
+            propose_claim_v1_proof(&self.propose_claim_zkbin, &self.propose_claim_pk, &self.input)?;
+        Ok(ProposeClaimResult {
+            call_data: self.call_data,
+            public_inputs,
+            proof,
+            commitment: tx_commitment,
+        })
+    }
 }
 
 /// Result of voting on a claim

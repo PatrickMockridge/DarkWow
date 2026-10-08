@@ -1359,24 +1359,34 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     let appr = approvals.lock().ok().map(|g| g.clone())
                         .filter(|a| !a.is_empty())
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (dao approvals)".into()))?;
-                    let r = h.dispute(cap_job_id, worker_secret, pallas::Base::from(99u64), endowment_bulla, worker_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let f = ms.finalize(DaoEscrowHarness::governance_group(), msg_propose, appr)
-                        .map_err(|e| dwow_core::Error::Custom(format!("finalize: {e}")))?;
-                    // `OBL-C198`, AND THIS ROW IS THE CAMPAIGN'S HARD CASE, stated rather than left
-                    // to be discovered: the dao call here is a **nested child**. The set the node
-                    // hashes is `[ms_child, dao_call, this labor_market call]`, and a proof must
-                    // bind to a commitment over that whole set — which no builder for a *child* can
-                    // compute, because its parent's bytes come after it. Passing `&[]` binds this
-                    // proof to `[dao_call]` alone, so the row is expected to be red until the dao
-                    // harness grows a form the caller supplies the commitment to. It was already
-                    // red before this change for the same reason one level up: `ms.finalize` binds
-                    // over `[ms_call]`, while multisig's arm derives over the whole set.
-                    let pc = dao.propose_claim(
-                        &[],
+                    // ── `OBL-C198`, AND THIS ROW IS THE CAMPAIGN'S HARD CASE: a **three-level frame**.
+                    // The set the node hashes is `[ms_child, dao_call, this labor_market call]` —
+                    // `build_witness_tree`'s post-order, children before the call that names them — and
+                    // **every** proof in it must bind a commitment over that whole set, the root
+                    // included. Nothing about a call's bytes depends on a proof, so the caller can do
+                    // what no builder can: assemble all three calls first, hash them, then prove each.
+                    let plan_f = ms.finalize_prepare(DaoEscrowHarness::governance_group(), msg_propose, appr)
+                        .map_err(|e| dwow_core::Error::Custom(format!("finalize_prepare: {e}")))?;
+                    let ms_call = dwow_sdk::tx::ContractCall {
+                        contract_id: *MULTISIG_CONTRACT_ID,
+                        data: plan_f.call_data.clone(),
+                    };
+                    let plan_pc = dao.propose_claim_prepare(
                         nullifier_k, endowment_bulla, dispute_claim_id, dao_capability_id,
                         dao_capability_secret, dao_proposer_secret, 10_000,
                         pallas::Base::from(50u64), owner_pub, dispute_proposal_blind,
-                    ).map_err(|e| dwow_core::Error::Custom(format!("propose_claim: {e}")))?;
+                    ).map_err(|e| dwow_core::Error::Custom(format!("propose_claim_prepare: {e}")))?;
+                    let pc_call = dwow_sdk::tx::ContractCall {
+                        contract_id: crate::tests::blockchain::derive_contract_id_from_name("dao_escrow"),
+                        data: plan_pc.call_data.clone(),
+                    };
+                    let r = h.dispute(cap_job_id, worker_secret, pallas::Base::from(99u64), endowment_bulla, worker_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let lm_call = parent_call(&r.call_data);
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&ms_call, &pc_call, &lm_call]);
+                    let f = plan_f.prove(commitment)
+                        .map_err(|e| dwow_core::Error::Custom(format!("finalize prove: {e}")))?;
+                    let pc = plan_pc.prove(commitment)
+                        .map_err(|e| dwow_core::Error::Custom(format!("propose_claim prove: {e}")))?;
                     Ok(EndpointResult {
                         children: vec![ChildCall {
                             contract_id: crate::tests::blockchain::derive_contract_id_from_name("dao_escrow"),
