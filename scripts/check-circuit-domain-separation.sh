@@ -152,7 +152,11 @@ for path in paths:
                              f"(a {dom_role}) — the domain does not carry the derivation's purpose"))
 
 exceptions = {}
-exc_path = os.path.join(repo, "script", "circuit_domain_exceptions.txt")
+# Overridable so the stale-entry check below can be controlled: a check that has never been shown to
+# fire is the thing this whole gate exists to catch, and it cannot be shown to fire against a list
+# whose every entry is live.
+exc_path = os.environ.get(
+    "DOMAIN_EXCEPTIONS", os.path.join(repo, "script", "circuit_domain_exceptions.txt"))
 if os.path.isfile(exc_path):
     for raw in open(exc_path, errors="replace").read().splitlines():
         entry = raw.split("#")[0].strip()
@@ -174,7 +178,17 @@ for identity, message in findings:
     else:
         failing.append((identity, message))
 
-if not findings:
+# A declared entry that matches no finding is covering nothing — the site was repaired, the file was
+# renamed, or the identity drifted — and an exception list that only ever grows is how a gate's
+# coverage quietly becomes a list of things nobody has looked at recently. **This check is the gap
+# this file's own header names**: "it reports '4 adjudicated' against a file holding five entries, and
+# nothing compares the two numbers — unlike the phase, metadata and hidden-test gates, which each
+# carry a stale-entry check" (`OBL-Z3`). The dead fifth entry was found by sweeping every exception
+# list by hand and re-reading each reason; the next one is found here, on the run that retires it.
+used = {identity for identity, _ in findings if identity in exceptions}
+stale = sorted(set(exceptions) - used)
+
+if not findings and not stale:
     print("PASS: all contract circuits are domain-separated "
           "(presence, within-circuit collisions, and role)")
     sys.exit(0)
@@ -182,6 +196,16 @@ if not findings:
 for message, reason in excepted:
     print(f"EXCEPTED: {message}")
     print(f"          {reason}")
+
+if stale:
+    print(f"FAIL: {len(stale)} declared exception(s) match no finding — the entry is covering nothing:")
+    for identity in stale:
+        print(f"  {identity}")
+        print(f"          {exceptions[identity]}")
+    print("")
+    print("Fix: retire the entry (delete it, or comment it out with what replaced it), so the list")
+    print("     stays the reviewed residue of a rule rather than a record of what used to be true.")
+    sys.exit(1)
 
 if failing:
     print(f"FAIL: {len(failing)} unexcepted domain-separation finding(s):")

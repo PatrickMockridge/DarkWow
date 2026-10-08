@@ -27,7 +27,10 @@
 # **How the dead entry was found, because it is the instrument gap this file leaves open**: not by
 # this gate. It reports "4 adjudicated" against a file holding five entries, and nothing compares the
 # two numbers — unlike the phase, metadata and hidden-test gates, which each carry a stale-entry check.
-# The entry was found by sweeping every exception list by hand and re-reading each reason. The
+# The entry was found by sweeping every exception list by hand and re-reading each reason. **THAT GAP
+# IS NOW CLOSED (2026-10-08, `OBL-Z3`)**: the gate compares the two numbers, a declared entry matching
+# no finding fails with `the entry is covering nothing`, and `run-all-tests.sh` controls it by planting
+# exactly that. On the corpus it reports all four entries live. The
 # mismatch is recorded here rather than left for the next sweep to rediscover.
 
 src/contract/betting_stake/proof/claim.zk :: collision :: 3 : OBL-Z19 — `DOMAIN_NULLIFIER` and `DOMAIN_TX_BINDING` are both `witness_base(3)`, and both derivations are exposed (:66-68, :70-71), so this circuit's nullifier and its tx binding are hashed in one domain. The header comment claims "every poseidon_hash prepends a unique domain constant", which is the property it breaks. Repair is one value

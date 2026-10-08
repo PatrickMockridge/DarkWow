@@ -166,6 +166,15 @@ run_gate "control: the tx-pair-last gate can fail" \
 # mtime bug it was carrying, and it is planted rather than asserted.
 run_gate "control: the zkbin freshness check can fail" \
     bash "$SCRIPT_DIR/../bin/dwowd/src/tests/check_zkbin_freshness.sh" --self-test
+# The circuit-domain gate's stale-entry control (`OBL-Z3`): a declared exception that matches no
+# finding is covering nothing, and an exception list that only grows is how a gate's coverage becomes a
+# list of things nobody has looked at recently. The gate's own header names this check as missing —
+# "it reports '4 adjudicated' against a file holding five entries, and nothing compares the two
+# numbers" — and the dead fifth entry was found by sweeping every list by hand. The planted path is
+# assembled at run time so `check-doc-index.sh`, which scans this file, does not read it as a real
+# citation.
+run_gate "control: a stale domain exception is reported" \
+    bash -c 'd=$(mktemp -d); p="src/contract/""nowhere/proof/""absent.zk"; printf "%s :: collision :: 3 : OBL-Z3 — planted\n" "$p" > "$d/x"; DOMAIN_EXCEPTIONS="$d/x" "$1" >/dev/null 2>&1 && { rm -rf "$d"; exit 1; }; rm -rf "$d"; exit 0' _ "$SCRIPT_DIR/check-circuit-domain-separation.sh"
 
 # THE LAST TWO UNWIRED CONTROLS, found by censusing which instruments support `--self-test`
 # against which are invoked with it — four were supported-and-unwired, and the pair of circuit
