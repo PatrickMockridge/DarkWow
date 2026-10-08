@@ -41,7 +41,6 @@ impl FunctionParams for insurance_market_model::FileClaimParamsV1 {
         dict.set_item("buyer", self.buyer.to_string())?;
         dict.set_item("amount", format!("{:?}", self.amount))?;
         dict.set_item("evidence", format!("{:?}", self.evidence))?;
-        dict.set_item("oracle_signature", format!("{:?}", self.oracle_signature))?;
         Ok(dict.unbind())
     }
 
@@ -52,7 +51,6 @@ impl FunctionParams for insurance_market_model::FileClaimParamsV1 {
         writeln!(out, "{prefix}buyer: {}", self.buyer).unwrap();
         writeln!(out, "{prefix}amount: {:?}", self.amount).unwrap();
         writeln!(out, "{prefix}evidence: {:?}", self.evidence).unwrap();
-        writeln!(out, "{prefix}oracle_signature: {:?}", self.oracle_signature).unwrap();
         Ok(())
     }
 }

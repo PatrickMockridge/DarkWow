@@ -43,7 +43,6 @@ impl FunctionParams for insurance_market_model::ResolveClaimWithCapabilityParams
         dict.set_item("is_valid", format!("{:?}", self.is_valid))?;
         dict.set_item("payout_amount", format!("{:?}", self.payout_amount))?;
         dict.set_item("attestation", format!("{:?}", self.attestation))?;
-        dict.set_item("oracle_signature", format!("{:?}", self.oracle_signature))?;
         dict.set_item("capability_proof", format!("{:?}", self.capability_proof))?;
         dict.set_item("capability_secret", format!("{:?}", self.capability_secret))?;
         Ok(dict.unbind())
@@ -56,7 +55,6 @@ impl FunctionParams for insurance_market_model::ResolveClaimWithCapabilityParams
         writeln!(out, "{prefix}is_valid: {:?}", self.is_valid).unwrap();
         writeln!(out, "{prefix}payout_amount: {:?}", self.payout_amount).unwrap();
         writeln!(out, "{prefix}attestation: {:?}", self.attestation).unwrap();
-        writeln!(out, "{prefix}oracle_signature: {:?}", self.oracle_signature).unwrap();
         writeln!(out, "{prefix}capability_proof: {:?}", self.capability_proof).unwrap();
         writeln!(out, "{prefix}capability_secret: {:?}", self.capability_secret).unwrap();
         Ok(())

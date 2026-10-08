@@ -113,7 +113,6 @@ pub fn insurance_market_resolve_claim_with_capability_process_instruction_v1(
         crate::model::ClaimState::Rejected
     };
     claim.attestation = vec![];
-    claim.oracle_signature = params.oracle_signature;
     claim.resolved_at = current_block;
 
     let mut coverage = coverage;
@@ -142,7 +141,6 @@ pub fn insurance_market_resolve_claim_with_capability_process_instruction_v1(
         payout_amount: payout,
         slash_amount,
         resolved_at: current_block,
-        oracle_signature: params.oracle_signature,
         claim_bytes: claim.encode()?,
         coverage_bytes: coverage.encode(),
         underwriter_bytes,

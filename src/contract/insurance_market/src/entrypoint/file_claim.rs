@@ -106,7 +106,6 @@ pub fn insurance_market_file_claim_process_instruction_v1(
         amount: params.amount,
         state: crate::model::ClaimState::Filed,
         created_at: current_block,
-        oracle_signature: params.oracle_signature,
         coverage_bytes,
     };
 
@@ -133,7 +132,6 @@ pub fn insurance_market_file_claim_process_update_v1(
         state: crate::model::ClaimState::Filed,
         evidence: vec![], // Stored separately or in metadata
         attestation: vec![],
-        oracle_signature: update.oracle_signature,
         resolved_at: 0,
     };
 
