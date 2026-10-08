@@ -15,12 +15,41 @@
 # defect class `OBL-C150` records, which `PayInterestUpdateV1` is the demonstration of — or (b) a
 # site deliberately kept as a lone integer with a reason that says why. "Unclear" is neither column.
 #
-# EMPTY ON PURPOSE, AND THAT IS THE MEASUREMENT. The gate's first full run over 31 contract model
-# files reported 21 sites, and every one was hand-summed from its own `encode` body and found
-# *arithmetically correct* (`RequestInterestUpdateV1 = 32 + 8 + RequestedClaim(41) = 81`,
-# `IssueParamsV1 = 6×32 + CapCommitment(32) = 224`, and so on). So the 21 are a drift register, not a
-# defect list: each is the shape that went stale in `PayInterestUpdateV1`, not yet stale. They are
-# the worklist, and the run prints them.
+# ADJUDICATED 2026-10-08 — all 21 sites read and summed from their own `encode` bodies; the gate is
+# now **BLOCKING**. Every entry is column (b): a total deliberately kept as a lone integer, with the
+# sum it equals named as the reason. The class is real — `PayInterestUpdateV1` carried 625 while its
+# `encode` wrote 753 — and each of these is that shape *not yet stale*, which is why this is a ratchet
+# and not a defect log. A new lone-integer composite now fails the build.
+#
+# Each reason states the sum, because the sum IS the adjudication. A nested type named in a reason
+# contributes that type's own `ENCODED_SIZE`; `32` is a `pallas::Base`/`PublicKey`/`[u8;32]`, `8` a
+# `u64`, `4` a `u32`, `1` a `bool` or a one-byte enum discriminant.
+#
+# WHEN ONE STOPS BEING TRUE, the gate says so: the sum in a reason is prose, so the check is a reader's
+# or a run's — but a site whose `ENCODED_SIZE` goes stale is exactly what flagged it here, and the
+# endpoint behind it is what made `PayInterestUpdateV1` visible.
+
+src/contract/bearer_bond/src/model/mod.rs : RequestInterestUpdateV1 : 32 + 8 + RequestedClaim(41) = 81
+src/contract/betting_stake/src/model/mod.rs : InitializeParamsV1 : 32 + 32 + 4 + 1 + 32 + Signature(64) = 165
+src/contract/betting_stake/src/model/mod.rs : StakeUpdateV1 : 32×4 + 8×2 + TableStakeRegistry(70) = 246
+src/contract/betting_stake/src/model/mod.rs : UnstakeUpdateV1 : 32 + 8 + 8 + 32 + Stake(171) = 251
+src/contract/betting_stake/src/model/mod.rs : ClaimEarningsUpdateV1 : 32 + 8 + 8 + 32 + Stake(171) = 251
+src/contract/betting_stake/src/model/mod.rs : UpdateRiskUpdateV1 : 32 + 8 + 8 + TableStakeRegistry(70) = 118
+src/contract/darkbet_exchange/src/model/mod.rs : CancelOrderUpdateV1 : 32 + 8 + 32 + Order(192) = 264
+src/contract/darkbet_exchange/src/model/mod.rs : ClaimWinningsUpdateV1 : 32 + 8 + 1 + Position(155) = 196
+src/contract/darkbet_exchange/src/model/mod.rs : MatchOrdersUpdateV1 : 32×4 + 4 + 8×3 + 32 + 8 + Order(192)×2 = 580
+src/contract/drain_protection/src/model/mod.rs : NoLossReserveConfig : 8 + ReserveSpendAuthority(1) + 8 = 17
+src/contract/escrow/src/model/mod.rs : CreateEscrowParamsV1 : 32×6 + 8×2 = 208
+src/contract/escrow/src/model/mod.rs : ClaimEscrowParamsV1 : 32×3 = 96
+src/contract/escrow/src/model/mod.rs : RefundEscrowParamsV1 : 32×3 + 8×2 = 112
+src/contract/escrow/src/model/mod.rs : CancelEscrowParamsV1 : 32×3 = 96
+src/contract/multisig/src/model/mod.rs : SignUpdateV1 : 32×3 = 96
+src/contract/pool_stake/src/model/mod.rs : JoinPoolUpdateV1 : 32×4 + 8×3 + 4 + PoolStakeRegistry(130) = 286
+src/contract/pool_stake/src/model/mod.rs : LeavePoolUpdateV1 : PoolMemberStake(223) + 8×2 = 239
+src/contract/pool_stake/src/model/mod.rs : ClaimFeesUpdateV1 : PoolMemberStake(223) + 8 = 231
+src/contract/pool_stake/src/model/mod.rs : UpdatePoolConfigUpdateV1 : PoolStakeRegistry(130) = 130
+src/contract/promissory_note/src/model/mod.rs : RegisterTypeParamsV1 : 32×7 = 224
+src/contract/promissory_note/src/model/mod.rs : IssueParamsV1 : 32×7 = 224
 #
 # WHY THIS GATE EXISTS AT ALL, in one line: `PayInterestUpdateV1` carried `ENCODED_SIZE = 625` while
 # its `encode` wrote two `BondCommitment`s of 336 each, so `encode` produced 753 bytes and `decode`

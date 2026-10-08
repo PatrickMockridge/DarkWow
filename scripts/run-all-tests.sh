@@ -301,12 +301,11 @@ run_gate "store key agreement" bash "$SCRIPT_DIR/check-store-key-agreement.sh" -
 # total whose parts are free to move. `PayInterestUpdateV1` was exactly this — `= 625` while its
 # two `BondCommitment`s encoded to 336 each — and the gate's rule flags it on the pre-fix tree
 # (`git show 3a4ba64641^`, checked 2026-10-07) and is silent on the repaired one, which is the
-# control that the rule points at the real class rather than at a style. REPORT-ONLY: measured
-# 2026-10-07 the tree carries 21 such sites, every one of them currently *arithmetically correct*
-# (each was hand-summed from its own `encode` body), so this is a drift register, not a defect
-# list — the value is that the shape is the one that went stale, and 21 is small enough to keep at
-# zero deliberately.
-run_gate "codec size derivation (report-only)" bash "$SCRIPT_DIR/check-codec-size-derivation.sh"
+# control that the rule points at the real class rather than at a style. BLOCKING as of 2026-10-08:
+# all 21 sites the first run reported have since been read and summed from their own `encode` bodies,
+# and each is declared in `script/codec_size_derivation_exceptions.txt` with the sum it equals — so
+# the list is a ratchet over a known-good set, and a *new* lone-integer composite fails the build.
+run_gate "codec size derivation" bash "$SCRIPT_DIR/check-codec-size-derivation.sh" --strict
 # OBL-C198: a circuit's last two `constrain_instance` targets are `tx_binding` then `tx_nonce`.
 # Stage 4 of the tx_binding chain is one comparison — the node recomputes
 # `poseidon(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` over the enclosing transaction and
