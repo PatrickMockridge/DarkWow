@@ -75,6 +75,12 @@ VOCAB = (
     ("ACCEPTED-WITH-REASON", r'accepted-with-reason'),
     ("FAILS",       r'fails'),
     ("PARTLY",      r'partly'),
+    # A row whose gap cannot be closed by working it: it is blocked on a design or policy choice
+    # nobody has made. Added 2026-10-08 because `OPEN` was doing three jobs — "we will do this",
+    # "we are waiting for a decision", and "we have decided not to" — and a list that mixes them
+    # cannot be closed, so its count only ever grew. `ACCEPTED-WITH-REASON` was already the word
+    # for the third; this is the word for the second.
+    ("DECISION",    r'decision'),
     ("PROVED",      r'proved'),
     ("DEFINITIONAL", r'definitional'),
     ("MECHANIZED",  r'mechanized'),

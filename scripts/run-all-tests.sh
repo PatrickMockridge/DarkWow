@@ -113,6 +113,11 @@ run_gate "control: heavyweight coverage can fail" \
 # historical defect — the table called `drain_protection` STUB at 0/9 while its spec covered 4.
 run_gate "control: coverage table can contradict the tree" \
     bash "$REPO_ROOT/contrib/ci/check-coverage-table.sh" --self-test
+# The register worklist ratchet's control: a planted register over its budget must fail, one within
+# budget must pass, and a row whose Status cell opens with a coined word must not be counted at all —
+# that last one is the defect this control found in the checker's own first draft.
+run_gate "control: register worklist over budget fails" \
+    bash "$SCRIPT_DIR/check-register-worklist.sh" --self-test
 # The manifest <-> entrypoint gate's control: a manifest code the enum does not assign, and a
 # proof-bearing function with no dispatch arm, must each be caught.
 run_gate "control: manifest↔entrypoint agreement can fail" \
@@ -464,6 +469,14 @@ run_gate "empty metadata arms declared"   bash "$SCRIPT_DIR/check-metadata-arms.
 # Negative-controlled before wiring, per the OBL-Z18 lesson: a copy of the register with a coined
 # marker appended as OBL-C23's last cell fails the check; the register itself passes.
 run_gate "register status markers"        bash "$SCRIPT_DIR/register-status.sh" --check
+# The register's worklist, counted — and ratcheted. The gate above guards the *form* of each marker;
+# this one is the measurement that was missing, and its absence is why the open set sat still: 70 rows
+# on 2026-09-29 and 70 on 2026-10-08, with fourteen minted and six closed in the last four days. `OPEN`
+# had been doing three jobs at once — work, a waiting decision, and a decline — so the number could not
+# fall, because a row blocked on a design choice cannot be closed by working it. The decisions now carry
+# their own status (`DECISION`), and this fails when the worklist grows past its declared budget.
+# **It is green.**
+run_gate "register worklist (ratchet)"    bash "$SCRIPT_DIR/check-register-worklist.sh" --strict
 
 run_gate "build contract ZK circuits"     "$SCRIPT_DIR/build-contract-zk.sh"
 # The `unwrap_used`/`expect_used` census, made a gate so the rollout cannot silently regress
