@@ -24,7 +24,7 @@
 //! DarkBet Exchange Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, pasta_prelude::PrimeField, ContractId},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, poseidon_hash, pasta_prelude::PrimeField, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
@@ -127,18 +127,27 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
 /// Get metadata for verification
 #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+/// `OBL-C198`: the binding is the host's derivation over the enclosing transaction, not a constant.
+/// Ten arms published `poseidon_hash([3, 0, 0])` for every call; they derive now.
+fn darkbet_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        dwow_sdk::wasm::util::get_tx_commitment()?,
+        tx_nonce,
+    ]))
+}
+
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = DarkbetFunction::try_from(self_.data[0])?;
 
-    let tx_binding = poseidon_hash([
-        pallas::Base::from(3u64),
-        pallas::Base::zero(),
-        pallas::Base::zero(),
-    ]);
+    // `OBL-C198`: the binding is the host's derivation over the enclosing transaction, not a
+    // constant. This contract's params carry no `tx_nonce`, so the nonce stays a literal zero and is
+    // passed to the helper as one.
     let tx_nonce = pallas::Base::zero();
+    let tx_binding = darkbet_tx_binding(tx_nonce)?;
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 

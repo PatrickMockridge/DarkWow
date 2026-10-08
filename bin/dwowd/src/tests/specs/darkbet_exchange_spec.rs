@@ -15,13 +15,21 @@ use dwow_sdk::crypto::{
 use dwow_sdk::pasta::pallas;
 use std::sync::{Arc, Mutex};
 
-use crate::tests::modules::child_calls::{pn_transfer_child, PnNote};
+use crate::tests::modules::child_calls::{pn_transfer_prepare, PnNote};
 use crate::tests::uniform_runner::{
-    ContractTestSpec, EndpointExpectation, EndpointResult, EndpointSpec,
+    ChildCall, ContractTestSpec, EndpointExpectation, EndpointResult, EndpointSpec,
 };
 
+/// The `ContractCall` a prepared parent frames as. `OBL-C198`'s commitment is taken over the call
+/// set the transaction will carry — children first, the parent last, post-order.
+fn parent_call(cid: dwow_sdk::crypto::ContractId, data: &[u8]) -> dwow_sdk::tx::ContractCall {
+    dwow_sdk::tx::ContractCall { contract_id: cid, data: data.to_vec() }
+}
+
 pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(DarkbetExchangeHarness::spawn()));
+    // The harness frames a one-step call over its own `ContractCall`, which needs this id.
+    let cid = crate::tests::blockchain::derive_contract_id_from_name("darkbet_exchange");
+    let harness = Box::leak(Box::new(DarkbetExchangeHarness::spawn(cid)));
     let h: &DarkbetExchangeHarness = harness;
     let wasm =
         include_bytes!("../../../../../src/contract/darkbet_exchange/dwow_darkbet_exchange_contract.wasm");
@@ -260,14 +268,20 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h
-                            .place_back(market_ob, backer_secret, 0, odds, stake)
+                        let plan = h
+                            .place_back_prepare(market_ob, backer_secret, 0, odds, stake)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(stake), back_order_id]);
-                        let child = pn_transfer_child(&n[1], stake, blind_seed, pallas::Base::zero())?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        // `OBL-C198`: one commitment over `[child, parent]`, both proofs bound to it.
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[1], stake, blind_seed, pallas::Base::zero())?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &call_data)]);
+                        let proof = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -281,14 +295,19 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h
-                            .place_lay(market_ob, layer_secret, 0, odds, stake)
+                        let plan = h
+                            .place_lay_prepare(market_ob, layer_secret, 0, odds, stake)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(stake), lay_order_id]);
-                        let child = pn_transfer_child(&n[2], stake, blind_seed, pallas::Base::zero())?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[2], stake, blind_seed, pallas::Base::zero())?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &call_data)]);
+                        let proof = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -302,14 +321,19 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h
-                            .buy_position(market_amm1, owner_secret, 0, amount, bp_nonce)
+                        let plan = h
+                            .buy_position_prepare(market_amm1, owner_secret, 0, amount, bp_nonce)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(amount), position_id]);
-                        let child = pn_transfer_child(&n[3], amount, blind_seed, pallas::Base::zero())?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[3], amount, blind_seed, pallas::Base::zero())?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &call_data)]);
+                        let (proof, _) = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -323,14 +347,19 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h
-                            .add_liquidity(market_amm2, provider_secret, lp_amount, al_nonce)
+                        let plan = h
+                            .add_liquidity_prepare(market_amm2, provider_secret, lp_amount, al_nonce)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(lp_amount), lp_share_id]);
-                        let child = pn_transfer_child(&n[4], lp_amount, blind_seed, pallas::Base::zero())?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[4], lp_amount, blind_seed, pallas::Base::zero())?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &call_data)]);
+                        let (proof, _) = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -392,7 +421,12 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(settle_payout), market_ob]);
-                        let child = pn_transfer_child(&n[7], settle_payout, blind_seed, pallas::Base::zero())?;
+                        // `OBL-C198`: this parent carries no proof, but its child's proof binds the
+                        // frame — so the frame is what the child must be proven against.
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[7], settle_payout, blind_seed, pallas::Base::zero())?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &r.call_data)]);
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
                         Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![] })
                     }
                 }),
@@ -407,14 +441,19 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h
-                            .claim_winnings(market_amm1, position_id, owner_secret, 0, amount)
+                        let plan = h
+                            .claim_winnings_prepare(market_amm1, position_id, owner_secret, 0, amount)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(claim_payout), position_id]);
-                        let child = pn_transfer_child(&n[6], claim_payout, blind_seed, pallas::Base::zero())?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[6], claim_payout, blind_seed, pallas::Base::zero())?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &call_data)]);
+                        let (proof, _) = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -428,14 +467,19 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h
-                            .remove_liquidity(market_amm2, lp_share_id, provider_secret)
+                        let plan = h
+                            .remove_liquidity_prepare(market_amm2, lp_share_id, provider_secret)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(remove_payout), lp_share_id]);
-                        let child = pn_transfer_child(&n[5], remove_payout, blind_seed, pallas::Base::zero())?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[5], remove_payout, blind_seed, pallas::Base::zero())?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &call_data)]);
+                        let proof = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -452,14 +496,19 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h
-                            .cancel_order(back_order_id, backer_secret)
+                        let plan = h
+                            .cancel_order_prepare(back_order_id, backer_secret)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(stake), back_order_id]);
-                        let child = pn_transfer_child(&n[8], stake, blind_seed, pallas::Base::zero())?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[8], stake, blind_seed, pallas::Base::zero())?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &call_data)]);
+                        let proof = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![proof] })
                     }
                 }),
             },

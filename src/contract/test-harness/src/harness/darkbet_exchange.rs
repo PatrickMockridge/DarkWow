@@ -51,6 +51,8 @@ use dwow_darkbet_exchange_contract::model::{
 
 /// DarkbetExchange Harness for isolated testing
 pub struct DarkbetExchangeHarness {
+    /// This contract's id — needed to frame a single-call transaction's commitment (`OBL-C198`).
+    contract_id: dwow_sdk::crypto::ContractId,
     /// CreateMarketV2 ZkBinary
     create_market_zkbin: ZkBinary,
     /// CreateMarketV2 ProvingKey
@@ -94,8 +96,12 @@ pub struct DarkbetExchangeHarness {
 }
 
 impl DarkbetExchangeHarness {
-    /// Spawn a new DarkbetExchange harness with pre-loaded circuits
-    pub fn spawn() -> Self {
+    /// Spawn a new DarkbetExchange harness with pre-loaded circuits.
+    ///
+    /// Takes the contract's id because a one-step call must frame the transaction commitment over
+    /// its own `ContractCall`, and that needs the id (`OBL-C198`). `slot`'s harness takes it the
+    /// same way.
+    pub fn spawn(contract_id: dwow_sdk::crypto::ContractId) -> Self {
         dwow_darkbet_exchange_contract::enable_deterministic_zk();
         let create_market_bin =
             include_bytes!("../../../darkbet_exchange/proof/create_market.zk.bin");
@@ -185,6 +191,7 @@ impl DarkbetExchangeHarness {
             ProvingKey::build(resolve_market_zkbin.k, &resolve_market_circuit).expect("ProvingKey::build failed");
 
         Self {
+            contract_id,
             create_market_zkbin,
             create_market_pk,
             buy_position_zkbin,
@@ -208,19 +215,28 @@ impl DarkbetExchangeHarness {
         }
     }
 
+    /// The frame a **single-call** transaction commits to (`OBL-C198`). A one-step caller has no
+    /// siblings to include, so this is exactly the value the node derives and the arm reads — which
+    /// is what makes the one-step form bind something real rather than a zero.
+    fn own_frame(&self, call_data: &[u8]) -> pallas::Base {
+        dwow_sdk::crypto::util::tx_commitment([&dwow_sdk::tx::ContractCall {
+            contract_id: self.contract_id,
+            data: call_data.to_vec(),
+        }])
+    }
+
     /// Create a new market
-    pub fn create_market(
+    pub fn create_market_prepare(
         &self,
         creator_secret: pallas::Base,
         oracle_id: pallas::Base,
         nonce: u64,
         duration_blocks: u64,
         market_type: u8,
-    ) -> Result<CreateMarketResult> {
+    ) -> Result<CreateMarketPlan> {
         let creator_public = PublicKey::from_secret(SecretKey::from_base(creator_secret));
         let close_block = nonce + duration_blocks;
         let input = CreateMarketV1CallData::new(creator_public, creator_secret, close_block, nonce);
-        let (proof, public_inputs) = create_market_v1_proof(&self.create_market_zkbin, &self.create_market_pk, &input)?;
 
         let params = CreateMarketParamsV1 {
             description: "Test Market".to_string(),
@@ -235,27 +251,44 @@ impl DarkbetExchangeHarness {
             signature: Signature::dummy(),
             instance_seed: [0u8; 32],
             nonce,
-            nullifier: public_inputs.computed_nullifier,
+            // The client's own derivation, read rather than re-derived (`OBL-C198`).
+            nullifier: input.compute_public_inputs().computed_nullifier,
         };
 
         let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
+        Ok(CreateMarketPlan { call_data, input, zkbin: self.create_market_zkbin.clone(), pk: self.create_market_pk.clone() })
+    }
+
+    /// Create a new market and prove it in one step, framing this call alone. A caller whose call is
+    /// a *parent* with children uses [`Self::create_market_prepare`] and frames the whole set.
+    pub fn create_market(
+        &self,
+        creator_secret: pallas::Base,
+        oracle_id: pallas::Base,
+        nonce: u64,
+        duration_blocks: u64,
+        market_type: u8,
+    ) -> Result<CreateMarketResult> {
+        let plan = self.create_market_prepare(creator_secret, oracle_id, nonce, duration_blocks, market_type)?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.own_frame(&call_data);
+        let (proof, public_inputs) = plan.prove(commitment, pallas::Base::zero())?;
         Ok(CreateMarketResult { call_data, public_inputs, proof })
     }
 
     /// Buy a position on a market
-    pub fn buy_position(
+    pub fn buy_position_prepare(
         &self,
         market_id: pallas::Base,
         owner_secret: pallas::Base,
         outcome: u8,
         amount: u64,
         nonce: u64,
-    ) -> Result<BuyPositionResult> {
+    ) -> Result<BuyPositionPlan> {
         let owner_public = PublicKey::from_secret(SecretKey::from_base(owner_secret));
         let input = BuyPositionV1CallData::new(market_id, owner_public, owner_secret, outcome, amount, nonce);
-        let (proof, public_inputs) = buy_position_v1_proof(&self.buy_position_zkbin, &self.buy_position_pk, &input)?;
 
         let params = BuyPositionParamsV1 {
             market_id,
@@ -267,27 +300,42 @@ impl DarkbetExchangeHarness {
             signature: Signature::dummy(),
             instance_seed: [0u8; 32],
             nonce,
-            nullifier: public_inputs.computed_nullifier,
+            nullifier: input.compute_public_inputs().computed_nullifier,
         };
 
         let mut call_data = vec![0x07];
         call_data.extend_from_slice(&params.encode());
 
+        Ok(BuyPositionPlan { call_data, input, zkbin: self.buy_position_zkbin.clone(), pk: self.buy_position_pk.clone() })
+    }
+
+    /// Buy a position and prove it in one step, framing this call alone.
+    pub fn buy_position(
+        &self,
+        market_id: pallas::Base,
+        owner_secret: pallas::Base,
+        outcome: u8,
+        amount: u64,
+        nonce: u64,
+    ) -> Result<BuyPositionResult> {
+        let plan = self.buy_position_prepare(market_id, owner_secret, outcome, amount, nonce)?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.own_frame(&call_data);
+        let (proof, public_inputs) = plan.prove(commitment, pallas::Base::zero())?;
         Ok(BuyPositionResult { call_data, public_inputs, proof })
     }
 
     /// Claim winnings from a winning position
-    pub fn claim_winnings(
+    pub fn claim_winnings_prepare(
         &self,
         market_id: pallas::Base,
         position_id: pallas::Base,
         owner_secret: pallas::Base,
         winning_outcome: u8,
         amount: u64,
-    ) -> Result<ClaimWinningsResult> {
+    ) -> Result<ClaimWinningsPlan> {
         let owner_public = PublicKey::from_secret(SecretKey::from_base(owner_secret));
         let input = ClaimWinningsV1CallData::new(market_id, owner_public, owner_secret, winning_outcome, amount, 0u64);
-        let (proof, public_inputs) = claim_winnings_v1_proof(&self.claim_winnings_zkbin, &self.claim_winnings_pk, &input)?;
 
         let params = ClaimWinningsParamsV1 {
             position_id,
@@ -301,20 +349,35 @@ impl DarkbetExchangeHarness {
         let mut call_data = vec![0x0A];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
+        Ok(ClaimWinningsPlan { call_data, input, zkbin: self.claim_winnings_zkbin.clone(), pk: self.claim_winnings_pk.clone() })
+    }
+
+    /// Claim winnings and prove it in one step, framing this call alone.
+    pub fn claim_winnings(
+        &self,
+        market_id: pallas::Base,
+        position_id: pallas::Base,
+        owner_secret: pallas::Base,
+        winning_outcome: u8,
+        amount: u64,
+    ) -> Result<ClaimWinningsResult> {
+        let plan = self.claim_winnings_prepare(market_id, position_id, owner_secret, winning_outcome, amount)?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.own_frame(&call_data);
+        let (proof, public_inputs) = plan.prove(commitment, pallas::Base::zero())?;
         Ok(ClaimWinningsResult { call_data, public_inputs, proof })
     }
 
     /// Add liquidity to a market's AMM pool
-    pub fn add_liquidity(
+    pub fn add_liquidity_prepare(
         &self,
         market_id: pallas::Base,
         provider_secret: pallas::Base,
         amount: u64,
         nonce: u64,
-    ) -> Result<AddLiquidityResult> {
+    ) -> Result<AddLiquidityPlan> {
         let provider_public = PublicKey::from_secret(SecretKey::from_base(provider_secret));
         let input = AddLiquidityV1CallData::new(market_id, provider_public, provider_secret, amount, nonce);
-        let (proof, public_inputs) = add_liquidity_v1_proof(&self.add_liquidity_zkbin, &self.add_liquidity_pk, &input)?;
 
         let params = AddLiquidityParamsV1 {
             market_id,
@@ -324,27 +387,41 @@ impl DarkbetExchangeHarness {
             signature: Signature::dummy(),
             instance_seed: [0u8; 32],
             nonce,
-            nullifier: public_inputs.computed_nullifier,
+            nullifier: input.compute_public_inputs().computed_nullifier,
         };
 
         let mut call_data = vec![0x08];
         call_data.extend_from_slice(&params.encode());
 
+        Ok(AddLiquidityPlan { call_data, input, zkbin: self.add_liquidity_zkbin.clone(), pk: self.add_liquidity_pk.clone() })
+    }
+
+    /// Add liquidity and prove it in one step, framing this call alone.
+    pub fn add_liquidity(
+        &self,
+        market_id: pallas::Base,
+        provider_secret: pallas::Base,
+        amount: u64,
+        nonce: u64,
+    ) -> Result<AddLiquidityResult> {
+        let plan = self.add_liquidity_prepare(market_id, provider_secret, amount, nonce)?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.own_frame(&call_data);
+        let (proof, public_inputs) = plan.prove(commitment, pallas::Base::zero())?;
         Ok(AddLiquidityResult { call_data, public_inputs, proof })
     }
 
-    /// Place a back bet (function code 0x01)
-    pub fn place_back(
+    /// Place a back bet (function code 0x01) — the call data, and no proof yet (`OBL-C198`).
+    pub fn place_back_prepare(
         &self,
         market_id: pallas::Base,
         user_secret: pallas::Base,
         outcome_index: u8,
         odds: u32,
         stake: u64,
-    ) -> Result<PlaceBackResult> {
+    ) -> Result<PlaceBackPlan> {
         let user_pub = PublicKey::from_secret(SecretKey::from_base(user_secret));
         let auth = AuthCallData::new(market_id, user_secret);
-        let (proof, _pi) = create_auth_proof(&self.place_back_zkbin, &self.place_back_pk, &auth)?;
 
         let params = PlaceBackParamsV1 {
             market_id,
@@ -354,27 +431,42 @@ impl DarkbetExchangeHarness {
             user_pub,
             signature: Signature::dummy(),
             instance_seed: [0u8; 32],
-            nullifier: auth.nullifier,
+            nullifier: auth.nullifier.clone(),
         };
 
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(PlaceBackResult { call_data, proof })
+        Ok(PlaceBackPlan { call_data, input: auth, zkbin: self.place_back_zkbin.clone(), pk: self.place_back_pk.clone() })
     }
 
-    /// Place a lay bet (function code 0x02)
-    pub fn place_lay(
+    /// Place a back bet and prove it in one step, framing this call alone.
+    pub fn place_back(
         &self,
         market_id: pallas::Base,
         user_secret: pallas::Base,
         outcome_index: u8,
         odds: u32,
         stake: u64,
-    ) -> Result<PlaceLayResult> {
+    ) -> Result<PlaceBackResult> {
+        let plan = self.place_back_prepare(market_id, user_secret, outcome_index, odds, stake)?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.own_frame(&call_data);
+        let proof = plan.prove(commitment, pallas::Base::zero())?;
+        Ok(PlaceBackResult { call_data, proof })
+    }
+
+    /// Place a lay bet (function code 0x02) — the call data, and no proof yet.
+    pub fn place_lay_prepare(
+        &self,
+        market_id: pallas::Base,
+        user_secret: pallas::Base,
+        outcome_index: u8,
+        odds: u32,
+        stake: u64,
+    ) -> Result<PlaceLayPlan> {
         let user_pub = PublicKey::from_secret(SecretKey::from_base(user_secret));
         let auth = AuthCallData::new(market_id, user_secret);
-        let (proof, _pi) = create_auth_proof(&self.place_lay_zkbin, &self.place_lay_pk, &auth)?;
 
         let params = PlaceLayParamsV1 {
             market_id,
@@ -384,27 +476,42 @@ impl DarkbetExchangeHarness {
             user_pub,
             signature: Signature::dummy(),
             instance_seed: [0u8; 32],
-            nullifier: auth.nullifier,
+            nullifier: auth.nullifier.clone(),
         };
 
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
 
+        Ok(PlaceLayPlan { call_data, input: auth, zkbin: self.place_lay_zkbin.clone(), pk: self.place_lay_pk.clone() })
+    }
+
+    /// Place a lay bet and prove it in one step, framing this call alone.
+    pub fn place_lay(
+        &self,
+        market_id: pallas::Base,
+        user_secret: pallas::Base,
+        outcome_index: u8,
+        odds: u32,
+        stake: u64,
+    ) -> Result<PlaceLayResult> {
+        let plan = self.place_lay_prepare(market_id, user_secret, outcome_index, odds, stake)?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.own_frame(&call_data);
+        let proof = plan.prove(commitment, pallas::Base::zero())?;
         Ok(PlaceLayResult { call_data, proof })
     }
 
-    /// Match orders (function code 0x03)
-    pub fn match_orders(
+    /// Match orders (function code 0x03) — the call data, and no proof yet.
+    pub fn match_orders_prepare(
         &self,
         market_id: pallas::Base,
         matcher_secret: pallas::Base,
         back_order_id: pallas::Base,
         lay_order_id: pallas::Base,
         odds: u32,
-    ) -> Result<MatchOrdersResult> {
+    ) -> Result<MatchOrdersPlan> {
         let user_pub = PublicKey::from_secret(SecretKey::from_base(matcher_secret));
         let auth = AuthCallData::new(market_id, matcher_secret);
-        let (proof, _pi) = create_auth_proof(&self.match_orders_zkbin, &self.match_orders_pk, &auth)?;
 
         let params = MatchOrdersParamsV1 {
             market_id,
@@ -413,37 +520,70 @@ impl DarkbetExchangeHarness {
             odds,
             user_pub,
             signature: Signature::dummy(),
-            nullifier: auth.nullifier,
+            nullifier: auth.nullifier.clone(),
         };
 
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
+        Ok(MatchOrdersPlan { call_data, input: auth, zkbin: self.match_orders_zkbin.clone(), pk: self.match_orders_pk.clone() })
+    }
+
+    /// Match orders and prove it in one step, framing this call alone.
+    pub fn match_orders(
+        &self,
+        market_id: pallas::Base,
+        matcher_secret: pallas::Base,
+        back_order_id: pallas::Base,
+        lay_order_id: pallas::Base,
+        odds: u32,
+    ) -> Result<MatchOrdersResult> {
+        let plan = self.match_orders_prepare(market_id, matcher_secret, back_order_id, lay_order_id, odds)?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.own_frame(&call_data);
+        let proof = plan.prove(commitment, pallas::Base::zero())?;
         Ok(MatchOrdersResult { call_data, proof })
     }
 
-    /// Resolve a market (function code 0x04)
-    pub fn resolve_market(
+    /// Resolve a market (function code 0x04) — the call data, and no proof yet.
+    ///
+    /// `oracle_signature` is `Signature::dummy()`: the placeholder `OBL-C211` names, standing for a
+    /// verification the contract does not make. It is untouched here — `OBL-C198` is a different
+    /// repair, and deleting or verifying this field is that row's decision, not this one's.
+    pub fn resolve_market_prepare(
         &self,
         market_id: pallas::Base,
         oracle_secret: pallas::Base,
         winning_outcome: u8,
-    ) -> Result<ResolveMarketResult> {
+    ) -> Result<ResolveMarketPlan> {
         let oracle_pub = PublicKey::from_secret(SecretKey::from_base(oracle_secret));
         let auth = AuthCallData::new(market_id, oracle_secret);
-        let (proof, _pi) = create_auth_proof(&self.resolve_market_zkbin, &self.resolve_market_pk, &auth)?;
 
         let params = ResolveMarketParamsV1 {
             market_id,
             winning_outcome,
             oracle_pub,
             oracle_signature: Signature::dummy(),
-            nullifier: auth.nullifier,
+            nullifier: auth.nullifier.clone(),
         };
 
         let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
 
+        Ok(ResolveMarketPlan { call_data, input: auth, zkbin: self.resolve_market_zkbin.clone(), pk: self.resolve_market_pk.clone() })
+    }
+
+    /// Resolve a market and prove it in one step, framing this call alone.
+    pub fn resolve_market(
+        &self,
+        market_id: pallas::Base,
+        oracle_secret: pallas::Base,
+        winning_outcome: u8,
+    ) -> Result<ResolveMarketResult> {
+        let plan = self.resolve_market_prepare(market_id, oracle_secret, winning_outcome)?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.own_frame(&call_data);
+        let proof = plan.prove(commitment, pallas::Base::zero())?;
         Ok(ResolveMarketResult { call_data, proof })
     }
 
@@ -461,51 +601,76 @@ impl DarkbetExchangeHarness {
         Ok(SettleMarketResult { call_data })
     }
 
-    /// Cancel an order (function code 0x06)
-    pub fn cancel_order(
+    /// Cancel an order (function code 0x06) — the call data, and no proof yet.
+    pub fn cancel_order_prepare(
         &self,
         order_id: pallas::Base,
         user_secret: pallas::Base,
-    ) -> Result<CancelOrderResult> {
+    ) -> Result<CancelOrderPlan> {
         let user_pub = PublicKey::from_secret(SecretKey::from_base(user_secret));
         let auth = AuthCallData::new(order_id, user_secret);
-        let (proof, _pi) = create_auth_proof(&self.cancel_order_zkbin, &self.cancel_order_pk, &auth)?;
 
         let params = CancelOrderParamsV1 {
             order_id,
             user_pub,
             signature: Signature::dummy(),
-            nullifier: auth.nullifier,
+            nullifier: auth.nullifier.clone(),
         };
 
         let mut call_data = vec![0x06];
         call_data.extend_from_slice(&params.encode());
 
+        Ok(CancelOrderPlan { call_data, input: auth, zkbin: self.cancel_order_zkbin.clone(), pk: self.cancel_order_pk.clone() })
+    }
+
+    /// Cancel an order and prove it in one step, framing this call alone.
+    pub fn cancel_order(
+        &self,
+        order_id: pallas::Base,
+        user_secret: pallas::Base,
+    ) -> Result<CancelOrderResult> {
+        let plan = self.cancel_order_prepare(order_id, user_secret)?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.own_frame(&call_data);
+        let proof = plan.prove(commitment, pallas::Base::zero())?;
         Ok(CancelOrderResult { call_data, proof })
     }
 
-    /// Remove liquidity (function code 0x09)
-    pub fn remove_liquidity(
+    /// Remove liquidity (function code 0x09) — the call data, and no proof yet.
+    pub fn remove_liquidity_prepare(
         &self,
         market_id: pallas::Base,
         lp_share_id: pallas::Base,
         provider_secret: pallas::Base,
-    ) -> Result<RemoveLiquidityResult> {
+    ) -> Result<RemoveLiquidityPlan> {
         let provider_pub = PublicKey::from_secret(SecretKey::from_base(provider_secret));
         let auth = AuthCallData::new(market_id, provider_secret);
-        let (proof, _pi) = create_auth_proof(&self.remove_liquidity_zkbin, &self.remove_liquidity_pk, &auth)?;
 
         let params = RemoveLiquidityParamsV1 {
             market_id,
             lp_share_id,
             provider: provider_pub,
             signature: Signature::dummy(),
-            nullifier: auth.nullifier,
+            nullifier: auth.nullifier.clone(),
         };
 
         let mut call_data = vec![0x09];
         call_data.extend_from_slice(&params.encode());
 
+        Ok(RemoveLiquidityPlan { call_data, input: auth, zkbin: self.remove_liquidity_zkbin.clone(), pk: self.remove_liquidity_pk.clone() })
+    }
+
+    /// Remove liquidity and prove it in one step, framing this call alone.
+    pub fn remove_liquidity(
+        &self,
+        market_id: pallas::Base,
+        lp_share_id: pallas::Base,
+        provider_secret: pallas::Base,
+    ) -> Result<RemoveLiquidityResult> {
+        let plan = self.remove_liquidity_prepare(market_id, lp_share_id, provider_secret)?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.own_frame(&call_data);
+        let proof = plan.prove(commitment, pallas::Base::zero())?;
         Ok(RemoveLiquidityResult { call_data, proof })
     }
 }
@@ -560,6 +725,182 @@ impl super::ContractHarness for DarkbetExchangeHarness {
             "ResolveMarketV2" => Some(&self.resolve_market_pk),
             _ => None,
         }
+    }
+}
+
+// ============================================================================
+// Prepared calls (`OBL-C198`)
+// ============================================================================
+//
+// Each `*_prepare` builds the call data and stops; `prove(commitment, nonce)` binds it to a
+// transaction commitment the caller supplies, so a parent's proof and its children's bind the same
+// value. The one-step fns above frame their own single call through `own_frame`.
+//
+// `settle_market` has no plan: it is non-ZK and carries no proof.
+
+/// A prepared CreateMarket: the call data exists, the proof does not.
+pub struct CreateMarketPlan {
+    pub call_data: Vec<u8>,
+    input: CreateMarketV1CallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl CreateMarketPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(dwow_core::zk::Proof, CreateMarketV1PublicInputs)> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        create_market_v1_proof(&self.zkbin, &self.pk, &self.input)
+    }
+}
+
+/// A prepared BuyPosition. See [`CreateMarketPlan`].
+pub struct BuyPositionPlan {
+    pub call_data: Vec<u8>,
+    input: BuyPositionV1CallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl BuyPositionPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(dwow_core::zk::Proof, BuyPositionV1PublicInputs)> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        buy_position_v1_proof(&self.zkbin, &self.pk, &self.input)
+    }
+}
+
+/// A prepared ClaimWinnings. See [`CreateMarketPlan`].
+pub struct ClaimWinningsPlan {
+    pub call_data: Vec<u8>,
+    input: ClaimWinningsV1CallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl ClaimWinningsPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(dwow_core::zk::Proof, ClaimWinningsV1PublicInputs)> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        claim_winnings_v1_proof(&self.zkbin, &self.pk, &self.input)
+    }
+}
+
+/// A prepared AddLiquidity. See [`CreateMarketPlan`].
+pub struct AddLiquidityPlan {
+    pub call_data: Vec<u8>,
+    input: AddLiquidityV1CallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl AddLiquidityPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(dwow_core::zk::Proof, AddLiquidityV1PublicInputs)> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        add_liquidity_v1_proof(&self.zkbin, &self.pk, &self.input)
+    }
+}
+
+/// A prepared PlaceBack. The auth proof's revealed values are not carried — no caller reads them.
+pub struct PlaceBackPlan {
+    pub call_data: Vec<u8>,
+    input: AuthCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl PlaceBackPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<dwow_core::zk::Proof> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, _pi) = create_auth_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok(proof)
+    }
+}
+
+/// A prepared PlaceLay. See [`PlaceBackPlan`].
+pub struct PlaceLayPlan {
+    pub call_data: Vec<u8>,
+    input: AuthCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl PlaceLayPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<dwow_core::zk::Proof> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, _pi) = create_auth_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok(proof)
+    }
+}
+
+/// A prepared MatchOrders. See [`PlaceBackPlan`].
+pub struct MatchOrdersPlan {
+    pub call_data: Vec<u8>,
+    input: AuthCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl MatchOrdersPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<dwow_core::zk::Proof> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, _pi) = create_auth_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok(proof)
+    }
+}
+
+/// A prepared ResolveMarket. See [`PlaceBackPlan`].
+pub struct ResolveMarketPlan {
+    pub call_data: Vec<u8>,
+    input: AuthCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl ResolveMarketPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<dwow_core::zk::Proof> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, _pi) = create_auth_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok(proof)
+    }
+}
+
+/// A prepared CancelOrder. See [`PlaceBackPlan`].
+pub struct CancelOrderPlan {
+    pub call_data: Vec<u8>,
+    input: AuthCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl CancelOrderPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<dwow_core::zk::Proof> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, _pi) = create_auth_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok(proof)
+    }
+}
+
+/// A prepared RemoveLiquidity. See [`PlaceBackPlan`].
+pub struct RemoveLiquidityPlan {
+    pub call_data: Vec<u8>,
+    input: AuthCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl RemoveLiquidityPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<dwow_core::zk::Proof> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, _pi) = create_auth_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok(proof)
     }
 }
 
