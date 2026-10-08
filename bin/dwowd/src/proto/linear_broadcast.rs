@@ -440,6 +440,32 @@ async fn handle_receive_block(
             continue;
         }
 
+        // ── Early future-timestamp rejection (`OBL-C120`) ──────────────
+        // The same shape as the height check above and for the same reasons: it is cheap, and it
+        // happens before the RandomX VM is built. **A node-local policy, never a consensus rule** —
+        // a predicate reading the local clock is not a function of block data (`type-system.md` §9),
+        // which is why the check lives here rather than in `check_block_header`, and why the boundary
+        // in `check_future_timestamp` takes the clock as a parameter: this is the only place that
+        // reads it. What it prevents is measured in the row: one block dated far ahead makes every
+        // retarget window containing it abort, freezing difficulty adjustment for up to ten blocks.
+        // Bitcoin Core's `MAX_FUTURE`, because a network that admits arbitrary skew has no bound at all.
+        let local_now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        if let Err(e) = dwow_chain::validation::check_future_timestamp(
+            msg.block.header.timestamp,
+            local_now,
+            dwow_chain::validation::MAX_FUTURE_SECS,
+        ) {
+            tracing::warn!(
+                target: "dwowd::proto::linear_broadcast",
+                "Rejecting block at height {} on the future-timestamp policy: {}",
+                msg.block.header.height, e
+            );
+            continue;
+        }
+
         // Verify proof-of-token-balance: no hidden darkw minting beyond the coinbase.
         // C1 fix: log and skip bad block instead of killing the broadcast handler.
         if let Err(e) = dwow_chain::proof_of_token_balance::verify_proof_of_token_balance(&msg.block) {

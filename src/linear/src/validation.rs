@@ -235,6 +235,44 @@ pub fn check_block_timestamp(
     Ok(())
 }
 
+/// Bitcoin Core's `MAX_FUTURE`, as the **node-local relay policy** it is — not a consensus rule, and
+/// the header of this file's timestamp section says why: a predicate reading the local clock is not a
+/// function of block data, which is what `type-system.md` §9 requires of consensus validation.
+///
+/// **So it is not in `check_block_header`, and the shape of the function is the argument.** `local_now`
+/// is a parameter rather than a call to `SystemTime::now()`, which keeps the predicate pure — the same
+/// discipline the rest of this module holds itself to — and makes it testable at the boundary, where
+/// the interesting cases are. The *caller* supplies the clock, and the only caller is the relay path
+/// (`bin/dwowd/src/proto/linear_broadcast.rs`, `handle_receive_block`), which is free to decline to
+/// relay what it does not like.
+///
+/// **What the bound prevents, measured rather than asserted** (`OBL-C120`): `compute_adjustment`
+/// abandons the retarget outright when any interval in its ten-block window is negative, so one block
+/// dated far ahead makes every window containing it abort — a single miner, with one block and no extra
+/// hashrate, freezes difficulty adjustment for up to ten blocks. The median rule below cannot see it,
+/// because a future timestamp is above the median by construction. This is the upper bound; that is
+/// the lower one.
+pub const MAX_FUTURE_SECS: u64 = 2 * 60 * 60;
+
+pub fn check_future_timestamp(
+    timestamp: BlockTimestamp,
+    local_now: u64,
+    max_future_secs: u64,
+) -> Result<()> {
+    // Saturating, so a clock near `u64::MAX` cannot wrap the bound round to a rejection of everything.
+    let bound = local_now.saturating_add(max_future_secs);
+    if timestamp.get() > bound {
+        return Err(LinearError::InvalidTimestamp {
+            timestamp: timestamp.get(),
+            reason: format!(
+                "more than {max_future_secs}s ahead of the local clock ({local_now}); \
+                 this is a node-local relay policy, not a consensus rule"
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// Verify uncle blocks against all consensus rules.
 ///
 /// Pure — the caller provides the pre-computed uncle merkle root, proofs, the
@@ -1284,5 +1322,51 @@ mod tests {
             }
             e => panic!("expected BlockIsInvalid for a misaligned proof slice, got {e:?}"),
         }
+    }
+
+    /// `OBL-C120`'s bound, at the three places it can be wrong: inside, exactly at, and beyond.
+    ///
+    /// The middle one is the boundary that matters and the reason `>` rather than `>=` is asserted
+    /// here: Bitcoin Core's rule admits a timestamp *equal* to `now + MAX_FUTURE`, and a fixture that
+    /// only tested the comfortable middle would accept either comparison.
+    #[test]
+    fn future_timestamp_bound_admits_records_and_rejects_beyond() {
+        const NOW: u64 = 1_700_000_000;
+
+        // Comfortably inside.
+        assert!(
+            check_future_timestamp(BlockTimestamp::new(NOW + 60), NOW, MAX_FUTURE_SECS).is_ok(),
+            "a timestamp one minute ahead is ordinary clock skew and must be admitted"
+        );
+        // Exactly at the bound — admitted, because the rule is `>` (Bitcoin Core's `MAX_FUTURE`).
+        assert!(
+            check_future_timestamp(BlockTimestamp::new(NOW + MAX_FUTURE_SECS), NOW, MAX_FUTURE_SECS)
+                .is_ok(),
+            "a timestamp exactly at the bound is admitted; the comparison is > and not >="
+        );
+        // One second beyond — rejected.
+        assert!(
+            check_future_timestamp(
+                BlockTimestamp::new(NOW + MAX_FUTURE_SECS + 1), NOW, MAX_FUTURE_SECS
+            )
+            .is_err(),
+            "a timestamp one second beyond the bound must be rejected"
+        );
+    }
+
+    /// **It is a policy and not a rule, and this is the test that says so**: the same block becomes
+    /// admissible as the local clock advances, which no consensus rule can do. A `check_block_header`
+    /// predicate with this behaviour would be a fork.
+    #[test]
+    fn the_future_bound_is_a_function_of_the_clock_the_caller_supplies() {
+        let far = BlockTimestamp::new(1_700_000_000 + MAX_FUTURE_SECS + 1);
+        assert!(
+            check_future_timestamp(far, 1_700_000_000, MAX_FUTURE_SECS).is_err(),
+            "at the first clock reading the block is beyond the bound"
+        );
+        assert!(
+            check_future_timestamp(far, 1_700_000_001, MAX_FUTURE_SECS).is_ok(),
+            "one second later the same block is inside it — which is what makes this a policy"
+        );
     }
 }
