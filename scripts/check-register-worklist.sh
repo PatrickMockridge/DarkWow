@@ -65,7 +65,7 @@ ALL = ("OPEN", "PARTLY", "FAILS", "DECISION", "ACCEPTED-WITH-REASON", "CLOSED", 
 # its self-test plants the mtime regression), and `OBL-C135` closed (the verdict table keys every suite
 # on its binary, so the whole-chunk tally is available and the rows stop collapsing). The ceiling comes
 # down with each rather than leaving slack that a future row could occupy without anyone deciding to.
-BUDGET = 27
+BUDGET = 26
 
 ROW = re.compile(r'^\|\s*(OBL-[A-Za-z0-9]+)\s*\|\s*\*\*([A-Z-]+)\*\*')
 
