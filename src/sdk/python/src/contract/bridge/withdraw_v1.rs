@@ -39,7 +39,6 @@ impl FunctionParams for bridge_model::WithdrawParams {
         dict.set_item("nullifier", format!("{:?}", self.nullifier))?;
         dict.set_item("recipient_hash", format!("{:?}", self.recipient_hash))?;
         dict.set_item("amount", format!("{:?}", self.amount))?;
-        dict.set_item("proof", format!("{:?}", self.proof))?;
         dict.set_item("fee", format!("{:?}", self.fee))?;
         dict.set_item("timeout_height", format!("{:?}", self.timeout_height))?;
         dict.set_item("feed_mode", format!("{:?}", self.feed_mode))?;
@@ -52,7 +51,6 @@ impl FunctionParams for bridge_model::WithdrawParams {
         writeln!(out, "{prefix}nullifier: {:?}", self.nullifier).unwrap();
         writeln!(out, "{prefix}recipient_hash: {:?}", self.recipient_hash).unwrap();
         writeln!(out, "{prefix}amount: {:?}", self.amount).unwrap();
-        writeln!(out, "{prefix}proof: {:?}", self.proof).unwrap();
         writeln!(out, "{prefix}fee: {:?}", self.fee).unwrap();
         writeln!(out, "{prefix}timeout_height: {:?}", self.timeout_height).unwrap();
         writeln!(out, "{prefix}feed_mode: {:?}", self.feed_mode).unwrap();

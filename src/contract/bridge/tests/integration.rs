@@ -76,7 +76,6 @@ fn test_deposit_params_encoding() {
         external_state_root: [7u8; 32],
         fee: 100,
         amount: 50,
-        proof: vec![0xAA, 0xBB, 0xCC],
         chain_proof: ExternalChainProof::Ethereum,
     };
 
@@ -90,13 +89,14 @@ fn test_deposit_params_encoding() {
     assert_eq!(decoded.merkle_proof.len(), 3);
     assert_eq!(decoded.external_state_root, [7u8; 32]);
     assert_eq!(decoded.fee, 100);
-    assert_eq!(decoded.proof, vec![0xAA, 0xBB, 0xCC]);
     assert!(matches!(decoded.chain_proof, ExternalChainProof::Ethereum));
 }
 
-/// 256 merkle elements and a 300-byte proof: both past the `u8` bound, and both followed by fields
-/// (`external_state_root`, `fee`, `amount`) that a truncated prefix would move. The test above uses
-/// three of each, which is why neither prefix's width could be seen from it.
+/// 256 merkle elements — past the `u8` bound, and followed by fields (`external_state_root`, `fee`,
+/// `amount`) that a truncated prefix would move. The test above uses three, which is why the
+/// prefix's width could not be seen from it. It shared this shape with a 300-byte `proof` field
+/// until `OBL-C198` deleted that field: a proof inside the call data makes the transaction
+/// commitment cover the proof, which is why this contract's arm published a constant.
 #[test]
 fn test_deposit_params_prefixes_are_not_bytes() {
     let params = DepositParams {
@@ -109,7 +109,6 @@ fn test_deposit_params_prefixes_are_not_bytes() {
         external_state_root: [0x33u8; 32],
         fee: 4242,
         amount: 777,
-        proof: vec![0x44; 300],
         chain_proof: ExternalChainProof::Ethereum,
     };
 
@@ -120,19 +119,19 @@ fn test_deposit_params_prefixes_are_not_bytes() {
     assert_eq!(decoded.merkle_proof[255], [0x22u8; 32]);
     assert_eq!(decoded.external_state_root, [0x33u8; 32]);
     assert_eq!(decoded.fee, 4242);
-    assert_eq!(decoded.proof.len(), 300);
     assert_eq!(decoded.amount, 777);
 }
 
-/// The withdraw proof is kilobyte-scale. `max_fee_bp` is the optional field after it, so a proof
-/// length read as a byte realigns everything that follows — this pins the round trip.
+/// `max_fee_bp` is the optional field after the fixed tail, so a presence byte read at the wrong
+/// offset realigns everything that follows — this pins the round trip. It used to be reached
+/// through a kilobyte-scale `proof` field, which is where the original width bug lived; that field
+/// left the wire in `OBL-C198`, so what remains to pin is the optional tail itself.
 #[test]
-fn test_withdraw_params_proof_length_is_not_a_byte() {
+fn test_withdraw_params_optional_max_fee_round_trips() {
     let params = WithdrawParams {
         nullifier: make_nullifier(200),
         recipient_hash: [0x55u8; 32],
         amount: 1000,
-        proof: vec![0x66; 300],
         fee: 55,
         timeout_height: 999,
         feed_mode: 1,
@@ -142,7 +141,6 @@ fn test_withdraw_params_proof_length_is_not_a_byte() {
     let encoded = params.encode().unwrap();
     let decoded = WithdrawParams::decode(&encoded).unwrap();
 
-    assert_eq!(decoded.proof.len(), 300);
     assert_eq!(decoded.amount, 1000);
     assert_eq!(decoded.max_fee_bp, Some(250));
     assert_eq!(decoded.timeout_height, 999);
@@ -161,7 +159,6 @@ fn test_deposit_params_empty_merkle_proof() {
         external_state_root: [0u8; 32],
         fee: 0,
         amount: 0,
-        proof: vec![],
         chain_proof: ExternalChainProof::Ethereum,
     };
 
@@ -169,7 +166,6 @@ fn test_deposit_params_empty_merkle_proof() {
     let decoded: DepositParams = deserialize(&encoded).unwrap();
 
     assert!(decoded.merkle_proof.is_empty());
-    assert!(decoded.proof.is_empty());
     assert_eq!(decoded.fee, 0);
     assert!(matches!(decoded.chain_proof, ExternalChainProof::Ethereum));
 }
@@ -180,7 +176,6 @@ fn test_withdraw_params_encoding() {
         nullifier: make_nullifier(100),
         recipient_hash: [10u8; 32],
         amount: 5000,
-        proof: vec![0x11, 0x22, 0x33, 0x44],
         fee: 50,
         timeout_height: 1000,
         feed_mode: 1,
@@ -193,7 +188,6 @@ fn test_withdraw_params_encoding() {
     assert_eq!(decoded.nullifier, make_nullifier(100));
     assert_eq!(decoded.recipient_hash, [10u8; 32]);
     assert_eq!(decoded.amount, 5000);
-    assert_eq!(decoded.proof, vec![0x11, 0x22, 0x33, 0x44]);
     assert_eq!(decoded.fee, 50);
     assert_eq!(decoded.timeout_height, 1000);
     assert_eq!(decoded.feed_mode, 1);
@@ -207,7 +201,6 @@ fn test_withdraw_params_optional_fields() {
         nullifier: make_nullifier(1),
         recipient_hash: [0u8; 32],
         amount: 0,
-        proof: vec![],
         fee: 0,
         timeout_height: 0,
         feed_mode: 0,

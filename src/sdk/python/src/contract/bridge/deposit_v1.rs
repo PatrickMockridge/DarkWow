@@ -44,7 +44,6 @@ impl FunctionParams for bridge_model::DepositParams {
         dict.set_item("merkle_proof", format!("{:?}", self.merkle_proof))?;
         dict.set_item("external_state_root", format!("{:?}", self.external_state_root))?;
         dict.set_item("fee", format!("{:?}", self.fee))?;
-        dict.set_item("proof", format!("{:?}", self.proof))?;
         dict.set_item("chain_proof", format!("{:?}", self.chain_proof))?;
         Ok(dict.unbind())
     }
@@ -59,7 +58,6 @@ impl FunctionParams for bridge_model::DepositParams {
         writeln!(out, "{prefix}merkle_proof: {:?}", self.merkle_proof).unwrap();
         writeln!(out, "{prefix}external_state_root: {:?}", self.external_state_root).unwrap();
         writeln!(out, "{prefix}fee: {:?}", self.fee).unwrap();
-        writeln!(out, "{prefix}proof: {:?}", self.proof).unwrap();
         writeln!(out, "{prefix}chain_proof: {:?}", self.chain_proof).unwrap();
         Ok(())
     }

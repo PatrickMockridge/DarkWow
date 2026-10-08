@@ -77,8 +77,17 @@ impl BridgeHarness {
         }
     }
 
-    /// Create a deposit with ZK proof
-    pub fn deposit(
+    /// Prepare a deposit — the call data, and no proof yet (`OBL-C198`).
+    ///
+    /// The proof binds the **transaction** commitment, a derivation over the transaction's whole
+    /// call set, so the call must exist before its proof can and only the caller knows what else
+    /// its transaction carries. Nothing here depends on the commitment: the commitment and the
+    /// recipient key are pure derivations of the input. And `DepositParams` no longer carries a
+    /// proof at all — it could not bind while it did, because a proof inside the call data makes
+    /// the commitment over that call data cover the proof, which is circular. That circularity is
+    /// why this contract's metadata arm published a constant until `OBL-C198` took the proof off
+    /// the wire; it now rides in `ContractCallImport.proofs`, where every binding contract puts it.
+    pub fn deposit_prepare(
         &self,
         secret: pallas::Base,
         amount: u64,
@@ -88,7 +97,7 @@ impl BridgeHarness {
         chain: ExternalChain,
         merkle_proof: Vec<[u8; 32]>,
         fee: u64,
-    ) -> Result<DepositResult, Box<dyn std::error::Error>> {
+    ) -> Result<DepositPlan, Box<dyn std::error::Error>> {
         let input = DepositCallData::new(
             secret,
             amount,
@@ -97,19 +106,15 @@ impl BridgeHarness {
             external_block_hash,
         );
 
-        let (proof, public_inputs) = create_deposit_proof(
-            &self.deposit_zkbin,
-            &self.deposit_pk,
-            &input,
-        )?;
+        let commitment = input.compute_commitment();
 
         let params = DepositParams {
-            commitment: IntentCommitment::from_bytes(public_inputs.commitment.to_repr())
+            commitment: IntentCommitment::from_bytes(commitment.to_repr())
                 .map_err(|e| format!("Invalid commitment: {e}"))?,
             recipient_pub: recipient_public,
             bridge_nonce,
             chain,
-            external_block_hash: public_inputs.external_block_hash.to_repr(),
+            external_block_hash: external_block_hash.to_repr(),
             // External-chain merkle proof, supplied by the caller. It rides in `DepositParams` but
             // is not a public input of `deposit.zk` (whose instances are the derived commitment,
             // the tx binding and the nonce), so its contents do not affect the proof. Taking it as
@@ -122,44 +127,37 @@ impl BridgeHarness {
             external_state_root: [0u8; 32],
             fee,
             amount,
-            proof: proof.as_ref().to_vec(),
             chain_proof: ExternalChainProof::Ethereum,
         };
 
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
-        Ok(DepositResult { call_data, proof, public_inputs })
+        Ok(DepositPlan { call_data, input, zkbin: self.deposit_zkbin.clone(), pk: self.deposit_pk.clone() })
     }
 
-    /// Create a withdrawal with ZK proof (function code 0x02)
-    pub fn withdraw(
+    /// Prepare a withdrawal — the call data, and no proof yet. See [`Self::deposit_prepare`] for
+    /// why the split exists and why the proof left the wire.
+    pub fn withdraw_prepare(
         &self,
         secret: pallas::Base,
         amount: u64,
         recipient_hash: pallas::Base,
         fee: u64,
-    ) -> Result<WithdrawResult, Box<dyn std::error::Error>> {
+    ) -> Result<WithdrawPlan, Box<dyn std::error::Error>> {
         let input = WithdrawCallData::new(
             secret,
             amount,
             recipient_hash,
         );
 
-        let (proof, public_inputs) = create_withdraw_proof(
-            &self.withdraw_zkbin,
-            &self.withdraw_pk,
-            &input,
-        )?;
-
-        let nullifier = IntentNullifier::from_bytes(public_inputs.nullifier.to_repr())
+        let nullifier = IntentNullifier::from_bytes(input.compute_nullifier().to_repr())
             .map_err(|e| format!("Invalid nullifier: {e}"))?;
 
         let params = WithdrawParams {
             nullifier,
-            recipient_hash: public_inputs.recipient_hash.to_repr(),
+            recipient_hash: recipient_hash.to_repr(),
             amount,
-            proof: proof.as_ref().to_vec(),
             fee,
             timeout_height: 0,
             feed_mode: 0,
@@ -169,7 +167,7 @@ impl BridgeHarness {
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
-        Ok(WithdrawResult { call_data, proof, public_inputs })
+        Ok(WithdrawPlan { call_data, input, zkbin: self.withdraw_zkbin.clone(), pk: self.withdraw_pk.clone() })
     }
 }
 
@@ -199,16 +197,95 @@ impl super::ContractHarness for BridgeHarness {
     }
 }
 
-/// Result of deposit
+/// A prepared deposit: the call data exists, the proof does not (`OBL-C198`).
+pub struct DepositPlan {
+    /// The deposit's call data — **without** a proof, because the proof binds a commitment over
+    /// this call data and would otherwise be inside what it binds.
+    pub call_data: Vec<u8>,
+    input: DepositCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl DepositPlan {
+    /// Prove the deposit, binding its proof to `tx_commitment` — the commitment over the whole call
+    /// set the transaction carries, this call included.
+    pub fn prove(self, tx_commitment: pallas::Base) -> Result<(dwow_core::zk::Proof, DepositPublicInputs), Box<dyn std::error::Error>> {
+        let mut input = self.input;
+        input.tx_commitment = tx_commitment;
+        let (proof, public_inputs) = create_deposit_proof(&self.zkbin, &self.pk, &input)?;
+        Ok((proof, public_inputs))
+    }
+}
+
+/// A prepared withdrawal: the call data exists, the proof does not. See [`DepositPlan`].
+pub struct WithdrawPlan {
+    pub call_data: Vec<u8>,
+    input: WithdrawCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl WithdrawPlan {
+    pub fn prove(self, tx_commitment: pallas::Base) -> Result<(dwow_core::zk::Proof, WithdrawPublicInputs), Box<dyn std::error::Error>> {
+        let mut input = self.input;
+        input.tx_commitment = tx_commitment;
+        let (proof, public_inputs) = create_withdraw_proof(&self.zkbin, &self.pk, &input)?;
+        Ok((proof, public_inputs))
+    }
+}
+
+/// Result of a one-step deposit.
 pub struct DepositResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: DepositPublicInputs,
 }
 
-/// Result of withdraw
+/// Result of a one-step withdraw.
 pub struct WithdrawResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: WithdrawPublicInputs,
+}
+
+impl BridgeHarness {
+    /// Create a deposit and its proof in one step, binding a **zero** commitment.
+    ///
+    /// Kept because the migration is half done and this half is honest about which half it is:
+    /// the proof no longer rides in the call data, but `bridge`'s metadata arm still publishes a
+    /// constant binding, so a one-shot caller here agrees with it. A caller that binds the real
+    /// value uses [`Self::deposit_prepare`] and [`DepositPlan::prove`] — and cannot use it until
+    /// this contract's fixtures frame their children, which is `OBL-C198`'s next step.
+    pub fn deposit(
+        &self,
+        secret: pallas::Base,
+        amount: u64,
+        recipient_public: PublicKey,
+        bridge_nonce: u64,
+        external_block_hash: pallas::Base,
+        chain: ExternalChain,
+        merkle_proof: Vec<[u8; 32]>,
+        fee: u64,
+    ) -> Result<DepositResult, Box<dyn std::error::Error>> {
+        let plan = self.deposit_prepare(secret, amount, recipient_public, bridge_nonce, external_block_hash, chain, merkle_proof, fee)?;
+        let call_data = plan.call_data.clone();
+        let (proof, public_inputs) = plan.prove(pallas::Base::zero())?;
+        Ok(DepositResult { call_data, proof, public_inputs })
+    }
+
+    /// Create a withdrawal and its proof in one step, binding a **zero** commitment. See
+    /// [`Self::deposit`] for why the one-step form still exists and what it does and does not bind.
+    pub fn withdraw(
+        &self,
+        secret: pallas::Base,
+        amount: u64,
+        recipient_hash: pallas::Base,
+        fee: u64,
+    ) -> Result<WithdrawResult, Box<dyn std::error::Error>> {
+        let plan = self.withdraw_prepare(secret, amount, recipient_hash, fee)?;
+        let call_data = plan.call_data.clone();
+        let (proof, public_inputs) = plan.prove(pallas::Base::zero())?;
+        Ok(WithdrawResult { call_data, proof, public_inputs })
+    }
 }

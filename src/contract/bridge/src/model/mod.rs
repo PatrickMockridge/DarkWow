@@ -175,9 +175,6 @@ pub struct DepositParams {
     /// Amount deposited (smallest unit of the external chain asset)
     pub amount: u64,
 
-    /// ZK proof demonstrating deposit validity
-    pub proof: Vec<u8>,
-
     /// Chain-specific deposit proof (Monero, Zcash, Aztec, or Litecoin).
     pub chain_proof: ExternalChainProof,
 }
@@ -200,7 +197,7 @@ impl dwow_serial::Decodable for DepositParams {
 impl DepositParams {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let cp_bytes = dwow_serial::serialize(&self.chain_proof);
-        let mut b = Vec::with_capacity(113 + self.merkle_proof.len()*32 + self.proof.len() + cp_bytes.len());
+        let mut b = Vec::with_capacity(113 + self.merkle_proof.len()*32 + cp_bytes.len());
         b.extend_from_slice(&self.commitment.to_bytes());
         b.extend_from_slice(&self.recipient_pub.to_bytes());
         b.extend_from_slice(&self.bridge_nonce.to_le_bytes());
@@ -210,10 +207,12 @@ impl DepositParams {
         for h in &self.merkle_proof { b.extend_from_slice(h); }
         b.extend_from_slice(&self.external_state_root);
         b.extend_from_slice(&self.fee.to_le_bytes());
-        // The proof and chain-proof lengths were widened from `u8` to a bare `u32` because a deposit
-        // proof is kilobytes; this makes the width nominal, as the merkle count never was.
-        b.extend_from_slice(&SerializedLen::try_from_len(self.proof.len())?.to_le_bytes());
-        b.extend_from_slice(&self.proof);
+        // The chain-proof length is a bare `u32`: it was widened from `u8` when a deposit proof rode
+        // here beside it. **The proof left the wire in `OBL-C198`.** It was read by no arm, and its
+        // presence was the reason this contract could not bind: a proof inside the call data makes
+        // the commitment over that call data cover the proof, which is circular, so the metadata arm
+        // published a constant instead. It now rides in `ContractCallImport.proofs`, as every
+        // contract that binds already carries it, and only the chain proof is length-prefixed here.
         b.extend_from_slice(&SerializedLen::try_from_len(cp_bytes.len())?.to_le_bytes());
         b.extend_from_slice(&cp_bytes);
         b.extend_from_slice(&self.amount.to_le_bytes());
@@ -233,23 +232,11 @@ impl DepositParams {
         for i in 0..mp_count { merkle_proof.push(data[109+i*32..109+(i+1)*32].try_into().unwrap()); }
         let external_state_root: [u8;32] = data[mp_end..mp_end+32].try_into().unwrap();
         let fee = u64::from_le_bytes(data[mp_end+32..mp_end+40].try_into().unwrap());
-        // Mirrors `encode`: the proof length is a `u32`. Reading a single byte
-        // here made every field after it realign against a truncated length.
-        let proof_len = SerializedLen::from_le_bytes(data[mp_end+40..mp_end+44].try_into().unwrap()).to_usize();
-        let p = mp_end+44+proof_len;
-        if data.len() < p+4 { return Err(ContractError::IoError("DepositParams: proof truncated".into())); }
-        // The body starts *after* the four-byte length, not one byte into it. This read
-        // `mp_end+41`, so every decoded proof began with three bytes of its own length and lost its
-        // last three — a round trip that only ever worked for the empty proof, and only then by
-        // accident. Found by `test_deposit_params_encoding` and
-        // `test_deposit_params_empty_merkle_proof`, which could not run until 2026-09-20: `make test`
-        // stopped at the contract build, and the contract build stopped on stale artifacts.
-        let proof = data[mp_end+44..p].to_vec();
-        let cp_len = SerializedLen::from_le_bytes(data[p..p+4].try_into().unwrap()).to_usize();
-        if data.len() != p+4+cp_len+8 { return Err(ContractError::IoError(format!("DepositParams: expected {} bytes, got {}", p+4+cp_len+8, data.len()))); }
-        let chain_proof = dwow_serial::deserialize(&data[p+4..p+4+cp_len]).map_err(|e| ContractError::IoError(format!("DepositParams: invalid chain_proof: {:?}", e)))?;
-        let amount = u64::from_le_bytes(data[p+4+cp_len..p+4+cp_len+8].try_into().unwrap());
-        Ok(DepositParams { commitment, recipient_pub, bridge_nonce, chain, external_block_hash, merkle_proof, external_state_root, fee, proof, amount, chain_proof })
+        let cp_len = SerializedLen::from_le_bytes(data[mp_end+40..mp_end+44].try_into().unwrap()).to_usize();
+        if data.len() != mp_end+44+cp_len+8 { return Err(ContractError::IoError(format!("DepositParams: expected {} bytes, got {}", mp_end+44+cp_len+8, data.len()))); }
+        let chain_proof = dwow_serial::deserialize(&data[mp_end+44..mp_end+44+cp_len]).map_err(|e| ContractError::IoError(format!("DepositParams: invalid chain_proof: {:?}", e)))?;
+        let amount = u64::from_le_bytes(data[mp_end+44+cp_len..mp_end+44+cp_len+8].try_into().unwrap());
+        Ok(DepositParams { commitment, recipient_pub, bridge_nonce, chain, external_block_hash, merkle_proof, external_state_root, fee, amount, chain_proof })
     }
 }
 
@@ -264,9 +251,6 @@ pub struct WithdrawParams {
 
     /// Amount to withdraw
     pub amount: u64,
-
-    /// ZK proof demonstrating withdrawal authorization
-    pub proof: Vec<u8>,
 
     /// Bridge fee paid by withdrawer
     pub fee: u64,
@@ -298,12 +282,10 @@ impl dwow_serial::Decodable for WithdrawParams {
 
 impl WithdrawParams {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
-        let mut b = Vec::with_capacity(94 + self.proof.len());
+        let mut b = Vec::with_capacity(98);
         b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.recipient_hash);
         b.extend_from_slice(&self.amount.to_le_bytes());
-        b.extend_from_slice(&SerializedLen::try_from_len(self.proof.len())?.to_le_bytes());
-        b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.fee.to_le_bytes());
         b.extend_from_slice(&self.timeout_height.to_le_bytes());
         b.push(self.feed_mode);
@@ -313,19 +295,16 @@ impl WithdrawParams {
     }
     #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 94 { return Err(ContractError::IoError("WithdrawParams: too short".into())); }
+        if data.len() < 90 { return Err(ContractError::IoError("WithdrawParams: too short".into())); }
         let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("WithdrawParams: invalid nullifier".into()))?;
         let recipient_hash: [u8;32] = data[32..64].try_into().unwrap();
         let amount = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        let proof_len = SerializedLen::from_le_bytes(data[72..76].try_into().unwrap()).to_usize(); let p = proof_len.saturating_add(76);
-        if data.len() < p+8+8+1+1 { return Err(ContractError::IoError("WithdrawParams: proof truncated".into())); }
-        let proof = data[76..p].to_vec();
-        let fee = u64::from_le_bytes(data[p..p+8].try_into().unwrap());
-        let timeout_height = u64::from_le_bytes(data[p+8..p+16].try_into().unwrap());
-        let feed_mode = data[p+16];
-        let has_mfb = data[p+17] != 0;
-        let max_fee_bp = if has_mfb { if data.len() < p+26 { return Err(ContractError::IoError(format!("WithdrawParams: expected {} bytes, got {}", p+26, data.len()))); } Some(u64::from_le_bytes(data[p+18..p+26].try_into().unwrap())) } else { None };
-        Ok(WithdrawParams { nullifier, recipient_hash, amount, proof, fee, timeout_height, feed_mode, max_fee_bp })
+        let fee = u64::from_le_bytes(data[72..80].try_into().unwrap());
+        let timeout_height = u64::from_le_bytes(data[80..88].try_into().unwrap());
+        let feed_mode = data[88];
+        let has_mfb = data[89] != 0;
+        let max_fee_bp = if has_mfb { if data.len() < 98 { return Err(ContractError::IoError(format!("WithdrawParams: expected {} bytes, got {}", 98, data.len()))); } Some(u64::from_le_bytes(data[90..98].try_into().unwrap())) } else { None };
+        Ok(WithdrawParams { nullifier, recipient_hash, amount, fee, timeout_height, feed_mode, max_fee_bp })
     }
 }
 
