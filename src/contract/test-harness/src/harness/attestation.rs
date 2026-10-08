@@ -422,6 +422,49 @@ impl AttestationHarness {
         Ok(VerifyClaimResult { call_data, proof, public_inputs })
     }
 
+    /// Assemble a `VerifyClaimV1` call and **stop before the proof**, so a caller that is building a
+    /// *child* can prove it against the transaction it will travel in (`OBL-C198`).
+    ///
+    /// `verify_claim` above proves over `commitment_of(&[this call])` — this call alone. That is
+    /// correct for a single-call transaction and wrong for a child, because the host hands every call
+    /// in a transaction the same commitment and `attestation_tx_binding` derives the published binding
+    /// from it (`entrypoint.rs:190`). A child proved over its own call is refused at the L2 verify;
+    /// `labor_market_spec.rs`'s `SubmitDeliverableV1` row is where that was measured.
+    ///
+    /// Only `claim_id`, `attestation_id` and `evidence` reach the call: they are the whole of
+    /// `VerifyClaimParamsV1`, and the five arguments `verify_claim` still takes for its other call
+    /// sites are discarded by `VerifyClaimV1CallData::new` (which is why they are underscored there).
+    pub fn verify_claim_prepare(
+        &self,
+        claim_id: pallas::Base,
+        attestation_id: pallas::Base,
+        evidence: pallas::Base,
+    ) -> Result<VerifyClaimPlan, Box<dyn std::error::Error>> {
+        let input = VerifyClaimV1CallData::new(
+            claim_id,
+            pallas::Base::zero(),
+            evidence,
+            pallas::Base::zero(),
+            pallas::Base::zero(),
+            pallas::Base::zero(),
+            [pallas::Base::zero(); 255],
+            pallas::Base::zero(),
+        );
+        let params = VerifyClaimParamsV1 {
+            claim_id: ClaimId(claim_id),
+            attestation_id: AttestationId(attestation_id),
+            evidence_commitment: evidence,
+        };
+        let mut call_data = vec![0x04];
+        call_data.extend_from_slice(&params.encode());
+        Ok(VerifyClaimPlan {
+            input,
+            call_data,
+            verify_claim_zkbin: self.verify_claim_zkbin.clone(),
+            verify_claim_pk: self.verify_claim_pk.clone(),
+        })
+    }
+
     /// Consume a claim (function code 0x05)
     pub fn consume_claim(
         &self,
@@ -887,6 +930,29 @@ pub struct VerifyClaimResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: VerifyClaimV1PublicInputs,
+}
+
+/// A `VerifyClaimV1` child whose proof is deferred — the shape
+/// [`AttestationHarness::verify_claim_prepare`] returns and [`IdentityHarness`]'s
+/// `VerifyCapabilityPlan` established. See that method for why a child cannot prove in one pass.
+pub struct VerifyClaimPlan {
+    input: VerifyClaimV1CallData,
+    /// The call data the commitment must cover — selector `0x04` and the encoded params.
+    pub call_data: Vec<u8>,
+    verify_claim_zkbin: ZkBinary,
+    verify_claim_pk: ProvingKey,
+}
+
+impl VerifyClaimPlan {
+    /// Prove against `tx_commitment` — the commitment over the whole ordered call set the node will
+    /// hash, not just this call.
+    pub fn prove(self, tx_commitment: pallas::Base) -> Result<VerifyClaimResult, Box<dyn std::error::Error>> {
+        let mut input = self.input;
+        input.tx_commitment = tx_commitment;
+        let (proof, public_inputs) =
+            verify_claim_v1_proof(&self.verify_claim_zkbin, &self.verify_claim_pk, &input)?;
+        Ok(VerifyClaimResult { call_data: self.call_data, proof, public_inputs })
+    }
 }
 
 pub struct ConsumeClaimResult {

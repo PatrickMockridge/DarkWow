@@ -78,6 +78,20 @@ const MS_JOB_PAYMENT: u64 = MILESTONE_PAYMENT * 2;
 /// reached rather than as a block this run will cross.
 const MILESTONE_DEADLINE: u64 = 1_000_000;
 
+/// The evidence a claim asserts, and the value `VerifyClaimV1`'s child passes back to it — **one
+/// constant, because the attestation contract requires the two to be the same number**.
+///
+/// `verify_claim_v1` refuses unless `params.evidence_commitment` equals the claim's stored evidence,
+/// and then evaluates the attestation's predicate over it (`model::predicate_holds`, which compares
+/// the first elements as integers). `setup` registers the attestation with `GreaterOrEqual` over
+/// `[50]`, so this must be ≥ 50 or the child's own contract refuses its own row. It read `2` until
+/// 2026-10-08, which is why all three `VerifyClaimV1`-bearing rows were refused with
+/// `Claim predicate does not hold` — reported as `ContractError(InvalidFunction)` (register
+/// OBL-C163), which reads as a dispatch fault and is not one. **The equality sits at the boundary on
+/// purpose**: `GreaterOrEqual` is the predicate under test and a value strictly above it would not
+/// catch a `>`-for-`>=` regression.
+const CLAIM_EVIDENCE: pallas::Base = pallas::Base::from_raw([50, 0, 0, 0]);
+
 /// The hand-encoded `CreateJobWithMilestonesV1` (0x08) call: selector plus
 /// `CreateJobWithMilestonesParamsV1::encode()`.
 ///
@@ -260,19 +274,54 @@ fn attestation_child(attestation_id: pallas::Base) -> ChildCall {
 /// The `attestation::VerifyClaimV1` child `submit_deliverable_v1` requires — and this one **does**
 /// need a proof, so it cannot be hand-encoded the way `attestation_child` is.
 ///
-/// Ported from `attestation_spec.rs:99`, which is the working example and passes the same placeholder
-/// witnesses; the parent checks only the selector and the contract id, so the child's own meaning is
-/// the attestation contract's business.
-fn verify_claim_child(claim_id: pallas::Base, attestation_id: pallas::Base) -> dwow_core::Result<ChildCall> {
+/// Ported from `attestation_spec.rs:99`, and **corrected twice against it** — the port was of the
+/// call's *shape*, and two of its assumptions did not hold here.
+///
+/// **`OBL-C198`: the child is prepared here and proven by the caller.** `attestation` derives its
+/// published binding from the enclosing transaction (`attestation_tx_binding`, `entrypoint.rs:190`),
+/// so a proof over the child's own call alone is refused at the L2 verify. Same split as
+/// `capability_child_prepare` below, and for the same reason.
+///
+/// **The evidence must satisfy the attestation's predicate, because the child's own contract executes
+/// it.** The comment this replaces said "the parent checks only the selector and the contract id, so
+/// the child's own meaning is the attestation contract's business" — true of the parent, and the child
+/// *is* executed by its own contract, which refused every row with `Claim predicate does not hold` for
+/// as long as the placeholders stood. `CLAIM_EVIDENCE` carries the rest.
+fn verify_claim_child_prepare(
+    claim_id: pallas::Base,
+    attestation_id: pallas::Base,
+) -> dwow_core::Result<(
+    dwow_sdk::tx::ContractCall,
+    dwow_contract_test_harness::harness::attestation::VerifyClaimPlan,
+)> {
     let att = AttestationHarness::spawn(*ATTESTATION_CONTRACT_ID);
-    let r = att.verify_claim(
-        claim_id, attestation_id,
-        pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64),
-        pallas::Base::from(4u64), pallas::Base::from(5u64), [pallas::Base::from(0u64); 255],
-        pallas::Base::from(6u64),
-    ).map_err(|e| dwow_core::Error::Custom(format!("verify_claim: {e}")))?;
+    let plan = att
+        .verify_claim_prepare(claim_id, attestation_id, CLAIM_EVIDENCE)
+        .map_err(|e| dwow_core::Error::Custom(format!("verify_claim: {e}")))?;
+    let call = dwow_sdk::tx::ContractCall {
+        contract_id: *ATTESTATION_CONTRACT_ID,
+        data: plan.call_data.clone(),
+    };
+    Ok((call, plan))
+}
+
+/// Prove a prepared `VerifyClaimV1` child over its frame — the same shape as
+/// `prove_pn_child_in_frame`, for the same reason. The frame here is the child and the parent, in that
+/// order: every row that carries this child carries exactly one.
+fn prove_attestation_child_in_frame(
+    child_call: dwow_sdk::tx::ContractCall,
+    plan: dwow_contract_test_harness::harness::attestation::VerifyClaimPlan,
+    parent_data: &[u8],
+) -> dwow_core::Result<ChildCall> {
+    let commitment =
+        dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(parent_data)]);
+    let v = plan
+        .prove(commitment)
+        .map_err(|e| dwow_core::Error::Custom(format!("verify_claim prove: {e}")))?;
     Ok(ChildCall {
-        contract_id: *ATTESTATION_CONTRACT_ID, call_data: r.call_data, proofs: vec![r.proof],
+        contract_id: *ATTESTATION_CONTRACT_ID,
+        call_data: v.call_data,
+        proofs: vec![v.proof],
         children: vec![],
     })
 }
@@ -474,7 +523,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             let cl = att.create_claim(
                 attestation_id, claimant_secret, claimant_pub,
                 dwow_attestation_contract::model::Predicate::GreaterOrEqual,
-                pallas::Base::from(2u64).to_repr().to_vec(), b"result".to_vec(), claim_id,
+                CLAIM_EVIDENCE.to_repr().to_vec(), b"result".to_vec(), claim_id,
             ).map_err(|e| oh(format!("create_claim: {e}")))?;
             smol::block_on(chain.block()?.with_call(att_cid, &att, &cl.call_data, vec![cl.proof.clone()])?.submit())?;
 
@@ -486,7 +535,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             let cl2 = att.create_claim(
                 attestation_id, claimant_secret, claimant_pub,
                 dwow_attestation_contract::model::Predicate::GreaterOrEqual,
-                pallas::Base::from(2u64).to_repr().to_vec(), b"result".to_vec(), claim_id_git,
+                CLAIM_EVIDENCE.to_repr().to_vec(), b"result".to_vec(), claim_id_git,
             ).map_err(|e| oh(format!("create_claim (git): {e}")))?;
             smol::block_on(chain.block()?.with_call(att_cid, &att, &cl2.call_data, vec![cl2.proof.clone()])?.submit())?;
 
@@ -497,7 +546,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             let cl3 = att.create_claim(
                 attestation_id, claimant_secret, claimant_pub,
                 dwow_attestation_contract::model::Predicate::GreaterOrEqual,
-                pallas::Base::from(2u64).to_repr().to_vec(), b"result".to_vec(), claim_id_ms,
+                CLAIM_EVIDENCE.to_repr().to_vec(), b"result".to_vec(), claim_id_ms,
             ).map_err(|e| oh(format!("create_claim (milestones): {e}")))?;
             smol::block_on(chain.block()?.with_call(att_cid, &att, &cl3.call_data, vec![cl3.proof.clone()])?.submit())?;
 
@@ -840,14 +889,19 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             })),
             mk_ep("SubmitDeliverableV1", true, Box::new(move || {
                 let r = h.submit_deliverable(worker_secret, worker_pub, job_id, claim_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                // `OBL-C198`: prepared, then proven over the frame — see `verify_claim_child_prepare`.
+                let (att_call, att_plan) = verify_claim_child_prepare(claim_id, attestation_id)?;
+                let att_child = prove_attestation_child_in_frame(att_call, att_plan, &r.call_data)?;
                 Ok(EndpointResult {
-                    children: vec![verify_claim_child(claim_id, attestation_id)?],
+                    children: vec![att_child],
                     call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("SubmitGitDeliverableV1", true, Box::new(move || {
                 let r = h.submit_git_deliverable(worker_secret, worker_pub, job_id_git, claim_id_git).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let (att_call, att_plan) = verify_claim_child_prepare(claim_id_git, attestation_id)?;
+                let att_child = prove_attestation_child_in_frame(att_call, att_plan, &r.call_data)?;
                 Ok(EndpointResult {
-                    children: vec![verify_claim_child(claim_id_git, attestation_id)?],
+                    children: vec![att_child],
                     call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("ConfirmDeliveryV1", true, Box::new({
@@ -1073,8 +1127,10 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             // and `claim_id_ms` supply.
             mk_ep("SubmitDeliverableV1_Milestones", true, Box::new(move || {
                 let r = h.submit_deliverable(worker_secret, worker_pub, ms_job_id, claim_id_ms).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let (att_call, att_plan) = verify_claim_child_prepare(claim_id_ms, attestation_id)?;
+                let att_child = prove_attestation_child_in_frame(att_call, att_plan, &r.call_data)?;
                 Ok(EndpointResult {
-                    children: vec![verify_claim_child(claim_id_ms, attestation_id)?],
+                    children: vec![att_child],
                     call_data: r.call_data, proofs: vec![r.proof] })
             })),
             // **The two rows that could not pass now can, and this is the first of them (`OBL-C170`).**
