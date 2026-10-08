@@ -603,6 +603,12 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 // is what `create_job_with_milestones_v1` makes its child commit. Index 8 does the same
                 // for the capability twin.
                 (MS_JOB_PAYMENT, 18u64), (MILESTONE_PAYMENT, 19u64),
+                // Index 9 is `OBL-C96`'s amount control (`ConfirmMilestoneV1_WrongAmount`), and it must
+                // be worth the amount that row *tries* to release — `MILESTONE_PAYMENT + 1` — because
+                // the child transfer has to be legal for the parent's comparison to be the thing that
+                // refuses it. A note of the *recorded* amount would make the child itself the refuser,
+                // and the control would prove nothing.
+                (MILESTONE_PAYMENT + 1, 20u64),
             ] {
                 let blind = pallas::Base::from(blind_seed);
                 let n = pn.issue(
@@ -1067,6 +1073,47 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
+            // ── `OBL-C96`'s control for the **sum** invariant, and it is the negative half: the row
+            // below is the positive one. Exactly one thing differs — the milestones sum to
+            // `MILESTONE_PAYMENT` while `payment_amount` is `MS_JOB_PAYMENT` — and the child is the
+            // same legal deposit, so nothing but the new comparison can refuse this.
+            //
+            // `RejectionByEndpoint` rather than the fixture's usual `RejectionNaming`, because the
+            // refuser *is* determinable: `InvalidMilestonePaymentAmount` (`Custom(24)`), the variant
+            // `refund_v1` uses for the same shape. A `RejectionNaming` needle could be satisfied by this
+            // row's `pn_transfer_child` instead, which would make the control prove nothing.
+            //
+            // Declared before its positive sibling so the note it escrows is still unspent when the
+            // positive row needs it: a rejected frame leaves no state, which is the same reason
+            // `CreateJobWithMilestonesV1_NoChild` sits where it does.
+            EndpointSpec {
+                name: "CreateJobWithMilestonesV1_SumMismatch",
+                is_zk: true,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(24))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new({
+                    let more = more_notes.clone();
+                    move || {
+                        let note = more.lock().ok().and_then(|g| g.get(7).cloned())
+                            .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
+                        let (call_data, proof) = milestones_create_call(
+                            h, employer_secret, employer_pub, attestation_id, ms_job_id,
+                            MS_JOB_PAYMENT, milestones_of(1),
+                        )?;
+                        let blind = child_blind(MS_JOB_PAYMENT, ms_job_id);
+                        Ok(EndpointResult {
+                            // **And this row's first failure was itself instructive**: it carried an
+                            // `attestation_child` sibling beside the transfer, which
+                            // `create_job_with_milestones_v1` refuses with `InvalidChildrenIndexes`
+                            // (`Custom(31)`) *before* the sum comparison is reached — the milestone
+                            // create requires **exactly one** child, unlike `create_job_v1`, which
+                            // requires two. Corrected: one child, so the refusal can only be the sum's.
+                            children: pn_and_siblings(&note, MS_JOB_PAYMENT, blind, vec![], &call_data)?,
+                            call_data, proofs: vec![proof] })
+                    }
+                }),
+            },
             // ── The milestones job, and the repair `OBL-C190` owed (`create_job_with_milestones_v1`
             // had no escrow child check at all) ──
             //
@@ -1163,6 +1210,41 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             // (`entrypoint.rs:1686-1691`). It does here because `milestones_of` writes
             // `MILESTONE_PAYMENT` into every milestone, and `MS_JOB_PAYMENT` is that figure times the
             // count — so this row would fail if either constant drifted.
+            // ── `OBL-C96`'s control for the **amount** comparison, and the negative half of it: the row
+            // below is the positive one, and it is the same frame with one number changed — the release
+            // it names is `MILESTONE_PAYMENT + 1` where the job records `MILESTONE_PAYMENT`.
+            //
+            // The child moves that same `+ 1`, and its note (extra-note index 9) is issued for it, so
+            // the transfer is legal and the *contract's* comparison is the only thing that can refuse
+            // this call. Before the comparison existed this call would have been **accepted** and would
+            // have paid the worker 1001 for a milestone the record says is worth 1000 — which is the
+            // defect, stated as the control that detects it.
+            //
+            // Declared before the positive row because that row consumes the spent-flag and the job's
+            // only confirmation; a rejection leaves both where they were.
+            EndpointSpec {
+                name: "ConfirmMilestoneV1_WrongAmount",
+                is_zk: true,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(24))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new({
+                    let more = more_notes.clone();
+                    move || {
+                        let note = more.lock().ok().and_then(|g| g.get(9).cloned())
+                            .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
+                        let wrong = MILESTONE_PAYMENT + 1;
+                        let r = h.confirm_milestone(employer_secret, employer_pub, ms_job_id, 1, wrong, wrong).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        // The parent's own seed: `poseidon_hash([payment_release, spent_nullifier])`.
+                        let blind = poseidon_hash([
+                            pallas::Base::from(wrong), r.public_inputs.spent_nullifier,
+                        ]);
+                        Ok(EndpointResult {
+                            children: pn_and_siblings(&note, wrong, blind, vec![], &r.call_data)?,
+                            call_data: r.call_data, proofs: vec![r.proof] })
+                    }
+                }),
+            },
             mk_ep("ConfirmMilestoneV1", true, Box::new({
                 let more = more_notes.clone();
                 move || {
