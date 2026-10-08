@@ -158,6 +158,14 @@ run_gate "control: circuit metadata alignment can fail" \
     bash "$SCRIPT_DIR/check-circuit-metadata-alignment.sh" --self-test
 run_gate "control: the tx-pair-last gate can fail" \
     bash "$SCRIPT_DIR/check-circuit-tx-pair-last.sh" --self-test
+# `bin/dwowd/src/tests/check_zkbin_freshness.sh` — RG-9, and until 2026-10-08 it ran NOWHERE
+# (`OBL-C142`; a sibling of `OBL-C137`), while `doc/src/dev/testing/level-2-heavyweight.md` recorded
+# it as part of the heavyweight procedure. Wiring it is the other half of that repair: its verdict is
+# now content-based, and a content-based verdict that nothing consults is still nothing. Its control
+# is its own regression — identical bytes under a newer mtime must decide nothing — which is the
+# mtime bug it was carrying, and it is planted rather than asserted.
+run_gate "control: the zkbin freshness check can fail" \
+    bash "$SCRIPT_DIR/../bin/dwowd/src/tests/check_zkbin_freshness.sh" --self-test
 
 # THE LAST TWO UNWIRED CONTROLS, found by censusing which instruments support `--self-test`
 # against which are invoked with it — four were supported-and-unwired, and the pair of circuit
@@ -494,6 +502,12 @@ run_gate "register status markers"        bash "$SCRIPT_DIR/register-status.sh" 
 # their own status (`DECISION`), and this fails when the worklist grows past its declared budget.
 # **It is green.**
 run_gate "register worklist (ratchet)"    bash "$SCRIPT_DIR/check-register-worklist.sh" --strict
+# RG-9, wired 2026-10-08 (`OBL-C142`): every contract's WASM embeds the current bytes of every circuit
+# in its `proof/` directory. Decided by content — the wasm either contains the `.zk.bin` bytes or it
+# does not — so a byte-identical regeneration of a circuit cannot make this fire, which is what its
+# `-nt` predecessor did against a genesis artifact.
+run_gate "zkbin freshness (WASM embeds its circuits)" \
+    bash "$SCRIPT_DIR/../bin/dwowd/src/tests/check_zkbin_freshness.sh"
 
 run_gate "build contract ZK circuits"     "$SCRIPT_DIR/build-contract-zk.sh"
 # The `unwrap_used`/`expect_used` census, made a gate so the rollout cannot silently regress

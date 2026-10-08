@@ -58,7 +58,13 @@ ALL = ("OPEN", "PARTLY", "FAILS", "DECISION", "ACCEPTED-WITH-REASON", "CLOSED", 
 # resolver landed, which leaves the symbol half as work that did not exist as work before. That is the
 # ratchet doing its job — reclassifying a blocked row into real work is a change to the worklist, and
 # it costs a sentence rather than happening silently.
-BUDGET = 30
+#
+# **Lowered twice later the same day**, which is the direction the ratchet exists for: `OBL-C124`
+# closed (the checker's summary now names each failure class it counts, guarded by a fourth assertion
+# in that gate's `--self-test`) and `OBL-C142` closed (the freshness verdict is content-based and its
+# self-test plants the mtime regression), so the ceiling comes down with each rather than leaving slack
+# that a future row could occupy without anyone deciding to.
+BUDGET = 28
 
 ROW = re.compile(r'^\|\s*(OBL-[A-Za-z0-9]+)\s*\|\s*\*\*([A-Z-]+)\*\*')
 

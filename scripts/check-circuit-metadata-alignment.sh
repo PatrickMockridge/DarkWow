@@ -296,6 +296,18 @@ RSEOF
         echo "SELF-TEST FAILED: the clientless circuit was not named as the failing subject."
         FAILED=1
     fi
+    # `OBL-C124`: the summary must NAME each class it counted rather than lump them. The three
+    # planted defects are of three different classes, so one `count mismatch(es)` label covering all
+    # three is exactly the defect this asserts the absence of — and the assertion is on the three
+    # *names*, not on the line's shape, so a summary that printed a count per class but not the
+    # class would also fail.
+    for want in "circuit-vs-metadata=" "element-order=" "no-leg-compared="
+    do
+        if ! printf '%s\n' "$B_OUT" | grep -qF "$want"; then
+            echo "SELF-TEST FAILED: the summary did not name the class it counted: $want"
+            FAILED=1
+        fi
+    done
 
     if [ "$FAILED" -ne 0 ]; then
         echo ""
@@ -747,6 +759,29 @@ if CIRCUIT_FREE:
 print("")
 passes = 0
 failures = 0
+
+# `OBL-C124`: every failure is counted under the class it belongs to, so the summary can NAME the
+# classes rather than lump them. It printed `5 count mismatch(es) over 5 circuit(s)` while one of the
+# five was a *missing metadata push* — an arm that pushed nothing at all, so there was no vector to
+# compare counts against. The verdicts were right and the label was wrong, which is the failure mode
+# worth guarding: a reader triaging by class (which is how this register's rows get worked) cannot
+# find a class the summary says does not exist.
+#
+# The classes are the seven `fail(…)` call sites below, and each is the thing its own message says:
+#   no-metadata-push      the circuit's namespace reaches no push at all
+#   circuit-vs-metadata   the pushed vector is a literal and its length differs from the instances
+#   circuit-vs-client     the client's `to_vec` length differs (whatever the metadata leg did)
+#   no-leg-compared       neither the metadata vector nor the client's `to_vec` could be read
+#   third-leg-unchecked   the metadata vector was read, the client's `to_vec` could not be
+#   element-order         both legs were read and they disagree element for element
+fail_kinds = {}
+
+
+def fail(kind):
+    """Count one failure under its class; `kind` is the name the summary prints."""
+    global failures
+    failures += 1
+    fail_kinds[kind] = fail_kinds.get(kind, 0) + 1
 # Circuits checked on TWO legs — circuit instance order and metadata push — because the client's
 # `to_vec` could not be located. A *set*, because one circuit can be reached by more than one
 # namespace push and the summary must not call 63 rows "63 circuits" — the same overstatement the
@@ -858,7 +893,7 @@ for contract_name in COVERED:
                 print(f"FAIL: {contract_name}/{circuit_name} — circuit has {circuit_count} "
                       f"constrain_instance but no metadata push carries {label}"
                       f"{'' if identity else ' (circuit declares no identity string)'}")
-                failures += 1
+                fail("no-metadata-push")
                 failed_circuits.add((contract_name, circuit_name))
                 continue
             unreadable = (f"the vector for {label} is built elsewhere (the namespace is passed to "
@@ -884,7 +919,7 @@ for contract_name in COVERED:
                           f"located either, so NO leg was compared. Name the file in "
                           f"CLIENT_ALIASES, or declare the circuit in "
                           f"script/circuit_client_alignment_exceptions.txt")
-                    failures += 1
+                    fail("no-leg-compared")
                     failed_circuits.add((contract_name, circuit_name))
             elif client_count == circuit_count:
                 print(f"OK(client): {contract_name}/{circuit_name} — {circuit_count} "
@@ -897,7 +932,7 @@ for contract_name in COVERED:
                       f"constrain_instance vs client to_vec {client_count}: the proof would be "
                       f"created over a different public-input vector than the verifier uses "
                       f"({label}; {unreadable})")
-                failures += 1
+                fail("circuit-vs-client")
                 failed_circuits.add((contract_name, circuit_name))
             # NO `continue`. The pair rule below compares the client against the CIRCUIT and does
             # not read the metadata leg at all, so it must still run for these circuits — they are
@@ -914,7 +949,7 @@ for contract_name in COVERED:
                 else:
                     print(f"FAIL: {contract_name}/{circuit_name} — {circuit_count} constrain_instance "
                           f"vs {n} pushed values ({ns})")
-                    failures += 1
+                    fail("circuit-vs-metadata")
                     failed_circuits.add((contract_name, circuit_name))
             elif client_count is None:
                 # The THIRD leg, and until 2026-10-04 this branch printed a bare `OK`: a green line
@@ -932,13 +967,13 @@ for contract_name in COVERED:
                           f"not located, so the third leg is unchecked. Name the file in "
                           f"CLIENT_ALIASES, or declare the circuit in "
                           f"script/circuit_client_alignment_exceptions.txt")
-                    failures += 1
+                    fail("third-leg-unchecked")
                     failed_circuits.add((contract_name, circuit_name))
             elif client_count != circuit_count:
                 print(f"FAIL: {contract_name}/{circuit_name} — circuit {circuit_count} "
                       f"constrain_instance vs client to_vec {client_count}: the proof would be "
                       f"created over a different public-input vector than the verifier uses")
-                failures += 1
+                fail("circuit-vs-client")
                 failed_circuits.add((contract_name, circuit_name))
             else:
                 print(f"OK:   {contract_name}/{circuit_name} — {circuit_count} constrain_instance, "
@@ -975,7 +1010,7 @@ for contract_name in COVERED:
                               f"at position {k + 1} of {circuit_count}, and the client's `to_vec` "
                               f"supplies `{shown}` there. The two vectors disagree element for "
                               f"element; a proof built by this client is refused (OBL-C198).")
-                        failures += 1
+                        fail("element-order")
                         failed_circuits.add((contract_name, circuit_name))
 
         # ORDER, as a WARN (OBL-C79). Only meaningful against the longest matching push, and only
@@ -1160,7 +1195,10 @@ else:
     literal_circuits = {label for label, _p, _v, _e in literal_findings}
     parts = []
     if failures:
-        parts.append(f"{failures} count mismatch(es) over {len(failed_circuits)} circuit(s)")
+        # `OBL-C124`: each class is named with its own count. Sorting by name keeps the line stable
+        # between runs, so a diff of two reports shows what changed rather than what reordered.
+        named = ", ".join(f"{k}={n}" for k, n in sorted(fail_kinds.items()))
+        parts.append(f"{failures} failure(s) over {len(failed_circuits)} circuit(s) — {named}")
     if literal_findings:
         parts.append(f"{len(literal_findings)} literal-vs-value position(s) over "
                      f"{len(literal_circuits)} circuit(s)")
