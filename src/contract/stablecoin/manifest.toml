@@ -67,11 +67,16 @@ code = 9
 requires_proof = true
 proof_circuit = "AccrueInterestV2"
 
+# `requires_proof` and `proof_circuit` are **removed**, not corrected. Measured 2026-10-08: this
+# contract's `proof/` holds ten `.zk` files (init, open_position, mint_stable, add_collateral,
+# remove_collateral, repay_stable, liquidate, accrue_interest, update_config, governance_report) and
+# **no redeem circuit at all**, so `RedeemStableV1` named something that does not exist. `OBL-C92` is
+# the row that owns what this endpoint should become — its circuit pins the receipt's value to zero
+# while the parent computes a `collateral_return`, so the arm is a design choice, not a naming one —
+# and `OBL-C91` is closed here by making the manifest stop claiming a proof.
 [[functions]]
 name = "redeem_stable"
 code = 10
-requires_proof = true
-proof_circuit = "RedeemStableV1"
 
 [[functions]]
 name = "spend_hook_callback"
@@ -142,6 +147,6 @@ namespace = "stablecoin"
 name = "AccrueInterestV2"
 namespace = "stablecoin"
 
-[[circuits]]
-name = "RedeemStableV1"
-namespace = "stablecoin"
+# `RedeemStableV1` was declared here with no `.zk` source (measured 2026-10-08). Removed with the
+# `[[functions]]` claim above; what this endpoint should become is `OBL-C92`'s choice, and `OBL-C91`
+# is closed by the manifest ceasing to claim a proof it does not have.

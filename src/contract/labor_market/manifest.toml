@@ -69,11 +69,18 @@ code = 10
 name = "initiate_dispute"
 code = 11
 
+# `requires_proof` and `proof_circuit` are **removed** from this pair, not corrected. Measured
+# 2026-10-08: `CreateJobWithCapabilityV2` and `CreateJobWithMilestonesAndCapabilityV2` have no `.zk`
+# source anywhere under `proof/` (the nine files there declare `CreateJobV2`, `AcceptJobV2`,
+# `AcceptJobWithCapabilityV2` and six others, and neither of these two). The manifest was therefore
+# naming circuits that do not exist, so a wallet reading it would try to build a proof it cannot make,
+# and a reviewer would read a proof-bearing endpoint that is not proof-bearing. Both endpoints run
+# unproved — which is the gap `OBL-C188` records, a caller-chosen principal stored with no signature
+# and no circuit — and this file now says so instead of claiming otherwise. `OBL-C91`; the arm not
+# taken is writing the two circuits.
 [[functions]]
 name = "create_job_with_capability"
 code = 12
-requires_proof = true
-proof_circuit = "CreateJobWithCapabilityV2"
 
 [[functions]]
 name = "accept_job_with_capability"
@@ -84,8 +91,6 @@ proof_circuit = "AcceptJobWithCapabilityV2"
 [[functions]]
 name = "create_job_with_milestones_and_capability"
 code = 14
-requires_proof = true
-proof_circuit = "CreateJobWithMilestonesAndCapabilityV2"
 
 [[trees]]
 name = "jobs"
@@ -138,10 +143,6 @@ namespace = "labor_market"
 name = "MilestonePaymentV2"
 namespace = "labor_market"
 
-[[circuits]]
-name = "CreateJobWithCapabilityV2"
-namespace = "labor_market"
-
-[[circuits]]
-name = "CreateJobWithMilestonesAndCapabilityV2"
-namespace = "labor_market"
+# `CreateJobWithCapabilityV2` and `CreateJobWithMilestonesAndCapabilityV2` were listed here and have
+# no `.zk` source (measured 2026-10-08) — a circuit table naming circuits that do not exist. Removed
+# with the `[[functions]]` claims above; `OBL-C91`.
