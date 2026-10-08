@@ -156,7 +156,11 @@ for rel in sys.argv[1:]:
 # Reviewed exceptions (script/circuit_pubkey_binding_exceptions.txt). Keyed on (path, the equality
 # as it appears in the source) — content, not a line number, so an edit above a site moves nothing.
 exceptions = {}
-exc_path = os.path.join(repo, "script", "circuit_pubkey_binding_exceptions.txt")
+# Overridable so the stale-entry check below can be controlled — the argument
+# `check-circuit-domain-separation.sh`'s own list records, applied here rather than argued again.
+exc_path = os.environ.get(
+    "PUBKEY_BINDING_EXCEPTIONS",
+    os.path.join(repo, "script", "circuit_pubkey_binding_exceptions.txt"))
 if os.path.isfile(exc_path):
     for raw in open(exc_path, errors="replace").read().splitlines():
         entry = raw.split("#")[0].strip()
@@ -170,16 +174,34 @@ if os.path.isfile(exc_path):
         exceptions.setdefault((parts[0], parts[1]), parts[2])
 
 excepted, failing = [], []
+used = set()
 for rel, lineno, detail in findings:
     key = (rel, detail.split(" binds two", 1)[0].strip())
     if key in exceptions:
         excepted.append((rel, lineno, key[1], exceptions[key]))
+        used.add(key)
     else:
         failing.append((rel, lineno, detail))
+
+# A declared entry that matches no finding is covering nothing — the site was repaired, the `.zk` was
+# renamed, or the equality text drifted — and a list that only grows stops being the reviewed residue
+# of a rule and becomes a record of what used to be true. The same check
+# `check-circuit-domain-separation.sh` gained on 2026-10-08 (`OBL-Z3`), where a dead fifth entry had
+# been found by sweeping every list by hand because nothing compared the two numbers.
+stale = sorted(set(exceptions) - used)
 
 for rel, lineno, pair, reason in excepted:
     print(f"EXCEPTED: {rel}:{lineno}: {pair}")
     print(f"          {reason}")
+
+if stale:
+    print(f"FAIL: {len(stale)} declared exception(s) match no finding — the entry is covering nothing:")
+    for path, eq in stale:
+        print(f"  {path} : {eq}")
+        print(f"          {exceptions[(path, eq)]}")
+    print("")
+    print("Fix: retire the entry (delete it, or comment it out with what replaced it).")
+    sys.exit(1)
 
 for rel, lineno, detail in failing:
     print(f"FAIL: {rel}:{lineno}: {detail}")

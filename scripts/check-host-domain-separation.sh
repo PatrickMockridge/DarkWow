@@ -95,14 +95,33 @@ if os.path.isfile(exc_path):
 
 failing = [(key, msg) for key, msg in findings if key not in exceptions]
 
-if not findings:
+# **This is the check this file's own header promised and did not have.** It said "a stale entry is
+# reported by the checker so the list cannot outlive its sites" — while the checker reported
+# `stale-mentions=0`, nothing compared the entries to the findings, and the list is keyed on a Rust
+# *line*, which is precisely the key that drifts when an edit lands above a site. With the list empty
+# the gap was invisible; the moment entries land, every one of them becomes a claim nobody re-reads.
+# So the claim is now true: an entry whose `path:line` no longer yields a finding is reported as stale,
+# and the report says whether the derivation moved, was repaired, or the file was renamed.
+used = set()
+for key, _msg in findings:
+    if key in exceptions:
+        used.add(key)
+stale = sorted(set(exceptions) - used)
+
+if not findings and not stale:
     print("OK: every contract host poseidon_hash carries a DOMAIN reference")
     sys.exit(0)
 
 print(f"REPORT (advisory): {len(findings)} host poseidon_hash call(s) with no DOMAIN reference; "
-      f"{len(failing)} unadjudicated")
+      f"{len(failing)} unadjudicated; {len(stale)} stale")
 for _key, msg in failing:
     print(f"  {msg}")
+if stale:
+    print("STALE: declared entries matching no finding — the site moved, was repaired, or was renamed:")
+    for key in stale:
+        print(f"  {key}")
+        print(f"          {exceptions[key]}")
+    print("  Fix: correct the entry's path:line, or retire it.")
 print("Adjudicate each into script/host_domain_exceptions.txt, or give the derivation its domain.")
 sys.exit(0)
 PYEOF
@@ -130,7 +149,23 @@ RS
     echo "$out"
     exit 1
   fi
-  echo "PASS: --self-test — the planted bare derivation is reported, the domained one is not"
+  # The stale-entry control: an entry naming a line in a file that exists, which carries no finding.
+  # The list's own header promised this check ("a stale entry is reported by the checker") while the
+  # checker had none — with an empty list the gap was invisible, and this is what makes the claim true
+  # before the list starts filling.
+  mkdir -p "$tmp/script"
+  printf 'src/contract/bad_probe/src/entrypoint.rs:999 : OBL-C196 — planted stale entry\n' \
+      > "$tmp/script/host_domain_exceptions.txt"
+  set +e
+  stale_out="$(run_scan "$tmp")"
+  set -e
+  if ! grep -q "STALE" <<<"$stale_out" || ! grep -q "bad_probe/src/entrypoint.rs:999" <<<"$stale_out"; then
+    echo "FAIL: --self-test — a declared entry matching no finding was not reported as stale"
+    echo "$stale_out"
+    exit 1
+  fi
+  echo "PASS: --self-test — the planted bare derivation is reported, the domained one is not, and a"
+  echo "                   declared entry matching no finding is reported as stale"
   exit 0
 fi
 

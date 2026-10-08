@@ -8,7 +8,12 @@
 # Keyed on path and line, NOT on a bare path, because one file can carry several derivations with
 # different dispositions. (The circuit-side lists key on path and name instead, since a circuit
 # name is stable where a Rust line can shift — this file has no such stable name, and a stale
-# entry is reported by the checker so the list cannot outlive its sites.)
+# entry is reported by the checker so the list cannot outlive its sites. **That last clause was a
+# PROMISE, not a description, until 2026-10-08 (`OBL-C196`, `OBL-C209`)**: the checker had no
+# stale-entry check at all, and the gap was invisible only because this list is empty. It now
+# reports `N stale` in its advisory line and names each entry under `STALE:`, and its `--self-test`
+# plants one and requires that report — so the sentence above is a fact from that date, on a list
+# that is keyed on the one thing in this tree that drifts on any edit above it.)
 #
 # THIS LIST IS A RATCHET, NOT AN AMNESTY, and it is currently EMPTY ON PURPOSE.
 #

@@ -166,6 +166,13 @@ run_gate "control: the tx-pair-last gate can fail" \
 # mtime bug it was carrying, and it is planted rather than asserted.
 run_gate "control: the zkbin freshness check can fail" \
     bash "$SCRIPT_DIR/../bin/dwowd/src/tests/check_zkbin_freshness.sh" --self-test
+# The pubkey-binding gate's stale-entry control (`OBL-C209`): a declared exception matching no finding
+# is covering nothing, and this list — like the two others the row names — had no such comparison
+# until 2026-10-08. Its fifty-two entries are all live, which is what the control's *other* half
+# asserts on the real corpus. The planted path is assembled at run time so `check-doc-index.sh`, which
+# scans this file, does not read it as a citation.
+run_gate "control: a stale pubkey-binding exception is reported" \
+    bash -c 'd=$(mktemp -d); p="src/contract/""nowhere/proof/""absent.zk"; printf "%s:1 : OBL-Z18 — planted\n" "$p" > "$d/x"; PUBKEY_BINDING_EXCEPTIONS="$d/x" "$1" >/dev/null 2>&1 && { rm -rf "$d"; exit 1; }; rm -rf "$d"; exit 0' _ "$SCRIPT_DIR/check-pubkey-binding.sh"
 # The circuit-domain gate's stale-entry control (`OBL-Z3`): a declared exception that matches no
 # finding is covering nothing, and an exception list that only grows is how a gate's coverage becomes a
 # list of things nobody has looked at recently. The gate's own header names this check as missing —
