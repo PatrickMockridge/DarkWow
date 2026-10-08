@@ -57,10 +57,10 @@ All 23 WASM contracts have `ContractTestSpec` files registered in
 
 | Tier | Count | Contracts | Endpoints |
 |------|-------|-----------|-----------|
-| FULL | 12 | auction, baccarat, bearer_bond, betting_stake, darktoshi_dice, dex, lottery, otc_swap, pool_stake, roulette, stablecoin, tender | All active |
-| HARVESTABLE | 4 | dao_escrow (12/13), labor_market (9/9), subscription (5/5), escrow (3/3) | Most active, documented gaps |
+| FULL | 11 | auction, baccarat, bearer_bond, betting_stake, darktoshi_dice, dex, lottery, otc_swap, pool_stake, roulette, stablecoin | All active |
+| HARVESTABLE | 5 | dao_escrow (12/13), labor_market (9/9), subscription (5/5), escrow (3/3), tender (7/9) | Most active, documented gaps |
 | UNDERPOWERED | 4 | bridge (7/7), darkbet_exchange (4/10), insurance_market (2/16), relayer_endowment (3/8) | Active endpoints populated, documented harness gaps |
-| STUB | 3 | drain_protection (0/9), game_room (0/12), slot (0/4) | All `empty_witnesses` — needs client proof modules |
+| STUB | 0 | (none) | No contract has zero covered variants. This row listed `drain_protection (0/9)`, `game_room (0/12)` and `slot (0/4)` as "All `empty_witnesses`" — measured 2026-10-08 by `contrib/ci/check-coverage-table.sh` they are **4/9, 11/12 and 5/5**, and `drain_protection_spec.rs` has said "Every endpoint's proof is real" since `OBL-C88`. The tier is kept as a category the checker can populate: membership means a spec carrying a row for **none** of its contract's function-enum variants |
 
 **Total active endpoints:** 169 across 32 specs. **verify_state closures:** 49
 (genesis contracts + multisig). **has_initialize:** 2 (dao_escrow, identity).
@@ -75,7 +75,7 @@ All 23 WASM contracts have `ContractTestSpec` files registered in
 | RG-10 (No swallowed failures) | PASS | Zero `println!("skipped")` |
 | RG-16 (No compatibility shims) | PASS | Zero compat_/_bridge/_shim methods |
 | RG-21 (No heuristic ZK gating) | PASS | `is_zk` from `EndpointSpec`, never heuristic |
-| RG-24 (No false positives) | PASS | STUB contracts have 0 endpoints |
+| RG-24 (No false positives) | PASS | No contract is STUB, so the clause has no members (measured 2026-10-08) |
 | RG-26 (No `#[allow(dead_code)]`) | PASS | Zero in test infrastructure |
 | RG-27 (No preserved old bodies) | PASS | Zero `_old_*` functions |
 | CI scanner | ACTIVE | `contrib/ci/scan_heavyweight_antipatterns.sh` — 11 patterns |
@@ -370,3 +370,11 @@ scanner updated with Patterns 10-11 (dead_code and `_old_*` detection). 6 contra
 had endpoint closures populated (insurance_market, darkbet_exchange, labor_market,
 dao_escrow, subscription, bridge). 3 STUB contracts correctly have 0 active endpoints
 per RG-24.
+
+> **Corrected 2026-10-08 — the paragraph above is history, and it is left as written.**
+> The STUB tier is now empty. Measured, `drain_protection`, `game_room` and `slot` cover
+> **4/9, 11/12 and 5/5** of their function-enum variants, and `drain_protection_spec.rs`
+> has said "Every endpoint's proof is real" since `OBL-C88` landed. So the three are not
+> unverified contracts with pending proof modules; a reader who took the sentence above as
+> current would believe the opposite of the tree. The live table in "WASM Contracts" is
+> the current one, and `contrib/ci/check-coverage-table.sh` is what keeps it so.

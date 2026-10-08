@@ -108,6 +108,11 @@ run_gate "control: heavyweight anti-patterns can fail" \
 # defect this list exists to avoid.
 run_gate "control: heavyweight coverage can fail" \
     bash "$REPO_ROOT/contrib/ci/check_heavyweight_coverage.sh" --self-test
+# The coverage *table* checker's control: a STUB claim the tree contradicts, a zero-coverage contract
+# left undeclared, and a table carrying no STUB row at all must each be reported. The first is the
+# historical defect — the table called `drain_protection` STUB at 0/9 while its spec covered 4.
+run_gate "control: coverage table can contradict the tree" \
+    bash "$REPO_ROOT/contrib/ci/check-coverage-table.sh" --self-test
 # The manifest <-> entrypoint gate's control: a manifest code the enum does not assign, and a
 # proof-bearing function with no dispatch arm, must each be caught.
 run_gate "control: manifest↔entrypoint agreement can fail" \
@@ -390,6 +395,14 @@ run_gate "heavyweight anti-patterns (spec §4.11)" \
 # declared in the script with their reasons (expiry = the variant gaining a row). **It is green.**
 run_gate "heavyweight coverage (genesis endpoints)" \
     bash "$REPO_ROOT/contrib/ci/check_heavyweight_coverage.sh"
+# The coverage *table* — `doc/src/dev/testing/level-2-heavyweight.md` — against the tree it describes.
+# It had no gate and had drifted: its STUB row named three contracts at 0 endpoints while their specs
+# carried real rows, so a reader was told they were unverified when they were not. It checks one rule
+# in both directions: a contract is STUB iff its spec carries a row for none of its function-enum
+# variants. `covered()` is name-appearance, so it proves table-vs-spec agreement, not coverage — the
+# narrowness is stated in the script header. **It is green.**
+run_gate "heavyweight coverage table (doc vs tree)" \
+    bash "$REPO_ROOT/contrib/ci/check-coverage-table.sh"
 # The barb alphabet, in five representations: the Lean `inductive Barb`, the core `BarbId`, the sdk
 # `Barb`, the Python model, and `type-system.md` §1.1. `contrib/barb_alphabet_diff.sh` extracts and
 # diffs the four sets mechanically; `contrib/primitive_barbs_diff.sh` does the same for the *type→barb
