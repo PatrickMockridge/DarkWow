@@ -197,12 +197,17 @@ pub fn check_block_header(
 ///
 /// The future-timestamp check (Bitcoin Core's MAX_FUTURE) is a network policy, not a
 /// consensus rule — a predicate reading the local clock is not a function of block
-/// data (`type-system.md` §9). **No such policy is implemented in this tree**: nothing
-/// in the relay path compares a timestamp against the local clock, so a block dated
-/// arbitrarily far ahead is relayed and accepted, and the median rule below — a
-/// *lower* bound — is the only constraint on this field. This sentence read "It is
-/// enforced at the P2P layer before relaying a block", which was false; the consequence
-/// and what would close it are recorded as `OBL-C120`.
+/// data (`type-system.md` §9), which is why it is not in this function. It lives in
+/// `check_future_timestamp` below, which takes the clock as a parameter precisely so
+/// that this one stays pure, and it is applied at **both** ways a block can enter a
+/// node: the relay path refuses to forward one (`bin/dwowd/src/proto/linear_broadcast.rs`)
+/// and the sync loop refuses to accept one (`bin/dwowd/src/task/consensus_linear.rs`).
+/// The median rule below is still only a *lower* bound. This paragraph read "It is
+/// enforced at the P2P layer before relaying a block", which was false — `OBL-C120` —
+/// and then "No such policy is implemented in this tree", which was true only until the
+/// relay half landed. What an absent bound costs is in the row: one block dated far
+/// ahead makes every retarget window containing it abort, which freezes difficulty
+/// adjustment for up to ten blocks.
 ///
 /// Median time warp protection (Bitcoin Core CheckBlockTimestamp pattern):
 /// timestamp MUST be strictly greater than the median of the last

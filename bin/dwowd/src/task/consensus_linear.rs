@@ -476,6 +476,29 @@ pub async fn consensus_linear_init_task(
                             break;
                         }
                     }
+                    // Future-timestamp policy, at the sync path too (`OBL-C120`).
+                    // The relay path refuses to *forward* a block dated beyond the bound; this is the
+                    // other way a block enters a node, and the same node-local policy applies. It sits
+                    // beside the PoTB pre-filter above for the same reason it sits before the VM in the
+                    // relay path: it is cheap and needs no VM. What it prevents is in the row — one
+                    // block dated far ahead aborts every retarget window containing it, freezing
+                    // difficulty adjustment for up to ten blocks. A peer that serves one is the peer's
+                    // problem rather than a local one, so it is scored like the PoTB failure above.
+                    let local_now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    if let Err(e) = dwow_chain::validation::check_future_timestamp(
+                        block.header.timestamp,
+                        local_now,
+                        dwow_chain::validation::MAX_FUTURE_SECS,
+                    ) {
+                        warn!(target: "dwowd::task::consensus_linear_init_task",
+                            "Refusing synced block at height {} on the future-timestamp policy: {}",
+                            block.header.height, e);
+                        client.penalise(peer.url());
+                        break;
+                    }
                     let rx_flags = randomx::RandomXFlags::get_recommended_flags()
                         & !randomx::RandomXFlags::JIT;
                     let Ok(rx_cache) = blockchain.get_cache(block.header.randomx_key) else {
