@@ -5,9 +5,8 @@ use dwow_contract_test_harness::harness::{
 };
 use dwow_dao_escrow_contract::model::{governance_message, governance_role, DaoEscrowMode};
 use dwow_identity_contract::model::{CapabilityId, CredentialRequirement};
-use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
 use dwow_sdk::crypto::{
-    pasta_prelude::PrimeField, poseidon_hash, util::fp_mod_fv, AssetId, Blind, IntentNullifier,
+    pasta_prelude::PrimeField, poseidon_hash, AssetId, Blind, IntentNullifier,
     MerkleNode, MerkleTree, Nullifier, PublicKey, SecretKey, ATTESTATION_CONTRACT_ID,
     IDENTITY_CONTRACT_ID, MULTISIG_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID,
 };
@@ -15,11 +14,14 @@ use dwow_sdk::pasta::pallas;
 use std::sync::{Arc, Mutex};
 use crate::tests::uniform_runner::{ChildCall, EndpointResult, EndpointSpec, EndpointExpectation};
 use crate::tests::uniform_runner::*;
+use crate::tests::modules::child_calls::{pn_transfer_prepare, PnNote};
 use super::helpers::{mk_ep, mk_ep_rejecting_naming};
 
-/// `(commitment, leaf position, merkle path, asset id, commitment blind)` — copied from
-/// `insurance_market_spec.rs:69`, which copies it from `escrow_spec.rs`.
-type PnNote = (pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base);
+/// `(commitment, leaf position, merkle path, asset id, commitment blind)` — **the shared module's own
+/// type** (`modules/child_calls.rs`), imported at the top of this file rather than redeclared here: a
+/// second copy of a note's shape is a second thing that can drift from the builder that consumes it.
+/// The one-pass `pn_transfer_child` that used to live here went the same way — see
+/// `prove_pn_child_in_frame` for what replaced it and why.
 
 /// The job's payment, and therefore the value the promissory-note child must move.
 const PAYMENT: u64 = 5000;
@@ -156,48 +158,92 @@ struct CapSetup {
     issuer_secret: pallas::Base,
 }
 
-/// The `promissory_note::transfer_v1` child `create_job_v1` requires.
+/// Prove a prepared `promissory_note::transfer_v1` child against the transaction it will travel in.
 ///
-/// Copied from `insurance_market_spec.rs:77` (itself copied from `escrow_spec.rs`), including the
-/// detail that matters: the **output's** `value` and `commitment_blind` are the ones the parent
-/// re-derives, because `validate_child_value_commit` compares the output's commitment against
-/// `pedersen_commitment_u64(payment_amount, value_blind)` where `value_blind` is
-/// `poseidon_hash([payment_amount, job_id])` (`labor_market/src/entrypoint.rs`, `create_job_v1`).
-fn pn_transfer_child(note: &PnNote, value: u64, blind_seed: pallas::Base) -> dwow_core::Result<ChildCall> {
-    let (note_commitment, pos, path, asset_id, commitment_blind) = note;
-    let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
-    let input = TransferCallInput {
-        value,
-        asset_id: *asset_id,
-        spend_hook: pallas::Base::zero(),
-        user_data: pallas::Base::zero(),
-        commitment_blind: *commitment_blind,
-        leaf_position: *pos,
-        merkle_path: path.clone(),
-        // **100, and it must be**: the transfer proof rebuilds the leaf as
-        // `poseidon_hash([7, secret])` (`promissory_note/src/client/transfer.rs:353`), so a note
-        // issued under any other secret recomputes a root that no recorded root contains and the
-        // child is rejected with `Custom(13)` before the parent's guard is reached. `PN_SECRET` is
-        // the same constant `setup` issues under and `child_blind` derives the note's nullifier from.
-        secret: PN_SECRET,
-        ephemeral_signature_secret: pallas::Base::from(9u64),
-        tx_commitment: pallas::Base::zero(),
-        tx_nonce: pallas::Base::zero(),
-    };
-    let output = TransferCallOutput {
-        recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
-        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(200u64))),
-        value,
-        asset_id: *asset_id,
-        spend_hook: pallas::Base::zero(),
-        user_data: pallas::Base::zero(),
-        commitment_blind: poseidon_hash([blind_seed, *note_commitment]),
-    };
-    let pn = PromissoryNoteHarness::spawn();
-    let child = pn
-        .transfer_with_value_blinds(vec![input], vec![output], Some(vec![value_blind]))
-        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child.call_data, proofs: child.proofs, children: vec![] })
+/// **`OBL-C198`, and this is the shape that unblocks this fixture.** `pn_transfer_prepare` (the shared
+/// builder, `modules/child_calls.rs`) stops before the proof for one reason: the child's proof binds
+/// the transaction commitment the *node* hashes, that commitment covers **every call in the frame**,
+/// and so it cannot be computed until the parent's call data exists. The one-pass
+/// `transfer_with_value_blinds` proves against the child's *own* call instead
+/// (`test-harness/src/harness/promissory_note.rs:86-91`), which agrees only in a one-call
+/// transaction; used inside a frame it is refused at the L2 verify with `invalid proof: call[0]
+/// namespace 'Revoke_V2'` — the input's half of the child — which is how this fixture was red at its
+/// first row. The local one-pass copy that stood here is gone rather than fixed: a per-spec copy of a
+/// shared builder is the divergence `drain_protection_spec.rs:61-62` records having paid for once
+/// already.
+///
+/// `others` is the rest of the frame in the order the node hashes it — `build_witness_tree`'s
+/// post-order: the remaining children in the order the frame passes them, and the parent **last**.
+/// That is the same order the identity children of the two `AcceptJobWithCapability*` rows use.
+///
+/// The shared builder spends with `secret = 100`, which `PN_SECRET` is, and the *output's* `value`
+/// and `commitment_blind` are still the ones the parent re-derives — `validate_child_value_commit`
+/// compares the output's commitment against `pedersen_commitment_u64(payment_amount, value_blind)`,
+/// so a caller must match the parent's own seed (`poseidon_hash([payment_amount, job_id])` for
+/// `create_job_v1`) or the call is refused.
+fn prove_pn_child_in_frame(
+    child_call: dwow_sdk::tx::ContractCall,
+    plan: dwow_promissory_note_contract::client::transfer::TransferCallPlan,
+    nonce: pallas::Base,
+    others: &[dwow_sdk::tx::ContractCall],
+) -> dwow_core::Result<ChildCall> {
+    let commitment = dwow_sdk::crypto::util::tx_commitment(
+        std::iter::once(&child_call).chain(others.iter()),
+    );
+    let debris = plan
+        .prove(commitment, nonce)
+        .map_err(|e| dwow_core::Error::Custom(format!("pn child prove: {e}")))?;
+    // `prove` injects the commitment into *clones* of the planned inputs, so the call data is the one
+    // `pn_transfer_prepare` produced — which is also what the frame commitment was taken over.
+    Ok(ChildCall {
+        contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
+        call_data: child_call.data,
+        proofs: debris.proofs,
+        children: vec![],
+    })
+}
+
+/// A child call as the frame's `ContractCall`: the node hashes calls, not `ChildCall`s.
+fn frame_call(c: &ChildCall) -> dwow_sdk::tx::ContractCall {
+    dwow_sdk::tx::ContractCall { contract_id: c.contract_id, data: c.call_data.clone() }
+}
+
+/// The parent's own call, as the frame's **last** entry. The id is the same
+/// `derive_contract_id_from_name` the fixture deploys at and the identity rows commit over.
+fn parent_call(data: &[u8]) -> dwow_sdk::tx::ContractCall {
+    dwow_sdk::tx::ContractCall {
+        contract_id: crate::tests::blockchain::derive_contract_id_from_name("labor_market"),
+        data: data.to_vec(),
+    }
+}
+
+/// The frame's children: the `promissory_note` transfer this parent requires, proven over the frame,
+/// followed by `siblings` — in the order the frame passes them, which is the order the node hashes.
+///
+/// One helper rather than four lines at each of the ten call sites, because the **order** is the thing
+/// that has to be right and it is easiest to get right in one place: `build_witness_tree`'s post-order
+/// is the children as the frame lists them and the parent last, and a proof taken over any other order
+/// is refused at the L2 verify with no localising message.
+///
+/// Returned as the whole `children` vector, so a call site reads
+/// `children: pn_and_siblings(&note, value, blind, vec![attestation_child(id)], &r.call_data)?`.
+fn pn_and_siblings(
+    note: &PnNote,
+    value: u64,
+    blind_seed: pallas::Base,
+    siblings: Vec<ChildCall>,
+    parent_data: &[u8],
+) -> dwow_core::Result<Vec<ChildCall>> {
+    // The output's spend hook is zero: labor_market reads only the child's value commitment, so a
+    // hook here would be a leaf attribute no parent consults (`child_calls.rs:64-68`).
+    let (pn_call, plan, nonce) =
+        pn_transfer_prepare(note, value, blind_seed, pallas::Base::zero())?;
+    let mut others: Vec<dwow_sdk::tx::ContractCall> = siblings.iter().map(frame_call).collect();
+    others.push(parent_call(parent_data));
+    let child = prove_pn_child_in_frame(pn_call, plan, nonce, &others)?;
+    let mut children = vec![child];
+    children.extend(siblings);
+    Ok(children)
 }
 
 /// The `attestation::CheckAttestationV1` child `create_job_v1` requires — **and this one needs no
@@ -689,7 +735,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 let blind = child_blind(PAYMENT, job_id);
                 let r = h.create_job(employer_secret, employer_pub, attestation_id, job_id, 0, PAYMENT, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult {
-                    children: vec![pn_transfer_child(&note, PAYMENT, blind)?, attestation_child(attestation_id)],
+                    children: pn_and_siblings(&note, PAYMENT, blind, vec![attestation_child(attestation_id)], &r.call_data)?,
                     call_data: r.call_data, proofs: vec![r.proof] })
             }})),
             // **A second job, and the reason is measured rather than anticipated.** `SubmitDeliverableV1`
@@ -711,7 +757,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     // claim they verify, which is why this job carries the type in its name.
                     let r = h.create_job(employer_secret, employer_pub, attestation_id, job_id_git, 1, PAYMENT, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult {
-                        children: vec![pn_transfer_child(&note, PAYMENT, blind)?, attestation_child(attestation_id)],
+                        children: pn_and_siblings(&note, PAYMENT, blind, vec![attestation_child(attestation_id)], &r.call_data)?,
                         call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -737,7 +783,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     let blind = child_blind(PAYMENT, cancel_job_id);
                     let r = h.create_job(employer_secret, employer_pub, attestation_id, cancel_job_id, 0, PAYMENT, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult {
-                        children: vec![pn_transfer_child(&note, PAYMENT, blind)?, attestation_child(attestation_id)],
+                        children: pn_and_siblings(&note, PAYMENT, blind, vec![attestation_child(attestation_id)], &r.call_data)?,
                         call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -780,7 +826,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         .map_err(|e| dwow_core::Error::Custom(format!("encode: {e}")))?);
                     let blind = child_blind(PAYMENT, cancel_job_id);
                     Ok(EndpointResult {
-                        children: vec![pn_transfer_child(&note, PAYMENT, blind)?],
+                        children: pn_and_siblings(&note, PAYMENT, blind, vec![], &call_data)?,
                         call_data, proofs: vec![] })
                 }
             })),
@@ -821,7 +867,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     // here; it is still what the endpoint's `spent_flags` check enforces.
                     let blind = child_blind(PAYMENT, job_id);
                     Ok(EndpointResult {
-                        children: vec![pn_transfer_child(&note, PAYMENT, blind)?],
+                        children: pn_and_siblings(&note, PAYMENT, blind, vec![], &r.call_data)?,
                         call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -845,7 +891,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(2500u64), r.public_inputs.spent_nullifier,
                     ]);
                     Ok(EndpointResult {
-                        children: vec![pn_transfer_child(&note, 2500, blind)?],
+                        children: pn_and_siblings(&note, 2500, blind, vec![], &r.call_data)?,
                         call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -892,7 +938,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         .map_err(|e| dwow_core::Error::Custom(format!("encode: {e}")))?);
                     let blind = child_blind(PAYMENT, cap_job_id);
                     Ok(EndpointResult {
-                        children: vec![pn_transfer_child(&note, PAYMENT, blind)?],
+                        children: pn_and_siblings(&note, PAYMENT, blind, vec![], &call_data)?,
                         call_data, proofs: vec![] })
                 }
             })),
@@ -992,7 +1038,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     )?;
                     let blind = child_blind(MS_JOB_PAYMENT, ms_job_id);
                     Ok(EndpointResult {
-                        children: vec![pn_transfer_child(&note, MS_JOB_PAYMENT, blind)?],
+                        children: pn_and_siblings(&note, MS_JOB_PAYMENT, blind, vec![], &call_data)?,
                         call_data, proofs: vec![proof] })
                 }
             })),
@@ -1071,7 +1117,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(MILESTONE_PAYMENT), r.public_inputs.spent_nullifier,
                     ]);
                     Ok(EndpointResult {
-                        children: vec![pn_transfer_child(&note, MILESTONE_PAYMENT, blind)?],
+                        children: pn_and_siblings(&note, MILESTONE_PAYMENT, blind, vec![], &r.call_data)?,
                         call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
@@ -1114,7 +1160,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         .map_err(|e| dwow_core::Error::Custom(format!("encode: {e}")))?);
                     let blind = child_blind(MILESTONE_PAYMENT, ms_cap_job_id);
                     Ok(EndpointResult {
-                        children: vec![pn_transfer_child(&note, MILESTONE_PAYMENT, blind)?],
+                        children: pn_and_siblings(&note, MILESTONE_PAYMENT, blind, vec![], &call_data)?,
                         call_data, proofs: vec![] })
                 }
             })),
