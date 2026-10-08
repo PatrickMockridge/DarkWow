@@ -34,6 +34,7 @@ use std::sync::Mutex;
 
 use dwow_core::zk::Proof;
 use dwow_core::Result;
+use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::crypto::ContractId;
 use dwow_contract_test_harness::harness::ContractHarness;
 
@@ -543,12 +544,178 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     }
 
     // Compare final block hashes (PI-7)
-    let hash_a = chain_a.block_hash_at(chain_a.height())?;
-    let hash_b = chain_b.block_hash_at(chain_b.height())?;
-    assert_eq!(hash_a, hash_b,
-        "INFRA-FAIL [determinism]: PI-7 block hashes must match for {}", spec.name);
+    //
+    // A mismatch is localised before it is reported. Two opaque final hashes are
+    // why diagnosing `OBL-C206` cost three ~10-minute runs: the sentence named
+    // neither a height nor a value. Heights are compared first, because a height
+    // mismatch and a value mismatch otherwise print identically.
+    let (height_a, height_b) = (chain_a.height(), chain_b.height());
+    let hash_a = chain_a.block_hash_at(height_a)?;
+    let hash_b = chain_b.block_hash_at(height_b)?;
+    if hash_a != hash_b || height_a != height_b {
+        // Only here, and only once: the bisect re-hashes blocks and the RandomX
+        // VM cache holds six entries keyed per height, so it is not a per-run cost.
+        let report = pi7_divergence_report(&chain_a, &chain_b, spec.name);
+        assert_eq!(height_a, height_b,
+            "INFRA-FAIL [determinism]: PI-7 chain heights must match for {}\n{}",
+            spec.name, report);
+        assert_eq!(hash_a, hash_b,
+            "INFRA-FAIL [determinism]: PI-7 block hashes must match for {}\n{}",
+            spec.name, report);
+    }
 
     Ok(())
+}
+
+/// The offset of the first element at which two runs' per-height block hashes
+/// disagree, or `None` when they agree over the whole common prefix.
+///
+/// Pure, and free of chain I/O on purpose: it makes the diagnostic's own
+/// negative control a millisecond `#[test]` (`pi7_diagnostic::first_divergence_*`)
+/// instead of a ten-minute run, which is the reason `OBL-C206`'s instrument is
+/// shaped this way rather than inline in the assertion.
+fn first_divergence(a: &[Option<blake3::Hash>], b: &[Option<blake3::Hash>]) -> Option<usize> {
+    let common = a.len().min(b.len());
+    for i in 0..common {
+        if a[i] != b[i] {
+            return Some(i);
+        }
+    }
+    if a.len() == b.len() {
+        None
+    } else {
+        Some(common)
+    }
+}
+
+/// Localise a `PI-7` mismatch to a height, a transaction and a byte, and write
+/// both sides of any differing contract call to `/tmp`.
+///
+/// The payload is deliberately narrow: `Transaction::hash()` never commits to
+/// `witness` (`src/linear/src/transaction.rs`), so ZK proof bytes cannot move a
+/// block hash. What can is a value in a contract call's `data` — which is what
+/// this prints, to the byte.
+fn pi7_divergence_report(
+    a: &HeavyweightPipeline,
+    b: &HeavyweightPipeline,
+    spec_name: &str,
+) -> String {
+    let (top_a, top_b) = (a.height(), b.height());
+    let mut out = format!(
+        "  PI-7 divergence for {spec_name}: chain_a height {top_a}, chain_b height {top_b}"
+    );
+    if top_a != top_b {
+        // The two runs built different numbers of blocks. That is its own
+        // finding — not a value divergence — and there is no common tip to diff.
+        out.push_str("\n  (heights differ: the runs built different block counts)");
+        return out;
+    }
+
+    // Block hashes are a prefix property — each header commits to `previous` —
+    // so the first differing height is binary-searchable.
+    let tip_differs = a.block_hash_at(top_a).ok().flatten() != b.block_hash_at(top_b).ok().flatten();
+    if !tip_differs {
+        out.push_str(
+            "\n  (final hashes differ but the tip's block hashes agree — the mismatch is not a stored block)",
+        );
+        return out;
+    }
+    let mut lo = BlockHeight::new(2);
+    let mut hi = top_a;
+    while lo < hi {
+        let mid = BlockHeight::new((lo.get() + hi.get()) / 2);
+        let agree = a.block_hash_at(mid).ok().flatten() == b.block_hash_at(mid).ok().flatten();
+        if agree {
+            lo = BlockHeight::new(mid.get() + 1);
+        } else {
+            hi = mid;
+        }
+    }
+    let h = hi;
+    out.push_str(&format!("\n  first differing height: {h}"));
+
+    let (blk_a, blk_b) = match (a.chain_state.store.get_block(h), b.chain_state.store.get_block(h)) {
+        (Ok(x), Ok(y)) => (x, y),
+        _ => {
+            out.push_str("\n  (could not read both blocks at that height)");
+            return out;
+        }
+    };
+    out.push_str(&format!(
+        "\n  transactions: chain_a {}, chain_b {}",
+        blk_a.transactions.len(),
+        blk_b.transactions.len()
+    ));
+    let common = blk_a.transactions.len().min(blk_b.transactions.len());
+    for i in 0..common {
+        let (ta, tb) = (&blk_a.transactions[i], &blk_b.transactions[i]);
+        if ta.hash() == tb.hash() {
+            continue;
+        }
+        out.push_str(&format!("\n  first differing transaction: index {i}"));
+        let (ca, cb) = (&ta.contract_calls, &tb.contract_calls);
+        out.push_str(&format!("\n    calls: chain_a {}, chain_b {}", ca.len(), cb.len()));
+        for j in 0..ca.len().min(cb.len()) {
+            if ca[j].data == cb[j].data {
+                continue;
+            }
+            let off = ca[j]
+                .data
+                .iter()
+                .zip(cb[j].data.iter())
+                .position(|(x, y)| x != y)
+                .unwrap_or(ca[j].data.len().min(cb[j].data.len()));
+            out.push_str(&format!(
+                "\n    call[{j}] contract {} differs at byte {off} (len {} vs {})",
+                ca[j].contract_id,
+                ca[j].data.len(),
+                cb[j].data.len()
+            ));
+            let pa = format!("/tmp/pi7_{spec_name}_h{h}_tx{i}_call{j}.a");
+            let pb = format!("/tmp/pi7_{spec_name}_h{h}_tx{i}_call{j}.b");
+            let wrote = std::fs::write(&pa, &ca[j].data).is_ok() && std::fs::write(&pb, &cb[j].data).is_ok();
+            out.push_str(&format!(
+                "\n    {}",
+                if wrote {
+                    format!("wrote {pa} and {pb}")
+                } else {
+                    format!("could not write {pa} / {pb}")
+                }
+            ));
+            break;
+        }
+        break;
+    }
+    out
+}
+
+/// Negative control for `OBL-C206`'s diagnostic. The instrument exists to turn an
+/// unreadable mismatch into a height, a transaction and a byte; this shows it
+/// finds the divergence, and finds nothing when there is none — in milliseconds,
+/// which is the whole reason the comparator is pure and separate from the runner.
+#[cfg(test)]
+mod pi7_diagnostic {
+    use super::first_divergence;
+    use blake3::Hash;
+
+    fn h(b: u8) -> Option<Hash> {
+        Some(Hash::from([b; 32]))
+    }
+
+    #[test]
+    fn first_divergence_reports_the_first_mismatch() {
+        // Agreement, over zero, one and several heights.
+        assert_eq!(first_divergence(&[], &[]), None);
+        assert_eq!(first_divergence(&[h(1)], &[h(1)]), None);
+        assert_eq!(first_divergence(&[h(1), h(2), h(3)], &[h(1), h(2), h(3)]), None);
+        // A divergence is reported at its FIRST offset even when later heights
+        // agree again — the property the bisect in `pi7_divergence_report` relies on.
+        assert_eq!(first_divergence(&[h(1), h(2), h(3)], &[h(1), h(9), h(3)]), Some(1));
+        assert_eq!(first_divergence(&[h(9), h(2)], &[h(1), h(2)]), Some(0));
+        // Unequal lengths diverge at the shorter run's end.
+        assert_eq!(first_divergence(&[h(1)], &[h(1), h(2)]), Some(1));
+        assert_eq!(first_divergence(&[h(1), h(2)], &[h(1)]), Some(1));
+    }
 }
 
 #[cfg(test)]
