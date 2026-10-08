@@ -15,11 +15,29 @@
 # Usage:
 #   contrib/test_verdicts.sh parse <log> [<log> ...]     # table on stdout
 #   contrib/test_verdicts.sh parse --causes <log> ...    # plus the verbatim failure lines
+#   contrib/test_verdicts.sh tally <log> [<log> ...]     # whole-chunk sums of the per-suite summaries
 #   contrib/test_verdicts.sh run <cargo-test-args...>    # run, log to /tmp, then parse
 #
 # Table columns (tab-separated):
-#   target  <TAB>  test  <TAB>  verdict
+#   target  <TAB>  suite  <TAB>  test  <TAB>  verdict
 # where verdict is one of: ok | FAILED | ignored | filtered-out | target-summary
+#
+# WHAT `target` IS, AND WHY IT CHANGED (`OBL-C135`). It used to be the first word of cargo's
+# `Running` banner, which is not an identity: every lib suite is literally `unittests`, every crate
+# names its file `tests/integration.rs` (33 of them), and every doctest suite is `Doc-tests`. So 157
+# suites shared 19 strings, and because the table is `sort -u`'d, rows that agreed in every column
+# **collapsed** — the table reported 57 `target-summary` rows for a log carrying 157, and summing it
+# gave 1166 passed where the log gave 1314, an undercount of 148 that nothing in the output hinted at.
+#
+# `target` is now unique per suite: the test **binary** cargo prints in the banner's parentheses
+# (`dwow_a-1111111111111111`, `integration-2222222222222222`), which carries cargo's per-crate
+# metadata hash, and `<crate>-doctests` for a doctest suite — the crate name being the one thing
+# libtest does put on that banner. `suite` keeps the human path (`tests/integration.rs`), so a reader
+# loses nothing and gains a key they can group by. The crate name behind an `integration-<hash>`
+# binary is NOT recoverable from the log alone; the hash is what makes the rows distinct, and that is
+# stated rather than papered over.
+#
+# `tally` sums the per-suite summaries into the whole-chunk figure the table exists to make possible.
 #
 # `run` mode never filters and never truncates: the whole output goes to a /tmp file whose path
 # is printed, because a table you cannot trace back to a log is a claim, not a measurement.
@@ -33,12 +51,30 @@ cd "$ROOT"
 parse_one() {
     # shellcheck disable=SC2016
     sed 's/\x1b\[[0-9;]*m//g' "$1" | awk '
-        # cargo announces each test binary it runs; that is the target boundary.
+        # A doctest suite: `   Doc-tests <crate>`. Its own rule, because the crate name is the only
+        # identity the banner carries and the generic rule below would key it on the word "Doc-tests".
+        /^[[:space:]]+Doc-tests / {
+            line = $0
+            sub(/^[[:space:]]+Doc-tests /, "", line)
+            target = line "-doctests"
+            suite = "Doc-tests"
+            next
+        }
+        # cargo announces each test binary it runs: `Running <path> (<binary>)`. The BINARY is the
+        # identity — see the header for why the path is not — and the path is kept in `suite`.
         /^[[:space:]]+Running / {
             line = $0
             sub(/^[[:space:]]+Running /, "", line)
-            split(line, parts, " ")
-            target = parts[1]
+            if (match(line, /\([^)]*\)[[:space:]]*$/)) {
+                binary = substr(line, RSTART + 1, RLENGTH - 2)
+                n = split(binary, bparts, "/")
+                target = bparts[n]
+                suite = substr(line, 1, RSTART - 1)
+                sub(/[[:space:]]+$/, "", suite)
+            } else {
+                target = line
+                suite = line
+            }
             next
         }
         # a per-test verdict
@@ -51,17 +87,37 @@ parse_one() {
             else if (line ~ / \.\.\. filtered out/) { v = "filtered-out" }
             else next
             sub(/ \.\.\. .*$/, "", line)
-            print (target == "" ? "(unknown target)" : target) "\t" line "\t" v
+            print (target == "" ? "(unknown target)" : target) "\t" (suite == "" ? "-" : suite) "\t" line "\t" v
             next
         }
-        # the per-target roll-up, kept because it is the line everyone quotes
+        # the per-suite roll-up, kept because it is the line everyone quotes. The verdict is
+        # `target-summary` and not `(target-summary)`: the header has documented it without
+        # parentheses since this script was written, and `tally` filters on the documented word.
         /^test result:/ {
             line = $0
             sub(/^test result: /, "", line)
-            print (target == "" ? "(unknown target)" : target) "\t(target-summary)\t" line
+            print (target == "" ? "(unknown target)" : target) "\t" (suite == "" ? "-" : suite) "\ttarget-summary\t" line
             next
         }
     ' | sort -u
+}
+
+# Sum the per-suite summaries into the whole-chunk figure — what the table exists to make possible,
+# and the number that was wrong by 148 tests before the targets were unique (`OBL-C135`).
+tally() {
+    for f in "$@"; do
+        parse_one "$f"
+    done | awk -F'\t' '
+        $3 == "target-summary" {
+            if (match($4, /[0-9]+ passed/))  { passed  += substr($4, RSTART, RLENGTH - 7) }
+            if (match($4, /[0-9]+ failed/))  { failed  += substr($4, RSTART, RLENGTH - 7) }
+            if (match($4, /[0-9]+ ignored/)) { ignored += substr($4, RSTART, RLENGTH - 8) }
+            if (match($4, /[0-9]+ measured/)){ measured+= substr($4, RSTART, RLENGTH - 9) }
+            suites++
+        }
+        END { printf "suites %d  passed %d  failed %d  ignored %d  measured %d\n",
+                     suites, passed, failed, ignored, measured }
+    '
 }
 
 causes() {
@@ -81,7 +137,69 @@ case "$mode" in
             echo "  (a runner whose exit code is not its run's verdict is not a runner)" >&2
             exit 1
         fi
-        echo "SELF-TEST PASS: a failing cargo invocation propagates a non-zero status"
+        # The table's own controls (`OBL-C135`): a synthetic log carrying the three shapes that used
+        # to collapse under `sort -u` — two suites sharing the path `tests/integration.rs`, a lib
+        # suite, and a doctest suite whose crate name only its own banner carries.
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        cat > "$tmp/log" <<'LOGEOF'
+     Running unittests src/lib.rs (target/release/deps/dwow_a-1111111111111111)
+
+test foo::one ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+     Running tests/integration.rs (target/release/deps/integration-2222222222222222)
+
+test t1 ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+     Running tests/integration.rs (target/release/deps/integration-3333333333333333)
+
+test t1 ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+   Doc-tests dwow_a
+
+test src/lib.rs - (line 1) ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+LOGEOF
+        out="$("$0" parse "$tmp/log")"
+        t="$(printf '%s\n' "$out" | cut -f1 | sort -u | grep -c '^dwow_a-1111111111111111$')"
+        if [ "$t" != 1 ]; then echo "SELF-TEST FAIL: the lib suite was not keyed on its binary" >&2; exit 1; fi
+        t="$(printf '%s\n' "$out" | cut -f1 | sort -u | grep -c '^integration-')"
+        if [ "$t" != 2 ]; then
+            echo "SELF-TEST FAIL: two suites sharing tests/integration.rs produced $t target(s), not 2" >&2
+            exit 1
+        fi
+        if ! printf '%s\n' "$out" | cut -f1 | grep -qF 'dwow_a-doctests'; then
+            echo "SELF-TEST FAIL: the doctest suite did not carry its crate name" >&2
+            exit 1
+        fi
+        # The collapse itself: four `test result:` lines in the log, four `target-summary` rows out.
+        t="$(printf '%s\n' "$out" | cut -f3 | grep -c 'target-summary')"
+        if [ "$t" != 4 ]; then
+            echo "SELF-TEST FAIL: 4 suites produced $t summary row(s) — rows are still collapsing" >&2
+            exit 1
+        fi
+        # And the whole-chunk figure the rows make possible: 1+2+3+4 = 10 passed over 4 suites.
+        t="$("$0" tally "$tmp/log" | tr -s ' ' | cut -d' ' -f2,4)"
+        if [ "$t" != "4 10" ]; then
+            echo "SELF-TEST FAIL: tally said '$t', expected '4 10'" >&2
+            exit 1
+        fi
+        echo "SELF-TEST PASS: a failing cargo invocation propagates a non-zero status, and the table"
+        echo "               keys every suite uniquely — lib, two same-path suites, and a doctest suite"
+        echo "               — with the four summaries summing to 10 passed over 4 suites"
+        ;;
+    tally)
+        if [ $# -eq 0 ]; then
+            echo "test_verdicts: tally needs at least one log file" >&2
+            exit 2
+        fi
+        for f in "$@"; do
+            [ -f "$f" ] || { echo "test_verdicts: no such log: $f" >&2; exit 2; }
+        done
+        tally "$@"
         ;;
     parse)
         show_causes=0

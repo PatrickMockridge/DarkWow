@@ -59,12 +59,13 @@ ALL = ("OPEN", "PARTLY", "FAILS", "DECISION", "ACCEPTED-WITH-REASON", "CLOSED", 
 # ratchet doing its job — reclassifying a blocked row into real work is a change to the worklist, and
 # it costs a sentence rather than happening silently.
 #
-# **Lowered twice later the same day**, which is the direction the ratchet exists for: `OBL-C124`
-# closed (the checker's summary now names each failure class it counts, guarded by a fourth assertion
-# in that gate's `--self-test`) and `OBL-C142` closed (the freshness verdict is content-based and its
-# self-test plants the mtime regression), so the ceiling comes down with each rather than leaving slack
-# that a future row could occupy without anyone deciding to.
-BUDGET = 28
+# **Lowered three times later the same day**, which is the direction the ratchet exists for:
+# `OBL-C124` closed (the checker's summary now names each failure class it counts, guarded by a fourth
+# assertion in that gate's `--self-test`), `OBL-C142` closed (the freshness verdict is content-based and
+# its self-test plants the mtime regression), and `OBL-C135` closed (the verdict table keys every suite
+# on its binary, so the whole-chunk tally is available and the rows stop collapsing). The ceiling comes
+# down with each rather than leaving slack that a future row could occupy without anyone deciding to.
+BUDGET = 27
 
 ROW = re.compile(r'^\|\s*(OBL-[A-Za-z0-9]+)\s*\|\s*\*\*([A-Z-]+)\*\*')
 
