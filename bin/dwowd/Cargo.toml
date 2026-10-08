@@ -74,29 +74,41 @@ dwow-sdk = {path = "../../src/sdk", features = ["json", "test-support"]}
 # about the padding having broken the module.
 wasmparser = "0.243.0"
 dwow-contract-test-harness = {path = "../../src/contract/test-harness"}
-dwow_attestation_contract = {path = "../../src/contract/attestation", features = ["client", "no-entrypoint"]}
-dwow_bridge_contract = {path = "../../src/contract/bridge", features = ["client", "no-entrypoint"]}
-dwow_lottery_contract = {path = "../../src/contract/lottery", features = ["client", "no-entrypoint"]}
-dwow_tender_contract = {path = "../../src/contract/tender", features = ["client", "no-entrypoint"]}
-dwow_auction_contract = {path = "../../src/contract/auction", features = ["client", "no-entrypoint"]}
-dwow_pool_stake_contract = {path = "../../src/contract/pool_stake", features = ["client", "no-entrypoint"]}
-dwow_dao_escrow_contract = {path = "../../src/contract/dao_escrow", features = ["client", "no-entrypoint"]}
-dwow_identity_contract = {path = "../../src/contract/identity", features = ["client", "no-entrypoint"]}
-dwow_stablecoin_contract = {path = "../../src/contract/stablecoin", features = ["client", "no-entrypoint"]}
-dwow_dex_contract = {path = "../../src/contract/dex", features = ["client", "no-entrypoint"]}
-dwow_drain_protection_contract = {path = "../../src/contract/drain_protection", features = ["client", "no-entrypoint"]}
-dwow_insurance_market_contract = {path = "../../src/contract/insurance_market", features = ["client", "no-entrypoint"]}
-dwow_escrow_contract = {path = "../../src/contract/escrow", features = ["client", "no-entrypoint"]}
-dwow_labor_market_contract = {path = "../../src/contract/labor_market", features = ["client", "no-entrypoint"]}
-dwow_subscription_contract = {path = "../../src/contract/subscription", features = ["client", "no-entrypoint"]}
-dwow_relayer_endowment_contract = {path = "../../src/contract/relayer_endowment", features = ["client", "no-entrypoint"]}
-dwow_slot_contract = {path = "../../src/contract/slot", features = ["client", "no-entrypoint"]}
-dwow_game_room_contract = {path = "../../src/contract/game_room", features = ["client", "no-entrypoint"]}
-dwow_betting_stake_contract = {path = "../../src/contract/betting_stake", features = ["client", "no-entrypoint"]}
-dwow_darkbet_exchange_contract = {path = "../../src/contract/darkbet_exchange", features = ["client", "no-entrypoint"]}
-dwow_darktoshi_dice_contract = {path = "../../src/contract/darktoshi_dice", features = ["client", "no-entrypoint"]}
-dwow_roulette_contract = {path = "../../src/contract/roulette", features = ["client", "no-entrypoint"]}
-dwow_otc_swap_contract = {path = "../../src/contract/otc_swap", features = ["client", "no-entrypoint"]}
+# `deterministic-zk` is declared here as well as in the harness, on purpose.
+#
+# The heavy fixtures call `<contract>::enable_deterministic_zk()`, and that call is a
+# **silent no-op** unless the contract's feature is compiled in — `<contract>/src/lib.rs`
+# makes `deterministic_zk_enabled()` a constant `false` under
+# `#[cfg(not(feature = "deterministic-zk"))]`. So the determinism replay (PI-7) rests on
+# that feature, and until now it arrived only by unification through a *third* crate's
+# manifest (`test-harness/Cargo.toml`). Declaring it where the fixtures live removes that
+# hop. The feature is additive, so the resolved set is unchanged today — this is insurance
+# against the harness's feature strings moving, not a behaviour change.
+#
+# Safe by the note above: dev-dependencies are not in the graph of a contract WASM build.
+dwow_attestation_contract = {path = "../../src/contract/attestation", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_bridge_contract = {path = "../../src/contract/bridge", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_lottery_contract = {path = "../../src/contract/lottery", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_tender_contract = {path = "../../src/contract/tender", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_auction_contract = {path = "../../src/contract/auction", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_pool_stake_contract = {path = "../../src/contract/pool_stake", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_dao_escrow_contract = {path = "../../src/contract/dao_escrow", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_identity_contract = {path = "../../src/contract/identity", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_stablecoin_contract = {path = "../../src/contract/stablecoin", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_dex_contract = {path = "../../src/contract/dex", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_drain_protection_contract = {path = "../../src/contract/drain_protection", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_insurance_market_contract = {path = "../../src/contract/insurance_market", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_escrow_contract = {path = "../../src/contract/escrow", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_labor_market_contract = {path = "../../src/contract/labor_market", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_subscription_contract = {path = "../../src/contract/subscription", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_relayer_endowment_contract = {path = "../../src/contract/relayer_endowment", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_slot_contract = {path = "../../src/contract/slot", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_game_room_contract = {path = "../../src/contract/game_room", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_betting_stake_contract = {path = "../../src/contract/betting_stake", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_darkbet_exchange_contract = {path = "../../src/contract/darkbet_exchange", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_darktoshi_dice_contract = {path = "../../src/contract/darktoshi_dice", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_roulette_contract = {path = "../../src/contract/roulette", features = ["client", "no-entrypoint", "deterministic-zk"]}
+dwow_otc_swap_contract = {path = "../../src/contract/otc_swap", features = ["client", "no-entrypoint", "deterministic-zk"]}
 dwow_wallet = {path = "../dww"}
 
 [lints]
