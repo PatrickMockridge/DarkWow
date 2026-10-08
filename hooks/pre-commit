@@ -178,4 +178,41 @@ if [ -x "$PAIR_CHECKER" ]; then
         exit 1
     fi
 fi
+
+# ---------------------------------------------------------------------------
+# The register nudge — a report, never a failure.
+#
+# A commit that touches a file an *open* register row cites is the moment that row may have been
+# discharged, and nothing said so when it happened: OBL-C141's repair landed in `15ee21b06d` and the
+# row read `OPEN` for thirteen days afterwards, because the status-vocabulary gate checks that a
+# marker is *from* the vocabulary, not that it is true. This prints the rows whose cited files this
+# commit touches.
+#
+# It exits 0 regardless, and that is the design rather than a weakness: a row may cite a file for a
+# reason unrelated to the change, so a blocking version would fire on most commits and be turned off.
+# A nudge that cannot be a check is the honest shape; `exit 0` is how it says so.
+# ---------------------------------------------------------------------------
+REGISTER="$REPO_ROOT/doc/src/arch/verification-hazop.md"
+if [ -f "$REGISTER" ]; then
+    OPEN_ROWS="$(grep -E '\| \*\*(OPEN|PARTLY)\*\* \|' "$REGISTER" 2>/dev/null || true)"
+    NUDGE_HITS=""
+    while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        case "$rel" in *.wasm|*.olean|*.bin) continue ;; esac
+        HIT="$(printf '%s\n' "$OPEN_ROWS" | grep -F "$rel" | head -1 | cut -c1-72)"
+        if [ -n "$HIT" ]; then
+            NUDGE_HITS="${NUDGE_HITS}  ${rel}
+      ${HIT}...
+
+"
+        fi
+    done < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true)
+    if [ -n "$NUDGE_HITS" ]; then
+        echo ""
+        echo "NUDGE (not a failure): this commit touches files cited by open register rows."
+        printf '%s' "$NUDGE_HITS"
+        echo "  If one of those rows is now discharged, update its Status in the same commit."
+    fi
+fi
+
 exit 0
