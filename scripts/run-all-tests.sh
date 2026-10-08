@@ -498,6 +498,18 @@ run_gate "clippy unwrap/expect census (40 crates)" \
 # `SOURCE_MANIFEST`, so an edited circuit makes the contract stale and `contract artifact freshness`
 # (gate 1) names it. What was missing is exactly this: nobody checked the *output* is well-formed.
 run_gate "ZK binaries well-formed"        bash "$SCRIPT_DIR/validate_zk_bins.sh"
+# OBL-C140: the artifact-level invariant — a contract wasm carries no panic machinery and no
+# first-party source path. The checker has existed since 2026-09-24 and **ran nowhere** until here:
+# not this runner, not `hooks/pre-commit`. That is the register's recurring "a gate nobody runs"
+# shape, and wiring it is the repair. **REPORT-ONLY, and the reason is the finding rather than a
+# preference**: its first run reports **9 of 9 genesis artifacts DIRTY** — `panic_bounds_check`,
+# `rust_begin_unwind` and embedded `src/…` paths — and exits 1, so wiring it blocking would redden the
+# umbrella on a repair that is not this line's to make. The levers that clear it (`strip`,
+# `-Zlocation-detail=none`) are `OBL-C147`'s, and they are not in force because the pinned toolchain
+# cannot pass the flag without a genesis re-roll. Publishing the count on every run is what this line
+# buys; flipping it to blocking is what `OBL-C140` closes on.
+run_gate "wasm artifact purity (report-only)" \
+    bash "$REPO_ROOT/contrib/wasm_artifact_check.sh" --genesis --report-only
 # OBL-C122's shape in the circuit layer, and the two halves of what the comment above does not claim.
 # It walks *sources* — 178 of them, the same set `script/circuit_instance_derivation.py` analyses, so
 # the two cannot drift — compiles each with the compiler's `-e`, and compares the decoded bytecode

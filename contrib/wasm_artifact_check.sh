@@ -87,10 +87,24 @@
 # Usage:
 #   contrib/wasm_artifact_check.sh <wasm> [<wasm> ...]     # check named artifacts
 #   contrib/wasm_artifact_check.sh --genesis               # check all nine genesis contracts
+#   contrib/wasm_artifact_check.sh --genesis --report-only  # print the verdict and exit 0
 #
 # Exit status: 0 if every artifact is clean, 1 if any carries panic machinery or an embedded path.
+# `--report-only` forces 0 and says so, so the finding stays visible on every run without failing the
+# umbrella — the posture every gate in this tree takes while its finding is unadjudicated. It was added
+# on 2026-10-08 together with this script's first wiring (OBL-C140): the check had existed since
+# 2026-09-24 and **ran nowhere**, and its first run reports **9 of 9 genesis artifacts DIRTY** — so
+# wiring it blocking would have reddened the umbrella on a finding whose repair is a genesis re-roll.
 
 set -uo pipefail
+
+# Split `--report-only` out before the artifact list is read.
+REPORT_ONLY=0
+ARGS=()
+for a in "$@"; do
+    if [ "$a" = "--report-only" ]; then REPORT_ONLY=1; else ARGS+=("$a"); fi
+done
+set -- ${ARGS[@]+"${ARGS[@]}"}
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -145,4 +159,8 @@ for w in "${ARTIFACTS[@]}"; do
     fi
 done
 
+if [ "$REPORT_ONLY" = 1 ]; then
+    [ "$fail" = 1 ] && echo "REPORT-ONLY: the artifact invariant is NOT met (this run would exit 1)."
+    exit 0
+fi
 exit "$fail"
