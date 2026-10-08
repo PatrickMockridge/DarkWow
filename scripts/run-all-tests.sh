@@ -113,10 +113,11 @@ run_gate "control: heavyweight coverage can fail" \
 # historical defect — the table called `drain_protection` STUB at 0/9 while its spec covered 4.
 run_gate "control: coverage table can contradict the tree" \
     bash "$REPO_ROOT/contrib/ci/check-coverage-table.sh" --self-test
-# The register worklist ratchet's control: a planted register over its budget must fail, one within
-# budget must pass, and a row whose Status cell opens with a coined word must not be counted at all —
-# that last one is the defect this control found in the checker's own first draft.
-run_gate "control: register worklist over budget fails" \
+# The register worklist's control: a planted open row naming no root cause must fail, and the four other
+# failure modes with it (a group naming a non-row, a row named in two groups, a settled row listed as a
+# member, and the unassigned row above); a complete assignment passes; and a row whose Status cell opens
+# with a coined word is not counted at all — that last one is the defect the checker's first draft had.
+run_gate "control: an unassigned register row fails" \
     bash "$SCRIPT_DIR/check-register-worklist.sh" --self-test
 # The register citation gate's line half (OBL-C148): a citation whose *path* resolves and whose *line*
 # no longer exists must be reported. The control plants exactly that in a temp register and requires a
@@ -510,14 +511,15 @@ run_gate "empty metadata arms declared"   bash "$SCRIPT_DIR/check-metadata-arms.
 # Negative-controlled before wiring, per the OBL-Z18 lesson: a copy of the register with a coined
 # marker appended as OBL-C23's last cell fails the check; the register itself passes.
 run_gate "register status markers"        bash "$SCRIPT_DIR/register-status.sh" --check
-# The register's worklist, counted — and ratcheted. The gate above guards the *form* of each marker;
-# this one is the measurement that was missing, and its absence is why the open set sat still: 70 rows
-# on 2026-09-29 and 70 on 2026-10-08, with fourteen minted and six closed in the last four days. `OPEN`
-# had been doing three jobs at once — work, a waiting decision, and a decline — so the number could not
-# fall, because a row blocked on a design choice cannot be closed by working it. The decisions now carry
-# their own status (`DECISION`), and this fails when the worklist grows past its declared budget.
-# **It is green.**
-run_gate "register worklist (ratchet)"    bash "$SCRIPT_DIR/check-register-worklist.sh" --strict
+# The register's worklist, counted — and assigned to its root causes. The gate above guards the *form*
+# of each marker; this one requires every open row to name the cause that produces it, in the register's
+# `<!-- root-cause-groups -->` block. It **replaced a budget ratchet on 2026-10-08**: a budget failed on
+# any net-new finding, which forced closing a row for every finding, and the cheapest row to close is
+# always a record or tooling row — measured over sixty commits, 36 touched the register and only ~12 were
+# product-source edits. An assignment fails on an un-understood finding instead, which is the property
+# that matters. **It is green.**
+run_gate "register worklist (root-cause assignment)" \
+    bash "$SCRIPT_DIR/check-register-worklist.sh" --strict
 # RG-9, wired 2026-10-08 (`OBL-C142`): every contract's WASM embeds the current bytes of every circuit
 # in its `proof/` directory. Decided by content — the wasm either contains the `.zk.bin` bytes or it
 # does not — so a byte-identical regeneration of a circuit cannot make this fire, which is what its

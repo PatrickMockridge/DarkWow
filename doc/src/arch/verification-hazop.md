@@ -41,6 +41,49 @@ breaks a stated safety property; **M** = defence-in-depth or liveness.
 
 ---
 
+## The root causes — the open findings reduce to six
+
+**A finding is a symptom.** The 57 rows that are not settled — the 26-row worklist (`OPEN` 10,
+`PARTLY` 12, `FAILS` 4) and the 31 `DECISION` rows — reduce to six causes and one residue. The cause
+is what gets eliminated; the finding is what closes when it does. Working the findings one at a time
+is what produced the drift this section exists to stop: over the sixty commits of 2026-10-06..08,
+**36 touched this register and only ~12 were product-source edits**, because the cheapest row to close
+is always a record or tooling row.
+
+**The cause is repaired, not the row.** A cause already fixed somewhere and live elsewhere is the
+cheapest work in the register, because the repair is known. `RC1` is the archetype: roughly twenty
+settled rows already landed its repair — derive-and-expose in the circuit, then compare the exposed
+value against stored state on the host — and every one of its open members is that same fix not yet
+applied. The counts are not restated here; they are derived, and the gate prints them.
+
+| # | cause | the repair |
+|---|---|---|
+| `RC1` | **Unbound authorization** — a check meant to gate an action compares two prover/caller-chosen values, or reads nothing, so it authorizes any witness | derive-and-expose in-circuit, then compare against stored state on the host (**proven in ~20 settled rows**) |
+| `RC3` | **Dead state & unreachable endpoints** — a field or endpoint is written and never read, or read and never written | delete the dead state, build the missing writer, or extract the predicate so a test can reach it |
+| `RC4` | **Verification exists but is not wired, enabled or run** | fail-closed by default; a startup config gate; re-wire the dead predicate to its caller |
+| `RC2` | **Split source of truth** — one value has several homes and they drift | one derivation, one home; one codec per struct. Its residue is a live defect with **no row at all**: `auction`'s six clients, all V1, against their V2 circuits |
+| `RC5` | **The instrument overstates its verdict** — a checker reports a verdict it did not compute | *process, not code*: a negative control, not a re-listing |
+| `RC6` | **Spec, model or register drift** — a doc states a rule the code does not enforce | *process, not code* |
+| `RESIDUE` | no shared cause — each is its own defect | one repair each |
+
+The block below is the single source of truth for the assignment. Every row whose status is `OPEN`,
+`PARTLY`, `FAILS` or `DECISION` appears in exactly one group; `scripts/check-register-worklist.sh
+--strict` fails a row that appears in none, a member that is not an open row, and a row named twice.
+**The gate is this assignment rather than a budget** — a budget fails on any new finding, which forces
+closing a row for every finding, and the cheapest row to close is the one that fixes nothing.
+
+<!-- root-cause-groups -->
+RC1 · unbound authorization: OBL-C82 OBL-C92 OBL-C96 OBL-C97 OBL-C102 OBL-C130 OBL-C146 OBL-C160 OBL-C164 OBL-C165 OBL-C167 OBL-C171 OBL-C184 OBL-C188 OBL-C198 OBL-C203 OBL-Z13 OBL-Z18
+RC2 · split source of truth: OBL-C45 OBL-C179
+RC3 · dead state and unreachable endpoints: OBL-C89 OBL-C113 OBL-C154 OBL-C163 OBL-C166 OBL-C200 OBL-Z23
+RC4 · verification exists but is not wired, enabled or run: OBL-C95 OBL-C120 OBL-C125 OBL-C140
+RC5 · the instrument overstates its verdict: OBL-C76 OBL-C136 OBL-C138 OBL-C148 OBL-C149 OBL-C194 OBL-C202 OBL-C205 OBL-C206 OBL-T26 OBL-Z3 OBL-Z5
+RC6 · spec, model or register drift: OBL-C74 OBL-C109 OBL-C126 OBL-C147 OBL-C181 OBL-T20 OBL-T22 OBL-T23 OBL-T24 OBL-Z6 OBL-Z12
+RESIDUE · no shared cause: OBL-C12 OBL-C54 OBL-C56
+<!-- /root-cause-groups -->
+
+---
+
 ## The assumption inventory, and the check that keeps it honest
 
 `proofs/lean/src/DarkFi/Axioms.lean` is the only file in `proofs/lean/` permitted to contain an
