@@ -127,7 +127,13 @@ impl BaccaratHarness {
     /// * `house_edge` - House edge in basis points
     /// * `confirmation_depth` - Confirmation depth for randomness
     /// * `value_blind` - Blinding factor for the value commitment (deterministic)
-    pub fn commit_bet(
+    /// `OBL-C198`: assemble the CommitBet call's data and stop, **before** the proof exists.
+    ///
+    /// The proof binds the **transaction** commitment — a derivation over the whole ordered call
+    /// set — so the call must exist before its proof can, and only the caller knows what else its
+    /// transaction carries. [`Self::commit_bet`] binds a **zero** commitment instead, which agrees
+    /// with the constant this contract used to publish and binds nothing.
+    pub fn commit_bet_prepare(
         &self,
         player_pub: PublicKey,
         bet_value: u64,
@@ -138,7 +144,7 @@ impl BaccaratHarness {
         house_edge: u32,
         confirmation_depth: u8,
         value_blind: pallas::Scalar,
-    ) -> Result<CommitBetResult, Box<dyn std::error::Error>> {
+    ) -> Result<CommitBetPlan, Box<dyn std::error::Error>> {
         let input = CommitBetV1CallData::new(
             player_pub,
             bet_value,
@@ -148,12 +154,6 @@ impl BaccaratHarness {
             asset_id,
             value_blind,
         );
-
-        let (proof, public_inputs) = create_commit_bet_v1_proof(
-            &self.commit_bet_zkbin,
-            &self.commit_bet_pk,
-            &input,
-        )?;
 
         // Create value commitment using Pedersen
         let value_commit = dwow_sdk::crypto::pedersen_commitment_u64(
@@ -189,10 +189,55 @@ impl BaccaratHarness {
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
+        Ok(CommitBetPlan { call_data, bet_id, input, zkbin: self.commit_bet_zkbin.clone(), pk: self.commit_bet_pk.clone() })
+    }
+
+    /// Create a CommitBet call and its proof in one step, binding a **zero** commitment.
+    pub fn commit_bet(
+        &self,
+        player_pub: PublicKey,
+        bet_value: u64,
+        bet_type: BetType,
+        secret_nonce: pallas::Base,
+        blind: pallas::Base,
+        asset_id: pallas::Base,
+        house_edge: u32,
+        confirmation_depth: u8,
+        value_blind: pallas::Scalar,
+    ) -> Result<CommitBetResult, Box<dyn std::error::Error>> {
+        let plan = self.commit_bet_prepare(player_pub, bet_value, bet_type, secret_nonce, blind, asset_id, house_edge, confirmation_depth, value_blind)?;
+        let call_data = plan.call_data.clone();
+        let bet_id = plan.bet_id;
+        let (proof, public_inputs) = plan.prove(pallas::Base::zero(), pallas::Base::zero())?;
         Ok(CommitBetResult { call_data, proof, public_inputs, bet_id })
     }
 
-    /// Create draw cards call data with ZK proof
+    /// `OBL-C198`: assemble the DrawCards call's data and stop. See [`Self::commit_bet_prepare`]:
+    /// the caller cannot supply the frame commitment until the call data exists, and this half is
+    /// what gives it that.
+    pub fn draw_cards_prepare(
+        &self,
+        bet_id: BetId,
+        secret_nonce: pallas::Base,
+        secret_nonce_commit: pallas::Base,
+    ) -> Result<DrawCardsPlan, Box<dyn std::error::Error>> {
+        let input = DrawCardsCallData {
+            bet_id,
+            secret_nonce,
+            secret_nonce_commit,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
+
+        let params = DrawCardsParamsV1 { bet_id, secret_nonce };
+
+        let mut call_data = vec![0x02];
+        call_data.extend_from_slice(&params.encode());
+
+        Ok(DrawCardsPlan { call_data, bet_id, input, zkbin: self.draw_cards_zkbin.clone(), pk: self.draw_cards_pk.clone() })
+    }
+
+    /// Create draw cards call data with ZK proof in one step, with the pair the caller passes.
     pub fn draw_cards(
         &self,
         bet_id: BetId,
@@ -201,30 +246,15 @@ impl BaccaratHarness {
         tx_commitment: pallas::Base,
         tx_nonce: pallas::Base,
     ) -> Result<DrawCardsResult, Box<dyn std::error::Error>> {
-        let input = DrawCardsCallData {
-            bet_id,
-            secret_nonce,
-            secret_nonce_commit,
-            tx_commitment,
-            tx_nonce,
-        };
-
-        let (proof, public_inputs) = create_draw_cards_proof(
-            &self.draw_cards_zkbin,
-            &self.draw_cards_pk,
-            &input,
-        )?;
-
-        let params = DrawCardsParamsV1 { bet_id, secret_nonce };
-
-        let mut call_data = vec![0x02];
-        call_data.extend_from_slice(&params.encode());
-
+        let plan = self.draw_cards_prepare(bet_id, secret_nonce, secret_nonce_commit)?;
+        let call_data = plan.call_data.clone();
+        let bet_id = plan.bet_id;
+        let (proof, public_inputs) = plan.prove(tx_commitment, tx_nonce)?;
         Ok(DrawCardsResult { call_data, proof, public_inputs, bet_id })
     }
 
-    /// Create a settle bet proof and call data
-    pub fn settle_bet(
+    /// `OBL-C198`: assemble the SettleBet call's data and stop. See [`Self::commit_bet_prepare`].
+    pub fn settle_bet_prepare(
         &self,
         bet_id: BetId,
         secret_nonce: pallas::Base,
@@ -233,7 +263,7 @@ impl BaccaratHarness {
         bet_type: BetType,
         asset_id: pallas::Base,
         blind: pallas::Base,
-    ) -> Result<SettleBetResult, Box<dyn std::error::Error>> {
+    ) -> Result<SettleBetPlan, Box<dyn std::error::Error>> {
         let input = SettleBetV1CallData::new(
             bet_id,
             secret_nonce,
@@ -244,22 +274,69 @@ impl BaccaratHarness {
             blind,
         );
 
-        let (proof, public_inputs) = create_settle_bet_v1_proof(
-            &self.settle_bet_zkbin,
-            &self.settle_bet_pk,
-            &input,
-        )?;
-
         // Build SettleBetParamsV1
         let params = SettleBetParamsV1 { bet_id };
 
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
+        Ok(SettleBetPlan { call_data, input, zkbin: self.settle_bet_zkbin.clone(), pk: self.settle_bet_pk.clone() })
+    }
+
+    /// Create a settle bet proof and call data in one step, binding a **zero** commitment.
+    pub fn settle_bet(
+        &self,
+        bet_id: BetId,
+        secret_nonce: pallas::Base,
+        player_pub: PublicKey,
+        bet_value: u64,
+        bet_type: BetType,
+        asset_id: pallas::Base,
+        blind: pallas::Base,
+    ) -> Result<SettleBetResult, Box<dyn std::error::Error>> {
+        let plan = self.settle_bet_prepare(bet_id, secret_nonce, player_pub, bet_value, bet_type, asset_id, blind)?;
+        let call_data = plan.call_data.clone();
+        let (proof, public_inputs) = plan.prove(pallas::Base::zero(), pallas::Base::zero())?;
         Ok(SettleBetResult { call_data, proof, public_inputs })
     }
 
-    /// Create house close call data with ZK proof
+    /// `OBL-C198`: assemble the HouseClose call's data and stop. Its params carry
+    /// `close_nullifier`, which is a **derivation** of the input rather than a proof output, so the
+    /// call data is proof-independent and this half is possible at all. The derivation is the
+    /// client's own — `HouseCloseCallData::compute_public_inputs` — and is read from there rather
+    /// than re-derived here, because a second copy is how a nullifier changes without a decision.
+    pub fn house_close_prepare(
+        &self,
+        bet_id: BetId,
+        house_secret: pallas::Base,
+        house_pub_x: pallas::Base,
+        house_pub_y: pallas::Base,
+    ) -> Result<HouseClosePlan, Box<dyn std::error::Error>> {
+        let input = HouseCloseCallData {
+            bet_id,
+            house_secret,
+            house_pub_x,
+            house_pub_y,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
+
+        let close_nullifier = input.compute_public_inputs().close_nullifier;
+
+        let params = HouseCloseParamsV1 {
+            bet_id,
+            house_pub_x,
+            house_pub_y,
+            close_nullifier,
+        };
+
+        let mut call_data = vec![0x04];
+        call_data.extend_from_slice(&params.encode());
+
+        Ok(HouseClosePlan { call_data, bet_id, input, zkbin: self.house_close_zkbin.clone(), pk: self.house_close_pk.clone() })
+    }
+
+    /// Create house close call data with ZK proof in one step, with the pair the caller passes.
     pub fn house_close(
         &self,
         bet_id: BetId,
@@ -269,31 +346,10 @@ impl BaccaratHarness {
         tx_commitment: pallas::Base,
         tx_nonce: pallas::Base,
     ) -> Result<HouseCloseResult, Box<dyn std::error::Error>> {
-        let input = HouseCloseCallData {
-            bet_id,
-            house_secret,
-            house_pub_x,
-            house_pub_y,
-            tx_commitment,
-            tx_nonce,
-        };
-
-        let (proof, public_inputs) = create_house_close_proof(
-            &self.house_close_zkbin,
-            &self.house_close_pk,
-            &input,
-        )?;
-
-        let params = HouseCloseParamsV1 {
-            bet_id,
-            house_pub_x,
-            house_pub_y,
-            close_nullifier: public_inputs.close_nullifier,
-        };
-
-        let mut call_data = vec![0x04];
-        call_data.extend_from_slice(&params.encode());
-
+        let plan = self.house_close_prepare(bet_id, house_secret, house_pub_x, house_pub_y)?;
+        let call_data = plan.call_data.clone();
+        let bet_id = plan.bet_id;
+        let (proof, public_inputs) = plan.prove(tx_commitment, tx_nonce)?;
         Ok(HouseCloseResult { call_data, proof, public_inputs, bet_id })
     }
 }
@@ -325,6 +381,83 @@ impl super::ContractHarness for BaccaratHarness {
             "SettleBet_V2" => Some(&self.settle_bet_pk),
             _ => None,
         }
+    }
+}
+
+// ============================================================================
+// Prepared calls (`OBL-C198`)
+// ============================================================================
+
+/// A prepared CommitBet: the call data and the derived `bet_id` exist, the proof does not.
+pub struct CommitBetPlan {
+    pub call_data: Vec<u8>,
+    pub bet_id: BetId,
+    input: CommitBetV1CallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl CommitBetPlan {
+    /// Prove the call, binding its proof to `tx_commitment` — the commitment over the whole call
+    /// set the transaction carries, this call and its siblings included.
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(dwow_core::zk::Proof, CommitBetV1PublicInputs), Box<dyn std::error::Error>> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, public_inputs) = create_commit_bet_v1_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok((proof, public_inputs))
+    }
+}
+
+/// A prepared DrawCards. See [`CommitBetPlan`].
+pub struct DrawCardsPlan {
+    pub call_data: Vec<u8>,
+    pub bet_id: BetId,
+    input: DrawCardsCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl DrawCardsPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(dwow_core::zk::Proof, DrawCardsPublicInputs), Box<dyn std::error::Error>> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, public_inputs) = create_draw_cards_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok((proof, public_inputs))
+    }
+}
+
+/// A prepared SettleBet. See [`CommitBetPlan`].
+pub struct SettleBetPlan {
+    pub call_data: Vec<u8>,
+    input: SettleBetV1CallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl SettleBetPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(dwow_core::zk::Proof, SettleBetV1PublicInputs), Box<dyn std::error::Error>> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, public_inputs) = create_settle_bet_v1_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok((proof, public_inputs))
+    }
+}
+
+/// A prepared HouseClose. See [`CommitBetPlan`].
+pub struct HouseClosePlan {
+    pub call_data: Vec<u8>,
+    pub bet_id: BetId,
+    input: HouseCloseCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl HouseClosePlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(dwow_core::zk::Proof, HouseClosePublicInputs), Box<dyn std::error::Error>> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, public_inputs) = create_house_close_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok((proof, public_inputs))
     }
 }
 

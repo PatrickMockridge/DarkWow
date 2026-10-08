@@ -24,9 +24,9 @@
 //! Baccarat Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId, PublicKey, SecretKey},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, poseidon_hash, ContractId, PublicKey, SecretKey},
     dark_tree::DarkLeaf,
-    error::ContractResult,
+    error::{ContractError, ContractResult},
     pasta::pallas, wasm, ContractCall,
 };
 use dwow_serial::{deserialize, Encodable};
@@ -83,6 +83,18 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 }
 
 /// Get metadata for ZK proof verification
+/// `OBL-C198`: the binding is the host's derivation over the enclosing transaction, not a constant.
+/// `baccarat`'s params carry no `tx_nonce` — the nonce is a literal zero end to end here — so the
+/// helper takes it as an argument and every arm passes zero, which is what their
+/// `constrain_instance` lists already publish.
+fn baccarat_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        dwow_sdk::wasm::util::get_tx_commitment()?,
+        tx_nonce,
+    ]))
+}
+
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
@@ -113,7 +125,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_COMMIT_NS_V2.to_string(),
-                vec![bet_id, *vc_coords.x(), *vc_coords.y(), poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+                vec![bet_id, *vc_coords.x(), *vc_coords.y(), baccarat_tx_binding(pallas::Base::zero())?, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -126,7 +138,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let secret_nonce_commit = poseidon_hash([pallas::Base::from(7), params.secret_nonce]);
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_DRAW_NS_V2.to_string(),
-                vec![params.bet_id, secret_nonce_commit, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+                vec![params.bet_id, secret_nonce_commit, baccarat_tx_binding(pallas::Base::zero())?, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -137,7 +149,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V2.to_string(),
-                vec![params.bet_id, params.house_pub_x, params.house_pub_y, params.close_nullifier, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+                vec![params.bet_id, params.house_pub_x, params.house_pub_y, params.close_nullifier, baccarat_tx_binding(pallas::Base::zero())?, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -148,7 +160,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_SETTLE_NS_V2.to_string(),
-                vec![params.bet_id, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+                vec![params.bet_id, baccarat_tx_binding(pallas::Base::zero())?, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
