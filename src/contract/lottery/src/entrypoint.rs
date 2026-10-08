@@ -24,7 +24,7 @@
 //! Lottery Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::ContractResult,
     pasta::pallas, wasm, ContractCall,
@@ -82,6 +82,17 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
+/// `OBL-C198`: the binding is the host's derivation over the enclosing transaction, not a constant.
+/// `lottery`'s params carry no `tx_nonce` — the nonce is a literal zero end to end here — so the
+/// helper takes it as an argument and every arm passes zero.
+fn lottery_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, dwow_sdk::error::ContractError> {
+    Ok(poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        dwow_sdk::wasm::util::get_tx_commitment()?,
+        tx_nonce,
+    ]))
+}
+
 /// Get metadata for ZK proof verification
 #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
@@ -90,8 +101,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let self_ = &calls[call_idx].data;
     let func = LotteryFunction::try_from(self_.data[0])?;
 
-    // tx fields are zero in heavyweight; the V2 clients commit to poseidon_hash([3, 0, 0]).
-    let tx_binding = poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
+    // `OBL-C198`: the binding is the host's derivation over the enclosing transaction, not a
+    // constant. The arm's comment used to read "tx fields are zero in heavyweight; the V2 clients
+    // commit to poseidon_hash([3, 0, 0])" — true of the fixtures and of nothing else, which is the
+    // shape the row exists to remove. `lottery`'s params carry no `tx_nonce`, so the nonce is a
+    // literal zero end to end and is passed as one.
+    let tx_binding = lottery_tx_binding(pallas::Base::zero())?;
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     match func {

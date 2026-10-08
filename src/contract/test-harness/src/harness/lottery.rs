@@ -35,10 +35,10 @@ use dwow_sdk::{
 };
 
 use dwow_lottery_contract::client::{
-    claim_prize::{ClaimPrizeCallData, create_claim_prize_proof},
+    claim_prize::{ClaimPrizeCallData, ClaimPrizePublicInputs, create_claim_prize_proof},
     commit_ticket::{CommitTicketV1CallData, create_commit_ticket_v1_proof, CommitTicketV1PublicInputs},
-    house_auth::{HouseAuthCallData, create_house_auth_proof},
-    reveal_ticket::{RevealTicketV1CallData, create_reveal_ticket_v1_proof},
+    house_auth::{HouseAuthCallData, HouseAuthPublicInputs, create_house_auth_proof},
+    reveal_ticket::{RevealTicketV1CallData, RevealTicketV1PublicInputs, create_reveal_ticket_v1_proof},
 };
 use dwow_lottery_contract::model::{
     BuyTicketParamsV1, ClaimPrizeParamsV1, DrawWinnersParamsV1, ExpireLotteryParamsV1,
@@ -169,7 +169,7 @@ impl LotteryHarness {
     /// The `commitment` field in `BuyTicketParamsV1` is the contract-level commitment
     /// `Hash(...Hash(lottery_id, n1), n2..., nonce)` verified off-circuit by RevealTicketV1.
     /// The ZK proof's `ticket_id = poseidon_hash(4, lottery_id, px, py, amount, nonce)`.
-    pub fn commit_ticket(
+    pub fn commit_ticket_prepare(
         &self,
         player_pub: PublicKey,
         lottery_id: pallas::Base,
@@ -177,14 +177,8 @@ impl LotteryHarness {
         nonce: pallas::Base,
         ticket_price: u64,
         asset_id: pallas::Base,
-    ) -> Result<CommitTicketResult, Box<dyn std::error::Error>> {
+    ) -> Result<CommitTicketPlan, Box<dyn std::error::Error>> {
         let call_data_input = CommitTicketV1CallData::new(lottery_id, player_pub, ticket_price, nonce);
-
-        let (proof, public_inputs) = create_commit_ticket_v1_proof(
-            &self.commit_ticket_zkbin,
-            &self.commit_ticket_pk,
-            &call_data_input,
-        )?;
 
         // Contract-level commitment: iterative hash of lottery_id + sorted numbers + nonce.
         let mut sorted_numbers = numbers.clone();
@@ -210,50 +204,76 @@ impl LotteryHarness {
         let mut call_data = vec![0x01]; // BuyTicketV1
         call_data.extend_from_slice(&params.encode());
 
+        Ok(CommitTicketPlan { call_data, input: call_data_input, zkbin: self.commit_ticket_zkbin.clone(), pk: self.commit_ticket_pk.clone() })
+    }
+
+    /// Buy a ticket and prove it in one step, binding a **zero** commitment. A caller whose ticket
+    /// is a *child* of another call uses [`Self::commit_ticket_prepare`].
+    ///
+    /// `OBL-C198`: the proof binds the **transaction** commitment — a derivation over the whole
+    /// ordered call set — so the call must exist before its proof can.
+    pub fn commit_ticket(
+        &self,
+        player_pub: PublicKey,
+        lottery_id: pallas::Base,
+        numbers: Vec<u8>,
+        nonce: pallas::Base,
+        ticket_price: u64,
+        asset_id: pallas::Base,
+    ) -> Result<CommitTicketResult, Box<dyn std::error::Error>> {
+        let plan = self.commit_ticket_prepare(player_pub, lottery_id, numbers, nonce, ticket_price, asset_id)?;
+        let call_data = plan.call_data.clone();
+        let (proof, public_inputs) = plan.prove(pallas::Base::zero(), pallas::Base::zero())?;
         Ok(CommitTicketResult { call_data, proof, public_inputs })
     }
 
-    /// Draw winners (house-auth, function code 0x02).
-    pub fn draw_winners(
+    /// Draw winners (house-auth, function code 0x02) — the call data, and no proof yet. See
+    /// [`Self::commit_ticket_prepare`] for why the split exists. `house_nullifier` is the client
+    /// data's own derivation, so the call data is proof-independent.
+    pub fn draw_winners_prepare(
         &self,
         lottery_id: pallas::Base,
         house_secret: pallas::Base,
         nonce: pallas::Base,
-    ) -> Result<DrawWinnersResult, Box<dyn std::error::Error>> {
+    ) -> Result<DrawWinnersPlan, Box<dyn std::error::Error>> {
         let data = HouseAuthCallData::new(lottery_id, house_secret);
-        let (proof, _public_inputs) = create_house_auth_proof(
-            &self.draw_winners_zkbin,
-            &self.draw_winners_pk,
-            &data,
-        )?;
 
         let house_pub = PublicKey::from_secret(SecretKey::from_base(house_secret));
         let params = DrawWinnersParamsV1 {
             lottery_id,
             nonce,
             house_pub,
-            house_nullifier: data.house_nullifier,
+            house_nullifier: data.house_nullifier.clone(),
         };
 
         let mut call_data = vec![0x02]; // DrawWinnersV1
         call_data.extend_from_slice(&params.encode());
 
+        Ok(DrawWinnersPlan { call_data, input: data, zkbin: self.draw_winners_zkbin.clone(), pk: self.draw_winners_pk.clone() })
+    }
+
+    /// Draw winners and prove it in one step, binding a **zero** commitment.
+    pub fn draw_winners(
+        &self,
+        lottery_id: pallas::Base,
+        house_secret: pallas::Base,
+        nonce: pallas::Base,
+    ) -> Result<DrawWinnersResult, Box<dyn std::error::Error>> {
+        let plan = self.draw_winners_prepare(lottery_id, house_secret, nonce)?;
+        let call_data = plan.call_data.clone();
+        let (proof, _) = plan.prove(pallas::Base::zero(), pallas::Base::zero())?;
         Ok(DrawWinnersResult { call_data, proof })
     }
 
-    /// Reveal a ticket (for RevealTicketV1, 0x03). The reveal proof is tx_binding-only.
-    pub fn reveal_ticket(
+    /// Reveal a ticket (for RevealTicketV1, 0x03) — the call data, and no proof yet. The reveal
+    /// proof is tx_binding-only, so this half is what lets it bind the frame.
+    pub fn reveal_ticket_prepare(
         &self,
         ticket_id: pallas::Base,
         numbers: Vec<u8>,
         nonce: pallas::Base,
-    ) -> Result<RevealTicketResult, Box<dyn std::error::Error>> {
+    ) -> Result<RevealTicketPlan, Box<dyn std::error::Error>> {
         let call_data_input = RevealTicketV1CallData::new();
-        let (proof, _public_inputs) = create_reveal_ticket_v1_proof(
-            &self.reveal_ticket_zkbin,
-            &self.reveal_ticket_pk,
-            &call_data_input,
-        )?;
 
         let params = RevealTicketParamsV1 {
             ticket_id,
@@ -266,10 +286,49 @@ impl LotteryHarness {
         let mut call_data = vec![0x03]; // RevealTicketV1
         call_data.extend_from_slice(&params.encode()?);
 
+        Ok(RevealTicketPlan { call_data, input: call_data_input, zkbin: self.reveal_ticket_zkbin.clone(), pk: self.reveal_ticket_pk.clone() })
+    }
+
+    /// Reveal a ticket and prove it in one step, binding a **zero** commitment.
+    pub fn reveal_ticket(
+        &self,
+        ticket_id: pallas::Base,
+        numbers: Vec<u8>,
+        nonce: pallas::Base,
+    ) -> Result<RevealTicketResult, Box<dyn std::error::Error>> {
+        let plan = self.reveal_ticket_prepare(ticket_id, numbers, nonce)?;
+        let call_data = plan.call_data.clone();
+        let (proof, _) = plan.prove(pallas::Base::zero(), pallas::Base::zero())?;
         Ok(RevealTicketResult { call_data, proof })
     }
 
-    /// Claim a prize (for ClaimPrizeV1, 0x04).
+    /// Claim a prize (for ClaimPrizeV1, 0x04) — the call data, and no proof yet. `computed_commit`
+    /// is the client data's own `poseidon_hash([4, ticket_id, ticket_secret])` rather than a proof
+    /// output, which is what makes this half possible; it is read from the client, not re-derived.
+    pub fn claim_prize_prepare(
+        &self,
+        ticket_id: pallas::Base,
+        ticket_secret: pallas::Base,
+        tier: u8,
+        matches: u8,
+    ) -> Result<ClaimPrizePlan, Box<dyn std::error::Error>> {
+        let call_data_input = ClaimPrizeCallData::new(ticket_id, ticket_secret);
+
+        let params = ClaimPrizeParamsV1 {
+            ticket_id,
+            proof: vec![],
+            tier,
+            matches,
+            computed_commit: call_data_input.compute_public_inputs().computed_commit,
+        };
+
+        let mut call_data = vec![0x04]; // ClaimPrizeV1
+        call_data.extend_from_slice(&params.encode()?);
+
+        Ok(ClaimPrizePlan { call_data, input: call_data_input, zkbin: self.claim_prize_zkbin.clone(), pk: self.claim_prize_pk.clone() })
+    }
+
+    /// Claim a prize and prove it in one step, binding a **zero** commitment.
     pub fn claim_prize(
         &self,
         ticket_id: pallas::Base,
@@ -277,51 +336,134 @@ impl LotteryHarness {
         tier: u8,
         matches: u8,
     ) -> Result<ClaimPrizeResult, Box<dyn std::error::Error>> {
-        let call_data_input = ClaimPrizeCallData::new(ticket_id, ticket_secret);
-        let (proof, public_inputs) = create_claim_prize_proof(
-            &self.claim_prize_zkbin,
-            &self.claim_prize_pk,
-            &call_data_input,
-        )?;
-
-        let params = ClaimPrizeParamsV1 {
-            ticket_id,
-            proof: vec![],
-            tier,
-            matches,
-            computed_commit: public_inputs.computed_commit,
-        };
-
-        let mut call_data = vec![0x04]; // ClaimPrizeV1
-        call_data.extend_from_slice(&params.encode()?);
-
+        let plan = self.claim_prize_prepare(ticket_id, ticket_secret, tier, matches)?;
+        let call_data = plan.call_data.clone();
+        let (proof, _) = plan.prove(pallas::Base::zero(), pallas::Base::zero())?;
         Ok(ClaimPrizeResult { call_data, proof })
     }
 
-    /// Expire a lottery (house-auth, function code 0x05).
-    pub fn expire_lottery(
+    /// Expire a lottery (house-auth, function code 0x05) — the call data, and no proof yet.
+    pub fn expire_lottery_prepare(
         &self,
         lottery_id: pallas::Base,
         house_secret: pallas::Base,
-    ) -> Result<ExpireLotteryResult, Box<dyn std::error::Error>> {
+    ) -> Result<ExpireLotteryPlan, Box<dyn std::error::Error>> {
         let data = HouseAuthCallData::new(lottery_id, house_secret);
-        let (proof, _public_inputs) = create_house_auth_proof(
-            &self.expire_lottery_zkbin,
-            &self.expire_lottery_pk,
-            &data,
-        )?;
 
         let house_pub = PublicKey::from_secret(SecretKey::from_base(house_secret));
         let params = ExpireLotteryParamsV1 {
             lottery_id,
             house_pub,
-            house_nullifier: data.house_nullifier,
+            house_nullifier: data.house_nullifier.clone(),
         };
 
         let mut call_data = vec![0x05]; // ExpireLotteryV1
         call_data.extend_from_slice(&params.encode());
 
+        Ok(ExpireLotteryPlan { call_data, input: data, zkbin: self.expire_lottery_zkbin.clone(), pk: self.expire_lottery_pk.clone() })
+    }
+
+    /// Expire a lottery and prove it in one step, binding a **zero** commitment.
+    pub fn expire_lottery(
+        &self,
+        lottery_id: pallas::Base,
+        house_secret: pallas::Base,
+    ) -> Result<ExpireLotteryResult, Box<dyn std::error::Error>> {
+        let plan = self.expire_lottery_prepare(lottery_id, house_secret)?;
+        let call_data = plan.call_data.clone();
+        let (proof, _) = plan.prove(pallas::Base::zero(), pallas::Base::zero())?;
         Ok(ExpireLotteryResult { call_data, proof })
+    }
+}
+
+// ============================================================================
+// Prepared calls (`OBL-C198`)
+// ============================================================================
+
+/// A prepared BuyTicket: the call data exists, the proof does not.
+pub struct CommitTicketPlan {
+    pub call_data: Vec<u8>,
+    input: CommitTicketV1CallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl CommitTicketPlan {
+    /// Prove the call, binding its proof to `tx_commitment` — the commitment over the whole call
+    /// set the transaction carries, this call and its siblings included.
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(dwow_core::zk::Proof, CommitTicketV1PublicInputs), Box<dyn std::error::Error>> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, public_inputs) = create_commit_ticket_v1_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok((proof, public_inputs))
+    }
+}
+
+/// A prepared DrawWinners. See [`CommitTicketPlan`].
+pub struct DrawWinnersPlan {
+    pub call_data: Vec<u8>,
+    input: HouseAuthCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl DrawWinnersPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(dwow_core::zk::Proof, HouseAuthPublicInputs), Box<dyn std::error::Error>> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, public_inputs) = create_house_auth_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok((proof, public_inputs))
+    }
+}
+
+/// A prepared RevealTicket. See [`CommitTicketPlan`].
+pub struct RevealTicketPlan {
+    pub call_data: Vec<u8>,
+    input: RevealTicketV1CallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl RevealTicketPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(dwow_core::zk::Proof, RevealTicketV1PublicInputs), Box<dyn std::error::Error>> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, public_inputs) = create_reveal_ticket_v1_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok((proof, public_inputs))
+    }
+}
+
+/// A prepared ClaimPrize. See [`CommitTicketPlan`].
+pub struct ClaimPrizePlan {
+    pub call_data: Vec<u8>,
+    input: ClaimPrizeCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl ClaimPrizePlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(dwow_core::zk::Proof, ClaimPrizePublicInputs), Box<dyn std::error::Error>> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, public_inputs) = create_claim_prize_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok((proof, public_inputs))
+    }
+}
+
+/// A prepared ExpireLottery. See [`CommitTicketPlan`].
+pub struct ExpireLotteryPlan {
+    pub call_data: Vec<u8>,
+    input: HouseAuthCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl ExpireLotteryPlan {
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(dwow_core::zk::Proof, HouseAuthPublicInputs), Box<dyn std::error::Error>> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        let (proof, public_inputs) = create_house_auth_proof(&self.zkbin, &self.pk, &self.input)?;
+        Ok((proof, public_inputs))
     }
 }
 

@@ -16,11 +16,17 @@ use dwow_sdk::pasta::pallas;
 use std::sync::{Arc, Mutex};
 
 use crate::tests::modules::child_calls::{
-    pn_transfer_child, pn_transfer_payout_child, PnNote,
+    pn_transfer_prepare, pn_transfer_payout_prepare, PnNote,
 };
 use crate::tests::uniform_runner::{
-    ContractTestSpec, EndpointExpectation, EndpointResult, EndpointSpec,
+    ChildCall, ContractTestSpec, EndpointExpectation, EndpointResult, EndpointSpec,
 };
+
+/// The `ContractCall` a prepared parent frames as. `OBL-C198`'s commitment is taken over the call
+/// set the transaction will carry — children first, the parent last, post-order.
+fn parent_call(cid: dwow_sdk::crypto::ContractId, data: &[u8]) -> dwow_sdk::tx::ContractCall {
+    dwow_sdk::tx::ContractCall { contract_id: cid, data: data.to_vec() }
+}
 
 pub fn lottery_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(LotteryHarness::spawn()));
@@ -126,12 +132,19 @@ pub fn lottery_test_spec() -> ContractTestSpec<'static> {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let asset_id = n[0].3;
-                        let r = h.commit_ticket(player_pub, id, numbers.to_vec(), nonce, ticket_price, asset_id)
+                        let cid = crate::tests::blockchain::derive_contract_id_from_name("lottery");
+                        let plan = h.commit_ticket_prepare(player_pub, id, numbers.to_vec(), nonce, ticket_price, asset_id)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        *ticket_id.lock().unwrap() = Some(r.public_inputs.ticket_id);
+                        let call_data = plan.call_data.clone();
                         let blind_seed = poseidon_hash([pallas::Base::from(ticket_price), id]);
-                        let child = pn_transfer_child(&n[0], ticket_price, blind_seed, pallas::Base::zero())?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        // `OBL-C198`: one commitment over `[child, parent]`, both proofs bound to it.
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[0], ticket_price, blind_seed, pallas::Base::zero())?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &call_data)]);
+                        let (proof, public_inputs) = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        *ticket_id.lock().unwrap() = Some(public_inputs.ticket_id);
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -145,9 +158,14 @@ pub fn lottery_test_spec() -> ContractTestSpec<'static> {
                     let lottery_id = lottery_id.clone();
                     move || {
                         let id = lottery_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("lottery not initialized".into()))?;
-                        let r = h.draw_winners(id, house_secret, draw_nonce)
+                        let cid = crate::tests::blockchain::derive_contract_id_from_name("lottery");
+                        let plan = h.draw_winners_prepare(id, house_secret, draw_nonce)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                        let call_data = plan.call_data.clone();
+                        // `OBL-C198`: no child, so the frame is this call alone.
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&parent_call(cid, &call_data)]);
+                        let (proof, _) = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult { children: vec![], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -161,9 +179,13 @@ pub fn lottery_test_spec() -> ContractTestSpec<'static> {
                     let ticket_id = ticket_id.clone();
                     move || {
                         let tid = ticket_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("ticket not committed".into()))?;
-                        let r = h.reveal_ticket(tid, numbers.to_vec(), nonce)
+                        let cid = crate::tests::blockchain::derive_contract_id_from_name("lottery");
+                        let plan = h.reveal_ticket_prepare(tid, numbers.to_vec(), nonce)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                        let call_data = plan.call_data.clone();
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&parent_call(cid, &call_data)]);
+                        let (proof, _) = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult { children: vec![], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -180,13 +202,19 @@ pub fn lottery_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let id = lottery_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("lottery not initialized".into()))?;
                         let tid = ticket_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("ticket not committed".into()))?;
-                        let r = h.claim_prize(tid, player_secret, 0, 1)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let cid = crate::tests::blockchain::derive_contract_id_from_name("lottery");
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(prize), id]);
-                        let child = pn_transfer_payout_child(&n[1], ticket_price, prize, blind_seed)?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        let plan = h.claim_prize_prepare(tid, player_secret, 0, 1)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
+                        let (child_call, child_plan, child_nonce) = pn_transfer_payout_prepare(&n[1], ticket_price, prize, blind_seed)?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &call_data)]);
+                        let (proof, _) = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -201,13 +229,19 @@ pub fn lottery_test_spec() -> ContractTestSpec<'static> {
                     let lottery_id = lottery_id.clone();
                     move || {
                         let id = lottery_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("lottery not initialized".into()))?;
-                        let r = h.expire_lottery(id, house_secret)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let cid = crate::tests::blockchain::derive_contract_id_from_name("lottery");
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(house_claim), id]);
-                        let child = pn_transfer_payout_child(&n[2], ticket_price, house_claim, blind_seed)?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        let plan = h.expire_lottery_prepare(id, house_secret)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
+                        let (child_call, child_plan, child_nonce) = pn_transfer_payout_prepare(&n[2], ticket_price, house_claim, blind_seed)?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &call_data)]);
+                        let (proof, _) = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![proof] })
                     }
                 }),
             },
