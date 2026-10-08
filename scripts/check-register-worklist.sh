@@ -53,8 +53,12 @@ ALL = ("OPEN", "PARTLY", "FAILS", "DECISION", "ACCEPTED-WITH-REASON", "CLOSED", 
        "SATISFIED", "RESTATED", "PROVED", "DEFINITIONAL", "MECHANIZED")
 
 # The declared ceiling on rows that are work. Lower it when you close rows; raise it only with a
-# reason in the commit message. Measured at introduction, 2026-10-08: 15 OPEN + 10 PARTLY + 4 FAILS.
-BUDGET = 29
+# reason in the commit message. Introduced 2026-10-08 at 29 (15 OPEN + 10 PARTLY + 4 FAILS), and
+# **raised to 30 the same day** when `OBL-C148` moved from `DECISION` to `PARTLY`: its line-citation
+# resolver landed, which leaves the symbol half as work that did not exist as work before. That is the
+# ratchet doing its job — reclassifying a blocked row into real work is a change to the worklist, and
+# it costs a sentence rather than happening silently.
+BUDGET = 30
 
 ROW = re.compile(r'^\|\s*(OBL-[A-Za-z0-9]+)\s*\|\s*\*\*([A-Z-]+)\*\*')
 

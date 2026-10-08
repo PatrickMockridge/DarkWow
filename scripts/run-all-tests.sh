@@ -118,6 +118,15 @@ run_gate "control: coverage table can contradict the tree" \
 # that last one is the defect this control found in the checker's own first draft.
 run_gate "control: register worklist over budget fails" \
     bash "$SCRIPT_DIR/check-register-worklist.sh" --self-test
+# The register citation gate's line half (OBL-C148): a citation whose *path* resolves and whose *line*
+# no longer exists must be reported. The control plants exactly that in a temp register and requires a
+# non-zero exit — the check found one real instance when it was added (OBL-C103's citation, whose
+# builder library had been retired), so it is not a check that has never fired.
+# The planted id and the planted filename are assembled at run time rather than written literally,
+# because `check-doc-index.sh` scans this file for citations and a literal planted id reads as a real
+# one — it found this comment's first draft.
+run_gate "control: a stale line citation is reported" \
+    bash -c 'd=$(mktemp -d); o="OBL-C""999"; printf "%s\n" "| $o | **OPEN** | planted | src/sdk/src/manifest.rs:99999 | M | x |" > "$d/x"; REGISTER="$d/x" "$1" >/dev/null 2>&1 && { rm -rf "$d"; exit 1; }; rm -rf "$d"; exit 0' _ "$SCRIPT_DIR/check-register-artifacts.sh"
 # The manifest <-> entrypoint gate's control: a manifest code the enum does not assign, and a
 # proof-bearing function with no dispatch arm, must each be caught.
 run_gate "control: manifest↔entrypoint agreement can fail" \

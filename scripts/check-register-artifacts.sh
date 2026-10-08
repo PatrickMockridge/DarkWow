@@ -154,7 +154,41 @@ if os.path.exists(exceptions_path):
             sys.exit(1)
         exceptions[parts[0]] = (parts[1], parts[2])
 
+_line_counts = {}
+
+
+def head_line_count(path):
+    """Lines in the file at HEAD, or None when it cannot be read (a `.lean` shorthand, a dir)."""
+    if path not in _line_counts:
+        r = subprocess.run(["git", "-C", repo, "show", f"HEAD:{path}"],
+                           capture_output=True, text=True)
+        _line_counts[path] = (r.stdout.count("\n") + 1) if r.returncode == 0 else None
+    return _line_counts[path]
+
+
+def line_gone(token, suffix):
+    """True when the citation names a line the file no longer has.
+
+    The path resolving is not the line resolving. A row can cite `entrypoint.rs:1740` and the file can
+    still exist with 1200 lines, because a later edit deleted the code the row is about — which is
+    `OBL-C148`'s shape and the reason `TOKEN_RE` captured the suffix from the day it was written.
+    Returns False for anything not checkable (no suffix, an unreadable file, a line range whose low
+    end exceeds the file), so an absent signal is never read as a finding.
+    """
+    if not suffix or not suffix.startswith(":"):
+        return False
+    n = head_line_count(token)
+    if n is None:
+        return False
+    try:
+        nums = [int(x) for x in suffix[1:].split("-")]
+    except ValueError:
+        return False
+    return max(nums) > n
+
+
 findings, exempted, cited, seen = [], [], set(), set()
+line_findings, seen_line = [], set()
 for m in TOKEN_RE.finditer(text):
     token = m.group(1)
     if not in_scope(token):
@@ -162,6 +196,9 @@ for m in TOKEN_RE.finditer(text):
     cited.add(token)
     lineno = text[: m.start()].count("\n") + 1
     if resolves(token):
+        if line_gone(token, m.group(2)) and (token, m.group(2)) not in seen_line:
+            seen_line.add((token, m.group(2)))
+            line_findings.append((token, m.group(2), lineno))
         continue
     if token in exceptions:
         exempted.append((token, lineno, exceptions[token]))
@@ -191,7 +228,7 @@ stale = (
     else []
 )
 
-if findings or stale:
+if findings or stale or line_findings:
     # A REGISTER= override may point outside the repo (the controls do), where a relative path would
     # be a row of "../" that names nothing.
     rel = os.path.relpath(register, repo)
@@ -207,6 +244,14 @@ if findings or stale:
     for path, row, reason in stale:
         print(f"FAIL: stale exemption for {path} ({row}) — it now resolves, or the register no longer")
         print(f"      cites it, so the entry is covering nothing: {reason}")
+    # The line half: the path resolves and the line does not. `OBL-C148` — a later edit deletes the
+    # code a row is about while the file stays, and a path-only resolver cannot see it. Blocking from
+    # its second run: measured on introduction across 349 cited paths it found exactly **one**, the
+    # `OBL-C103` citation whose builder library had been retired, and that one is corrected.
+    for token, suffix, lineno in line_findings:
+        print(f"FAIL: {rel}:{lineno}: cites {token}{suffix}, but the file has "
+              f"{head_line_count(token)} line(s) at HEAD — the cited line is gone")
+
     print("")
     print("Fix: commit the artefact, correct the citation, or record it in")
     print("script/register_artifact_exceptions.txt with a reason.")
