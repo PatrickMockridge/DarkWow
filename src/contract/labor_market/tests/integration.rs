@@ -606,3 +606,75 @@ fn test_constants() {
     assert_eq!(LABOR_CONTRACT_NULLIFIERS_TREE, "nullifiers");
     assert_eq!(LABOR_CONTRACT_INFO_TREE, "info");
 }
+
+// ============================================================================
+// `OBL-C96` — the control for the milestones-sum invariant
+// ============================================================================
+//
+// `validate_milestone_total` **is** the whole of `create_job_with_milestones_v1`'s new check, so R8
+// ("a check is not a check until something can make it fail") is satisfied here, at the level that
+// can reach it without a chain. Two things this module cannot do, stated because a passing run here
+// would otherwise read as more than it is:
+//
+//   * It does not establish that the two call sites reach the helper, nor that an endpoint refuses a
+//     mismatched call end to end. That needs the heavyweight fixture, and that fixture cannot currently
+//     reach **any** labor_market endpoint — it dies on its first row (`CreateJobV1`) at the L2 verify
+//     with `invalid proof: call[0] namespace 'Revoke_V2'`, the `promissory_note` input proof of its
+//     transfer child. Log `/tmp/lm-c96-after.log`, measured 2026-10-08; recorded against `OBL-C170`.
+//   * `confirm_milestone_v1`'s amount comparison has no counterpart here: it is an `if` inside a
+//     handler that needs a job record, and its endpoint-level control is owed with the blocker above.
+//
+// **And the reason these tests live in this file rather than in a `#[cfg(test)] mod` beside the check:
+// the crate's own `dwow-contract-test-harness` dev-dependency enables labor_market's `no-entrypoint`
+// feature for every `cargo test -p dwow_labor_market_contract`, and `lib.rs` gates the entrypoint
+// module on `#[cfg(not(feature = "no-entrypoint"))]`. A unit test placed there compiles to nothing and
+// reports as **0 passed** — a green line that ran no test at all, which is how this was found.**
+
+fn milestone(amount: u64) -> Milestone {
+    Milestone {
+        index: 0,
+        payment_amount: amount,
+        deadline_block: 0,
+        completed: false,
+        completed_at_block: None,
+    }
+}
+
+#[test]
+fn milestone_total_accepts_a_sum_that_matches() {
+    assert!(dwow_labor_market_contract::model::validate_milestone_total(2_000, &[milestone(1_000), milestone(1_000)]).is_ok());
+}
+
+#[test]
+fn milestone_total_accepts_the_degenerate_empty_job() {
+    // No milestones and no total. Inert rather than dangerous — every later milestone endpoint refuses
+    // an empty list with `JobDoesNotHaveMilestones` — so it is pinned as *accepted*, which is what the
+    // code does. A control that asserted the opposite would be testing a rule the contract does not have.
+    assert!(dwow_labor_market_contract::model::validate_milestone_total(0, &[]).is_ok());
+}
+
+#[test]
+fn milestone_total_refuses_a_sum_that_does_not_match() {
+    assert!(dwow_labor_market_contract::model::validate_milestone_total(2_000, &[milestone(1_000)]).is_err());
+    assert!(dwow_labor_market_contract::model::validate_milestone_total(1_000, &[milestone(1_000), milestone(1_000)]).is_err());
+}
+
+#[test]
+fn milestone_total_refuses_an_overflow_rather_than_wrapping() {
+    // Why the helper uses `checked_add`: the workspace sets no `overflow-checks`, so `+` here wraps
+    // *silently* in release, and this call would compare a wrapped total of 0 against a
+    // `payment_amount` of 0 and accept.
+    assert!(dwow_labor_market_contract::model::validate_milestone_total(0, &[milestone(u64::MAX), milestone(1)]).is_err());
+}
+
+#[test]
+fn milestone_total_refuses_with_the_declared_variant() {
+    // A control that only asserted `is_err()` would pass for a refusal of any kind. The condition has
+    // one name, `InvalidMilestonePaymentAmount` (`Custom(24)`), the variant `refund_v1` already uses
+    // for the same shape of comparison against `job.payment_amount`.
+    let e = dwow_labor_market_contract::model::validate_milestone_total(2_000, &[milestone(1_000)]).unwrap_err();
+    assert!(
+        matches!(e, dwow_sdk::error::ContractError::Custom(24)),
+        "expected Custom(24) (InvalidMilestonePaymentAmount), got {e:?}"
+    );
+}

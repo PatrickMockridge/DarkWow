@@ -234,15 +234,22 @@ bin/darkirc/proof/rlnv2-diff-signal.zk : epoch : host: darkirc irc/client.rs:631
 #
 # labor_market: `milestone_payment.zk` exposes `milestone_payment_amount`, whose only
 # determination in the circuit is the expose. The `ConfirmMilestoneV1` arm publishes
-# `pallas::Base::from(params.payment_release)` in that position (entrypoint.rs:389), and the
+# `pallas::Base::from(params.payment_release)` in that position (entrypoint.rs:419), and the
 # runtime hands the metadata's vector to `verify_zkp` as the proof's public inputs
 # (`src/linear/src/zk_verifier.rs:234-238`), so the instance is forced to equal the params value.
 # That value is then bound to the child transfer by `validate_child_value_commit(&child_call.data,
-# params.payment_release, value_blind)` (`:1467-1472`). The amount paid is the one the host checks
-# the transfer against. The residual — that the amount is *not* compared against the job's own
-# `milestones[i].payment_amount` — is a different proposition and is filed as OBL-C96.
+# params.payment_release, value_blind)` (`:1620-1622`), and — since OBL-C96 — required to equal the
+# job's own recorded figure for that milestone (`:1686-1691`, `params.payment_release !=
+# job.milestones[index].payment_amount` -> `InvalidMilestonePaymentAmount`). The amount paid is the
+# amount the job records, and the record is what the worker read before accepting: the residual this
+# entry used to name is closed.
+#
+# BOTH citations above read `:389` and `:1467-1472` until 2026-10-08 and pointed 30 and 180 lines
+# short — the entry was written against an older revision and nothing re-resolves line numbers in
+# this file, which is the class `scripts/check-register-artifacts.sh` now blocks for the *register*
+# and does not yet block here. Corrected by reading the sites, not by arithmetic.
 src/contract/roulette/proof/settle_bet.zk : payout : host: roulette entrypoint.rs:583-611 settle_bets_v1 recomputes total_payout from `bet.payout` in `bets_db` and binds it to the child transfer with `validate_child_value_commit`; `params.payout` reaches only the metadata arm (:138)
-src/contract/labor_market/proof/milestone_payment.zk : milestone_payment_amount : host: labor_market entrypoint.rs:389 the metadata arm publishes `params.payment_release` as this instance (the runtime checks the proof against that vector, `src/linear/src/zk_verifier.rs:234`), and `:1501-1502` binds the same params value to the child transfer's value commit
+src/contract/labor_market/proof/milestone_payment.zk : milestone_payment_amount : host: labor_market entrypoint.rs:419 the metadata arm publishes `params.payment_release` as this instance (the runtime checks the proof against that vector, `src/linear/src/zk_verifier.rs:234`), `:1620-1622` binds the same params value to the child transfer's value commit, and `:1686-1691` requires it to equal `job.milestones[params.milestone_index].payment_amount` (OBL-C96)
 
 # --- the job's attestation: two children now, and one of them is the check ----------------------
 # `create_job.zk` exposes `attestation_id` as a witness the circuit never derives — it is the id the

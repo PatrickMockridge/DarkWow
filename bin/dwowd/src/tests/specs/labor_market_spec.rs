@@ -315,7 +315,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
     let job_id = pallas::Base::from(100u64);
     // **A second job, because the capability row cannot take the first one.** A job that
     // `AcceptJobV1` has already accepted has a worker and is `InProgress`, and
-    // `accept_job_with_capability_v1` refuses both (`entrypoint.rs:1721-1728`) — so the capability
+    // `accept_job_with_capability_v1` refuses both (`entrypoint.rs:1857-1863`) — so the capability
     // pair needs a job of its own, created by the only endpoint that can set a requirement.
     let cap_job_id = pallas::Base::from(101u64);
     // **And a third job, for the same shape one row over.** `SubmitDeliverableV1` and
@@ -333,8 +333,8 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
     // (`Custom(2)`) for a reason that says nothing about the seed this row exists to exercise.
     let cancel_job_id = pallas::Base::from(203u64);
     // **The milestones job, and its own accept and deliverable rows.** `ConfirmMilestoneV1` needs a
-    // job that *has* milestones (`entrypoint.rs:1628-1631`, `job.milestones.is_empty()`), that is
-    // `Delivered` (`:1632`), and whose milestone index is in range — and the only endpoint that can
+    // job that *has* milestones (`entrypoint.rs:1644-1647`, `job.milestones.is_empty()`), that is
+    // `Delivered` (`:1648`), and whose milestone index is in range — and the only endpoint that can
     // give a job milestones is `create_job_with_milestones_v1`, so the job has to be built by this
     // fixture rather than borrowed. Two milestones of `MILESTONE_PAYMENT` each, so the job's
     // `payment_amount` is their sum and `confirm_milestone_v1` at index 1 is the last one.
@@ -852,7 +852,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             // ── The writer: the only endpoint that can give a job a capability requirement ──
             //
             // Until this row existed, `job.required_capability_id` was always `None`, so
-            // `accept_job_with_capability_v1`'s `ok_or_else` refused at `entrypoint.rs:1730` before
+            // `accept_job_with_capability_v1`'s `ok_or_else` refused at `entrypoint.rs:1866` before
             // its comparison could run and the capability gate was **dormant**. Its sibling in
             // `tender` was the same, and `OBL-C186` records both.
             //
@@ -863,7 +863,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             // `Params::encode()`, exactly as tender's `CreateTenderWithCapabilityV1` row is built.
             //
             // It requires **one** `promissory_note::transfer_v1` child with value-commit validation
-            // (`entrypoint.rs:1787-1822`), which is why it spends a note of its own.
+            // (`entrypoint.rs:1924-1955`), which is why it spends a note of its own.
             mk_ep("CreateJobWithCapabilityV1", false, Box::new({
                 let more = more_notes.clone();
                 let caps = caps.clone();
@@ -902,7 +902,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             //
             // **Declared before the positive row, and that is a state requirement rather than a
             // style**: `accept_job_with_capability_v1` requires `JobState::Created`
-            // (`entrypoint.rs:1721`), and the positive row below moves `cap_job_id` to `InProgress`.
+            // (`entrypoint.rs:1857`), and the positive row below moves `cap_job_id` to `InProgress`.
             // A rejected row leaves the job where it was, so this order is the only one that works.
             //
             // **Before the writer row above existed this endpoint could only ever refuse** — with
@@ -1018,7 +1018,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             // **`SubmitDeliverableV1`, not `SubmitMilestoneV1`, and that is a measurement rather than a
-            // preference.** `confirm_milestone_v1` requires the job to be `Delivered` (`:1632`), and the
+            // preference.** `confirm_milestone_v1` requires the job to be `Delivered` (`:1648`), and the
             // two endpoints that set `Delivered` are `submit_deliverable_v1` and `submit_git_deliverable_v1`
             // — `submit_milestone_v1` also sets it, but its metadata arm publishes `SubmitDeliverableV2`'s
             // six instances, so it needs a proof this file has no way to build, which is `OBL-C190`'s
@@ -1034,17 +1034,33 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             // **The two rows that could not pass now can, and this is the first of them (`OBL-C170`).**
             // It acts on `ms_job_id`, whose two milestones `CreateJobWithMilestonesV1` made; the handler
             // refuses a job with no milestones with `JobDoesNotHaveMilestones` (`Custom(25)`) *before*
-            // its state check (`:1628-1635`), which is what made the old row — pointed at `job_id` —
+            // its state check (`:1644-1650`), which is what made the old row — pointed at `job_id` —
             // unable to pass for any reason but its own subject.
             //
             // Index 1 of 2 is the last milestone, so the handler takes the `Confirmed` arm. Nothing
             // confirms index 0 first: `confirm_milestone_v1` checks the index is in range and not
-            // already completed, and deliberately does not require it to equal `current_milestone`
-            // (`:1640-1647`), so a milestone can be confirmed without its predecessor.
+            // already completed, and does not require it to equal `current_milestone` (`:1660-1663`),
+            // so a milestone can be confirmed without its predecessor.
+            //
+            // **That asymmetry is load-bearing, and this comment used to record it as deliberate
+            // without saying why.** The why is HIGH-4, named above `confirm_delivery_v1`: the action
+            // circuits share one nullifier derivation, so a job is submitted-to once. Since a
+            // confirmation returns the job to `InProgress` and nothing returns it to `Delivered`,
+            // requiring the index to be the *current* one would leave a job with more than one
+            // milestone uncompletable — index 0 could be confirmed and then nothing further. Confirming
+            // the *last* index is what makes the single confirmation a job gets terminal. Read
+            // `entrypoint.rs:1665-1677` before changing this row or adding that check; `OBL-C96`
+            // records the attempt that made a multi-milestone job deadlock instead.
             //
             // `MILESTONE_PAYMENT` reaches the harness as both `milestone_payment_amount` — the
             // circuit's instance 5 witness — and `payment_release` — the value the metadata arm
             // publishes in that slot — and the two must agree or the proof fails.
+            //
+            // Since `OBL-C96` the amount is no longer the caller's to choose: `confirm_milestone_v1`
+            // requires `payment_release` to equal `job.milestones[index].payment_amount`
+            // (`entrypoint.rs:1686-1691`). It does here because `milestones_of` writes
+            // `MILESTONE_PAYMENT` into every milestone, and `MS_JOB_PAYMENT` is that figure times the
+            // count — so this row would fail if either constant drifted.
             mk_ep("ConfirmMilestoneV1", true, Box::new({
                 let more = more_notes.clone();
                 move || {

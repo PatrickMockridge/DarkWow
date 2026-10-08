@@ -187,9 +187,11 @@ All 9 circuits compiled to `.zk.bin`:
 | `submit_deliverable.zk` | job_id, claim_id, worker_pub, nullifier | Worker assigned, deadline not passed, valid claim |
 | `submit_git_deliverable.zk` | job_id, claim_id, worker_pub, nullifier | Same + git claim verified |
 | `confirm_delivery.zk` | job_id, employer_pub, nullifier | Employer authorizes release |
-| `milestone_payment.zk` | job_id, milestone_id, employer_pub, nullifier | Milestone completed, employer authorizes payment |
+| `milestone_payment.zk` | spent_nullifier, job_id, employer_pub_x, employer_pub_y, milestone_payment_amount, tx_binding, tx_nonce | Employer knows the secret; the amount is 64-bit bounded; the transaction is bound. **It proves nothing about a milestone** — no index is a public input, and no index reaches any circuit. Which milestone a payment is for, and that the amount is the job's recorded figure for it, are enforced host-side by `confirm_milestone_v1` (register OBL-C207, OBL-C96) |
 | `dispute.zk` | job_id, disputer_pub, dao_bulla, nullifier | Disputer is party to job |
 | `refund.zk` | job_id, employer_pub, nullifier | Deadline passed, employer authorizes |
+
+*(Corrected 2026-10-08: the `milestone_payment.zk` row read `job_id, milestone_id, employer_pub, nullifier` over "Milestone completed, employer authorizes payment" — two claims and neither true, since that circuit has no milestone input and consults no milestone state. The **other eight rows are abbreviations of their circuits' instance lists rather than corrections owed** — two of `create_job.zk`'s five, for instance — and none has been re-verified against its `.zk`; that re-verification is what `OBL-C207` records as unmeasured.)*
 
 ## Dispute Resolution Flow
 

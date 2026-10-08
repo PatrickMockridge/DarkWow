@@ -110,6 +110,27 @@ for m in ROW_RE.finditer(text):
 seen = [r[0] for r in rows]
 dupes = sorted(i for i, c in collections.Counter(seen).items() if c > 1)
 
+# --- the row-is-one-line check --------------------------------------------------------------------
+# 2026-10-08. A row's Discussion is often thousands of characters, and the register's convention is
+# still that it is ONE line: every cell of a row lives between the same pair of pipes. An edit that
+# inserts a newline — a bulleted list, a paragraph break — fails nothing that existed: the row keeps
+# its `| OBL-… | **STATUS** |` prefix, so this file's status check, `check-register-worklist.sh`'s
+# census and `check-doc-index.sh`'s id resolution all still pass, while everything after the newline
+# falls *out* of the table and into the document body. The row is truncated and its cells are lost
+# silently. Found by making exactly that mistake: `OBL-C96`'s closure was written as seven lines, the
+# register went on reporting every row healthy, and only a read-back of the row's tail showed the
+# text had left it.
+#
+# The invariant that catches it with no false positive, measured over all 257 rows before it was
+# added: a row line ENDS with its closing pipe. Prose that follows a table is a separate paragraph and
+# never begins with `| OBL-`, so the reverse error — prose mistaken for a row — cannot arise.
+splits = [
+    (m.group(1), m.group(0)[-60:])
+    for m in ROW_RE.finditer(text)
+    if not m.group(0).rstrip().endswith('|')
+]
+
+
 hist = collections.Counter()
 unmarked, weak_only, multi = [], [], []
 for rid, _body, found, weak in rows:
@@ -146,6 +167,13 @@ for rid, body, _f, _w in rows:
         coined.append((rid, hit.group(1)))
 
 if check_mode:
+    if splits:
+        print(f"FAIL: {len(splits)} row(s) do not end with a closing pipe — the row is split across "
+              f"lines, so the cells after the break are outside the table:")
+        for rid, tail in splits:
+            print(f"  {rid}: …{tail!r}")
+        print("A row is one line however long its Discussion. Join the continuation lines into it.")
+        sys.exit(1)
     if coined:
         print(f"FAIL: {len(coined)} row(s) open their Status cell with a word that is not a status:")
         for rid, word in coined:
@@ -159,8 +187,8 @@ if check_mode:
         print("Every row states one status from the vocabulary. A row without one cannot be counted,")
         print("grepped or audited, which is the reason the column exists.")
         sys.exit(1)
-    print(f"OK: every row carries one status from the vocabulary in its Status column "
-          f"({len(rows)} rows walked).")
+    print(f"OK: every row carries one status from the vocabulary in its Status column, and every row "
+          f"is one line ending in its closing pipe ({len(rows)} rows walked).")
     sys.exit(0)
 
 print(f"register: {path}")

@@ -27,8 +27,11 @@ use dwow_sdk::{
     blockchain::SerializedLen,
     crypto::pasta_prelude::PrimeField,
     error::ContractError,
+    msg,
     pasta::pallas,
 };
+
+use crate::error::LaborMarketError;
 
 // `LABOR_MARKET_DOMAIN_CANCEL` stood here — the domain tag `OBL-C189` gave `cancel_job_v1`'s seed
 // when this contract was the first of the class. **It is gone, and so is the seed change it served.**
@@ -81,6 +84,42 @@ impl Default for Milestone {
     fn default() -> Self {
         Self { index: 0, payment_amount: 0, deadline_block: 0, completed: false, completed_at_block: None }
     }
+}
+
+/// The job's total is the sum of the parts it is paid in — the invariant `create_job_with_milestones_v1`
+/// has asserted in a comment since it was written ("a milestone job's `payment_amount` is what its
+/// milestones sum to") and that the field's own doc repeats ("Total payment amount (sum of all
+/// milestones)") while nothing checked it (register OBL-C96).
+///
+/// **Why it is load-bearing rather than tidy.** The escrow child commits `params.payment_amount`
+/// (`validate_child_value_commit`) while the per-part figures live only in `Milestone.payment_amount`,
+/// which the worker reads before accepting the job and `confirm_milestone_v1` pays from. Two
+/// unrelated numbers would let every milestone be paid exactly as recorded and still leave
+/// `released_payment` short of, or past, the total the job escrowed — so the two halves of OBL-C96's
+/// proposition would hold separately rather than as one statement.
+///
+/// **`checked_add`, not `+`.** The main workspace sets no `overflow-checks`, so a `+` here wraps
+/// *silently* in release: a caller could supply parts summing to more than `u64::MAX` and have the
+/// wrapped figure pass an equality test against a small `payment_amount`. The overflow case is a
+/// refusal like any other.
+///
+/// **It lives in the model rather than in `entrypoint.rs`, and the reason is a measured one.**
+/// `lib.rs` gates the entrypoint module on `#[cfg(not(feature = "no-entrypoint"))]`, and this crate's
+/// own `dwow-contract-test-harness` dev-dependency turns that feature on for every `cargo test -p
+/// dwow_labor_market_contract` — so a `#[cfg(test)] mod` inside `entrypoint.rs` compiles to nothing
+/// and its tests report as **0 passed** rather than as an error. A control (R8) that cannot run is
+/// not a control, and `tests/integration.rs` can only reach what this module exposes.
+pub fn validate_milestone_total(payment_amount: u64, milestones: &[Milestone]) -> Result<(), ContractError> {
+    let total = milestones
+        .iter()
+        .try_fold(0u64, |acc, m| acc.checked_add(m.payment_amount))
+        .ok_or_else(|| ContractError::from(LaborMarketError::InvalidMilestonePaymentAmount))?;
+    if total != payment_amount {
+        msg!("[labor_market] Error: milestones sum to {}, job payment_amount is {}",
+             total, payment_amount);
+        return Err(ContractError::from(LaborMarketError::InvalidMilestonePaymentAmount))
+    }
+    Ok(())
 }
 
 impl Milestone {

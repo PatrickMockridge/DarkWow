@@ -127,6 +127,14 @@ run_gate "control: register worklist over budget fails" \
 # one — it found this comment's first draft.
 run_gate "control: a stale line citation is reported" \
     bash -c 'd=$(mktemp -d); o="OBL-C""999"; printf "%s\n" "| $o | **OPEN** | planted | src/sdk/src/manifest.rs:99999 | M | x |" > "$d/x"; REGISTER="$d/x" "$1" >/dev/null 2>&1 && { rm -rf "$d"; exit 1; }; rm -rf "$d"; exit 0' _ "$SCRIPT_DIR/check-register-artifacts.sh"
+# The register row-integrity check's control (`OBL-C96`, 2026-10-08): a row whose Discussion is written
+# across two lines — so everything after the break falls out of the table — must be reported by
+# `register-status.sh --check` rather than passing every gate while its cells are gone. The real
+# instance was this unit's own edit, which the status check, the worklist census and the doc index all
+# passed before the tail-pipe invariant was added. Assemble the planted id at run time for the reason
+# the control above does.
+run_gate "control: a row split across lines is reported" \
+    bash -c 'd=$(mktemp -d); o="OBL-C""999"; printf "| %s | **OPEN** | planted | a.rs | M | x\n  a continuation that fell out |\n" "$o" > "$d/x"; REGISTER="$d/x" "$1" --check >/dev/null 2>&1 && { rm -rf "$d"; exit 1; }; rm -rf "$d"; exit 0' _ "$SCRIPT_DIR/register-status.sh"
 # The manifest <-> entrypoint gate's control: a manifest code the enum does not assign, and a
 # proof-bearing function with no dispatch arm, must each be caught.
 run_gate "control: manifest↔entrypoint agreement can fail" \

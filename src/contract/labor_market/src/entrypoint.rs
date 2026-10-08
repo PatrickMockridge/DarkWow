@@ -1457,6 +1457,12 @@ fn create_job_with_milestones_v1(cid: ContractId, call_idx: usize, calls: Vec<Da
     }
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
+    // The invariant this endpoint has asserted in a comment since it was written and never checked
+    // (register OBL-C96). It sits before the seed below because the seed, and the escrow the child
+    // carries, are derived from the total the milestones must now be shown to add up to. The check
+    // itself lives in `model` — see its doc comment for why it cannot live here.
+    crate::model::validate_milestone_total(params.payment_amount, &params.milestones)?;
+
     // The same seed `create_job_v1` derives, because this is the same deposit: a milestone job's
     // `payment_amount` is what its milestones sum to, and the child must commit to it.
     let value_blind = poseidon_hash([pallas::Base::from(params.payment_amount), params.job_id]);
@@ -1656,8 +1662,39 @@ fn confirm_milestone_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
         return Err(ContractError::from(LaborMarketError::MilestoneAlreadyCompleted).into())
     }
 
+    // **`params.milestone_index` is deliberately NOT required to equal `job.current_milestone`, and
+    // that asymmetry with `submit_milestone_v1` is the liveness workaround for HIGH-4, not an
+    // oversight.** Named at `confirm_delivery_v1`'s header: the action circuits share one nullifier
+    // derivation, so a job can be submitted-to once. Since a confirmation returns the job to
+    // `InProgress` (`current_milestone = index + 1`, below) and nothing can put it back in
+    // `Delivered`, requiring the index to be the *current* one would leave a job with more than one
+    // milestone uncompletable — it could only ever confirm index 0 and then deadlock. Requiring it
+    // to be the *last* one is what makes the single confirmation the sequence gets into the terminal
+    // state. The repair for the premature termination that permits is a per-milestone nullifier in
+    // `milestone_payment.zk` — a circuit change, and filed as such rather than simulated here
+    // (register OBL-C96).
+    //
+    // The amount, unlike the index, is no longer the caller's to choose — see the check below.
+
+    // The amount paid is the amount the job records for this milestone, not the caller's choice.
+    // `Milestone.payment_amount` is written at creation (`model/mod.rs`) and was read nowhere in this
+    // crate; `payment_release` is a caller-supplied `u64` that `milestone_payment.zk` constrains only
+    // to 64 bits (`range_check(64, milestone_payment_amount)` — the circuit never sees the job
+    // record), so nothing above the host related the two. The sibling `refund_v1` already refuses a
+    // caller-chosen amount that differs from `job.payment_amount`; this is that comparison for the
+    // per-milestone figure (register OBL-C96).
+    if params.payment_release != job.milestones[params.milestone_index as usize].payment_amount {
+        msg!("[labor_market::confirm_milestone_v1] ERROR: Payment release {} does not match milestone {}'s recorded amount {}",
+             params.payment_release, params.milestone_index,
+             job.milestones[params.milestone_index as usize].payment_amount);
+        return Err(ContractError::from(LaborMarketError::InvalidMilestonePaymentAmount).into())
+    }
+
     job.milestones[params.milestone_index as usize].completed = true;
     job.milestones[params.milestone_index as usize].completed_at_block = Some(0); // Would be set by block
+    // `+=` is safe here by construction, not by hope: the amount is now the milestone's recorded one
+    // and each index is confirmed at most once, so this can only ever reach `validate_milestone_total`'s
+    // checked sum — itself a `u64` — and never wrap.
     job.released_payment += params.payment_release;
 
     if params.milestone_index == (milestone_count - 1) {
@@ -1999,6 +2036,10 @@ fn create_job_with_milestones_and_capability_v1(cid: ContractId, call_idx: usize
     }
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
+    // The same call as its sibling above, so the same invariant, checked in the same place
+    // (register OBL-C96).
+    crate::model::validate_milestone_total(params.payment_amount, &params.milestones)?;
+
     let value_blind = poseidon_hash([pallas::Base::from(params.payment_amount), params.job_id]);
     if let Err(e) = validate_child_value_commit(
         &child_call.data, params.payment_amount, value_blind,
@@ -2054,4 +2095,3 @@ fn create_job_with_milestones_and_capability_v1(cid: ContractId, call_idx: usize
     wasm::util::set_return_data(&payload)?;
     Ok(())
 }
-
