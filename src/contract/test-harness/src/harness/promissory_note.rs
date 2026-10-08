@@ -211,8 +211,15 @@ impl PromissoryNoteHarness {
         })
     }
 
-    /// Issue capabilities of an existing type
-    pub fn issue(
+    /// `OBL-C198`: assemble the issue call's data and stop, **before** the proof exists.
+    ///
+    /// The caller computes the commitment over the whole ordered call set — children before the
+    /// parent — and only then calls `plan.prove(commitment, nonce)`, so a child issue binds the same
+    /// commitment its parent's arm publishes. [`Self::issue`] binds the call's **own** commitment
+    /// instead, which is right for a single-call transaction and wrong for a child: a child binding
+    /// its own call commitment is refused by the node the moment its parent's arm derives, which is
+    /// the composition red `OBL-C170`/`OBL-C198` measure.
+    pub fn issue_prepare(
         &self,
         issue_secret: pallas::Base,
         asset_id: pallas::Base,
@@ -221,7 +228,7 @@ impl PromissoryNoteHarness {
         spend_hook: pallas::Base,
         user_data: pallas::Base,
         commitment_blind: pallas::Base,
-    ) -> Result<IssueResult> {
+    ) -> Result<(Vec<u8>, dwow_promissory_note_contract::client::issue::IssueCallPlan)> {
         // Build Merkle tree matching on-chain token registry structure:
         // init_contract places ZERO guard leaf at position 0, then
         // apply_token_mint (RegisterTypeV1) appends asset_id at position 1.
@@ -246,7 +253,6 @@ impl PromissoryNoteHarness {
             commitment_blind,
         };
 
-        // `OBL-C198`: prepare, take the commitment over the finished call data, then prove.
         let plan = IssueCallBuilder {
             input: issue_input,
             issue_zkbin: self.issue_zkbin.clone(),
@@ -258,6 +264,22 @@ impl PromissoryNoteHarness {
 
         let mut call_data = vec![0x02u8]; // IssueV1
         call_data.extend_from_slice(&plan.params().encode());
+        Ok((call_data, plan))
+    }
+
+    /// Issue capabilities of an existing type, in one step, binding the call's **own** commitment.
+    /// A caller whose issue is a *child* of another call uses [`Self::issue_prepare`].
+    pub fn issue(
+        &self,
+        issue_secret: pallas::Base,
+        asset_id: pallas::Base,
+        recipient: pallas::Base,
+        value: u64,
+        spend_hook: pallas::Base,
+        user_data: pallas::Base,
+        commitment_blind: pallas::Base,
+    ) -> Result<IssueResult> {
+        let (call_data, plan) = self.issue_prepare(issue_secret, asset_id, recipient, value, spend_hook, user_data, commitment_blind)?;
 
         let debris = plan.prove(own_call_commitment(&call_data), pallas::Base::zero())?;
 
@@ -341,11 +363,10 @@ impl PromissoryNoteHarness {
         .prepare()
     }
 
-    /// Perform an OTC swap between two parties
-    /// Inputs are revoked, outputs are transferred - cross-token atomic swap
-    /// Redeem commitments (function code 0x01, ZK).
-    /// Closes the bearer-instrument lifecycle: burns the commitment, issues zero-value receipt.
-    pub fn redeem(
+    /// `OBL-C198`: assemble the redeem call's data and stop, **before** the proof exists (the
+    /// prepare half also builds the AEAD note). See [`Self::issue_prepare`] for why a child cannot
+    /// use the one-step form: it would bind its own call commitment rather than the frame's.
+    pub fn redeem_prepare(
         &self,
         value: u64,
         asset_id: pallas::Base,
@@ -356,7 +377,7 @@ impl PromissoryNoteHarness {
         recipient: pallas::Base,
         leaf_position: u64,
         merkle_path: Vec<MerkleNode>,
-    ) -> Result<RedeemResult> {
+    ) -> Result<(Vec<u8>, dwow_promissory_note_contract::client::redeem::RedeemCallPlan)> {
         use dwow_promissory_note_contract::client::redeem::{RedeemCallBuilder, RedeemCallInput, RedeemCallOutput};
         let ephem_secret = pallas::Base::from(9u64);
         let recipient_pub = PublicKey::from_secret(SecretKey::from_base(recipient));
@@ -371,8 +392,6 @@ impl PromissoryNoteHarness {
             recipient_pub,
             asset_id, spend_hook, user_data, commitment_blind,
         };
-        // `OBL-C198`: prepare (which also builds the AEAD note), take the commitment over the
-        // finished call data, then prove.
         let plan = RedeemCallBuilder {
             input, output,
             burn_zkbin: self.revoke_zkbin.clone(),
@@ -386,6 +405,31 @@ impl PromissoryNoteHarness {
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
         let mut call_data = vec![0x01u8]; // RedeemV1
         call_data.extend_from_slice(&plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        Ok((call_data, plan))
+    }
+
+    /// Perform an OTC swap between two parties
+    /// Inputs are revoked, outputs are transferred - cross-token atomic swap
+    /// Redeem commitments (function code 0x01, ZK).
+    /// Closes the bearer-instrument lifecycle: burns the commitment, issues zero-value receipt.
+    ///
+    /// In one step, binding the call's **own** commitment. A caller whose redeem is a *child* of
+    /// another call uses [`Self::redeem_prepare`].
+    pub fn redeem(
+        &self,
+        value: u64,
+        asset_id: pallas::Base,
+        spend_hook: pallas::Base,
+        user_data: pallas::Base,
+        commitment_blind: pallas::Base,
+        secret: pallas::Base,
+        recipient: pallas::Base,
+        leaf_position: u64,
+        merkle_path: Vec<MerkleNode>,
+    ) -> Result<RedeemResult> {
+        let (call_data, plan) = self.redeem_prepare(
+            value, asset_id, spend_hook, user_data, commitment_blind, secret, recipient, leaf_position, merkle_path,
+        )?;
         let debris = plan
             .prove(own_call_commitment(&call_data), pallas::Base::zero())
             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

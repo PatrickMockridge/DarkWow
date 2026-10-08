@@ -37,18 +37,33 @@ fn derive_wrapped_asset_id(bridge_cid: pallas::Base, chain: ExternalChain) -> pa
     ])
 }
 
-/// Build a PN IssueV1 (0x02) child call minting the wrapped PN to the depositor.
-fn pn_issue_child(
+/// The `ContractCall` a prepared child frames as. `OBL-C198`'s commitment is taken over the call
+/// set the transaction will carry, so the fixture must hand the derivation the same shape the node
+/// hashes — not the harness's own result struct.
+fn frame_call(c: &ChildCall) -> dwow_sdk::tx::ContractCall {
+    dwow_sdk::tx::ContractCall { contract_id: c.contract_id, data: c.call_data.clone() }
+}
+
+/// The `ContractCall` a prepared parent frames as.
+fn parent_call(contract_id: dwow_sdk::crypto::ContractId, data: &[u8]) -> dwow_sdk::tx::ContractCall {
+    dwow_sdk::tx::ContractCall { contract_id, data: data.to_vec() }
+}
+
+/// `OBL-C198`: build the PN IssueV1 (0x02) child's call data and stop — its proof binds the
+/// **frame** commitment, which the row computes once it holds both the child's and the parent's
+/// call data. Proving here instead would bind the child's *own* call commitment, which the node
+/// refuses the moment the parent's arm derives — the composition red `OBL-C170`/`OBL-C198` measure.
+fn pn_issue_child_prepare(
     bridge_cid: pallas::Base,
     chain: ExternalChain,
     recipient: pallas::Base,
     value: u64,
-) -> dwow_core::Result<ChildCall> {
+) -> dwow_core::Result<(ChildCall, dwow_promissory_note_contract::client::issue::IssueCallPlan)> {
     let asset_id = derive_wrapped_asset_id(bridge_cid, chain);
     let issue_secret = derive_issue_secret(bridge_cid, chain);
     let pn = PromissoryNoteHarness::spawn();
-    let child = pn
-        .issue(
+    let (call_data, plan) = pn
+        .issue_prepare(
             issue_secret,
             asset_id,
             recipient,
@@ -58,24 +73,28 @@ fn pn_issue_child(
             pallas::Base::from(7u64), // commitment_blind
         )
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall {
-        contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
-        call_data: child.call_data,
-        proofs: child.proofs,
-        children: vec![],
-    })
+    Ok((
+        ChildCall {
+            contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
+            call_data,
+            proofs: vec![],
+            children: vec![],
+        },
+        plan,
+    ))
 }
 
-/// Build a PN RedeemV1 (0x01) child call burning a wrapped PN.
-fn pn_redeem_child(
+/// `OBL-C198`: build the PN RedeemV1 (0x01) child's call data and stop, for the reason
+/// [`pn_issue_child_prepare`] records.
+fn pn_redeem_child_prepare(
     bridge_cid: pallas::Base,
     note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
     value: u64,
-) -> dwow_core::Result<ChildCall> {
+) -> dwow_core::Result<(ChildCall, dwow_promissory_note_contract::client::redeem::RedeemCallPlan)> {
     let (_, pos, path, asset_id, commitment_blind) = note;
     let pn = PromissoryNoteHarness::spawn();
-    let child = pn
-        .redeem(
+    let (call_data, plan) = pn
+        .redeem_prepare(
             value,
             *asset_id,
             bridge_cid,           // spend_hook = bridge
@@ -87,12 +106,15 @@ fn pn_redeem_child(
             path.clone(),
         )
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall {
-        contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
-        call_data: child.call_data,
-        proofs: child.proofs,
-        children: vec![],
-    })
+    Ok((
+        ChildCall {
+            contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
+            call_data,
+            proofs: vec![],
+            children: vec![],
+        },
+        plan,
+    ))
 }
 
 pub fn bridge_test_spec() -> ContractTestSpec<'static> {
@@ -184,10 +206,20 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                         // proof was *empty* — so an empty one here would be refused by that shape
                         // check in both the old and the new code, and the rejection assertion
                         // below would hold either way: a control that cannot fail (OBL-C21).
-                        let r = h.deposit(secret, 10000, recipient, 1, pallas::Base::from(200u64), ExternalChain::Ethereum, vec![[4u8; 32], [5u8; 32], [6u8; 32]], 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let child = pn_issue_child(bridge_cid, ExternalChain::Ethereum, poseidon_hash([pallas::Base::from(7u64), secret]), 10000)?;
+                        let (child, child_plan) = pn_issue_child_prepare(bridge_cid, ExternalChain::Ethereum, poseidon_hash([pallas::Base::from(7u64), secret]), 10000)?;
+                        let plan = h.deposit_prepare(secret, 10000, recipient, 1, pallas::Base::from(200u64), ExternalChain::Ethereum, vec![[4u8; 32], [5u8; 32], [6u8; 32]], 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        // `OBL-C198`: both call data exist first, one commitment is taken over the
+                        // ordered set, and only then are both proofs made — so each binds the
+                        // *frame* rather than its own call, which is what the parent's arm now
+                        // derives and what the node will check.
+                        let parent_data = plan.call_data.clone();
+                        let pcall = parent_call(cid, &parent_data);
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&frame_call(&child), &pcall]);
+                        let child_debris = child_plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let (proof, _) = plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { proofs: child_debris.proofs, ..child };
                         drop(notes.lock().unwrap());
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![child], call_data: parent_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -204,11 +236,19 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h.withdraw(secret, 5000, pallas::Base::from(400u64), 10).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let child = pn_redeem_child(bridge_cid, &n[1], 5000)?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        let (child, child_plan) = pn_redeem_child_prepare(bridge_cid, &n[1], 5000)?;
+                        let plan = h.withdraw_prepare(secret, 5000, pallas::Base::from(400u64), 10).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        // `OBL-C198`: framed as the deposit row is — one commitment over the
+                        // ordered call set, both proofs made against it.
+                        let parent_data = plan.call_data.clone();
+                        let pcall = parent_call(cid, &parent_data);
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&frame_call(&child), &pcall]);
+                        let child_debris = child_plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let (proof, _) = plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { proofs: child_debris.proofs, ..child };
+                        Ok(EndpointResult { children: vec![child], call_data: parent_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -246,11 +286,17 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h.withdraw(secret, 1, pallas::Base::from(401u64), 10).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let child = pn_redeem_child(bridge_cid, &n[1], 1)?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        let (child, child_plan) = pn_redeem_child_prepare(bridge_cid, &n[1], 1)?;
+                        let plan = h.withdraw_prepare(secret, 1, pallas::Base::from(401u64), 10).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let parent_data = plan.call_data.clone();
+                        let pcall = parent_call(cid, &parent_data);
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&frame_call(&child), &pcall]);
+                        let child_debris = child_plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let (proof, _) = plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { proofs: child_debris.proofs, ..child };
+                        Ok(EndpointResult { children: vec![child], call_data: parent_data, proofs: vec![proof] })
                     }
                 }),
             },

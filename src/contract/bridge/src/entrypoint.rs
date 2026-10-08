@@ -35,7 +35,7 @@
 //! 4. **No fund destruction**: Burned deposits emit nullifiers. Unspent deposits remain.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, ContractId, PublicKey, poseidon_hash},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, pasta_prelude::PrimeField, ContractId, PublicKey, poseidon_hash},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
@@ -167,6 +167,20 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 
 /// Metadata for DepositV1 ZK proof verification.
+/// `OBL-C198`: the binding is the host's derivation over the enclosing transaction, not a
+/// constant. `DepositParams` and `WithdrawParams` carry no `tx_nonce` — the nonce is a literal
+/// zero end to end in this contract — so the helper takes it as an argument and both arms pass
+/// zero, which is what their `constrain_instance` lists already publish. The proof left the call
+/// data in the same row, which is what made this derivable at all: a proof inside the call data
+/// puts it inside the commitment that covers that call data, which is circular.
+fn bridge_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        dwow_sdk::wasm::util::get_tx_commitment()?,
+        tx_nonce,
+    ]))
+}
+
 fn deposit_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     use dwow_sdk::pasta::pallas;
 
@@ -183,7 +197,7 @@ fn deposit_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
         BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V2.to_string(),
-        vec![params.commitment.inner(), poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+        vec![params.commitment.inner(), bridge_tx_binding(pallas::Base::zero())?, pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -217,7 +231,7 @@ fn withdraw_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     // `BRIDGE_CONTRACT_MIN_WITHDRAWAL` against `params.amount` in `process_withdraw_instruction`.
     zk_public_inputs.push((
         BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2.to_string(),
-        vec![nullifier, derived_recipient, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+        vec![nullifier, derived_recipient, bridge_tx_binding(pallas::Base::zero())?, pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
