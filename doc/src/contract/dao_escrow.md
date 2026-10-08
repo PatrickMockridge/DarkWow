@@ -387,13 +387,16 @@ These are in the code as it stands, and a caller or a reviewer should know each 
   the other half: `propose_claim_v1`, `vote_claim_v1` and `cancel_claim_v1` validate no child count, so
   extra calls ride along in a governance-gated transaction unvalidated by this contract, where the
   vetted endpoints pin theirs.
-- **`EndowmentWithdrawV1` is not tied to the claim lifecycle at all** (`OBL-C166`). It never loads the
-  `proposals` tree, and its `claim_id` appears in no approval message, no lookup and no write:
-  `EndowmentWithdrawParamsV1.claim_id` and `EndowmentWithdrawUpdateV1.claim_id` are inert. The group's
-  approval over `(bulla, value, recipient_x)` is the entire authority, so an "endowment withdrawal" is
-  a group-authorised transfer, not the execution of a claim. The fix is a choice rather than a repair:
-  either bind `claim_id` into the message and require an `Approved` proposal — which reintroduces the
-  second lifecycle executor the re-wire removed — or delete the field.
+- **`EndowmentWithdrawV1` is not tied to the claim lifecycle at all** (`OBL-C166`, **fixed 2026-10-08**).
+  It never loads the `proposals` tree, and its `claim_id` appeared in no approval message, no lookup and
+  no write: `EndowmentWithdrawParamsV1.claim_id` was copied into
+  `EndowmentWithdrawUpdateV1.claim_id` and read by nothing. **Both fields were deleted** rather than
+  bound — the policy `D1` is that an inert wire field is removed, not documented: the params are now
+  `(dao_escrow_bulla, recipient_pubkey, value)`, a 72-byte frame, and the update 52 bytes plus the
+  endowment. So an "endowment withdrawal" is a group-authorised transfer, not the execution of a claim,
+  and the code now says that rather than carrying an id that implies a lifecycle link it does not have.
+  The alternative — binding `claim_id` into the message and requiring an `Approved` proposal — was
+  rejected because it reintroduces the second lifecycle executor the re-wire removed.
 - **The vote's anti-double-vote key is derived from public call data.** `capability_proof.capability_secret`
   is 32 bytes in the params and 32 bytes on the wire, so the "secret" the name promises is published
   by the struct that carries it (`OBL-C160`, residual). The property holds today through the group

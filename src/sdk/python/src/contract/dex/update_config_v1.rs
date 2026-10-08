@@ -41,7 +41,6 @@ impl FunctionParams for dex_model::UpdateConfigParams {
         dict.set_item("gov_pub_x", format!("{:?}", self.gov_pub_x))?;
         dict.set_item("gov_pub_y", format!("{:?}", self.gov_pub_y))?;
         dict.set_item("gov_nullifier", format!("{:?}", self.gov_nullifier))?;
-        dict.set_item("tx_binding", format!("{:?}", self.tx_binding))?;
         dict.set_item("tx_nonce", format!("{:?}", self.tx_nonce))?;
         Ok(dict.unbind())
     }
@@ -53,7 +52,6 @@ impl FunctionParams for dex_model::UpdateConfigParams {
         writeln!(out, "{prefix}gov_pub_x: {:?}", self.gov_pub_x).unwrap();
         writeln!(out, "{prefix}gov_pub_y: {:?}", self.gov_pub_y).unwrap();
         writeln!(out, "{prefix}gov_nullifier: {:?}", self.gov_nullifier).unwrap();
-        writeln!(out, "{prefix}tx_binding: {:?}", self.tx_binding).unwrap();
         writeln!(out, "{prefix}tx_nonce: {:?}", self.tx_nonce).unwrap();
         Ok(())
     }

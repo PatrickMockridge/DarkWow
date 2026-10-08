@@ -425,22 +425,21 @@ fn test_withdraw_update_round_trip() {
 
 /// `EndowmentWithdrawV1`'s params must decode **exactly**. This is `OBL-C150`'s second instance: the
 /// decoder demanded `>= 105` while the encoder wrote `105 + proof + 33`, so every governance-path call
-/// was undecodable — and the `capability_proof` field that caused it is now gone, with the params a
-/// fixed 104 bytes, so the equality is the right check rather than a minimum.
+/// was undecodable — and `capability_proof`, the field that caused it, is gone. `claim_id` followed it
+/// (`OBL-C166`: it reached only the record it was copied into), leaving three fixed-size fields and a
+/// 72-byte frame, so the equality is the right check rather than a minimum.
 #[test]
 fn test_endowment_withdraw_params_round_trip() {
     let params = EndowmentWithdrawParamsV1 {
         dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(1)),
-        claim_id: ClaimId(pallas::Base::from(2)),
         recipient_pubkey: make_pubkey(1),
         value: 500,
     };
 
     let encoded = params.encode();
-    assert_eq!(encoded.len(), 104);
+    assert_eq!(encoded.len(), 72);
     let decoded = EndowmentWithdrawParamsV1::decode(&encoded).unwrap();
     assert_eq!(decoded.dao_escrow_bulla, params.dao_escrow_bulla);
-    assert_eq!(decoded.claim_id, params.claim_id);
     assert_eq!(decoded.recipient_pubkey, params.recipient_pubkey);
     assert_eq!(decoded.value, params.value);
 
@@ -453,17 +452,15 @@ fn test_endowment_withdraw_params_round_trip() {
 fn test_endowment_withdraw_update_round_trip() {
     let update = EndowmentWithdrawUpdateV1 {
         dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(1)),
-        claim_id: ClaimId(pallas::Base::from(2)),
         value: 500,
         amount: 9500,
         endowment_bytes: vec![7u8; 73],
     };
 
     let encoded = update.encode().unwrap();
-    assert_eq!(encoded.len(), 84 + 73);
+    assert_eq!(encoded.len(), 52 + 73);
     let decoded = EndowmentWithdrawUpdateV1::decode(&encoded).unwrap();
     assert_eq!(decoded.dao_escrow_bulla, update.dao_escrow_bulla);
-    assert_eq!(decoded.claim_id, update.claim_id);
     assert_eq!(decoded.value, update.value);
     assert_eq!(decoded.amount, update.amount);
     assert_eq!(decoded.endowment_bytes, update.endowment_bytes);

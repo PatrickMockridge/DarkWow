@@ -45,7 +45,6 @@ impl FunctionParams for dex_model::ExecuteSwapParams {
         dict.set_item("bob_nullifier", format!("{:?}", self.bob_nullifier))?;
         dict.set_item("proof", format!("{:?}", self.proof))?;
         dict.set_item("fee", format!("{:?}", self.fee))?;
-        dict.set_item("tx_binding", format!("{:?}", self.tx_binding))?;
         dict.set_item("tx_nonce", format!("{:?}", self.tx_nonce))?;
         Ok(dict.unbind())
     }
@@ -61,7 +60,6 @@ impl FunctionParams for dex_model::ExecuteSwapParams {
         writeln!(out, "{prefix}bob_nullifier: {:?}", self.bob_nullifier).unwrap();
         writeln!(out, "{prefix}proof: {:?}", self.proof).unwrap();
         writeln!(out, "{prefix}fee: {:?}", self.fee).unwrap();
-        writeln!(out, "{prefix}tx_binding: {:?}", self.tx_binding).unwrap();
         writeln!(out, "{prefix}tx_nonce: {:?}", self.tx_nonce).unwrap();
         Ok(())
     }

@@ -46,7 +46,6 @@ impl FunctionParams for dex_model::ExecuteSwapFeeParams {
         dict.set_item("fee_bps", format!("{:?}", self.fee_bps))?;
         dict.set_item("proof", format!("{:?}", self.proof))?;
         dict.set_item("fee", format!("{:?}", self.fee))?;
-        dict.set_item("tx_binding", format!("{:?}", self.tx_binding))?;
         dict.set_item("tx_nonce", format!("{:?}", self.tx_nonce))?;
         Ok(dict.unbind())
     }
@@ -63,7 +62,6 @@ impl FunctionParams for dex_model::ExecuteSwapFeeParams {
         writeln!(out, "{prefix}fee_bps: {:?}", self.fee_bps).unwrap();
         writeln!(out, "{prefix}proof: {:?}", self.proof).unwrap();
         writeln!(out, "{prefix}fee: {:?}", self.fee).unwrap();
-        writeln!(out, "{prefix}tx_binding: {:?}", self.tx_binding).unwrap();
         writeln!(out, "{prefix}tx_nonce: {:?}", self.tx_nonce).unwrap();
         Ok(())
     }

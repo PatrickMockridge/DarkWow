@@ -46,7 +46,6 @@ impl FunctionParams for dex_model::CreateSwapParams {
         dict.set_item("signature_public", format!("{:?}", self.signature_public))?;
         dict.set_item("fee", format!("{:?}", self.fee))?;
         dict.set_item("open_execution", format!("{:?}", self.open_execution))?;
-        dict.set_item("tx_binding", format!("{:?}", self.tx_binding))?;
         dict.set_item("tx_nonce", format!("{:?}", self.tx_nonce))?;
         Ok(dict.unbind())
     }
@@ -63,7 +62,6 @@ impl FunctionParams for dex_model::CreateSwapParams {
         writeln!(out, "{prefix}signature_public: {:?}", self.signature_public).unwrap();
         writeln!(out, "{prefix}fee: {:?}", self.fee).unwrap();
         writeln!(out, "{prefix}open_execution: {:?}", self.open_execution).unwrap();
-        writeln!(out, "{prefix}tx_binding: {:?}", self.tx_binding).unwrap();
         writeln!(out, "{prefix}tx_nonce: {:?}", self.tx_nonce).unwrap();
         Ok(())
     }

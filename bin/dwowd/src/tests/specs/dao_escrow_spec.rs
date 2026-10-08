@@ -691,7 +691,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     // endpoint carries no proof of its own — and the commitment, taken here over
                     // the ordered set the node hashes.
                     let (child_call, child_plan, child_nonce) = pn_transfer_prepare(pn, &note, PN_VALUE_ENDOWMENT_NO_AUTH, child_blind(PN_VALUE_ENDOWMENT_NO_AUTH, endowment_bulla))?;
-                    let r = h.endowment_withdraw(endowment_bulla, claim_id, owner_pub, PN_VALUE_ENDOWMENT_NO_AUTH).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.endowment_withdraw(endowment_bulla, owner_pub, PN_VALUE_ENDOWMENT_NO_AUTH).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let parent_call = dwow_sdk::tx::ContractCall { contract_id: de_cid, data: r.call_data.clone() };
                     let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call]);
                     let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -821,7 +821,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     // first (neither proof yet), the commitment is taken, and only then are the
                     // two children proven against it. The parent carries no proof of its own.
                     let (child_call, child_plan, child_nonce) = pn_transfer_prepare(pn, &note, PN_VALUE_ENDOWMENT_APPROVED, child_blind(PN_VALUE_ENDOWMENT_APPROVED, endowment_bulla))?;
-                    let r = h.endowment_withdraw(endowment_bulla, claim_id, owner_pub, PN_VALUE_ENDOWMENT_APPROVED)
+                    let r = h.endowment_withdraw(endowment_bulla, owner_pub, PN_VALUE_ENDOWMENT_APPROVED)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let ms_plan = ms.finalize_prepare(DaoEscrowHarness::governance_group(), action_endowment_withdraw, approvals)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -881,7 +881,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     // `OBL-C198`: as in `EndowmentWithdrawV1_Approved` — both calls' data first, one
                     // commitment over `[pn_child, multisig_child, this call]`, then both proofs.
                     let (child_call, child_plan, child_nonce) = pn_transfer_prepare(pn, &note, PN_VALUE_ENDOWMENT_APPROVED, child_blind(PN_VALUE_ENDOWMENT_APPROVED, endowment_bulla))?;
-                    let r = h.endowment_withdraw(endowment_bulla, claim_id, second_recipient_pub, PN_VALUE_ENDOWMENT_APPROVED)
+                    let r = h.endowment_withdraw(endowment_bulla, second_recipient_pub, PN_VALUE_ENDOWMENT_APPROVED)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let ms_plan = ms.finalize_prepare(DaoEscrowHarness::governance_group(), action_endowment_withdraw_2, approvals)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

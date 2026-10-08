@@ -351,25 +351,24 @@ impl DaoEscrowHarness {
 
     /// Endowment withdraw (EndowmentWithdrawV1 - 0x04)
     ///
-    /// The endpoint's authority is the endowment's group and nothing else: the two *path selector*
-    /// fields this took (`capability_proof`, `proposal_id`) are gone from `EndowmentWithdrawParamsV1`,
-    /// because neither was a value the handler read — one carried a single `is_some()` bit and the
-    /// other named a second executor for the lifecycle `ExecuteClaimV1` already executes.
+    /// The endpoint's authority is the endowment's group and nothing else. Three *path selector* fields
+    /// this took are gone from `EndowmentWithdrawParamsV1`, because none was a value the handler read:
+    /// `capability_proof` carried a single `is_some()` bit, `proposal_id` named a second executor for
+    /// the lifecycle `ExecuteClaimV1` already executes, and `claim_id` reached only the record it was
+    /// copied into (`OBL-C166`).
     pub fn endowment_withdraw(
         &self,
         dao_escrow_bulla: pallas::Base,
-        claim_id: pallas::Base,
         recipient_pubkey: PublicKey,
         value: u64,
     ) -> Result<EndowmentWithdrawResult> {
         let params = EndowmentWithdrawParamsV1 {
             dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
-            claim_id: ClaimId(claim_id),
             recipient_pubkey,
             value,
         };
         let mut call_data = vec![0x04]; // EndowmentWithdrawV1
-        // `EndowmentWithdrawParamsV1::encode` is infallible now: four fixed-size fields, no `Option` and
+        // `EndowmentWithdrawParamsV1::encode` is infallible now: three fixed-size fields, no `Option` and
         // no length prefix.
         call_data.extend_from_slice(&params.encode());
         Ok(EndowmentWithdrawResult { call_data })

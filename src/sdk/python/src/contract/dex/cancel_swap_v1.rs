@@ -41,7 +41,6 @@ impl FunctionParams for dex_model::CancelSwapParams {
         dict.set_item("nullifier", format!("{:?}", self.nullifier))?;
         dict.set_item("proof", format!("{:?}", self.proof))?;
         dict.set_item("fee", format!("{:?}", self.fee))?;
-        dict.set_item("tx_binding", format!("{:?}", self.tx_binding))?;
         dict.set_item("tx_nonce", format!("{:?}", self.tx_nonce))?;
         Ok(dict.unbind())
     }
@@ -53,7 +52,6 @@ impl FunctionParams for dex_model::CancelSwapParams {
         writeln!(out, "{prefix}nullifier: {:?}", self.nullifier).unwrap();
         writeln!(out, "{prefix}proof: {:?}", self.proof).unwrap();
         writeln!(out, "{prefix}fee: {:?}", self.fee).unwrap();
-        writeln!(out, "{prefix}tx_binding: {:?}", self.tx_binding).unwrap();
         writeln!(out, "{prefix}tx_nonce: {:?}", self.tx_nonce).unwrap();
         Ok(())
     }

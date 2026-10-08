@@ -37,7 +37,6 @@ impl FunctionParams for dao_escrow_model::EndowmentWithdrawParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("dao_escrow_bulla", format!("{:?}", self.dao_escrow_bulla))?;
-        dict.set_item("claim_id", format!("{:?}", self.claim_id))?;
         dict.set_item("recipient_pubkey", self.recipient_pubkey.to_string())?;
         dict.set_item("value", format!("{:?}", self.value))?;
         Ok(dict.unbind())
@@ -46,7 +45,6 @@ impl FunctionParams for dao_escrow_model::EndowmentWithdrawParamsV1 {
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}dao_escrow_bulla: {:?}", self.dao_escrow_bulla).unwrap();
-        writeln!(out, "{prefix}claim_id: {:?}", self.claim_id).unwrap();
         writeln!(out, "{prefix}recipient_pubkey: {}", self.recipient_pubkey).unwrap();
         writeln!(out, "{prefix}value: {:?}", self.value).unwrap();
         Ok(())

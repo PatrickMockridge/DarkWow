@@ -922,7 +922,6 @@ fn endowment_withdraw_v1(
     // Create update
     let update = model::EndowmentWithdrawUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
-        claim_id: params.claim_id,
         value: params.value,
         amount: params.value, // Purse verifies balance
         endowment_bytes: endowment.encode(),
