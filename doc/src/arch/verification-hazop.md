@@ -82,6 +82,23 @@ RC6 · spec, model or register drift: OBL-C74 OBL-C109 OBL-C126 OBL-C147 OBL-C18
 RESIDUE · no shared cause: OBL-C12 OBL-C54 OBL-C56
 <!-- /root-cause-groups -->
 
+**Decisions taken, 2026-10-08.** A `DECISION` row is blocked on a *policy*, and fourteen of the
+thirty-one hinge on two policies that are now decided — so leaving them reading "blocked on a choice
+nobody has made" is itself a false statement. Recorded here once rather than in fourteen rows:
+
+* **D1 — a wire field nothing reads.** Inert fields are **deleted** at the next wire batch —
+  `capability_secret` in `identity`'s params (`C89`), `capability_secret` in `VoteClaimParamsV1`
+  (`C160`), `claim_id` in `dao_escrow`'s `EndowmentWithdrawParamsV1` (`C166`), `oracle_signature` in
+  `insurance_market` (`C203`) — and where a verifier needs a binding it cannot see, a **tag** is added
+  rather than a field kept (`nullifier = true`; a box owner term): `C146`, `C171`, `C179`, `C184`,
+  `C188`. The four deletions are not all one batch: `C89` is a genesis contract's params and travels
+  with the re-roll, the other three do not.
+* **D3 — gate it, or accept it.** Build the gate where one is possible (`C76` feature-gated tests,
+  `C125` `bridge_test_helper` build, `C138` dex coverage); record the rest as `ACCEPTED-WITH-REASON`
+  with the gap named (`C140`). **`C147` is neither**: its row already says the stated mechanism is
+  *unwritable* on this toolchain, so its sentence is corrected — `RESTATED`, which is not a softer
+  `CLOSED` — rather than gated or accepted.
+
 ---
 
 ## The assumption inventory, and the check that keeps it honest
