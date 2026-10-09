@@ -204,7 +204,6 @@ impl InitializeBuilder {
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
         })
     }
@@ -294,7 +293,6 @@ impl ProposeBuilder {
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
             fund_id: self.fund_id,
         })
@@ -384,7 +382,6 @@ impl VoteBuilder {
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
             fund_id: self.fund_id,
         })
@@ -446,7 +443,6 @@ impl ExecuteBuilder {
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
             fund_id: self.fund_id,
         })
@@ -548,12 +544,6 @@ impl ExitBuilder {
             dao_membership_note: self.dao_membership_note,
             effective_weight: self.effective_weight,
             proof: self.proof.clone(),
-            // The derivation `client/exit.rs` uses, so the builder and the proof cannot disagree.
-            tx_binding: poseidon_hash([
-                DRK_POSEIDON_DOMAIN_TX_BINDING,
-                self.tx_commitment,
-                self.tx_nonce,
-            ]),
             tx_nonce: self.tx_nonce,
         })
     }
@@ -641,7 +631,6 @@ impl TransferBuilder {
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
         })
     }
@@ -683,7 +672,7 @@ impl LockBuilder {
 
     pub fn build(&self) -> Result<LockParamsV1, &'static str> {
         let pi = self.authority.compute_public_inputs()?;
-        Ok(LockParamsV1 { fund_id: self.fund_id, duration_blocks: self.duration_blocks, signature: self.signature, authority_pub_x: pi.authority_pub_x, authority_pub_y: pi.authority_pub_y, authority_nullifier: pi.authority_nullifier, tx_binding: pi.tx_binding, tx_nonce: pi.tx_nonce })
+        Ok(LockParamsV1 { fund_id: self.fund_id, duration_blocks: self.duration_blocks, signature: self.signature, authority_pub_x: pi.authority_pub_x, authority_pub_y: pi.authority_pub_y, authority_nullifier: pi.authority_nullifier, tx_nonce: pi.tx_nonce })
     }
 }
 
@@ -716,7 +705,7 @@ impl UnlockBuilder {
 
     pub fn build(&self) -> Result<UnlockParamsV1, &'static str> {
         let pi = self.authority.compute_public_inputs()?;
-        Ok(UnlockParamsV1 { fund_id: self.fund_id, signature: self.signature, authority_pub_x: pi.authority_pub_x, authority_pub_y: pi.authority_pub_y, authority_nullifier: pi.authority_nullifier, tx_binding: pi.tx_binding, tx_nonce: pi.tx_nonce })
+        Ok(UnlockParamsV1 { fund_id: self.fund_id, signature: self.signature, authority_pub_x: pi.authority_pub_x, authority_pub_y: pi.authority_pub_y, authority_nullifier: pi.authority_nullifier, tx_nonce: pi.tx_nonce })
     }
 }
 
@@ -769,7 +758,6 @@ impl UpdateConfigBuilder {
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
         })
     }

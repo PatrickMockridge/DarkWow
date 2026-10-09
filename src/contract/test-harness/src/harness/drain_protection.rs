@@ -59,6 +59,8 @@ use dwow_sdk::{
 
 /// DrainProtection Harness for isolated testing
 pub struct DrainProtectionHarness {
+    /// The deployed contract's id — the frame commitment covers it (`OBL-C198`).
+    contract_id: dwow_sdk::crypto::ContractId,
     /// ExitProof ZkBinary
     exit_zkbin: ZkBinary,
     /// ExitProof ProvingKey
@@ -97,9 +99,57 @@ pub struct DrainProtectionHarness {
     vote_pk: ProvingKey,
 }
 
+/// A prepared authority call: its call data is fixed, the proof is not yet made (`OBL-C198`).
+///
+/// The caller cannot supply the frame commitment until the call data exists — the commitment is over
+/// the call set, which includes this call — so splitting assembly from proving is what lets a
+/// child-bearing endpoint be framed over `[child…, parent]`. `prove` binds the proof to it.
+pub struct AuthorityCallPlan {
+    /// The encoded call data (selector + params), the same bytes the host will execute.
+    pub call_data: Vec<u8>,
+    authority: AuthorityCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl AuthorityCallPlan {
+    /// Prove the call, binding its proof to `tx_commitment` — the commitment over the whole call set
+    /// the transaction carries, this call's children and siblings included.
+    pub fn prove(self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<Proof> {
+        let authority = self.authority.tx_pair(tx_commitment, tx_nonce);
+        let (proof, _pi) = create_authority_proof(&self.zkbin, &self.pk, &authority)
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        Ok(proof)
+    }
+}
+
+/// A prepared `exit` call (`OBL-C198`) — the exit circuit's twin of [`AuthorityCallPlan`]. `exit`
+/// proves through `create_exit_proof` rather than `create_authority_proof`.
+pub struct ExitCallPlan {
+    /// The encoded call data (selector + params).
+    pub call_data: Vec<u8>,
+    call: ExitCallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl ExitCallPlan {
+    /// Prove the call, binding its proof to `tx_commitment` (`OBL-C198`).
+    pub fn prove(self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<Proof> {
+        let call = self.call.tx_pair(tx_commitment, tx_nonce);
+        let (proof, _pi) = create_exit_proof(&self.zkbin, &self.pk, &call)
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        Ok(proof)
+    }
+}
+
 impl DrainProtectionHarness {
-    /// Spawn a new DrainProtection harness with pre-loaded circuits
-    pub fn spawn() -> Self {
+    /// Spawn a new DrainProtection harness with pre-loaded circuits, for the contract `contract_id`.
+    ///
+    /// The id is not decoration (`OBL-C198`): a proof now binds the frame commitment, which covers
+    /// the call's `ContractCall` — and that carries the contract id — so the fixture and the host
+    /// must derive over the same one. It is the id the spec deploys the wasm under.
+    pub fn spawn(contract_id: dwow_sdk::crypto::ContractId) -> Self {
         let exit_bin = include_bytes!("../../../drain_protection/proof/exit.zk.bin");
         let execute_bin = include_bytes!("../../../drain_protection/proof/execute.zk.bin");
         let initialize_bin = include_bytes!("../../../drain_protection/proof/initialize.zk.bin");
@@ -168,6 +218,7 @@ impl DrainProtectionHarness {
         let vote_pk = ProvingKey::build(vote_zkbin.k, &vote_circuit).expect("ProvingKey::build failed");
 
         Self {
+            contract_id,
             exit_zkbin,
             exit_pk,
             execute_zkbin,
@@ -239,6 +290,14 @@ impl DrainProtectionHarness {
         AuthorityCallData::new(Self::AUTHORITY_SECRET, Self::FUND_ID)
     }
 
+    /// The frame commitment over a call set that is this call alone (`OBL-C198`). Correct only for a
+    /// **childless** endpoint: a caller with children assembles `[child…, parent]` in DFS post-order
+    /// and derives over the whole set with `dwow_sdk::crypto::util::tx_commitment`.
+    fn commitment(&self, call_data: &[u8]) -> pallas::Base {
+        let call = dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.to_vec() };
+        dwow_sdk::crypto::util::tx_commitment([&call])
+    }
+
     /// The id `propose_process_instruction_v1` derives — `poseidon_hash([fund.id, message_hash])`
     /// (`entrypoint.rs:582`) — and therefore the id `vote` and `execute` have to name, and the
     /// message the fund's group must approve for an execution to be allowed. The three endpoints are
@@ -258,10 +317,10 @@ impl DrainProtectionHarness {
     /// The message hash `propose` proposes.
     const MESSAGE_HASH: pallas::Base = pallas::Base::from_raw([7, 0, 0, 0]);
 
-    pub fn initialize(&self) -> dwow_core::Result<DrainInitResult> {
+    /// Assemble `initialize`'s call data and stop, before the proof (`OBL-C198`).
+    pub fn initialize_prepare(&self) -> Result<AuthorityCallPlan> {
         let authority = self.authority();
-        let (proof, pi) = create_authority_proof(&self.initialize_zkbin, &self.initialize_pk, &authority)
-            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let pi = authority.compute_public_inputs().map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         let params = InitializeParamsV1 {
             instance_seed: [0u8; 32],
             fund_id: Self::FUND_ID,
@@ -271,18 +330,26 @@ impl DrainProtectionHarness {
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
         };
         let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode());
+        Ok(AuthorityCallPlan { call_data, authority, zkbin: self.initialize_zkbin.clone(), pk: self.initialize_pk.clone() })
+    }
+
+    /// `initialize` as the **only** call in its transaction (childless fast path, `OBL-C198`).
+    pub fn initialize(&self) -> Result<DrainInitResult> {
+        let plan = self.initialize_prepare()?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.commitment(&call_data);
+        let proof = plan.prove(commitment, pallas::Base::zero())?;
         Ok(DrainInitResult { call_data, proof })
     }
 
-    pub fn propose(&self) -> dwow_core::Result<DrainProposeResult> {
+    /// Assemble `propose`'s call data and stop, before the proof (`OBL-C198`).
+    pub fn propose_prepare(&self) -> Result<AuthorityCallPlan> {
         let authority = self.authority();
-        let (proof, pi) = create_authority_proof(&self.propose_zkbin, &self.propose_pk, &authority)
-            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let pi = authority.compute_public_inputs().map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         let params = ProposeParamsV1 {
             message_hash: Self::MESSAGE_HASH,
             // `propose_process_instruction_v1` looks the **fund** up by this field
@@ -296,18 +363,26 @@ impl DrainProtectionHarness {
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
         };
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
+        Ok(AuthorityCallPlan { call_data, authority, zkbin: self.propose_zkbin.clone(), pk: self.propose_pk.clone() })
+    }
+
+    /// `propose` as the **only** call in its transaction (childless fast path, `OBL-C198`).
+    pub fn propose(&self) -> Result<DrainProposeResult> {
+        let plan = self.propose_prepare()?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.commitment(&call_data);
+        let proof = plan.prove(commitment, pallas::Base::zero())?;
         Ok(DrainProposeResult { call_data, proof })
     }
 
-    pub fn vote(&self) -> dwow_core::Result<DrainVoteResult> {
+    /// Assemble `vote`'s call data and stop, before the proof (`OBL-C198`).
+    pub fn vote_prepare(&self) -> Result<AuthorityCallPlan> {
         let authority = self.authority();
-        let (proof, pi) = create_authority_proof(&self.vote_zkbin, &self.vote_pk, &authority)
-            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let pi = authority.compute_public_inputs().map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         let params = VoteParamsV1 {
             proposal_id: self.proposal_id(),
             voter_pubkey: authority.authority_pub(),
@@ -317,18 +392,28 @@ impl DrainProtectionHarness {
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
         };
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
+        Ok(AuthorityCallPlan { call_data, authority, zkbin: self.vote_zkbin.clone(), pk: self.vote_pk.clone() })
+    }
+
+    /// `vote` as the **only** call in its transaction (childless fast path, `OBL-C198`).
+    pub fn vote(&self) -> Result<DrainVoteResult> {
+        let plan = self.vote_prepare()?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.commitment(&call_data);
+        let proof = plan.prove(commitment, pallas::Base::zero())?;
         Ok(DrainVoteResult { call_data, proof })
     }
 
-    pub fn execute(&self) -> dwow_core::Result<DrainExecuteResult> {
+    /// Assemble `execute`'s call data and stop, before the proof (`OBL-C198`). This endpoint always
+    /// carries a `multisig::FinalizeV1` child, so the caller frames `[child, parent]` and proves the
+    /// parent against that commitment.
+    pub fn execute_prepare(&self) -> Result<AuthorityCallPlan> {
         let authority = self.authority();
-        let (proof, pi) = create_authority_proof(&self.execute_zkbin, &self.execute_pk, &authority)
-            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let pi = authority.compute_public_inputs().map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         let params = ExecuteParamsV1 {
             proposal_id: self.proposal_id(),
             signature: pallas::Base::zero(),
@@ -336,18 +421,18 @@ impl DrainProtectionHarness {
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
         };
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
-        Ok(DrainExecuteResult { call_data, proof })
+        Ok(AuthorityCallPlan { call_data, authority, zkbin: self.execute_zkbin.clone(), pk: self.execute_pk.clone() })
     }
 
-    pub fn exit(&self) -> dwow_core::Result<DrainExitResult> {
+    /// Assemble `exit`'s call data and stop, before the proof (`OBL-C198`). Carries a
+    /// `pn_transfer_payout_child`, so the caller frames `[child, parent]`.
+    pub fn exit_prepare(&self) -> Result<ExitCallPlan> {
         let call = ExitCallData::new();
-        let (proof, pi) = create_exit_proof(&self.exit_zkbin, &self.exit_pk, &call)
-            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let pi = call.compute_public_inputs();
         let params = ExitParamsV1 {
             fund_id: Self::FUND_ID,
             member_pubkey: PublicKey::from_secret(SecretKey::from_base(Self::AUTHORITY_SECRET)),
@@ -357,17 +442,18 @@ impl DrainProtectionHarness {
             dao_membership_note: pallas::Base::zero(),
             effective_weight: pallas::Base::from(1000u64),
             proof: vec![],
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
         };
         let mut call_data = vec![0x04];
         call_data
             .extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
-        Ok(DrainExitResult { call_data, proof })
+        Ok(ExitCallPlan { call_data, call, zkbin: self.exit_zkbin.clone(), pk: self.exit_pk.clone() })
     }
 
-    pub fn transfer(&self) -> dwow_core::Result<DrainTransferResult> {
-        self.transfer_naming(self.proposal_id())
+    /// Assemble `transfer`'s call data and stop, before the proof (`OBL-C198`). This endpoint always
+    /// carries a `pn_transfer_child`, so the caller frames `[child, parent]`.
+    pub fn transfer_prepare(&self) -> Result<AuthorityCallPlan> {
+        self.transfer_naming_prepare(self.proposal_id())
     }
 
     /// `transfer` naming a proposal the caller chooses.
@@ -375,10 +461,9 @@ impl DrainProtectionHarness {
     /// The rate-limited path requires the proposal to have been **executed** (`OBL-C101`), not merely
     /// named, so this is the shape the fixture's control needs: the same call, the same proof, the
     /// same amount, naming a proposal the fund's group approved and never executed.
-    pub fn transfer_naming(&self, proposal_id: pallas::Base) -> dwow_core::Result<DrainTransferResult> {
+    pub fn transfer_naming_prepare(&self, proposal_id: pallas::Base) -> Result<AuthorityCallPlan> {
         let authority = self.authority();
-        let (proof, pi) = create_authority_proof(&self.transfer_zkbin, &self.transfer_pk, &authority)
-            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let pi = authority.compute_public_inputs().map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         let params = TransferParamsV1 {
             fund_id: Self::FUND_ID,
             amount: 100,
@@ -394,18 +479,17 @@ impl DrainProtectionHarness {
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
         };
         let mut call_data = vec![0x05];
         call_data.extend_from_slice(&params.encode());
-        Ok(DrainTransferResult { call_data, proof })
+        Ok(AuthorityCallPlan { call_data, authority, zkbin: self.transfer_zkbin.clone(), pk: self.transfer_pk.clone() })
     }
 
-    pub fn lock(&self) -> dwow_core::Result<DrainLockResult> {
+    /// Assemble `lock`'s call data and stop, before the proof (`OBL-C198`).
+    pub fn lock_prepare(&self) -> Result<AuthorityCallPlan> {
         let authority = self.authority();
-        let (proof, pi) = create_authority_proof(&self.lock_zkbin, &self.lock_pk, &authority)
-            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let pi = authority.compute_public_inputs().map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         let params = LockParamsV1 {
             fund_id: Self::FUND_ID,
             duration_blocks: 6000,
@@ -413,34 +497,55 @@ impl DrainProtectionHarness {
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
         };
         let mut call_data = vec![0x06];
         call_data.extend_from_slice(&params.encode());
+        Ok(AuthorityCallPlan { call_data, authority, zkbin: self.lock_zkbin.clone(), pk: self.lock_pk.clone() })
+    }
+
+    /// `lock` as the **only** call in its transaction (childless fast path, `OBL-C198`).
+    pub fn lock(&self) -> Result<DrainLockResult> {
+        let plan = self.lock_prepare()?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.commitment(&call_data);
+        let proof = plan.prove(commitment, pallas::Base::zero())?;
         Ok(DrainLockResult { call_data, proof })
     }
 
-    pub fn unlock(&self) -> dwow_core::Result<DrainUnlockResult> {
+    /// Assemble `unlock`'s call data and stop, before the proof (`OBL-C198`).
+    pub fn unlock_prepare(&self) -> Result<AuthorityCallPlan> {
         let authority = self.authority();
-        let (proof, pi) = create_authority_proof(&self.unlock_zkbin, &self.unlock_pk, &authority)
-            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let pi = authority.compute_public_inputs().map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         let params = UnlockParamsV1 {
             fund_id: Self::FUND_ID,
             signature: pallas::Base::zero(),
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
         };
         let mut call_data = vec![0x07];
         call_data.extend_from_slice(&params.encode());
+        Ok(AuthorityCallPlan { call_data, authority, zkbin: self.unlock_zkbin.clone(), pk: self.unlock_pk.clone() })
+    }
+
+    /// `unlock` as the **only** call in its transaction (childless fast path, `OBL-C198`).
+    pub fn unlock(&self) -> Result<DrainUnlockResult> {
+        let plan = self.unlock_prepare()?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.commitment(&call_data);
+        let proof = plan.prove(commitment, pallas::Base::zero())?;
         Ok(DrainUnlockResult { call_data, proof })
     }
 
-    pub fn update_config(&self) -> dwow_core::Result<DrainUpdateConfigResult> {
-        self.update_config_with(self.authority())
+    /// `update_config` as the **only** call in its transaction (childless fast path, `OBL-C198`).
+    pub fn update_config(&self) -> Result<DrainUpdateConfigResult> {
+        let plan = self.update_config_prepare()?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.commitment(&call_data);
+        let proof = plan.prove(commitment, pallas::Base::zero())?;
+        Ok(DrainUpdateConfigResult { call_data, proof })
     }
 
     /// `update_config`, but proving with a **stranger's** secret — the negative control for
@@ -448,13 +553,26 @@ impl DrainProtectionHarness {
     /// the only thing that differs from `update_config` is which secret the point derives from. So a
     /// rejection can only come from the host comparing that point against the fund's registered one,
     /// and if the check is ever removed this endpoint starts succeeding.
-    pub fn update_config_as_stranger(&self) -> dwow_core::Result<DrainUpdateConfigResult> {
-        self.update_config_with(AuthorityCallData::new(Self::STRANGER_SECRET, Self::FUND_ID))
+    pub fn update_config_as_stranger(&self) -> Result<DrainUpdateConfigResult> {
+        let plan = self.update_config_as_stranger_prepare()?;
+        let call_data = plan.call_data.clone();
+        let commitment = self.commitment(&call_data);
+        let proof = plan.prove(commitment, pallas::Base::zero())?;
+        Ok(DrainUpdateConfigResult { call_data, proof })
     }
 
-    fn update_config_with(&self, authority: AuthorityCallData) -> dwow_core::Result<DrainUpdateConfigResult> {
-        let (proof, pi) = create_authority_proof(&self.update_config_zkbin, &self.update_config_pk, &authority)
-            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+    /// Assemble `update_config`'s call data and stop, before the proof (`OBL-C198`).
+    pub fn update_config_prepare(&self) -> Result<AuthorityCallPlan> {
+        self.update_config_with_prepare(self.authority())
+    }
+
+    /// As [`Self::update_config_prepare`], from a stranger's secret (`OBL-C97`'s control).
+    pub fn update_config_as_stranger_prepare(&self) -> Result<AuthorityCallPlan> {
+        self.update_config_with_prepare(AuthorityCallData::new(Self::STRANGER_SECRET, Self::FUND_ID))
+    }
+
+    fn update_config_with_prepare(&self, authority: AuthorityCallData) -> Result<AuthorityCallPlan> {
+        let pi = authority.compute_public_inputs().map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         let params = UpdateConfigParamsV1 {
             fund_id: Self::FUND_ID,
             rate_limit: None,
@@ -469,12 +587,11 @@ impl DrainProtectionHarness {
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
-            tx_binding: pi.tx_binding,
             tx_nonce: pi.tx_nonce,
         };
         let mut call_data = vec![0x08];
         call_data.extend_from_slice(&params.encode());
-        Ok(DrainUpdateConfigResult { call_data, proof })
+        Ok(AuthorityCallPlan { call_data, authority, zkbin: self.update_config_zkbin.clone(), pk: self.update_config_pk.clone() })
     }
 }
 

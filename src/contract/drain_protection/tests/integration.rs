@@ -212,7 +212,6 @@ fn test_initialize_params_encoding() {
         authority_pub_x: pallas::Base::from(51),
         authority_pub_y: pallas::Base::from(52),
         authority_nullifier: pallas::Base::from(53),
-        tx_binding: pallas::Base::from(54),
         tx_nonce: pallas::Base::from(55),
     };
 
@@ -224,7 +223,6 @@ fn test_initialize_params_encoding() {
     assert_eq!(decoded.authority_pub_x, params.authority_pub_x);
     assert_eq!(decoded.authority_pub_y, params.authority_pub_y);
     assert_eq!(decoded.authority_nullifier, params.authority_nullifier);
-    assert_eq!(decoded.tx_binding, params.tx_binding);
     assert_eq!(decoded.tx_nonce, params.tx_nonce);
 }
 
@@ -239,7 +237,6 @@ fn test_exit_params_encoding() {
         dao_membership_note: pallas::Base::from(1),
         effective_weight: pallas::Base::from(1000),
         proof: vec![1, 2, 3],
-        tx_binding: pallas::Base::from(23),
         tx_nonce: pallas::Base::from(24),
     };
 
@@ -248,7 +245,6 @@ fn test_exit_params_encoding() {
 
     assert_eq!(decoded.contribution_weight, params.contribution_weight);
     assert_eq!(decoded.current_block, params.current_block);
-    assert_eq!(decoded.tx_binding, params.tx_binding);
     assert_eq!(decoded.tx_nonce, params.tx_nonce);
 }
 
@@ -267,18 +263,16 @@ fn test_exit_params_proof_length_is_not_a_byte() {
         dao_membership_note: pallas::Base::from(43),
         effective_weight: pallas::Base::from(1000),
         proof: vec![0xE9; 700],
-        tx_binding: pallas::Base::from(45),
         tx_nonce: pallas::Base::from(46),
     };
 
     let encoded = params.encode().unwrap();
-    assert_eq!(encoded.len(), 244 + 700);
+    assert_eq!(encoded.len(), 212 + 700);
 
     let decoded = ExitParamsV1::decode(&encoded).unwrap();
     assert_eq!(decoded.proof.len(), 700);
     assert_eq!(decoded.contribution_weight, 4242);
     assert_eq!(decoded.current_block, 5000);
-    assert_eq!(decoded.tx_binding, pallas::Base::from(45));
     assert_eq!(decoded.tx_nonce, pallas::Base::from(46));
 }
 
@@ -296,7 +290,6 @@ fn test_vote_and_execute_params_carry_the_fund() {
         authority_pub_x: pallas::Base::from(73),
         authority_pub_y: pallas::Base::from(74),
         authority_nullifier: pallas::Base::from(75),
-        tx_binding: pallas::Base::from(76),
         tx_nonce: pallas::Base::from(77),
         fund_id: pallas::Base::from(78),
     };
@@ -311,7 +304,6 @@ fn test_vote_and_execute_params_carry_the_fund() {
         authority_pub_x: pallas::Base::from(83),
         authority_pub_y: pallas::Base::from(84),
         authority_nullifier: pallas::Base::from(85),
-        tx_binding: pallas::Base::from(86),
         tx_nonce: pallas::Base::from(87),
         fund_id: pallas::Base::from(88),
     };
@@ -338,19 +330,17 @@ fn test_propose_params_proof_length_is_not_a_byte() {
         authority_pub_x: pallas::Base::from(61),
         authority_pub_y: pallas::Base::from(62),
         authority_nullifier: pallas::Base::from(63),
-        tx_binding: pallas::Base::from(64),
         tx_nonce: pallas::Base::from(65),
         fund_id: pallas::Base::from(66),
     };
 
     let encoded = params.encode().unwrap();
-    assert_eq!(encoded.len(), 300 + 700);
+    assert_eq!(encoded.len(), 268 + 700);
 
     let decoded = ProposeParamsV1::decode(&encoded).unwrap();
     assert_eq!(decoded.proof.len(), 700);
     assert_eq!(decoded.vote_period_blocks, 77);
     assert_eq!(decoded.message_hash, params.message_hash);
-    assert_eq!(decoded.tx_binding, params.tx_binding);
     assert_eq!(decoded.tx_nonce, params.tx_nonce);
     assert_eq!(decoded.authority_nullifier, params.authority_nullifier);
 }
@@ -437,7 +427,6 @@ fn test_lock_params_encoding() {
         authority_pub_x: pallas::Base::from(11),
         authority_pub_y: pallas::Base::from(12),
         authority_nullifier: pallas::Base::from(13),
-        tx_binding: pallas::Base::from(14),
         tx_nonce: pallas::Base::from(15),
     };
 
@@ -499,7 +488,6 @@ fn test_unlock_params_encoding() {
         authority_pub_x: pallas::Base::from(21),
         authority_pub_y: pallas::Base::from(22),
         authority_nullifier: pallas::Base::from(23),
-        tx_binding: pallas::Base::from(24),
         tx_nonce: pallas::Base::from(25),
     };
 
@@ -537,7 +525,6 @@ fn test_transfer_params_encoding() {
         authority_pub_x: pallas::Base::from(31),
         authority_pub_y: pallas::Base::from(32),
         authority_nullifier: pallas::Base::from(33),
-        tx_binding: pallas::Base::from(34),
         tx_nonce: pallas::Base::from(35),
     };
 
@@ -546,7 +533,7 @@ fn test_transfer_params_encoding() {
 
     assert_eq!(decoded.amount, params.amount);
     assert_eq!(decoded.exceeds_rate_limit, params.exceeds_rate_limit);
-    assert_eq!(decoded.tx_binding, params.tx_binding);
+    assert_eq!(decoded.tx_nonce, params.tx_nonce);
 }
 
 #[test]
@@ -580,7 +567,6 @@ fn test_update_config_params_encoding() {
         authority_pub_x: pallas::Base::from(41),
         authority_pub_y: pallas::Base::from(42),
         authority_nullifier: pallas::Base::from(43),
-        tx_binding: pallas::Base::from(44),
         tx_nonce: pallas::Base::from(45),
     };
 

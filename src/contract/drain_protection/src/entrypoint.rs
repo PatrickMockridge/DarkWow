@@ -45,7 +45,7 @@
 //! and require full implementation and security audit.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, BOX_CONTRACT_ID, ContractId, MULTISIG_CONTRACT_ID, PURSE_CONTRACT_ID},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, pasta_prelude::PrimeField, poseidon_hash, BOX_CONTRACT_ID, ContractId, MULTISIG_CONTRACT_ID, PURSE_CONTRACT_ID},
     error::{ContractError, ContractResult},
     msg,
     pasta::pallas,
@@ -152,6 +152,21 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
 // METADATA (ZK proof verification)
 // ============================================================================
 
+/// `OBL-C198`: the binding is the host's derivation over the enclosing transaction, not the value the
+/// caller put in the call data. Every arm below read `params.tx_binding` — a caller-supplied field
+/// republished as though it pinned the call to a transaction, which `OBL-C152`'s
+/// public-value-checked-against-a-public-value shape names. The commitment comes from the host
+/// (`get_tx_commitment`) and never from the call data, because the commitment covers the call data and
+/// a binding carried inside it would be a cycle with no fixed point. The nonce stays the call's own —
+/// these calls carry one — so the helper takes it.
+fn drain_protection_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        dwow_sdk::wasm::util::get_tx_commitment()?,
+        tx_nonce,
+    ]))
+}
+
 /// Fetch metadata for ZK proof verification
 fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
@@ -181,7 +196,7 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
             // zeros, which no satisfiable proof can match.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_INITIALIZE_NS_V2.to_string(),
-                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, drain_protection_tx_binding(params.tx_nonce)?, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
@@ -202,7 +217,7 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
             // OBL-C78: the five values `propose.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_PROPOSE_NS_V2.to_string(),
-                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, drain_protection_tx_binding(params.tx_nonce)?, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
@@ -223,7 +238,7 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
             // OBL-C78: the five values `vote.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_VOTE_NS_V2.to_string(),
-                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, drain_protection_tx_binding(params.tx_nonce)?, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
@@ -244,7 +259,7 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
             // OBL-C78: the five values `execute.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_EXECUTE_NS_V2.to_string(),
-                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, drain_protection_tx_binding(params.tx_nonce)?, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
@@ -265,7 +280,7 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
             // OBL-C78: the five values `transfer.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_TRANSFER_NS_V2.to_string(),
-                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, drain_protection_tx_binding(params.tx_nonce)?, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
@@ -286,7 +301,7 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
             // OBL-C78: the five values `lock.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_LOCK_NS_V2.to_string(),
-                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, drain_protection_tx_binding(params.tx_nonce)?, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
@@ -307,7 +322,7 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
             // OBL-C78: the five values `unlock.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_UNLOCK_NS_V2.to_string(),
-                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, drain_protection_tx_binding(params.tx_nonce)?, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
@@ -328,7 +343,7 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
             // OBL-C78: the five values `update_config.zk` instances; see the arm above.
             zk_public_inputs.push((
                 crate::DRAIN_PROTECTION_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2.to_string(),
-                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, params.tx_binding, params.tx_nonce],
+                vec![params.authority_pub_x, params.authority_pub_y, params.authority_nullifier, drain_protection_tx_binding(params.tx_nonce)?, params.tx_nonce],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
@@ -342,12 +357,11 @@ fn drain_protection_exit_get_metadata_v1(
     params: ExitParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // OBL-C78: the pair comes from the call. `exit.zk` derives `tx_binding` from `tx_commitment` and
-    // `tx_nonce` and instances it with `tx_nonce`; this pushed two literal zeros, which no
-    // satisfiable proof can match, so `ExitV1` could not verify as built.
+    // OBL-C78: `exit.zk` instances `[tx_binding, tx_nonce]`; OBL-C198: `tx_binding` is now the host's
+    // derivation over the enclosing transaction, not the caller's `params.tx_binding`.
     zk_public_inputs.push((
         crate::DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V2.to_string(),
-        vec![params.tx_binding, params.tx_nonce],
+        vec![drain_protection_tx_binding(params.tx_nonce)?, params.tx_nonce],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;

@@ -53,15 +53,22 @@ use dwow_contract_test_harness::harness::{
 use dwow_sdk::{
     crypto::{
         pasta_prelude::PrimeField, poseidon_hash, MerkleNode, MerkleTree, Nullifier,
-        MULTISIG_CONTRACT_ID,
+        MULTISIG_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID,
     },
     pasta::pallas,
 };
 // The shared builders (`modules/child_calls.rs`), not a per-spec copy: this spec's own copy is what
 // made the exit's child a zero-value one, and a **zero-value spend is unprovable** (see the header).
-use crate::tests::modules::child_calls::{pn_transfer_child, pn_transfer_payout_child, PnNote};
+use crate::tests::modules::child_calls::{pn_transfer_payout_prepare, pn_transfer_prepare, PnNote};
 use crate::tests::uniform_runner::*;
 use super::helpers::mk_ep;
+
+/// The `ContractCall` a prepared parent or child frames as. `OBL-C198`'s commitment is over the call
+/// set the transaction carries — children first, the parent last, post-order — so the fixture hands
+/// the derivation the same shape the node hashes.
+fn mk_call(cid: dwow_sdk::crypto::ContractId, data: &[u8]) -> dwow_sdk::tx::ContractCall {
+    dwow_sdk::tx::ContractCall { contract_id: cid, data: data.to_vec() }
+}
 
 /// A second group, for `execute_foreign_group`: one member, threshold one, so its approval of the
 /// proposal is a **valid** finalize that the fund must nevertheless refuse.
@@ -85,7 +92,8 @@ struct Approvals {
 }
 
 pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(DrainProtectionHarness::spawn()));
+    let drain_cid = crate::tests::blockchain::derive_contract_id_from_name("drain_protection");
+    let harness = Box::leak(Box::new(DrainProtectionHarness::spawn(drain_cid)));
     let h: &DrainProtectionHarness = harness;
     // Leaked like the contract's harness, and for a reason that shows up in the wall clock: every
     // `spawn` rebuilds the multisig contract's three proving keys, and this spec calls `sign`,
@@ -100,7 +108,7 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
     let approvals: Arc<Mutex<Approvals>> = Arc::new(Mutex::new(Approvals::default()));
     ContractTestSpec {
         name: "drain_protection", is_genesis: false,
-        contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
+        contract_id: drain_cid,
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
@@ -294,13 +302,20 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
             mk_ep("execute", true, Box::new({
                 let approvals = approvals.clone();
                 move || {
-                    let r = h.execute().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    // `OBL-C198`: the parent and its `multisig::FinalizeV1` child are one call set, so
+                    // both proofs bind the commitment over `[child, parent]`.
+                    let parent = h.execute_prepare().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let parent_contract_call = mk_call(drain_cid, &parent.call_data);
                     let a = approvals.lock().unwrap();
-                    let f = ms
-                        .finalize(DrainProtectionHarness::governance_group(), h.proposal_id(), a.governance.clone())
+                    let f_plan = ms
+                        .finalize_prepare(DrainProtectionHarness::governance_group(), h.proposal_id(), a.governance.clone())
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child_contract_call = mk_call(*MULTISIG_CONTRACT_ID, &f_plan.call_data);
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&child_contract_call, &parent_contract_call]);
+                    let f = f_plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let proof = parent.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let child = ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] };
-                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![child], call_data: parent_contract_call.data, proofs: vec![proof] })
                 }
             })),
             // NEGATIVE — the approval is real, and it is someone else's. The foreign group (one
@@ -316,13 +331,18 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let approvals = approvals.clone();
                     move || {
-                        let r = h.execute().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let parent = h.execute_prepare().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let parent_contract_call = mk_call(drain_cid, &parent.call_data);
                         let a = approvals.lock().unwrap();
-                        let f = ms
-                            .finalize(a.foreign_group, h.proposal_id(), a.foreign.clone())
+                        let f_plan = ms
+                            .finalize_prepare(a.foreign_group, h.proposal_id(), a.foreign.clone())
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child_contract_call = mk_call(*MULTISIG_CONTRACT_ID, &f_plan.call_data);
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_contract_call, &parent_contract_call]);
+                        let f = f_plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let proof = parent.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let child = ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] };
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![child], call_data: parent_contract_call.data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -338,20 +358,26 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let approvals = approvals.clone();
                     move || {
-                        let r = h.execute().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let parent = h.execute_prepare().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let parent_contract_call = mk_call(drain_cid, &parent.call_data);
                         let a = approvals.lock().unwrap();
-                        let f = ms
-                            .finalize(DrainProtectionHarness::governance_group(), OTHER_MESSAGE, a.other_message.clone())
+                        let f_plan = ms
+                            .finalize_prepare(DrainProtectionHarness::governance_group(), OTHER_MESSAGE, a.other_message.clone())
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child_contract_call = mk_call(*MULTISIG_CONTRACT_ID, &f_plan.call_data);
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_contract_call, &parent_contract_call]);
+                        let f = f_plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let proof = parent.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let child = ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: f.call_data, proofs: vec![f.proof], children: vec![] };
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![child], call_data: parent_contract_call.data, proofs: vec![proof] })
                     }
                 }),
             },
             mk_ep("exit", true, Box::new({
                 let notes = notes.clone();
                 move || {
-                    let r = h.exit().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let parent = h.exit_prepare().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let parent_contract_call = mk_call(drain_cid, &parent.call_data);
                     let n = notes.lock().unwrap();
                     let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                     // The pool has neither members nor funds — `initialize` stores an empty member
@@ -365,14 +391,19 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                     // the rest returns as change — the only shape that leaves the spent note
                     // non-zero, and therefore the only one that can be proven at all.
                     let blind_seed = poseidon_hash([pallas::Base::zero(), pallas::Base::from(1u64)]);
-                    let child = pn_transfer_payout_child(&n[1], 1000, 0, blind_seed)?;
-                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                    let (child_contract_call, child_plan, child_nonce) = pn_transfer_payout_prepare(&n[1], 1000, 0, blind_seed)?;
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&child_contract_call, &parent_contract_call]);
+                    let child_debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let proof = parent.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_contract_call.data, proofs: child_debris.proofs, children: vec![] };
+                    Ok(EndpointResult { children: vec![child], call_data: parent_contract_call.data, proofs: vec![proof] })
                 }
             })),
             mk_ep("transfer", true, Box::new({
                 let notes = notes.clone();
                 move || {
-                    let r = h.transfer().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let parent = h.transfer_prepare().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let parent_contract_call = mk_call(drain_cid, &parent.call_data);
                     let n = notes.lock().unwrap();
                     let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                     // `transfer_process_instruction_v1` requires exactly one child and checks it
@@ -381,8 +412,12 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                     // here is worth 100, so one input and one output of 100 conserve value with the
                     // shared blind the helper is handed.
                     let blind_seed = poseidon_hash([pallas::Base::from(100u64), pallas::Base::from(1u64)]);
-                    let child = pn_transfer_child(&n[2], 100, blind_seed, pallas::Base::zero())?;
-                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                    let (child_contract_call, child_plan, child_nonce) = pn_transfer_prepare(&n[2], 100, blind_seed, pallas::Base::zero())?;
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&child_contract_call, &parent_contract_call]);
+                    let child_debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let proof = parent.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_contract_call.data, proofs: child_debris.proofs, children: vec![] };
+                    Ok(EndpointResult { children: vec![child], call_data: parent_contract_call.data, proofs: vec![proof] })
                 }
             })),
             // `unlock` before `lock`, and then the control that makes the pair readable. The fund is
@@ -409,16 +444,21 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
-                        let r = h
-                            .transfer_naming(h.proposal_id_of(OTHER_MESSAGE))
+                        let parent = h
+                            .transfer_naming_prepare(h.proposal_id_of(OTHER_MESSAGE))
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let parent_contract_call = mk_call(drain_cid, &parent.call_data);
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(100u64), pallas::Base::from(1u64)]);
                         // The third note. The leaf blind is derived from the spent note inside
-                        // `pn_transfer_child`, so this call site no longer chooses it.
-                        let child = pn_transfer_child(&n[3], 100, blind_seed, pallas::Base::zero())?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        // `pn_transfer_prepare`, so this call site no longer chooses it.
+                        let (child_contract_call, child_plan, child_nonce) = pn_transfer_prepare(&n[3], 100, blind_seed, pallas::Base::zero())?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_contract_call, &parent_contract_call]);
+                        let child_debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let proof = parent.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_contract_call.data, proofs: child_debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data: parent_contract_call.data, proofs: vec![proof] })
                     }
                 }),
             },
