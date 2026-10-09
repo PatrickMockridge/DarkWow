@@ -42,3 +42,4 @@ pub mod tripwire;
 pub mod uncle_minting;
 pub mod wire_format;
 pub mod genesis_contract_ids;
+pub mod stage4_binding_control;

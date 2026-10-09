@@ -485,18 +485,23 @@ pub fn build_fee_collect_tx(
     // length guard in verify_core_tx_with_tables requires proofs.len() ==
     // metadata-call count, and execution pushes one metadata entry per call.
     // UNVERIFIED(F2-4): needs cargo check -p dwowd --lib && cargo test -p dwowd --lib
+    let calls = vec![dwow_sdk::dark_tree::DarkLeaf {
+        data: dwow_sdk::tx::ContractCall {
+            contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+            data: call_data.clone(),
+        },
+        children_indexes: vec![],
+        parent_index: None,
+    }];
+    // `OBL-C198`: the L1 commitment field must equal the derivation over the calls. The witness is
+    // hash-excluded (L1 barrier #1), so `decode_and_reconcile` recomputes it and refuses a
+    // disagreement — a literal zero here is a witness the node throws out (`OBL-C198` stage 3a).
+    let tx_commitment = dwow_core::tx::commitment_of_calls(&calls);
     let core_tx = dwow_core::tx::Transaction {
-        calls: vec![dwow_sdk::dark_tree::DarkLeaf {
-            data: dwow_sdk::tx::ContractCall {
-                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
-                data: call_data.clone(),
-            },
-            children_indexes: vec![],
-            parent_index: None,
-        }],
+        calls,
         proofs: vec![vec![]],
         // Schnorr signatures removed per contract-standards.md §3.
-        tx_commitment: [0u8; 32],
+        tx_commitment,
         nullifiers: vec![nullifier],
     };
 
@@ -547,15 +552,20 @@ pub fn build_uncle_mint_tx(
         buf
     };
 
+    let calls = vec![dwow_sdk::dark_tree::DarkLeaf {
+        data: dwow_sdk::tx::ContractCall {
+            contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+            data: call_data.clone(),
+        },
+        children_indexes: vec![],
+        parent_index: None,
+    }];
+    // `OBL-C198`: the L1 commitment field must equal the derivation over the calls; a literal zero
+    // is a witness `decode_and_reconcile` refuses (stage 3a). The uncle tx *inside an uncle block* is
+    // never verified, but this canonical-block mint is a non-coinbase tx like any other.
+    let tx_commitment = dwow_core::tx::commitment_of_calls(&calls);
     let core_tx = dwow_core::tx::Transaction {
-        calls: vec![dwow_sdk::dark_tree::DarkLeaf {
-            data: dwow_sdk::tx::ContractCall {
-                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
-                data: call_data.clone(),
-            },
-            children_indexes: vec![],
-            parent_index: None,
-        }],
+        calls,
         // Plaintext uncle mint since b6bf44f79 — no ZK proof. The proofs vec
         // still holds one (empty) per-call slot — same shape as
         // `build_fee_collect_tx` above. An empty OUTER vec is not "no proofs";
@@ -563,7 +573,7 @@ pub fn build_uncle_mint_tx(
         // `verify_single_tx` requires proofs.len() == calls.len() and
         // `verify_core_tx_with_tables` requires proofs.len() == zkp_table.len().
         proofs: vec![vec![]],
-        tx_commitment: [0u8; 32],
+        tx_commitment,
         // No nullifier: the canonical miner does not know the uncle miner's spend
         // key, so it cannot compute the note's nullifier. It is revealed at spend
         // (unchanged: this tx has no inputs, so it consumes nothing either).

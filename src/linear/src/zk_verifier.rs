@@ -35,7 +35,9 @@
 
 
 use crate::Transaction as ChainTransaction;
+use dwow_sdk::crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, pasta_prelude::PrimeField, poseidon_hash};
 use dwow_sdk::dark_tree::dark_forest_leaf_vec_integrity_check;
+use dwow_sdk::pasta::pallas;
 
 /// The largest number of calls a transaction may carry.
 ///
@@ -146,6 +148,22 @@ pub fn decode_and_reconcile(
         )));
     }
 
+    // -- `OBL-C198` stage 4's precondition, and it is not optional. --
+    //
+    // `tx_commitment` is part of the witness bundle — proofs, signatures and this field are all
+    // hash-excluded from `tx.hash()` (L1 barrier #1) — so until it is tied to the calls reconciled
+    // above it is a prover-supplied value like any other. `verify_core_tx_with_tables` compares a
+    // proof's published `tx_binding` against the commitment *this* field carries; if the field were
+    // unconstrained, a proof lifted from transaction A would pass by the prover writing A's
+    // commitment here, and the stage-4 check could not fail. The calls are settled one branch up, so
+    // derive the commitment from them — the same `commitment_of_calls` the builder uses, one
+    // derivation, one home — and require agreement.
+    if core_tx.tx_commitment != dwow_core::tx::commitment_of_calls(&core_tx.calls) {
+        return Err(VerifyError::Reconciliation(
+            "witness tx_commitment does not match its own reconciled call set".into(),
+        ));
+    }
+
     Ok(core_tx)
 }
 
@@ -201,6 +219,9 @@ pub enum VerifyError {
     MissingCircuit(String),
     /// A ZK proof did not verify, or a signature was invalid.
     InvalidProof(String),
+    /// A proof's published `tx_binding` does not bind to the enclosing transaction
+    /// (`OBL-C198` stage 4) — the proof was made against a different `tx_commitment`.
+    BindingMismatch(String),
 }
 
 impl std::fmt::Display for VerifyError {
@@ -212,6 +233,7 @@ impl std::fmt::Display for VerifyError {
             Self::StoreRead(msg) => write!(f, "store read: {}", msg),
             Self::MissingCircuit(msg) => write!(f, "missing circuit: {}", msg),
             Self::InvalidProof(msg) => write!(f, "invalid proof: {}", msg),
+            Self::BindingMismatch(msg) => write!(f, "binding mismatch: {}", msg),
         }
     }
 }
@@ -221,6 +243,37 @@ impl std::error::Error for VerifyError {}
 // ---------------------------------------------------------------------------
 // 4. Per-tx verification with accumulated metadata tables
 // ---------------------------------------------------------------------------
+
+/// `OBL-C198` stage 4: does a proof's public-input vector bind it to the transaction that carries it?
+///
+/// Every circuit places the pair last (`scripts/check-circuit-tx-pair-last.sh`, whose exceptions file is
+/// empty), so `pubvals[len-2]`/`[len-1]` is the interface and no per-circuit index map is wanted. Returns
+/// `None` when the published `tx_binding` is exactly `poseidon_hash(DOMAIN_TX_BINDING, tx_commitment,
+/// tx_nonce)`, or the reason it is not. A **named predicate** so that a control can make it fail
+/// (AGENTS.md R8): hand it a commitment the proof was *not* made over and it must report a mismatch.
+fn tx_binding_mismatch(
+    pubvals: &[dwow_sdk::pasta::pallas::Base],
+    tx_commitment: [u8; 32],
+) -> Option<String> {
+    let pair_at = match pubvals.len().checked_sub(2) {
+        Some(p) => p,
+        None => {
+            return Some(
+                "circuit instances no tx pair, so the binding cannot be checked".to_string(),
+            )
+        }
+    };
+    let (tx_binding, tx_nonce) = (pubvals[pair_at], pubvals[pair_at + 1]);
+    let commitment = match pallas::Base::from_repr(tx_commitment).into_option() {
+        Some(c) => c,
+        None => return Some("witness tx_commitment is not a canonical field element".to_string()),
+    };
+    let expected = poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, commitment, tx_nonce]);
+    if expected != tx_binding {
+        return Some("published tx_binding does not bind to the enclosing transaction".to_string());
+    }
+    None
+}
 
 /// Verify the decoded core_tx against the accumulated per-call `metadata()`
 /// tables (see `execute_block`) and the on-chain zkas binaries.
@@ -277,7 +330,20 @@ pub fn verify_core_tx_with_tables(
             let result =
                 dwow_core::zk::verify_zkp(proof_ref, &zkbin, pubvals);
             match result {
-                dwow_core::zk::ZkVerifyResult::Ok => {}
+                dwow_core::zk::ZkVerifyResult::Ok => {
+                    // -- `OBL-C198` stage 4: the proof must bind to the transaction carrying it. --
+                    //
+                    // Reached only on `Ok`, so the refusal is a genuine proof that is *mis-bound*, never a
+                    // malformed one. The commitment compared against is `core_tx.tx_commitment`, which
+                    // `decode_and_reconcile` proved equal to `commitment_of_calls(&core_tx.calls)`, so the
+                    // binding ties the proof to this reconciled call set and not to one the prover chose.
+                    if let Some(reason) = tx_binding_mismatch(pubvals, core_tx.tx_commitment) {
+                        return Err(VerifyError::BindingMismatch(format!(
+                            "call[{}] namespace '{}': {}",
+                            call_i, ns, reason,
+                        )));
+                    }
+                }
                 dwow_core::zk::ZkVerifyResult::InvalidVk
                 | dwow_core::zk::ZkVerifyResult::InvalidProof => {
                     return Err(VerifyError::InvalidProof(format!(
@@ -400,13 +466,12 @@ mod tests {
         }
     }
 
+    /// `tx_commitment` is *derived* from `calls`, not zeroed: `decode_and_reconcile` now requires the
+    /// witness's field to equal `commitment_of_calls(&calls)` (`OBL-C198` stage 4's precondition), so a
+    /// fixture that zeroes it is refused before the structure checks these tests are about ever run.
     fn core_tx_of(calls: Vec<Leaf>) -> dwow_core::tx::Transaction {
-        dwow_core::tx::Transaction {
-            calls,
-            proofs: vec![],
-            tx_commitment: [0u8; 32],
-            nullifiers: vec![],
-        }
+        let tx_commitment = dwow_core::tx::commitment_of_calls(&calls);
+        dwow_core::tx::Transaction { calls, proofs: vec![], tx_commitment, nullifiers: vec![] }
     }
 
     /// F10's witness, with its acceptance control.
@@ -508,14 +573,16 @@ mod tests {
             data: b"data".to_vec(),
         };
 
+        let calls = vec![dwow_sdk::dark_tree::DarkLeaf {
+            data: call.clone(),
+            children_indexes: vec![],
+            parent_index: None,
+        }];
+        let expected_commitment = dwow_core::tx::commitment_of_calls(&calls);
         let core_tx = dwow_core::tx::Transaction {
-            calls: vec![dwow_sdk::dark_tree::DarkLeaf {
-                data: call.clone(),
-                children_indexes: vec![],
-                parent_index: None,
-            }],
+            calls,
             proofs: vec![],
-            tx_commitment: [0u8; 32],
+            tx_commitment: expected_commitment,
             nullifiers: vec![],
         };
 
@@ -533,7 +600,53 @@ mod tests {
         };
 
         let decoded = decode_and_reconcile(&chain_tx).unwrap();
-        assert_eq!(decoded.tx_commitment, [0u8; 32]);
+        assert_eq!(decoded.tx_commitment, expected_commitment);
+    }
+
+    /// `OBL-C198` stage 4's negative control (AGENTS.md R8): the check must be able to fail. A binding
+    /// made over commitment A verifies against A and is **refused** against a different transaction B,
+    /// with the refusal naming the binding rather than the proof.
+    #[test]
+    fn stage_4_refuses_a_binding_made_over_a_different_transaction() {
+        let commitment_a = pallas::Base::from(11u64);
+        let commitment_b = pallas::Base::from(22u64);
+        let nonce = pallas::Base::from(33u64);
+        // The proof's pair as a circuit instances it: binding then nonce, last.
+        let binding_a = poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, commitment_a, nonce]);
+        let pubvals = vec![pallas::Base::from(1u64), binding_a, nonce];
+
+        // Honest: the proof binds the transaction it was made over.
+        assert!(
+            tx_binding_mismatch(&pubvals, commitment_a.to_repr()).is_none(),
+            "a binding over its own transaction must pass",
+        );
+        // Planted defect: the same proof where the enclosing transaction is B.
+        let reason = tx_binding_mismatch(&pubvals, commitment_b.to_repr())
+            .expect("a binding over a different transaction must be refused");
+        assert!(reason.contains("does not bind"), "wrong refusal: {reason}");
+    }
+
+    /// `OBL-C198` stage 4's precondition, with its control: a witness whose `tx_commitment` field does
+    /// not equal `commitment_of_calls` over its own calls is refused — the value the node compares a
+    /// proof's binding against is derived, never the one the prover wrote down.
+    #[test]
+    fn a_witness_whose_commitment_disagrees_with_its_calls_is_refused() {
+        let calls = vec![leaf(1, None, vec![])];
+        let honest = core_tx_of(calls.clone());
+        let witness = dwow_serial::serialize(&honest);
+        decode_and_reconcile(&chain_tx_for(&calls, &witness))
+            .expect("a witness whose commitment matches its calls must reconcile");
+
+        // Planted defect: the field moves, the calls do not.
+        let mut tampered = core_tx_of(calls.clone());
+        tampered.tx_commitment = pallas::Base::from(9u64).to_repr();
+        let witness = dwow_serial::serialize(&tampered);
+        let err = decode_and_reconcile(&chain_tx_for(&calls, &witness))
+            .expect_err("a witness whose commitment disagrees with its calls must be refused");
+        assert!(
+            matches!(err, VerifyError::Reconciliation(ref m) if m.contains("does not match its own reconciled call set")),
+            "wrong rejection: {err:?}",
+        );
     }
 
     #[test]

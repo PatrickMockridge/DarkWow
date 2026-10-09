@@ -133,19 +133,24 @@ impl DwowNode {
             // witness (a proofless submission) reconstructs a proofless core tx,
             // which L2 verification will reject.
             if chain_tx.witness.is_empty() {
+                let calls: Vec<DarkLeaf<ContractCall>> = chain_tx.contract_calls.iter().map(|c| {
+                    DarkLeaf {
+                        data: ContractCall {
+                            contract_id: c.contract_id,
+                            data: c.data.clone(),
+                        },
+                        children_indexes: vec![],
+                        parent_index: None,
+                    }
+                }).collect();
+                // `OBL-C198`: the reconstructed commitment is the derivation over the calls, so a
+                // relaying node that verifies it sees a value that agrees with itself; this tx is
+                // proofless and L2 rejects it, but the field is no longer a lie about the call set.
+                let tx_commitment = dwow_core::tx::commitment_of_calls(&calls);
                 let core_tx = dwow_core::tx::Transaction {
-                    calls: chain_tx.contract_calls.iter().map(|c| {
-                        DarkLeaf {
-                            data: ContractCall {
-                                contract_id: c.contract_id,
-                                data: c.data.clone(),
-                            },
-                            children_indexes: vec![],
-                            parent_index: None,
-                        }
-                    }).collect(),
+                    calls,
                     proofs: vec![],
-                    tx_commitment: [0u8; 32],
+                    tx_commitment,
                     nullifiers: chain_tx.nullifiers.clone(),
                 };
                 self.p2p_handler.p2p.broadcast(&core_tx).await;

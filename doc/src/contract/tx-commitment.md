@@ -89,7 +89,7 @@ Where:
 
 ### Circuit Pattern
 
-Every ZK circuit (127 circuits across all contracts) implements:
+Every ZK circuit (166 across the contracts) implements:
 
 ```zk
 Base tx_commitment;     // private — prover supplies the real commitment
@@ -103,26 +103,34 @@ constrain_instance(tx_nonce);
 
 ### Verification
 
-**Stage 4 is specified here and is NOT implemented.** Read this section as
-the requirement, not as a description of the node. Measured on
-`linear-master @ d775e37c6d` (github issue #3, filed 2026-10-03; register
-`OBL-C198`): of the four stages below, (1) the circuit derivation and (2)
-`metadata()`'s publication exist, (3) proof↔metadata agreement exists in
-`src/linear/src/zk_verifier.rs`, and (4) the check this section describes
-does not exist anywhere — nothing in `zk_verifier.rs` or `execution.rs`
-compares a published `tx_binding` against anything derived from the
-transaction, and no host import exposes `tx_commitment` to WASM at all.
-`core_tx.tx_commitment` *is* in scope at the reconciliation site
-(`zk_verifier.rs:274-289`), so the check is a local addition rather than a
-data-plumbing project. Until it lands, a proof is bound to a
-`tx_commitment` the prover chose, and a proof lifted from one transaction
-verifies in another.
+**All four stages are implemented** (`OBL-C198`, closed 2026-10-09). The
+history is worth keeping: this section previously read *"Stage 4 is specified
+here and is NOT implemented"* — measured on `linear-master @ d775e37c6d`
+(github issue #3, filed 2026-10-03), when a proof was bound to a
+`tx_commitment` the prover chose and a proof lifted from one transaction
+verified in another. Two things closed it, and they are one mechanism.
 
-The node processing a transaction already knows `tx_commitment` (it's in
-the `Transaction` struct). For each proof, the node:
+First, the node **recomputes the commitment from the transaction's own calls**
+and refuses a witness whose `tx_commitment` field disagrees. The field is part
+of the witness bundle — proofs, signatures and `tx_commitment` are all
+hash-excluded from `tx.hash()` (L1 barrier #1) — so without this the value the
+comparison reads is prover-supplied and the comparison below could never fail.
+`decode_and_reconcile` (`src/linear/src/zk_verifier.rs`) requires
+`tx_commitment == commitment_of_calls(&calls)` over the calls it has already
+reconciled against the chain tx.
+
+Second, `verify_core_tx_with_tables` compares each proof's published
+`tx_binding` against that reconciled commitment (`tx_binding_mismatch`), reading
+the pair from the last two instances of the circuit.
+
+The node processing a transaction **recomputes** `tx_commitment` from the
+transaction's reconciled call set (`commitment_of_calls`), and refuses the
+transaction when the witness's own `tx_commitment` field disagrees — the field
+is hash-excluded and would otherwise be the prover's word. With the commitment
+established, for each proof the node:
 
 1. Reads `tx_nonce` from the proof's public inputs
-2. Computes `expected = poseidon_hash(DOMAIN_TX_BINDING, tx.tx_commitment, tx_nonce)`
+2. Computes `expected = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`
 3. Verifies `expected == tx_binding`
 
 If a proof was created for a different transaction, the `tx_commitment`
@@ -165,7 +173,7 @@ verify a hash-preimage relationship.
 | | Before (raw `tx_commitment`) | After (nullifier scheme) |
 |---|---|---|
 | Proofs linkable to same tx? | **Yes** — same `tx_commitment` on all proofs | **No** — different `tx_nonce` per proof, different `tx_binding` |
-| Proof recombination prevented? | No — stage 4 absent (`OBL-C198`) | **Not by this mechanism** — stage 4 is specified and not implemented (`OBL-C198`) |
+| Proof recombination prevented? | No — no node-side check bound a proof to its transaction | **Yes** — the node recomputes the binding from the reconciled commitment and refuses a mismatch (`OBL-C198`) |
 | Additional public inputs per proof | 1 | 2 |
 | Additional circuit constraints | 0 | 1 `poseidon_hash` |
 
@@ -191,14 +199,14 @@ Each contract's ZK circuits and client builders are updated:
 
 ### Circuit Layer
 
-Every `.zk` circuit file (127 across all contracts) includes the
+Every `.zk` circuit file (166 across the contracts) includes the
 `tx_commitment`/`tx_nonce`/`tx_binding` witness declarations and the
-`poseidon_hash` derivation constraint. What the circuit enforces is that
-`tx_binding` is *a* hash of *some* `tx_commitment` the prover supplied —
-**not** that it is the hash of the enclosing transaction's commitment,
-because no node-side check compares the two (`OBL-C198`). The claim that a
-proof deriving its binding from the wrong `tx_commitment` "will not verify"
-is true only once that check exists.
+`poseidon_hash` derivation constraint. What the circuit enforces *on its own*
+is that `tx_binding` is *a* hash of *some* `tx_commitment` the prover supplied
+— not that it is the hash of the enclosing transaction's commitment. That is
+the node's half, and it exists (`OBL-C198`): the node recomputes the expected
+binding from the reconciled commitment and refuses a mismatch, so a proof
+deriving its binding from the wrong `tx_commitment` no longer verifies.
 
 ### Client Layer
 
@@ -228,13 +236,17 @@ Measured 2026-10-04 against `linear-master @ d775e37c6d` (github issue #3,
 register `OBL-C198`). Where a line below describes something that does not
 exist, it says so rather than describing the intent.
 
-- **127 ZK circuits** across all contracts — each derives and instances its
-  `tx_binding`; the binding **binds nothing to the enclosing transaction**
-  until the node-side check exists (see §Verification)
+- **166 ZK circuits** — the corpus `scripts/check-circuit-tx-pair-last.sh`
+  walks (`src/contract/*/proof/*.zk`; twelve more live under `proofs/core` and
+  `bin/darkirc/proof/`) — each derives and instances its `tx_binding`, and the
+  node compares it against the enclosing transaction's reconciled commitment
+  (see §Verification)
 - **~22 contract client crates** — builders compute per-proof binding
-- **Transaction struct** — stores `tx_commitment`. It does **not** provide
+- **Transaction struct** — stores `tx_commitment`, derived by
+  `commitment_of_calls` (`src/tx/mod.rs`). It does **not** provide
   `compute_tx_binding()`: that name exists only as per-contract client
-  helpers, never on `Transaction` (`src/tx/mod.rs`). This scope line
-  claimed otherwise, and no such method was ever there to be called
-- **Execution layer** — does **not** verify per-proof binding against the
-  transaction commitment; that is the missing stage above
+  helpers, never on `Transaction`. This scope line claimed otherwise, and no
+  such method was ever there to be called
+- **Execution layer** — `decode_and_reconcile` requires the witness's
+  `tx_commitment` to equal `commitment_of_calls(&calls)`, and
+  `verify_core_tx_with_tables` verifies per-proof binding against it
