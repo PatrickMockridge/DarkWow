@@ -356,10 +356,10 @@ mod attestation_issue3 {
             create_attestation_v1_proof(zkbin, &pk, &call_data).expect("the client must build a proof");
         let inputs = public_inputs.to_vec();
 
-        assert_eq!(inputs.len(), 4, "create_attestation.zk instances tx_binding, tx_nonce, and \
-                                     the two attestor coordinates");
-        assert_eq!(inputs[2], ax);
-        assert_eq!(inputs[3], ay);
+        assert_eq!(inputs.len(), 4, "create_attestation.zk instances the two attestor coordinates \
+                                     and then the tx pair (the pair is last, OBL-C198)");
+        assert_eq!(inputs[0], ax);
+        assert_eq!(inputs[1], ay);
 
         match verify_zkp(&proof, CREATE_ATTESTATION, &inputs) {
             ZkVerifyResult::Ok => {}
@@ -371,7 +371,7 @@ mod attestation_issue3 {
         // coordinates unconstrained would accept this, which is the forgery.
         let victim = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(11u64)));
         let (vx, vy) = victim.xy().expect("pk not identity");
-        let forged = [inputs[0], inputs[1], vx, vy];
+        let forged = [vx, vy, inputs[2], inputs[3]];
         match verify_zkp(&proof, CREATE_ATTESTATION, &forged) {
             ZkVerifyResult::Ok => panic!(
                 "create_attestation's proof verifies under the instance vector of a DIFFERENT \
@@ -435,7 +435,7 @@ mod attestation_issue3 {
         // to the key: a different attestor's instance vector must not verify.
         let victim = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(11u64)));
         let (vx, vy) = victim.xy().expect("pk not identity");
-        match verify_zkp(&proof, REVOKE, &[inputs[0], inputs[1], vx, vy]) {
+        match verify_zkp(&proof, REVOKE, &[vx, vy, inputs[2], inputs[3]]) {
             ZkVerifyResult::Ok => panic!(
                 "revoke_attestation's proof verifies under another attestor's coordinates — the \
                  public-against-public check this circuit replaced."
@@ -465,9 +465,9 @@ mod attestation_issue3 {
         let (proof, public_inputs) =
             expire_attestation_v1_proof(zkbin, &pk, &call_data).expect("the client must build a proof");
         let inputs = public_inputs.to_vec();
-        assert_eq!(inputs.len(), 4, "expire_attestation.zk instances the tx pair and the two attestor coordinates");
-        assert_eq!(inputs[2], ax);
-        assert_eq!(inputs[3], ay);
+        assert_eq!(inputs.len(), 4, "expire_attestation.zk instances the two attestor coordinates and then the tx pair");
+        assert_eq!(inputs[0], ax);
+        assert_eq!(inputs[1], ay);
 
         match verify_zkp(&proof, EXPIRE, &inputs) {
             ZkVerifyResult::Ok => {}
@@ -476,7 +476,7 @@ mod attestation_issue3 {
 
         let victim = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(11u64)));
         let (vx, vy) = victim.xy().expect("pk not identity");
-        match verify_zkp(&proof, EXPIRE, &[inputs[0], inputs[1], vx, vy]) {
+        match verify_zkp(&proof, EXPIRE, &[vx, vy, inputs[2], inputs[3]]) {
             ZkVerifyResult::Ok => panic!(
                 "expire_attestation's proof verifies under another attestor's coordinates — any \
                  party could expire any attestation, which is the hole this circuit closed."
@@ -509,9 +509,9 @@ mod attestation_issue3 {
         let (proof, public_inputs) =
             update_delegation_v1_proof(zkbin, &pk, &call_data).expect("the client must build a proof");
         let inputs = public_inputs.to_vec();
-        assert_eq!(inputs.len(), 4, "update_delegation.zk instances tx_binding, tx_nonce and the two delegator coordinates");
-        assert_eq!(inputs[2], dx);
-        assert_eq!(inputs[3], dy);
+        assert_eq!(inputs.len(), 4, "update_delegation.zk instances the two delegator coordinates and then the tx pair");
+        assert_eq!(inputs[0], dx);
+        assert_eq!(inputs[1], dy);
 
         match verify_zkp(&proof, UPDATE_DELEGATION, &inputs) {
             ZkVerifyResult::Ok => {}
@@ -520,7 +520,7 @@ mod attestation_issue3 {
 
         let victim = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(11u64)));
         let (vx, vy) = victim.xy().expect("pk not identity");
-        match verify_zkp(&proof, UPDATE_DELEGATION, &[inputs[0], inputs[1], vx, vy]) {
+        match verify_zkp(&proof, UPDATE_DELEGATION, &[vx, vy, inputs[2], inputs[3]]) {
             ZkVerifyResult::Ok => panic!(
                 "update_delegation's proof verifies under another delegator's coordinates — the arm \
                  authorized no one before this."
@@ -549,8 +549,8 @@ mod attestation_issue3 {
             Witness::Base(Value::known(pallas::Base::zero())),
             Witness::Base(Value::known(txb)),
         ];
-        // Circuit constrain_instance order: tx_binding, tx_nonce, attester_pub_x, attester_pub_y
-        let publics = vec![txb, pallas::Base::zero(), ax, ay];
+        // Circuit constrain_instance order: attester_pub_x, attester_pub_y, tx_binding, tx_nonce
+        let publics = vec![ax, ay, txb, pallas::Base::zero()];
         let circuit = ZkCircuit::new(witnesses, zkbin);
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
         let proof = Proof::create(&pk, &[circuit], &publics, &mut rng)
