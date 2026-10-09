@@ -31,7 +31,7 @@ witness "RegisterOracleV2" {
 }
 
 circuit "RegisterOracleV2" {
-    DOMAIN_TX_BINDING = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
     # The operator commitment has its OWN domain rather than the generic DOMAIN_COMMITMENT.
     # Sharing one made `oracle_commitment` constructibly equal to any other three-argument hash
     # over prover-chosen elements in the same circuit (OBL-Z19, inherited from OBL-Z9). The value

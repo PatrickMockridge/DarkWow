@@ -141,14 +141,14 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 /// The nonce stays the call's own. These calls carry one, so unlike the other contracts in this
 /// campaign a per-proof nonce is available rather than owed, and the binding is not shared between
 /// a transaction's proofs.
-/// `domain` is the **circuit's own** `DOMAIN_TX_BINDING`, and it is a parameter rather than a
-/// constant in here because oracle does not use one value: `register_oracle.zk` derives with
-/// `witness_base(1)` and the other five with `witness_base(3)`, and their clients agree with them
-/// respectively. A helper that hardcoded 3 would publish `poseidon(3, …)` for a circuit that
-/// constrains `poseidon(1, …)`, which is a proof the verifier refuses — and the two sides are in
-/// different files, so it is only visible by reading both.
-pub fn oracle_tx_binding(domain: Base, tx_nonce: Base) -> Result<Base, ContractError> {
-    Ok(poseidon_hash([domain, wasm::util::get_tx_commitment()?, tx_nonce]))
+///
+/// `DOMAIN_TX_BINDING` is the shared constant `3` on **all six** oracle circuits. `register_oracle.zk`
+/// used `witness_base(1)` — the nullifier domain — where the other five and the rest of the tree use
+/// 3; the arm mirrored it, so the arm's proof was accepted while the binding bound nothing a node
+/// could recompute. The node-side check (`OBL-C198`) derives one binding from the enclosing
+/// transaction, so the register circuit was corrected to 3 rather than the node taught a set of two.
+pub fn oracle_tx_binding(tx_nonce: Base) -> Result<Base, ContractError> {
+    Ok(poseidon_hash([Base::from(3u64), wasm::util::get_tx_commitment()?, tx_nonce]))
 }
 
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
@@ -177,7 +177,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             // Circuit constrain_instance: oracle_id, oracle_commitment, tx_binding, tx_nonce
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V2.to_string(),
-                vec![params.oracle_id.inner(), params.oracle_commitment, oracle_tx_binding(Base::from(1u64), params.tx_nonce)?, params.tx_nonce],
+                vec![params.oracle_id.inner(), params.oracle_commitment, oracle_tx_binding(params.tx_nonce)?, params.tx_nonce],
             ));
         }
         OracleFunction::PushValueV1 => {
@@ -193,7 +193,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.oracle_commitment,
                     params.value,
                     params.nullifier,
-                    oracle_tx_binding(Base::from(3u64), params.tx_nonce)?,
+                    oracle_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             ));
@@ -213,7 +213,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     Base::from(params.predicate as u64),
                     params.threshold,
                     params.nullifier,
-                    oracle_tx_binding(Base::from(3u64), params.tx_nonce)?,
+                    oracle_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             ));
@@ -231,7 +231,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.oracle_commitment,
                     params.commitment,
                     params.nullifier,
-                    oracle_tx_binding(Base::from(3u64), params.tx_nonce)?,
+                    oracle_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             ));
@@ -251,7 +251,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.min_result,
                     params.max_result,
                     params.nullifier,
-                    oracle_tx_binding(Base::from(3u64), params.tx_nonce)?,
+                    oracle_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             ));
@@ -268,7 +268,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.oracle_id.inner(),
                     params.oracle_commitment,
                     Base::from(params.is_active as u64),
-                    oracle_tx_binding(Base::from(3u64), params.tx_nonce)?,
+                    oracle_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             ));

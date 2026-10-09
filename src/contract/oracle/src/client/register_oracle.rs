@@ -77,8 +77,8 @@ impl RegisterOracleV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> RegisterOracleV1PublicInputs {
-        // Circuit: DOMAIN_TX_BINDING = witness_base(1) = 1
-        let tx_binding = poseidon_hash([pallas::Base::from(1u64), self.tx_commitment, self.tx_nonce]);
+        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = DRK_POSEIDON_DOMAIN_TX_BINDING
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         RegisterOracleV1PublicInputs {
             oracle_id: self.oracle_id,
             oracle_commitment: self.compute_commitment(),
@@ -88,8 +88,8 @@ impl RegisterOracleV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        // Circuit: DOMAIN_TX_BINDING = witness_base(1) = 1
-        let tx_binding = poseidon_hash([pallas::Base::from(1u64), self.tx_commitment, self.tx_nonce]);
+        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = DRK_POSEIDON_DOMAIN_TX_BINDING
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
             // Circuit order: oracle_secret(0), oracle_id(1),
             //   tx_commitment(2), tx_nonce(3), tx_binding(4)
