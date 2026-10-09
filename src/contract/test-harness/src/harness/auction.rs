@@ -136,13 +136,15 @@ impl AuctionHarness {
         current_block: u64,
         seller_public: PublicKey,
     ) -> Result<CreateAuctionResult, Box<dyn std::error::Error>> {
+        // `OBL-C212`: the V2 circuit witnesses `block_height` (the block the proof is made in — the
+        // entrypoint stores it as `created_at`) and a per-auction `nonce`, and hashes both into
+        // `auction_id`; `item_commitment`/`reserve_price`/`deadline_block` are wire fields, not
+        // witnesses.
         let input = CreateAuctionV1CallData::new(
             seller_secret,
-            item_commitment,
-            pallas::Base::from(reserve_price),
             asset_id,
-            pallas::Base::from(deadline_block),
             pallas::Base::from(current_block),
+            pallas::Base::zero(),
             seller_public,
         );
 

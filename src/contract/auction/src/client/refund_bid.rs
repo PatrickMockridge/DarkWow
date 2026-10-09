@@ -90,13 +90,13 @@ impl RefundBidV1CallData {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         vec![
-            // Must match circuit witness order:
-            // bid_id, bidder_secret, bidder_pub_x, bidder_pub_y
+            // `refund_bid.zk` witness declaration order:
+            // bid_id, bidder_pub_x, bidder_pub_y, bidder_secret, tx_commitment, tx_nonce, tx_binding
             // (refund_nullifier is computed by the circuit)
             Witness::Base(Value::known(self.bid_id)),
-            Witness::Base(Value::known(self.bidder_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
+            Witness::Base(Value::known(self.bidder_secret)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding

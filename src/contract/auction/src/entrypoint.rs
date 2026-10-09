@@ -45,7 +45,7 @@
 //! - Seller settles to receive the winning bid amount
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, pasta_prelude::PrimeField, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta,
@@ -168,13 +168,24 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 
 /// `get_metadata` for CreateAuctionV1
+/// `OBL-C198`: every auction arm published the constant `poseidon_hash([3, 0, 0])` — a value no node
+/// could recompute from the transaction carrying the proof. Each derives now, over the host's
+/// `get_tx_commitment`. The nonce is the call's own and is zero for these endpoints.
+fn auction_tx_binding() -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        wasm::util::get_tx_commitment()?,
+        pallas::Base::zero(),
+    ]))
+}
+
 fn create_auction_get_metadata_v1(params: CreateAuctionParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[auction::create_auction_get_metadata_v1] Creating auction: {:?}", params.auction_id);
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
-        vec![params.auction_id, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+        vec![params.auction_id, auction_tx_binding()?, pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -189,7 +200,7 @@ fn place_bid_get_metadata_v1(params: PlaceBidParamsV1) -> Result<Vec<u8>, Contra
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V2.to_string(),
-        vec![params.bid_id, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+        vec![params.bid_id, auction_tx_binding()?, pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -204,7 +215,7 @@ fn close_auction_get_metadata_v1(params: CloseAuctionParamsV1) -> Result<Vec<u8>
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_CLOSE_NS_V2.to_string(),
-        vec![poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+        vec![auction_tx_binding()?, pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -219,7 +230,7 @@ fn claim_winnings_get_metadata_v1(params: ClaimWinningsParamsV1) -> Result<Vec<u
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V2.to_string(),
-        vec![poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+        vec![auction_tx_binding()?, pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -234,7 +245,7 @@ fn settle_auction_get_metadata_v1(params: SettleAuctionParamsV1) -> Result<Vec<u
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_SETTLE_NS_V2.to_string(),
-        vec![params.settlement_nullifier, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+        vec![params.settlement_nullifier, auction_tx_binding()?, pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -249,7 +260,7 @@ fn refund_bid_get_metadata_v1(params: RefundBidParamsV1) -> Result<Vec<u8>, Cont
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V2.to_string(),
-        vec![params.refund_nullifier, poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), pallas::Base::zero()],
+        vec![params.refund_nullifier, auction_tx_binding()?, pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];

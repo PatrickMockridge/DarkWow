@@ -104,15 +104,13 @@ impl CloseAuctionV1CallData {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.seller_public.xy().expect("pk not identity");
         vec![
-            // Must match circuit witness order:
-            // auction_id, seller_secret, winner_bid_id, auction_deadline, current_block, seller_pub_x, seller_pub_y
+            // `close_auction.zk` witness declaration order:
+            // auction_id, seller_pub_x, seller_pub_y, seller_secret, tx_commitment, tx_nonce,
+            // tx_binding
             Witness::Base(Value::known(self.auction_id)),
-            Witness::Base(Value::known(self.seller_secret)),
-            Witness::Base(Value::known(self.winner_bid_id)),
-            Witness::Base(Value::known(self.auction_deadline)),
-            Witness::Base(Value::known(self.current_block)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
+            Witness::Base(Value::known(self.seller_secret)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding

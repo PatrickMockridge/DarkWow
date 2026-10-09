@@ -117,17 +117,19 @@ impl PlaceBidV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+        let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         vec![
-            // Must match circuit witness declaration order:
-            // auction_id, bidder_secret, amount, bid_nonce, auction_deadline,
-            // current_block, current_high_bid
+            // `place_bid.zk` witness declaration order:
+            // auction_id, bidder_pub_x, bidder_pub_y, bidder_secret, amount, nonce,
+            // block_height, tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.auction_id)),
+            Witness::Base(Value::known(ix)),
+            Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.bidder_secret)),
             Witness::Base(Value::known(self.amount)),
             Witness::Base(Value::known(self.bid_nonce)),
-            Witness::Base(Value::known(self.auction_deadline)),
             Witness::Base(Value::known(self.current_block)),
-            Witness::Base(Value::known(self.current_high_bid)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding

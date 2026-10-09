@@ -54,11 +54,13 @@ impl CreateAuctionV1PublicInputs {
 #[derive(Debug, Clone)]
 pub struct CreateAuctionV1CallData {
     pub seller_secret: pallas::Base,
-    pub item_commitment: pallas::Base,
-    pub reserve_price: pallas::Base,
     pub asset_id: pallas::Base,
-    pub deadline_block: pallas::Base,
-    pub current_block: pallas::Base,
+    /// The block the proof is made in — `create_auction.zk` witnesses it as `block_height` and hashes
+    /// it into `auction_id`, and the entrypoint reads the same value as `created_at`
+    /// (`get_verifying_block_height`).
+    pub block_height: pallas::Base,
+    /// A per-auction nonce, witnessed by the circuit and hashed into `auction_id`.
+    pub nonce: pallas::Base,
     // Public inputs
     pub seller_public: PublicKey,
     pub tx_commitment: pallas::Base,
@@ -68,20 +70,16 @@ pub struct CreateAuctionV1CallData {
 impl CreateAuctionV1CallData {
     pub fn new(
         seller_secret: pallas::Base,
-        item_commitment: pallas::Base,
-        reserve_price: pallas::Base,
         asset_id: pallas::Base,
-        deadline_block: pallas::Base,
-        current_block: pallas::Base,
+        block_height: pallas::Base,
+        nonce: pallas::Base,
         seller_public: PublicKey,
     ) -> Self {
         Self {
             seller_secret,
-            item_commitment,
-            reserve_price,
             asset_id,
-            deadline_block,
-            current_block,
+            block_height,
+            nonce,
             seller_public,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
@@ -92,7 +90,7 @@ impl CreateAuctionV1CallData {
     pub fn compute_seller_commitment(&self) -> pallas::Base {
         #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
         let (ix, iy) = self.seller_public.xy().expect("pk not identity");
-        poseidon_hash([pallas::Base::from(7u64), ix, iy])
+        poseidon_hash([pallas::Base::from(4u64), ix, iy])
     }
 
     /// Compute auction ID from auction parameters
@@ -103,10 +101,9 @@ impl CreateAuctionV1CallData {
             pallas::Base::from(4u64),
             ix,
             iy,
-            self.item_commitment,
-            self.reserve_price,
             self.asset_id,
-            self.deadline_block,
+            self.block_height,
+            self.nonce,
         ])
     }
 
@@ -120,16 +117,18 @@ impl CreateAuctionV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
+        let (ix, iy) = self.seller_public.xy().expect("pk not identity");
         vec![
-            // Must match circuit witness order:
-            // seller_secret, item_commitment, reserve_price, asset_id, deadline_block, current_block
-            // (auction_id and seller_commitment are computed by the circuit)
+            // `create_auction.zk` witness order:
+            // seller_pub_x, seller_pub_y, seller_secret, asset_id, block_height, nonce,
+            // tx_commitment, tx_nonce, tx_binding
+            Witness::Base(Value::known(ix)),
+            Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.seller_secret)),
-            Witness::Base(Value::known(self.item_commitment)),
-            Witness::Base(Value::known(self.reserve_price)),
             Witness::Base(Value::known(self.asset_id)),
-            Witness::Base(Value::known(self.deadline_block)),
-            Witness::Base(Value::known(self.current_block)),
+            Witness::Base(Value::known(self.block_height)),
+            Witness::Base(Value::known(self.nonce)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]))), // tx_binding
