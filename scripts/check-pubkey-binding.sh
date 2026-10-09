@@ -54,14 +54,20 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Staleness is decidable only over the whole corpus: a run given specific files walks a subset,
+# so every declaration whose site was not among them would look stale. `check-circuit-tx-pair-last.sh`
+# records the same bug and gates its own stale check on `ALL == "1"`; the pre-commit hook runs this
+# checker on the staged files, so without the gate every partial `.zk` commit is a false block.
 if [ "$#" -eq 0 ] || [ "$1" = "--all" ]; then
+    ALL=1
     TARGETS=()
     while IFS= read -r f; do TARGETS+=("$f"); done < <(cd "$REPO_ROOT" && ls src/contract/*/proof/*.zk proofs/core/*.zk bin/darkirc/proof/*.zk 2>/dev/null)
 else
+    ALL=0
     TARGETS=("$@")
 fi
 
-REPO_ROOT="$REPO_ROOT" python3 - "${TARGETS[@]}" <<'PYEOF'
+REPO_ROOT="$REPO_ROOT" ALL="$ALL" python3 - "${TARGETS[@]}" <<'PYEOF'
 import os, re, sys
 
 repo = os.environ["REPO_ROOT"]
@@ -194,7 +200,8 @@ for rel, lineno, pair, reason in excepted:
     print(f"EXCEPTED: {rel}:{lineno}: {pair}")
     print(f"          {reason}")
 
-if stale:
+# Only a full scan can decide staleness — see the `ALL` comment above the scan-set selection.
+if stale and os.environ.get("ALL") == "1":
     print(f"FAIL: {len(stale)} declared exception(s) match no finding — the entry is covering nothing:")
     for path, eq in stale:
         print(f"  {path} : {eq}")

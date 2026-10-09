@@ -63,6 +63,11 @@ fi
 # every commit is how a hook gets disabled — and a disabled hook is worse than a quiet one.
 if [ "$STATUS" -ne 0 ]; then
     echo ""
+    # The evidence, not the success-path summary: the message below says "the lines above name
+    # them", and the success summarisation (which deliberately suppresses the 52 adjudicated
+    # entries) must not also swallow the failure's own findings. Start at the first FAIL line.
+    printf '%s\n' "$OUT" | sed -n '/^FAIL/,$p'
+    echo ""
     echo "BLOCKED: unexcepted vacuous binding(s) — the lines above name them."
     echo "  A constrain_equal_base whose two sides are both prover-chosen proves nothing: the"
     echo "  equality holds for any witness, so the verifier learns nothing from it."
