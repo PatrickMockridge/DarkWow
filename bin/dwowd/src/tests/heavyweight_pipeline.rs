@@ -984,7 +984,7 @@ fn test_recruitment_pipeline_call_data() -> std::result::Result<(), Box<dyn std:
         let _id_contract_id = *dwow_sdk::crypto::IDENTITY_CONTRACT_ID;  // deployed at genesis
 
         // Deploy Labor Market (with milestone_payment binary now registered)
-        let lm_harness = LaborMarketHarness::spawn();
+        let lm_harness = LaborMarketHarness::spawn(crate::tests::blockchain::derive_contract_id_from_name("labor_market"));
         println!("LaborMarket harness: {:?}", lm_harness.circuits());
         let lm_wasm = include_bytes!("../../../../src/contract/labor_market/dwow_labor_market_contract.wasm");
         let _lm_contract_id = chain.deploy(&lm_harness, "labor_market", lm_wasm).await?;

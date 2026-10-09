@@ -65,7 +65,7 @@ fn test_all_harnesses_zk_coverage() {
     zk_check_with_id!(GameRoomHarness, "game_room");
     zk_check_with_id!(IdentityHarness, "identity");
     zk_check_with_id!(InsuranceMarketHarness, "insurance_market");
-    zk_check!(LaborMarketHarness, "labor_market");
+    zk_check_with_id!(LaborMarketHarness, "labor_market");
     zk_check!(LotteryHarness, "lottery");
     zk_check!(MultiSigHarness, "multisig");
     zk_check!(NativeTokenHarness, "native_token");

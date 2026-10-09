@@ -230,7 +230,6 @@ fn test_job_with_capability_encoding() {
 #[test]
 fn test_create_job_params_encoding() {
     let params = CreateJobParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         employer_pub_x: pallas::Base::from(2),
         employer_pub_y: pallas::Base::from(3),
@@ -240,7 +239,6 @@ fn test_create_job_params_encoding() {
         payment_token: pallas::Base::from(1),
         payment_commit_x: pallas::Base::from(5),
         payment_commit_y: pallas::Base::from(6),
-        tx_binding: pallas::Base::from(7),
         tx_nonce: pallas::Base::from(8),
     };
 
@@ -255,12 +253,10 @@ fn test_create_job_params_encoding() {
 #[test]
 fn test_accept_job_params_encoding() {
     let params = AcceptJobParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         worker_pub_x: pallas::Base::from(2),
         worker_pub_y: pallas::Base::from(3),
         spent_nullifier: pallas::Base::from(4),
-        tx_binding: pallas::Base::from(5),
         tx_nonce: pallas::Base::from(6),
     };
 
@@ -274,13 +270,11 @@ fn test_accept_job_params_encoding() {
 #[test]
 fn test_submit_deliverable_params_encoding() {
     let params = SubmitDeliverableParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         claim_id: pallas::Base::from(2),
         worker_pub_x: pallas::Base::from(3),
         worker_pub_y: pallas::Base::from(4),
         spent_nullifier: pallas::Base::from(5),
-        tx_binding: pallas::Base::from(6),
         tx_nonce: pallas::Base::from(7),
     };
 
@@ -295,13 +289,11 @@ fn test_submit_deliverable_params_encoding() {
 #[test]
 fn test_submit_git_deliverable_params_encoding() {
     let params = SubmitGitDeliverableParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         claim_id: pallas::Base::from(2),
         worker_pub_x: pallas::Base::from(3),
         worker_pub_y: pallas::Base::from(4),
         spent_nullifier: pallas::Base::from(5),
-        tx_binding: pallas::Base::from(6),
         tx_nonce: pallas::Base::from(7),
     };
 
@@ -315,12 +307,10 @@ fn test_submit_git_deliverable_params_encoding() {
 #[test]
 fn test_confirm_delivery_params_encoding() {
     let params = ConfirmDeliveryParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         employer_pub_x: pallas::Base::from(2),
         employer_pub_y: pallas::Base::from(3),
         spent_nullifier: pallas::Base::from(4),
-        tx_binding: pallas::Base::from(5),
         tx_nonce: pallas::Base::from(6),
     };
 
@@ -334,14 +324,12 @@ fn test_confirm_delivery_params_encoding() {
 #[test]
 fn test_dispute_params_encoding() {
     let params = DisputeParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         disputer_pub_x: pallas::Base::from(2),
         disputer_pub_y: pallas::Base::from(3),
         dao_escrow_bulla: pallas::Base::from(4),
         spent_nullifier: pallas::Base::from(5),
         dispute_reason_hash: pallas::Base::from(6),
-        tx_binding: pallas::Base::from(7),
         tx_nonce: pallas::Base::from(8),
     };
 
@@ -355,7 +343,6 @@ fn test_dispute_params_encoding() {
 #[test]
 fn test_refund_params_encoding() {
     let params = RefundParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         employer_pub_x: pallas::Base::from(2),
         employer_pub_y: pallas::Base::from(3),
@@ -363,7 +350,6 @@ fn test_refund_params_encoding() {
         completed_payment: 500,
         refund_amount: 500,
         spent_nullifier: pallas::Base::from(4),
-        tx_binding: pallas::Base::from(5),
         tx_nonce: pallas::Base::from(6),
     };
 
@@ -377,7 +363,6 @@ fn test_refund_params_encoding() {
 #[test]
 fn test_cancel_job_params_encoding() {
     let params = CancelJobParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         employer_pub_x: pallas::Base::from(2),
         employer_pub_y: pallas::Base::from(3),
@@ -393,7 +378,6 @@ fn test_cancel_job_params_encoding() {
 #[test]
 fn test_create_job_with_milestones_params_encoding() {
     let params = CreateJobWithMilestonesParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         employer_pub_x: pallas::Base::from(2),
         employer_pub_y: pallas::Base::from(3),
@@ -428,7 +412,6 @@ fn test_create_job_with_milestones_params_encoding() {
                 completed_at_block: None,
             },
         ],
-        tx_binding: pallas::Base::from(7),
         tx_nonce: pallas::Base::from(8),
     };
 
@@ -443,14 +426,12 @@ fn test_create_job_with_milestones_params_encoding() {
 #[test]
 fn test_submit_milestone_deliverable_params_encoding() {
     let params = SubmitMilestoneDeliverableParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         milestone_index: 1,
         claim_id: pallas::Base::from(2),
         worker_pub_x: pallas::Base::from(3),
         worker_pub_y: pallas::Base::from(4),
         spent_nullifier: pallas::Base::from(5),
-        tx_binding: pallas::Base::from(6),
         tx_nonce: pallas::Base::from(7),
     };
 
@@ -465,14 +446,12 @@ fn test_submit_milestone_deliverable_params_encoding() {
 #[test]
 fn test_confirm_milestone_params_encoding() {
     let params = ConfirmMilestoneParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         milestone_index: 0,
         employer_pub_x: pallas::Base::from(2),
         employer_pub_y: pallas::Base::from(3),
         payment_release: 1000,
         spent_nullifier: pallas::Base::from(4),
-        tx_binding: pallas::Base::from(5),
         tx_nonce: pallas::Base::from(6),
     };
 
@@ -487,7 +466,6 @@ fn test_confirm_milestone_params_encoding() {
 #[test]
 fn test_initiate_dispute_params_encoding() {
     let params = InitiateDisputeParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         milestone_index: 1,
         disputer_pub_x: pallas::Base::from(2),
@@ -495,7 +473,6 @@ fn test_initiate_dispute_params_encoding() {
         dao_escrow_bulla: pallas::Base::from(4),
         spent_nullifier: pallas::Base::from(5),
         dispute_reason_hash: pallas::Base::from(6),
-        tx_binding: pallas::Base::from(7),
         tx_nonce: pallas::Base::from(8),
     };
 
@@ -510,7 +487,6 @@ fn test_initiate_dispute_params_encoding() {
 #[test]
 fn test_create_job_with_capability_params_encoding() {
     let params = CreateJobWithCapabilityParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         employer_pub_x: pallas::Base::from(2),
         employer_pub_y: pallas::Base::from(3),
@@ -535,7 +511,6 @@ fn test_create_job_with_capability_params_encoding() {
 #[test]
 fn test_accept_job_with_capability_params_encoding() {
     let params = AcceptJobWithCapabilityParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         worker_pub_x: pallas::Base::from(2),
         worker_pub_y: pallas::Base::from(3),
@@ -543,7 +518,6 @@ fn test_accept_job_with_capability_params_encoding() {
         capability_proof: vec![4, 5, 6],
         capability_secret: [7u8; 32],
         spent_nullifier: pallas::Base::from(11),
-        tx_binding: pallas::Base::from(12),
         tx_nonce: pallas::Base::from(13),
     };
 
@@ -557,7 +531,6 @@ fn test_accept_job_with_capability_params_encoding() {
 #[test]
 fn test_create_job_with_milestones_and_capability_params_encoding() {
     let params = CreateJobWithMilestonesAndCapabilityParamsV1 {
-        proof: vec![1, 2, 3],
         job_id: pallas::Base::from(1),
         employer_pub_x: pallas::Base::from(2),
         employer_pub_y: pallas::Base::from(3),

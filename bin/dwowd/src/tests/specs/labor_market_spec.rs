@@ -103,7 +103,8 @@ const CLAIM_EVIDENCE: pallas::Base = pallas::Base::from_raw([50, 0, 0, 0]);
 /// from that proof's own public inputs; writing them by hand would be five constants the host
 /// compares against the proof and rejects the row for, which reads as a contract failure.
 ///
-/// Returned with the proof because the runner submits both: `is_zk` is true for this endpoint.
+/// Returned with the prepared plan (`OBL-C198`): the row proves it over the frame of the whole call
+/// set — this milestone-create call plus whatever children the row carries.
 fn milestones_create_call(
     h: &LaborMarketHarness,
     employer_secret: pallas::Base,
@@ -112,19 +113,19 @@ fn milestones_create_call(
     job_id: pallas::Base,
     payment_amount: u64,
     milestones: Vec<dwow_labor_market_contract::model::Milestone>,
-) -> dwow_core::Result<(Vec<u8>, dwow_core::zk::Proof)> {
-    let r = h.create_job(
+) -> dwow_core::Result<(Vec<u8>, dwow_contract_test_harness::harness::labor_market::CreateJobPlan)> {
+    let plan = h.create_job_prepare(
         employer_secret, employer_pub, attestation_id, job_id, 0, payment_amount,
         pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64),
     ).map_err(|e| dwow_core::Error::Custom(format!("create_job (milestones proof): {e}")))?;
+    let pi = plan.public_inputs();
     let milestone_count = u32::try_from(milestones.len())
         .map_err(|_| dwow_core::Error::Custom("too many milestones for a u32 count".into()))?;
     let params = dwow_labor_market_contract::model::CreateJobWithMilestonesParamsV1 {
-        proof: r.proof.as_ref().to_vec(),
         job_id,
-        employer_pub_x: r.public_inputs.employer_pub_x,
-        employer_pub_y: r.public_inputs.employer_pub_y,
-        attestation_id: r.public_inputs.attestation_id,
+        employer_pub_x: pi.employer_pub_x,
+        employer_pub_y: pi.employer_pub_y,
+        attestation_id: pi.attestation_id,
         delivery_type: 0,
         payment_amount,
         payment_token: pallas::Base::from(1u64),
@@ -133,13 +134,15 @@ fn milestones_create_call(
         deadline_block: MILESTONE_DEADLINE,
         milestone_count,
         milestones,
-        tx_binding: r.public_inputs.tx_binding,
-        tx_nonce: r.public_inputs.tx_nonce,
+        tx_nonce: pi.tx_nonce,
     };
     let mut call_data = vec![0x08u8];
     call_data.extend_from_slice(&params.encode()
         .map_err(|e| dwow_core::Error::Custom(format!("encode: {e}")))?);
-    Ok((call_data, r.proof))
+    // `OBL-C198`: the proof is made by the caller over the frame of **this** call set (the
+    // milestone-create call plus whatever children the row carries) — not over the `create_job`
+    // call whose circuit it shares.
+    Ok((call_data, plan))
 }
 
 /// The milestone list both milestone creates use: `count` milestones of `MILESTONE_PAYMENT`.
@@ -229,6 +232,17 @@ fn parent_call(data: &[u8]) -> dwow_sdk::tx::ContractCall {
         contract_id: crate::tests::blockchain::derive_contract_id_from_name("labor_market"),
         data: data.to_vec(),
     }
+}
+
+/// The frame commitment over the calls a transaction will carry — the children in DFS post-order,
+/// then the parent last (`OBL-C198`). This is exactly the derivation `prove_pn_child_in_frame`
+/// (:198) and `prove_attestation_child_in_frame` (:311) hash for a child, and the order
+/// `pn_and_siblings` (:244) returns (`[pn_child, …siblings]`); a parent's proof must bind the same
+/// value over the same order.
+fn frame_of(children: &[ChildCall], parent_data: &[u8]) -> pallas::Base {
+    let mut calls: Vec<dwow_sdk::tx::ContractCall> = children.iter().map(frame_call).collect();
+    calls.push(parent_call(parent_data));
+    dwow_sdk::crypto::util::tx_commitment(calls.iter())
 }
 
 /// The frame's children: the `promissory_note` transfer this parent requires, proven over the frame,
@@ -360,7 +374,9 @@ fn capability_child_prepare(
 }
 
 pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
-    let harness = Box::leak(Box::new(LaborMarketHarness::spawn()));
+    let harness = Box::leak(Box::new(LaborMarketHarness::spawn(
+        crate::tests::blockchain::derive_contract_id_from_name("labor_market"),
+    )));
     let h: &LaborMarketHarness = harness;
     // Leaked, and for the reason `dao_escrow_spec.rs:217-221` gives: `spawn` rebuilds proving keys, and
     // this fixture's `setup` runs twice — once per chain — while the rows build children from both.
@@ -788,10 +804,12 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     .ok_or_else(|| dwow_core::Error::Custom("setup did not run".into()))?;
                 // The blind the parent re-derives: `poseidon_hash([payment_amount, job_id])`.
                 let blind = child_blind(PAYMENT, job_id);
-                let r = h.create_job(employer_secret, employer_pub, attestation_id, job_id, 0, PAYMENT, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult {
-                    children: pn_and_siblings(&note, PAYMENT, blind, vec![attestation_child(attestation_id)], &r.call_data)?,
-                    call_data: r.call_data, proofs: vec![r.proof] })
+                let plan = h.create_job_prepare(employer_secret, employer_pub, attestation_id, job_id, 0, PAYMENT, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let call_data = plan.call_data.clone();
+                let children = pn_and_siblings(&note, PAYMENT, blind, vec![attestation_child(attestation_id)], &call_data)?;
+                let frame = frame_of(&children, &call_data);
+                let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children, call_data: r.call_data, proofs: vec![r.proof] })
             }})),
             // **A second job, and the reason is measured rather than anticipated.** `SubmitDeliverableV1`
             // and `SubmitGitDeliverableV1` both require `JobState::InProgress` and both set `Delivered`,
@@ -810,10 +828,12 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     // this fixture's block 24 — while its sibling `submit_deliverable_v1` accepts only
                     // Generic. So the two deliverable rows differ in the *job they act on* as well as the
                     // claim they verify, which is why this job carries the type in its name.
-                    let r = h.create_job(employer_secret, employer_pub, attestation_id, job_id_git, 1, PAYMENT, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult {
-                        children: pn_and_siblings(&note, PAYMENT, blind, vec![attestation_child(attestation_id)], &r.call_data)?,
-                        call_data: r.call_data, proofs: vec![r.proof] })
+                    let plan = h.create_job_prepare(employer_secret, employer_pub, attestation_id, job_id_git, 1, PAYMENT, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let call_data = plan.call_data.clone();
+                    let children = pn_and_siblings(&note, PAYMENT, blind, vec![attestation_child(attestation_id)], &call_data)?;
+                    let frame = frame_of(&children, &call_data);
+                    let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children, call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
             // ── `CancelJobV1`'s pair: the job, and the cancel (`OBL-C189`) ──
@@ -836,10 +856,12 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     let note = more.lock().ok().and_then(|g| g.get(5).cloned())
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
                     let blind = child_blind(PAYMENT, cancel_job_id);
-                    let r = h.create_job(employer_secret, employer_pub, attestation_id, cancel_job_id, 0, PAYMENT, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult {
-                        children: pn_and_siblings(&note, PAYMENT, blind, vec![attestation_child(attestation_id)], &r.call_data)?,
-                        call_data: r.call_data, proofs: vec![r.proof] })
+                    let plan = h.create_job_prepare(employer_secret, employer_pub, attestation_id, cancel_job_id, 0, PAYMENT, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let call_data = plan.call_data.clone();
+                    let children = pn_and_siblings(&note, PAYMENT, blind, vec![attestation_child(attestation_id)], &call_data)?;
+                    let frame = frame_of(&children, &call_data);
+                    let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children, call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
             // **This row is the pair that pins the class, and it is the one row whose seed is the same
@@ -871,7 +893,6 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
                     let (ex, ey) = employer_pub.xy().ok_or_else(|| dwow_core::Error::Custom("employer pk is identity".into()))?;
                     let params = dwow_labor_market_contract::model::CancelJobParamsV1 {
-                        proof: vec![],
                         job_id: cancel_job_id,
                         employer_pub_x: ex,
                         employer_pub_y: ey,
@@ -894,28 +915,31 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("SubmitDeliverableV1", true, Box::new(move || {
-                let r = h.submit_deliverable(worker_secret, worker_pub, job_id, claim_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let plan = h.submit_deliverable_prepare(worker_secret, worker_pub, job_id, claim_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let call_data = plan.call_data.clone();
                 // `OBL-C198`: prepared, then proven over the frame — see `verify_claim_child_prepare`.
                 let (att_call, att_plan) = verify_claim_child_prepare(claim_id, attestation_id)?;
-                let att_child = prove_attestation_child_in_frame(att_call, att_plan, &r.call_data)?;
-                Ok(EndpointResult {
-                    children: vec![att_child],
-                    call_data: r.call_data, proofs: vec![r.proof] })
+                let att_child = prove_attestation_child_in_frame(att_call, att_plan, &call_data)?;
+                let frame = frame_of(std::slice::from_ref(&att_child), &call_data);
+                let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![att_child], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("SubmitGitDeliverableV1", true, Box::new(move || {
-                let r = h.submit_git_deliverable(worker_secret, worker_pub, job_id_git, claim_id_git).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let plan = h.submit_git_deliverable_prepare(worker_secret, worker_pub, job_id_git, claim_id_git).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let call_data = plan.call_data.clone();
                 let (att_call, att_plan) = verify_claim_child_prepare(claim_id_git, attestation_id)?;
-                let att_child = prove_attestation_child_in_frame(att_call, att_plan, &r.call_data)?;
-                Ok(EndpointResult {
-                    children: vec![att_child],
-                    call_data: r.call_data, proofs: vec![r.proof] })
+                let att_child = prove_attestation_child_in_frame(att_call, att_plan, &call_data)?;
+                let frame = frame_of(std::slice::from_ref(&att_child), &call_data);
+                let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![att_child], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("ConfirmDeliveryV1", true, Box::new({
                 let more = more_notes.clone();
                 move || {
                     let note = more.lock().ok().and_then(|g| g.get(0).cloned())
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
-                    let r = h.confirm_delivery(employer_secret, employer_pub, job_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let plan = h.confirm_delivery_prepare(employer_secret, employer_pub, job_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let call_data = plan.call_data.clone();
                     // **The parent's derivation, which is the job's and not the call's:**
                     // `poseidon_hash([job.payment_amount, params.job_id])` — this endpoint's seed is
                     // `create_job_v1`'s, the record-keyed pair, and `child_blind` is the fixture's single
@@ -926,9 +950,10 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     // child spends (`OBL-C192`'s unit A). The proof's `spent_nullifier` is no longer read
                     // here; it is still what the endpoint's `spent_flags` check enforces.
                     let blind = child_blind(PAYMENT, job_id);
-                    Ok(EndpointResult {
-                        children: pn_and_siblings(&note, PAYMENT, blind, vec![], &r.call_data)?,
-                        call_data: r.call_data, proofs: vec![r.proof] })
+                    let children = pn_and_siblings(&note, PAYMENT, blind, vec![], &call_data)?;
+                    let frame = frame_of(&children, &call_data);
+                    let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children, call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
             // **It acts on the git job, not the first one, and that is a correction this fixture
@@ -942,17 +967,19 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 move || {
                     let note = more.lock().ok().and_then(|g| g.get(1).cloned())
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
-                    let r = h.refund(job_id_git, employer_secret, 1, 2500, 2500, 5000, 200, 5000, employer_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let plan = h.refund_prepare(job_id_git, employer_secret, 1, 2500, 2500, 5000, 200, 5000, employer_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let call_data = plan.call_data.clone();
                     // **The blind is derived from the harness's own output, not guessed.** The parent
                     // computes `poseidon_hash([params.refund_amount, params.spent_nullifier])`, and
                     // `spent_nullifier` is produced by the proof — so the only place a caller can read
                     // it is the client's public inputs, which is what this is.
                     let blind = poseidon_hash([
-                        pallas::Base::from(2500u64), r.public_inputs.spent_nullifier,
+                        pallas::Base::from(2500u64), plan.public_inputs().spent_nullifier,
                     ]);
-                    Ok(EndpointResult {
-                        children: pn_and_siblings(&note, 2500, blind, vec![], &r.call_data)?,
-                        call_data: r.call_data, proofs: vec![r.proof] })
+                    let children = pn_and_siblings(&note, 2500, blind, vec![], &call_data)?;
+                    let frame = frame_of(&children, &call_data);
+                    let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children, call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
             // ── The writer: the only endpoint that can give a job a capability requirement ──
@@ -980,7 +1007,6 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (caps)".into()))?;
                     let (ex, ey) = employer_pub.xy().ok_or_else(|| dwow_core::Error::Custom("employer pk is identity".into()))?;
                     let params = dwow_labor_market_contract::model::CreateJobWithCapabilityParamsV1 {
-                        proof: vec![],
                         job_id: cap_job_id,
                         employer_pub_x: ex,
                         employer_pub_y: ey,
@@ -1035,17 +1061,14 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         // `OBL-C198`: prepared first, proven after the parent, over the ordered set
                         // the node hashes (child first, this call last).
                         let (child_call, child_plan) = capability_child_prepare(&s, s.credential_secret_b, s.cap_b.inner(), s.schema_b)?;
-                        let r = h.accept_job_with_capability(worker_secret, worker_pub, cap_job_id, pallas::Base::from(1u64), cap_proof.clone(), cap_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        let job_call = dwow_sdk::tx::ContractCall {
-                            contract_id: crate::tests::blockchain::derive_contract_id_from_name("labor_market"),
-                            data: r.call_data.clone(),
-                        };
+                        let plan = h.accept_job_with_capability_prepare(worker_secret, worker_pub, cap_job_id, pallas::Base::from(1u64), cap_proof.clone(), cap_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
+                        let job_call = parent_call(&call_data);
                         let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &job_call]);
                         let v = child_plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("verify_capability B: {e}")))?;
+                        let r = plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let child = ChildCall { contract_id: *IDENTITY_CONTRACT_ID, call_data: v.call_data, proofs: vec![v.proof], children: vec![] };
-                        Ok(EndpointResult {
-                            children: vec![child],
-                            call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 })),
             // ── THE POSITIVE CASE, and the control for the row above: the same frame with the
@@ -1060,17 +1083,14 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (caps)".into()))?;
                     // `OBL-C198`: prepared first, proven after the parent — see the row above.
                     let (child_call, child_plan) = capability_child_prepare(&s, s.credential_secret_a, s.cap_a.inner(), s.schema_a)?;
-                    let r = h.accept_job_with_capability(worker_secret, worker_pub, cap_job_id, pallas::Base::from(1u64), cap_proof.clone(), cap_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let job_call = dwow_sdk::tx::ContractCall {
-                        contract_id: crate::tests::blockchain::derive_contract_id_from_name("labor_market"),
-                        data: r.call_data.clone(),
-                    };
+                    let plan = h.accept_job_with_capability_prepare(worker_secret, worker_pub, cap_job_id, pallas::Base::from(1u64), cap_proof.clone(), cap_secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let call_data = plan.call_data.clone();
+                    let job_call = parent_call(&call_data);
                     let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &job_call]);
                     let v = child_plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("verify_capability A: {e}")))?;
+                    let r = plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let child = ChildCall { contract_id: *IDENTITY_CONTRACT_ID, call_data: v.call_data, proofs: vec![v.proof], children: vec![] };
-                    Ok(EndpointResult {
-                        children: vec![child],
-                        call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
             // ── `OBL-C96`'s control for the **sum** invariant, and it is the negative half: the row
@@ -1097,20 +1117,21 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let note = more.lock().ok().and_then(|g| g.get(7).cloned())
                             .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
-                        let (call_data, proof) = milestones_create_call(
+                        let (call_data, plan) = milestones_create_call(
                             h, employer_secret, employer_pub, attestation_id, ms_job_id,
                             MS_JOB_PAYMENT, milestones_of(1),
                         )?;
                         let blind = child_blind(MS_JOB_PAYMENT, ms_job_id);
-                        Ok(EndpointResult {
-                            // **And this row's first failure was itself instructive**: it carried an
-                            // `attestation_child` sibling beside the transfer, which
-                            // `create_job_with_milestones_v1` refuses with `InvalidChildrenIndexes`
-                            // (`Custom(31)`) *before* the sum comparison is reached — the milestone
-                            // create requires **exactly one** child, unlike `create_job_v1`, which
-                            // requires two. Corrected: one child, so the refusal can only be the sum's.
-                            children: pn_and_siblings(&note, MS_JOB_PAYMENT, blind, vec![], &call_data)?,
-                            call_data, proofs: vec![proof] })
+                        // **And this row's first failure was itself instructive**: it carried an
+                        // `attestation_child` sibling beside the transfer, which
+                        // `create_job_with_milestones_v1` refuses with `InvalidChildrenIndexes`
+                        // (`Custom(31)`) *before* the sum comparison is reached — the milestone
+                        // create requires **exactly one** child, unlike `create_job_v1`, which
+                        // requires two. Corrected: one child, so the refusal can only be the sum's.
+                        let children = pn_and_siblings(&note, MS_JOB_PAYMENT, blind, vec![], &call_data)?;
+                        let frame = frame_of(&children, &call_data);
+                        let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult { children, call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -1133,14 +1154,15 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 move || {
                     let note = more.lock().ok().and_then(|g| g.get(7).cloned())
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
-                    let (call_data, proof) = milestones_create_call(
+                    let (call_data, plan) = milestones_create_call(
                         h, employer_secret, employer_pub, attestation_id, ms_job_id,
                         MS_JOB_PAYMENT, milestones_of(2),
                     )?;
                     let blind = child_blind(MS_JOB_PAYMENT, ms_job_id);
-                    Ok(EndpointResult {
-                        children: pn_and_siblings(&note, MS_JOB_PAYMENT, blind, vec![], &call_data)?,
-                        call_data, proofs: vec![proof] })
+                    let children = pn_and_siblings(&note, MS_JOB_PAYMENT, blind, vec![], &call_data)?;
+                    let frame = frame_of(&children, &call_data);
+                    let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children, call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
             // **`OBL-C190`'s negative control, and the same frame with exactly one thing changed: the
@@ -1154,11 +1176,13 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             // child check is reached before the job-exists check.
             mk_ep_rejecting_naming("CreateJobWithMilestonesV1_NoChild", true, &["ContractError(Custom(31))"],
                 Box::new(move || {
-                    let (call_data, proof) = milestones_create_call(
+                    let (call_data, plan) = milestones_create_call(
                         h, employer_secret, employer_pub, attestation_id, ms_job_id,
                         MS_JOB_PAYMENT, milestones_of(2),
                     )?;
-                    Ok(EndpointResult { children: vec![], call_data, proofs: vec![proof] })
+                    let frame = frame_of(&[], &call_data);
+                    let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 })),
             mk_ep("AcceptJobV1_Milestones", true, Box::new(move || {
                 let r = h.accept_job(worker_secret, worker_pub, ms_job_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -1173,12 +1197,13 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             // `InProgress`, `Generic` and to carry a `VerifyClaimV1` child — all three of which this job
             // and `claim_id_ms` supply.
             mk_ep("SubmitDeliverableV1_Milestones", true, Box::new(move || {
-                let r = h.submit_deliverable(worker_secret, worker_pub, ms_job_id, claim_id_ms).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let plan = h.submit_deliverable_prepare(worker_secret, worker_pub, ms_job_id, claim_id_ms).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let call_data = plan.call_data.clone();
                 let (att_call, att_plan) = verify_claim_child_prepare(claim_id_ms, attestation_id)?;
-                let att_child = prove_attestation_child_in_frame(att_call, att_plan, &r.call_data)?;
-                Ok(EndpointResult {
-                    children: vec![att_child],
-                    call_data: r.call_data, proofs: vec![r.proof] })
+                let att_child = prove_attestation_child_in_frame(att_call, att_plan, &call_data)?;
+                let frame = frame_of(std::slice::from_ref(&att_child), &call_data);
+                let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { children: vec![att_child], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             // **The two rows that could not pass now can, and this is the first of them (`OBL-C170`).**
             // It acts on `ms_job_id`, whose two milestones `CreateJobWithMilestonesV1` made; the handler
@@ -1234,14 +1259,16 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         let note = more.lock().ok().and_then(|g| g.get(9).cloned())
                             .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
                         let wrong = MILESTONE_PAYMENT + 1;
-                        let r = h.confirm_milestone(employer_secret, employer_pub, ms_job_id, 1, wrong, wrong).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let plan = h.confirm_milestone_prepare(employer_secret, employer_pub, ms_job_id, 1, wrong, wrong).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
                         // The parent's own seed: `poseidon_hash([payment_release, spent_nullifier])`.
                         let blind = poseidon_hash([
-                            pallas::Base::from(wrong), r.public_inputs.spent_nullifier,
+                            pallas::Base::from(wrong), plan.public_inputs().spent_nullifier,
                         ]);
-                        Ok(EndpointResult {
-                            children: pn_and_siblings(&note, wrong, blind, vec![], &r.call_data)?,
-                            call_data: r.call_data, proofs: vec![r.proof] })
+                        let children = pn_and_siblings(&note, wrong, blind, vec![], &call_data)?;
+                        let frame = frame_of(&children, &call_data);
+                        let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult { children, call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -1250,13 +1277,15 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                 move || {
                     let note = more.lock().ok().and_then(|g| g.get(2).cloned())
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (notes)".into()))?;
-                    let r = h.confirm_milestone(employer_secret, employer_pub, ms_job_id, 1, MILESTONE_PAYMENT, MILESTONE_PAYMENT).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let plan = h.confirm_milestone_prepare(employer_secret, employer_pub, ms_job_id, 1, MILESTONE_PAYMENT, MILESTONE_PAYMENT).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let call_data = plan.call_data.clone();
                     let blind = poseidon_hash([
-                        pallas::Base::from(MILESTONE_PAYMENT), r.public_inputs.spent_nullifier,
+                        pallas::Base::from(MILESTONE_PAYMENT), plan.public_inputs().spent_nullifier,
                     ]);
-                    Ok(EndpointResult {
-                        children: pn_and_siblings(&note, MILESTONE_PAYMENT, blind, vec![], &r.call_data)?,
-                        call_data: r.call_data, proofs: vec![r.proof] })
+                    let children = pn_and_siblings(&note, MILESTONE_PAYMENT, blind, vec![], &call_data)?;
+                    let frame = frame_of(&children, &call_data);
+                    let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children, call_data: r.call_data, proofs: vec![r.proof] })
                 }
             })),
             // ── `OBL-C190`'s other repaired endpoint, and the note on the one above carries the
@@ -1277,7 +1306,6 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         .ok_or_else(|| dwow_core::Error::Custom("setup did not run (caps)".into()))?;
                     let (ex, ey) = employer_pub.xy().ok_or_else(|| dwow_core::Error::Custom("employer pk is identity".into()))?;
                     let params = dwow_labor_market_contract::model::CreateJobWithMilestonesAndCapabilityParamsV1 {
-                        proof: vec![],
                         job_id: ms_cap_job_id,
                         employer_pub_x: ex,
                         employer_pub_y: ey,
@@ -1310,7 +1338,6 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                             .ok_or_else(|| dwow_core::Error::Custom("setup did not run (caps)".into()))?;
                         let (ex, ey) = employer_pub.xy().ok_or_else(|| dwow_core::Error::Custom("employer pk is identity".into()))?;
                         let params = dwow_labor_market_contract::model::CreateJobWithMilestonesAndCapabilityParamsV1 {
-                            proof: vec![],
                             job_id: ms_cap_job_id,
                             employer_pub_x: ex,
                             employer_pub_y: ey,
@@ -1380,13 +1407,15 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                         contract_id: crate::tests::blockchain::derive_contract_id_from_name("dao_escrow"),
                         data: plan_pc.call_data.clone(),
                     };
-                    let r = h.dispute(cap_job_id, worker_secret, pallas::Base::from(99u64), endowment_bulla, worker_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    let lm_call = parent_call(&r.call_data);
+                    let plan = h.dispute_prepare(cap_job_id, worker_secret, pallas::Base::from(99u64), endowment_bulla, worker_pub).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let call_data = plan.call_data.clone();
+                    let lm_call = parent_call(&call_data);
                     let commitment = dwow_sdk::crypto::util::tx_commitment([&ms_call, &pc_call, &lm_call]);
                     let f = plan_f.prove(commitment)
                         .map_err(|e| dwow_core::Error::Custom(format!("finalize prove: {e}")))?;
                     let pc = plan_pc.prove(commitment)
                         .map_err(|e| dwow_core::Error::Custom(format!("propose_claim prove: {e}")))?;
+                    let r = plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult {
                         children: vec![ChildCall {
                             contract_id: crate::tests::blockchain::derive_contract_id_from_name("dao_escrow"),

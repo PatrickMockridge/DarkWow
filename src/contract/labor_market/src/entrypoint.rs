@@ -43,7 +43,7 @@
 //! - **Git**: Worker submits `commit_hash` as proof of work
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_TX_BINDING, pasta_prelude::PrimeField, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta,
@@ -190,6 +190,21 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 // METADATA (ZK proof verification)
 // ============================================================================
 
+/// `OBL-C198`: the binding every arm below publishes is the host's derivation over the enclosing
+/// transaction, not the value the caller put in the call data. Each arm read `params.tx_binding` —
+/// a caller-supplied field republished as though it pinned the call to a transaction, which
+/// `OBL-C152`'s public-value-checked-against-a-public-value shape names. The commitment comes from
+/// the host (`get_tx_commitment`) and never from the call data, because the commitment covers the
+/// call data and a binding carried inside it would be a cycle with no fixed point. The nonce stays
+/// the call's own, so the helper takes it.
+fn labor_market_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
+    Ok(poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        wasm::util::get_tx_commitment()?,
+        tx_nonce,
+    ]))
+}
+
 /// Fetch metadata for ZK proof verification
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
@@ -205,15 +220,16 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             // Circuit `CreateJobV2` constrain_instance (5), in order: employer_pub_x,
             // employer_pub_y, attestation_id, tx_binding, tx_nonce. The tx pair was missing
             // entirely, so the vector the verifier used was shorter than the circuit's instance
-            // list and no proof could verify (register OBL-C78). Both are now carried in params —
-            // get_metadata is a pure echo, so the host publishes them rather than recomputing.
+            // list and no proof could verify (register OBL-C78). `tx_nonce` is carried in params;
+            // `tx_binding` is derived here (`OBL-C198`), because a binding echoed from the call data
+            // pins nothing.
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V2.to_string(),
                 vec![
                     params.employer_pub_x,
                     params.employer_pub_y,
                     params.attestation_id,
-                    params.tx_binding,
+                    labor_market_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             )];
@@ -234,7 +250,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.job_id,
                     params.worker_pub_x,
                     params.worker_pub_y,
-                    params.tx_binding,
+                    labor_market_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             )];
@@ -255,7 +271,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.job_id,
                     params.worker_pub_x,
                     params.worker_pub_y,
-                    params.tx_binding,
+                    labor_market_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             )];
@@ -274,7 +290,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.job_id,
                     params.worker_pub_x,
                     params.worker_pub_y,
-                    params.tx_binding,
+                    labor_market_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             )];
@@ -293,7 +309,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.job_id,
                     params.employer_pub_x,
                     params.employer_pub_y,
-                    params.tx_binding,
+                    labor_market_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             )];
@@ -316,7 +332,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.disputer_pub_x,
                     params.disputer_pub_y,
                     params.dispute_reason_hash,
-                    params.tx_binding,
+                    labor_market_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             )];
@@ -339,7 +355,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.employer_pub_x,
                     params.employer_pub_y,
                     pallas::Base::from(params.refund_amount),
-                    params.tx_binding,
+                    labor_market_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             )];
@@ -370,7 +386,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.employer_pub_x,
                     params.employer_pub_y,
                     params.attestation_id,
-                    params.tx_binding,
+                    labor_market_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             )];
@@ -390,7 +406,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.job_id,
                     params.worker_pub_x,
                     params.worker_pub_y,
-                    params.tx_binding,
+                    labor_market_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             )];
@@ -417,7 +433,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.employer_pub_x,
                     params.employer_pub_y,
                     pallas::Base::from(params.payment_release),
-                    params.tx_binding,
+                    labor_market_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             )];
@@ -439,7 +455,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.disputer_pub_x,
                     params.disputer_pub_y,
                     params.dispute_reason_hash,
-                    params.tx_binding,
+                    labor_market_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             )];
@@ -473,7 +489,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.worker_pub_x,
                     params.worker_pub_y,
                     params.required_capability_id,
-                    params.tx_binding,
+                    labor_market_tx_binding(params.tx_nonce)?,
                     params.tx_nonce,
                 ],
             )];
