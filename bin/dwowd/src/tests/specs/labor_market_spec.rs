@@ -1122,16 +1122,15 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                             MS_JOB_PAYMENT, milestones_of(1),
                         )?;
                         let blind = child_blind(MS_JOB_PAYMENT, ms_job_id);
-                        // **And this row's first failure was itself instructive**: it carried an
-                        // `attestation_child` sibling beside the transfer, which
-                        // `create_job_with_milestones_v1` refuses with `InvalidChildrenIndexes`
-                        // (`Custom(31)`) *before* the sum comparison is reached — the milestone
-                        // create requires **exactly one** child, unlike `create_job_v1`, which
-                        // requires two. Corrected: one child, so the refusal can only be the sum's.
+                        // `milestones_create_call` returns **two** call datas: its own — the
+                        // milestone-create call (`0x08`) — and the `plan`'s, which is the
+                        // `CreateJobV2` circuit's call (`create_job_v1`, `0x00`). The row submits the
+                        // helper's; using the plan's would put a `create_job_v1` in the frame, and
+                        // that arm requires **two** children where this one requires one.
                         let children = pn_and_siblings(&note, MS_JOB_PAYMENT, blind, vec![], &call_data)?;
                         let frame = frame_of(&children, &call_data);
                         let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        Ok(EndpointResult { children, call_data: r.call_data, proofs: vec![r.proof] })
+                        Ok(EndpointResult { children, call_data, proofs: vec![r.proof] })
                     }
                 }),
             },
@@ -1162,7 +1161,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     let children = pn_and_siblings(&note, MS_JOB_PAYMENT, blind, vec![], &call_data)?;
                     let frame = frame_of(&children, &call_data);
                     let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { children, call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children, call_data, proofs: vec![r.proof] })
                 }
             })),
             // **`OBL-C190`'s negative control, and the same frame with exactly one thing changed: the
@@ -1182,7 +1181,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
                     )?;
                     let frame = frame_of(&[], &call_data);
                     let r = plan.prove(frame).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                    Ok(EndpointResult { children: vec![], call_data, proofs: vec![r.proof] })
                 })),
             mk_ep("AcceptJobV1_Milestones", true, Box::new(move || {
                 let r = h.accept_job(worker_secret, worker_pub, ms_job_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
