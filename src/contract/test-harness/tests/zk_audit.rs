@@ -74,7 +74,7 @@ fn test_all_harnesses_zk_coverage() {
     zk_check_with_id!(PoolStakeHarness, "pool_stake");
     zk_check!(PromissoryNoteHarness, "promissory_note");
     zk_check_with_id!(PurseHarness, "purse");
-    zk_check!(RelayerEndowmentHarness, "relayer_endowment");
+    zk_check_with_id!(RelayerEndowmentHarness, "relayer_endowment");
     zk_check_with_id!(RouletteHarness, "roulette");
     zk_check_with_id!(SlotHarness, "slot");
     zk_check_with_id!(StablecoinHarness, "stablecoin");
