@@ -16,8 +16,10 @@
 #
 # WHAT A PASS DOES NOT MEAN, stated because the register's own discipline is that a gate says what it
 # is narrower than. It does not mean the cited file is the *right* file; it does not mean the file's
-# contents, line numbers or function names are as the row describes (line suffixes are stripped, and no
-# symbol is checked); it does not mean the row's proposition is true or that its "Enforced at" site
+# contents, line numbers or function names are as the row describes (the `:line` suffix is used only as
+# a *coarse existence bound* — `line_gone` flags a citation past the file's end — and no symbol is
+# checked, so a line that exists does not mean the code on it is the row's); it does not mean the row's
+# proposition is true or that its "Enforced at" site
 # enforces anything; and it does not mean every citation was examined — bare filenames, crate-relative
 # paths and non-path identifiers are residue by construction (see the extraction rules below). This
 # guards the form "this file exists here", which is the form that failed.
@@ -40,6 +42,7 @@
 # Usage:
 #   scripts/check-register-artifacts.sh                  # HEAD, the committed register
 #   scripts/check-register-artifacts.sh --working-tree   # check against uncommitted files too (authoring)
+#   scripts/check-register-artifacts.sh --self-test      # negative control (planted bad citations)
 #   REGISTER=<path> scripts/check-register-artifacts.sh  # check a specific register copy (negative control)
 #
 # Exit 0: every in-scope citation resolves. Exit 1: at least one finding, each printed as
@@ -52,9 +55,26 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 MODE="head"
 case "${1:-}" in
+  --self-test)
+    # The negative control (F-199): a citation to a file that does not exist, and one whose line suffix
+    # is past the file's end, must each fire. A temp register, so the shared tree is untouched.
+    tmp=$(mktemp -d)
+    printf '| OBL-C999 | **OPEN** | planted | `src/no_such_file_xyz.rs` | planted | M | planted |\n' \
+      > "$tmp/a.md"
+    if REGISTER="$tmp/a.md" bash "$0" >/dev/null 2>&1; then
+      echo "FAIL: --self-test planted a nonexistent-path citation and the gate passed"; rm -rf "$tmp"; exit 1
+    fi
+    echo "OK: --self-test — a citation to a file that does not exist fails the gate"
+    printf '| OBL-C998 | **OPEN** | planted | `src/tx/mod.rs:999999` | planted | M | planted |\n' \
+      > "$tmp/b.md"
+    if REGISTER="$tmp/b.md" bash "$0" >/dev/null 2>&1; then
+      echo "FAIL: --self-test planted a line past EOF and the gate passed"; rm -rf "$tmp"; exit 1
+    fi
+    echo "OK: --self-test — a citation past the file's end fails the gate"
+    rm -rf "$tmp"; exit 0 ;;
   --working-tree) MODE="work" ;;
   "") ;;
-  *) echo "usage: $0 [--working-tree]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--working-tree|--self-test]" >&2; exit 2 ;;
 esac
 
 REPO_ROOT="$REPO_ROOT" MODE="$MODE" python3 - <<'PYEOF'

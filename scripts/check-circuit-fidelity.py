@@ -52,6 +52,7 @@ one thing worse than a red gate is a green one that checked nothing.
 Usage:
     python3 scripts/check-circuit-fidelity.py            # table + verdict
     python3 scripts/check-circuit-fidelity.py --quiet     # only failures
+    python3 scripts/check-circuit-fidelity.py --self-test  # negative control (no compiler needed)
 """
 import importlib.util
 import os
@@ -122,7 +123,43 @@ def compiled_facts(zkas, path, tmp):
     return len(OPCODE_RE.findall(out)), ns.group(1)
 
 
+def fidelity_failures(src_n, src_name, bin_n, bin_name, rel):
+    """The two comparisons, extracted so the self-test can plant a drift (F-128)."""
+    out = []
+    if src_n != bin_n:
+        out.append(f"{rel}: source has {src_n} `constrain_instance`, the compiled circuit has "
+                   f"{bin_n} `ConstrainInstance`")
+    if src_name != bin_name:
+        out.append(f"{rel}: source's circuit is {src_name!r}, the compiled circuit's namespace is "
+                   f"{bin_name!r}")
+    return out
+
+
+def self_test():
+    """The negative control OBL-Z22 names (F-128): a planted drift must fire.
+
+    This exercises the comparison, not the compiler — the compiler's own absence is already a
+    failure in `main`, and a control that needed a working `zkas` could not run where the gate is
+    reddest.
+    """
+    problems = []
+    if not fidelity_failures(2, "A", 3, "A", "x.zk"):
+        problems.append("a count drift (2 vs 3) did not fire")
+    if not fidelity_failures(2, "A", 2, "B", "x.zk"):
+        problems.append("a name drift (A vs B) did not fire")
+    if fidelity_failures(2, "A", 2, "A", "x.zk"):
+        problems.append("a matching pair fired — the detector would red every run")
+    if problems:
+        for p in problems:
+            print(f"{RED}FAIL:{NC} self-test: {p}", file=sys.stderr)
+        return 1
+    print(f"{GREEN}OK:{NC}  self-test: a count drift, a name drift and a matching pair behave")
+    return 0
+
+
 def main():
+    if "--self-test" in sys.argv:
+        return self_test()
     quiet = "--quiet" in sys.argv
     ner = checker()
     zkas = find_zkas()
@@ -144,12 +181,7 @@ def main():
                 failures.append(f"{rel}: {e}")
                 continue
             checked += 1
-            if src_n != bin_n:
-                failures.append(f"{rel}: source has {src_n} `constrain_instance`, the compiled "
-                                f"circuit has {bin_n} `ConstrainInstance`")
-            if src_name != bin_name:
-                failures.append(f"{rel}: source's circuit is {src_name!r}, the compiled circuit's "
-                                f"namespace is {bin_name!r}")
+            failures.extend(fidelity_failures(src_n, src_name, bin_n, bin_name, rel))
             if not quiet and src_n == bin_n and src_name == bin_name:
                 print(f"  ok  {rel:58s} {src_n:3d} constrain_instance = {bin_n:3d} ConstrainInstance")
 

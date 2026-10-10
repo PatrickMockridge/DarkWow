@@ -37,12 +37,38 @@
 # — the declared absence is about these two files, which is where the selection logic lives.
 #
 # Usage: scripts/check-wallet-kernel.sh
+#        scripts/check-wallet-kernel.sh --self-test   (planted bespoke path; non-zero exit)
 # Exit status: 1 on a second bespoke path, or on the declared absence going stale; 0 otherwise.
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="${WALLET_KERNEL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$ROOT"
+
+# The negative control (F-198): the gate's own claim — "a second bespoke path fails it" — is a claim
+# until something can make it fail. A planted bespoke scan function must red the tree; removing it must
+# clear it. Built on a temp tree so the shared working tree is untouched.
+if [ "${1:-}" = "--self-test" ]; then
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/bin/dww/src"
+    : > "$tmp/bin/dww/src/dispatch.rs"
+    : > "$tmp/bin/dww/src/lib.rs"
+    printf 'fn scan_native_token_contract_calls() {}\nfn discover_native_token_outputs() {}\n' \
+        > "$tmp/bin/dww/src/nt.rs"
+    printf 'fn scan_evil_contract() {}\n' > "$tmp/bin/dww/src/evil.rs"
+    if WALLET_KERNEL_ROOT="$tmp" "$0" >/dev/null 2>&1; then
+        echo "FAIL: --self-test planted a bespoke scan path and the gate passed"
+        rm -rf "$tmp"; exit 1
+    fi
+    echo "OK: --self-test — an undeclared bespoke scan path fails the gate"
+    rm "$tmp/bin/dww/src/evil.rs"
+    if ! WALLET_KERNEL_ROOT="$tmp" "$0" >/dev/null 2>&1; then
+        echo "FAIL: --self-test — a clean tree failed the gate"
+        rm -rf "$tmp"; exit 1
+    fi
+    echo "OK: --self-test — a clean tree passes"
+    rm -rf "$tmp"; exit 0
+fi
 
 OUT="/tmp/wallet-kernel.txt"
 SRC=bin/dww/src
