@@ -1,66 +1,235 @@
 # Documentation-vs-Code Review — Findings Ledger
 
-**Started 2026-10-10.** This is the intake ledger for a documentation review against the code it
-describes. It is **not a home**: remediation moves each confirmed finding to where it belongs (a doc
-edit, a new `OBL-*` row in [the register](../verification-hazop.md), or a new gate) and stamps the
-row's `promoted` cell. A finding is never in two homes.
+**Started 2026-10-10.** Phase 0 (instruments) and Phase 1 (registers) are complete; Phases 2–5 (the
+formal spine, contract docs, arch/dev, and adjudication) have not run. This is the intake ledger for a
+documentation review against the code it describes. It is **not a home**: remediation moves each
+confirmed finding to where it belongs (a doc edit, a new `OBL-*` row in [the
+register](../verification-hazop.md), or a new gate) and stamps the row's `promoted` cell.
+
+Read every finding as a **hypothesis** (`R6`) until it is adjudicated: the producer agent quoted both
+sides, but the refuter pass (Phase 5) has not run. Read-at-commit for all Phase-1 findings:
+`9c6ad4a6c4a83b4c5b4d9589ec990075d3e95352`.
 
 ## Why this exists
 
 The repository instruments its **code** heavily (≈30 gates pin circuit ↔ entrypoint ↔ client ↔
-manifest) and its **docs** *structurally* (`scripts/check-doc-index.sh`: SUMMARY ↔ tree, links,
-include anchors, every `OBL-*` citation resolves). Nothing read a doc's **prose claim about a code
-fact** and compared it to the code. This campaign is the instrument that was missing.
+manifest) and its **docs** *structurally* (`scripts/check-doc-index.sh`). Nothing read a doc's **prose
+claim about a code fact** and compared it to the code. Phase 1 found that this gap has, over months,
+let **every register and audit document drift from the code in the same direction: the code moved and
+the record did not.**
 
-## Method
+## Method, and the shape of the result
 
-Each finding names **both sides** — the doc claim and the code reality, each with `path:line` — and
-is a **hypothesis** until a reader opens the code (`R6`). No agent in this campaign writes or fixes
-anything; remediation is a separate exercise. Mechanical classes are read by scripts, which ship a
-**negative control** (`R8`); semantic classes are read by agents.
+Ten read-only agents partitioned the register corpus; each finding carries both sides quoted with
+`path:line`. Instruments are read by scripts that ship a negative control (`R8`). The dominant result
+is not new defects in the *code* — it is that the **record overstates its own currency**: instruments
+described as they were, counts frozen at an old commit, and findings presented as open that the code
+has closed.
 
-| Class | Meaning | Remediation home |
+**Classes** (remediation home): DOC-STALE → edit the doc where load-bearing (`R11`);
+CODE-VIOLATES-ITS-OWN-SPEC → new `OBL-*` row; AMBIGUOUS-SPEC → restate the clause;
+REGISTER-ROW-UNSOUND → amend the row in place; INSTRUMENT-GAP → build the detector (+ control).
+**Severity** uses the register's legend: C mints/destroys/steals value; H breaks a stated property;
+M defence-in-depth or liveness.
+
+## Summary
+
+| Cluster | # | The shared cause |
 |---|---|---|
-| **DOC-STALE** | doc asserts a code fact that is false; code is truth | edit the doc where load-bearing (`R11`) |
-| **CODE-VIOLATES-ITS-OWN-SPEC** | code does not enforce a rule a normative doc states | new `OBL-*` row; safety-class → `safety.md` |
-| **AMBIGUOUS-SPEC** | normative text admits two readings | restate the clause |
-| **REGISTER-ROW-UNSOUND** | a register row's proposition does not imply its property | amend the row in place |
-| **INSTRUMENT-GAP** | a claim class no gate catches | build the detector (+ control) |
+| 1 — Register prose, counts and instrument descriptions | 12 | the register's prose is not gated; it drifted from its own rows and scripts |
+| 2 — Status cell vs body (`DECISION` token) | 3 | the 2026-10-08 relabel changed cells, append-only bodies kept the old word |
+| 3 — Stale register rows (code moved, row not reconciled) | 18 | the row's proposition or figures were true at some commit and are not now |
+| 4 — Lean HAZOP matrix | 22 | the riskMatrix presents 2026 findings as open; the circuits fixed them |
+| 5 — Lean assumption boundary (`check_lean_axioms.py`) | 5 | the intake checker has blind spots and no control for the inventory |
+| 6 — `security-analysis.md` | 14 | the audit quotes code that has since changed, as live "FIXED" |
+| 7 — sync red-team audit + audit README | 7 | resolutions and a "lesson" the code and spec contradict |
+| 8 — `safety.md` root-cause ledger | 16 | the canonical ledger drifted from the Lean work and the register |
+| 9 — Cross-cutting instrument gaps (`R8`) | 4 | gates that name a control they do not ship |
+| **Total** | **101** | plus the 7 from Phase-0 detectors (below) |
 
-Severity uses the register's legend (**C** mints/destroys/steals consensus value, **H** breaks a
-stated property, **M** defence-in-depth or liveness). A documentation defect caps at **M**: it cannot
-mint value — unless it states a rule the code fails to enforce, which is reclassified.
+By class: DOC-STALE 68 · REGISTER-ROW-UNSOUND 12 · INSTRUMENT-GAP 9 · AMBIGUOUS-SPEC 5 ·
+CODE-VIOLATES-ITS-OWN-SPEC 3 · (plus 7 Phase-0, all DOC-STALE/INSTRUMENT-GAP).
 
-## Findings
+---
 
-| ID | Class | Sev | Doc (claim) | Code (reality) | Status | Promoted |
-|---|---|---|---|---|---|---|
-| F-001 | DOC-STALE | M | `contract/attestation.md:261` — "All 10 circuits compiled" | `src/contract/attestation/proof/` holds **12** (`expire_attestation`, `revoke_attestation` added) | proposed | |
-| F-002 | DOC-STALE | M | `contract/escrow.md:320` — "All 4 circuits"; trace table omits `cancel` | `src/contract/escrow/proof/` holds **5** | proposed | |
-| F-003 | DOC-STALE | M | `contract/game_room.md:214` — "All 5 circuits"; table lists 5 | `src/contract/game_room/proof/` holds **12**; table omits 7 (`call`, `close_pot`, `contribute_entropy`, `create_pot`, `fold`, `raise`, `withdraw`) | proposed | |
-| F-004 | DOC-STALE | M | `contract/slot.md` — circuit table lists 2 | `src/contract/slot/proof/` holds **3**; `reveal_spin` omitted | proposed | |
-| F-005 | DOC-STALE | M | `contract/stablecoin.md:193` — "All 9 circuits"; table lists 9 | `src/contract/stablecoin/proof/` holds **10**; `update_config` omitted | proposed | |
-| F-006 | DOC-STALE | M | `arch/verification-hazop.md:461` — "**Inventory: 180 circuits.**" | the Orchard-class gate walks **178** (166 contract + `proofs/core/` 10 + `bin/darkirc/proof/` 2); the same file prints 178 at :820 | proposed | |
-| F-007 | DOC-STALE | M | `for-researchers.md:14` — "**228 ZK circuits** across 32 contracts" | `src/contract/*/proof/*.zk` holds **166** (178 walked) | proposed | |
+## Cluster 1 — The register's prose, counts and instrument descriptions are stale
+
+| ID | class | sev | doc | code | claim |
+|---|---|---|---|---|---|
+| F-101 | DOC-STALE | H | `verification-hazop.md:47` | `scripts/check-register-worklist.sh` | census stale in 5 of 6 figures: prose 57/26/10/12/4/31 vs derived 56/27/12/11/4/29; the same section says the counts "are not restated here" |
+| F-102 | DOC-STALE | M | `verification-hazop.md:85` | `check-register-worklist.sh:122` | "thirty-one `DECISION`" vs the gate's 29 |
+| F-103 | DOC-STALE | M | `verification-hazop.md:91` | `insurance_market/src`, `dao_escrow/src/model/mod.rs:659` | D1 lists `C166`/`C203` as pending deletions; both rows are FIXED and the code confirms the deletions |
+| F-104 | DOC-STALE | M | `verification-hazop.md:98` | `verification-hazop.md:1445,1454` | D3 gives `C140`→ACCEPTED-WITH-REASON and `C147`→RESTATED; both rows carry DECISION |
+| F-105 | DOC-STALE | H | `verification-hazop.md:1054` | `scripts/register-status.sh:160` | prose says the status check reads a row's **last** cell; the script was changed 2026-09-23 to read the **Status** column |
+| F-106 | INSTRUMENT-GAP | H | `verification-hazop.md:1056` | `register-status.sh:157` | the *documented* negative control no longer fails — a coined marker in the last cell exits 0; the guard's real control (a marker in the status cell) is undocumented |
+| F-107 | DOC-STALE | M | `verification-hazop.md:1059` | `register-status.sh:183` | "guards the form, not the existence" — `--check` now also fails a missing status; "the ten rows that still carry none" — report mode prints **0** |
+| F-108 | DOC-STALE | M | `verification-hazop.md:1024` | `check-register-worklist.sh:11` | "runs it `--strict` against a declared budget" — there is no budget since 2026-10-08; the same doc contradicts this at :72 |
+| F-109 | DOC-STALE | M | `verification-hazop.md:1042` | `verification-hazop.md:1126` | worked example cites `OBL-C44` as an open row at severity **H**; the row is CLOSED at severity **M** |
+| F-110 | DOC-STALE | M | `verification-hazop.md:1919` | `verification-hazop.md:1068` | "item 5: every one of `C16`'s 72 guards fail-open"; the row says zero fail-open and is CLOSED (72/78/84 all disagree) |
+| F-111 | AMBIGUOUS-SPEC | M | `verification-hazop.md:61` | `dev/contracts/safety.md:131` | the register reuses `RC1`–`RC6` with meanings that collide with safety.md's canonical `RC1`–`RC12`; not in the alias table; `check-doc-index.sh` check 6 cannot see bare `RC<n>` |
+| F-134 | DOC-STALE | L | `verification-hazop.md:469` (Z1) | `script/circuit_instance_derivation.py` | stale figures: 880→899 instances, 200→218 bound, 223→224 redundant |
+
+## Cluster 2 — Status cell disagrees with the row's own body
+
+The `DECISION` token was added 2026-10-08; it re-labelled the status cells while the append-only body
+text kept the old word. A reader trusting the body counts a different status than the gate does.
+
+| ID | class | sev | doc | code | claim |
+|---|---|---|---|---|---|
+| F-112 | REGISTER-ROW-UNSOUND | M | `verification-hazop.md:474` (Z6) | `proofs/lean/.../HashOps.lean:296` | cell **DECISION**, body "The status stays `PARTLY`"; the Lean module calls it "partly" |
+| F-113 | REGISTER-ROW-UNSOUND | M | `verification-hazop.md:1491` (C184) | same row's closing text | cell **DECISION**, closing sentence "Status unchanged at `OPEN`" |
+| F-114 | REGISTER-ROW-UNSOUND | M | `verification-hazop.md` Z5 :475, Z13 :478, T20, T23 | — | the same cell/body divergence recurs; T23's body even says "The row is `OPEN` rather than `PARTLY`" |
+
+## Cluster 3 — Register rows the code has moved past
+
+| ID | class | sev | doc | code | claim |
+|---|---|---|---|---|---|
+| F-115 | DOC-STALE | M | `verification-hazop.md:1461` (C154) | `dao_escrow/src/model/mod.rs:359`, `entrypoint.rs:1612` | DECISION row asserts `mode` unsettable and `Approved` written by nobody; both are fixed, the fix sites cite `C154`/`C159` by name |
+| F-116 | DOC-STALE | M | `verification-hazop.md:1416` (C97) | `drain_protection/src/entrypoint.rs:613,701` | residual names `propose`/`vote`/`execute` as unchecked; `propose` and `execute` now call `require_fund_authority` |
+| F-117 | DOC-STALE | M | `verification-hazop.md:1438` (C136) | `src/net/tests.rs:306` | attributes the message-swallowing hook to the event-graph harness; it is `net`'s, and the payload loss it calls unfixable is fixed |
+| F-118 | REGISTER-ROW-UNSOUND | M | `verification-hazop.md:1368` (C74) | `stablecoin/manifest.toml:1` | `PARTLY` over a 3-of-4-false compound (8/32 declare `required_barbs`, 8/32 `note_schema`), with no discussion cell |
+| F-119 | DOC-STALE | M | `verification-hazop.md:1507` (C200) | `bearer_bond/src/error.rs:56,110,168` | gives `InterestOverflow` (code 9) the text "must be non-zero"; that text belongs to `InvalidInterestRate` (code 28) |
+| F-120 | REGISTER-ROW-UNSOUND | M | `verification-hazop.md:497` (Z19) | `betting_stake/proof/claim.zk:42` | `CLOSED` on a **universal** still false: the nullifier and the tx binding share `witness_base(3)`; the gate reports it live |
+| F-121 | DOC-STALE | M | `verification-hazop.md:495` (Z18) | `scripts/check-pubkey-binding.sh` | "carries all 57 findings" / control "exits 1 with all 57"; reality is **52** (57, 49 and 52 disagree across the row, the file header, and the run) |
+| F-122 | DOC-STALE | M | `verification-hazop.md:503` (Z23) | `check-circuit-dead-values.sh` | "177 `.zk` files" and quoted coverage "177 of 177"; now **178** |
+| F-123 | DOC-STALE | M | `verification-hazop.md:477` (Z12) | `check-circuit-instance-derivation.sh` | "880 `constrain_instance` sites"; now **899** (the same figure is stale in Z1) |
+| F-124 | DOC-STALE | M | `verification-hazop.md:474` (Z6) | `sdk/src/crypto/constants/sinsemilla.rs:89` | cites `:89` for `ALTITUDE_BITS=10`; `:89` is a function, `K = 10` is at `:31` |
+| F-125 | DOC-STALE | M | `verification-hazop.md:478` (Z13) | `stablecoin/src/entrypoint.rs:1737` | cited `:1363-1368` has moved ~370 lines (the proposition still holds) |
+| F-126 | DOC-STALE | M | `verification-hazop.md:938` (T2), T21 | `Capability/Types.lean:278`, `fee_builder.rs:189` | stale line citations on `PROVED`/`DEFINITIONAL` rows |
+| F-127 | DOC-STALE | H | `verification-hazop.md:470` (Z2) | `check-circuit-metadata-alignment.sh:37` | credits the gate with "11 contracts / 68 sites" — the very allowlist the gate records as its worst defect; it now covers 31 contracts / 162 |
+| F-128 | INSTRUMENT-GAP | H | `verification-hazop.md:501` (Z22) | `scripts/check-circuit-fidelity.py:125` | claims a negative control; the checker ships no `--self-test` |
+| F-129 | REGISTER-ROW-UNSOUND | M | `verification-hazop.md:497` (Z19) | — | the row's "Checked today by" cell is **empty** on a CLOSED row |
+| F-130 | DOC-STALE | M | `verification-hazop.md:400` (C13) | `hooks/pre-commit:24` | credits `hooks/pre-commit`; the row's own text says the hook "never enforced this" |
+| F-131 | DOC-STALE | M | `verification-hazop.md:471` (Z3) | `check-circuit-domain-separation.sh:9` | cell says the script "never [checks] the correct one"; it has a ROLE rule that does |
+| F-132 | DOC-STALE | M | `verification-hazop.md:472` (Z4) | `hooks/pre-commit:20` | cell describes the removed line-anchored awk |
+| F-133 | REGISTER-ROW-UNSOUND | M | `verification-hazop.md:393` (C6/C10/C11) | — | SATISFIED/CLOSED rows whose cell names a *category* ("Rust only") while their own text says no test and no control exist |
+
+## Cluster 4 — The Lean HAZOP matrix presents fixed findings as open
+
+`proofs/lean/src/DarkFi/HAZOP.lean` (the `riskMatrix`) and `HAZOP/{Critical,High,Elevated}.lean`. The
+structural findings are F-135/F-136; the 19 stale findings are F-137–F-155, each of the form "the
+matrix holds this at risk *n*; the named circuit now carries an explicit `HAZOP … FIX` guard."
+
+| ID | class | sev | doc | code | claim |
+|---|---|---|---|---|---|
+| F-135 | INSTRUMENT-GAP | H | `HAZOP.lean:55`, `src/Main.lean:295` | `src/Main.lean:295` | `Main.lean` asserts the stale counts (4/5/6/7); correcting the matrix to drop fixed findings **fails the suite** — the guard pins the stale data |
+| F-136 | DOC-STALE | M | `HAZOP.lean:7` | `src/contract/*/proof` | 14 of 14 distinctive `riskMatrix` paths fail to resolve (`stablecommitment/`, `*_v2.zk` — no such files); no gate checks the paths |
+| F-137 | DOC-STALE | H | `HAZOP.lean:57` (CRIT-1) | `stablecoin/proof/governance_report.zk:82` | the free witnesses are now instanced; superseded (register `OBL-Z14`) |
+| F-138 | DOC-STALE | H | `HAZOP/Critical.lean:152` (CRIT-2) | `stablecoin/proof/liquidate.zk:79` | "does NOT enforce undercollateralization" — the circuit carries `HAZOP CRIT-2 FIX` + the constraint |
+| F-139 | DOC-STALE | H | `HAZOP.lean:61` (CRIT-3) | `bridge/proof/withdraw.zk:31` | recipient front-running — the nullifier is now bound to `recipient_hash` |
+| F-140 | DOC-STALE | H | `HAZOP/Critical.lean:298` (CRIT-4) | `oracle/proof/aggregate.zk:163` | boundary checks "are NO-OP" — now `range_check`ed under `HAZOP CRIT-4 FIX` |
+| F-141 | DOC-STALE | M | `HAZOP/High.lean:105` (HIGH-2) | `native_token/proof/burn.zk:83` | `zero_cond` unguarded — now `less_than_strict(ZERO, value)` |
+| F-142 | DOC-STALE | M | `HAZOP/High.lean:194` (HIGH-4) | `labor_market/proof/milestone_payment.zk:21` | shared nullifier derivation — now distinct action tags (CONFIRM 4 / MILESTONE 2 / REFUND 7) |
+| F-143 | DOC-STALE | M | `HAZOP/High.lean:125` (HIGH-3) | `labor_market/proof/refund.zk:1` | the described `cond_select` branch no longer exists (residual is `OBL-C96`) |
+| F-144 | DOC-STALE | M | `HAZOP/High.lean:243` (HIGH-5) | `stablecoin/proof/governance_report.zk:156` | premise (free `total_debt`, 15000 floor) both gone (`OBL-C204`) |
+| F-145 | DOC-STALE | M | `HAZOP.lean:67` (HIGH-1) | `promissory_note/proof/` | cites `burn_v2.zk`; PN has no burn circuit — the path never resolves |
+| F-146 | DOC-STALE | M | `HAZOP/Elevated.lean:32` (ELEV-1) | `bridge/proof/deposit.zk:41` | describes `zero_cond` + a Merkle proof that are not there |
+| F-147 | DOC-STALE | M | `HAZOP/Elevated.lean:77` (ELEV-2) | `dex/proof/cancel_swap.zk:51` | incompatible `swap_id` derivations — now identical |
+| F-148 | DOC-STALE | M | `HAZOP/Elevated.lean:130` (ELEV-4) | `promissory_note/proof/redeem.zk:57` | asks for `constrain_equal_base(value, ZERO)` — the circuit carries it under `HAZOP ELEV-4 FIX` |
+| F-149 | DOC-STALE | M | `HAZOP/Elevated.lean:167` (ELEV-5) | `dex/proof/execute_swap_slippage.zk:4` | "uses `base_div`" — no `base_div` remains; cross-multiplication |
+| F-150 | DOC-STALE | M | `HAZOP/Elevated.lean:212` (ELEV-6) | `dex/proof/execute_swap.zk:78` | `bool_check` — none remains; the file is a rewritten circuit |
+| F-151 | DOC-STALE | M | `HAZOP.lean:93` (MOD-1) | `dex/proof/execute_swap_fee.zk:6` | "field division for fees" — exact integer quotient-remainder (`OBL-Z13`) |
+| F-152 | DOC-STALE | M | `HAZOP.lean:97` (MOD-3) | `stablecoin/proof/accrue_interest.zk:53` | free witnesses now range-checked (partly superseded) |
+| F-153 | DOC-STALE | M | `HAZOP.lean:101` (MOD-5) | `tender/proof/reveal_bid.zk:73` | recorded twice, unlinked: matrix MOD-5 (risk 22) and a register ZK row (severity H) |
+| F-154 | DOC-STALE | L | `HAZOP.lean:105` (MOD-7) | `dex/proof/create_swap.zk:64` | `NULLIFIER_K` for signature derivation — but that is the tree-wide generator; unclear it is a defect |
+| F-155 | DOC-STALE | M | `HAZOP/Critical.lean:8`, `High.lean:8` | `HAZOP/Critical.lean:2` | banners say "NOT FORMAL PROOFS" while subtitles say "Formal Vulnerability Proofs" and entries are labelled `THEOREM` |
+
+## Cluster 5 — The Lean assumption boundary (`check_lean_axioms.py`)
+
+| ID | class | sev | doc | code | claim |
+|---|---|---|---|---|---|
+| F-156 | INSTRUMENT-GAP | H | `verification-hazop.md:110` | `script/check_lean_axioms.py:209` | `assumptions()` sees only an `axiom` carrying a `/-- … -/` doc block; an **undocumented** axiom in `Axioms.lean` is invisible to the inventory — so "a new assumption cannot be sneaked in" overstates the instrument |
+| F-157 | INSTRUMENT-GAP | M | `verification-hazop.md:112` | `check_lean_axioms.py:207` | `assumptions()` reads raw text (no `strip_comments()`), so a comment-out deletion is not caught — the "absence is a failure" direction misses it |
+| F-158 | INSTRUMENT-GAP | M | `verification-hazop.md:165` | `check_lean_axioms.py:512` | the only control is `--self-test`, which exercises `reconcile()` only; nothing can make `check_inventory` fail in CI (`R8`) |
+| F-159 | INSTRUMENT-GAP | M | `verification-hazop.md:106` | `check_lean_axioms.py:169` | the location regex misses attributed declarations (`@[simp] axiom foo : Nat`), which also evade the inventory |
+| F-160 | DOC-STALE | L | `verification-hazop.md:106` | `check_lean_axioms.py:46` | "the only file in `proofs/lean/`" — scope is `proofs/lean/src`; `.lake/packages/**` hold many axioms (the intended reading is probably fine, the wording is not) |
+
+## Cluster 6 — `security-analysis.md`
+
+| ID | class | sev | doc | code | claim |
+|---|---|---|---|---|---|
+| F-161 | DOC-STALE | H | `security-analysis.md:409,584` | `check-circuit-instance-derivation.sh` | "reports 4 unclassified, exiting 1"; today 0 unclassified, exit 0 |
+| F-162 | DOC-STALE | H | `security-analysis.md:401,456` | `check-pubkey-binding.sh:229` | carries **two** contradictory figures (49 and 51) for the same checker; it prints 52 |
+| F-163 | DOC-STALE | H | `security-analysis.md:206` | `dao_escrow/proof/pay_premium.zk:45` | a `max_membership_blocks = 52560` cap "FIXED" — the constant exists nowhere under `src/` |
+| F-164 | DOC-STALE | H | `security-analysis.md:236` | `dex/src/` | quotes a `params.lock_proof` guard as a live partial fix; the path was removed (`d71447b096`) |
+| F-165 | DOC-STALE | H | `security-analysis.md:219` | `dex/src/entrypoint/create_swap.rs:139` | "zeroed pubkeys for proposer and acceptor" — the proposer key is derived; only the acceptor stays zeroed |
+| F-166 | DOC-STALE | H | `security-analysis.md:356` | `src/contract/*/proof` | a whole "Circuits Fixed" table names `_v1.zk` files that no longer exist (only 2 of 30 resolve) |
+| F-167 | DOC-STALE | H | `security-analysis.md:450` | `bridge/src/lib.rs:106` | bridge anti-dust floor stated as `100_000_000`; the code is **100** |
+| F-168 | AMBIGUOUS-SPEC | M | `security-analysis.md:283` vs `:450` | `bridge/src/entrypoint.rs:633` | the body presents Issue 12 as open with a Recommendation; the summary row says "FIXED" |
+| F-169 | DOC-STALE | M | `security-analysis.md:163` | `escrow/proof/claim.zk:14` | quotes a comment "`<-- NOT VERIFIED`" as live; it now reads "CONTRACT ENFORCED" and the host enforces it |
+| F-170 | DOC-STALE | H | `security-analysis.md:59` | `subscription/proof/verify_access.zk:36` | quotes tiered-permission circuit code that is absent (the circuit is a capability-hash scheme) |
+| F-171 | DOC-STALE | H | `security-analysis.md:99` | `verify_access.zk` | cites `verify_access.zk:150-151` and quoted Merkle code in a 66-line file that has neither |
+| F-172 | DOC-STALE | M | `security-analysis.md:256` | `dex/src/entrypoint/mod.rs:239` | "ZK verification returns empty / circuits never called" — the DEX is now a full contract |
+| F-173 | DOC-STALE | M | `security-analysis.md:401` | `run-all-tests.sh:316` | a correction's own replacement line reference (`:200`) is itself stale (now `:316`) |
+| F-174 | DOC-STALE | M | `security-analysis.md:456` | `verification-hazop.md:1393` | "fifteen genuine defects … scheduling its repair" — four of the five named rows are CLOSED |
+
+## Cluster 7 — sync red-team audit + audit README
+
+| ID | class | sev | doc | code | claim |
+|---|---|---|---|---|---|
+| F-175 | DOC-STALE | M | `arch/audit/README.md:19` | `src/linear/src/chain_state.rs:268` | the headline "two audits disagreed, the specific one won" is unsupported — the "refuted" items were real HAZOP findings a same-day commit fixed |
+| F-176 | DOC-STALE | M | `sync-red-team-audit.md:70` | `sync-protocol.md:90` | attributes to §3 a requirement the clause does not contain ("a zero hash at height > 0 SHALL NOT round-trip") |
+| F-177 | DOC-STALE | M | `sync-red-team-audit.md:139` | `bin/dww/src/sync_task.rs:59` | R3 "RESOLVED" — `HighestPeerTip` is still monotonic and never decays; the defect survives and gates `is_synced()` |
+| F-178 | REGISTER-ROW-UNSOUND | L | `arch/audit/README.md:10` | `safety.md:1084` | "every legacy ID … mapped in the alias table" — the red-team `C-/H-/M-/L-/SC-` forms and the sync-HAZOP `R1–R5` are not mapped |
+| F-179 | DOC-STALE | L | `sync-red-team-audit.md:142` | `sync-protocol.md:363` | R6 "RESOLVED (round-robin)" — §13.3 explicitly says there is no round-robin, and the code does not implement one |
+| F-180 | DOC-STALE | L | `sync-red-team-audit.md:81` | `sync-protocol.md:97` | cites §5 for `MAX_BYTES`; it is §4 |
+| F-181 | DOC-STALE | L | `sync-red-team-audit.md:61` | `sync-protocol.md:361` | cites §13.3 for "3 failures deprioritised"; the clause says a timeout peer "is simply skipped" |
+
+## Cluster 8 — `safety.md` root-cause ledger
+
+| ID | class | sev | doc | code | claim |
+|---|---|---|---|---|---|
+| F-182 | DOC-STALE | H | `safety.md:242` | `proofs/lean/README.md:206`, `CircuitIndex.lean:37` | RC2 says `Axioms.NoFreeInstances` still exists; it was deleted 2026-09-24 |
+| F-183 | DOC-STALE | H | `safety.md:244` | `proofs/lean/src/DarkFi/Circuits/InstanceDerivation.lean:458` | "`Circuits/` contains no Lean declarations" — it holds theorems (`soundness`, …), plus Token/Bridge/Exchange structures |
+| F-184 | DOC-STALE | M | `safety.md:449` | `src/linear/src/chain_state.rs:1167` | RC6's cited lines are both stale (1117→1167, 1340-1349→1380-1389); the structural claim holds |
+| F-185 | DOC-STALE | M | `safety.md:306` | `auction/proof/create_auction.zk:6` | `4 = COIN_COMMIT` — no such constant; value 4 is `DOMAIN_COMMITMENT` |
+| F-186 | DOC-STALE | M | `safety.md:598` | `drain_protection/src/model/mod.rs:253` | the "insecure `Default`" no longer holds; both fields are `Some(...)` |
+| F-187 | DOC-STALE | M | `safety.md:638` | `src/contract/identity/src/lib.rs` | `IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS` is defined nowhere in the repo |
+| F-188 | DOC-STALE | M | `safety.md:744` | `src/error.rs:165` | a "naming convention" (`ComponentOperationFailed`) with zero instances |
+| F-189 | CODE-VIOLATES-ITS-OWN-SPEC | M | `safety.md:748` | `bin/dwowd/src/rpc/miner.rs:139` | the doc resolves `safety.md C1` to a *tier*; code calling the token calls it a *finding* |
+| F-190 | REGISTER-ROW-UNSOUND | H | `safety.md:1060` | `verification-hazop.md:61` | the register's `RC1`–`RC6` collide with safety.md's canonical `RC1`–`RC12`, with no alias or disambiguation (mirrors F-111) |
+| F-191 | AMBIGUOUS-SPEC | M | `safety.md:1067` | `safety.md:507` | the alias table maps Lesson 3→RC2 and Lesson 21→RC12, but RC7's "Taught by" cites Lesson 3 and RC5's cites Lesson 21 |
+| F-192 | DOC-STALE | M | `safety.md:14` | `safety.md:507` | "A finding is never recorded in both places" — RC7 records its findings as `OBL-C1/C3/C4/C5` (all SATISFIED) |
+| F-193 | INSTRUMENT-GAP | M | `safety.md:302` | `src/contract/*/proof/*.zk` | the "grep returns nothing" recipe returns 42 lines (DOMAIN_* on the next line of multi-line calls) |
+| F-194 | DOC-STALE | M | `safety.md:633` | `insurance_market/src/lib.rs:66` | "seven deactivation functions across four contracts" does not reconcile with the tree |
+| F-195 | DOC-STALE | L | `safety.md:496` | `native_token/proof/mint.zk:46` | names `Mint_V1`; the circuit is `Mint_V2` |
+| F-196 | CODE-VIOLATES-ITS-OWN-SPEC | M | `safety.md:160` | `drain_protection/src/client/mod.rs:327` | a `signature: pallas::Base::zero()` of the exact RC1 anti-pattern survives in production client code (also `lottery`) |
+| F-197 | AMBIGUOUS-SPEC | M | `safety.md:1084` | `verification-hazop.md:9` | the alias table does not map the `V1`–`V7` or `C1` finding-ID schemes the register names as existing, while the register calls it "every legacy scheme" |
+
+## Cluster 9 — Cross-cutting instrument gaps (`R8`)
+
+| ID | class | sev | doc | code | claim |
+|---|---|---|---|---|---|
+| F-198 | INSTRUMENT-GAP | M | `verification-hazop.md:1431` (C130) | `scripts/check-wallet-kernel.sh` | the row names it as the falsifying instrument; it ships no `--self-test` and no planted-defect control |
+| F-199 | INSTRUMENT-GAP | M | `check-register-artifacts.sh` header | same file | its header still says "line suffixes are stripped, and no symbol is checked", which its new `line_gone()` contradicts |
+| F-200 | DOC-STALE | M | `verification-hazop.md:39` | — | the severity legend defines only C/H/M; 17 rows carry `L`, so a severity-partitioning instrument cannot bucket them (overlaps `OBL-C149`) |
+| F-201 | DOC-STALE | M | `check-register-worklist.sh:7` | same file | the worklist script's own docstring repeats the stale census ("258 rows; 57 not settled") |
+
+---
+
+## Phase 0 — instrument findings (detectors)
+
+| ID | class | sev | doc (claim) | code (reality) | status |
+|---|---|---|---|---|---|
+| F-001 | DOC-STALE | M | `contract/attestation.md:261` — "All 10 circuits" | `src/contract/attestation/proof/` holds **12** | proposed |
+| F-002 | DOC-STALE | M | `contract/escrow.md:320` — "All 4 circuits"; table omits `cancel` | `src/contract/escrow/proof/` holds **5** | proposed |
+| F-003 | DOC-STALE | M | `contract/game_room.md:214` — "All 5 circuits"; table lists 5 | `src/contract/game_room/proof/` holds **12**; omits 7 | proposed |
+| F-004 | DOC-STALE | M | `contract/slot.md` — circuit table lists 2 | `src/contract/slot/proof/` holds **3**; `reveal_spin` omitted | proposed |
+| F-005 | DOC-STALE | M | `contract/stablecoin.md:193` — "All 9 circuits"; table lists 9 | `src/contract/stablecoin/proof/` holds **10**; `update_config` omitted | proposed |
+| F-006 | DOC-STALE | M | `arch/verification-hazop.md:461` — "**Inventory: 180 circuits.**" | the gate walks **178**; same file prints 178 at :820 (independently confirmed by F-110/F-127/F-136) | proposed |
+| F-007 | DOC-STALE | M | `for-researchers.md:14` — "**228 ZK circuits**" | `src/contract/*/proof/*.zk` holds **166** (178 walked) | proposed |
 
 ## Coverage observations (not findings)
 
-These are surfaces the instruments see but do not judge; they feed the agent pass:
-
-- **No circuit table.** Fourteen contract docs have a `proof/` directory but no circuit table at all:
+- **No circuit table.** Fourteen contract docs have a `proof/` directory but no circuit table:
   `baccarat`, `bearer_bond`, `betting_stake`, `darkbet_exchange`, `darktoshi_dice`, `drain_protection`,
   `insurance_market`, `lottery`, `native_token`, `pool_stake`, `relayer_endowment`, `roulette`,
-  `subscription`, `tender`. A doc that documents no circuits cannot drift on that axis, but it also
-  cannot be checked — a reader copying the surface has no list.
-- **Incomplete function tables.** Six docs' Function tables list fewer functions than the manifest
-  declares: `bearer_bond` (9/10, missing `register_series`), `bridge` (1/3), `game_room` (11/12,
-  missing `create_pot`), `labor_market` (3/15 — documents its functions in a state-machine diagram),
-  `native_token` (6/8), `stablecoin` (10/12). Not by itself drift (a diagram may be the list), which is
-  why the gate reports it as a coverage note rather than a failure.
+  `subscription`, `tender`.
+- **Incomplete function tables.** Six docs list fewer functions than the manifest declares:
+  `bearer_bond` (9/10), `bridge` (1/3), `game_room` (11/12, missing `create_pot`), `labor_market` (3/15,
+  diagram-documented), `native_token` (6/8), `stablecoin` (10/12).
 
-## Instruments built
-
-Three sound, negative-controlled detectors (`R8`), each committed on `linear-master`:
+## Instruments built (Phase 0)
 
 | Detector | Pins | Commit |
 |---|---|---|
@@ -70,11 +239,16 @@ Three sound, negative-controlled detectors (`R8`), each committed on `linear-mas
 
 ## What is not established (R7)
 
-- The detectors judge the **countable** surface (circuit sets, function codes, population figures).
-  They do not read a doc's **state machine**, **struct fields**, **cross-contract call flows**, or
-  whether a normative clause **says what a referrer claims** — those are the agent pass's work and it
-  has not run.
-- A blanket "every *N* circuits" scanner was **built and rejected as unsound**: docs legitimately
-  state dozens of local counts ("2 circuits" for a feature), and the draft produced more than ten
-  false positives. The count gate fires only on the global phrasings; the residual class is left to
-  the agent pass rather than closed by pretending.
+- **All 101 Phase-1 findings are unadjudicated hypotheses.** The producer agents quoted both sides, but
+  the refuter pass (Phase 5) has not run; the register's own precedent is a ~70% refutation rate on its
+  2026-09-23 adversarial pass, so expect a material fraction to fall.
+- Phases 2–4 (formal spine incl. Lean theorems and Python models, contract docs, arch/dev, narrative
+  tail) have **not** run. This ledger covers the registers only.
+- No gate, test, `cargo` command or Lean build was executed by any Phase-1 agent (`R5`); every verdict
+  is from reading code, manifests, scripts and git history — no exit code was witnessed, and the
+  heavyweight half of any claim (a fixture run, a Lean kernel check) is unverified.
+- A blanket "every *N* circuits" scanner was **built and rejected as unsound** (Phase 0): the count gate
+  fires only on global phrasings; the residual class is left to the agent pass.
+- Line-number drift is pervasive in the register and was **not** filed row-by-row (rows whose cited line
+  moved but whose code still supports the proposition): examples across C56, C82, C96, C102, C126, plus
+  F-124/F-125/F-126 above. It is the class `OBL-Z5` already records.
