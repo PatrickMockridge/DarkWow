@@ -62,7 +62,13 @@ See the Phase 2 section below.
 owned by no existing row (deployooor's `LockV1` no-signature lock, dex's transfer-not-swap,
 relayer_endowment's unpayable `ForceSettle`, `audit.md`'s all-false fix table, …). The dominant family:
 a doc's "composes with X" section names a cross-contract child call the entrypoint never makes. See the
-Phase 3 section below. **Phase 4 (arch/dev + narrative tail) remains.**
+Phase 3 section below.
+
+**Phase 4 (arch/dev + narrative tail): +133 findings** (`F-601`–`F-637`; some rows aggregate),
+unadjudicated — the whole review is now recorded. The dominant family: `dev/` and `testnet/`
+operational docs running commands that do not exist, plus ~25 stale counts/constants, ~15 phantom
+modules/symbols, and CODE-VIOLATES where a spec the code does not meet (or two specs that contradict).
+See the Phase 4 section below.
 
 ---
 
@@ -390,6 +396,83 @@ Five refuters over the 51 rows. **45 CONFIRMED · 5 PARTIAL · 1 REFUTED.**
 `F-512` (`dex` 0x04 vs 0x05), `F-513` (unpayable `ForceSettle`), `F-514` (unread `capability_proof`),
 `F-515` (no host `schnorr_verify`), `F-516` (models never stored), `F-518` (cancel timeout removed),
 `F-519` (`audit.md`'s fix table), `F-520` (no governance key).
+
+---
+
+## Phase 4 — arch/dev + narrative tail (133 findings, unadjudicated)
+
+Nine agents over the remaining arch docs, `dev/*`, `zkas/*`, `spec/*`, `crypto/*`, `dep/*`, and the
+sampled narrative tail (`learn/`, `misc/`, `testnet/`, `relayer/`, `philosophy/`, `about/`, root docs).
+Read-at `e32e4d1eb4`. **Not refuted.**
+
+### 4A — A command, binary or module the doc tells the reader to use, that is not there
+
+The largest family: `dev/` and `testnet/` operational docs, plus two whole-binary cases.
+
+| ID | sev | doc | claim |
+|---|---|---|---|
+| F-601 | H | `localnet-dev.md:19,65,99` | `contrib/localnet/` config absent (first command can't run); the CLI reference lists ~15 wallet/contract subcommands the parser rejects; block reward "20 DRKW" (curve gives ~13.8) |
+| F-602 | H | `dev/native-workflow.md:58,91` | `wallet import-secret` absent, and dwowd does not auto-generate a mining keypair ("no auto-generation") |
+| F-603 | H | `testnet/token.md` | a whole `token`/`alias` interactive CLI that does not exist |
+| F-604 | H | `testnet/node.md:338`, `bootstrapping.md:118` | `dwow_wallet interactive` (disabled) and `wallet keygen` (removed) |
+| F-605 | H | `relayer/relayer.md`, `dev/bridge-node.md` | `universal_relayer` — commented out of the workspace (all stub code); the image cannot run its relayer |
+| F-606 | H | `dev/bridge-node.md:170,200` | `contract invoke <bridge_id> get_config` (no such function); `/app/universal_relayer` |
+| F-607 | H | `dev/quickstart.md:137` | a harness example using `create_token`/`mint`/`verify` — the API is `spawn`/`issue`/`transfer` |
+| F-608 | M | `misc/vanityaddr.md`, `misc/network-troubleshooting.md` | `vanityaddr` (on hold, not a member); `node_get-info.py` (is `node_get_info.py`) |
+| F-609 | M | `learn/…/writing-a-daemon.md:17` | `use dwow_util::…` — the crate is `dwow_core` (the tutorial's own example says so) |
+| F-610 | M | `learn/…/using-dnet.md:40` | `python main.py` — no such file (the script is `dnet`) |
+| F-611 | M | `misc/nodes/node-configurations.md:28`, `public-guide.md` | darkirc/taud default ports stale (9600/9800 vs 25551/23330) |
+
+### 4B — A spec the code does not meet, or two specs that contradict (`CODE-VIOLATES`)
+
+| ID | sev | doc | claim |
+|---|---|---|---|
+| F-612 | H | `dev/testing/heavyweight-spec.md:207` | §3.5 mandates an unconditional `FeeCollectV1`; the harness omits it — and the sibling normative `production-test-standard.md` says it *shall* omit it. Two normative docs, opposite rules |
+| F-613 | H | `dev/testing/heavyweight-spec.md:454` | §5.4 requires 9 identity functions / `CreateClaimV1 (0x03)`, removed; the enum has 8 |
+| F-614 | H | `zk-engineering-posture.md:69` | "no asterisks, no exceptions — every call path carries a ZK proof"; native_token's coinbase/fee/uncle-mint are plaintext, circuits deleted |
+| F-615 | M | `arch/legacy/event_graph.md:114` | asserts a binary-level quarantine §10.4 says dwowd must never enable; `src/lib.rs:46` says dwowd intentionally enables it (doc/comment/manifest disagree) |
+| F-616 | M | `dev/testing/heavyweight-spec.md:59,117` | oracle circuit count (5 vs §5.8's own 6); a gate cites `src/linear/src/block_acceptor.rs` (it is `bin/dwowd/…`) |
+
+### 4C — A phantom module, type or symbol
+
+| ID | doc | claim |
+|---|---|---|
+| F-617 | `arch/consensus/merge-mining-ffi.md` | the whole `dwow_mm_*` FFI layer — 8+ symbols nowhere in the tree |
+| F-618 | `arch/monero-merge-mining.md:192`, `arch/services.md:44` | `CChainState::apply_block_with_uncles` and a `ManualSession.connect` — neither exists |
+| F-619 | `arch/zk/spend_hook.md:29` | five PN circuits (`burn_v1.zk`, `mint_v1.zk`, …) — none exists |
+| F-620 | `arch/economics-caveat-emptor.md:179` | `DeclareProfitsV1`/`ClaimProfitsV1` bearer_bond entrypoints — neither exists; whole scenarios built on them |
+| F-621 | `arch/contract-metadata.md`, `contract-wasm-standards-best-practices.md` | `contract_interactions`/`transactions_history` tables (removed); `BoxRecord`, `Purse`, `PurseFunction` — removed/renamed |
+| F-622 | `for-researchers.md:30` | the type `CoinCommitment` — the type is `Commitment` (a no-coins-rename survivor) |
+| F-623 | `arch/contract-trust-model.md`, `dev/contracts/identity.md` | `manifest_verify.rs` / Layer-2 WASM verification "not implemented"; identity dev guide repeats `0x0b`/`CreateClaimV1`/3 circuits |
+
+### 4D — Stale counts, constants and values
+
+| ID | doc | claim |
+|---|---|---|
+| F-624 | `monero-merge-mining.md:32`, `consensus/stratum.md:179`, `merge-mining.md:22`, `localnet-dev.md:100` | the mining blob given as **227 / 260 / 292 / 43** across four docs; it is 292 (`OBL-C64`) |
+| F-625 | `intro.md:72`, `README.md:13`, `for-researchers.md:13,48` | "32 zkVM opcodes" (31 usable); "26 Lean proof files" (81); "228 circuits" (dedup F-007); "5-level test pipeline" (4) |
+| F-626 | `quantum-threat.md:104,171` | "120 contract circuits" (166) and "X25519 DH" note encryption (Pallas ECDH) |
+| F-627 | `arch/network-types.md:15,72,12` | devnet difficulty `20000` / key `fixed-difficulty` (config: `pow_fixed_difficulty = 1`); default network devnet (is testnet); magic bytes "(none)" |
+| F-628 | `dev/testing/*` | `.zk.bin` 175 (166); pipeline modules 18 (19); harness circuit counts (oracle 1→6, attestation 5→10 …); model test counts (34/34→41/41) |
+| F-629 | `dev/intro.md`, `spec/crypto-schemes.md:192`, `crypto/*` | `⊕_b` formula has identical cases; `rln.md` describes v1 while embedding v2; `zk_explainer.md` written against **bellman** (the project uses halo2) |
+| F-630 | `arch/circuit-versioning.md:56` | "Only V2 circuits exist on disk" — five unsuffixed circuits (`Put`/`Take`/`Deposit`/`Withdraw`/`Balance`) |
+
+### 4E — Instrument gaps
+
+| ID | sev | doc | claim |
+|---|---|---|---|
+| F-631 | H | `dev/contracts/checklist.md:3` | presents ~30 items as "the operative pre-commit gates"; only two classes are mechanically enforced (Exec/Apply phasing, clippy-unwrap). Nullifier-zero, temporal bounds, fail-closed, consensus-path rules have no gate |
+| F-632 | M | 12 files | malformed `[…](…)` markdown links (missing `](`) render as literal text; targets exist. `check-doc-index.sh` does not flag link syntax |
+
+### 4F — Registers and indexes pointing at the wrong state
+
+| ID | doc | claim |
+|---|---|---|
+| F-633 | `arch/monero.md:232`, `merge-mining.md:144` | cite `OBL-C67` as "open"; the register records it CLOSED (residual split to `OBL-C80`) |
+| F-634 | `arch/sync.md:3` vs `arch/README.md:51`, `SUMMARY.md:85` | sync.md self-declares SUPERSEDED; the indexes still list it as current with no redirect |
+| F-635 | `arch/consensus/stratum.md:146` | presents `OBL-C68` as an active self-inflicted lock serialization; the code drops the lock before the network call (`OBL-C68` FIXED) |
+| F-636 | `arch/consensus/transfer-spec.md:38,70` | cites a renamed Lean theorem; a caveat about a "legacy identifier" the model no longer has |
+| F-637 | `arch/merge-mining.md:143` | a paragraph duplicated verbatim (lines 143-144 = 146-147) |
 
 ---
 
