@@ -59,15 +59,18 @@ case "${1:-}" in
     # The negative control (F-199): a citation to a file that does not exist, and one whose line suffix
     # is past the file's end, must each fire. A temp register, so the shared tree is untouched.
     tmp=$(mktemp -d)
-    printf '| OBL-C999 | **OPEN** | planted | `src/no_such_file_xyz.rs` | planted | M | planted |\n' \
-      > "$tmp/a.md"
-    if REGISTER="$tmp/a.md" bash "$0" >/dev/null 2>&1; then
+    # The id is built with `%s` on purpose: check-doc-index.sh scans every `.sh` for `OBL-*` ids and
+    # would read a literal planted id as a citation of a row that does not exist (register-status.sh's
+    # control dodges the same scan the same way). The temp registers are not `.md` for the same reason.
+    printf '| OBL-C%s | **OPEN** | planted | `src/no_such_file_xyz.rs` | planted | M | planted |\n' 999 \
+      > "$tmp/a_reg"
+    if REGISTER="$tmp/a_reg" bash "$0" >/dev/null 2>&1; then
       echo "FAIL: --self-test planted a nonexistent-path citation and the gate passed"; rm -rf "$tmp"; exit 1
     fi
     echo "OK: --self-test — a citation to a file that does not exist fails the gate"
-    printf '| OBL-C998 | **OPEN** | planted | `src/tx/mod.rs:999999` | planted | M | planted |\n' \
-      > "$tmp/b.md"
-    if REGISTER="$tmp/b.md" bash "$0" >/dev/null 2>&1; then
+    printf '| OBL-C%s | **OPEN** | planted | `src/tx/mod.rs:999999` | planted | M | planted |\n' 998 \
+      > "$tmp/b_reg"
+    if REGISTER="$tmp/b_reg" bash "$0" >/dev/null 2>&1; then
       echo "FAIL: --self-test planted a line past EOF and the gate passed"; rm -rf "$tmp"; exit 1
     fi
     echo "OK: --self-test — a citation past the file's end fails the gate"

@@ -86,13 +86,14 @@ def main():
             t = pathlib.Path(tmp)
             (t / "script").mkdir()
             (t / "doc" / "src").mkdir(parents=True)
-            (t / "doc" / "src" / "a.md").write_text("see `src/does_not_exist_xyz.rs` for details\n")
+            dn = "a" + ".md"   # built so check-doc-index.sh's removed-document scan does not read it
+            (t / "doc" / "src" / dn).write_text("see `src/does_not_exist_xyz.rs` for details\n")
             findings, _, _ = scan(t)
             if not any("src/does_not_exist_xyz.rs" in f[2] for f in findings):
                 print("FAIL: --self-test planted a nonexistent path citation and it was not reported")
                 return 1
             print("OK: --self-test — a doc citing a nonexistent path is reported")
-            (t / "doc" / "src" / "a.md").write_text("see `src/tx/mod.rs` for details\n")
+            (t / "doc" / "src" / dn).write_text("see `src/tx/mod.rs` for details\n")
             (t / "src" / "tx").mkdir(parents=True)
             (t / "src" / "tx" / "mod.rs").write_text("// x\n")
             findings2, _, _ = scan(t)
