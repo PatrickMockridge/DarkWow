@@ -52,10 +52,10 @@ CODE-VIOLATES-ITS-OWN-SPEC 3 · (plus 7 Phase-0, all DOC-STALE/INSTRUMENT-GAP).
 
 **Adjudication (Phase 5): 95 CONFIRMED · 11 PARTIAL · 2 REFUTED** — see the section below.
 
-**Phase 2 (the formal spine): +109 findings** (`F-301`–`F-375`; some rows aggregate related findings),
-unadjudicated. The new class is
-`CODE-VIOLATES-ITS-OWN-SPEC` — a normative clause the code does not enforce — 15 of them, three at
-severity H in the consensus fee path. See the Phase 2 section below.
+**Phase 2 (the formal spine): +109 findings** (`F-301`–`F-375`; some rows aggregate related findings).
+**Adjudicated: 66 CONFIRMED · 9 PARTIAL · 0 REFUTED** — of which **11 are confirmed
+`CODE-VIOLATES-ITS-OWN-SPEC`** (a normative clause the code does not enforce) owned by no existing row.
+See the Phase 2 section below.
 
 ---
 
@@ -229,6 +229,36 @@ Pervasive across `type-system.md`, `contract-wasm-type-system.md`, `consensus.md
 `consensus-coinbase.md`, `wallet.md`, `net-node-boundary.md` — cited `file:line` ranges that have moved
 while the named symbol still holds the claim (the `OBL-Z5` class). Not filed row-by-row; representative
 instances are folded into the rows above. No gate reads a doc's line citations.
+
+### Phase 2 adjudication (refuter pass)
+
+Five refuters over the 75 rows. **66 CONFIRMED · 9 PARTIAL · 0 REFUTED.** The rate is 0%, but the pass
+did real work — the partials corrected overstatements and mis-citations.
+
+**The 11 confirmed `CODE-VIOLATES` that no existing row owns** — the campaign's highest-value output,
+genuine code-vs-spec gaps invisible until a reader compares the clause to the code:
+`F-301` (FI-GEN-1), `F-302` (FI-PLAIN-2), `F-303` (FI-RISK-1), `F-305` (`ChannelId`), `F-306`
+(`SessionSelector`), `F-308` (mempool non-FeeV3 rejection), `F-309` (re-entrancy), `F-310`
+(`deny(unreachable_patterns)`), `F-311` (`drk_log` ACL), `F-313` (PBKDF2 entropy), `F-314`
+(`nullifier_root` verification).
+
+**The 4 partial `CODE-VIOLATES`** — three are **already tracked** (not new): F-307 → `OBL-C32`,
+F-312 → `OBL-C145`, F-315 → `OBL-C65/66/67/80`; and F-304 is **overstated** — the wallet *does* display
+a per-contract trust tier (`resolve_show_trust`), just not the four-input metric the spec demands, so
+the residual is narrower than "no such metric exists".
+
+**Corrections the partials force:**
+- **F-320** — the sentence is in `wallet.md:701`, not `privacy.md:701` (a mis-citation in the producer's
+  row); and it duplicates the already-open `OBL-C126`.
+- **F-350** — the doc's "14 barbs, 13 types" is stale, but the finding's own replacement count ("14
+  types") is **also wrong**: the recount is 33 barbs and **17** primitive types (and register `OBL-T9`
+  says 16 — the primitive-type count has drifted across at least three records).
+- **F-361** — two of its three sub-claims hold; the third (the §2.6 `pow_reward_v1` "nullifier non-zero"
+  cite) is refuted — that check is still enforced.
+- **F-323** — the stale count is superseded in substance by `OBL-C184`.
+- Several doc line-cites are off by one (`F-355`, `F-356`, `F-357`, `F-362`) — the line-drift class;
+  content unaffected.
+- **F-332** — overreaches: the `:1730` identifier it calls dangling is a real Lean theorem.
 
 ---
 
