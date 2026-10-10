@@ -11,8 +11,10 @@ findings that taught each one as its evidence.
   must hold, where it is enforced, and whether anything checks it today. **Open obligations live
   there.** A resolved finding is a root cause entry below; an unresolved one is an `OBL-*` row there.
 
-A finding is never recorded in both places. If you are looking for the current status of an open
-item, it is in the register — not here.
+A *resolved* finding is a root cause entry here; an unresolved one is an `OBL-*` row in the register.
+A resolved *obligation* may still leave a `SATISFIED`/`CLOSED` row in the register (a property the
+register keeps), so the same property can appear in both — the *finding* does not. If you are looking
+for the current status of an open item, it is in the register — not here.
 
 ## Fundamentals
 
@@ -238,11 +240,12 @@ by `script/circuit_instance_derivation.py` (gate: `scripts/check-circuit-instanc
 which classifies every `constrain_instance` in all `.zk` files as derived, bound, redundant, or
 declared free with a host-side mechanism in `script/circuit_free_instances.txt`. Two things it does
 **not** establish, and they must not be read as settled: a *derivation* proving what the circuit
-intends is the opcode-semantics layer, still named by the uninterpreted, unconsumed obligation
-`Axioms.NoFreeInstances`; and `ECOps.detect_orchard_class_vulnerability` is a `def` over a *modelled*
-gadget that carries no weight for a real circuit. This is **not** "the circuits are formally
-verified" — `proofs/lean/src/DarkFi/Circuits/` contains no Lean declarations, and an earlier version
-of this document said otherwise.
+intends is the opcode-semantics layer, which no Lean term closes — `Axioms.NoFreeInstances` was
+**deleted** on 2026-09-24 and its premise relocated to `Capability.Inversion.CircuitDerivable`, still a
+name; and `ECOps.detect_orchard_class_vulnerability` is a `def` over a *modelled* gadget that carries
+no weight for a real circuit. This is **not** "the circuits are formally verified" — `DarkFi/Circuits/`
+holds *transcriptions* of modelled gadgets (`InstanceDerivation.soundness`, `Token`, `Bridge`), not
+proofs of the shipped circuits, and an earlier version of this document said the directory was empty.
 
 **Detection.**
 
@@ -299,11 +302,14 @@ simultaneously. The rule is the same in both places: the value's *position* must
 **Detection.**
 
 - Every `poseidon_hash(...)` in every `.zk` circuit prepends a `DOMAIN_*` constant as its first
-  argument. `grep "poseidon_hash(" proof/*.zk | grep -v "DOMAIN_"` returns nothing.
+  argument. The *naive* recipe, `grep -rn "poseidon_hash(" --include='*.zk' | grep -v DOMAIN_`,
+  returns ~42 lines, because a multi-line call puts the constant on the *next* line — the sound
+  instrument is `scripts/check-circuit-domain-separation.sh` (its role rule), not the grep.
 - For every `constrain_instance` of a nullifier: is an operation-specific identifier (bulla, proposal
   ID, swap ID, job ID) also constrained and bound to it?
-- The domain vocabulary, cross-circuit: `1 = NULLIFIER`, `2 = TOKEN_COMMIT`, `3 = TX_BINDING`,
-  `4 = COIN_COMMIT`, `5 = MERKLE_LEAF`, `6 = USER_DATA_ENC`, `7 = SIGNATURE_SECRET`.
+- The domain vocabulary, cross-circuit: `1 = DRK_POSEIDON_DOMAIN_NULLIFIER`, `2 = …_TOK_COMMIT`,
+  `3 = …_TX_BINDING`, `4 = …_COMMITMENT`, `5 = …_MERKLE_LEAF`, `6 = …_USER_DATA_ENC`,
+  `7 = …_SIGNATURE_SECRET` (`src/sdk/src/crypto/constants.rs`).
 
 **Taught by.** HAZOP RC3; lessons 14 and 22 (metadata drift); old `RC-D`; HAZOP
 `pattern5_nullifier_collision`. Closed and gated: `OBL-Z2`, `OBL-Z7`.
@@ -446,8 +452,8 @@ follow it. For every `take_*`/`remove`/`delete`, list the fallible operations th
 every merge of concurrent write sets, state what happens on a duplicate key.
 
 **Taught by.** Old `RC-B`; HAZID RC4; lesson 19 — and the coinbase-maturity instance of it is now
-*closed*: the check at `src/linear/src/chain_state.rs:1117` precedes every `apply_batch` at
-`:1340-1349`, both inside `connect_block`. The register records the closure so it is not re-carried.
+*closed*: the check at `src/linear/src/chain_state.rs:1167` precedes every `apply_batch` at
+`:1380-1389`, both inside `connect_block`. The register records the closure so it is not re-carried.
 
 ---
 
@@ -493,7 +499,7 @@ And for any shielded asset: **ask whether a circuit bug allowing unbounded minti
 detectable.** If not, the asset needs a cumulative commitment chain independent of any single
 circuit. The test is not "has the circuit been reviewed?" — Orchard's was reviewed for four years.
 NativeToken's answer is the Pedersen cumulative chain `S_H = S_{H-1} + C_H`, verified two independent
-ways: the `Mint_V1` circuit constrains `ec_add(S_{H-1}, C_H) == S_H` (depends on Halo2 soundness),
+ways: the `Mint_V2` circuit constrains `ec_add(S_{H-1}, C_H) == S_H` (depends on Halo2 soundness),
 and any node can check the identity in pure Pedersen arithmetic via the
 `blockchain.get_cumulative_supply` RPC without verifying a proof (depends on Pedersen binding). To
 hide inflation an attacker must break both simultaneously. The burden of proof falls on the miners
@@ -594,8 +600,9 @@ not the default. A developer who does not read every optional setter gets the in
   `pallas::Base::zero()`, so every call with the same parameters from the same caller produced an
   identical, trivially linkable commitment. The setter existed; the default was the trap. Fixed across
   eight builders by defaulting to `pallas::Base::random(&mut OsRng)`.
-* *Safety features off by default.* `DrainConfig { circuit_breaker: None, exit_queue: None }` as
-  `Default` means every deployment starts unprotected and operators must opt in.
+* *Safety features off by default.* `DrainConfig` once defaulted `circuit_breaker` and `exit_queue` to
+  `None`, so every deployment started unprotected and operators had to opt in. **Fixed**: the `Default`
+  impl now sets both to `Some(...)`.
 * *A random seed supplied as a constant.* The generic-prover path passed `[0u8; 32]` where the shell's
   random seed belonged, making every `blind:<name>` witness a publicly-known constant.
 * *An AEAD nonce of zeros.* Notes encrypted under a fixed `[0u8; 12]` nonce rather than one derived
@@ -630,13 +637,15 @@ lifetime, or its effect is unbounded.
 * *Creation with no deactivation path.* `active: bool` flags with no function that clears them:
   underwriters could not resign, markets could not close, risk types could not be retired, governance
   could not be paused, capabilities could not be revoked. Every record, once created, was permanently
-  active. Seven deactivation functions were added across four contracts.
+  active. Deactivation functions were added across four contracts (insurance_market, betting_stake,
+  pool_stake, relayer_endowment) — the count depends on the reading (six that clear an `active` flag,
+  seven counting the `deactivate_*`/`retire_*`/`close_*` names).
 * *User-supplied collections iterated without a limit.* Not a DoS vector under the current runtime
   ceiling, but the ceiling produces an opaque WASM trap rather than a diagnosable error, and as gas
-  metering evolves the cost becomes proportional and unpredictable. Five per-call `MAX_*` constants
+  metering evolves the cost becomes proportional and unpredictable. Four per-call `MAX_*` constants
   were added (`DARKBET_EXCHANGE_MAX_SETTLE_MATCHES`, `POOL_STAKE_MAX_REBALANCE_MEMBERS`,
-  `RELAYER_ENDOWMENT_MAX_ALLOCATIONS`, `IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS`,
-  `ROULETTE_CONTRACT_MAX_SETTLE_BETS`, all 100).
+  `RELAYER_ENDOWMENT_MAX_ALLOCATIONS`, `ROULETTE_CONTRACT_MAX_SETTLE_BETS`, all 100); identity — named
+  by an earlier version of this count — defines no such constant.
 * *Governance-configurable values with no sanity bounds.* Bridge confirmation counts and fee
   ceilings could be set to any value; `max_deposit`/`max_withdrawal` were parsed and never written to
   state at all.
@@ -741,12 +750,14 @@ go stale.
 In host functions serving hard-path contracts, `ContractError::Internal` (code 2) SHALL NOT be a
 catch-all: each distinct recoverable failure — missing data, corrupt data, handle out of bounds,
 deserialization failure — gets its own variant. It is reserved for genuinely unrecoverable conditions
-(host memory faults, environment crashes). New variants follow the `ComponentOperationFailed` naming
-convention, and the host-side `error!()` log includes the contract ID and relevant keys.
+(host memory faults, environment crashes). New variants name the operation that failed — the tree's
+near form is `NetworkOperationFailed` (`src/error.rs`) — and the host-side `error!()` log includes the
+contract ID and relevant keys.
 
 > **A naming collision worth knowing.** `safety.md C1` in a `#[expect(…, reason = …)]` under
-> `bin/dwowd/src/` refers to the **unwrap-audit tier C1** (RandomX `.expect()`), not to the red-team
-> finding `C-1` and not to HAZOP root cause `RC1`. The tiers were `C1` (RandomX `.expect()`), `C2`
+> `bin/dwowd/src/` is read two ways — this document's own **finding** `C1` (the RandomX `.expect()`
+> sites, which is how the code's comment resolves it) and the later unwrap-audit **tier** `C1` for the
+> same sites. Not the red-team finding `C-1`, not HAZOP root cause `RC1`. The tiers were `C1`, `C2`
 > (`unwrap_or([0u8; N])` PoW bypass), `H3` (`Scalar::from_repr().unwrap()`), `H4` (precision loss),
 > `M1–M7` (mutex poison, daemon/miner/client unwraps).
 
@@ -1058,7 +1069,11 @@ V1→V2 migration rationale. Each rule there prevents a specific instance of RC5
 This document previously numbered its findings as Lessons 1–25, with a second, colliding `RC1–RC5`
 scheme for the July-2026 circuit campaign. Lesson numbers are cited from other documents and from
 Rust comments, so the mapping is kept. **The root-cause ID is the stable name; the lesson number is
-an alias.**
+an alias.** Two caveats. Two lessons are cited by an RC's own *"Taught by"* list that this table maps
+elsewhere — Lesson 3 is RC7's "Taught by" but the table maps it to RC2, and Lesson 21 is RC5's but maps
+to RC12; the *"Taught by"* list is the per-cause record and is the more specific reading. And the
+register's `V1`–`V7` and `C1` finding-ID schemes have **no mapping here** — they collide and are cited
+only, never resolved.
 
 | Legacy | Root cause | Legacy | Root cause |
 |---|---|---|---|
