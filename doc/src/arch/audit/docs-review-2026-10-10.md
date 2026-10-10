@@ -50,6 +50,60 @@ M defence-in-depth or liveness.
 By class: DOC-STALE 68 · REGISTER-ROW-UNSOUND 12 · INSTRUMENT-GAP 9 · AMBIGUOUS-SPEC 5 ·
 CODE-VIOLATES-ITS-OWN-SPEC 3 · (plus 7 Phase-0, all DOC-STALE/INSTRUMENT-GAP).
 
+**Adjudication (Phase 5): 95 CONFIRMED · 11 PARTIAL · 2 REFUTED** — see the section below.
+
+---
+
+## Phase 5 — adjudication (refuter pass)
+
+Seven independent refuters re-opened every finding, verified both quotes verbatim, reproduced any
+cited command, and dedup-checked against the existing rows. Verdicts over the 108 findings:
+
+| Verdict | Count |
+|---|---|
+| CONFIRMED | 95 |
+| PARTIAL (a weaker/different claim; correction below) | 11 |
+| REFUTED (struck) | 2 |
+
+The refutation rate is **2 of 108 (~2%)** — far below the register's own 2026-09-23 precedent (~10 of
+14). Read that as the producers having quoted both sides and verified their paths, **not** as the
+refuters being idle: the same pass corrected a figure or a framing in 11 further findings.
+
+**Refuted — do not action:**
+- **F-154** (HAZOP MOD-7, `NULLIFIER_K` for signature derivation): the pattern is present *verbatim* in
+  the circuit; the producer's own text conceded "unclear it is a defect". Not a stale finding.
+- **F-190** (register `RC1`–`RC6` collision): a duplicate of F-111. One finding, not two.
+
+**Partial — action with the correction:**
+- **F-004** (`slot.md`): the omission is real (`reveal_spin` appears nowhere), but `slot.md` has no
+  "All N" table, so the "circuit table lists 2" framing is loose.
+- **F-112** (`OBL-Z6`): drop the sub-claim "the Lean module calls it partly" — `HashOps.lean` contains
+  no such word; the cell/body divergence (`DECISION` vs "stays `PARTLY`") stands.
+- **F-129** (`OBL-Z19`): the cell is **not empty** — it holds "**M**" misplaced in the "Checked today
+  by" column. A column-placement defect, not an absent cell.
+- **F-136** (HAZOP paths): it is **15 of 15** fully-qualified paths that fail to resolve, not 14.
+- **F-152** (HAZOP MOD-3): the witnesses gained `range_check`s but remain unbound; "partly superseded"
+  is the exact degree.
+- **F-158** (`check_lean_axioms.py`): `run-all-tests.sh` *does* run `check_inventory`
+  (`--require-collector`), so "cannot fail in CI" is wrong; the residue is that its failure path has no
+  *shipped* automated control (`R8`).
+- **F-186** (`safety.md` `DrainConfig`): the bullet sits under the "How it has manifested" section,
+  which documents *resolved* findings by design; the defect is only that it lacks the fix marker its
+  siblings carry.
+- **F-192** (`safety.md`): "a finding is never recorded in both places" — the register rows are recast
+  *obligations* cross-referenced by RC7, not duplicate write-ups; the absolute claim is arguable, not
+  false.
+- **F-194** (`safety.md`): "seven deactivation functions across four contracts" is definition-dependent
+  (a narrow reading yields 6 across 4); the number cannot be crisply adjudicated.
+- **F-198** (`check-wallet-kernel.sh`): a planted-defect control *was* performed (recorded in
+  `run-all-tests.sh`), so "no control" is wrong; the residue is that it is not *shipped* in the script.
+- **F-200** (severity legend): the facts hold (the legend is C/H/M; 17 rows carry `L`); the
+  "severity-partitioning instrument" it warns about is named nowhere.
+
+Two CONFIRMED findings carry a minor caveat: **F-110**'s "72/78/84" aside is not reproducible (the
+"every one fail-open" vs "zero fail-open" contradiction holds); **F-121**'s cited "49" is a historical
+paragraph (the row's "57" vs the run's "52" stands).
+
 ---
 
 ## Cluster 1 — The register's prose, counts and instrument descriptions are stale
