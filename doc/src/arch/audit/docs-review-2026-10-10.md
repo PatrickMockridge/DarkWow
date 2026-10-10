@@ -57,6 +57,13 @@ CODE-VIOLATES-ITS-OWN-SPEC 3 · (plus 7 Phase-0, all DOC-STALE/INSTRUMENT-GAP).
 `CODE-VIOLATES-ITS-OWN-SPEC`** (a normative clause the code does not enforce) owned by no existing row.
 See the Phase 2 section below.
 
+**Phase 3 (the contract descriptions): +136 findings** (`F-501`–`F-551`; some rows aggregate),
+unadjudicated. The dominant family: a doc's "composes with X" section names a cross-contract child call
+the entrypoint never makes (Purse/Box/Escrow/Attestation), plus 10 `CODE-VIOLATES` where an advertised
+mechanism is not implemented (deployooor's `LockV1` no-signature lock, dex's transfer-not-swap,
+relayer_endowment's unpayable `ForceSettle`, `audit.md`'s all-false fix table). See the Phase 3 section
+below. Phases 4 (arch/dev) remains.
+
 ---
 
 ## Phase 5 — adjudication (refuter pass)
@@ -259,6 +266,103 @@ the residual is narrower than "no such metric exists".
 - Several doc line-cites are off by one (`F-355`, `F-356`, `F-357`, `F-362`) — the line-drift class;
   content unaffected.
 - **F-332** — overreaches: the `:1730` identifier it calls dangling is a real Lean theorem.
+
+---
+
+## Phase 3 — the contract descriptions (136 findings, unadjudicated)
+
+Nine agents over the 42 `doc/src/contract/*.md` (eight batches of paired docs + the analysis/app-layer
+docs), each against its manifest, circuits, entrypoint, model and client. Read-at `cb0c85ce8f`.
+**Not refuted.** The Phase-0 detectors already own the circuit-table and function-table classes, so
+these are what they cannot see — the same families recur across nearly every contract.
+
+### 3A — A cross-contract call the doc names and the code does not make
+
+The dominant family: a doc's opening "composes with X" section names a child call the entrypoint never
+makes. `Purse::DepositV1`/`WithdrawV1` is claimed by `drain_protection`, `escrow`, `betting_stake`,
+`labor_market`, `relayer_endowment` — none call Purse (all use `promissory_note::transfer_v1 0x04`),
+and each crate carries an unused `*_PURSE_CONTRACT_ID` constant.
+
+| ID | sev | doc | claim |
+|---|---|---|---|
+| F-501 | H | `drain_protection.md:10`, `escrow.md:9`, `betting_stake.md:9`, `labor_market.md:8`, `relayer_endowment.md:8` | the Purse/Box composition family — no such child call exists |
+| F-502 | H | `auction.md:12` | "composes with escrow"; it composes with `promissory_note` (the stale claim is in the crate's own comments too) |
+| F-503 | H | `box.md:139` | lists `drain_protection`/`subscription`/`dao_escrow` as composing Box — only `escrow` does |
+| F-504 | H | `identity.md:195` | the `VerifyCapabilityV1` caller table names `subscription` (own circuit), `tau` (**no such contract**), `dao_escrow` (removed) |
+| F-505 | H | `tender.md:315` | "`claim_id` is verified by attestation" — tender never calls attestation |
+| F-506 | H | `subscription.md:229` | claims a DAO-Escrow membership Merkle proof in `subscribe.zk`; the circuit instances only `derived_id` + the tx pair |
+| F-507 | H | `insurance_market.md:350` | claims PN `RevokeV1`/`IssueV1`; every child call is `TransferV1` |
+| F-508 | H | `promissory_note_intermediaries.md:190,204,198` | the bridge "uses TransferV1 exclusively" / "does not use RedeemV1" — it uses `IssueV1`/`RedeemV1`, and never `validate_child_value_commit` |
+| F-509 | M | `game_room.md:168,183` | Deposit/Withdraw use `RevokeV1`/`IssueV1`; the code uses `TransferV1` |
+| F-510 | M | `pool_stake.md:8` | Slash uses a `transfer_v1` child; `process_slash_coverage` reads no child |
+
+### 3B — A mechanism the doc advertises that the code does not implement (`CODE-VIOLATES`)
+
+| ID | sev | doc | code | claim |
+|---|---|---|---|---|
+| F-511 | H | `deployooor.md:63` | `deployooor/src/entrypoint/lock.rs:58` | `LockV1` verifies "a signature from the deployer"; it publishes an **empty** signature-pubkey vector and checks no signature — any tx can lock any deployed contract |
+| F-512 | H | `dex.md:109` | `dex/src/entrypoint/execute_swap.rs:109` | `ExecuteSwap*` drive `otc_swap_v1 (0x05)`; the enforced child byte is `0x04` (`transfer_v1`) — the DEX does plain transfers (the code comments say 0x05 too) |
+| F-513 | H | `relayer_endowment.md:92` | `relayer_endowment/src/entrypoint.rs:980` | `ForceSettle`'s pro-rata share reads `total_collected_fees_log`, **never incremented** — the guard is always false and it can never pay |
+| F-514 | M | `insurance_market.md:179` | `resolve_claim_with_capability.rs:56` | `ResolveClaimWithCapabilityV1` carries a `capability_proof` the handler never reads |
+| F-515 | M | `dex.md:158` | `create_swap.rs:100` | "Host verifies `schnorr_verify`"; `get_metadata` publishes no signature pubkeys and no host check runs |
+| F-516 | M | `stablecoin.md:45` | `stablecoin/src/entrypoint.rs:124` | four "selectable models"; `model` is decoded but never stored or branched on |
+| F-517 | M | `stablecoin.md:178` | `entrypoint.rs:1755` | "verifies every exposed input"; `interest_accrued` is not (`OBL-C204`) |
+| F-518 | M | `otc_swap.md:170` | `otc_swap/proof/cancel_swap.zk:66` | the cancel circuit enforces the timeout via `less_than_strict`; it was **removed** (host-enforced) |
+| F-519 | H | `audit.md:24,27,28,25` | `bridge/src/lib.rs:69` | the "Key Fixes Applied" table advertises four bridge fixes (`ReassignWithdrawalV1`, `token_minimum`, sparse-Merkle, slashing) — none is in the tree |
+| F-520 | M | `dex.md:40` | `dex/src/model/mod.rs:64` | `InitializeV1` registers a governance key; none is stored/written |
+
+### 3C — A module, function or field the doc teaches that does not exist
+
+| ID | doc | claim |
+|---|---|---|
+| F-521 | `wallet.md` (via contract docs) | `manifest_verify.rs`, `build_proof`, `build_fee_and_finalize_tx` — see Phase 2 |
+| F-522 | `composability.md:74` | `validate_child_transfer_value` — phantom; the helper is `validate_child_value_commit` |
+| F-523 | `composability.md:57` | `Output.public_value`/`public_asset_id` and a `TransferOutput_V1` circuit — neither exists |
+| F-524 | `game_room_app_layer.md:122,81` | `entropy_commit`/`entropy_reveal`/`get_account` — no such `GameRoomClient` methods |
+| F-525 | `drain_protection.md:70` | `GraduatedTiers` / `DrainConfig::full/conservative/minimal` — none exist |
+| F-526 | `promissory_note.md:292` | an `is_notequal(value, 0)` gate and a whole "Breakthrough" section on it; the opcode is `is_not_equal` and `Redeem` uses `constrain_equal_base(value, ZERO)` |
+| F-527 | `multi_contract` field tables | `game_room` `PlayerAccount.balance/locked`; `relayer_endowment`/`betting_stake`/`pool_stake`/`roulette`/`darkbet_exchange`/`bearer_bond`/`oracle`/`auction`/`attestation` struct tables each omit `version`/`instance_seed`/… — a serialization-layout mismatch (aggregated; ~15 rows) |
+
+### 3D — A state machine the doc draws that the code cannot reach
+
+| ID | doc | claim |
+|---|---|---|
+| F-528 | `game_room.md:57` | `RoomState::Concluded` unreachable |
+| F-529 | `attestation.md:124` | `ClaimState::Rejected` never set (reverts instead) |
+| F-530 | `auction.md:63` | a `Claimed` bid state; `BidState` ends at `Refunded` |
+| F-531 | `tender.md:105` | `BidState::Expired` unreachable |
+| F-532 | `darktoshi_dice.md:16` | a single `SETTLED` state and a SettleBet→CANCELLED edge; five states, none named SETTLED |
+| F-533 | `darkbet_exchange.md:249,283` | `MarketState::Closed/Cancelled` and `PositionState::Refunded` never set; no `None` variant |
+| F-534 | `lottery.md:77` | a four-state machine with `TICKETS_SOLD`; only three states exist |
+| F-535 | `labor_market.md:118` | Cancel-from-Delivered edge; Cancel is Created-only; Dispute/Refund edges omit InProgress |
+
+### 3E — Stale opcodes, layouts, trees, counts
+
+| ID | doc | claim |
+|---|---|---|
+| F-536 | `composability.md:102,109`, `recruitment_pipeline.md:104` (H) | `Identity::VerifyCapabilityV1` written `0x0b`; it is `0x06`; and `VerifyMemberCapabilityV1`/`ResolveDisputeV1 (0x0b/0x0c)` are retired dao_escrow selectors |
+| F-537 | `oracle.md:188`, `:70` (H) | `DOMAIN_OPERATOR_COMMITMENT = witness_base(4)`; all six circuits use `witness_base(8)` — a client's proofs fail |
+| F-538 | `promissory_note.md:537` (H) | the five Public-Input-Layout sections omit the trailing `tx_binding`/`tx_nonce` pair (the wire spec 21 contracts zip against) |
+| F-539 | `promissory_note.md:379`, `otc_swap.md:143`, `escrow.md:119` | params/pubinput snippets omit `tx_nonce`/the trailing pair; `escrow`'s commitment omits the domain tags |
+| F-540 | `dao_escrow.md:252` (H) | the `constrain_instance` order for 3 of 5 circuits is the pre-`OBL-C198` order — a client publishes in an order the circuit rejects |
+| F-541 | `multi_contract` V1-vs-V2 | `bearer_bond.md:393` (`Burn_V1`…), `promissory_note.md:876` (`*_v1.rs` files), `slot.md`, `roulette.md:26` name `_V1` circuits/files that are `_V2` (aggregated) |
+| F-542 | `bearer_bond.md:210,228,242`, `:76` | `CoinAttributes`→`CommitmentAttributes`; missing `series_asset_id`; tree keyed by `commitment` not `token_commit`; missing `receipt_*` fields |
+| F-543 | `multi_contract` trees | `multisig.md:208` fabricates an `info` tree; `identity.md:281` omits `identity_info`; `bearer_bond.md:451` wrong tree names; `bridge.md:80`+`deployooor.md:92` — the **manifest** omits `chain_events`/`singleton` while the doc and constants list them |
+| F-544 | `bearer_bond.md:439`, `otc_swap.md:118`, `box.md` | capability tables list 6/4/… where the manifest declares 1/2 — doc and manifest disagree on the capability ABI |
+| F-545 | `multi_contract` counts | `bearer_bond.md:407` "30 variants" (35); `otc_swap.md:239` "274 lines" (708); `promissory_note_intermediaries.md:432` opcode-consumer counts; `roulette.md:167` "circuits not yet built" (built) |
+| F-546 | `recruitment_pipeline.md:201`, `provable_randomness.md:427` | `RegisterCapabilityV1` `0x09` (is `0x04`); `ContributeEntropyV1` `0x04` (is `0x09`) |
+| F-547 | `dex.md:47,148`, `baccarat.md:73`, `slot.md:139` | `(BaseDiv)` annotations on circuits that use quotient-remainder; `baccarat`'s payout formula; `slot`'s "paytable lookup in ZK" (it instances `payout`) |
+| F-548 | `audit.md:15`, `:22` | "14 FIXED / 3 PLANNED" contradicts `AUDIT.md` (all 17 FIXED); HTLC `claimed_at`/`refunded_at` absent |
+| F-549 | `risk_market_ecosystem.md:115,263` | a proposed insurance selector table that doesn't match the shipped ABI; a `prediction_market` contract that doesn't exist |
+| F-550 | `bridge.md`, `betting_stake.md` | `betting_stake`'s `Stake`/`TableStakeRegistry` omit fields; `bridge` value-commit validation is inline not the named helper |
+
+### 3F — The `security-analysis.md`-style status pages inside contract docs
+
+`audit.md` (`audit.md`) and the "MVP Status"/"Future Improvements" tables in `subscription.md`,
+`lottery.md`, `roulette.md` mark as **Complete/Done** features that are removed or absent
+(`subscription.md:345` DAO-treasury + bridge "✅ Complete"; `lottery.md:283` "Merkle tree" +
+"tests" unchecked but present; `roulette.md:167` circuits "not yet built" but shipped). Aggregated as
+**F-551** (H, ~6 sites).
 
 ---
 
