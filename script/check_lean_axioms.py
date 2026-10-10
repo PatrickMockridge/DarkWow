@@ -151,7 +151,7 @@ def check_no_sorry():
     return True
 
 
-OPAQUE_RE = re.compile(r"^\s*(?:private\s+|protected\s+|noncomputable\s+)*opaque\s+(\S+)")
+OPAQUE_RE = re.compile(r"^\s*(?:@\[[^\]]*\]\s*)?(?:private\s+|protected\s+|noncomputable\s+)*opaque\s+(\S+)")
 
 
 def check_axiom_location():
@@ -166,7 +166,7 @@ def check_axiom_location():
         code = strip_comments(open(path, encoding="utf-8").read())
         lines = code.splitlines()
         for lineno, line in enumerate(lines, 1):
-            m = re.match(r"^\s*(?:private\s+|protected\s+|noncomputable\s+)*axiom\s+(\S+)", line)
+            m = re.match(r"^\s*(?:@\[[^\]]*\]\s*)?(?:private\s+|protected\s+|noncomputable\s+)*axiom\s+(\S+)", line)
             if m and os.path.abspath(path) != os.path.abspath(AXIOMS_FILE):
                 bad.append(f"{rel(path)}:{lineno}: axiom {m.group(1)}")
                 continue
@@ -202,18 +202,31 @@ def declared_names():
     return names
 
 
-def assumptions():
-    """Parse each assumption block in Axioms.lean into (name, lineno, docblock)."""
-    text = open(AXIOMS_FILE, encoding="utf-8").read()
+DECL_RE = re.compile(
+    r"^(?:@\[[^\]]*\]\s*)?(?:(?:private|protected|noncomputable)\s+)*"
+    r"(?:axiom|opaque)\s+([A-Za-z_][A-Za-z0-9_.']*)", re.MULTILINE)
+
+
+def assumptions(path=None):
+    """Every `axiom`/value-less `opaque` in Axioms.lean as (name, lineno, docblock).
+
+    Collected in *two passes*, because the two defects are opposite. A declaration is *live* only
+    if it survives `strip_comments` (a commented-out assumption is not in the theory). But the
+    `/-- ... -/` doc block is itself a comment, so it is read from the *raw* text. And a
+    declaration with no doc block at all is still collected — an undocumented assumption must
+    reach the inventory diff, or it can be smuggled in invisibly (docs-review F-156; F-157 is the
+    comment-out half). An attribute prefix is admitted (F-159).
+    """
+    raw = open(path or AXIOMS_FILE, encoding="utf-8").read()
+    live = strip_comments(raw)
     out = []
-    for m in re.finditer(
-        r"/--(.*?)-/\s*\n((?:(?:private|protected|noncomputable)\s+)*"
-        r"(?:axiom|opaque)\s+([A-Za-z_][A-Za-z0-9_.']*))",
-        text, re.DOTALL,
-    ):
-        doc, _, name = m.group(1), m.group(2), m.group(3)
-        lineno = text[: m.start()].count("\n") + 1
-        out.append((name, lineno, doc))
+    for m in DECL_RE.finditer(live):
+        name = m.group(1)
+        lineno = live[: m.start()].count("\n") + 1
+        dm = re.search(
+            r"/--(.*?)-/\s*(?:@\[[^\]]*\]\s*)?(?:(?:private|protected|noncomputable)\s+)*"
+            r"(?:axiom|opaque)\s+" + re.escape(name) + r"\b", raw, re.DOTALL)
+        out.append((name, lineno, dm.group(1) if dm else ""))
     return out
 
 
@@ -398,6 +411,18 @@ def qualified_theorems():
     return out
 
 
+def inventory_problems(declared, actual):
+    """The inventory diff, both directions — extracted so its own control can call it (F-158)."""
+    out = []
+    for n in sorted(declared - actual):
+        out.append(f"{n} is declared in the register's inventory but is not in Axioms.lean "
+                   f"— an assumption was removed without recording it")
+    for n in sorted(actual - declared):
+        out.append(f"{n} is in Axioms.lean but not declared in the register's inventory "
+                   f"— an assumption was added without recording it")
+    return out
+
+
 def check_inventory():
     """(6) The register's declared inventory must equal `Axioms.lean`'s actual assumptions.
 
@@ -421,14 +446,8 @@ def check_inventory():
         return False
     declared = {l.strip() for l in m.group(1).splitlines() if l.strip()}
     actual = {name for name, _, _ in assumptions()}
-    absent = sorted(declared - actual)
-    undeclared = sorted(actual - declared)
-    for n in absent:
-        fail(f"{n} is declared in the register's inventory but is not in Axioms.lean "
-             f"— an assumption was removed without recording it")
-    for n in undeclared:
-        fail(f"{n} is in Axioms.lean but not declared in the register's inventory "
-             f"— an assumption was added without recording it")
+    for p in inventory_problems(declared, actual):
+        fail(p)
     if absent or undeclared:
         return False
     ok(f"the register's inventory matches Axioms.lean ({len(actual)} assumptions)")
@@ -562,12 +581,39 @@ def self_test():
     if reconcile(fed, rows, dupes, set()) is None:
         problems.append("a duplicated row reconciled")
 
+    # The inventory check's own control (F-158). Its two-directional claim — "a new assumption cannot
+    # be sneaked in; a removed one cannot vanish" — is what makes absence a failure, and an arm that
+    # has never been shown to fail is a claim, not a check. `inventory_problems` is the extracted diff,
+    # exercised here without touching Axioms.lean or the register.
+    if not inventory_problems({"only_declared"}, {"only_declared", "smuggled"}):
+        problems.append("inventory: an added assumption did not fire")
+    if not inventory_problems({"declared", "gone"}, {"declared"}):
+        problems.append("inventory: a removed assumption did not fire")
+
+    # The assumptions() parser's controls (F-156/157/159): an undocumented axiom must be seen, a
+    # commented-out one must not, and an attributed one must. A temp file, so the "no files" note in
+    # the docstring is relaxed to "no Lean, no clock" — the file is this process's own.
+    import tempfile, os as _os
+    probe = ("/-- d -/\naxiom doc_ok : Nat\naxiom bare : Nat\n@[simp] axiom tagged : Nat\n"
+             "/-\naxiom gone : Nat\n-/\n")
+    with tempfile.NamedTemporaryFile("w", suffix=".lean", delete=False) as fh:
+        fh.write(probe)
+        tmp = fh.name
+    seen = {n for n, _, _ in assumptions(tmp)}
+    _os.unlink(tmp)
+    for want in ("doc_ok", "bare", "tagged"):
+        if want not in seen:
+            problems.append(f"assumptions: {want} was not seen")
+    if "gone" in seen:
+        problems.append("assumptions: a commented-out axiom was seen")
+
     if problems:
         for p in problems:
             fail(f"self-test: {p}")
         return 1
-    ok("self-test: a clean stream reconciles, a renamed row is named, an unresolved name and a "
-       "duplicate row are told apart")
+    ok("self-test: a clean stream reconciles; a renamed row, an unresolved name and a duplicate row "
+       "are told apart; an added/removed assumption and an undocumented/commented-out/attributed "
+       "`axiom` each behave")
     return 0
 
 
