@@ -1,14 +1,12 @@
 # Documentation-vs-Code Review — Findings Ledger
 
-**Started 2026-10-10.** Phase 0 (instruments) and Phase 1 (registers) are complete; Phases 2–5 (the
-formal spine, contract docs, arch/dev, and adjudication) have not run. This is the intake ledger for a
-documentation review against the code it describes. It is **not a home**: remediation moves each
-confirmed finding to where it belongs (a doc edit, a new `OBL-*` row in [the
-register](../verification-hazop.md), or a new gate) and stamps the row's `promoted` cell.
-
-Read every finding as a **hypothesis** (`R6`) until it is adjudicated: the producer agent quoted both
-sides, but the refuter pass (Phase 5) has not run. Read-at-commit for all Phase-1 findings:
-`9c6ad4a6c4a83b4c5b4d9589ec990075d3e95352`.
+**Started 2026-10-10; the review is complete and fully adjudicated** — read the code before acting on any
+row (`R6`). Four phases (the registers; the formal spine + Lean/Python; the contract descriptions;
+arch/dev + the narrative tail) reviewed the corpus against the code, and a refuter pass adjudicated
+every row: **486 findings — 239 CONFIRMED, 29 PARTIAL, 3 REFUTED**. This is the intake ledger for that
+review. It is **not a home**: remediation moves each confirmed finding to where it belongs (a doc edit, a
+new `OBL-*` row in [the register](../verification-hazop.md), or a new gate) and records the stamp in the
+`<!-- promotion-log -->` block at this file's foot, which `scripts/check-ledger-promotion.sh` reads.
 
 ## Why this exists
 
@@ -682,16 +680,26 @@ matrix holds this at risk *n*; the named circuit now carries an explicit `HAZOP 
 
 ## What is not established (R7)
 
-- **All 101 Phase-1 findings are unadjudicated hypotheses.** The producer agents quoted both sides, but
-  the refuter pass (Phase 5) has not run; the register's own precedent is a ~70% refutation rate on its
-  2026-09-23 adversarial pass, so expect a material fraction to fall.
-- Phases 2–4 (formal spine incl. Lean theorems and Python models, contract docs, arch/dev, narrative
-  tail) have **not** run. This ledger covers the registers only.
-- No gate, test, `cargo` command or Lean build was executed by any Phase-1 agent (`R5`); every verdict
-  is from reading code, manifests, scripts and git history — no exit code was witnessed, and the
-  heavyweight half of any claim (a fixture run, a Lean kernel check) is unverified.
+- **Symbol and mechanism claims have no sound gate.** A doc claim that a *symbol* or a *mechanism* is X
+  cannot be mechanically checked (names lie — `R6`); those rows are verified by a two-sided read and are
+  recorded as this exercise's named residue rather than a silent gap.
+- **Line-number drift** is pervasive in the register and was not filed row-by-row (rows whose cited line
+  moved but whose code still supports the proposition) — the `OBL-Z5` class.
 - A blanket "every *N* circuits" scanner was **built and rejected as unsound** (Phase 0): the count gate
   fires only on global phrasings; the residual class is left to the agent pass.
-- Line-number drift is pervasive in the register and was **not** filed row-by-row (rows whose cited line
-  moved but whose code still supports the proposition): examples across C56, C82, C96, C102, C126, plus
-  F-124/F-125/F-126 above. It is the class `OBL-Z5` already records.
+- Three rows were **refuted** in adjudication (`struck`) and 29 are PARTIAL (each with its correction
+  recorded in the phase's adjudication subsection).
+- No gate, test, `cargo` command or Lean build was executed by any review agent (`R5`); every review
+  verdict is from reading code, manifests, scripts and git history. A remediation fix is the first place
+  a run is quoted.
+
+## Promotion log (remediation)
+
+Remediation moves each confirmed finding to its home and records the stamp in the block below;
+`scripts/check-ledger-promotion.sh` reads it. Grammar — a comma-separated list per row:
+`doc:<path>#<anchor>@<commit>` · `row:OBL-<id>` · `gate:<script>` · `struck:REFUTED:<id>` ·
+`partial:<the correction applied>`.
+
+<!-- promotion-log -->
+refuted: F-154 F-190 F-517
+<!-- /promotion-log -->
