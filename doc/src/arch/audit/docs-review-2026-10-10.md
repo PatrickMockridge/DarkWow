@@ -57,12 +57,12 @@ CODE-VIOLATES-ITS-OWN-SPEC 3 · (plus 7 Phase-0, all DOC-STALE/INSTRUMENT-GAP).
 `CODE-VIOLATES-ITS-OWN-SPEC`** (a normative clause the code does not enforce) owned by no existing row.
 See the Phase 2 section below.
 
-**Phase 3 (the contract descriptions): +136 findings** (`F-501`–`F-551`; some rows aggregate),
-unadjudicated. The dominant family: a doc's "composes with X" section names a cross-contract child call
-the entrypoint never makes (Purse/Box/Escrow/Attestation), plus 10 `CODE-VIOLATES` where an advertised
-mechanism is not implemented (deployooor's `LockV1` no-signature lock, dex's transfer-not-swap,
-relayer_endowment's unpayable `ForceSettle`, `audit.md`'s all-false fix table). See the Phase 3 section
-below. Phases 4 (arch/dev) remains.
+**Phase 3 (the contract descriptions): +136 findings** (`F-501`–`F-551`; some rows aggregate).
+**Adjudicated: 45 CONFIRMED · 5 PARTIAL · 1 REFUTED** — of which **9 are confirmed `CODE-VIOLATES`**
+owned by no existing row (deployooor's `LockV1` no-signature lock, dex's transfer-not-swap,
+relayer_endowment's unpayable `ForceSettle`, `audit.md`'s all-false fix table, …). The dominant family:
+a doc's "composes with X" section names a cross-contract child call the entrypoint never makes. See the
+Phase 3 section below. **Phase 4 (arch/dev + narrative tail) remains.**
 
 ---
 
@@ -363,6 +363,33 @@ and each crate carries an unused `*_PURSE_CONTRACT_ID` constant.
 (`subscription.md:345` DAO-treasury + bridge "✅ Complete"; `lottery.md:283` "Merkle tree" +
 "tests" unchecked but present; `roulette.md:167` circuits "not yet built" but shipped). Aggregated as
 **F-551** (H, ~6 sites).
+
+### Phase 3 adjudication (refuter pass)
+
+Five refuters over the 51 rows. **45 CONFIRMED · 5 PARTIAL · 1 REFUTED.**
+
+**Refuted — do not action:**
+- **F-517** — a duplicate of the existing `OBL-C204` row (which already owns the stablecoin
+  `interest_accrued` finding).
+
+**Partial — action with the correction:**
+- **F-501** (aggregated) — overreaches on **escrow**, which *does* call `Purse::DepositV1` (in
+  `FundV1`) and `Box::TakeV1` (in `ClaimV1`); only its Refund-Box claim is false. The other four
+  (drain_protection, betting_stake, labor_market, relayer_endowment) hold.
+- **F-527** (aggregated struct tables) — holds for 8 of the 9 contracts it names; overreaches on
+  `oracle` and `bearer_bond`, whose documented structs carry no `version`/`instance_seed` in code.
+- **F-541** (V1-vs-V2) — the `bearer_bond` and `promissory_note` sites hold; the `slot`/`roulette`
+  sub-cites do not (those `V1` names are real enum variants, not stale circuit names).
+- **F-544** (capability tables) — `bearer_bond` (6 vs 1) and `otc_swap` (4 vs 2) hold; the `box.md`
+  sub-cite does not (box has no capability-discriminant table).
+- **F-550** — the `betting_stake` half holds; the `bridge` half does not (bridge.md makes no
+  value-commit claim).
+
+**The 9 confirmed `CODE-VIOLATES` owned by no existing row** — the Phase-3 equivalent of the Phase-2
+`FN-3xx` set: `F-511` (`LockV1` no signature — the refuter traced the whole tx-validity path),
+`F-512` (`dex` 0x04 vs 0x05), `F-513` (unpayable `ForceSettle`), `F-514` (unread `capability_proof`),
+`F-515` (no host `schnorr_verify`), `F-516` (models never stored), `F-518` (cancel timeout removed),
+`F-519` (`audit.md`'s fix table), `F-520` (no governance key).
 
 ---
 
