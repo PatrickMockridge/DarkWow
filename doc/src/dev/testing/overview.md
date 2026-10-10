@@ -362,7 +362,7 @@ block creation, and WASM execution) without multi-node networking.
 | **No real PoW** | `u32::MAX` target (instant blocks), deterministic ZK (`dwow_native_token_contract::enable_deterministic_zk()`) | Real RandomX mining, xmrig integration, target adjustment |
 
 **Key tests:** `test_genesis_determinism` and `test_block_creation` in
-[`bin/dwowd/src/tests/genesis.rs`../../../../bin/dwowd/src/tests/genesis.rs).
+[`bin/dwowd/src/tests/genesis.rs`](../../../../bin/dwowd/src/tests/genesis.rs).
 
 **Bridge tests:** `test_wallet_coinbase_scan_only`,
 `test_canonical_call_failure_rejects_block`,

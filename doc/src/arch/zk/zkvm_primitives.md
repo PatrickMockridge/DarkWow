@@ -1,6 +1,6 @@
 # zkVM Primitive Layer: Opcode Reasoning
 
-> **Note:** The core zkVM opcode layer (constraint system, bincode format, WASM execution model) is inherited from upstream DarkFi. DarkWow-specific additions (LessThanOrEqual, BaseDiv, IsNotEqual) are documented in [What's Different from Upstream../../about/differences_from_upstream.md).
+> **Note:** The core zkVM opcode layer (constraint system, bincode format, WASM execution model) is inherited from upstream DarkFi. DarkWow-specific additions (LessThanOrEqual, BaseDiv, IsNotEqual) are documented in [What's Different from Upstream](../../about/differences_from_upstream.md).
 
 > **Prerequisite reading**: Before this document, read [Field Arithmetic Constraints](field_arithmetic.md). It explains why every operation in a ZK circuit must be re-expressed in finite field arithmetic — and why that re-expression is the primary difficulty in ZK circuit design. The examples in this document assume you understand field vs. integer ordering and modular arithmetic.
 
@@ -516,5 +516,5 @@ to call other circuits directly. See [O-Cap](../ocap.md) for cross-contract patt
 - [Field Arithmetic Constraints](field_arithmetic.md) — foundational reading for understanding why ZK circuit arithmetic is hard
 - [O-Cap & Composable Privacy](../ocap.md) — the authorization pattern these opcodes enable and how they compose across contracts
 - [intent-amm fork (rusticml)](https://codeberg.org/rusticml/darkfi-intent-amm-proposal) — experimentation with intent-based AMM logic
-- [zkas bincode../../zkas/bincode.md) — existing opcode specifications
+- [zkas bincode](../../zkas/bincode.md) — existing opcode specifications
 - [Smart Contracts architecture](../sc/sc.md) — contract layer built on zkVM

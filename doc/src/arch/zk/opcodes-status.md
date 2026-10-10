@@ -137,4 +137,4 @@ All 120 contract circuits were audited for this pattern:
 - [Opcodes and Formal Verification](opcodes.md) — Full proof architecture and Lean 4 project structure
 - [Field Arithmetic](field_arithmetic.md) — ZK field arithmetic fundamentals
 - [ZK Verification](zk_verification.md) — Host-level ZK proof verification
-- [Proofs README../../../../proofs/lean/README.md) — How to run the verification suite
+- [Proofs README](../../../../proofs/lean/README.md) — How to run the verification suite

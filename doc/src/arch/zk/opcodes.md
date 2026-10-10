@@ -725,4 +725,4 @@ Note: `LessThanOrEqual` (0x55) verification is complete via Lean 4 exhaustive te
 
 - [opcode_universe.md](opcode_universe.md) — Complete mathematical universe
 - [zkvm_primitives.md](zkvm_primitives.md) — zkVM internals
-- [proofs/lean../../../../proofs/lean/) — Lean 4 verification source code
+- [proofs/lean](../../../../proofs/lean/) — Lean 4 verification source code

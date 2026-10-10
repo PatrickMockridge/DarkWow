@@ -218,6 +218,15 @@ run_gate "circuit metadata alignment"     bash "$SCRIPT_DIR/check-circuit-metada
 run_gate "manifest ↔ entrypoint agreement" \
     bash "$SCRIPT_DIR/check-manifest-entrypoint-agreement.sh"
 run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain-separation.sh"
+# The docs-vs-code review's doc-fact gates (2026-10-10). Nothing read a doc's prose claim about a code
+# fact; `check-contract-doc-functions.sh` compares a contract doc's function/opcode table to its manifest
+# and is GREEN — wired blocking here, with its control. Its sibling `check-contract-doc-circuits.sh` (the
+# circuit table + "All N circuits") is RED on five stale docs and is wired report-only until remediation
+# E5 corrects them, then flipped (Phase F). `check-doc-canonical-counts.sh` likewise.
+run_gate "a contract doc's function table ↔ its manifest" \
+    bash "$SCRIPT_DIR/check-contract-doc-functions.sh"
+run_gate "control: the doc-function-table gate can fail" \
+    bash "$SCRIPT_DIR/check-contract-doc-functions.sh" --self-test
 # OBL-Z1: the Orchard-class rule. The other two circuit gates are structural (counts, prefix
 # presence); this is the only one that asks whether an exposed public input is *determined*.
 # **It is GREEN, re-measured 2026-09-24, and it is the gate the circuits' Lean discharge rests on**:

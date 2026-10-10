@@ -82,6 +82,13 @@ for path in sorted(glob.glob(f"{docs}/**/*.md", recursive=True)):
         if not os.path.exists(os.path.normpath(os.path.join(base, target))):
             lineno = text[:m.start()].count("\n") + 1
             problems.append(f"{rel}:{lineno}: link target does not exist: {target}")
+    # A malformed link — a `[` with no `]` before its `)` — renders as literal text and is invisible to
+    # the `](target)` scan above. Require the content to end in a path token (`.ext` or `/`), so prose
+    # brackets and math intervals (`[0, 2^253)`) do not cry wolf while a real label+path does.
+    for m in re.finditer(r'\[[^)\]]*?/[^)\]]*?(?:\.\w+|/)\)', text):
+        lineno = text[:m.start()].count("\n") + 1
+        problems.append(f"{rel}:{lineno}: malformed link (no `](`) — renders as literal text: "
+                        f"{m.group(0)[:60]!r}")
     for m in re.finditer(r'\{\{#include\s+([^\s}:]+)(?::([^}]+))?\}\}', text):
         inc, anchor = m.group(1), m.group(2)
         target = os.path.normpath(os.path.join(base, inc))
@@ -163,6 +170,13 @@ for path in scan_files:
         if ref not in safety:
             lineno = text[:m.start()].count("\n") + 1
             problems.append(f"{rel}:{lineno}: cites safety.md but it does not mention: {ref}")
+    # 6b. A bare `RC<n>` names a root cause only if n is one of safety.md's canonical RC1..RC12
+    # (docs-review F-111/F-190: the register's own RC1..RC6 collided with these; remediation renames
+    # them to CAUSE-*, so a bare RC<n> out of range is caught here).
+    for m in re.finditer(r'(?<![\w.\-])RC(\d+)(?![\w\-])', text):
+        if not (1 <= int(m.group(1)) <= 12):
+            lineno = text[:m.start()].count("\n") + 1
+            problems.append(f"{rel}:{lineno}: bare RC{m.group(1)} names no safety.md root cause (1..12)")
 
 # ------------------------------------- 7. no citation of a deleted .md
 # Basename-level, against every .md in the repository rather than only doc/src —
