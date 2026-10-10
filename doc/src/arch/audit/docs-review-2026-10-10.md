@@ -64,11 +64,16 @@ relayer_endowment's unpayable `ForceSettle`, `audit.md`'s all-false fix table, �
 a doc's "composes with X" section names a cross-contract child call the entrypoint never makes. See the
 Phase 3 section below.
 
-**Phase 4 (arch/dev + narrative tail): +133 findings** (`F-601`–`F-637`; some rows aggregate),
-unadjudicated — the whole review is now recorded. The dominant family: `dev/` and `testnet/`
+**Phase 4 (arch/dev + narrative tail): +133 findings** (`F-601`–`F-637`; some rows aggregate).
+**Adjudicated: 33 CONFIRMED · 4 PARTIAL · 0 REFUTED.** The dominant family: `dev/` and `testnet/`
 operational docs running commands that do not exist, plus ~25 stale counts/constants, ~15 phantom
 modules/symbols, and CODE-VIOLATES where a spec the code does not meet (or two specs that contradict).
 See the Phase 4 section below.
+
+**The review is complete and fully adjudicated:** all four phases recorded, every row refuted-or-not.
+Totals — **486 findings; 239 confirmed rows**, of which **~25 are `CODE-VIOLATES-ITS-OWN-SPEC` owned
+by no existing row** (the Phase-2 `F-3xx` and Phase-3 `F-5xx` sets), the rest the record drifting from
+the code. The next exercise is remediation.
 
 ---
 
@@ -473,6 +478,20 @@ The largest family: `dev/` and `testnet/` operational docs, plus two whole-binar
 | F-635 | `arch/consensus/stratum.md:146` | presents `OBL-C68` as an active self-inflicted lock serialization; the code drops the lock before the network call (`OBL-C68` FIXED) |
 | F-636 | `arch/consensus/transfer-spec.md:38,70` | cites a renamed Lean theorem; a caveat about a "legacy identifier" the model no longer has |
 | F-637 | `arch/merge-mining.md:143` | a paragraph duplicated verbatim (lines 143-144 = 146-147) |
+
+### Phase 4 adjudication (refuter pass)
+
+Five refuters over the 37 rows. **33 CONFIRMED · 4 PARTIAL · 0 REFUTED.**
+
+**Partial — action with the correction:**
+- **F-631** (the checklist instrument-gap) — the "only two classes are enforced" universal is **false**: `run-all-tests.sh` wires ~90 gates and `hooks/pre-commit` blocks on two more, so several checklist items map to shipped gates. The valid residue is narrower — the four named rule classes (nullifier-zero, temporal bounds, fail-closed, consensus-path) have **no** gate — and the file has 48 checkboxes, not ~30.
+- **F-633** (the `OBL-C67` citation) — `monero.md:232` does call it "open" (the register Status column says `CLOSED`, residual split to `OBL-C80`), but `merge-mining.md:144` merely cites it without the word "open"; and the register's **own body** says "OPEN." while its Status column says CLOSED — an internal conflict the row did not name.
+- **F-614** (`zk-engineering-posture`) — the underlying code fact is already owned by `OBL-C134`; only the residual (this posture doc still makes the absolute claim, and it is not in that row's swept-file list) is new.
+- **F-625** (`for-researchers` counts) — the "32 opcodes" sub-claim is a doc-vs-doc inconsistency (32 enum variants incl. the internal `Noop`; 31 usable), not a clean doc-vs-code error; the other three sub-claims hold.
+
+**Corrections the pass forces anywhere (confirmed, but the row's own wording is off):** F-624 listed "292" among the stale blob values — 292 is the *correct* value (the docs say 260/260/227/43); F-632's count is **13 links in 11 files**, not "12 files", and the closing bracket is absent entirely; F-627's "default is testnet" holds for the config file though the CLI default is `darkwow-devnet`.
+
+**The confirmed CODE-VIOLATES owned by no existing row:** `F-612` (two normative testing docs give opposite rules for `with_fee_collect`), `F-613` (heavyweight-spec §5.4 requires a removed identity function), `F-615` (the four-way event-graph quarantine disagreement).
 
 ---
 
