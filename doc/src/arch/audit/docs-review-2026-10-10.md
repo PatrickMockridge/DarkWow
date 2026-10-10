@@ -462,7 +462,7 @@ The largest family: `dev/` and `testnet/` operational docs, plus two whole-binar
 | ID | sev | doc | claim |
 |---|---|---|---|
 | F-631 | H | `dev/contracts/checklist.md:3` | presents ~30 items as "the operative pre-commit gates"; only two classes are mechanically enforced (Exec/Apply phasing, clippy-unwrap). Nullifier-zero, temporal bounds, fail-closed, consensus-path rules have no gate |
-| F-632 | M | 12 files | malformed `[…](…)` markdown links (missing `](`) render as literal text; targets exist. `check-doc-index.sh` does not flag link syntax |
+| F-632 | M | 12 files | malformed markdown links — the closing bracket is not followed by an opening parenthesis, so they render as literal text; the targets exist. `check-doc-index.sh` does not flag link syntax |
 
 ### 4F — Registers and indexes pointing at the wrong state
 
