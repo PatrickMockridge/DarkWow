@@ -45,8 +45,8 @@ breaks a stated safety property; **M** = defence-in-depth or liveness.
 
 ## The root causes — the open findings reduce to six
 
-**A finding is a symptom.** The 57 rows that are not settled — the 26-row worklist (`OPEN` 10,
-`PARTLY` 12, `FAILS` 4) and the 31 `DECISION` rows — reduce to six causes and one residue. The cause
+**A finding is a symptom.** The rows that are not settled — the worklist (`OPEN`/`PARTLY`/`FAILS`) and
+the `DECISION` rows — reduce to six causes and one residue. The cause
 is what gets eliminated; the finding is what closes when it does. Working the findings one at a time
 is what produced the drift this section exists to stop: over the sixty commits of 2026-10-06..08,
 **36 touched this register and only ~12 were product-source edits**, because the cheapest row to close
@@ -84,8 +84,8 @@ CAUSE-6 · spec, model or register drift: OBL-C74 OBL-C109 OBL-C126 OBL-C147 OBL
 RESIDUE · no shared cause: OBL-C12 OBL-C54 OBL-C56
 <!-- /root-cause-groups -->
 
-**Decisions taken, 2026-10-08.** A `DECISION` row is blocked on a *policy*, and fourteen of the
-thirty-one hinge on two policies that are now decided — so leaving them reading "blocked on a choice
+**Decisions taken, 2026-10-08.** A `DECISION` row is blocked on a *policy*, and fourteen of them hinge
+on two policies that are now decided — so leaving them reading "blocked on a choice
 nobody has made" is itself a false statement. Recorded here once rather than in fourteen rows:
 
 * **D1 — a wire field nothing reads.** Inert fields are **deleted** at the next wire batch —
@@ -1022,8 +1022,9 @@ already cost three mis-counts).** A row's status is one of these words, in bold,
   decision*, and *we have decided not to* — and a list that mixes them cannot be closed, so its count
   could only grow. Measured: the open set was **70 rows on 2026-09-29 and 70 rows on 2026-10-08**,
   fourteen minted and six closed in the last four days. `scripts/check-register-worklist.sh` counts
-  these separately and excludes them from the worklist; the umbrella runs it `--strict` against a
-  declared budget, so a growing worklist is now a failing gate rather than a number nobody read.
+  these separately and excludes them from the worklist; the umbrella runs it `--strict`, requiring
+  every open row to name a root cause, so an unassigned row is a failing gate rather than a number
+  nobody read.
 - **`PARTLY`** — some clauses hold, and the row names which.
 - **`FAILS`** — measured false as written. This is a verdict on the **proposition**, not on the harm:
   a row may be `FAILS` and still have no reachable consequence.
@@ -1053,12 +1054,12 @@ no path — closed rows are graded by what they protect, not by what is reachabl
 **The form is now guarded, and this is the second time the guard was needed before it existed.** Three
 markers written on 2026-09-22 used words this note does not list — "STALE" and "CONFIRMED" — or carried
 no status word at all, and each was caught by a human reading a diff rather than by anything
-mechanical. `scripts/register-status.sh --check` now fails such a row: it examines the last cell of
-every row, and if that cell opens with an ALL-CAPS word the word must be one of the tokens above.
-Narrow on purpose — last cell, bold span, ALL-CAPS only — so it cannot cry wolf, and negative-controlled
-before it was wired into `run-all-tests.sh`: a copy of this file with a coined marker appended to
-`OBL-C23`'s last cell fails it, the file itself passes. It guards the *form* of a marker, not the
-existence of one; the ten rows that still carry none are listed by the same script in report mode.
+mechanical. `scripts/register-status.sh --check` now fails such a row: it examines a fixed cell — the
+**Status column**, the row's second — and requires a bold token there from the vocabulary above. Narrow
+on purpose (one cell, a bold span, the vocabulary) so it cannot cry wolf, and negative-controlled before
+it was wired into `run-all-tests.sh`: a copy of this file with a coined marker in `OBL-C23`'s **Status**
+cell fails it, the file itself passes. It guards the marker's *form* and its *existence* alike — a row
+with no status token fails too.
 
 Two rules learned the hard way, both already broken once above. **A marker must be greppable**: write
 `CLOSED 2026-09-22`, not "CLOSED by reading", because the second form is invisible to the grep that
@@ -1918,9 +1919,9 @@ breaking ties:
    verifies). The other thirteen are inert or prover-parametrised and the repair per site is small
    once read. `OBL-Z1` — the same rule as a checker — stands at **897 instances over 181 circuits,
    15 unclassified**.
-5. **OBL-C16 — 72 `ContractId::ZERO` guards across 20 contracts**, every one of them fail-open: an
-   unconfigured contract id skips the validation instead of rejecting. All non-genesis (verified:
-   zero such sites in any genesis contract), so no re-roll.
+5. **OBL-C16 — the `ContractId::ZERO` guards.** They were fail-open — an unconfigured contract id
+   skipped the validation instead of rejecting — and the row is now **CLOSED** with zero fail-open
+   sites remaining. All non-genesis, so no re-roll.
 6. **OBL-C5 and OBL-C3 are the supply chain**, and both are only partly proved: the Lean
    `SupplyChain` theorems are structural inductions that hold *for any* `reward`, conditional on the
    Pedersen assumptions. Making `reward` a definition transcribed from `blockchain.rs` and proving

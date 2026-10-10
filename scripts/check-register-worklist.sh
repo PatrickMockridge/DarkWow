@@ -4,8 +4,8 @@
 #
 # WHY THIS EXISTS. `scripts/register-status.sh --check` guards the *form* of each row's status: that it
 # is a word from the vocabulary. It says nothing about whether the open set is *understood*, and that is
-# the property a worklist needs. The register holds 258 rows; 57 are not settled (26 work, 31
-# `DECISION`). This gate requires each of those 57 to name its root cause, in the one block
+# the property a worklist needs. This gate requires every row that is not settled — the worklist
+# (`OPEN`/`PARTLY`/`FAILS`) and the `DECISION` rows — to name its root cause, in the one block
 # `<!-- root-cause-groups -->` in `doc/src/arch/verification-hazop.md`.
 #
 # **WHAT IT REPLACED, AND WHY.** Until 2026-10-08 this gate was a budget ratchet: it failed when
