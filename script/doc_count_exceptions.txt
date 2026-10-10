@@ -1,0 +1,11 @@
+# Waivers for scripts/check-doc-canonical-counts.sh.
+#
+# A number that is correct-in-context but is not the tree's current derived value goes here, with a
+# reason. Format:  <path-substring> : <number> : <reason>
+# The gate reads only the first two fields; the reason is for the reader and for review.
+#
+# A waiver is for a *historical* or *delimited* population that the sentence itself frames as such —
+# never for a stale figure the doc still asserts as current. Waiving a current claim would defeat the
+# gate; if a number is merely wrong, fix the doc (remediation), do not waive it.
+
+doc/src/arch/security-analysis.md : 144 : the audit's own population at the time ("A 7-dimensional adversarial audit of all 30 smart contracts (144 ZK circuits)"). The row carries its 2026-09-24 correction two lines below, which re-derives the current 166/178; the 144 is a dated historical figure, not a live claim.
