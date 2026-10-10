@@ -52,6 +52,11 @@ CODE-VIOLATES-ITS-OWN-SPEC 3 · (plus 7 Phase-0, all DOC-STALE/INSTRUMENT-GAP).
 
 **Adjudication (Phase 5): 95 CONFIRMED · 11 PARTIAL · 2 REFUTED** — see the section below.
 
+**Phase 2 (the formal spine): +109 findings** (`F-301`–`F-375`; some rows aggregate related findings),
+unadjudicated. The new class is
+`CODE-VIOLATES-ITS-OWN-SPEC` — a normative clause the code does not enforce — 15 of them, three at
+severity H in the consensus fee path. See the Phase 2 section below.
+
 ---
 
 ## Phase 5 — adjudication (refuter pass)
@@ -103,6 +108,127 @@ refuters being idle: the same pass corrected a figure or a framing in 11 further
 Two CONFIRMED findings carry a minor caveat: **F-110**'s "72/78/84" aside is not reproducible (the
 "every one fail-open" vs "zero fail-open" contradiction holds); **F-121**'s cited "49" is a historical
 paragraph (the row's "57" vs the run's "52" stands).
+
+---
+
+## Phase 2 — the formal spine (109 findings, unadjudicated)
+
+Ten review agents over the normative specs (`type-system`, `contract-wasm-type-system`, `ocap`,
+`composition`, `privacy`, `privacy-model`, `consensus/*`, `consensus-coinbase`, `uncle_merkle`,
+`fee-spec` + `fee_model.py`, `genesis`, `manifest`, `sync-protocol`, `sync-conformance`,
+`net-node-boundary`, `mempool`, `wallet`, `key-management`, and the Python models). Read-at commit
+`1bf6faa25f31ad50f2d2e49f9914eb9a70547b51`. **Not refuted** — the Phase-5 refuter pass has not run on
+these; treat each as a producer hypothesis.
+
+The dominant new class is **`CODE-VIOLATES-ITS-OWN-SPEC`** — a normative clause the code does not
+enforce — which the count-and-table drift of Phase 1 could not reach.
+
+### 2A — A normative clause the code does not enforce (`CODE-VIOLATES`)
+
+| ID | sev | doc | code | claim |
+|---|---|---|---|---|
+| F-301 | H | `fee-spec.md:1826` (FI-GEN-1) | `fee_window.rs:298` | fee economic parameters SHALL be genesis sled state; `BASELINE_STORAGE` is a `pub const` and the alphas/caps are hardcoded |
+| F-302 | H | `fee-spec.md:2026` (FI-PLAIN-2) | `crates/dwow-mempool/src/lib.rs:443` | a fee not matching the re-derived value SHALL be rejected; the mempool never re-derives (`extract_tier` unused) — an arbitrary declared fee is admitted |
+| F-303 | H | `fee-spec.md:2064` (FI-RISK-1) | `bin/dww/src/lib.rs:276` | the per-contract risk multiplier (1.0×→2.0×) SHALL apply; it is always `BASELINE` (inert) |
+| F-304 | M | `fee-spec.md:2069` (FI-RISK-2) | `bin/dww/src/lib.rs:276` | the wallet SHALL compute a trust metric; no such metric exists |
+| F-305 | M | `type-system.md:1118` | `src/net/channel.rs:76` | `ChannelId(u32)` SHALL be the nominal type; the type does not exist, the field is bare `u32` |
+| F-306 | M | `type-system.md:1141` | `src/net/session/mod.rs:60` | `SessionSelector` SHALL replace the `SessionBitFlag` alias; neither exists in the tree |
+| F-307 | M | `net-node-boundary.md:215` | `src/net/message_publisher.rs:246` | barb enforcement at dispatch is named as active; both `barbs()` impls are **commented out** |
+| F-308 | M | `mempool.md:156` | `crates/dwow-mempool/src/lib.rs:58` | §5.2's `extract_fee → None → REJECT`; the trait returns non-optional `FeeAmount`, `ZERO` when absent — non-FeeV3 txs are never rejected for this |
+| F-309 | M | `contract-wasm-type-system.md:1204` | `src/runtime/` | re-entrancy detection SHALL reject with `InvalidFunction`; no detection exists |
+| F-310 | M | `contract-wasm-type-system.md:178` | `src/contract/` | `#[deny(unreachable_patterns)]` SHALL be on the dispatch match; absent from the whole contract tree |
+| F-311 | M | `contract-wasm-type-system.md:870` | `src/runtime/import/util.rs:112` | every host fn SHALL call `acl_allow` and return `i64`; `drk_log` does neither |
+| F-312 | H | `privacy.md:39` | `src/contract/box/manifest.toml:108` | an L1 observer sees "only a nullifier and a Merkle root"; `box::Take` still publishes `contents_commit` (the gate reports 1 live leak) |
+| F-313 | M | `key-management.md:112` | `crates/dwow-accounts/src/lib.rs:1032` | PBKDF2 password is the mnemonic **phrase**; the code hashes the decoded **entropy** — a silent BIP39 divergence |
+| F-314 | M | `consensus/consensus.md:19` | `src/linear/src/block.rs:142` | "nullifier_root header verification `[IMPLEMENTED]`" and Phase 6 as a rule; the field is `RESERVED`, always zero, compared by nothing |
+| F-315 | M | `consensus/consensus.md:548` | `src/linear/src/chain_state.rs:1581` | the finality guard covers "Caribina **or Monero**"; only `caribina::verify_anchor_proof` participates |
+
+### 2B — The spec contradicts itself or the code (`AMBIGUOUS-SPEC`)
+
+| ID | sev | doc | code | claim |
+|---|---|---|---|---|
+| F-316 | M | `consensus-coinbase.md:111` vs `:1006` | `src/linear/src/block.rs:734` | §1.3 says `total_reward == expected_reward(h)`; §6 and the code say `base − Σ pin`; the two sections disagree |
+| F-317 | M | `consensus-coinbase.md:279` | `native_token/.../mod.rs:1047` | §2.6 check #7 says reward "meets or exceeds" expected; the handler enforces **exact equality** (the lower-bound was the pre-HAZOP-F1 over-mint bug) |
+| F-318 | M | `uncle_merkle.md:735` | `src/linear/src/validation.rs:287` | says the uncle PoW is judged against the canonical block's target; the code uses the target at the uncle's **own** height (the doc's own §2 says this) |
+| F-319 | M | `consensus/consensus.md:678` | `src/linear/src/block.rs:313` | `finality_flags` "at offset 145"; no serializer produces that offset (it is excluded from the mining blob; ~329 in the canonical codec) |
+| F-320 | M | `privacy.md:701` (wallet) | `bin/dww/src/capability.rs:29` | a capability in the `Reserved` state SHALL NOT be selected; `CapStatus` has no `Reserved` (nor `Unspent`) — the SHALL is unsatisfiable |
+| F-321 | M | `type-system.md:1728` | `Capability/Inversion.lean:259` | `capabilityPredicateBypass_prevention` is said to "close" the bypass; the Lean explicitly disclaims the provenance half (`OBL-T7`) |
+| F-322 | M | `ocap.md:132` | `Capability/Composition.lean:179` | §2.3's composed type disagrees with the Lean `tenderBidType` it is said to `PROVE` |
+
+### 2C — Register-row unsound
+
+| ID | sev | doc | code | claim |
+|---|---|---|---|---|
+| F-323 | M | `verification-hazop.md:1452` (OBL-C145) | `check-l1-wire-conformance.sh:264` | the row is `CLOSED` with an evidence cell quoting "PASS: **0** declared wire leak(s)"; the gate now prints **1** (the leak was added after the close, commit `da06073001`) |
+
+### 2D — Phantom symbols, modules and paths in the docs
+
+| ID | doc | claim |
+|---|---|---|
+| F-324 | `wallet.md:283` | `ProverContext::build_proof` — no such method anywhere |
+| F-325 | `wallet.md:893` | `build_fee_and_finalize_tx` — phantom; the API is `FeeHandoff`/`prepare_fee_call` |
+| F-326 | `wallet.md:331`, `wallet-vs-daemon.md:190` (H) | `manifest_verify.rs` — the trust-layer-1 "manifest-vs-WASM verification" module does not exist |
+| F-327 | `manifest.md:555` (×3) | `bin/dww/src/rpc.rs` — no such file (`scan.rs` holds `scan_block_linear`) |
+| F-328 | `genesis.md:118` | the "new genesis contract" checklist names `set_contract_data` in `init_linear()` — that call exists nowhere |
+| F-329 | `sync-conformance.md:42` (×many) | cites `§14.2`/`§15` — clauses that do not exist in `sync-protocol.md`; `p2p_wallet.rs` cites `§15` and the gate PASSes |
+| F-330 | `sync-protocol.md:429` code cites | `chain_state.rs`/`sync_types.rs` cite `§14.3`, `§19.3`, `§19.4`, `§6` — all dangling |
+| F-331 | `wallet_model.py:2646` | cites `bin/dww/src/cache.rs` — no such file |
+| F-332 | `type-system.md:1802`, `:1730` | `window_boundary_emission`, `verifierMinimumDisclosure` — dangling Lean decl names |
+
+### 2E — Stale formulas, constants and counts
+
+| ID | doc | claim |
+|---|---|---|
+| F-333 | `contract-wasm-type-system.md:2351` (H) | the block-anchor leaf formula omits the nullifier **and** `MERKLE_LEAF`; a reader computes a mismatching leaf |
+| F-334 | `consensus-coinbase.md:191` | `derive_instance` given as a 3-element hash; the SDK is 4-element with a domain separator — a re-implementer cannot decrypt the coinbase |
+| F-335 | `uncle_merkle.md:413`, `consensus-coinbase.md:1258` | mining blob stated as 260 bytes; it is **292** (OBL-C64) — a client built from the spec never meets target |
+| F-336 | `fee-spec.md:1206` | §12.4.4's CF formula places the floor inside; code and `fee_window_model.py` floor once |
+| F-337 | `fee-spec.md:1971` (FI-WINDOW-2) | "float SHALL NOT be used"; the CF path uses `f64` throughout |
+| F-338 | `type-system.md:1456` | "all 32" barbs; the alphabet is **33** (drops `Shard`) |
+| F-339 | `type-system.md:1505` | the barb space is 2²²; the alphabet is 33 → 2³³ |
+| F-340 | `type-system.md:1718` | "180 `.zk` sources"; the instrument roots yield **178** |
+| F-341 | `type-system.md:1684` | "all 10 pairs in §8.4"; the table has **13** rows |
+| F-342 | `contract-wasm-type-system.md:758` | "29 host functions"; the code registers **30** (8 omitted from every table) |
+| F-343 | `contract-wasm-type-system.md:823` | error codes "(1-24)" and a stale `error.rs` cite; codes run **1-37** |
+| F-344 | `contract-wasm-type-system.md:133` | `__metadata` signature `-> Vec<u8>`; the macro requires `ContractResult` |
+| F-345 | `contract-wasm-type-system.md:782` | §A.4.2 tables allow `Update` for `get_object_bytes_`/`get_object_size_`; the ACL excludes it |
+| F-346 | `contract-wasm-type-system.md:2690` | `O_CEILING = 3` "from Merkle proof cost (34 witnesses)"; the Lean derives it from operation count |
+| F-347 | `privacy.md:104` | "10 declared slots across Box and Purse"; the gate has **1** |
+| F-348 | `privacy.md:215` | the domain vocabulary is "7 values"; the code defines **10** (`privacy-model.md §3` itself uses domain 8) |
+| F-349 | `privacy-model.md:31` | names `fee_v3_tx_binding`, removed by `OBL-C198` |
+| F-350 | `ocap.md:473` | `Types.lean` "14 barbs, 13 types"; it has **33** barbs, 14 types (14 is the SDK subset) |
+| F-351 | `ocap.md:96,98,345,351` | the commitment/nullifier preimages omit the V2 domain tag (7-arg vs 8, 2-arg vs 3) |
+| F-352 | `consensus/consensus.md:634` | documents the "instant blocks" ease branch `OBL-C37` **removed** — following it reintroduces the bug |
+| F-353 | `consensus/consensus.md:657` | "`0x00FFFFFF`" (and ~1/256); the default is `0x0FFFFFFF` (~1/16); the doc's own table says so |
+| F-354 | `consensus/consensus.md:794`, `chain_architecture.md:72` | `BlockConnectOutcome` has "five variants"; it has **four** |
+| F-355 | `consensus/consensus.md:110` | the "boundary codec" rail is presented as inert-but-present; the trait/macro were **removed** |
+| F-356 | `consensus/linear_blockchain.md:66` | the `UncleProof` struct has `header`+`pow_hash`; the real one has neither |
+| F-357 | `consensus/linear_blockchain.md:245` | "25 of 28 contracts"; the tree has 32/33 (`check-doc-canonical-counts` P1 does not match this phrasing) |
+| F-358 | `consensus-core-map.md:46` | mechanism 4's Python count 3871; the file is **3918** |
+| F-359 | `consensus/consensus.md:17,18` | two IMPLEMENTED citations (`:736-760`, `blockchain.rs:106-137`) point at unrelated code |
+| F-360 | `consensus-coinbase.md:1436` | 100-year supply "~37.8M DRKW"; §4.5 gives 37,326,004 (the doc's own table disagrees) |
+| F-361 | `consensus-coinbase.md:279`, `:1603`, `:1624` | §17.4.1 check #6 (nullifier non-zero) and §17.4.3's uncle-mint algorithm describe a design the code no longer has |
+| F-362 | `sync-protocol.md:314` (§12) | calls `sync_model.py` the "1:1 executable specification"; the model has a **five**-variant `SyncState`, the Rust **two** |
+| F-363 | `sync-protocol.md` §8.1 | the constants table omits `HANDSHAKE_TIMEOUT` and `MAX_SYNC_CONNECTIONS` |
+| F-364 | `mempool.md:51` | `max_age_secs = 12,000`; the code default is **3600** (`wallet.md` agrees with the code) |
+| F-365 | `genesis.md:319` (H) | says `init_genesis` hard-errors on a genesis mismatch; enforcement is deliberately elsewhere (`check_genesis_pin` from `init_linear`) |
+| F-366 | `genesis.md:242` | the genesis header-field table lost its header row (renders as a paragraph) and omits `anchor_owner`/`caribina_anchor` |
+| F-367 | `genesis.md:92` | `genesis_contracts()` cited at `:915-927`; it is at `:949-961` |
+| F-368 | `manifest.md:263` | advertises a `string` param type no code arm implements |
+| F-369 | `manifest.md:9,8` | "6/6 unit tests" (now 27) and Python "13 tests" (file has 114) |
+| F-370 | `wallet.md:281,284,295`, `key-management.md:193` | four spec'd boundary signatures don't match the code (`wallet_construct`, `CircuitWitnessMap::from_manifest`, `generate_proof`, `compute_balance`); a fifth §6.4.1 "closed" rule table omits two accepted rules |
+| F-371 | `wallet_model.py:2532` | the model omits the `TokenId` alias the Rust accepts — a manifest parses in Rust but fails-closed in the model |
+| F-372 | `type-system.md:141`, `ocap.md:441`, `:457` | misc: normative barb count vs §10's "22"; `requiredBarbs` on `Action` vs `Resource`; a `#print axioms` sentence the Lean flags as previously false |
+| F-373 | `consensus/chain_architecture.md:59` | lists `uncle_commitment_set` as a live field; deleted (`OBL-C26`) |
+| F-374 | `consensus/scaling.md` (6 notes) | every "Scaffolding" note cites `sharding` files and a feature that no longer exist |
+| F-375 | `sync-conformance.md:60` | claims the gate fails on a header that "drifts"; it only greps the substring and does not resolve the clause number |
+
+### 2F — Line-citation drift (class note)
+
+Pervasive across `type-system.md`, `contract-wasm-type-system.md`, `consensus.md`,
+`consensus-coinbase.md`, `wallet.md`, `net-node-boundary.md` — cited `file:line` ranges that have moved
+while the named symbol still holds the claim (the `OBL-Z5` class). Not filed row-by-row; representative
+instances are folded into the rows above. No gate reads a doc's line citations.
 
 ---
 
