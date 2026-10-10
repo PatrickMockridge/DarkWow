@@ -11,9 +11,11 @@
 > Rewriting every audit document to one ID space would add nothing to what gets proved.
 >
 > **What changed on 2026-09-22.** The *root causes* are now stated once: `safety.md` was rewritten
-> around twelve of them, and every legacy scheme — the old `Lesson 1`–`25`, the circuit HAZOP's
-> `RC1`–`RC5`, the consensus HAZID report's colliding `RC1`–`RC6`, `HAZOP.lean`'s seven patterns, the
-> red-team `RC-A`–`RC-I` — maps into them through the alias table at that document's foot. The
+> around twelve of them (`RC1`–`RC12`), and every legacy scheme — the old `Lesson 1`–`25`, the circuit
+> HAZOP's `RC1`–`RC5`, the consensus HAZID report's colliding `RC1`–`RC6`, `HAZOP.lean`'s seven
+> patterns, the red-team `RC-A`–`RC-I` — maps into them through the alias table at that document's
+> foot. This register's *own* six root causes are a coarser reduction of the same twelve, and are named
+> `CAUSE-1`–`CAUSE-6` (they were `RC1`–`RC6` until 2026-10-10, colliding with `safety.md`'s scheme). The
 > *findings documents* whose items are all resolved were removed, and everything they left open was
 > promoted into the section above. So the corpus no longer "stays where it is" for those; the
 > remaining audit documents still do, and are cited here as before.
@@ -51,19 +53,19 @@ is what produced the drift this section exists to stop: over the sixty commits o
 is always a record or tooling row.
 
 **The cause is repaired, not the row.** A cause already fixed somewhere and live elsewhere is the
-cheapest work in the register, because the repair is known. `RC1` is the archetype: roughly twenty
+cheapest work in the register, because the repair is known. `CAUSE-1` is the archetype: roughly twenty
 settled rows already landed its repair — derive-and-expose in the circuit, then compare the exposed
 value against stored state on the host — and every one of its open members is that same fix not yet
 applied. The counts are not restated here; they are derived, and the gate prints them.
 
 | # | cause | the repair |
 |---|---|---|
-| `RC1` | **Unbound authorization** — a check meant to gate an action compares two prover/caller-chosen values, or reads nothing, so it authorizes any witness | derive-and-expose in-circuit, then compare against stored state on the host (**proven in ~20 settled rows**) |
-| `RC3` | **Dead state & unreachable endpoints** — a field or endpoint is written and never read, or read and never written | delete the dead state, build the missing writer, or extract the predicate so a test can reach it |
-| `RC4` | **Verification exists but is not wired, enabled or run** | fail-closed by default; a startup config gate; re-wire the dead predicate to its caller |
-| `RC2` | **Split source of truth** — one value has several homes and they drift | one derivation, one home; one codec per struct. Its residue is a live defect with **no row at all**: `auction`'s six clients, all V1, against their V2 circuits |
-| `RC5` | **The instrument overstates its verdict** — a checker reports a verdict it did not compute | *process, not code*: a negative control, not a re-listing |
-| `RC6` | **Spec, model or register drift** — a doc states a rule the code does not enforce | *process, not code* |
+| `CAUSE-1` | **Unbound authorization** — a check meant to gate an action compares two prover/caller-chosen values, or reads nothing, so it authorizes any witness | derive-and-expose in-circuit, then compare against stored state on the host (**proven in ~20 settled rows**) |
+| `CAUSE-3` | **Dead state & unreachable endpoints** — a field or endpoint is written and never read, or read and never written | delete the dead state, build the missing writer, or extract the predicate so a test can reach it |
+| `CAUSE-4` | **Verification exists but is not wired, enabled or run** | fail-closed by default; a startup config gate; re-wire the dead predicate to its caller |
+| `CAUSE-2` | **Split source of truth** — one value has several homes and they drift | one derivation, one home; one codec per struct. Its residue is a live defect with **no row at all**: `auction`'s six clients, all V1, against their V2 circuits |
+| `CAUSE-5` | **The instrument overstates its verdict** — a checker reports a verdict it did not compute | *process, not code*: a negative control, not a re-listing |
+| `CAUSE-6` | **Spec, model or register drift** — a doc states a rule the code does not enforce | *process, not code* |
 | `RESIDUE` | no shared cause — each is its own defect | one repair each |
 
 The block below is the single source of truth for the assignment. Every row whose status is `OPEN`,
@@ -73,12 +75,12 @@ The block below is the single source of truth for the assignment. Every row whos
 closing a row for every finding, and the cheapest row to close is the one that fixes nothing.
 
 <!-- root-cause-groups -->
-RC1 · unbound authorization: OBL-C82 OBL-C92 OBL-C96 OBL-C97 OBL-C102 OBL-C130 OBL-C146 OBL-C160 OBL-C164 OBL-C165 OBL-C167 OBL-C171 OBL-C184 OBL-C188 OBL-C211 OBL-Z13 OBL-Z18
-RC2 · split source of truth: OBL-C45 OBL-C179 OBL-C212
-RC3 · dead state and unreachable endpoints: OBL-C89 OBL-C113 OBL-C154 OBL-C163 OBL-C200 OBL-Z23
-RC4 · verification exists but is not wired, enabled or run: OBL-C95 OBL-C125 OBL-C140
-RC5 · the instrument overstates its verdict: OBL-C76 OBL-C136 OBL-C138 OBL-C148 OBL-C149 OBL-C194 OBL-C202 OBL-C205 OBL-C206 OBL-C210 OBL-T26 OBL-Z3 OBL-Z5
-RC6 · spec, model or register drift: OBL-C74 OBL-C109 OBL-C126 OBL-C147 OBL-C181 OBL-T20 OBL-T22 OBL-T23 OBL-T24 OBL-Z6 OBL-Z12
+CAUSE-1 · unbound authorization: OBL-C82 OBL-C92 OBL-C96 OBL-C97 OBL-C102 OBL-C130 OBL-C146 OBL-C160 OBL-C164 OBL-C165 OBL-C167 OBL-C171 OBL-C184 OBL-C188 OBL-C211 OBL-Z13 OBL-Z18
+CAUSE-2 · split source of truth: OBL-C45 OBL-C179 OBL-C212
+CAUSE-3 · dead state and unreachable endpoints: OBL-C89 OBL-C113 OBL-C154 OBL-C163 OBL-C200 OBL-Z23
+CAUSE-4 · verification exists but is not wired, enabled or run: OBL-C95 OBL-C125 OBL-C140
+CAUSE-5 · the instrument overstates its verdict: OBL-C76 OBL-C136 OBL-C138 OBL-C148 OBL-C149 OBL-C194 OBL-C202 OBL-C205 OBL-C206 OBL-C210 OBL-T26 OBL-Z3 OBL-Z5
+CAUSE-6 · spec, model or register drift: OBL-C74 OBL-C109 OBL-C126 OBL-C147 OBL-C181 OBL-T20 OBL-T22 OBL-T23 OBL-T24 OBL-Z6 OBL-Z12
 RESIDUE · no shared cause: OBL-C12 OBL-C54 OBL-C56
 <!-- /root-cause-groups -->
 
@@ -1319,7 +1321,7 @@ closed. These two had none, and drifted to **86 violations across 12 contracts, 
 The measurement is `scripts/check-phase-host-functions.sh`, which parses each contract's declared
 `define_contract!` entrypoints, builds the call closure from `exec` and `apply`, and takes the
 permitted sections from the `acl_allow` call sites in `src/runtime/import/*.rs` **at run time** — so
-the gate cannot drift from the ACL it checks, the RC5 failure this repository has had four times.
+the gate cannot drift from the ACL it checks, the CAUSE-5 failure this repository has had four times.
 **The gate corrected this row's first draft**: an earlier ad-hoc scan reported 66 sites and missed
 `insurance_market` entirely (15 sites — its apply handlers are `*_process_update_v1` in per-function
 files, which a name-pattern scan does not match) and the read-only getters `get_verifying_block_height`
@@ -1903,7 +1905,7 @@ breaking ties:
    no build enables `bridge-verify`; Ethereum MPT needs the traversal its RLP decoder is missing; Zcash
    Groth16 and Aztec PLONK need a pairing dependency that does not exist in this tree. The live
    vulnerability is narrower than the row's framing: with the feature off, an Ethereum deposit is
-   accepted when its proof is merely *non-empty* (`entrypoint.rs:320-333`), which is RC1's shape.
+   accepted when its proof is merely *non-empty* (`entrypoint.rs:320-333`), which is CAUSE-1's shape.
 3. **OBL-Z17 — the capability check's remaining half is *possession*.** Stage 1 and Stage 2 landed
    2026-09-21: the predicate is proved, and the proof is about a credential an issuer actually signed
    (schema, issuer, threshold and commitment are all checked against the stored record). What remains
