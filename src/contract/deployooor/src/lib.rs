@@ -71,6 +71,10 @@ pub const DEPLOY_CONTRACT_SINGLETON_TREE: &str = "singleton";
 pub const DEPLOY_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 pub const DEPLOY_CONTRACT_WASM_HASH_KEY: &[u8] = b"wasm_hash";
 
+/// `LockV2` circuit namespace — the deployooor lock's ZK proof (docs-review F-511; the lock was
+/// documented as signature-gated and enforced nothing).
+pub const DEPLOY_CONTRACT_ZKAS_LOCK_NS_V2: &str = "LockV2";
+
 /// WASM imports that are NOT allowed in deployed contracts.
 /// These provide access to internal DarkWow functions that regular contracts
 /// should never use directly.

@@ -1,7 +1,7 @@
 //! ContractTestSpec for deployooor contract. Spec: heavyweight-spec.md §5.2.
 
 use dwow_contract_test_harness::harness::{ContractHarness, DeployooorHarness};
-use dwow_sdk::crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID, Keypair, PublicKey, SecretKey};
+use dwow_sdk::{crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID, Keypair, PublicKey, SecretKey}, pasta::pallas};
 use dwow_serial::Encodable;
 
 use crate::tests::blockchain::HeavyweightPipeline;
@@ -57,7 +57,7 @@ pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
                 }),
             },
             EndpointSpec {
-                name: "LockV1", is_zk: false,
+                name: "LockV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
@@ -65,10 +65,19 @@ pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
                     let secret = SecretKey::from_bytes([9u8; 32]).unwrap();
                     let public = PublicKey::from_secret(secret.clone());
                     let kp = Keypair { secret, public };
-                    let lock = h.build_lock_call(kp)?;
+                    let tx_nonce = pallas::Base::from(0u64);
+                    let plan = h.build_lock_call(kp, tx_nonce)?;
                     let mut cd = vec![0x01];
-                    cd.extend_from_slice(&lock.params.encode());
-                    Ok(EndpointResult { children: vec![], call_data: cd, proofs: vec![] })
+                    cd.extend_from_slice(&plan.params().encode());
+                    // The `LockV2` proof binds to the frame the call lands in (`OBL-C198`). With no
+                    // children, the frame is the commitment over this one call.
+                    let call = dwow_sdk::tx::ContractCall {
+                        contract_id: *DEPLOYOOOR_CONTRACT_ID,
+                        data: cd.clone(),
+                    };
+                    let frame = dwow_sdk::crypto::util::tx_commitment([&call]);
+                    let r = plan.prove(frame)?;
+                    Ok(EndpointResult { children: vec![], call_data: r.params.encode(), proofs: vec![r.proof] })
                 }),
             },
         ],

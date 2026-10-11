@@ -18,8 +18,9 @@ requires_proof = false
 [[functions]]
 name = "lock"
 code = 1
-description = "Lock a deployed contract — marks it immutable. Requires deployer's signature."
-requires_proof = false
+description = "Lock a deployed contract — marks it immutable. Requires a `LockV2` proof that the caller knows the deployer's secret."
+requires_proof = true
+proof_circuit = "LockV2"
 
 [[capabilities]]
 discriminant = 0
@@ -42,7 +43,12 @@ produces = []
 consumes = ["deployment_right"]
 required_barbs = ["Commit", "Dispatch", "Gate"]
 
-# Deployooor has no ZK circuits — DeployV1 and LockV1 are native contract calls.
+# `DeployV1` is a native contract call; `LockV1` carries a `LockV2` proof that the caller knows the
+# secret behind `params.public_key` — whose `ContractId` the host derives and locks (docs-review
+# F-511: the doc promised a deployer-only lock and the code enforced nothing).
+[[circuits]]
+name = "LockV2"
+namespace = "deployooor"
 
 [[trees]]
 name = "info"

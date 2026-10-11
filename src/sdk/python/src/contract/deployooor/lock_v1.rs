@@ -24,6 +24,7 @@
 use std::fmt::Write;
 
 use dwow_deployooor_contract::model as deployooor_model;
+use dwow_sdk::{crypto::pasta_prelude::PrimeField, hex::AsHex};
 use pyo3::{prelude::PyDictMethods, pyclass, types::PyDict, Py, PyResult, Python};
 
 use super::{impl_py_methods, FunctionParams};
@@ -37,12 +38,14 @@ impl FunctionParams for deployooor_model::LockParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("public_key", self.public_key.to_string())?;
+        dict.set_item("tx_nonce", self.tx_nonce.to_repr().hex())?;
         Ok(dict.unbind())
     }
 
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}public_key: {}", self.public_key).unwrap();
+        writeln!(out, "{prefix}tx_nonce: {}", self.tx_nonce.to_repr().hex()).unwrap();
         Ok(())
     }
 }

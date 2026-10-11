@@ -92,14 +92,17 @@ impl DeployUpdateV1 {
 // ANCHOR: deploy-lock-params
 #[derive(Clone, Debug)]
 pub struct LockParamsV1 {
-    /// Public key used to sign the transaction and derive the `ContractId`
+    /// Public key whose secret opens it; the host derives the `ContractId` from it, and `LockV2`
+    /// proves the caller knows the secret behind it (docs-review F-511 — the gate the doc promised).
     pub public_key: PublicKey,
+    /// Transaction nonce, so the `LockV2` proof binds to this transaction (`OBL-C198`).
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for LockParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for LockParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-impl LockParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.public_key.to_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("LockParamsV1: expected 32 bytes, got {}", data.len()))); } Ok(LockParamsV1 { public_key: PublicKey::from_bytes(read_field::<32>(data, 0)?).map_err(|e| ContractError::IoError(format!("LockParamsV1: invalid public_key: {}", e)))? }) } }
+impl LockParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = self.public_key.to_bytes().to_vec(); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("LockParamsV1: expected 64 bytes, got {}", data.len()))); } let public_key = PublicKey::from_bytes(read_field::<32>(data, 0)?).map_err(|e| ContractError::IoError(format!("LockParamsV1: invalid public_key: {}", e)))?; let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 32)?)).ok_or_else(|| ContractError::IoError("LockParamsV1: invalid tx_nonce".into()))?; Ok(LockParamsV1 { public_key, tx_nonce }) } }
 // ANCHOR_END: deploy-lock-params
 
 /// State update for `Deploy::Lock`

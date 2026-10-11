@@ -22,7 +22,7 @@
  */
 
 use dwow_sdk::{
-    crypto::{ContractId, PublicKey},
+    crypto::{poseidon_hash, ContractId, PublicKey},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
@@ -47,12 +47,24 @@ pub(crate) fn lock_get_metadata_v1(
     let self_ = calls.get(call_idx).ok_or_else(|| {
         ContractError::IoError(format!("call_index {call_idx} out of range ({} calls)", calls.len()))
     })?;
-    let _params= LockParamsV1::decode(self_.data.data.get(1..).ok_or_else(|| {
+    let params = LockParamsV1::decode(self_.data.data.get(1..).ok_or_else(|| {
         ContractError::IoError("empty call data: no payload after selector".to_string())
     })?)?;
 
-    // Public inputs for the ZK proofs we have to verify
-    let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    // Public inputs for the `LockV2` proof: the deployer's public-key coordinates (the circuit
+    // derive-and-exposes them from the secret) and the tx pair, last (`OBL-C198`). The host derives
+    // the same `ContractId` from these coordinates that `DeployV1` stored, so the lock applies only
+    // to the deployer's own contract — and only a caller who can open the key can prove it.
+    let (pub_x, pub_y) = params
+        .public_key
+        .xy()
+        .ok_or_else(|| ContractError::IoError("LockV1: identity public key".to_string()))?;
+    let tx_commitment = wasm::util::get_tx_commitment()?;
+    let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, params.tx_nonce]);
+    let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+        crate::DEPLOY_CONTRACT_ZKAS_LOCK_NS_V2.to_string(),
+        vec![pub_x, pub_y, tx_binding, params.tx_nonce],
+    )];
     // Public keys for the transaction signatures we have to verify
     // Schnorr signatures prohibited (contract-standards.md §3).
     let signature_pubkeys: Vec<PublicKey> = vec![];

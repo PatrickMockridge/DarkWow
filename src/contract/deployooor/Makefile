@@ -39,6 +39,17 @@ PKGNAME = $(shell grep '^name = ' Cargo.toml | cut -d' ' -f3 | tr -d '"')
 # wasm contract binary
 WASM_BIN = $(PKGNAME:=.wasm)
 
+# zkas compiler - absolute path to ensure we find the right binary
+ZKAS = $(abspath ../../../zkas)
+
+# ZKAS version tracking
+ZKAS_VERSION_FILE = .zkas_version
+
+# zkas circuits — `LockV2` is the lock's proof that the caller knows the deployer's secret
+# (docs-review F-511).
+ZK_SRC := $(wildcard proof/*.zk)
+ZK_BINS := $(ZK_SRC:.zk=.zk.bin)
+
 # wasm source files
 WASM_SRC = \
 	Cargo.toml \
@@ -52,11 +63,10 @@ WASM_SRC = \
 # Source hash manifest
 SOURCE_HASH_FILE = .source_hash
 
-# Inputs whose contents can change the built WASM: this crate's Rust sources
-# and manifest, and the shared sdk/serial crates it links. Deployooor has no
-# zk circuits of its own, so there is no proof/ term here.
+# Inputs whose contents can change the built WASM or its circuits: this crate's
+# Rust sources and manifest, its zk circuits, and the shared sdk/serial crates.
 # $(wildcard) drops any that don't exist and sorts what remains.
-SOURCE_MANIFEST = $(wildcard $(WASM_SRC) proof/*.zk manifest.toml)
+SOURCE_MANIFEST = $(wildcard $(WASM_SRC) $(ZK_SRC) manifest.toml)
 
 # One "path sha256" line per input, sorted, then hashed. Including the path
 # makes renames and content swaps visible; sorting removes the dependence on
@@ -84,7 +94,26 @@ check-source-hash:
 		fi; \
 	fi
 
-all: check-source-hash $(WASM_BIN)
+# Check if zkas version changed
+check-zkas-version:
+	@current_ver=$$($(ZKAS) --version 2>/dev/null || echo "none"); \
+	if [ -f $(ZKAS_VERSION_FILE) ]; then \
+		stored_ver=$$(cat $(ZKAS_VERSION_FILE)); \
+		if [ "$$stored_ver" != "$$current_ver" ]; then \
+			echo "ZKas version changed ($$stored_ver -> $$current_ver), removing old binaries"; \
+			rm -f proof/*.zk.bin; \
+			echo "$$current_ver" > $(ZKAS_VERSION_FILE); \
+		fi; \
+	else \
+		echo "No version file, recording current zkas version..."; \
+		echo "$$current_ver" > $(ZKAS_VERSION_FILE); \
+	fi
+
+# Pattern rule for ZK binaries
+proof/%.zk.bin: proof/%.zk $(ZKAS) check-zkas-version
+	$(ZKAS) $< -o $@
+
+all: check-source-hash $(WASM_BIN) $(ZK_BINS)
 
 $(WASM_BIN): $(WASM_SRC)
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) build --target=$(WASM_TARGET) \
@@ -112,6 +141,6 @@ clean:
 		--release --package $(PKGNAME)
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) clean --target=$(RUST_TARGET) \
 		--release --package $(PKGNAME)
-	rm -f $(WASM_BIN) $(SOURCE_HASH_FILE)
+	rm -f $(WASM_BIN) $(SOURCE_HASH_FILE) proof/*.zk.bin $(ZKAS_VERSION_FILE)
 
 .PHONY: all test-integration test clippy clean check-source-hash

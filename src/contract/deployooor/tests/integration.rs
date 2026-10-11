@@ -65,7 +65,7 @@ fn deploy_integration() {
 
     // Build a lock call
     info!(target: "deploy", "Building lock call");
-    let lock_result = harness.build_lock_call(deploy_keypair.clone());
+    let lock_result = harness.build_lock_call(deploy_keypair.clone(), dwow_sdk::pasta::pallas::Base::from(0u64));
     assert!(lock_result.is_ok(), "Lock call should build successfully");
 
     // Negative: building a deploy call with empty WASM must fail
