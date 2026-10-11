@@ -33,8 +33,8 @@ use tracing::debug;
 
 use super::{
     super::{
-        channel::ChannelPtr, message::Message, message_publisher::MessageSubscription,
-        session::SessionBitFlag,
+        channel::{ChannelId, ChannelPtr}, message::Message,
+        message_publisher::MessageSubscription, session::SessionBitFlag,
     },
     protocol_base::{ProtocolBase, ProtocolBasePtr},
     protocol_jobs_manager::{ProtocolJobsManager, ProtocolJobsManagerPtr},
@@ -69,13 +69,13 @@ pub struct ProtocolGenericHandler<M: Message + Clone, R: Message + Clone + Debug
     // get dropped, we will keep one here to remain alive with the
     // handler.
     /// Message queue sender, passed to each P2P channel.
-    sender: Sender<(u32, M)>,
+    sender: Sender<(ChannelId, M)>,
     /// Message queue receiver listening for new messages
     /// from all channels.
-    pub receiver: Receiver<(u32, M)>,
+    pub receiver: Receiver<(ChannelId, M)>,
     /// Senders mapped by channel ID to propagate the
     /// action signal after a message retrieval.
-    senders: RwLock<HashMap<u32, Sender<ProtocolGenericAction<R>>>>,
+    senders: RwLock<HashMap<ChannelId, Sender<ProtocolGenericAction<R>>>>,
     /// Handler background task to run the messages listener
     /// function with.
     pub task: StoppableTaskPtr,
@@ -90,7 +90,7 @@ impl<M: Message + Clone, R: Message + Clone + Debug> ProtocolGenericHandler<M, R
         session: SessionBitFlag,
     ) -> ProtocolGenericHandlerPtr<M, R> {
         // Generate the message queue smol channel
-        let (sender, receiver) = smol::channel::unbounded::<(u32, M)>();
+        let (sender, receiver) = smol::channel::unbounded::<(ChannelId, M)>();
 
         // Keep a map for all P2P channels senders
         let senders = RwLock::new(HashMap::new());
@@ -121,7 +121,7 @@ impl<M: Message + Clone, R: Message + Clone + Debug> ProtocolGenericHandler<M, R
     /// Additionally, looks for stale(closed) channels and prunes then from it.
     async fn register_channel_sender(
         &self,
-        channel: u32,
+        channel: ChannelId,
         sender: Sender<ProtocolGenericAction<R>>,
     ) {
         // Register the new channel sender
@@ -145,7 +145,7 @@ impl<M: Message + Clone, R: Message + Clone + Debug> ProtocolGenericHandler<M, R
     }
 
     /// Sends provided protocol generic action to requested channel, if it exists.
-    pub async fn send_action(&self, channel: u32, action: ProtocolGenericAction<R>) {
+    pub async fn send_action(&self, channel: ChannelId, action: ProtocolGenericAction<R>) {
         debug!(
             target: "net::protocol_generic::ProtocolGenericHandler::send_action",
             "Sending action {action:?} to channel {channel}..."
@@ -181,7 +181,7 @@ pub struct ProtocolGeneric<M: Message + Clone, R: Message + Clone + Debug> {
     /// The P2P channel message subcription
     msg_sub: MessageSubscription<M>,
     /// The generic message smol channel sender
-    sender: Sender<(u32, M)>,
+    sender: Sender<(ChannelId, M)>,
     /// Action signal smol channel receiver
     receiver: Receiver<ProtocolGenericAction<R>>,
     /// The P2P channel the protocol is serving

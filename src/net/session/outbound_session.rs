@@ -42,7 +42,7 @@ use url::Url;
 
 use super::{
     super::{
-        channel::ChannelPtr,
+        channel::{ChannelId, ChannelPtr},
         connector::Connector,
         dnet::{self, dnetev, DnetEvent},
         hosts::{HostColor, HostState},
@@ -118,11 +118,11 @@ impl OutboundSession {
         debug!(target: "net::outbound_session", "Outbound session stopped!");
     }
 
-    pub async fn slot_info(&self) -> Vec<u32> {
+    pub async fn slot_info(&self) -> Vec<ChannelId> {
         let mut info = Vec::new();
         let slots = &*self.slots.lock().await;
         for slot in slots {
-            info.push(slot.channel_id.load(Ordering::Relaxed));
+            info.push(ChannelId(slot.channel_id.load(Ordering::Relaxed)));
         }
         info
     }
@@ -469,7 +469,7 @@ impl Slot {
                 continue
             }
 
-            self.channel_id.store(channel.info.id, Ordering::Relaxed);
+            self.channel_id.store(channel.info.id.0, Ordering::Relaxed);
 
             // Wait for channel to close
             stop_sub.receive().await;

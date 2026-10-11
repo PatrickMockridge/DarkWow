@@ -60,7 +60,7 @@ use url::{Host, Url};
 use super::{
     session::{SESSION_REFINE, SESSION_SEED},
     settings::Settings,
-    ChannelPtr,
+    ChannelId, ChannelPtr,
 };
 use crate::{
     concurrency::{Publisher, PublisherPtr, Subscription},
@@ -814,7 +814,7 @@ impl Hosts {
     }
 
     /// Get a channel by ID.
-    pub fn get_channel(&self, id: u32) -> Option<ChannelPtr> {
+    pub fn get_channel(&self, id: ChannelId) -> Option<ChannelPtr> {
         self.channels().into_iter().find(|c| c.info.id == id)
     }
 

@@ -45,7 +45,7 @@ use crate::{
     net::{
         connector::Connector,
         session::{SESSION_DIRECT, SESSION_MANUAL},
-        ChannelPtr, Message, P2pPtr,
+        ChannelId, ChannelPtr, Message, P2pPtr,
     },
     concurrency::{msleep, ExecutorPtr, Publisher, PublisherPtr, Subscription},
     util::time::Timestamp,
@@ -139,11 +139,11 @@ pub struct Dht<H: DhtHandler> {
     /// Number of buckets
     pub n_buckets: usize,
     /// Channel ID -> ChannelCacheItem
-    pub channel_cache: Arc<RwLock<HashMap<u32, ChannelCacheItem<H::Node>>>>,
+    pub channel_cache: Arc<RwLock<HashMap<ChannelId, ChannelCacheItem<H::Node>>>>,
     /// Host address -> ChannelCacheItem
     pub host_cache: Arc<RwLock<HashMap<Url, HostCacheItem>>>,
     /// Locks that prevent pinging the same channel multiple times at once.
-    ping_locks: Arc<Mutex<HashMap<u32, PingLock<H::Node>>>>,
+    ping_locks: Arc<Mutex<HashMap<ChannelId, PingLock<H::Node>>>>,
     /// Add node sender
     pub add_node_tx: channel::Sender<(H::Node, ChannelPtr)>,
     /// Add node receiver
@@ -281,7 +281,7 @@ impl<H: DhtHandler> Dht<H> {
     }
 
     /// Channel ID -> [`DhtNode`]
-    pub async fn get_node_from_channel(&self, channel_id: u32) -> Option<H::Node> {
+    pub async fn get_node_from_channel(&self, channel_id: ChannelId) -> Option<H::Node> {
         let channel_cache_lock = self.channel_cache.clone();
         let channel_cache = channel_cache_lock.read().await;
         if let Some(cached) = channel_cache.get(&channel_id) {
@@ -650,7 +650,7 @@ impl<H: DhtHandler> Dht<H> {
     }
 
     /// Update a channel's `last_used` field in the channel cache.
-    pub async fn update_channel(&self, channel_id: u32) {
+    pub async fn update_channel(&self, channel_id: ChannelId) {
         let channel_cache_lock = self.channel_cache.clone();
         let mut channel_cache = channel_cache_lock.write().await;
 
@@ -745,7 +745,7 @@ impl<H: DhtHandler> Dht<H> {
 
     /// Insert a channel to the DHT's channel cache. If the channel is already
     /// in the cache, `last_used` is updated.
-    pub async fn add_channel_to_cache(&self, channel_id: u32, node: &H::Node) {
+    pub async fn add_channel_to_cache(&self, channel_id: ChannelId, node: &H::Node) {
         let mut channel_cache = self.channel_cache.write().await;
         channel_cache
             .entry(channel_id)
@@ -759,7 +759,7 @@ impl<H: DhtHandler> Dht<H> {
     }
 
     /// Wait until we received a DHT ping and sent a DHT ping on a channel.
-    pub async fn wait_fully_pinged(&self, channel_id: u32) -> Result<()> {
+    pub async fn wait_fully_pinged(&self, channel_id: ChannelId) -> Result<()> {
         loop {
             let channel_cache = self.channel_cache.read().await;
             let cached = channel_cache

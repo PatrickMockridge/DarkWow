@@ -28,6 +28,16 @@ use crate::event_graph;
 
 use crate::net;
 
+/// A channel id reaches the RPC as a JSON *number*, which is the wire boundary
+/// where the nominal type stops. `f64: From<u32>` is a standard-library impl, so
+/// the conversion only had to be named for `ChannelId`.
+#[cfg(feature = "net")]
+impl From<net::ChannelId> for f64 {
+    fn from(id: net::ChannelId) -> f64 {
+        f64::from(u32::from(id))
+    }
+}
+
 #[cfg(feature = "net")]
 impl From<net::channel::ChannelInfo> for JsonValue {
     fn from(info: net::channel::ChannelInfo) -> JsonValue {

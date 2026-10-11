@@ -33,7 +33,7 @@ use tracing::{debug, error, warn};
 use url::Url;
 
 use super::{
-    channel::ChannelPtr,
+    channel::{ChannelId, ChannelPtr},
     dnet::DnetEvent,
     hosts::{Hosts, HostsPtr},
     message::{Message, SerializedMessage},
@@ -367,7 +367,7 @@ impl P2p {
     }
 
     /// Grab the channel pointer of provided channel ID, if it exists.
-    pub fn get_channel(&self, id: u32) -> Option<ChannelPtr> {
+    pub fn get_channel(&self, id: ChannelId) -> Option<ChannelPtr> {
         self.hosts.get_channel(id)
     }
 }

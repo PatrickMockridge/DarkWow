@@ -61,7 +61,7 @@ pub mod known_hosts;
 #[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod channel;
 #[cfg(any(feature = "net-full", feature = "net-wallet"))]
-pub use channel::ChannelPtr;
+pub use channel::{ChannelId, ChannelPtr};
 
 /// Compile-time barb declaration for protocol handlers (§1.1, §10.4).
 pub use crate::barb as barb_trait;

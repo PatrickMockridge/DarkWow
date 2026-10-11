@@ -23,7 +23,7 @@
 
 use url::Url;
 
-use super::channel::ChannelInfo;
+use super::channel::{ChannelId, ChannelInfo};
 use crate::util::time::NanoTimestamp;
 
 macro_rules! dnetev {
@@ -52,7 +52,7 @@ pub type RecvMessage = MessageInfo;
 #[derive(Clone, Debug)]
 pub struct InboundInfo {
     pub addr: Url,
-    pub channel_id: u32,
+    pub channel_id: ChannelId,
 }
 
 pub type InboundConnected = InboundInfo;
@@ -73,7 +73,7 @@ pub struct OutboundSlotConnecting {
 pub struct OutboundSlotConnected {
     pub slot: u32,
     pub addr: Url,
-    pub channel_id: u32,
+    pub channel_id: ChannelId,
 }
 
 #[derive(Clone, Debug)]
@@ -97,7 +97,7 @@ pub struct DirectConnecting {
 pub struct DirectConnected {
     pub connect_addr: Url,
     pub addr: Url,
-    pub channel_id: u32,
+    pub channel_id: ChannelId,
 }
 
 #[derive(Clone, Debug)]

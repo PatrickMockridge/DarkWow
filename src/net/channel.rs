@@ -67,13 +67,44 @@ use crate::{
 /// Atomic pointer to async channel
 pub type ChannelPtr = Arc<Channel>;
 
+/// A P2P channel's identity — the nominal type `type-system.md` §8.6.4 requires, in
+/// place of a bare `u32`.
+///
+/// The value is generated locally per channel (`OsRng`) and used as the routing key
+/// the per-protocol senders and receivers are registered under, so what it needs is
+/// identity and orderability: two channels must not collide, and a map or lookup
+/// keyed on it must not take one channel's id for another's. A bare `u32` satisfies
+/// both, which is how it was written; naming it is what stops a channel id being
+/// passed where some *other* `u32` was meant, which no test can catch because both
+/// are the same type.
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+pub struct ChannelId(pub u32);
+
+impl std::fmt::Display for ChannelId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<ChannelId> for u32 {
+    fn from(id: ChannelId) -> u32 {
+        id.0
+    }
+}
+
+impl From<u32> for ChannelId {
+    fn from(raw: u32) -> ChannelId {
+        ChannelId(raw)
+    }
+}
+
 /// Channel debug info
 #[derive(Clone, Debug, SerialEncodable, SerialDecodable)]
 pub struct ChannelInfo {
     pub resolve_addr: Option<Url>,
     pub connect_addr: Url,
     pub start_time: u64,
-    pub id: u32,
+    pub id: ChannelId,
     pub transport_mixed: bool,
 }
 
@@ -84,7 +115,7 @@ impl ChannelInfo {
         start_time: u64,
         transport_mixed: bool,
     ) -> Self {
-        Self { resolve_addr, connect_addr, start_time, id: OsRng.gen(), transport_mixed }
+        Self { resolve_addr, connect_addr, start_time, id: ChannelId(OsRng.gen()), transport_mixed }
     }
 }
 

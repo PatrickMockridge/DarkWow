@@ -54,7 +54,7 @@ use super::{
     Session, SessionBitFlag, SESSION_DIRECT,
 };
 use crate::{
-    net::ChannelPtr,
+    net::{ChannelId, ChannelPtr},
     concurrency::{
         msleep, sleep, timeout::timeout, CondVar, PublisherPtr, StoppableTask, StoppableTaskPtr,
     },
@@ -76,7 +76,7 @@ pub struct DirectSession {
     /// Peer discovery task
     peer_discovery: Arc<PeerDiscovery>,
     /// Channel ID -> usage count
-    channels_usage: Arc<AsyncMutex<HashMap<u32, u32>>>,
+    channels_usage: Arc<AsyncMutex<HashMap<ChannelId, u32>>>,
     /// Pending channel creation tasks
     tasks: Arc<AsyncMutex<HashMap<Url, Weak<ChannelTask>>>>,
 }
