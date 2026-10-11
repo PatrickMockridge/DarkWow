@@ -77,7 +77,12 @@ pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
                     };
                     let frame = dwow_sdk::crypto::util::tx_commitment([&call]);
                     let r = plan.prove(frame)?;
-                    Ok(EndpointResult { children: vec![], call_data: r.params.encode(), proofs: vec![r.proof] })
+                    // `cd`, not `r.params.encode()`: the call data carries the `0x01` selector byte
+                    // that `get_metadata` reads to pick the handler, and it is the same byte string
+                    // the frame above was proven over. Returning the bare params dropped the
+                    // selector, so `DeployFunction::try_from` read the first byte of the encoded
+                    // public key and errored with `InvalidFunction`.
+                    Ok(EndpointResult { children: vec![], call_data: cd, proofs: vec![r.proof] })
                 }),
             },
         ],

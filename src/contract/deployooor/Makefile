@@ -115,7 +115,10 @@ proof/%.zk.bin: proof/%.zk $(ZKAS) check-zkas-version
 
 all: check-source-hash $(WASM_BIN) $(ZK_BINS)
 
-$(WASM_BIN): $(WASM_SRC)
+# `$(ZK_BINS)` is a prerequisite, not a sibling of it in `all`: the wasm embeds each circuit with
+# `include_bytes!` (from `init_contract`), so compiling it before the circuits exist fails outright
+# with "couldn't read .../proof/lock.zk.bin". Listing both under `all` does not order them.
+$(WASM_BIN): $(ZK_BINS) $(WASM_SRC)
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) build --target=$(WASM_TARGET) \
 		--release --package $(PKGNAME)
 	cp -f ../../../target/$(WASM_TARGET)/release/$@ $@

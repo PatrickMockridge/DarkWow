@@ -54,6 +54,13 @@ dwow_sdk::define_contract!(
 /// We use this function to initialize all the necessary databases and prepare them
 /// with initial data if necessary.
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
+    // Register this contract's circuits before anything can ask the chain to verify one. The host
+    // reads them back out of the `_zkas` tree by namespace, so a circuit that is not written here is
+    // a proof nothing can ever verify: `load_zkbin` finds the key absent, `get_contract_data`
+    // returns an empty slice rather than an error, and the deserialize fails as "failed to fill
+    // whole buffer". `LockV1` is the only endpoint carrying a proof, so `LockV2` is the only entry.
+    wasm::db::zkas_db_set(include_bytes!("../proof/lock.zk.bin"))?;
+
     // Set up a database tree for arbitrary data
     let info_db = match wasm::db::db_lookup(cid, DEPLOY_CONTRACT_INFO_TREE) {
         Ok(v) => v,
