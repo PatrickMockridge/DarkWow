@@ -786,4 +786,10 @@ F-196: row:OBL-C229@e9e0d2567a
      right and only the code was wrong. The promotion's cost is unusual for this ledger and is recorded
      in the row: removing an unread field from six params is an ABI change (32 bytes each), and because
      the Python SDK bindings mirror those params under `src/sdk`, all 32 artifacts rebuilt behind it. -->
+F-518: doc:doc/src/contract/otc_swap.md#cancel_swapzk@4808b9b824, row:OBL-C230@4808b9b824
+<!-- F-518 is promoted as a documentation correction with no code half: the circuit had already dropped
+     the constraint, and dropped it for a good reason recorded at the site. The promotion's work was to
+     check the enforcement it claimed to have moved actually exists — it does, in the host, against the
+     stored swap and the chain height — so the correction names that site instead of leaving a reader to
+     infer that the timelock is unenforced. -->
 <!-- /promotion-log -->
