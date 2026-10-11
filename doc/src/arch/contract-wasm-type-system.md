@@ -1229,6 +1229,36 @@ to construct a valid witness.
 target object within the same anonymity set is NOT re-entrancy — it is sequential
 consume+create on distinct objects. See Part C §C.7 for the composition rules.
 
+*Restated 2026-10-11 (`F-309`). The rule survives; the check described for it does
+not, and two measured facts say why.*
+
+**The host has no call stack, and a contract cannot enter one.** Every import the
+host registers is a read, a write, or a return: state (`db_*`), circuits
+(`zkas_db_set`), trees (`merkle_add`, `sparse_merkle_insert_batch`,
+`merkle_anchor_add`), objects (`get_object_*`), the read-only getters, and the
+utilities (`drk_log`, `set_return_data`, `emit_spend_hook`). None of them creates
+or invokes a call. The call graph is therefore **static** — the prover fixes it in
+the transaction, the host validates it (`dark_forest_leaf_vec_integrity_check`,
+bounded by the one-byte index encoding) and executes each call once in a flat loop
+(`execution.rs`). A contract cannot re-enter itself because it cannot enter
+anything: the circular state dependency this section names cannot be constructed,
+and there is no stack for a detection to walk.
+
+**The section's own carve-out is what makes the check unimplementable as written.**
+"a contract invoking itself on a DIFFERENT target object ... is NOT re-entrancy"
+requires the host to see a call's *target object*. The tree it verifies carries
+`(contract_id, data)`; the target lives inside `data`, in a per-contract encoding
+the host does not parse. A predicate on `contract_id` alone would refuse the
+sequential consume-and-create pattern this section explicitly permits.
+
+**What the section leaves, and what covers it.** The tree's *shape* is the part a
+relaying node could re-encode, because `parent_index` and `children_indexes` live
+in the witness and in neither the transaction hash nor the merkle root. The
+verifier's reconciliation proves the leaves against the chain transaction, and
+checks the shape is well-formed and bounded — it does not check the shape is the
+one the prover built. That gap belongs to the check that makes it (`zk_verifier.rs`,
+`F10`) and is not this section's subject.
+
 ## A.8 Wallet-Contract Interface Contract
 
 ### A.8.1 The Two Scan Paths
