@@ -557,6 +557,13 @@ def strip_zk_comments(src):
 # (file, impl type) — the type matters: `unstake.rs` carries two `to_vec`s, `UnstakeBurnRevealed`
 # (the Burn circuit, 10 values) and `UnstakeReceiptRevealed` (the Redeem circuit, 8).
 CLIENT_ALIASES = {
+    # `deployooor`'s lock: the *file* is named for the entrypoint (`LockV1`, `lock_v1.rs`) and the
+    # *circuit* is `Lock_V2`, so neither name resolves the other and the alias is the only way the
+    # gate can find the third leg. The vector is four elements — `public_key_x`, `public_key_y`,
+    # `tx_binding`, `tx_nonce` — matching the circuit's four `constrain_instance` calls. Added
+    # 2026-10-11 with the circuit itself (`F-511`); until then the gate had no lock circuit to
+    # locate, and it reports one the moment the circuit exists.
+    ("deployooor", "lock"): ("lock_v1.rs", "LockV1PublicInputs"),
     ("bearer_bond", "blind_output"): ("pay_interest.rs", "PayInterestRevealed"),
     ("bearer_bond", "redeem"): ("unstake.rs", "UnstakeReceiptRevealed"),
     # promissory_note's clients carry two revealed-vector types each, one per circuit that a
