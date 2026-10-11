@@ -780,4 +780,10 @@ F-519: doc:doc/src/contract/audit.md#key-fixes-applied@20d308c7c1, row:OBL-C228@
      a seventh was deliberately removed on 2026-09-24. The promotion therefore does not merely correct
      a figure — it names each absence where the claim was made, and records that nothing covers the
      obligation the table created. The ledger rated this H for exactly that reason. -->
+F-196: row:OBL-C229@e9e0d2567a
+<!-- F-196 is promoted as a repair with no doc half: `safety.md`'s RC1 bullet states the anti-pattern
+     class and its checklist asks the exact question this field answered wrongly, so the document was
+     right and only the code was wrong. The promotion's cost is unusual for this ledger and is recorded
+     in the row: removing an unread field from six params is an ABI change (32 bytes each), and because
+     the Python SDK bindings mirror those params under `src/sdk`, all 32 artifacts rebuilt behind it. -->
 <!-- /promotion-log -->
