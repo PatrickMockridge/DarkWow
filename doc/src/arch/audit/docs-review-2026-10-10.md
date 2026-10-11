@@ -753,4 +753,10 @@ F-308: row:OBL-C223@f94e6c117e
      non-optional return is real, but the defect that matters is that `is_fee_v3` reads only the first
      call, which is the main call in every transaction the wallet builds. Triaging this also forced a
      correction to `OBL-C218`, whose fix sits behind the same predicate and had been marked FIXED. -->
+F-309: doc:doc/src/arch/contract-wasm-type-system.md#a74-re-entrancy@57715ed6da, row:OBL-C224@57715ed6da
+<!-- F-309 is promoted as a restatement, and the promotion's work was to establish which of two things was
+     wrong: a missing check, or a clause written for a different execution model. It is the second — the
+     host registers no import that creates a call, so the graph is static and the recursion the clause
+     fears cannot be built. The restatement keeps the rule, says what covers it, and disclaims a
+     similarly-named constant so a later reader does not mistake it for the check. -->
 <!-- /promotion-log -->
