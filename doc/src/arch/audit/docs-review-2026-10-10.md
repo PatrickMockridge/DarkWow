@@ -747,4 +747,10 @@ F-311: doc:doc/src/arch/contract-wasm-type-system.md#a47-acl-enforcement@1b79e76
      the rule: it names the exception inside the rule, which is where a reader of the specification
      will look. Applying it would have meant a full rebuild of all 32 contract artifacts (the guest
      declaration lives in `src/sdk`) for a return value the guest discards. -->
+F-308: row:OBL-C223@f94e6c117e
+<!-- F-308's clause is about a gate that rejects a transaction whose fee cannot be read, and the row it
+     is promoted to is about the gate not being reached at all. The framing was narrow: the trait's
+     non-optional return is real, but the defect that matters is that `is_fee_v3` reads only the first
+     call, which is the main call in every transaction the wallet builds. Triaging this also forced a
+     correction to `OBL-C218`, whose fix sits behind the same predicate and had been marked FIXED. -->
 <!-- /promotion-log -->
