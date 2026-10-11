@@ -106,9 +106,11 @@ pub(crate) fn dex_execute_swap_fee_process_instruction_v1(
     //     calls are validated for contract id only, and no dex entrypoint validates a child *value*
     //     commitment. Promissory note exports `validate_child_value_commit` for exactly that
     //     (`src/contract/promissory_note/src/validation.rs:46`), and `stablecoin` already uses it.
-    //   * Nothing in the spec says where the fee goes: `doc/src/contract/dex.md:47,110` names the
-    //     child function as `otc_swap_v1 (0x05)` while this function requires `0x04`
-    //     (`transfer_v1`), and no fee recipient appears in either.
+    //   * Nothing in the spec says where the fee goes: `doc/src/contract/dex.md` names no fee
+    //     recipient, and neither does this function. (That document used to name the child
+    //     function as `otc_swap_v1 (0x05)` where this function requires `0x04`, `transfer_v1`;
+    //     corrected 2026-10-11 under `F-512`, so the disagreement it recorded is gone and only
+    //     the absent recipient remains.)
     //
     // So the fee is proven and unbound, and binding it needs a decision this contract has not made.
     // Recorded as OBL-Z13 in `doc/src/arch/verification-hazop.md` rather than guessed at here.
@@ -117,9 +119,9 @@ pub(crate) fn dex_execute_swap_fee_process_instruction_v1(
         return Err(DexError::InvalidConfiguration.into())
     }
 
-    // Validate children_indexes for promissory_note::otc_swap_v1 calls
+    // Validate children_indexes for promissory_note::transfer_v1 calls
     if self_.children_indexes.len() != 2 {
-        msg!("[ExecuteSwapFeeV1] Error: Expected 2 child calls (promissory_note::otc_swap_v1), got {}",
+        msg!("[ExecuteSwapFeeV1] Error: Expected 2 child calls (promissory_note::transfer_v1), got {}",
              self_.children_indexes.len());
         return Err(DexError::InvalidChildrenIndexes.into())
     }

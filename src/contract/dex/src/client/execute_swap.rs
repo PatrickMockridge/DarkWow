@@ -48,9 +48,9 @@ pub struct ExecuteSwapPublicInputs {
     pub bob_nullifier: pallas::Base,
     /// Swap ID = poseidon_hash([alice_lock, bob_token, bob_amount])
     pub swap_id: pallas::Base,
-    /// FuncRef for Alice's OtcSwapV1 child call
+    /// FuncRef for Alice's TransferV1 child call
     pub alice_otc_func_id: pallas::Base,
-    /// FuncRef for Bob's OtcSwapV1 child call
+    /// FuncRef for Bob's TransferV1 child call
     pub bob_otc_func_id: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -97,9 +97,9 @@ pub struct ExecuteSwapCallData {
     pub bob_blind: pallas::Base,
     /// Partial fill amount
     pub fill_amount: pallas::Base,
-    /// FuncRef for Alice's OtcSwapV1 child call
+    /// FuncRef for Alice's TransferV1 child call
     pub alice_otc_func_id: pallas::Base,
-    /// FuncRef for Bob's OtcSwapV1 child call
+    /// FuncRef for Bob's TransferV1 child call
     pub bob_otc_func_id: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,

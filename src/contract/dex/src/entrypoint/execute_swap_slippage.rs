@@ -86,9 +86,9 @@ pub(crate) fn dex_execute_swap_slippage_process_instruction_v1(
 
     msg!("[ExecuteSwapSlippageV1] Executing swap with slippage: id={:?}", &params.swap_id);
 
-    // Validate children_indexes for promissory_note::otc_swap_v1 calls
+    // Validate children_indexes for promissory_note::transfer_v1 calls
     if self_.children_indexes.len() != 2 {
-        msg!("[ExecuteSwapSlippageV1] Error: Expected 2 child calls (promissory_note::otc_swap_v1), got {}",
+        msg!("[ExecuteSwapSlippageV1] Error: Expected 2 child calls (promissory_note::transfer_v1), got {}",
              self_.children_indexes.len());
         return Err(DexError::InvalidChildrenIndexes.into())
     }

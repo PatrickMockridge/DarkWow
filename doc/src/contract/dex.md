@@ -106,14 +106,27 @@ token exchange between participants but does not mint, burn, or redeem tokens.
 
 | Operation | PN Opcode Called | Purpose |
 |-----------|-----------------|---------|
-| ExecuteSwapV1 | otc_swap_v1 (0x05) | Atomic bilateral swap |
-| ExecuteSwapFeeV1 | otc_swap_v1 (0x05) | Swap with fee deduction |
-| ExecuteSwapSlippageV1 | otc_swap_v1 (0x05) | Swap with slippage tolerance |
+| ExecuteSwapV1 | TransferV1 (0x04) | Alice's token to Bob, one direction |
+| ExecuteSwapFeeV1 | TransferV1 (0x04) | The same move, with a fee deducted |
+| ExecuteSwapSlippageV1 | TransferV1 (0x04) | The same move, with a slippage bound |
 | CancelSwapV1 | TransferV1 (0x04) | Refund proposer on cancel |
 
-The DEX delegates swap execution to the PN contract's OTC swap functionality
-rather than implementing its own atomic swap logic. Cancel operations use
-TransferV1 to refund locked tokens.
+Every swap entrypoint requires **two** child calls, each a `TransferV1`: one
+moving Alice's token to Bob and one moving Bob's token to Alice. The swap's
+atomicity is the *transaction's* — both transfers are children of the same
+transaction, so the chain applies them together or not at all — and each
+entrypoint's circuit binds both children's `FuncRef`s, so neither can be
+substituted. Cancel operations use `TransferV1` to refund locked tokens.
+
+*Corrected 2026-10-11 (`F-512`).* This table said `otc_swap_v1 (0x05)` for the
+three swap operations, and the paragraph here said the DEX "delegates swap
+execution to the PN contract's OTC swap functionality rather than implementing
+its own atomic swap logic". Neither is what the code does: all three entrypoints
+reject a child whose selector is not `0x04`, and their error messages name
+`transfer_v1`. The child count settles which side was wrong — `otc_swap_v1` is
+itself a *bilateral* swap, so two of them would be two swaps, while two
+`TransferV1`s compose the single swap the DEX is making. `CancelSwapV1` was
+already documented as `TransferV1` and matches the code.
 
 ### Role in the PN Lifecycle
 

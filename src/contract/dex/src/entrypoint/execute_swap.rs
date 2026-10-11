@@ -35,18 +35,20 @@
 //!    - Prover knows alice_secret and bob_secret
 //!    - The nullifiers are correctly computed
 //!    - The swap ID is consistent
-//!    - The promissory_note::otc_swap_v1 calls are bundled (cross-contract atomic swap)
+//!    - The two promissory_note::transfer_v1 calls are bundled (one swap, composed)
 //!
 //! 3. **Contract** (this file) verifies:
 //!    - The nullifiers provided match what's on-chain (double-spend check)
 //!    - The swap exists and is in correct state
-//!    - Child contract calls include promissory_note::otc_swap_v1 for atomic token swap
+//!    - Child contract calls include the two promissory_note::transfer_v1 moves that make the swap
 //!
 //! ## Money Integration
 //!
-//! This function REQUIRES promissory_note::otc_swap_v1 child calls to be bundled for atomic token swap:
-//! - Child call 0: promissory_note::otc_swap_v1 for Alice's token to Bob
-//! - Child call 1: promissory_note::otc_swap_v1 for Bob's token to Alice
+//! This function REQUIRES two promissory_note::transfer_v1 child calls, which together
+//! make the swap. Its atomicity is the *transaction's*, not the PN contract's — both
+//! transfers are children of the same transaction (`F-512`):
+//! - Child call 0: promissory_note::transfer_v1 for Alice's token to Bob
+//! - Child call 1: promissory_note::transfer_v1 for Bob's token to Alice
 //!
 //! The ZK circuit includes FuncRefs from these child calls as public inputs,
 //! ensuring the atomic swap was executed as part of the same transaction.
@@ -103,7 +105,7 @@ pub(crate) fn dex_execute_swap_get_metadata_v1(
         return Err(DexError::InvalidChildrenIndexes.into())
     }
 
-    // Validate both child calls are promissory_note::otc_swap_v1 (0x05)
+    // Validate both child calls are promissory_note::transfer_v1 (0x04)
     for &child_idx in self_.children_indexes.iter() {
         let child_call = &calls[child_idx].data;
         if child_call.data[0] != 0x04 {
