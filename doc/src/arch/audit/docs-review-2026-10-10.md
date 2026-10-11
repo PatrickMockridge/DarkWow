@@ -774,4 +774,10 @@ F-306: doc:doc/src/arch/type-system.md#865-sessionselector--nominal-session-topo
      enum cannot hold a bitmask, and the values here are OR-sums. The promotion therefore restates the
      clause and implements the corrected one, and records the part of the section that is specified but
      has no consumer (the `ExhibitsBarb` impl) instead of dropping it. -->
+F-519: doc:doc/src/contract/audit.md#key-fixes-applied@20d308c7c1, row:OBL-C228@20d308c7c1
+<!-- F-519 is promoted as a correction to a *security* document, which is the class at its most
+     dangerous: six of the nine protections it advertised have no identifier anywhere in the tree, and
+     a seventh was deliberately removed on 2026-09-24. The promotion therefore does not merely correct
+     a figure — it names each absence where the claim was made, and records that nothing covers the
+     obligation the table created. The ledger rated this H for exactly that reason. -->
 <!-- /promotion-log -->
