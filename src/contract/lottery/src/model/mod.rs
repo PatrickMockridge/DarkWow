@@ -649,8 +649,6 @@ pub struct BuyTicketParamsV1 {
     pub value: u64,
     /// Value commitment point
     pub value_commit: pallas::Point,
-    /// Signature
-    pub signature: pallas::Base,
     /// Per-instance seed for deriving capability-scoped keys
     pub instance_seed: [u8; 32],
     /// Lottery this ticket belongs to (commit_ticket.zk witness)
@@ -660,7 +658,7 @@ pub struct BuyTicketParamsV1 {
 }
 
 impl BuyTicketParamsV1 {
-    pub const ENCODED_SIZE: usize = 264;
+    pub const ENCODED_SIZE: usize = 232;
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.player_pub.to_bytes());
@@ -668,7 +666,6 @@ impl BuyTicketParamsV1 {
         b.extend_from_slice(&self.asset_id.to_repr());
         b.extend_from_slice(&self.value.to_le_bytes());
         b.extend_from_slice(&self.value_commit.to_bytes());
-        b.extend_from_slice(&self.signature.to_repr());
         b.extend_from_slice(&self.instance_seed);
         b.extend_from_slice(&self.lottery_id.to_repr());
         b.extend_from_slice(&self.nonce.to_repr());
@@ -688,11 +685,10 @@ impl BuyTicketParamsV1 {
         let value = u64::from_le_bytes(data[96..104].try_into().unwrap());
         let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[104..136].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("BuyTicketParamsV1: invalid value_commit".into()))?;
-        let signature = read_base(&data[136..168])?;
-        let instance_seed: [u8; 32] = data[168..200].try_into().unwrap();
-        let lottery_id = read_base(&data[200..232])?;
-        let nonce = read_base(&data[232..264])?;
-        Ok(BuyTicketParamsV1 { player_pub, commitment, asset_id, value, value_commit, signature, instance_seed, lottery_id, nonce })
+        let instance_seed: [u8; 32] = data[136..168].try_into().unwrap();
+        let lottery_id = read_base(&data[168..200])?;
+        let nonce = read_base(&data[200..232])?;
+        Ok(BuyTicketParamsV1 { player_pub, commitment, asset_id, value, value_commit, instance_seed, lottery_id, nonce })
     }
 }
 

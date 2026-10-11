@@ -56,9 +56,6 @@ pub fn create_buy_ticket_tx(
     let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed)?;
     let player_pub = PublicKey::from_secret(instance_secret);
 
-    // Sign the commitment
-    let signature = sign_commitment(&commitment, secret_key)?;
-
     // Create params
     let params = BuyTicketParamsV1 {
         player_pub,
@@ -66,23 +63,12 @@ pub fn create_buy_ticket_tx(
         asset_id,
         value,
         value_commit: pallas::Point::identity(),
-        signature,
         instance_seed,
         lottery_id,
         nonce,
     };
 
     Ok(params)
-}
-
-/// Sign a commitment with a secret key
-fn sign_commitment(
-    commitment: &pallas::Base,
-    secret_key: &pallas::Base,
-) -> Result<pallas::Base, Box<dyn std::error::Error>> {
-    // For now, simple signature using Poseidon
-    // In production, use proper Schnorr signature
-    Ok(dwow_sdk::crypto::poseidon_hash([*commitment, *secret_key]))
 }
 
 /// Derive ticket ID from parameters (with derived key)

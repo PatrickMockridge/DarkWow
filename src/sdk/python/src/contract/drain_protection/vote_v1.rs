@@ -39,7 +39,6 @@ impl FunctionParams for drain_protection_model::VoteParamsV1 {
         dict.set_item("proposal_id", format!("{:?}", self.proposal_id))?;
         dict.set_item("voter_pubkey", self.voter_pubkey.to_string())?;
         dict.set_item("vote", self.vote)?;
-        dict.set_item("signature", format!("{:?}", self.signature))?;
         Ok(dict.unbind())
     }
 
@@ -48,7 +47,6 @@ impl FunctionParams for drain_protection_model::VoteParamsV1 {
         writeln!(out, "{prefix}proposal_id: {:?}", self.proposal_id).unwrap();
         writeln!(out, "{prefix}voter_pubkey: {}", self.voter_pubkey).unwrap();
         writeln!(out, "{prefix}vote: {}", self.vote).unwrap();
-        writeln!(out, "{prefix}signature: {:?}", self.signature).unwrap();
         Ok(())
     }
 }

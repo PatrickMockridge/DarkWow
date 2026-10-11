@@ -387,7 +387,6 @@ impl DrainProtectionHarness {
             proposal_id: self.proposal_id(),
             voter_pubkey: authority.authority_pub(),
             vote: true,
-            signature: pallas::Base::zero(),
             fund_id: Self::FUND_ID,
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
@@ -416,7 +415,6 @@ impl DrainProtectionHarness {
         let pi = authority.compute_public_inputs().map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         let params = ExecuteParamsV1 {
             proposal_id: self.proposal_id(),
-            signature: pallas::Base::zero(),
             fund_id: Self::FUND_ID,
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
@@ -468,7 +466,6 @@ impl DrainProtectionHarness {
             fund_id: Self::FUND_ID,
             amount: 100,
             recipient: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(4321u64))),
-            signature: pallas::Base::zero(),
             // The pool's `total_funds` is zero and nothing raises it, so `check_rate_limit`'s
             // threshold is zero and *every* transfer is rate-limited — which is why this endpoint
             // takes the multisig path, naming the proposal `propose` created. `exceeds_rate_limit`
@@ -493,7 +490,6 @@ impl DrainProtectionHarness {
         let params = LockParamsV1 {
             fund_id: Self::FUND_ID,
             duration_blocks: 6000,
-            signature: pallas::Base::zero(),
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
@@ -519,7 +515,6 @@ impl DrainProtectionHarness {
         let pi = authority.compute_public_inputs().map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         let params = UnlockParamsV1 {
             fund_id: Self::FUND_ID,
-            signature: pallas::Base::zero(),
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,

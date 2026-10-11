@@ -41,7 +41,6 @@ impl FunctionParams for lottery_model::BuyTicketParamsV1 {
         dict.set_item("asset_id", format!("{:?}", self.asset_id))?;
         dict.set_item("value", self.value)?;
         dict.set_item("value_commit", format!("{:?}", self.value_commit))?;
-        dict.set_item("signature", format!("{:?}", self.signature))?;
         dict.set_item("instance_seed", format!("{:?}", self.instance_seed))?;
         Ok(dict.unbind())
     }
@@ -53,7 +52,6 @@ impl FunctionParams for lottery_model::BuyTicketParamsV1 {
         writeln!(out, "{prefix}asset_id: {:?}", self.asset_id).unwrap();
         writeln!(out, "{prefix}value: {}", self.value).unwrap();
         writeln!(out, "{prefix}value_commit: {:?}", self.value_commit).unwrap();
-        writeln!(out, "{prefix}signature: {:?}", self.signature).unwrap();
         writeln!(out, "{prefix}instance_seed: {:?}", self.instance_seed).unwrap();
         Ok(())
     }

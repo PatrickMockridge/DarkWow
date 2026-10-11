@@ -37,14 +37,12 @@ impl FunctionParams for drain_protection_model::UnlockParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("fund_id", format!("{:?}", self.fund_id))?;
-        dict.set_item("signature", format!("{:?}", self.signature))?;
         Ok(dict.unbind())
     }
 
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}fund_id: {:?}", self.fund_id).unwrap();
-        writeln!(out, "{prefix}signature: {:?}", self.signature).unwrap();
         Ok(())
     }
 }

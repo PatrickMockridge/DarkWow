@@ -306,7 +306,6 @@ pub struct VoteBuilder {
     proposal_id: pallas::Base,
     voter_pubkey: PublicKey,
     vote: bool,
-    signature: pallas::Base,
     /// The authority inputs `vote.zk` instances (`OBL-C78`); zero by default.
     authority: AuthorityCallData,
     /// The fund the vote's proposal belongs to (`OBL-C98`). Zero by default.
@@ -324,7 +323,6 @@ impl VoteBuilder {
                 PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng))
             },
             vote: true,
-            signature: pallas::Base::zero(),
             authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()),
             fund_id: pallas::Base::zero(),
         }
@@ -361,11 +359,6 @@ impl VoteBuilder {
         self
     }
 
-    pub fn signature(mut self, sig: pallas::Base) -> Self {
-        self.signature = sig;
-        self
-    }
-
     /// The authority inputs the proof is made with (`OBL-C78`).
     pub fn authority(mut self, call: AuthorityCallData) -> Self {
         self.authority = call;
@@ -378,7 +371,6 @@ impl VoteBuilder {
             proposal_id: self.proposal_id,
             voter_pubkey: self.voter_pubkey,
             vote: self.vote,
-            signature: self.signature,
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
@@ -397,7 +389,6 @@ impl VoteBuilder {
 /// names, and `require_fund_authority` is checked against it.
 pub struct ExecuteBuilder {
     proposal_id: pallas::Base,
-    signature: pallas::Base,
     fund_id: FundId,
     /// The authority inputs `execute.zk` instances (`OBL-C78`); zero by default.
     authority: AuthorityCallData,
@@ -407,7 +398,6 @@ impl ExecuteBuilder {
     pub fn new() -> Self {
         Self {
             proposal_id: pallas::Base::zero(),
-            signature: pallas::Base::zero(),
             fund_id: pallas::Base::zero(),
             authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()),
         }
@@ -430,16 +420,10 @@ impl ExecuteBuilder {
         self
     }
 
-    pub fn signature(mut self, sig: pallas::Base) -> Self {
-        self.signature = sig;
-        self
-    }
-
     pub fn build(&self) -> Result<ExecuteParamsV1, &'static str> {
         let pi = self.authority.compute_public_inputs()?;
         Ok(ExecuteParamsV1 {
             proposal_id: self.proposal_id,
-            signature: self.signature,
             authority_pub_x: pi.authority_pub_x,
             authority_pub_y: pi.authority_pub_y,
             authority_nullifier: pi.authority_nullifier,
@@ -558,7 +542,6 @@ pub struct TransferBuilder {
     fund_id: FundId,
     amount: u64,
     recipient: PublicKey,
-    signature: pallas::Base,
     exceeds_rate_limit: bool,
     vote_proposal_id: Option<pallas::Base>,
     /// The authority inputs `transfer.zk` instances (`OBL-C78`); zero by default.
@@ -576,7 +559,6 @@ impl TransferBuilder {
             } else {
                 PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng))
             },
-            signature: pallas::Base::zero(),
             exceeds_rate_limit: false,
             vote_proposal_id: None,
             authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()),
@@ -604,11 +586,6 @@ impl TransferBuilder {
         self
     }
 
-    pub fn signature(mut self, sig: pallas::Base) -> Self {
-        self.signature = sig;
-        self
-    }
-
     pub fn exceeds_rate_limit(mut self, exceeds: bool) -> Self {
         self.exceeds_rate_limit = exceeds;
         self
@@ -625,7 +602,6 @@ impl TransferBuilder {
             fund_id: self.fund_id,
             amount: self.amount,
             recipient: self.recipient,
-            signature: self.signature,
             exceeds_rate_limit: self.exceeds_rate_limit,
             vote_proposal_id: self.vote_proposal_id,
             authority_pub_x: pi.authority_pub_x,
@@ -642,7 +618,6 @@ impl TransferBuilder {
 pub struct LockBuilder {
     fund_id: FundId,
     duration_blocks: u64,
-    signature: pallas::Base,
     /// The authority inputs `lock.zk` instances (`OBL-C78`); a zero secret by default, like the rest
     /// of this builder. `authority` sets it, and `create_authority_proof` must be given the same.
     authority: AuthorityCallData,
@@ -650,7 +625,7 @@ pub struct LockBuilder {
 
 impl LockBuilder {
     pub fn new() -> Self {
-        Self { fund_id: pallas::Base::zero(), duration_blocks: 6000, signature: pallas::Base::zero(), authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()) }
+        Self { fund_id: pallas::Base::zero(), duration_blocks: 6000, authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()) }
     }
 
     pub fn authority(mut self, call: AuthorityCallData) -> Self { self.authority = call; self }
@@ -665,14 +640,9 @@ impl LockBuilder {
         self
     }
 
-    pub fn signature(mut self, sig: pallas::Base) -> Self {
-        self.signature = sig;
-        self
-    }
-
     pub fn build(&self) -> Result<LockParamsV1, &'static str> {
         let pi = self.authority.compute_public_inputs()?;
-        Ok(LockParamsV1 { fund_id: self.fund_id, duration_blocks: self.duration_blocks, signature: self.signature, authority_pub_x: pi.authority_pub_x, authority_pub_y: pi.authority_pub_y, authority_nullifier: pi.authority_nullifier, tx_nonce: pi.tx_nonce })
+        Ok(LockParamsV1 { fund_id: self.fund_id, duration_blocks: self.duration_blocks, authority_pub_x: pi.authority_pub_x, authority_pub_y: pi.authority_pub_y, authority_nullifier: pi.authority_nullifier, tx_nonce: pi.tx_nonce })
     }
 }
 
@@ -681,14 +651,13 @@ impl LockBuilder {
 /// Unlock funds after timelock.
 pub struct UnlockBuilder {
     fund_id: FundId,
-    signature: pallas::Base,
     /// The authority inputs `unlock.zk` instances (`OBL-C78`); zero by default.
     authority: AuthorityCallData,
 }
 
 impl UnlockBuilder {
     pub fn new() -> Self {
-        Self { fund_id: pallas::Base::zero(), signature: pallas::Base::zero(), authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()) }
+        Self { fund_id: pallas::Base::zero(), authority: AuthorityCallData::new(pallas::Base::zero(), pallas::Base::zero()) }
     }
 
     pub fn authority(mut self, call: AuthorityCallData) -> Self { self.authority = call; self }
@@ -698,14 +667,9 @@ impl UnlockBuilder {
         self
     }
 
-    pub fn signature(mut self, sig: pallas::Base) -> Self {
-        self.signature = sig;
-        self
-    }
-
     pub fn build(&self) -> Result<UnlockParamsV1, &'static str> {
         let pi = self.authority.compute_public_inputs()?;
-        Ok(UnlockParamsV1 { fund_id: self.fund_id, signature: self.signature, authority_pub_x: pi.authority_pub_x, authority_pub_y: pi.authority_pub_y, authority_nullifier: pi.authority_nullifier, tx_nonce: pi.tx_nonce })
+        Ok(UnlockParamsV1 { fund_id: self.fund_id, authority_pub_x: pi.authority_pub_x, authority_pub_y: pi.authority_pub_y, authority_nullifier: pi.authority_nullifier, tx_nonce: pi.tx_nonce })
     }
 }
 

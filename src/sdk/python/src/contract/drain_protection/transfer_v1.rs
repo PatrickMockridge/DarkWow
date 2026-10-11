@@ -39,7 +39,6 @@ impl FunctionParams for drain_protection_model::TransferParamsV1 {
         dict.set_item("fund_id", format!("{:?}", self.fund_id))?;
         dict.set_item("amount", self.amount)?;
         dict.set_item("recipient", self.recipient.to_string())?;
-        dict.set_item("signature", format!("{:?}", self.signature))?;
         dict.set_item("exceeds_rate_limit", self.exceeds_rate_limit)?;
         dict.set_item("vote_proposal_id", format!("{:?}", self.vote_proposal_id))?;
         Ok(dict.unbind())
@@ -50,7 +49,6 @@ impl FunctionParams for drain_protection_model::TransferParamsV1 {
         writeln!(out, "{prefix}fund_id: {:?}", self.fund_id).unwrap();
         writeln!(out, "{prefix}amount: {}", self.amount).unwrap();
         writeln!(out, "{prefix}recipient: {}", self.recipient).unwrap();
-        writeln!(out, "{prefix}signature: {:?}", self.signature).unwrap();
         writeln!(out, "{prefix}exceeds_rate_limit: {}", self.exceeds_rate_limit).unwrap();
         writeln!(out, "{prefix}vote_proposal_id: {:?}", self.vote_proposal_id).unwrap();
         Ok(())

@@ -195,7 +195,6 @@ impl LotteryHarness {
             asset_id,
             value: ticket_price,
             value_commit: pallas::Point::identity(),
-            signature: pallas::Base::zero(),
             instance_seed: [0u8; 32],
             lottery_id,
             nonce,

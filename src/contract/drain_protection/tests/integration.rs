@@ -286,7 +286,6 @@ fn test_vote_and_execute_params_carry_the_fund() {
         proposal_id: pallas::Base::from(71),
         voter_pubkey: make_pubkey(4),
         vote: true,
-        signature: pallas::Base::from(72),
         authority_pub_x: pallas::Base::from(73),
         authority_pub_y: pallas::Base::from(74),
         authority_nullifier: pallas::Base::from(75),
@@ -300,7 +299,6 @@ fn test_vote_and_execute_params_carry_the_fund() {
 
     let execute = ExecuteParamsV1 {
         proposal_id: pallas::Base::from(81),
-        signature: pallas::Base::from(82),
         authority_pub_x: pallas::Base::from(83),
         authority_pub_y: pallas::Base::from(84),
         authority_nullifier: pallas::Base::from(85),
@@ -423,7 +421,6 @@ fn test_lock_params_encoding() {
     let params = LockParamsV1 {
         fund_id: pallas::Base::from(1),
         duration_blocks: 600,
-        signature: pallas::Base::from(1),
         authority_pub_x: pallas::Base::from(11),
         authority_pub_y: pallas::Base::from(12),
         authority_nullifier: pallas::Base::from(13),
@@ -484,7 +481,6 @@ fn test_lock_update_encoding() {
 fn test_unlock_params_encoding() {
     let params = UnlockParamsV1 {
         fund_id: pallas::Base::from(1),
-        signature: pallas::Base::from(1),
         authority_pub_x: pallas::Base::from(21),
         authority_pub_y: pallas::Base::from(22),
         authority_nullifier: pallas::Base::from(23),
@@ -494,7 +490,6 @@ fn test_unlock_params_encoding() {
     let encoded = serialize(&params);
     let decoded: UnlockParamsV1 = deserialize(&encoded).unwrap();
 
-    assert_eq!(decoded.signature, params.signature);
     assert_eq!(decoded.authority_nullifier, params.authority_nullifier);
 }
 
@@ -519,7 +514,6 @@ fn test_transfer_params_encoding() {
         fund_id: pallas::Base::from(1),
         amount: 500,
         recipient: make_pubkey(1),
-        signature: pallas::Base::from(1),
         exceeds_rate_limit: false,
         vote_proposal_id: None,
         authority_pub_x: pallas::Base::from(31),

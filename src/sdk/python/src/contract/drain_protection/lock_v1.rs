@@ -38,7 +38,6 @@ impl FunctionParams for drain_protection_model::LockParamsV1 {
         let dict = PyDict::new(py);
         dict.set_item("fund_id", format!("{:?}", self.fund_id))?;
         dict.set_item("duration_blocks", self.duration_blocks)?;
-        dict.set_item("signature", format!("{:?}", self.signature))?;
         Ok(dict.unbind())
     }
 
@@ -46,7 +45,6 @@ impl FunctionParams for drain_protection_model::LockParamsV1 {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}fund_id: {:?}", self.fund_id).unwrap();
         writeln!(out, "{prefix}duration_blocks: {}", self.duration_blocks).unwrap();
-        writeln!(out, "{prefix}signature: {:?}", self.signature).unwrap();
         Ok(())
     }
 }
