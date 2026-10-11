@@ -769,4 +769,9 @@ F-305: row:OBL-C226@96ac17e28e
 <!-- F-305 is promoted as a repair, and the clause required no amendment: `type-system.md` §8.6.4
      specified the type and its call sites accurately, and the code simply lacked them. Its sentence
      naming the `ProtocolGenericHandler` routing was, in the event, the work list. -->
+F-306: doc:doc/src/arch/type-system.md#865-sessionselector--nominal-session-topology@7fe6390b09, row:OBL-C227@7fe6390b09
+<!-- F-306 is the second clause in this campaign whose *type* was impossible rather than merely absent: an
+     enum cannot hold a bitmask, and the values here are OR-sums. The promotion therefore restates the
+     clause and implements the corrected one, and records the part of the section that is specified but
+     has no consumer (the `ExhibitsBarb` impl) instead of dropping it. -->
 <!-- /promotion-log -->
