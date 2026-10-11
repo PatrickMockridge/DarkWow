@@ -759,4 +759,10 @@ F-309: doc:doc/src/arch/contract-wasm-type-system.md#a74-re-entrancy@57715ed6da,
      host registers no import that creates a call, so the graph is static and the recursion the clause
      fears cannot be built. The restatement keeps the rule, says what covers it, and disclaims a
      similarly-named constant so a later reader does not mistake it for the check. -->
+F-314: doc:doc/src/arch/consensus/consensus.md#implementation-status@8f8c7069b8, row:OBL-C225@8f8c7069b8
+<!-- F-314 is promoted as a restatement, and it is the clearest case in the ledger of a capability table
+     asserting an instrument that does not exist: a row marked [IMPLEMENTED] whose cited site does not
+     mention the field. The promotion therefore corrects the row itself, not only the prose, and states
+     what the obligation's absence means — with the reason it is not repaired here (population moves the
+     PoW preimage, so it is a deliberate consensus change and the plan's out-of-scope default applies). -->
 <!-- /promotion-log -->

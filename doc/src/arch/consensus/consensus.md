@@ -1,4 +1,9 @@
-# Consensus [IMPLEMENTED]
+# Consensus
+
+*The title carried `[IMPLEMENTED]` until 2026-10-11 (`F-314`). It was the only title
+in the tree with a status tag, and the Implementation Status table below contradicts
+it — that table carries `[VISION]` and `**NONE — by decision**` rows, which is the
+honest form: status belongs to the item, not to the document. Read that table.*
 
 DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work. This is the only
 active consensus mechanism. All supported networks (`darkwow-devnet`, `darkwow-testnet`)
