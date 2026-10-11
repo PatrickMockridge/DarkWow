@@ -111,7 +111,20 @@ impl ContractMetadataRegistry {
 			name: "deployooor",
 			functions: vec![
 				FunctionSignature { name: "deploy", code: 0x00, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "lock", code: 0x01, requires_proof: false, proof_circuit: None },
+				// `requires_proof` must track `manifest.toml`, because this registry is consulted
+				// *before* the on-chain manifest — `lib.rs`'s `registry.get(...)` is the first arm
+				// and the manifest load is the `or_else`. A stale entry here therefore shadows the
+				// contract's real manifest, which is the defect the dao_escrow note above records.
+				// `lock` gained a `LockV2` proof on 2026-10-11 (OBL-C213): it used to check nothing,
+				// so `false` was true when written.
+				//
+				// The column is inert today, and this correction buys consistency rather than a
+				// reader. The only two contracts registered here (`native_token`, `deployooor`) each
+				// also have a `ContractClient` in `contract_imports.rs`, and that arm returns before
+				// the generic `requires_proof` pre-flight at `lib.rs` is reached — so nothing consults
+				// this field for either entry. `OBL-C214` carries the class; the value is corrected so
+				// the two declarations of one fact agree.
+				FunctionSignature { name: "lock", code: 0x01, requires_proof: true, proof_circuit: Some("LockV2") },
 			],
 		};
 		self.contracts.insert("deployooor", deployooor);
