@@ -898,6 +898,23 @@ This is the runtime enforcement of the barb constraints — `↓commit` (state
 writes) is only possible in the `Update` section; `↓verify` (returning metadata)
 is only possible in `Metadata` and `Exec`.
 
+**One host function is outside this rule, and it is named here rather than left as
+an unwritten exception.** `drk_log` (`src/runtime/import/util.rs`) takes no
+`acl_allow` gate, and it returns `()` rather than `i64`, so it departs from §A.4.1's
+signature rule as well. Both are deliberate. Logging is not state-mutating in the
+consensus sense — the log buffer is ephemeral, per-call, and never committed to sled
+— and it is metered, because `drk_log` subtracts gas for the bytes it is handed. The
+section a log comes from therefore carries no authority it could misuse, and gating
+it would hinder debugging from every section while withholding nothing. The return
+type is that judgement from the other side: the guest discards it (`src/sdk/src/log.rs`
+declares the import void), so a status would be written and never read.
+
+*Restated 2026-10-11 (`F-311`).* The rule is unchanged for the other host
+functions — `drk_log` is the only one in the tree that departs from it, and a new
+host function added without a gate is a defect against this section. What changed is
+that the exception is written down where the rule is, instead of living only in a
+comment above a single call site.
+
 ### A.4.8 Gas Metering
 
 The wasmer `Metering` middleware charges one gas unit per WASM opcode. Host
