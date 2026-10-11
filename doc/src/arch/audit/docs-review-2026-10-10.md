@@ -716,4 +716,15 @@ F-301: doc:doc/src/arch/consensus/fee-spec.md#141-genesis-initialization@5268607
      names the home (§14.1) and the drifted copy (§13.2) is collapsed into a pointer at it. The
      obligation the old wording carried — that the economic coefficients be adjustable at a window
      boundary — is covered by nothing, and `OBL-C216` says so in the open rather than dropping it. -->
+F-302: row:OBL-C218@264894db96, doc:doc/src/arch/consensus/fee-spec.md#1281-admission-gate-per-transaction@264894db96
+<!-- F-302's clause contradicted itself. §12.8.1 carried "no gas re-derivation" while FI-PLAIN-2, which
+     this finding is about, requires a non-matching fee to be rejected; the row quotes both. Both are
+     corrected in the commit the row names: the pseudocode now shows the re-derivation, and the rule is
+     stated as a floor rather than an equality test. -->
+F-303: row:OBL-C217@706a3220ef, row:OBL-C219@39be345363
+<!-- F-303 is promoted into two rows rather than one, because it turned out to be three defects with two
+     different homes. `OBL-C219` owns the tracker's inputs being two kinds of quantity — it escalated
+     every FeeV3-carrying contract to MAX from a comparison that meant nothing — and is FIXED.
+     `OBL-C217` owns where the factor comes from and who may read it, and is PARTLY: the chain now
+     derives it, and the wallet can never be a party to it, which `FI-RISK-1` was restated to say. -->
 <!-- /promotion-log -->
