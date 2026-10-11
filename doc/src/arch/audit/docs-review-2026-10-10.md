@@ -741,4 +741,10 @@ F-513: row:OBL-C221@3ce8fde500, doc:doc/src/contract/relayer_endowment.md#the-lo
      it is the relayer's own claim, so it protects a relayer that is late and not one that evades.
      The writer also deliberately leaves `last_settlement_height` alone, or it would suppress the
      very timeout it exists to satisfy. -->
+F-311: doc:doc/src/arch/contract-wasm-type-system.md#a47-acl-enforcement@1b79e768c9, row:OBL-C222@1b79e768c9
+<!-- F-311 is promoted as a restatement, because the code's deviation was deliberate, justified at the
+     function, and the only one of fifteen host functions in its module. The promotion does not weaken
+     the rule: it names the exception inside the rule, which is where a reader of the specification
+     will look. Applying it would have meant a full rebuild of all 32 contract artifacts (the guest
+     declaration lives in `src/sdk`) for a return value the guest discards. -->
 <!-- /promotion-log -->
