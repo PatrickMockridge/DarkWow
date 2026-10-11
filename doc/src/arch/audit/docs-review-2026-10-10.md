@@ -765,4 +765,8 @@ F-314: doc:doc/src/arch/consensus/consensus.md#implementation-status@8f8c7069b8,
      mention the field. The promotion therefore corrects the row itself, not only the prose, and states
      what the obligation's absence means — with the reason it is not repaired here (population moves the
      PoW preimage, so it is a deliberate consensus change and the plan's out-of-scope default applies). -->
+F-305: row:OBL-C226@96ac17e28e
+<!-- F-305 is promoted as a repair, and the clause required no amendment: `type-system.md` §8.6.4
+     specified the type and its call sites accurately, and the code simply lacked them. Its sentence
+     naming the `ProtocolGenericHandler` routing was, in the event, the work list. -->
 <!-- /promotion-log -->
