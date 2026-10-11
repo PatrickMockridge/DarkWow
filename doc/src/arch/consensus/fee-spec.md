@@ -266,7 +266,7 @@ acceptable operating ranges:
 | Flow Totalizer | FI-COLLECT-1,2 | Hidden inflation (ZCash Orchard class), supply not conserved, state machine violations, overlay visibility gaps, encoding corruption |
 | Valve Position Indicator | FI-FLAG-1,2,3 | Wallet derives wrong CFs, circular hash dependency, flags treated as consensus |
 | Private Channel | NONE | FeeV3 carries no ciphertext — plaintext fee (§14.4) |
-| System Parameters | FI-GEN-1,2 | Parameters not initialized at genesis, compile-time constants for economic values |
+| System Parameters | FI-GEN-1,2 | Fee window state or risk parameters not initialized at genesis; a typed consensus domain quantity declared as a `const` |
 | WASM Detection | FI-WASM-1,2 | Deploy transactions underpriced, WASM component ignored in admission |
 | Proof Timing | FI-TIME-1 | Proof generation exceeds block interval, transaction unpublishable |
 
@@ -1811,29 +1811,19 @@ from the block header and derives identical congestion factors via
 `derive_cfs()`. A node that substitutes a local value for a chain value has
 forked itself from the network.
 
-### 13.2 SPEC-1: Genesis-Initialized, Window-Updated
+### 13.2 SPEC-1: Chain-Derived State, Protocol-Constant Coefficients
 
-Every value that affects fee computation SHALL be initialized in genesis
-state and SHALL be updatable at window boundaries (every 20 blocks) through
-the PID controller defined in §12.
+This section used to state its own rule, and that was the defect: it was a second,
+drifted copy of **FI-GEN-1** (§14.1). It named constants that exist nowhere in the
+tree — `ALPHA_PREMIUM`, `ALPHA_STANDARD`, `MAX_ADJUSTMENT`; the code's fields are
+`FeeWindowConfig`'s `alpha_premium`, `alpha_standard`, `max_adjustment` — and it
+required the economic coefficients to be genesis sled state, which they are not and
+need not be.
 
-Compile-time constants SHALL be limited to:
-- Pure mathematical scaling factors (`SCALE = 1_000_000`, `RISK_FACTOR_SCALE = 100_000`)
-- Structural parameters that define the update mechanism, not the values
-  (`WINDOW_SIZE = 20`, `MAX_K = 16`)
-
-Values that define economic parameters SHALL NOT be compile-time constants:
-- Baseline storage cost (currently `BASELINE_STORAGE = 1_000_000`)
-- Congestion sensitivity coefficients (currently `ALPHA_PREMIUM = 0.05`,
-  `ALPHA_STANDARD = 0.01`)
-- Adjustment caps (currently `MAX_ADJUSTMENT = 0.10`)
-- Risk factor classifications and their multipliers
-
-These SHALL be stored in chain state (sled trees under the native_token
-contract) and initialized at genesis. The PID controller SHALL read current
-values from chain state at each window boundary, not from compile-time
-constants. A future governance mechanism MAY update these parameters; the
-mechanism for doing so is out of scope for this specification.
+The rule has one home now. §14.1 states which fee values are chain state (the fee
+window's 8 congestion-state keys, and the per-contract risk parameters) and which
+are protocol constants (the economic coefficients), and why a constant satisfies the
+principle in §13.1 rather than evading it.
 
 ### 13.3 SPEC-2: Chain-Derived, Not Local
 
@@ -1930,8 +1920,8 @@ Acceptable alternatives:
 
 | Guardrail | Rule | Verification |
 |-----------|------|-------------|
-| GS-1 | Fee values are genesis-initialized, window-updated | Audit: no compile-time economic constants outside §13.2 list |
-| GS-2 | Nodes read fee parameters from chain state | Audit: no `const` fee value used in consensus path |
+| GS-1 | Chain-synced fee state is genesis-initialized and window-updated; the economic coefficients are protocol constants | Audit: no compile-time economic value outside the FI-GEN-1 list (§14.1) |
+| GS-2 | Nodes read fee state from chain state, and never from a local default | Audit: no `const` fee *state* used in a consensus path — a protocol constant is shared by every build and is not a local value (§13.1) |
 | GS-3 | No silent fallbacks on consensus-critical paths | Audit: no `.unwrap_or(non_zero)` on values affecting block hash |
 | GS-4 | No feature gates on consensus-critical fee code | Audit: grep for `#[cfg(feature` in fee window, threshold, CF paths |
 | GS-6 | Congestion measurement accurate under load | Audit: no `try_lock().unwrap_or(0)` in queue length accessors |
@@ -1946,18 +1936,41 @@ spans), and specifies the minimum testing level required (L1, L1.5, L2, L3 per
 
 ### 14.1 Genesis Initialization
 
-**FI-GEN-1: Genesis initialization.** System fee parameters (baseline storage cost,
-congestion sensitivity coefficients, adjustment caps, ContractRiskTracker parameters)
-SHALL be stored in genesis sled state. `FeeWindowState::load()` SHALL reject partial
-persistence (a non-empty strict subset of the 8 parameter keys, indicating a crash
-during save); an empty store (0 keys, pre-activation blocks) is accepted. Scope:
-chain_state. Level: L1.
+**FI-GEN-1: Genesis initialization.** *Restated 2026-10-11 (`F-301`). This clause
+formerly read "System fee parameters (baseline storage cost, congestion sensitivity
+coefficients, adjustment caps, ContractRiskTracker parameters) SHALL be stored in
+genesis sled state", which is not what the system does and is not what it needs to
+do. The values split in two.*
 
-**FI-GEN-2: No compile-time fee constants.** No `const` or `static` of type
-`FeeAmount`, `CongestionFactor`, `RiskFactor`, or `BlockCharge` SHALL exist. The
-only permitted compile-time constants are pure mathematical scaling factors (`SCALE`,
-`RISK_FACTOR_SCALE`) and structural parameters that define the update mechanism
-(`WINDOW_SIZE`, `MAX_K`). Scope: all crates. Level: CI grep gate.
+The **chain-synced fee state** SHALL be initialized at genesis and persisted there:
+
+- The fee window's congestion state — the 8 CF keys written by
+  `FeeWindowState::save_to_batch()` and read by `FeeWindowState::load()`, which
+  SHALL reject partial persistence (a non-empty strict subset of the 8 keys) while
+  accepting an empty store as the pre-activation state.
+- The per-contract `ContractRiskTracker` parameters — the `contract_risk` sled tree
+  (§14.7, FI-RISK-4).
+
+The **economic coefficients** are protocol constants, fixed for a given protocol
+version and identical in every build; they are not chain state and SHALL NOT be
+required to be: `BASELINE_STORAGE` (a `const`), and `alpha_premium`,
+`alpha_standard`, `max_adjustment` (`FeeWindowConfig` defaults). Genesis
+initializes them — `tests/genesis.rs` asserts each value under `GAP-1` — without
+storing them, and nothing updates them at a window boundary. That they are
+identical in every build is what §13.1 requires; a constant has no local value to
+substitute. Scope: chain_state. Level: L1.
+
+**FI-GEN-2: No compile-time constants of a consensus domain type.** No `const` or
+`static` of type `FeeAmount`, `CongestionFactor`, `RiskFactor`, or `BlockCharge`
+SHALL exist. *Read the boundary against this clause's own title, which is broader
+than its text and was the drift: it forbids a **typed domain quantity** from being a
+constant — that is what stops fee arithmetic from mixing domains — and it does not
+forbid a documented protocol coefficient. `BASELINE_STORAGE` is a `const u64` and so
+falls outside it, deliberately and not by oversight; see FI-GEN-1 above.* The check
+this clause schedules is scoped the same way (`contrib/ci/check_fee_guardrails.sh`,
+`[FI-GEN-2]`, which passes). Also permitted: pure mathematical scaling factors
+(`SCALE`, `RISK_FACTOR_SCALE`) and structural parameters that define the update
+mechanism (`WINDOW_SIZE`, `MAX_K`). Scope: all crates. Level: CI grep gate.
 
 ### 14.2 Fee Window + Congestion Factors
 
