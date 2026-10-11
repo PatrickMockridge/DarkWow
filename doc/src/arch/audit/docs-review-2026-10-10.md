@@ -709,4 +709,11 @@ F-511: row:OBL-C213@6820bb91fe, doc:doc/src/contract/deployooor.md#lockv1-0x01@2
      a `## No ZK Circuits` heading whose text named a signature as the mechanism. Leaving that
      standing while the code changed underneath it would have been the same drift this exercise is
      about. -->
+F-301: doc:doc/src/arch/consensus/fee-spec.md#141-genesis-initialization@52686077c5, row:OBL-C216
+<!-- F-301's clause is not where the ledger's row points. The row cites `fee-spec.md:1826`, which is
+     §13.2's bullet list, while the finding ID it carries is `FI-GEN-1` — a clause in §14.1. Both
+     statements existed, and had drifted from the code and from each other. The promotion therefore
+     names the home (§14.1) and the drifted copy (§13.2) is collapsed into a pointer at it. The
+     obligation the old wording carried — that the economic coefficients be adjustable at a window
+     boundary — is covered by nothing, and `OBL-C216` says so in the open rather than dropping it. -->
 <!-- /promotion-log -->
