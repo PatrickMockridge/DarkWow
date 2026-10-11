@@ -734,4 +734,11 @@ F-512: doc:doc/src/contract/dex.md#pn-opcodes-used@8cfb6f6b78, row:OBL-C220@8cfb
      code enforces. The promotion therefore corrects three declarations — the doc's table and prose,
      three entrypoints' comments, and the client's field comments — and leaves the code untouched.
      One residual is recorded rather than renamed: the client's `*_otc_func_id` fields. -->
+F-513: row:OBL-C221@3ce8fde500, doc:doc/src/contract/relayer_endowment.md#the-logs-writer@3ce8fde500
+<!-- F-513 is promoted as a repair, because the endpoint's subject was reachable and payable in
+     principle — only its input was unwritable. The promotion therefore adds the writer rather than
+     deleting the endpoint, and both the row and the document state what the writer does not fix:
+     it is the relayer's own claim, so it protects a relayer that is late and not one that evades.
+     The writer also deliberately leaves `last_settlement_height` alone, or it would suppress the
+     very timeout it exists to satisfy. -->
 <!-- /promotion-log -->
