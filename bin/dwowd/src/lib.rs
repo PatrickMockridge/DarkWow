@@ -1565,6 +1565,13 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
                         let price_medium = compute_fee_v3(gas_ref, circuit_cf, FeeTier::MEDIUM, RiskFactor::BASELINE);
                         let price_low = compute_fee_v3(gas_ref, circuit_cf, FeeTier::LOW, RiskFactor::BASELINE);
                         mp.update_tier_prices(price_high, price_medium, price_low);
+                        // Admission re-derives each transaction's required fee
+                        // from the transaction itself, and starts that sum from
+                        // the fee circuit's own rows — the same base the wallet
+                        // uses (`OBL-C218`). The three prices above are that
+                        // derivation evaluated for this reference gas; this is
+                        // the reference itself.
+                        mp.update_fee_circuit_rows(gas_ref);
                     }
                     // ── Contract risk factor evaluation (FI-RISK-2) ──────────
                     // At each window boundary, update risk factors for contracts

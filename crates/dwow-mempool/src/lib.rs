@@ -37,7 +37,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dwow_chain::fee_window::CongestionFactor;
 use dwow_chain::{Nullifier, Transaction};
-use dwow_sdk::blockchain::{BlockCharge, FeeAmount, FeeTier, WasmKb};
+use dwow_sdk::blockchain::{BlockCharge, FeeAmount, FeeTier, RiskFactor, WasmKb};
 use smol::lock::Mutex;
 
 /// Fee Signalling Extractor — the control valve on the transaction pipeline.
@@ -197,6 +197,13 @@ pub struct Mempool {
     price_medium: AtomicU64,
     /// Low tier price — runtime-updatable via `update_tier_prices()`.
     price_low: AtomicU64,
+    /// The fee circuit's own row count (§12.4.2 gas), published by the miner at
+    /// window boundaries. Admission re-derives a transaction's required fee from
+    /// the transaction itself, and every call's gas is measured from this base:
+    /// the wallet computes `gas = fee-circuit rows + Σ declared
+    /// circuit_difficulty`, so the re-derivation has to start from the same
+    /// place. Zero means "not published yet", and the gate then keeps its floor.
+    fee_circuit_rows: AtomicU64,
     /// Fee extraction strategy (contract-specific, injected by caller)
     fee_extractor: Box<dyn FeeSignallingExtractor>,
     /// Optional chain state for on-chain nullifier consultation.
@@ -226,6 +233,9 @@ impl Mempool {
             price_high: AtomicU64::new(config.price_high.get()),
             price_medium: AtomicU64::new(config.price_medium.get()),
             price_low: AtomicU64::new(config.price_low.get()),
+            // Not published yet: admission keeps its tier-price floor until the
+            // miner supplies this. See `update_fee_circuit_rows`.
+            fee_circuit_rows: AtomicU64::new(0),
             config,
             fee_extractor,
             chain_state,
@@ -288,6 +298,9 @@ impl Mempool {
             price_high: AtomicU64::new(config.price_high.get()),
             price_medium: AtomicU64::new(config.price_medium.get()),
             price_low: AtomicU64::new(config.price_low.get()),
+            // Not published yet: admission keeps its tier-price floor until the
+            // miner supplies this. See `update_fee_circuit_rows`.
+            fee_circuit_rows: AtomicU64::new(0),
             config,
             fee_extractor,
             chain_state,
@@ -440,6 +453,28 @@ impl Mempool {
             let price_low = FeeAmount::new(self.price_low.load(AtomicOrdering::Acquire));
             // Plaintext fee — no ZK threshold proof in FeeV3.
             let plain_fee = self.fee_extractor.extract_fee(tx_ref);
+
+            // FI-PLAIN-2: re-derive what this transaction's *declared* tier
+            // requires and refuse one that does not cover it (`OBL-C218`). The
+            // declared tier comes from `FeeParamsV3.tier`: `extract_tier` was
+            // implemented for exactly this and had no caller until now, while
+            // the gate compared the fee only against three *global* prices, so a
+            // transaction's own size never entered its admission. Where the
+            // derivation is unavailable — no chain state, no fee window, or the
+            // fee-circuit row count not yet published — the tier-price floor
+            // below stands alone, which is what the gate did before.
+            let declared_tier = self.fee_extractor.extract_tier(tx_ref);
+            if let Some(required) = self.rederived_minimum_fee(tx_ref, declared_tier) {
+                if plain_fee < required {
+                    txs.remove(&tx_hash);
+                    for n in &tx_nullifiers { nulls.remove(n); }
+                    return Err(dwow_core::Error::Custom(format!(
+                        "FeeV3: declared fee {plain_fee} is below the re-derived \
+                         requirement {required} for its declared tier",
+                    )));
+                }
+            }
+
             if plain_fee >= price_high {
                 self.high_queue.lock().await.push_back(tx_hash);
                 self.high_queue_count.fetch_add(1, AtomicOrdering::Release);
@@ -667,6 +702,68 @@ impl Mempool {
         self.price_high.store(high.get(), AtomicOrdering::Release);
         self.price_medium.store(medium.get(), AtomicOrdering::Release);
         self.price_low.store(low.get(), AtomicOrdering::Release);
+    }
+
+    /// Publish the fee circuit's row count, so admission can re-derive a
+    /// transaction's required fee rather than trusting what it declares.
+    /// Called by the miner at fee window boundaries, beside
+    /// `update_tier_prices()`.
+    pub fn update_fee_circuit_rows(&self, rows: u64) {
+        self.fee_circuit_rows.store(rows, AtomicOrdering::Release);
+    }
+
+    /// The minimum fee this transaction's declared tier requires, re-derived
+    /// from the transaction's own contents: `gas × CF × tier × risk`
+    /// (fee-spec §12.4.1), where gas is the fee circuit's rows plus the declared
+    /// `circuit_difficulty` of every contract the transaction calls, CF is the
+    /// current fee-window congestion factor, and risk is the highest
+    /// `ContractRiskTracker` factor among those contracts.
+    ///
+    /// `None` when the derivation is unavailable — no chain state, no fee
+    /// window, or the fee-circuit row count not yet published — and the caller
+    /// then keeps the tier-price floor alone. It is deliberately lenient in the
+    /// other direction too: a call whose contract declares no cost profile
+    /// contributes only the fee circuit's rows, so an honest transaction is
+    /// never refused for a number this node could not work out.
+    ///
+    /// A floor, not an equality test. `FI-PLAIN-2` reads "a fee that does not
+    /// match the re-derived value ... SHALL be rejected", but a refusal here is
+    /// a relay verdict and not a validity one (R10): a block carrying such a
+    /// transaction is still valid, and this node merely declines to relay it.
+    fn rederived_minimum_fee(&self, tx: &Transaction, tier: FeeTier) -> Option<FeeAmount> {
+        let fee_rows = self.fee_circuit_rows.load(AtomicOrdering::Acquire);
+        if fee_rows == 0 {
+            return None;
+        }
+        let chain_state = self.chain_state.as_ref()?;
+        let fee_window = chain_state.fee_window.as_ref()?;
+        let cf = fee_window.circuit_cf();
+
+        let mut gas = fee_rows;
+        let mut risk = RiskFactor::BASELINE;
+        for call in &tx.contract_calls {
+            if call.as_mass_balance_fee_v3().is_some() {
+                continue;
+            }
+            if let Some(selector) = call.data.first().copied() {
+                if let Some(declared) = dwow_chain::contract_risk::declared_call_gas(
+                    &chain_state.store,
+                    &call.contract_id,
+                    selector,
+                ) {
+                    gas = gas.saturating_add(declared);
+                }
+            }
+            let call_risk = chain_state
+                .contract_risk_tracker
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get_risk_factor(&call.contract_id);
+            if call_risk > risk {
+                risk = call_risk;
+            }
+        }
+        Some(dwow_chain::fee_window::compute_fee_v3(gas, cf, tier, risk))
     }
 
     /// Count of transactions in the high queue.

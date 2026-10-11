@@ -132,6 +132,39 @@ pub fn call_cost_observation(
     Some((func.name.clone(), declared, measured))
 }
 
+/// The gas a contract's function declares for itself —
+/// `[[cost_profiles]].circuit_difficulty` — in §12.4.2 rows.
+///
+/// This is the half of `call_cost_observation` that a fee *payer* needs. The
+/// wallet builds its fee from this same declared value, so a mempool that wants
+/// to re-derive the fee must reach it too, and must not pay the circuit decode
+/// the measured side costs (that decode is the tracker's job, not admission's).
+/// Hence a separate entry point rather than a second return value: this one is
+/// called per call per transaction on the admission path.
+///
+/// `None` when the contract has no manifest, no cost profile for the function
+/// the selector names, or no such selector. A caller that cannot work out the
+/// gas must stay *lenient* — treating it as zero — rather than guess, because a
+/// guess that is too high refuses honest transactions for a number this node
+/// could not derive.
+pub fn declared_call_gas(
+    store: &crate::LinearStore,
+    contract_id: &ContractId,
+    selector: u8,
+) -> Option<u64> {
+    let raw = store.get_contract_manifest(&contract_id.to_bytes()).ok().flatten()?;
+    let manifest = dwow_sdk::manifest::ContractManifest::from_toml(
+        std::str::from_utf8(&raw).ok()?,
+    )
+    .ok()?;
+    let func = manifest.functions.iter().find(|f| f.code == selector)?;
+    manifest
+        .cost_profiles
+        .iter()
+        .find(|p| p.function == func.name)
+        .map(|p| p.circuit_difficulty)
+}
+
 /// Per-contract dynamic risk factor tracker.
 ///
 /// FI-RISK-3: Risk factors are stored per contract_id. No global

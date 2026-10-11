@@ -1403,15 +1403,36 @@ boundaries.
 
 ```
 admit(tx, window):
-    fee = extract_fee(tx)              // plaintext fee from FeeParamsV3
+    fee  = extract_fee(tx)             // plaintext fee from FeeParamsV3
+    tier = extract_tier(tx)            // declared tier from FeeParamsV3
 
-    // Plain three-tier priority (no ZK proof, no gas re-derivation —
-    // Mempool::add routes purely on fee vs tier price).
+    // FI-PLAIN-2: the declared fee must cover what the declared tier requires,
+    // re-derived from the transaction itself — gas × CF × tier × risk (§12.4.1),
+    // where gas is the fee circuit's rows plus the declared circuit_difficulty of
+    // every contract the transaction calls. None while the node has no fee
+    // circuit row count, and the tier floor below then stands alone.
+    required = rederive_minimum_fee(tx, tier)
+    if required is Some and fee < required: reject
+
     if fee >= price_high:   admit to high_queue   (FIFO); return HIGH
     if fee >= price_medium: admit to medium_queue (FIFO); return MEDIUM
     if fee >= price_low:    admit to low_queue    (FIFO); return LOW
     reject — fee below price_low
 ```
+
+**Re-derivation is a floor, not an equality test.** *Restated 2026-10-11
+(`OBL-C218`).* This pseudocode used to carry the parenthesis "no ZK proof, no gas
+re-derivation — `Mempool::add` routes purely on fee vs tier price", which
+contradicted `FI-PLAIN-2` — "a fee that does not match the re-derived value for its
+declared tier SHALL be rejected" — outright. The re-derivation refuses a
+transaction that does not **cover** the value; `FI-PLAIN-2` says *match*. Covering
+is the weaker test and the right one here: a refusal at admission is a relay
+verdict and not a validity verdict (R10), and a block carrying the transaction is
+still valid. Equality would additionally make admission depend on the wallet's
+arithmetic reproducing the node's to the last unit of a fixed-point division.
+Where the derivation is unavailable — a node not yet given the fee circuit's row
+count, or a call whose contract declares no cost profile — the tier-price floor
+stands alone, which is what the gate did before.
 
 #### 12.8.2 Window Transition (at boundary block)
 
