@@ -16,7 +16,7 @@ rationale and architectural divergence.
 | Pin reward (value-level) | [IMPLEMENTED] | `src/linear/src/chain_state.rs` |
 | Pin reward (Pedersen commitment split) | [IMPLEMENTED] | `chain_state.rs:736-760` |
 | Exponential reward schedule | [IMPLEMENTED] | `src/sdk/src/blockchain.rs:106-137` |
-| nullifier_root block header verification | [IMPLEMENTED] | `chain_state.rs:906-915` |
+| nullifier_root block header verification | **[RESERVED — not implemented]** | The field is `[0u8; 32]` at every construction site and is in the PoW preimage; nothing compares it. See Phase 6 below. |
 | Supply audit (Pedersen mass balance) | [IMPLEMENTED] | `src/linear/src/proof_of_token_balance.rs` |
 | Target adjustment algorithm | [IMPLEMENTED] | `src/linear/src/consensus.rs` |
 | mark_mined — 5 block acceptance paths | [IMPLEMENTED] | `bin/dwowd/` (5 call sites) |
@@ -914,11 +914,30 @@ Phase 5 — Transactions:
 Phase 6 — Nullifier Set Update:
   Insert nf into the host nullifier set as first entry for this block
   Insert remaining nullifiers from spends (incl. the fee-collect nullifier)
-  Verify nullifier_root matches block header
+  (nullifier_root is RESERVED — nothing compares it; see below)
 
 Phase 7 — Atomic Commit:
   Commit block, contracts overlay, supply chain, commitments, nullifiers in single sled transaction
 ```
+
+**Phase 6's `nullifier_root` line is not implemented, and Phase 6 as written
+overstates what this phase does.** *Restated 2026-10-11 (`F-314`).* The block
+header's `nullifier_root` is **RESERVED**: it is `[0u8; 32]` at every construction
+site (`src/linear/src/block.rs`, and the two validation fixtures), and its own field
+documentation says so. It does occupy the PoW preimage (`block.rs` assembles it into
+the blob at offset 195..227), so it is *covered* by the block hash — but nothing
+compares it against anything, and the site this table used to cite for the check
+(`chain_state.rs:906-915`) does not mention the field at all. What Phase 6 does
+implement is the first two lines: the coinbase nullifier is inserted first for the
+block, then the spends' nullifiers, then the whole set commits atomically in Phase 7.
+
+**What the old wording carried, and what now covers it**: the claim that a block's
+declared nullifier set root is verified against the nullifier set the block actually
+wrote. *Nothing covers it.* The field is a reserved slot a future version can
+populate, and populating it is a deliberate consensus change — it moves the mining
+preimage, exactly as `commitment_merkle_root`'s documentation says of its own
+neighbour — never a silent one. Until then a node has no header-level commitment to
+check its nullifier set against. Recorded as `OBL-C225`.
 
 ### Execution Ordering & Atomicity Layers
 
