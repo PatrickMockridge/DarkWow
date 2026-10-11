@@ -435,9 +435,14 @@ impl Mempool {
 
         // Three-tier admission gate per fee-spec.md §12.8.1 (plaintext fee —
         // no threshold proof, no encrypted-fee channel).
-        let is_fee_v3 = tx.contract_calls.first()
-            .and_then(|c| c.as_mass_balance_fee_v3())
-            .is_some();
+        // `any`, not `first`. The wallet's order is `[main, fee]` —
+        // `TransactionBuilder::new(transfer_leaf, vec![])` takes the parent call and
+        // `.append(fee_leaf, vec![])` adds the fee — so a predicate reading index 0
+        // is false for every transaction the wallet builds, and the whole gate below
+        // would be skipped for precisely the transactions it exists to check
+        // (`OBL-C223`). `extract_fee` has always scanned every call; this agrees with
+        // it now.
+        let is_fee_v3 = tx.contract_calls.iter().any(|c| c.as_mass_balance_fee_v3().is_some());
 
         // Insert
         for n in &tx_nullifiers { nulls.insert(*n); }
@@ -715,9 +720,15 @@ impl Mempool {
     /// The minimum fee this transaction's declared tier requires, re-derived
     /// from the transaction's own contents: `gas × CF × tier × risk`
     /// (fee-spec §12.4.1), where gas is the fee circuit's rows plus the declared
-    /// `circuit_difficulty` of every contract the transaction calls, CF is the
-    /// current fee-window congestion factor, and risk is the highest
-    /// `ContractRiskTracker` factor among those contracts.
+    /// `circuit_difficulty` of the transaction's *main* call, CF is the current
+    /// fee-window congestion factor, and risk is that contract's
+    /// `ContractRiskTracker` factor.
+    ///
+    /// The main call rather than every call, because the wallet computes its gas
+    /// the same way — one cost profile plus the fee circuit's rows — and this is a
+    /// check on what the wallet was told to build. Summing every call is stricter
+    /// and is the intended end state (`OBL-C223`), but it would refuse an honest
+    /// multi-call transaction today.
     ///
     /// `None` when the derivation is unavailable — no chain state, no fee
     /// window, or the fee-circuit row count not yet published — and the caller
@@ -739,30 +750,30 @@ impl Mempool {
         let fee_window = chain_state.fee_window.as_ref()?;
         let cf = fee_window.circuit_cf();
 
+        // The *main* call, mirroring the wallet exactly. `bin/dww` builds `gas` from
+        // one cost profile — the invoked function's `circuit_difficulty`, taken from
+        // its manifest — plus the fee circuit's rows, and takes the risk factor of
+        // the contract it invokes. Summing every non-fee call would be the stricter
+        // measure and is the intended end state, but it is not what the wallet was
+        // told to build, so it would refuse an honest transaction that carries
+        // children. `OBL-C223` records the sum as the target.
+        let main = tx.contract_calls.iter().find(|c| c.as_mass_balance_fee_v3().is_none())?;
+
         let mut gas = fee_rows;
-        let mut risk = RiskFactor::BASELINE;
-        for call in &tx.contract_calls {
-            if call.as_mass_balance_fee_v3().is_some() {
-                continue;
-            }
-            if let Some(selector) = call.data.first().copied() {
-                if let Some(declared) = dwow_chain::contract_risk::declared_call_gas(
-                    &chain_state.store,
-                    &call.contract_id,
-                    selector,
-                ) {
-                    gas = gas.saturating_add(declared);
-                }
-            }
-            let call_risk = chain_state
-                .contract_risk_tracker
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .get_risk_factor(&call.contract_id);
-            if call_risk > risk {
-                risk = call_risk;
+        if let Some(selector) = main.data.first().copied() {
+            if let Some(declared) = dwow_chain::contract_risk::declared_call_gas(
+                &chain_state.store,
+                &main.contract_id,
+                selector,
+            ) {
+                gas = gas.saturating_add(declared);
             }
         }
+        let risk = chain_state
+            .contract_risk_tracker
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_risk_factor(&main.contract_id);
         Some(dwow_chain::fee_window::compute_fee_v3(gas, cf, tier, risk))
     }
 
@@ -1018,6 +1029,58 @@ mod tests {
             let result = mempool.add(tx).await;
             assert!(result.is_err());
             assert!(result.unwrap_err().to_string().contains("Fee too low"));
+        });
+    }
+
+    /// A transaction whose fee call is **not** first — the shape the wallet builds —
+    /// must still reach the three-tier gate.
+    ///
+    /// Two things hid this. `is_fee_v3` read `contract_calls.first()`, and every
+    /// fixture here and in the daemon builds a transaction whose *selection* the
+    /// legacy `fee_idx` fallback satisfies, so nothing observed which path a wallet
+    /// transaction took. And `make_tx`'s fee call is nine bytes —
+    /// `[0x08, fee…]` — which `as_mass_balance_fee_v3` cannot decode, so this
+    /// crate's own fee fixtures never produced a detectable FeeV3 call either. The
+    /// fee call here is built at full length, as the daemon's helper does.
+    #[test]
+    fn fee_call_after_a_main_call_is_still_tiered() {
+        smol::block_on(async {
+            let mempool =
+                Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeSignallingExtractor), None);
+
+            // A decodable FeeV3 call, placed **second**, which is the wallet's order
+            // (`TransactionBuilder::new(main)` then `.append(fee)`).
+            let mut fee_data = vec![0x08u8];
+            fee_data.extend_from_slice(&100_000_000u64.to_le_bytes());
+            fee_data.resize(444, 0u8);
+            let fee_call = ContractCall {
+                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+                data: fee_data,
+            };
+            let tx = make_tx(vec![make_call(vec![0x01]), fee_call], None);
+
+            // The fixture's own preconditions. Without these the test would assert
+            // nothing about the predicate: a fee call that is first, or undecodable,
+            // reaches the gate for reasons unrelated to the ordering under test.
+            assert_eq!(tx.contract_calls.len(), 2, "a main call and a fee call");
+            assert!(
+                tx.contract_calls.first().unwrap().as_mass_balance_fee_v3().is_none(),
+                "the fee call must not be first, or this test asserts nothing"
+            );
+            assert!(
+                tx.contract_calls.last().unwrap().as_mass_balance_fee_v3().is_some(),
+                "the fee call must be decodable, or `is_fee_v3` is false for the wrong reason"
+            );
+
+            mempool.add(tx).await.unwrap();
+            assert_eq!(
+                mempool.high_queue_len(),
+                1,
+                "a fee-second transaction must reach the tier gate: 100_000_000 is above the \
+                 default price_high, so reaching the gate queues it in high. Landing in a queue \
+                 is the whole assertion — before the fix such a transaction was admitted and \
+                 only ever selected through the fee_idx fallback."
+            );
         });
     }
 
