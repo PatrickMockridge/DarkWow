@@ -43,7 +43,6 @@ use dwow_core::{
         settings::RpcSettings,
     },
     concurrency::{ExecutorPtr, PublisherPtr, StoppableTask, StoppableTaskPtr},
-    zkas::ZkBinary,
     Error, Result,
 };
 use dwow_chain::fee_window::{FeeWindowFlags, compute_fee_v3};
@@ -1355,33 +1354,21 @@ async fn prepare_block(
     // P2-9-5: single source of truth — the same sum feeds stratum/mm_rpc
     // templates via registry::model.
     let total_fees = crate::registry::model::sum_block_fee_v3(&mempool_txs);
-    // ── Contract risk factor update (FI-RISK-3, FI-RISK-5) ────────────
-    // Record observed-vs-declared BlockCharge so the dynamic tracker can
-    // escalate/de-escalate per-contract risk at the next window boundary.
-    // The miner owns only the native_token fee zkbin, so it measures the fee
-    // circuit's actual gas; non-fee contracts are not measured yet (their
-    // observed == declared → risk-neutral) until full gas metering lands.
+    // ── Contract risk factors are no longer recorded here (FI-RISK-3/4) ──
+    // Recording moved to `CChainState::connect_block`, where every node that
+    // applies a block derives the same factors. This path recorded only what
+    // *this* miner put into its own block, so a non-mining node's tracker
+    // stayed at baseline for ever (`OBL-C217`). The pair it recorded was also
+    // of unlike quantities — a `GAS_LIMIT`-sized per-call budget against the fee
+    // circuit's row count — a ratio that escalated every contract carrying a
+    // FeeV3 call to `MAX` (`OBL-C219`). What remains here is the read: an
+    // operator-visible log of what the chain has already decided.
     {
-        use dwow_chain::opcode_cost::circuit_difficulty;
-        let fee_gas = dwow_core::zkas::ZkBinary::decode(
-            dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN, false,
-        ).map(|zkbin| circuit_difficulty(&zkbin.opcodes))
-          .unwrap_or_else(|e| {
-              tracing::warn!(target: "dwowd::miner",
-                  "FeeV3 zkbin decode failed: {e}; risk tracker uses declared gas");
-              0
-          });
-
-        let mut tracker = chain_state.contract_risk_tracker
+        let tracker = chain_state.contract_risk_tracker
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         for tx in &mempool_txs {
             for call in &tx.contract_calls {
-                if call.as_mass_balance_fee_v3().is_some() {
-                    // Declared charge is the flat per-call promise (§12.4.5);
-                    // observed is the fee circuit's measured row count.
-                    tracker.record(call.contract_id, "fee_v3".into(), 400_000_000, fee_gas, height.get());
-                }
                 let risk = tracker.get_risk_factor(&call.contract_id);
                 if risk > RiskFactor::BASELINE {
                     debug!(target: "dwowd::prepare_block",
@@ -1390,7 +1377,6 @@ async fn prepare_block(
                 }
             }
         }
-        drop(tracker);
     }
     let prod_tf = total_fees;
     // ── The same packing obligation the template path enforces ───────────────────

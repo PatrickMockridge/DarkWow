@@ -2085,16 +2085,31 @@ been used before, attestation, and wallet-side checks of the WASM — to inform 
 user's decision. This metric SHALL NOT gate consensus or mempool admission. Scope:
 wallet. Level: L2.
 
-**FI-RISK-3: BlockCharge update loop.** The manifest SHALL declare a self-declared
-`BlockCharge` (expected gas). When a transaction runs, the miner SHALL compare
-*observed* gas to the declared charge and update the stored charge via the risk
-multiplier (observed / declared), through `ContractRiskTracker`. Scope: miner +
-ContractRiskTracker. Level: L2.
+**FI-RISK-3: BlockCharge update loop.** The manifest SHALL declare a per-function
+cost profile — `[[cost_profiles]].circuit_difficulty`, the self-declared expected
+gas. When a block is applied, every node SHALL compare the **measured** gas of each
+call (Σ per-opcode advice rows over that call's own circuit) against the declared
+value, and record the deviation through `ContractRiskTracker`. *Restated 2026-10-11
+(`OBL-C217`). This read "when a transaction runs, the miner SHALL compare", which
+made the tracker a function of which miner prepared a block: recording ran only in
+block preparation, over that miner's own mempool selection, so a non-mining node's
+factors never moved — the divergence §13.1 forbids, and a value no wallet could
+read. Recording on block application makes the inputs a function of the chain.*
+Two rules the restatement leans on, both earned. The two sides MUST be the same
+kind of quantity: the pre-restatement code compared a `GAS_LIMIT`-sized per-call
+budget against the **fee circuit's** row count, a ratio outside every tolerance,
+which escalated each FeeV3-carrying contract to `MAX` (`OBL-C219`). And the subject
+MUST be the called contract, not the FeeV3 call that paid for it. Scope: every node
++ ContractRiskTracker. Level: L2.
 
-**FI-RISK-4: Per-contract chain-state storage.** The updated BlockCharge/risk
-multiplier SHALL be stored per `contract_id` in the `contract_risk` sled tree, read
-by the miner when pricing deviations. No global classification table. Scope:
-chain_state. Level: L1.5.
+**FI-RISK-4: Per-contract chain-state storage.** The updated risk multiplier SHALL
+be stored per `contract_id` in the `contract_risk` sled tree, written at window
+boundaries as a block is applied and therefore identical on every node. No global
+classification table. *Restated 2026-10-11 (`OBL-C217`): this read "read by the miner
+when pricing deviations", which described the value's only reader at the time — a
+`debug!` in block preparation. Reading it to price a fee is the remaining half of
+`OBL-C217` (the wallet must be able to learn the factors) together with
+`OBL-C218`.* Scope: chain_state. Level: L1.5.
 
 **FI-RISK-5: Manifest role separation.** The manifest's `[[cost_profiles]]` section
 SHALL declare expected circuit difficulty, k-value, WASM size, and the self-declared

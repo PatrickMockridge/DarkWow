@@ -82,6 +82,56 @@ impl CostDeviation {
     }
 }
 
+/// What one contract call declared its work to be, and what its circuit
+/// actually measures — the two numbers the tracker exists to compare.
+///
+/// Both are in one unit (§12.4.2 advice rows), which is the whole point.
+/// *Declared* is the called function's `[[cost_profiles]].circuit_difficulty`:
+/// the self-declaration `FI-RISK-5` requires, and the value the wallet trusts
+/// when it builds a fee. *Measured* is Σ per-opcode advice rows over the call's
+/// own zkas binary, the independent computation the manifest's cost-profile
+/// comment assigns to the miner — "A mismatch is a black mark."
+///
+/// The production `record` call this replaces compared quantities of different
+/// kinds: a `GAS_LIMIT`-sized per-call budget against the *fee circuit's* row
+/// count. Their ratio is always near 0.000005, outside every tolerance, so the
+/// tracker escalated every contract carrying a FeeV3 call to `MAX` at its first
+/// window boundary from a comparison that meant nothing (`OBL-C219`). Nothing
+/// acted on the value, which is the only reason that was invisible.
+///
+/// `None` when either side is unavailable: no manifest for the contract, no
+/// cost profile for the function, no declared proof circuit, or the circuit
+/// absent from the `_zkas` tree. A contract that declares nothing is held to
+/// nothing — recording a fabricated pair is what produced the unearned verdict.
+/// This also excludes the genesis contracts by construction: their manifests
+/// are deliberately empty, so no call to them is ever recorded.
+pub fn call_cost_observation(
+    store: &crate::LinearStore,
+    contract_id: &ContractId,
+    selector: u8,
+) -> Option<(String, u64, u64)> {
+    let raw = store.get_contract_manifest(&contract_id.to_bytes()).ok().flatten()?;
+    let manifest = dwow_sdk::manifest::ContractManifest::from_toml(
+        std::str::from_utf8(&raw).ok()?,
+    )
+    .ok()?;
+    let func = manifest.functions.iter().find(|f| f.code == selector)?;
+    let declared = manifest
+        .cost_profiles
+        .iter()
+        .find(|p| p.function == func.name)?
+        .circuit_difficulty;
+    let namespace = &manifest
+        .circuits
+        .iter()
+        .find(|c| Some(c.name.as_str()) == func.proof_circuit.as_deref())?
+        .namespace;
+    let zkbin_bytes = crate::zk_verifier::load_zkbin(store, contract_id, namespace).ok()?;
+    let zkbin = dwow_core::zkas::ZkBinary::decode(&zkbin_bytes, false).ok()?;
+    let measured = crate::opcode_cost::circuit_difficulty(&zkbin.opcodes);
+    Some((func.name.clone(), declared, measured))
+}
+
 /// Per-contract dynamic risk factor tracker.
 ///
 /// FI-RISK-3: Risk factors are stored per contract_id. No global

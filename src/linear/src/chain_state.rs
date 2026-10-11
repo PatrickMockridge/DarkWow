@@ -1227,6 +1227,16 @@ impl CChainState {
             // Commitment and nullifier batches
             let mut commitments_batch = sled::Batch::default();
             let mut nullifiers_batch = sled::Batch::default();
+            // The declared/measured pair is a property of the contract's *code*,
+            // not of the call, so it is resolved once per (contract, selector)
+            // per block rather than re-parsing the manifest and re-decoding the
+            // circuit for every call. Deliberately not carried across blocks: a
+            // redeploy changes the pair, and a cache outliving the block would
+            // hide exactly the change the tracker is meant to see.
+            let mut call_cost_cache: std::collections::HashMap<
+                (Vec<u8>, u8),
+                Option<(String, u64, u64)>,
+            > = std::collections::HashMap::new();
             for (tx_idx, tx) in block.transactions.iter().enumerate() {
                 // Claim nullifiers collected from the coinbase/fee/uncle branches
                 // so the spend loop below does not re-write them as kind 1.
@@ -1312,6 +1322,64 @@ impl CChainState {
                     let mut nf_val = vec![1u8];
                     nf_val.extend_from_slice(&height.to_le_bytes());
                     nullifiers_batch.insert(&nf.to_bytes(), &nf_val[..]);
+                }
+
+                // ── Contract risk, recorded from the applied block ──────────
+                // FI-RISK-3/4, `OBL-C217`. This used to run in the miner's
+                // `prepare_block`, over that miner's own mempool selection, so a
+                // non-mining node's tracker stayed at `BASELINE` for ever — the
+                // divergence §13.1 forbids, and the opposite of FI-RISK-4's
+                // "per-contract chain-state storage". Recording here means the
+                // same inputs reach every node that applies the same block.
+                //
+                // The pair recorded is the called function's declared
+                // `circuit_difficulty` against its own circuit's measured rows
+                // (`call_cost_observation`), so escalation means under-declaration
+                // rather than a comparison of unlike quantities (`OBL-C219`).
+                // Calls whose contract declares no manifest — the genesis
+                // contracts — record nothing.
+                //
+                // The FeeV3 call is excluded: `OBL-C219` records that the old
+                // feed keyed on it, so the contract whose work was measured was
+                // `native_token`, never the one whose declaration was in question.
+                for call in &tx.contract_calls {
+                    if call.as_mass_balance_fee_v3().is_some() {
+                        continue;
+                    }
+                    let Some(selector) = call.data.first().copied() else { continue };
+                    let observation = call_cost_cache
+                        .entry((call.contract_id.to_bytes().to_vec(), selector))
+                        .or_insert_with(|| {
+                            crate::contract_risk::call_cost_observation(
+                                &self.store,
+                                &call.contract_id,
+                                selector,
+                            )
+                        })
+                        .clone();
+                    if let Some((function, declared, measured)) = observation {
+                        self.contract_risk_tracker
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .record(call.contract_id, function, declared, measured, height.get());
+                    }
+                }
+            }
+
+            // FI-RISK-2: at a window boundary, evaluate the deviations recorded
+            // above and persist the factors. Every node runs this, so the stored
+            // factors are a function of the chain rather than of who mined.
+            if dwow_sdk::blockchain::FeeWindowId::is_window_boundary(height) {
+                let mut tracker =
+                    self.contract_risk_tracker.lock().unwrap_or_else(|e| e.into_inner());
+                let updated = tracker.evaluate_all_windows();
+                if !updated.is_empty() {
+                    info!(target: "dwow_chain::connect_block",
+                        "Contract risk factors updated: {} contracts", updated.len());
+                }
+                if let Err(e) = tracker.save_to_tree(&self.store.contract_risk) {
+                    tracing::warn!(target: "dwow_chain::connect_block",
+                        "Failed to persist contract risk factors: {e}");
                 }
             }
 
