@@ -702,4 +702,9 @@ Remediation moves each confirmed finding to its home and records the stamp in th
 
 <!-- promotion-log -->
 refuted: F-154 F-190 F-517
+F-511: row:OBL-C213@6820bb91fe
+<!-- F-511's code half is `OBL-C213`, FIXED on `deployooor`. Its doc half is the LockV1 section of
+     doc/src/contract/deployooor.md, which still claims a signature check, a single-field
+     `LockParamsV1` and a `LockCallBuilder` that no longer exists. That correction belongs to E5, so
+     the `doc:` stamp lands with it — this row is stamped, not promoted whole. -->
 <!-- /promotion-log -->
