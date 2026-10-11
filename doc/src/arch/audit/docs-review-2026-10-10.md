@@ -702,9 +702,11 @@ Remediation moves each confirmed finding to its home and records the stamp in th
 
 <!-- promotion-log -->
 refuted: F-154 F-190 F-517
-F-511: row:OBL-C213@6820bb91fe
-<!-- F-511's code half is `OBL-C213`, FIXED on `deployooor`. Its doc half is the LockV1 section of
-     doc/src/contract/deployooor.md, which still claims a signature check, a single-field
-     `LockParamsV1` and a `LockCallBuilder` that no longer exists. That correction belongs to E5, so
-     the `doc:` stamp lands with it — this row is stamped, not promoted whole. -->
+F-511: row:OBL-C213@6820bb91fe, doc:doc/src/contract/deployooor.md#lockv1-0x01@298f47436c
+<!-- F-511 is promoted whole. The `doc:` half landed with the `row:` rather than waiting for E5,
+     because the session that found the code defect had the section open: it claimed a signature
+     check, a single-field `LockParamsV1` and a `LockCallBuilder` that does not exist, and it carried
+     a `## No ZK Circuits` heading whose text named a signature as the mechanism. Leaving that
+     standing while the code changed underneath it would have been the same drift this exercise is
+     about. -->
 <!-- /promotion-log -->
