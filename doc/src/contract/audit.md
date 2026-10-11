@@ -17,17 +17,28 @@ In May 2026, the bridge and relayer_endowment contracts underwent a hardening pa
 
 ### Key Fixes Applied
 
-| Feature | Contract | Description |
-|---------|----------|-------------|
-| HTLC state machine atomicity | Bridge | `claimed_at`/`refunded_at` timestamps with mutual exclusion |
-| Circuit breaker | Bridge | `GUARANTEED_PENDING` counter capped at `MAX_GUARANTEED_TOTAL` |
-| Withdrawal reassignment | Bridge | `ReassignWithdrawalV1` (0x09) — any relayer can claim stuck withdrawals |
-| Proportional slashing | Bridge | `max(MIN_SLASH, amount * SLASH_BP / BP_PRECISION)` — 10% of amount |
-| Fee caps | Bridge | `MAX_FEE_BP = 1000` (10%) + per-user `max_fee_bp` option |
-| Token-aware dust minimum | Bridge ZK | `token_minimum` public input instead of hardcoded threshold |
-| Merkle proof enforcement | Bridge ZK | `sparse_merkle_root` constraint with `SparseMerklePath` type |
-| Force settlement | Relayer Endowment | `ForceSettleV1` (0x06) — backer-initiated pro-rata fee distribution |
-| Fee logging | Relayer Endowment | `last_settlement_height` + `total_collected_fees_log` for auditability |
+**Restated 2026-10-11 (`F-519`).** This table listed nine protections as applied.
+Measured against the tree, two exist, one was deliberately removed, and six were
+never written — so it told a reader the bridge carries protections it does not. The
+rows below are what the artifacts have, with the removed and the absent named rather
+than deleted: a bridge that does not slash is something a reader needs to know, and
+an omission would say the same thing less honestly.
+
+| Feature | Contract | State |
+|---------|----------|-------|
+| Token-aware anti-dust floor | Bridge | **Not as this table said.** `token_minimum` was a *circuit public input*, and it was **removed 2026-09-24**: it was a witness the prover chose, so it bounded nothing (`proof/withdraw.zk` records the derivation). The floor is host-checked against the contract's own value. |
+| Force settlement | Relayer Endowment | `ForceSettleV1` (0x06) — present. It could not pay until 2026-10-11, when the log it distributes acquired a writer (`RecordCollectedFeesV1`, `F-513`); before that its pro-rata share was always zero. |
+| Fee logging | Relayer Endowment | `last_settlement_height` and `total_collected_fees_log` — present, with the same caveat: the log had no writer until `F-513`. |
+| HTLC state machine atomicity | Bridge | **Absent.** No `claimed_at` or `refunded_at` exists in the tree. |
+| Circuit breaker | Bridge | **Absent.** No `GUARANTEED_PENDING` counter and no `MAX_GUARANTEED_TOTAL`. |
+| Withdrawal reassignment | Bridge | **Absent.** There is no `ReassignWithdrawalV1`. |
+| Proportional slashing | Bridge | **Absent.** No `MIN_SLASH` and no `SLASH_BP`. |
+| Fee caps | Bridge | **Absent.** No `MAX_FEE_BP`, and no per-user `max_fee_bp`. |
+| Merkle proof enforcement | Bridge ZK | **Absent.** No `SparseMerklePath` type and no `sparse_merkle_root` constraint. |
+
+The six absent protections are tracked by no register row. The bridge is deferred;
+what this section owes a reader is the absence itself, stated where the claim was
+made. Recorded as `OBL-C228`.
 
 ### Residual Risks
 
