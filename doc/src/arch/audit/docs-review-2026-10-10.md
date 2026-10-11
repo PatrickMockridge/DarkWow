@@ -727,4 +727,11 @@ F-303: row:OBL-C217@706a3220ef, row:OBL-C219@39be345363
      every FeeV3-carrying contract to MAX from a comparison that meant nothing — and is FIXED.
      `OBL-C217` owns where the factor comes from and who may read it, and is PARTLY: the chain now
      derives it, and the wallet can never be a party to it, which `FI-RISK-1` was restated to say. -->
+F-512: doc:doc/src/contract/dex.md#pn-opcodes-used@8cfb6f6b78, row:OBL-C220@8cfb6f6b78
+<!-- F-512's clause is one the code was right about. The finding is a doc-vs-code disagreement, and the
+     resolution turned on a detail neither side had stated: the entrypoints require two children, and
+     `OtcSwapV1` is itself bilateral, so the documented opcode could not have produced the shape the
+     code enforces. The promotion therefore corrects three declarations — the doc's table and prose,
+     three entrypoints' comments, and the client's field comments — and leaves the code untouched.
+     One residual is recorded rather than renamed: the client's `*_otc_func_id` fields. -->
 <!-- /promotion-log -->
