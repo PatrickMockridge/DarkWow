@@ -167,9 +167,24 @@ Proves Alice legitimately cancels:
 - **Public inputs**: `swap_id, timeout, current_block, alice_pub_x, alice_pub_y, spent_nullifier`
 - **Private inputs**: `alice_secret, recipient_x, recipient_y`
 - **Verification**:
-  1. `less_than_strict(timeout, current_block)` — timeout passed (for Funded state)
-  2. `alice_pub = alice_secret * G` matches stored pubkey
-  3. `spent_nullifier = H(swap_id, alice_secret)`
+  1. `alice_pub = alice_secret * G` matches stored pubkey
+  2. `spent_nullifier = H(swap_id, alice_secret)`
+
+*Corrected 2026-10-11 (`F-518`).* This list opened with
+"`less_than_strict(timeout, current_block)` — timeout passed (for Funded state)",
+and **the circuit does not do that.** The comparison was removed on 2026-09-24,
+with its derivation left at the site in `proof/cancel_swap.zk`: both operands were
+prover-supplied witnesses, so the constraint was satisfiable by any prover who
+chose the pair and it bounded nothing. `timeout` and `current_block` are still
+published, but they are **free** — declared so in `script/circuit_free_instances.txt`,
+which is where a free public input has to be accounted for.
+
+The timelock *is* enforced, by the host rather than the proof:
+`src/contract/otc_swap/src/entrypoint.rs` reads `swap.timeout` from the **stored
+swap**, compares it against `get_verifying_block_height()`, and refuses a cancel
+that arrives early. Neither side of that comparison is the prover's to choose,
+which is precisely what the removed constraint lacked — the circuit proves the
+key, and the host supplies the clock.
 
 ## Opcode Requirements
 
