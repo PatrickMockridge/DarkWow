@@ -51,7 +51,7 @@ use super::{
         message::GetAddrsMessage,
         p2p::{P2p, P2pPtr},
     },
-    Session, SessionBitFlag, SESSION_DIRECT,
+    Session, SessionSelector, SESSION_DIRECT,
 };
 use crate::{
     net::{ChannelId, ChannelPtr},
@@ -440,7 +440,7 @@ impl Session for DirectSession {
         p2p
     }
 
-    fn type_id(&self) -> SessionBitFlag {
+    fn type_id(&self) -> SessionSelector {
         SESSION_DIRECT
     }
 

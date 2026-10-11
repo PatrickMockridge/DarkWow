@@ -34,7 +34,7 @@ use tracing::debug;
 use super::{
     super::{
         channel::{ChannelId, ChannelPtr}, message::Message,
-        message_publisher::MessageSubscription, session::SessionBitFlag,
+        message_publisher::MessageSubscription, session::SessionSelector,
     },
     protocol_base::{ProtocolBase, ProtocolBasePtr},
     protocol_jobs_manager::{ProtocolJobsManager, ProtocolJobsManagerPtr},
@@ -87,7 +87,7 @@ impl<M: Message + Clone, R: Message + Clone + Debug> ProtocolGenericHandler<M, R
     pub async fn new(
         p2p: &P2pPtr,
         name: &'static str,
-        session: SessionBitFlag,
+        session: SessionSelector,
     ) -> ProtocolGenericHandlerPtr<M, R> {
         // Generate the message queue smol channel
         let (sender, receiver) = smol::channel::unbounded::<(ChannelId, M)>();

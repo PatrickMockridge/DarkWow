@@ -42,7 +42,7 @@ use super::{
         dnet::{self, dnetev, DnetEvent},
         p2p::{P2p, P2pPtr},
     },
-    Session, SessionBitFlag, SESSION_INBOUND,
+    Session, SessionSelector, SESSION_INBOUND,
 };
 use crate::{
     concurrency::{ExecutorPtr, StoppableTask, StoppableTaskPtr, Subscription},
@@ -224,7 +224,7 @@ impl Session for InboundSession {
         p2p
     }
 
-    fn type_id(&self) -> SessionBitFlag {
+    fn type_id(&self) -> SessionSelector {
         SESSION_INBOUND
     }
 

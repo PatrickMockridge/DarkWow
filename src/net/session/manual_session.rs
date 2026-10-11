@@ -49,7 +49,7 @@ use super::{
         connector::Connector,
         p2p::{P2p, P2pPtr},
     },
-    Session, SessionBitFlag, SESSION_MANUAL,
+    Session, SessionSelector, SESSION_MANUAL,
 };
 use crate::{
     net::{hosts::HostState, settings::Settings},
@@ -112,7 +112,7 @@ impl Session for ManualSession {
         p2p
     }
 
-    fn type_id(&self) -> SessionBitFlag {
+    fn type_id(&self) -> SessionSelector {
         SESSION_MANUAL
     }
 

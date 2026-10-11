@@ -56,17 +56,75 @@ pub use refine_session::{RefineSession, RefineSessionPtr};
 pub mod direct_session;
 pub use direct_session::{DirectSession, DirectSessionPtr};
 
-/// Bitwise selectors for the `protocol_registry`
-pub type SessionBitFlag = u32;
-pub const SESSION_INBOUND: SessionBitFlag = 0b000001;
-pub const SESSION_OUTBOUND: SessionBitFlag = 0b000010;
-pub const SESSION_MANUAL: SessionBitFlag = 0b000100;
-pub const SESSION_SEED: SessionBitFlag = 0b001000;
-pub const SESSION_REFINE: SessionBitFlag = 0b010000;
-pub const SESSION_DIRECT: SessionBitFlag = 0b100000;
+/// The `protocol_registry`'s session selectors, as a nominal bitmask.
+///
+/// *Restated 2026-10-11 (`F-306`).* `type-system.md` §8.6.5 asks for a
+/// `#[repr(u32)]` enum with six variants, and such a type cannot hold what these
+/// values are: they compose by bitwise OR — `SESSION_DEFAULT` is four of them
+/// OR-ed, and the registry tests membership with `&` at some twenty sites — so an
+/// enum, which holds exactly one variant, could not express
+/// `SESSION_ALL & !SESSION_REFINE` or any of them. What the clause is *for* is
+/// that a session flag is a named type and never a bare `u32`; this is that, with
+/// the clause's six names and the clause's bit values, plus the two derived values
+/// the registry needs.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct SessionSelector(u32);
 
-pub const SESSION_DEFAULT: SessionBitFlag = 0b100111;
-pub const SESSION_ALL: SessionBitFlag = 0b111111;
+impl std::ops::BitAnd for SessionSelector {
+    type Output = SessionSelector;
+    fn bitand(self, rhs: SessionSelector) -> SessionSelector {
+        SessionSelector(self.0 & rhs.0)
+    }
+}
+
+impl std::ops::BitOr for SessionSelector {
+    type Output = SessionSelector;
+    fn bitor(self, rhs: SessionSelector) -> SessionSelector {
+        SessionSelector(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::Not for SessionSelector {
+    type Output = SessionSelector;
+    /// Inverting yields one outside the six-bit space, which is exactly what
+    /// `SESSION_ALL & !SESSION_REFINE` relies on: the mask is applied by the `&`
+    /// that follows, as it was when this was a bare `u32`.
+    fn not(self) -> SessionSelector {
+        SessionSelector(!self.0)
+    }
+}
+
+impl SessionSelector {
+    /// The raw bits — the boundary where a selection leaves the type, at the
+    /// `{:#b}` diagnostics and the registry's own bit tests.
+    pub fn bits(self) -> u32 {
+        self.0
+    }
+}
+
+/// Membership is tested throughout the registry as `type_id() & SESSION_X != 0`,
+/// and that comparison is against the *bits*, not against another selector.
+impl PartialEq<u32> for SessionSelector {
+    fn eq(&self, other: &u32) -> bool {
+        self.0 == *other
+    }
+}
+
+impl std::fmt::Binary for SessionSelector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Binary::fmt(&self.0, f)
+    }
+}
+
+pub const SESSION_INBOUND: SessionSelector = SessionSelector(0b000001);
+pub const SESSION_OUTBOUND: SessionSelector = SessionSelector(0b000010);
+pub const SESSION_MANUAL: SessionSelector = SessionSelector(0b000100);
+pub const SESSION_SEED: SessionSelector = SessionSelector(0b001000);
+pub const SESSION_REFINE: SessionSelector = SessionSelector(0b010000);
+pub const SESSION_DIRECT: SessionSelector = SessionSelector(0b100000);
+
+pub const SESSION_DEFAULT: SessionSelector = SessionSelector(0b100111);
+pub const SESSION_ALL: SessionSelector = SessionSelector(0b111111);
 
 pub type SessionWeakPtr = Weak<dyn Session + Send + Sync + 'static>;
 
@@ -75,7 +133,7 @@ pub type SessionWeakPtr = Weak<dyn Session + Send + Sync + 'static>;
 pub async fn remove_sub_on_stop(
     p2p: P2pPtr,
     channel: ChannelPtr,
-    type_id: SessionBitFlag,
+    type_id: SessionSelector,
     stop_sub: Subscription<Error>,
 ) {
     debug!(target: "net::session::remove_sub_on_stop", "[START]");
@@ -263,7 +321,7 @@ pub trait Session: Sync {
     fn p2p(&self) -> P2pPtr;
 
     /// Return the session bit flag for the session type
-    fn type_id(&self) -> SessionBitFlag;
+    fn type_id(&self) -> SessionSelector;
 
     /// Reload settings for this session
     async fn reload(self: Arc<Self>);

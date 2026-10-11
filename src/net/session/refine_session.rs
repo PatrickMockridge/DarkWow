@@ -51,7 +51,7 @@ use crate::{
         connector::Connector,
         hosts::HostColor,
         protocol::ProtocolVersion,
-        session::{Session, SessionBitFlag, SESSION_REFINE},
+        session::{Session, SessionSelector, SESSION_REFINE},
     },
     concurrency::{sleep, StoppableTask, StoppableTaskPtr},
     Error,
@@ -183,7 +183,7 @@ impl Session for RefineSession {
         p2p
     }
 
-    fn type_id(&self) -> SessionBitFlag {
+    fn type_id(&self) -> SessionSelector {
         SESSION_REFINE
     }
 

@@ -52,7 +52,7 @@ use super::{
     metering::{MeteringConfiguration, MeteringQueue},
     p2p::P2pPtr,
     session::{
-        Session, SessionBitFlag, SessionWeakPtr, SESSION_ALL, SESSION_INBOUND, SESSION_OUTBOUND,
+        Session, SessionSelector, SessionWeakPtr, SESSION_ALL, SESSION_INBOUND, SESSION_OUTBOUND,
         SESSION_REFINE,
     },
     transport::PtStream,
@@ -799,7 +799,7 @@ impl Channel {
         session
     }
 
-    pub fn session_type_id(&self) -> SessionBitFlag {
+    pub fn session_type_id(&self) -> SessionSelector {
         let session = self.session();
         session.type_id()
     }

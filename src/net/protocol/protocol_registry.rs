@@ -28,7 +28,7 @@ use smol::{
 use tracing::{debug, info, warn};
 
 use super::{
-    super::{channel::ChannelPtr, p2p::P2pPtr, session::SessionBitFlag},
+    super::{channel::ChannelPtr, p2p::P2pPtr, session::SessionSelector},
     protocol_base::ProtocolBasePtr,
 };
 
@@ -36,7 +36,7 @@ type Constructor = Box<dyn Fn(ChannelPtr, P2pPtr) -> Boxed<ProtocolBasePtr> + Se
 
 #[derive(Default)]
 pub struct ProtocolRegistry {
-    constructors: Mutex<Vec<(SessionBitFlag, Constructor)>>,
+    constructors: Mutex<Vec<(SessionSelector, Constructor)>>,
 }
 
 impl ProtocolRegistry {
@@ -46,7 +46,7 @@ impl ProtocolRegistry {
     }
 
     /// `add_protocol()?`
-    pub async fn register<C, F>(&self, session_flags: SessionBitFlag, constructor: C)
+    pub async fn register<C, F>(&self, session_flags: SessionSelector, constructor: C)
     where
         C: 'static + Fn(ChannelPtr, P2pPtr) -> F + Send + Sync,
         F: 'static + Future<Output = ProtocolBasePtr> + Send,
@@ -59,7 +59,7 @@ impl ProtocolRegistry {
 
     pub async fn attach(
         &self,
-        selector_id: SessionBitFlag,
+        selector_id: SessionSelector,
         channel: ChannelPtr,
         p2p: P2pPtr,
     ) -> Vec<ProtocolBasePtr> {
@@ -74,7 +74,7 @@ impl ProtocolRegistry {
 
         for (session_flags, construct) in self.constructors.lock().await.iter() {
             // Skip protocols that are not registered for this session
-            if selector_id & session_flags == 0 {
+            if selector_id & *session_flags == 0 {
                 debug!(
                     target: "net::protocol_registry",
                     "Skipping protocol attach [selector_id={selector_id:#b}, session_flags={session_flags:#b}]",

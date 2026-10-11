@@ -76,7 +76,7 @@ use super::{
         p2p::{P2p, P2pPtr},
         settings::Settings,
     },
-    Session, SessionBitFlag, SESSION_SEED,
+    Session, SessionSelector, SESSION_SEED,
 };
 use crate::{
     net::hosts::HostState,
@@ -204,7 +204,7 @@ impl Session for SeedSyncSession {
         p2p
     }
 
-    fn type_id(&self) -> SessionBitFlag {
+    fn type_id(&self) -> SessionSelector {
         SESSION_SEED
     }
 

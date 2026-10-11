@@ -49,7 +49,7 @@ use super::{
         message::GetAddrsMessage,
         p2p::{P2p, P2pPtr},
     },
-    Session, SessionBitFlag, SESSION_OUTBOUND,
+    Session, SessionSelector, SESSION_OUTBOUND,
 };
 use crate::{
     concurrency::{sleep, timeout::timeout, CondVar, StoppableTask, StoppableTaskPtr},
@@ -206,7 +206,7 @@ impl Session for OutboundSession {
         p2p
     }
 
-    fn type_id(&self) -> SessionBitFlag {
+    fn type_id(&self) -> SessionSelector {
         SESSION_OUTBOUND
     }
 

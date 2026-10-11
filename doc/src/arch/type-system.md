@@ -1138,34 +1138,51 @@ name in the P2P system.
 
 ### 8.6.5 SessionSelector — Nominal Session Topology
 
-`SessionSelector` SHALL be a `#[repr(u32)]` enum replacing the bare
-`SessionBitFlag = u32` type alias. Variants SHALL be: `Inbound = 0b000001`,
-`Outbound = 0b000010`, `Manual = 0b000100`, `Seed = 0b001000`,
-`Refine = 0b010000`, `Direct = 0b100000`.
+A session selector SHALL be a named type and never a bare `u32`, and the six
+selectors SHALL carry the bit values `Inbound = 0b000001`, `Outbound = 0b000010`,
+`Manual = 0b000100`, `Seed = 0b001000`, `Refine = 0b010000`, `Direct = 0b100000`.
+
+*Restated 2026-10-11 (`F-306`).* This asked for a `#[repr(u32)]` **enum** with those
+as variants, and that type cannot hold what the values are. A selector is a
+**bitmask**: the registry registers a protocol against one and tests membership with
+`&` at some twenty sites, `SESSION_DEFAULT` is four of the six OR-ed, `SESSION_ALL`
+is all six, and `channel.rs` asks `SESSION_ALL & !SESSION_REFINE`. An enum holds
+exactly one variant and can express none of them. The six values, their bits, and
+the rule that a selector is a named type all stand; what changes is the shape:
 
 ```rust
-#[repr(u32)]
-pub enum SessionSelector {
-    Inbound  = 0b000001,
-    Outbound = 0b000010,
-    Manual   = 0b000100,
-    Seed     = 0b001000,
-    Refine   = 0b010000,
-    Direct   = 0b100000,
-}
+/// Six bits of session topology, plus the two derived values the registry needs.
+/// The implementation is `src/net/session/mod.rs`.
+pub struct SessionSelector(u32);
 
-impl ExhibitsBarb for SessionSelector {
-    fn exhibited_barbs() -> &'static [Barb] {
-        &[Barb::Gate]
-    }
-}
+pub const SESSION_INBOUND:  SessionSelector = SessionSelector(0b000001);
+pub const SESSION_OUTBOUND: SessionSelector = SessionSelector(0b000010);
+pub const SESSION_MANUAL:   SessionSelector = SessionSelector(0b000100);
+pub const SESSION_SEED:     SessionSelector = SessionSelector(0b001000);
+pub const SESSION_REFINE:   SessionSelector = SessionSelector(0b010000);
+pub const SESSION_DIRECT:   SessionSelector = SessionSelector(0b100000);
+
+pub const SESSION_DEFAULT:  SessionSelector = SessionSelector(0b100111);
+pub const SESSION_ALL:      SessionSelector = SessionSelector(0b111111);
 ```
 
-The `Session::type_id()` method SHALL return `SessionSelector`. The
-`ProtocolRegistry::attach()` and `register()` methods SHALL accept
-`SessionSelector`. Bitmask operations on bare `u32` SHALL NOT appear
-outside the `SessionSelector` impl. This follows the `SyncState` pattern
-(§7.7) which replaced raw `u8` constants with a `#[repr(u8)]` enum.
+`BitAnd`, `BitOr` and `Not` are implemented so the compositions above read as they
+did when the operand was a bare `u32`; `PartialEq<u32>` exists because membership is
+tested as `selector & flag != 0`; `Binary` serves the `{:#b}` diagnostics; and the
+raw bits leave the type only through `SessionSelector::bits()`. The `Session::type_id()`
+method SHALL return `SessionSelector`, `ProtocolRegistry::attach()` and `register()`
+SHALL accept one, and no bitmask operation on a bare `u32` SHALL appear outside the
+type's own impls — which is now the case.
+
+**One part of this section is absent, and is recorded rather than dropped**:
+`ExhibitsBarb for SessionSelector`, with `&[Barb::Gate]`. No `bridge_safe` call in
+the tree is instantiated with a session selector — every one takes protocol markers
+— so the impl would have no reader. A future consumer should know it was specified.
+
+*This section cites the `SyncState` pattern (§7.7), where raw `u8` constants became
+a `#[repr(u8)]` enum. That works for a state machine, whose value is exactly one of
+its states. It does not work for a bitmask, whose value is a set — which is the
+whole of the difference this restatement records.*
 
 ## 9. Concurrent Execution Model
 
