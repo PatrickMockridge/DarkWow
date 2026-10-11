@@ -2074,10 +2074,22 @@ Risk is a dynamic fee multiplier (1.0× → 2.0×) sourced from
 boundaries. The wallet additionally computes a trust metric for observability
 (not consensus-gating).
 
-**FI-RISK-1: Risk multiplier on the fee.** `compute_fee_v3()` SHALL multiply
-by the `ContractRiskTracker` factor (1.0× → 2.0×) for the contract being
-called. The fee is `gas × CF × tier × risk`. Scope: fee_window.rs + wallet +
-mempool + miner. Level: L1.
+**FI-RISK-1: Risk multiplier on the fee.** `compute_fee_v3()` SHALL multiply by the
+`ContractRiskTracker` factor (1.0× → 2.0×) for the contract being called, wherever
+the chain's own risk state is available — the miner's block packing and the
+mempool's admission floor. The fee is `gas × CF × tier × risk`. *Restated
+2026-10-11 (`OBL-C217`). The scope below read "fee_window.rs + wallet + mempool +
+miner", and the wallet half is not implementable: the factor is derived from the
+called circuit's measured rows, which needs a contract store the wallet does not
+keep, and the manifest offers no second source — `[[circuits]].opcodes`, the field
+whose stated purpose is to make `circuit_difficulty` independently checkable, is
+present in **0 of 32** manifests, so a wallet-side derivation would sum nothing. A
+wallet therefore pays the tier price and is not a party to the multiplier: a call
+to an escalated contract is admitted once its fee covers the factor, which is the
+multiplier performing its function, at the cost of the wallet not being able to
+explain the refusal. Making the wallet a party again needs a retrieval path for the
+factors the node already persists — a protocol addition, not a repair.* Scope:
+fee_window.rs + mempool + miner. Level: L1.
 
 **FI-RISK-2: Wallet trust metric (observability).** The wallet SHALL compute a basic
 trust metric for a contract — from contract age, whether the transaction path has
