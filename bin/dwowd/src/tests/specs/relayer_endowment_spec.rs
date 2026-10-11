@@ -206,6 +206,25 @@ pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
                 }),
             },
             EndpointSpec {
+                // The writer `total_collected_fees_log` never had (`F-513`, `OBL-C221`).
+                //
+                // `ForceSettleV1` pro-rates that log to backers once a relayer has missed the
+                // settlement timeout, and with two assignment sites in the contract — `= 0` at
+                // initialize and a `saturating_sub` at force-settle — nothing could make it
+                // non-zero, so the force-settle path could only ever settle zero. This row
+                // reaching `Success` is the finding's negation: the log now has a writer, and it
+                // ran against a real chain with a real account.
+                //
+                // Plaintext: the manifest marks `record_collected_fees` so, and it has no circuit.
+                name: "RecordCollectedFeesV1", is_zk: false, expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None, verify_state: None,
+                generate: Box::new(move || {
+                    let r = h.record_collected_fees(pk, 100)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+                }),
+            },
+            EndpointSpec {
                 // **Before `ClaimFeesV1`, and it is the claim's own precondition.**
                 // `deployment.accumulated_fees` is written only inside
                 // `process_settle_fees_instruction`, so without this row the claim answers `NoFees`

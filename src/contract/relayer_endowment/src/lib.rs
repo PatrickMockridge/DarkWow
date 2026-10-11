@@ -84,6 +84,14 @@ pub enum RelayerEndowmentFunction {
     /// Register a fee schedule (registry submodule)
     #[cfg(feature = "relayer")]
     RegisterFeeScheduleV1 = 0x0a,
+    /// Relayer records fees it has collected and not yet allocated
+    ///
+    /// The writer `total_collected_fees_log` never had (`F-513`, `OBL-C221`).
+    /// `ForceSettleV1` distributes that log pro rata to backers once a relayer
+    /// has failed to settle within the timeout, and until this endpoint existed
+    /// nothing could put a non-zero value in it, so the force-settle path could
+    /// only ever pay zero.
+    RecordCollectedFeesV1 = 0x0b,
 }
 
 impl TryFrom<u8> for RelayerEndowmentFunction {
@@ -104,6 +112,7 @@ impl TryFrom<u8> for RelayerEndowmentFunction {
             0x09 => Ok(Self::VerifyRelayerReputationV1),
             #[cfg(feature = "relayer")]
             0x0a => Ok(Self::RegisterFeeScheduleV1),
+            0x0b => Ok(Self::RecordCollectedFeesV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }

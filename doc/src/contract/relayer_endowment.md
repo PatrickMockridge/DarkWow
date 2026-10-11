@@ -52,6 +52,7 @@ This contract enables:
 | 0x05 | UpdateConfigV1 | Update fee configuration |
 | 0x06 | ForceSettleV1 | Backer force-settles fees after relayer inactivity timeout |
 | 0x07 | DeactivateEndowmentV1 | Deactivate an endowment account |
+| 0x0b | RecordCollectedFeesV1 | Relayer records fees collected and not yet allocated |
 
 ## Data Model
 
@@ -99,6 +100,26 @@ ForceSettleV1 flow:
 4. Fees credited to backer's deployment
 5. last_settlement_height updated to current block
 ```
+
+### The log's writer
+
+`ForceSettleV1` distributes `total_collected_fees_log`, but the entrypoint that moves
+money — `SettleFeesV1` — writes `accumulated_fees` instead. Until 2026-10-11 nothing
+incremented the log at all: it had exactly two assignment sites, `= 0` at initialize
+and a `saturating_sub` here, so the pro-rata share above was always zero and the
+endpoint was callable but never payable (`F-513`, `OBL-C221`). `RecordCollectedFeesV1`
+(`0x0b`) is the writer: the relayer records fees it has collected and not yet
+allocated, and the log grows.
+
+It deliberately does **not** touch `last_settlement_height`. That field is what the
+timeout above is measured against, so a writer that reset it would let a relayer
+suppress force-settlement indefinitely simply by recording often — the endpoint that
+makes this section work would become the means of defeating it.
+
+What it does not fix: the log is the *relayer's claim*, because only the relayer knows
+its off-chain fee income. A relayer that means to evade never calls it and the log
+stays where it was. The protection above therefore covers a relayer that is honest but
+late — which is what a timeout models — and not one that has decided not to settle.
 
 ## Economic Model
 

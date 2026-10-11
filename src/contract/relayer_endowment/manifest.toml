@@ -43,6 +43,10 @@ code = 6
 name = "deactivate_endowment"
 code = 7
 
+[[functions]]
+name = "record_collected_fees"
+code = 11
+
 [[capabilities]]
 discriminant = 0
 name = "relayer"

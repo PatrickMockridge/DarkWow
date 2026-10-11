@@ -170,6 +170,11 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
             &self_.data[1..],
             |p| DeactivateEndowmentParamsV1::decode(p).map(|_| ()),
         )?,
+        RelayerEndowmentFunction::RecordCollectedFeesV1 => plaintext_call_get_metadata(
+            "record_collected_fees",
+            &self_.data[1..],
+            |p| RecordCollectedFeesParamsV1::decode(p).map(|_| ()),
+        )?,
         // The three relayer-rail instructions are gated in `process_instruction` too, and their arms are
         // gated here in the same way so the two dispatches stay in step: with the feature off they are not
         // dispatchable, and the metadata answers the same way exec would.
@@ -352,6 +357,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         RelayerEndowmentFunction::DeactivateEndowmentV1 => {
             process_deactivate_endowment_instruction(cid, call_idx, calls)?
         }
+        RelayerEndowmentFunction::RecordCollectedFeesV1 => {
+            process_record_collected_fees_instruction(cid, call_idx, calls)?
+        }
         #[cfg(feature = "relayer")]
         RelayerEndowmentFunction::RegisterRelayerV1 => {
             crate::relayer::process_register_relayer(cid, call_idx, calls)?
@@ -404,6 +412,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         RelayerEndowmentFunction::DeactivateEndowmentV1 => {
             let update = DeactivateEndowmentUpdateV1::decode(&update_data[1..])?;
             apply_deactivate_endowment_update(cid, update)
+        }
+        RelayerEndowmentFunction::RecordCollectedFeesV1 => {
+            let update = RecordCollectedFeesUpdateV1::decode(&update_data[1..])?;
+            apply_record_collected_fees_update(cid, update)
         }
         #[cfg(feature = "relayer")]
         RelayerEndowmentFunction::RegisterRelayerV1 => {
@@ -878,6 +890,86 @@ fn apply_settle_fees_update(cid: ContractId, update: SettleFeesUpdateV1) -> Cont
         &update.account.encode(),
     )?;
     msg!("[relayer_endowment::settle_fees::update] Fees distributed to {} deployments", update.deployments.len());
+
+    Ok(())
+}
+
+// ============================================================================
+// RECORD COLLECTED FEES
+// ============================================================================
+
+/// Record fees a relayer has collected and not yet allocated to backers.
+///
+/// The writer `total_collected_fees_log` never had (`F-513`, `OBL-C221`).
+/// `ForceSettleV1` pro-rates that log to backers once a relayer has missed the
+/// settlement timeout, and with nothing able to increment it the force-settle
+/// path could only ever settle zero.
+///
+/// Authority is the relayer's own signature, exactly as `SettleFeesV1` has it.
+/// The log records the relayer's *claim* about fees collected off-chain, so a
+/// relayer that declines to call this leaves the log at zero — the limitation
+/// the params model states, which no endpoint can close.
+///
+/// It deliberately does **not** touch `last_settlement_height`. That field is
+/// what ForceSettleV1's timeout is measured against, so a writer that reset it
+/// would let a relayer suppress force-settlement indefinitely by recording
+/// often — turning the endpoint that makes ForceSettle work into the means of
+/// defeating it. Only a real settlement moves it.
+fn process_record_collected_fees_instruction(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> Result<Vec<u8>, ContractError> {
+    let self_ = &calls[call_idx].data;
+    let params = RecordCollectedFeesParamsV1::decode(&self_.data[1..])?;
+
+    msg!("[relayer_endowment::record_collected_fees] Recording {} collected fees for relayer {:?}",
+        params.amount, params.relayer_pub);
+
+    // Auth: caller must be the relayer
+    if params.signature_public != params.relayer_pub {
+        return Err(RelayerEndowmentError::Unauthorized.into());
+    }
+
+    // A zero record is a no-op that would still cost a state write.
+    if params.amount == 0 {
+        msg!("[relayer_endowment::record_collected_fees] Amount is zero");
+        return Err(RelayerEndowmentError::InvalidParams("amount must be non-zero".into()).into());
+    }
+
+    let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
+    let mut account: RelayerEndowmentAccount =
+        match wasm::db::db_get(registry_db, &compute_relayer_key(&params.relayer_pub))? {
+            Some(data) => RelayerEndowmentAccount::decode(&data)?,
+            None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
+        };
+
+    if !account.is_active {
+        return Err(RelayerEndowmentError::EndpointInactive.into());
+    }
+
+    account.total_collected_fees_log =
+        account.total_collected_fees_log.saturating_add(params.amount);
+
+    msg!("[relayer_endowment::record_collected_fees] Log now {}", account.total_collected_fees_log);
+
+    let update = RecordCollectedFeesUpdateV1 { account, amount: params.amount };
+    update.encode()
+}
+
+fn apply_record_collected_fees_update(
+    cid: ContractId,
+    update: RecordCollectedFeesUpdateV1,
+) -> ContractResult {
+    let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
+
+    wasm::db::db_set(
+        registry_db,
+        &compute_relayer_key(&update.account.relayer_pub),
+        &update.account.encode(),
+    )?;
+    msg!("[relayer_endowment::record_collected_fees::update] Recorded {} in the collected-fees log",
+        update.amount);
 
     Ok(())
 }

@@ -100,10 +100,18 @@ fn test_relayer_endowment_function_enum_valid() {
 
 #[test]
 fn test_relayer_endowment_function_enum_invalid() {
-    // Test that invalid function IDs return errors
+    // Test that invalid function IDs return errors.
+    //
+    // The first code here moves with the enum's boundary: it was `0x0B` until
+    // `RecordCollectedFeesV1` took that code (`F-513`). The assertion is that an
+    // *unassigned* code is refused, so it tracks the first unassigned one rather
+    // than any particular number — `0x0C` is that code today.
     assert!(RelayerEndowmentFunction::try_from(0xFF).is_err());
-    assert!(RelayerEndowmentFunction::try_from(0x0B).is_err());
+    assert!(RelayerEndowmentFunction::try_from(0x0C).is_err());
     assert!(RelayerEndowmentFunction::try_from(0x10).is_err());
+    // And the code that took the old boundary resolves, so the boundary above is
+    // the enum's edge and not a coincidence of the test.
+    assert!(RelayerEndowmentFunction::try_from(0x0B).is_ok());
 }
 
 #[test]

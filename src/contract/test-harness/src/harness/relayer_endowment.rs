@@ -46,7 +46,7 @@ use dwow_relayer_endowment_contract::client::{
 };
 use dwow_relayer_endowment_contract::model::{
     InitializeParamsV1, DeployCapitalParamsV1, ClaimFeesParamsV1, FeeAllocation,
-    SettleFeesParamsV1,
+    RecordCollectedFeesParamsV1, SettleFeesParamsV1,
 };
 
 /// The commitment over an ordered call set (`OBL-C198`). The order is DFS post-order — children
@@ -298,6 +298,33 @@ impl RelayerEndowmentHarness {
         Ok(SettleFeesResult { call_data })
     }
 
+    /// Record fees a relayer has collected and not yet allocated — the writer
+    /// `total_collected_fees_log` never had (`F-513`, `OBL-C221`).
+    ///
+    /// `ForceSettleV1` pro-rates that log to backers once the settlement timeout
+    /// has passed, and before this endpoint existed nothing could make it
+    /// non-zero, so the force-settle path could only ever settle zero. A spec
+    /// that reaches `Success` here has therefore exercised the one operation the
+    /// finding says was impossible.
+    pub fn record_collected_fees(
+        &self,
+        relayer_pub: PublicKey,
+        amount: u64,
+    ) -> Result<RecordCollectedFeesResult, Box<dyn std::error::Error>> {
+        let params = RecordCollectedFeesParamsV1 {
+            relayer_pub,
+            amount,
+            // Same as `settle_fees`: the relayer acts for itself, and the harness does not model
+            // the transaction signature, there being no circuit to check it against.
+            signature_public: relayer_pub,
+        };
+        let mut call_data = vec![0x0b]; // RecordCollectedFeesV1
+        call_data.extend_from_slice(
+            &params.encode().map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?,
+        );
+        Ok(RecordCollectedFeesResult { call_data })
+    }
+
     /// Claim accumulated fees from a deployment with ZK proof
     ///
     /// The params carry the backer's public key **coordinates as bytes**, because the contract's
@@ -385,6 +412,11 @@ pub struct InitializeResult {
 
 /// Result of settle_fees — plaintext, so `call_data` only.
 pub struct SettleFeesResult {
+    pub call_data: Vec<u8>,
+}
+
+/// Result of record_collected_fees — plaintext, so `call_data` only.
+pub struct RecordCollectedFeesResult {
     pub call_data: Vec<u8>,
 }
 

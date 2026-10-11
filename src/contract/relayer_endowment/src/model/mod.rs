@@ -624,6 +624,94 @@ impl SettleFeesUpdateV1 {
     }
 }
 
+/// Parameters for recording fees a relayer has collected and not yet allocated
+///
+/// This is the writer `total_collected_fees_log` lacked. `ForceSettleV1`
+/// distributes that log pro rata to backers after a relayer has missed the
+/// settlement timeout, and until this endpoint existed nothing could make the
+/// log non-zero, so the force-settle path could only ever settle zero
+/// (`F-513`, `OBL-C221`).
+///
+/// What it is not: a defence against a relayer that means to evade. Only the
+/// relayer knows its off-chain fee income, so the log is a *claim*, and a
+/// relayer that simply never calls this leaves it at zero — the state the
+/// contract was already in. It makes force-settlement work for a relayer that
+/// is honest but late, which is what the timeout models.
+#[derive(Debug, Clone)]
+pub struct RecordCollectedFeesParamsV1 {
+    /// Relayer whose collected fees are being recorded
+    pub relayer_pub: PublicKey,
+    /// Fees collected since the last settlement and not yet allocated
+    pub amount: u64,
+    /// Public key of the relayer (from transaction signature)
+    pub signature_public: PublicKey,
+}
+
+impl dwow_serial::Encodable for RecordCollectedFeesParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RecordCollectedFeesParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
+impl RecordCollectedFeesParamsV1 {
+    /// relayer_pub(32) + amount(8) + signature_public(32) = 72.
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let mut b = Vec::with_capacity(72);
+        b.extend_from_slice(&self.relayer_pub.to_bytes());
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b.extend_from_slice(&self.signature_public.to_bytes());
+        Ok(b)
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 72 {
+            return Err(ContractError::IoError(format!(
+                "RecordCollectedFeesParamsV1: expected 72 bytes, got {}",
+                data.len()
+            )));
+        }
+        let relayer_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap())?;
+        let amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let signature_public = PublicKey::from_bytes(data[40..72].try_into().unwrap())?;
+        Ok(RecordCollectedFeesParamsV1 { relayer_pub, amount, signature_public })
+    }
+}
+
+/// Update returned after recording collected fees
+#[derive(Debug, Clone)]
+pub struct RecordCollectedFeesUpdateV1 {
+    /// Full endowment account (mutated in exec, carried to apply)
+    pub account: RelayerEndowmentAccount,
+    /// The amount recorded, carried so `apply` writes what `exec` decided
+    pub amount: u64,
+}
+
+impl dwow_serial::Encodable for RecordCollectedFeesUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RecordCollectedFeesUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+#[expect(clippy::unwrap_used, reason = "slice length checked above")]
+impl RecordCollectedFeesUpdateV1 {
+    /// account(ENCODED_SIZE) + amount(8).
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let mut b = Vec::with_capacity(RelayerEndowmentAccount::ENCODED_SIZE + 8);
+        b.extend_from_slice(&self.account.encode());
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        Ok(b)
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        let header = RelayerEndowmentAccount::ENCODED_SIZE + 8;
+        if data.len() != header {
+            return Err(ContractError::IoError(format!(
+                "RecordCollectedFeesUpdateV1: expected {} bytes, got {}",
+                header, data.len()
+            )));
+        }
+        let account =
+            RelayerEndowmentAccount::decode(&data[0..RelayerEndowmentAccount::ENCODED_SIZE])?;
+        let amount = u64::from_le_bytes(
+            data[RelayerEndowmentAccount::ENCODED_SIZE..header].try_into().unwrap(),
+        );
+        Ok(RecordCollectedFeesUpdateV1 { account, amount })
+    }
+}
+
 /// Parameters for updating fee configuration
 #[derive(Debug, Clone)]
 pub struct UpdateConfigParamsV1 {
