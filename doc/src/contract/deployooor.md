@@ -58,18 +58,22 @@ ContractId derivation).
 Once locked, a contract's WASM code becomes **permanently immutable** — no further
 code updates can be deployed. The lock state is stored in the `lock` sled tree.
 
-**Who can lock:** Only the original deployer. LockV1 requires a signature from the
-same keypair whose public key derived the contract's `ContractId`. The on-chain
-handler verifies this by extracting `params.public_key` and deriving the
-`ContractId` — it must match the signer.
+**Who can lock:** Only the original deployer, and it is a proof that enforces this. `LockV1`
+carries a `LockV2` ZK proof that the caller knows the secret behind `params.public_key`: the
+circuit derives the public key from the witnessed secret with `ec_mul_base` and constrains it
+equal to the pair the call publishes, so a prover can only produce it for a key it holds. The
+proof is bound to the transaction carrying it — it commits to `tx_commitment` and to a
+per-call `tx_nonce` — so one cannot be lifted from another transaction and replayed here.
 
 **Irrevocable:** Locking is a one-way transition. The lock tree entry goes from
 `false` (deployed, mutable) → `true` (locked, immutable). Once locked:
 - `DeployV1` is rejected with `DeployError::ContractLocked`
 - A second `LockV1` is rejected with `DeployError::ContractLocked`
 
-**Params:** `LockParamsV1` takes a single field — `public_key: PublicKey`.
-The `LockCallBuilder` in `client/lock_v1.rs` constructs the call from a `Keypair`.
+**Params:** `LockParamsV1` carries `public_key: PublicKey` and `tx_nonce: pallas::Base`
+(64 bytes encoded). `build_lock_call` in `client/lock_v1.rs` builds the witnesses from the
+deployer's `Keypair` and secret and returns a `LockPlan`; `LockPlan::prove(tx_commitment)`
+produces the proof, because the frame commitment is not known until the call exists.
 
 **Wallet CLI:**
 ```
@@ -79,10 +83,15 @@ Where `<deploy_auth>` is the hex-encoded secret key of the original deployer.
 The wallet derives the public key, builds a LockV1 transaction targeting the
 Deployooor contract, attaches a Native Token fee, and broadcasts via P2P.
 
-## No ZK Circuits
+## ZK Circuits
 
-Deployooor is a system contract and does not use ZK proofs. Deployment
-authorization is handled by signature verification at the consensus layer.
+| Circuit | Used by | What it proves |
+|---------|---------|----------------|
+| `lock.zk` | `LockV1` (0x01) | The caller knows the secret behind `params.public_key`, and the proof belongs to the transaction carrying it |
+
+`DeployV1` (0x00) carries no proof (`manifest.toml` declares `requires_proof = false`).
+Circuits are registered by the contract's `init_contract` into the `_zkas` tree, which is
+where the host reads them back from by namespace.
 
 ## Database Trees
 
