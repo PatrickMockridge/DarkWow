@@ -36,7 +36,6 @@ impl_py_methods!(LaborMarketSubmitDeliverableParamsV1);
 impl FunctionParams for labor_market_model::SubmitDeliverableParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
-        dict.set_item("proof", format!("{:?}", self.proof))?;
         dict.set_item("job_id", format!("{:?}", self.job_id))?;
         dict.set_item("claim_id", format!("{:?}", self.claim_id))?;
         dict.set_item("worker_pub_x", format!("{:?}", self.worker_pub_x))?;
@@ -47,7 +46,6 @@ impl FunctionParams for labor_market_model::SubmitDeliverableParamsV1 {
 
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
-        writeln!(out, "{prefix}proof: {:?}", self.proof).unwrap();
         writeln!(out, "{prefix}job_id: {:?}", self.job_id).unwrap();
         writeln!(out, "{prefix}claim_id: {:?}", self.claim_id).unwrap();
         writeln!(out, "{prefix}worker_pub_x: {:?}", self.worker_pub_x).unwrap();
