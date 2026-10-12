@@ -823,4 +823,25 @@ F-310: doc:doc/src/arch/contract-wasm-type-system.md#a12-function-dispatch@0df2e
      `cargo check --workspace` had reported clean without ever compiling that crate. The promotion records
      that, and it also records a regression of mine the same run exposed: the F-514 removal broke
      `dwow-sdk-py`, which that row's own verification had missed. -->
+F-315: doc:doc/src/arch/consensus/consensus.md#implications@d0ae4f9b1a
+<!-- F-315 is a documentation correction with no code half: the guard is Caribina-only by construction,
+     and OBL-C64 already records that the anchor fields "are no longer consulted for finality at all".
+     The correction is to the *scope* the bullet claimed — "or Monero" — not to the guard. -->
+F-316: doc:doc/src/arch/consensus-coinbase.md#13-block-header@d0ae4f9b1a
+<!-- F-316 is an internal self-contradiction: section 1.3 documented `total_reward` as the emission
+     schedule's value while section 6, 900 lines later, gave the rule the code enforces. The correction
+     names section 6 as the home. -->
+F-317: doc:doc/src/arch/consensus-coinbase.md#26-wasm-entrypoint-verification@d0ae4f9b1a
+<!-- F-317 is the most consequential of the five and still a doc correction: the check was documented as
+     a lower bound and the code enforces equality, because the lower bound was the over-minting bug. The
+     direction of the error is what made it worth correcting rather than leaving — a reader implementing
+     against the doc would reintroduce the bug. -->
+F-318: doc:doc/src/arch/consensus/uncle_merkle.md#security-considerations@d0ae4f9b1a
+<!-- F-318 is a self-contradiction again: the security list's difficulty rule named the referencing
+     block's target while the code's contract forbids it and the same document's section 2 agrees with
+     the code. -->
+F-319: doc:doc/src/arch/consensus/consensus.md#flag-bits@d0ae4f9b1a
+<!-- F-319 is an offset with no serializer behind it, contradicted by the paragraph directly beneath the
+     claim. Correcting it also removes the invitation to look for a byte the mining blob does not
+     contain. -->
 <!-- /promotion-log -->
