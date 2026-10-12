@@ -312,7 +312,9 @@ less_than_strict(current_block, reveal_deadline);
 
 - **Removed**: `Tender.requirement_commitment` - replaced with `Tender.attestation_id`
 - **Removed**: `Bid.competency_commitment` - replaced with `Bid.claim_id`
-- Workers now create attestation claims proving competency, reference claim_id in bid
+- Workers now prove competency with a **capability** — `submit_bid_with_capability_v1` requires an
+  `identity::VerifyCapabilityV1` (0x06) child. The `claim_id` field is carried, and no entrypoint calls
+  attestation; the verification is identity's
 
 ## Comparison
 

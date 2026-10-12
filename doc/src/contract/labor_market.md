@@ -2,14 +2,27 @@
 
 A job/labor market built on DarkWow primitives: escrow for payments, DAO for dispute resolution, and attestation for deliverable verification.
 
-## Purse Composition
+## Composition
 
-LaborMarket composes with the genesis [Purse](purse.md) primitive. Job payment escrow
-is tracked in a Purse. CreateJob calls `Purse::DepositV1` to lock the employer's
-payment. ConfirmDelivery calls `Purse::WithdrawV1` to release funds to the worker.
-The Purse contract handles balance integrity via Pedersen commitments — the labor
-market contract validates only that the child call targets the correct genesis
-Purse ContractId.
+**Not implemented as described.** The crate defines `LABOR_CONTRACT_PURSE_CONTRACT_ID` and
+writes it to its info tree, but no entrypoint calls Purse. The child calls the code actually
+enforces are:
+
+| Entrypoint | Child call |
+|---|---|
+| `create_job_v1` | **two**: `promissory_note::transfer_v1 (0x04)` + `attestation::CheckAttestationV1 (0x0d)` |
+| `confirm_delivery_v1`, `refund_v1`, `cancel_job_v1` | `promissory_note::transfer_v1 (0x04)` |
+| `submit_deliverable_v1`, `submit_git_deliverable_v1` | `attestation::VerifyClaimV1` |
+| `dispute_v1` | `dao_escrow::ProposeClaimV1` |
+
+So the payment is a promissory-note transfer held by the job record, verification is
+attestation's, and disputes go to **dao_escrow** — not to `escrow`, despite the design note
+above this section naming escrow for payments.
+
+The composition the contract is being built toward: job payment escrow tracked in a Purse,
+with `CreateJob` calling `Purse::DepositV1` to lock the employer's payment and
+`ConfirmDelivery` calling `Purse::WithdrawV1` to release to the worker, the contract
+validating only that the child call targets the correct genesis Purse ContractId.
 
 ## Design Goals
 

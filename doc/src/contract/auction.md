@@ -9,29 +9,29 @@ The auction contract enables:
 - **Sealed-bid auctions** (all bids hidden until close)
 - **Dutch auctions** (descending price, first to accept wins)
 
-The key insight is that the auction contract **composes with** the escrow contract rather than reimplementing escrow functionality.
+The key insight is that the auction contract **composes with** the promissory-note contract for value rather than reimplementing it.
 
-## Composition with Escrow
+## Composition with PromissoryNote
+
+The auction makes **no call to the escrow contract** — it was documented as composing with escrow, and the
+only child calls any entrypoint enforces are `promissory_note::transfer_v1 (0x04)`:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                    Auction Contract Composition                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│   Auction Contract                       Escrow Contract                      │
+│   Auction Contract                     PromissoryNote Contract                 │
 │   │                                     │                                   │
-│   │  CreateAuction ─────────────────────>│  (creates escrow for item)       │
-│   │                                     │                                   │
-│   │  PlaceBid ──────────────────────────>│  (creates escrow for bid)        │
-│   │                                     │                                   │
-│   │  CloseAuction                       │                                   │
-│   │                                     │                                   │
-│   │  SettleAuction ────────────────────>│  (claims winning bid)              │
-│   │                                     │                                   │
-│   │  RefundBid ─────────────────────────>│  (refunds outbid deposits)       │
-│   │                                     │                                   │
+│   │  SettleAuction ────────────────────>│  promissory_note::transfer_v1     │
+│   │  ClaimWinnings ────────────────────>│  promissory_note::transfer_v1     │
+│   │  RefundBid ─────────────────────────>│  promissory_note::transfer_v1     │
+│   │  (CreateAuction / PlaceBid /         │                                   │
+│   │   CloseAuction take no child)        │                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+Each of the three requires exactly **one** child, and the child's contract id is validated against the
+configured promissory-note id. Bids are held in the auction's own state rather than in per-bid escrows.
 
 ## State Machines
 

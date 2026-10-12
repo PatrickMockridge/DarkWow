@@ -2,12 +2,18 @@
 
 External capital providers ("backers") deploy capital to relayers in exchange for a share of the relayer's fees. This enables relayers to operate with more coverage than their own stake alone.
 
-## Purse Composition
+## Composition
 
-RelayerEndowment composes with the genesis [Purse](purse.md) primitive. Total deployed
-capital and per-deployment amounts are tracked in Purses. DeployCapital calls
-`Purse::DepositV1`. SettleFees calls `Purse::WithdrawV1`. The Purse contract
-handles balance integrity via Pedersen commitments.
+**Not implemented as described.** The crate defines `RELAYER_ENDOWMENT_PURSE_CONTRACT_ID`
+and writes it to its info tree, but no entrypoint calls Purse. `DeployCapitalV1` and
+`WithdrawDeploymentV1` each require exactly **one** child,
+`promissory_note::transfer_v1 (0x04)` — deployed capital moves as a promissory-note
+transfer.
+
+The composition the contract is being built toward: total deployed capital and
+per-deployment amounts tracked in Purses, with `DeployCapital` calling `Purse::DepositV1`
+and `SettleFees` calling `Purse::WithdrawV1`, so the Purse handles balance integrity via
+Pedersen commitments.
 
 ## Overview
 

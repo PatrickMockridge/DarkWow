@@ -133,10 +133,13 @@ Circuits use domain-separated Poseidon hashes (HAZOP RC3).
 
 | Contract | What the Box Delegates |
 |----------|----------------------|
-| [escrow](escrow.md) | Seller claim authority, buyer refund authority |
-| [drain_protection](drain_protection.md) | Spend authority, proposal rights, vote rights |
-| [subscription](subscription.md) | Subscription capability |
-| [dao_escrow](dao_escrow.md) | Governance roles |
+| [escrow](escrow.md) | Seller claim authority — `ClaimV1` requires a `Box::TakeV1` (0x02) child |
+
+`escrow` is the only contract that makes a `Box::TakeV1` child call. `drain_protection`,
+`subscription` and `dao_escrow` were listed here and do not: `drain_protection` writes the
+genesis `BOX_CONTRACT_ID` into its info tree and never calls it, and `subscription` and
+`dao_escrow` contain no Box reference at all. What delegates spend authority in those
+contracts today is `promissory_note::transfer_v1` (escrow's counterpart on the value side).
 
 ## References
 

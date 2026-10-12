@@ -2,13 +2,18 @@
 
 A composable contract that allows capital providers to stake against betting contracts (Dice, Baccarat, Lottery) in exchange for a share of the house edge over time.
 
-## Purse Composition
+## Composition
 
-BettingStake composes with the genesis [Purse](purse.md) primitive. The table pool
-stake, per-staker positions, and earnings/losses pools are tracked in Purses.
-Stake calls `Purse::DepositV1`. Unstake calls `Purse::WithdrawV1`. Earnings
-distribution uses Purse proportional transfers. The Purse contract handles
-balance integrity via Pedersen commitments.
+**Not implemented as described.** The crate defines `BETTING_STAKE_PURSE_CONTRACT_ID` and
+writes it to its info tree, but no entrypoint calls Purse. `StakeV1` and `UnstakeV1` each
+require exactly **one** child, `promissory_note::transfer_v1 (0x04)` — the value moves as a
+promissory-note transfer, not as a Purse deposit or withdrawal.
+
+The composition the contract is being built toward: the table pool stake, per-staker
+positions, and earnings/losses pools tracked in Purses, with Stake calling
+`Purse::DepositV1`, Unstake calling `Purse::WithdrawV1`, and earnings distribution using
+Purse proportional transfers, so the Purse handles balance integrity via Pedersen
+commitments.
 
 ## Purpose
 

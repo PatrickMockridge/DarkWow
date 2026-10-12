@@ -2,11 +2,14 @@
 
 Privacy-preserving conditional payment contract. Funds are locked in a commitment and released to the seller upon proof of knowledge of a secret, or returned to the buyer after a timeout.
 
-## Box + Purse Composition
+## Composition
 
-The escrow composes with two genesis O-Cap primitives:
-- **Purse**: Fund calls `Purse::DepositV1` as a child call to lock the escrowed amount. The Purse contract tracks the balance via Pedersen commitment — the escrow no longer needs its own value arithmetic.
-- **Box** (×2): The seller holds a claim Box; the buyer holds a refund Box. Claim calls `Box::TakeV1` to consume the seller's capability. Refund calls `Box::TakeV1` for the buyer. The Box contract handles nullifier replay internally.
+The escrow composes with two genesis O-Cap primitives (it is the one contract in this
+family whose composition is implemented — `drain_protection`, `betting_stake`,
+`labor_market` and `relayer_endowment` declare Purse and call it nowhere):
+
+- **Purse**: Fund requires two children — `promissory_note::transfer_v1 (0x04)` and `Purse::DepositV1 (0x01)` — to lock the escrowed amount. The Purse contract tracks the balance via Pedersen commitment, so the escrow needs no value arithmetic of its own.
+- **Box** (×1): the seller holds a claim Box and Claim calls `Box::TakeV1` to consume it. The Box contract handles nullifier replay internally. There is no refund Box: `RefundV1` requires exactly **one** child, `promissory_note::transfer_v1 (0x04)`, and takes no Box.
 
 See [Purse](purse.md) and [Box](box.md) for the genesis primitives.
 

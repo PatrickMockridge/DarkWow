@@ -369,7 +369,7 @@ Bond mechanics:
 | Contract | Integration |
 |----------|-------------|
 | Identity | O-Cap authorization via capabilities and DAGs |
-| PromissoryNote | Premium payments and claim payouts via RevokeV1/IssueV1 |
+| PromissoryNote | Premium payments and claim payouts via `transfer_v1` (0x04) — every child call this contract makes is a transfer; no `RevokeV1` or `IssueV1` |
 | Oracle | Claim resolution attestation |
 
 ## Promissory Note Lifecycle Integration

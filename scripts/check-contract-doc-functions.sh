@@ -50,7 +50,15 @@ def norm(s):
 
 
 def doc_rows(text):
-    """normalized-name -> code, from rows under a functions/entrypoint heading."""
+    """normalized-name -> code, from rows under a functions/entrypoint heading.
+
+    A row whose Function cell marks the entrypoint **removed/retired** is skipped:
+    this gate compares what the doc *lists* against the manifest, and a retirement
+    row claims the opposite — that the manifest does not have it. Skipping is
+    restricted to the Function cell so a stray "removed" in a description cannot
+    hide a wrong name. (Added 2026-10-12 for F-514/OBL-C232, where the row
+    `| 0x0c | *(removed)* | ... |` was reported as a function the manifest lacks.)
+    """
     rows, section = {}, None
     for line in text.splitlines():
         h = HEAD.match(line)
@@ -60,6 +68,9 @@ def doc_rows(text):
         if not line.lstrip().startswith('|'):
             continue
         if not (section and FUNHEAD.search(section)):
+            continue
+        cells = [c.strip() for c in line.strip().strip('|').split('|')]
+        if len(cells) >= 2 and re.search(r'\bremoved\b|\bretired\b', cells[1], re.I):
             continue
         codes, names = CODE.findall(line), NAME.findall(line)
         if len(codes) == 1 and len(names) == 1:
