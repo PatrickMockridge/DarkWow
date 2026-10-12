@@ -186,7 +186,6 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::util::set_return_data(&metadata)
 }
 
-/// Metadata for InitializeV1 (0x00)
 /// The transaction binding every arm publishes — the deriving side of `OBL-C198`.
 ///
 /// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
@@ -205,6 +204,12 @@ fn dao_escrow_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, Contrac
     Ok(poseidon_hash([pallas::Base::from(3u64), wasm::util::get_tx_commitment()?, tx_nonce]))
 }
 
+/// Metadata for InitializeV1 (0x00)
+///
+/// This line stood above `dao_escrow_tx_binding` — the *previous* item — with that helper's own doc
+/// block, so it described a function it did not precede and left this one undocumented while every
+/// sibling arm here has its own. Moved 2026-10-12; the same stranding is fixed in six sibling
+/// contracts.
 fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match model::InitializeParamsV1::decode(&self_.data[1..]) {

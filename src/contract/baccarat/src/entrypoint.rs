@@ -82,7 +82,6 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
-/// Get metadata for ZK proof verification
 /// `OBL-C198`: the binding is the host's derivation over the enclosing transaction, not a constant.
 /// `baccarat`'s params carry no `tx_nonce` — the nonce is a literal zero end to end here — so the
 /// helper takes it as an argument and every arm passes zero, which is what their
@@ -95,6 +94,10 @@ fn baccarat_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractE
     ]))
 }
 
+/// Get metadata for ZK proof verification
+///
+/// This line stood above `baccarat_tx_binding` — the *previous* item — so it described a function
+/// it did not precede. Moved here 2026-10-12; the same stranding is fixed in six sibling contracts.
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;

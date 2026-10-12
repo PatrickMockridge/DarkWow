@@ -168,12 +168,6 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::util::set_return_data(&metadata)
 }
 
-/// `get_metadata` for UnderwriteWithCapabilityV1
-///
-/// The ZK circuit `underwrite_with_capability.zk` constrains:
-///   constrain_instance(underwriter_pub_x);
-///   constrain_instance(underwriter_pub_y);
-///   constrain_instance(required_capability_id);
 /// The transaction binding every arm publishes — the deriving side of `OBL-C198`.
 ///
 /// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
@@ -194,6 +188,17 @@ pub(crate) fn insurance_market_tx_binding(
     Ok(poseidon_hash([pallas::Base::from(3u64), wasm::util::get_tx_commitment()?, tx_nonce]))
 }
 
+/// `get_metadata` for UnderwriteWithCapabilityV1
+///
+/// The ZK circuit `underwrite_with_capability.zk` constrains:
+///   constrain_instance(underwriter_pub_x);
+///   constrain_instance(underwriter_pub_y);
+///   constrain_instance(required_capability_id);
+///
+/// All six of those lines stood above `insurance_market_tx_binding` — the *previous* item — so they
+/// described a function they did not precede and left this one undocumented while its sibling
+/// `purchase_coverage_with_capability_get_metadata_v1` has its own. Moved 2026-10-12; the same
+/// stranding is fixed in six sibling contracts.
 fn underwrite_with_capability_get_metadata_v1(
     params: UnderwriteWithCapabilityParamsV1,
 ) -> Result<Vec<u8>, ContractError> {

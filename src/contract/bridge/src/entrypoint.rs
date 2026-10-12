@@ -166,7 +166,6 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::util::set_return_data(&metadata)
 }
 
-/// Metadata for DepositV1 ZK proof verification.
 /// `OBL-C198`: the binding is the host's derivation over the enclosing transaction, not a
 /// constant. `DepositParams` and `WithdrawParams` carry no `tx_nonce` — the nonce is a literal
 /// zero end to end in this contract — so the helper takes it as an argument and both arms pass
@@ -181,6 +180,11 @@ fn bridge_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractErr
     ]))
 }
 
+/// Metadata for DepositV1 ZK proof verification.
+///
+/// This doc line stood above `bridge_tx_binding` — the *previous* item — with that helper's own
+/// doc block, so it described a function it did not precede and left this one undocumented. Moved
+/// here 2026-10-12; the same stranding is fixed in six sibling contracts.
 fn deposit_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     use dwow_sdk::pasta::pallas;
 

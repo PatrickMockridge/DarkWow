@@ -167,7 +167,6 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::util::set_return_data(&metadata)
 }
 
-/// `get_metadata` for CreateAuctionV1
 /// `OBL-C198`: every auction arm published the constant `poseidon_hash([3, 0, 0])` — a value no node
 /// could recompute from the transaction carrying the proof. Each derives now, over the host's
 /// `get_tx_commitment`. The nonce is the call's own and is zero for these endpoints.
@@ -179,6 +178,11 @@ fn auction_tx_binding() -> Result<pallas::Base, ContractError> {
     ]))
 }
 
+/// `get_metadata` for CreateAuctionV1
+///
+/// This line stood above `auction_tx_binding` — the *previous* item — so it described a function it
+/// did not precede and left this one undocumented while the other five arms have their own. Moved
+/// 2026-10-12; the same stranding is fixed in six sibling contracts.
 fn create_auction_get_metadata_v1(params: CreateAuctionParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[auction::create_auction_get_metadata_v1] Creating auction: {:?}", params.auction_id);
 

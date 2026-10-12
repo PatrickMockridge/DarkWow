@@ -221,7 +221,6 @@ fn point_coords(pt: pallas::Point) -> Result<(pallas::Base, pallas::Base), Contr
 // METADATA: ISSUE STAKE
 // ============================================================================
 
-/// Metadata for IssueStakeV1 — BlindOutput_V1 instance(s) for output commitments.
 /// The transaction binding every bearer_bond proof publishes — the deriving side of `OBL-C198`.
 ///
 /// The commitment comes from the host (`get_tx_commitment`), not the call data: the commitment is a
@@ -237,6 +236,11 @@ fn tx_binding_of(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> 
     ]))
 }
 
+/// Metadata for IssueStakeV1 — BlindOutput_V1 instance(s) for output commitments.
+///
+/// This line stood above `tx_binding_of` — the *previous* item — with that helper's own doc block,
+/// so it described a function it did not precede and left this one undocumented while every
+/// sibling metadata arm here has its own. Moved 2026-10-12.
 fn issue_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match IssueStakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(e) => { msg!("[bearer_bond::get_metadata] arm params decode failed for call {}: {:?}", call_idx, e); return Ok(vec![]) } };

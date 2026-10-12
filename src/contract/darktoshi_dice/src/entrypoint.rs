@@ -80,7 +80,6 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
-/// Get metadata for ZK proof verification
 /// The transaction binding this call publishes — the deriving side of `OBL-C198`.
 ///
 /// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
@@ -98,6 +97,10 @@ fn dice_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError
     Ok(poseidon_hash([pallas::Base::from(3), wasm::util::get_tx_commitment()?, tx_nonce]))
 }
 
+/// Get metadata for ZK proof verification
+///
+/// This line stood above `dice_tx_binding` — the *previous* item — so it described a function it
+/// did not precede. Moved here 2026-10-12; the same stranding is fixed in six sibling contracts.
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
