@@ -9,11 +9,11 @@ DarkWow defines three network configurations. Two share the same code path
 
 | Setting | Value |
 |---------|-------|
-| Magic bytes | (none) |
-| Port range | 28xxx |
+| Magic bytes | `[241, 227, 197, 179]` |
+| Port range | 28xxx (`rpc_listen = "tcp://127.0.0.1:28345"`) |
 | Sync | `skip_sync = true`, `localnet = true` |
-| Difficulty | Fixed (`fixed-difficulty = 20000`) |
-| P2P | `outbound_connections = 0` |
+| Difficulty | Fixed: `pow_fixed_difficulty = 1` |
+| P2P | inherits the default `outbound_connections = 8` (the section does not override it) |
 | Purpose | Single-node local dev, contract testing, merge mining tests |
 
 ```bash
@@ -69,7 +69,7 @@ TOML configuration file (`dwowd_config.toml`), which can be overridden per-netwo
 The TOML config (`bin/dwowd/dwowd_config.toml`) defines per-network sections:
 
 ```toml
-network = "darkwow-devnet"  # default
+network = "darkwow-testnet"  # the config file's default; the CLI default is darkwow-devnet (`--network`)
 
 [network_config."darkwow-devnet"]
 database = "~/.local/share/dwow/dwowd/darkwow-devnet"

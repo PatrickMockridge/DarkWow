@@ -1269,7 +1269,7 @@ response). See [fee-spec.md §12.8.1](consensus/fee-spec.md).
 ## 10. Mining Flow
 
 1. `dwowd` generates a RandomX key for the next block template
-2. Miner receives 260-byte mining blob (header with zeroed nonce) + target
+2. Miner receives 292-byte mining blob (header with zeroed nonce) + target
 3. Miner initializes RandomX VM with the key, hashes the blob with different nonces
 4. If hash meets target (`hash_u32 <= target`), miner submits solved header
 5. `dwowd` verifies the proof-of-work and assembles the block

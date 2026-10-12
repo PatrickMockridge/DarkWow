@@ -114,8 +114,9 @@ DarkWow's quantum security posture is documented across three specifications:
 
 **Current posture:** Halo2 proofs rely on ECDLP (Shor-vulnerable). Hash functions
 (Poseidon, Sinsemilla, Blake2b) are quantum-safe up to Grover's quadratic speedup.
-P2P signatures (ed25519) are ECDLP-vulnerable. Note encryption (X25519) is ECDLP-
-vulnerable. The architecture is designed for community-coordinated hard fork when
+P2P signatures (ed25519) are ECDLP-vulnerable. Note encryption (Pallas DH,
+`sapling_ka_agree`) is ECDLP-vulnerable — on the same curve as the commitments, not
+X25519. The architecture is designed for community-coordinated hard fork when
 quantum timeline clarifies. No emergency governance — PoW-driven migration.
 
 **PQXDH research:** A Signal PQXDH implementation (Kyber-1024 + X25519 + Double

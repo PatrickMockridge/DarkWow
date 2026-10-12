@@ -64,7 +64,7 @@ practical.
 |---|---|---|---|---|
 | Halo2 PLONK (Pallas/Vesta) | `src/zk/vm.rs`, `src/zk/proof.rs` | ECDLP over Pallas (~255-bit) | Broken by Shor (polynomial time) | Replace proving system (see [Post-Quantum Proving System](zk/post-quantum-proving-system.md)) |
 | ed25519 signatures | P2P layer, wallet auth | ECDLP over Curve25519 | Broken by Shor | NIST PQC signatures (Dilithium/FALCON) |
-| X25519 key agreement | AEAD note encryption | ECDH over Curve25519 | Broken by Shor | Kyber-1024 hybrid (see [PQXDH](#retroactive-privacy-protection)) |
+| Pallas DH key agreement (`sapling_ka_agree`) | AEAD note encryption (`AeadEncryptedNote`) | ECDH over Pallas (~255-bit) | Broken by Shor | Kyber-1024 hybrid (see [PQXDH](#retroactive-privacy-protection)) |
 | Poseidon P128Pow5T3 | Commitments, nullifiers, SMT | Collision resistance | Grover: 128-bit classic → ~85-bit quantum | Double width to P256Pow5T3 |
 | Sinsemilla | Merkle tree hashing | Collision resistance | Grover: same analysis | Migrate to Poseidon-based Merkle (SparseMerkleRoot exists) |
 | Blake2b | Fiat-Shamir transcript | Collision resistance | Grover: 512-bit → 256-bit PQ | Acceptable; no migration needed |
@@ -100,7 +100,7 @@ to Poseidon-based (SparseMerkleRoot opcode already exists).
 
 Blake2b at 512-bit output gives 256-bit PQ security — no migration needed.
 
-**For DarkWow specifically:** the zkVM's 32 opcodes, all 120 contract circuits,
+**For DarkWow specifically:** the zkVM's 32 opcodes, all 167 contract circuits,
 the Pedersen commitments, the Sinsemilla hashes, the Merkle inclusion proofs —
 all of them bottom out on ECDLP over Pallas. A CRQC does not find a clever bug.
 It breaks the mathematical lock the entire system hangs on.
@@ -167,16 +167,21 @@ This is not fixable post-hoc — privacy that relied on ECDLP is permanently
 lost for historical blocks. All ZK blockchains share this exposure.
 
 **Harvest-now-decrypt-later (HNDL)**: an adversary storing all encrypted
-notes today can decrypt them once a CRQC breaks X25519. Current note
-encryption uses X25519 DH + ChaCha20Poly1305 in `AeadEncryptedNote`.
+notes today can decrypt them once a CRQC breaks the note key agreement.
+Current note encryption uses **Pallas (Sapling) Diffie-Hellman** —
+`diffie_hellman::sapling_ka_agree` + `kdf_sapling`, over the same Pallas curve
+the commitments use — with ChaCha20Poly1305 in `AeadEncryptedNote`. It is not
+X25519: the note path shares the curve the rest of the system's ECDLP security
+rests on, so it falls with the commitments rather than as a separate break.
 
 ### What Can Be Protected Going Forward
 
-1. **Forward-secret note encryption**: If PQXDH (Kyber-1024 + X25519 hybrid)
+1. **Forward-secret note encryption**: If a PQXDH-style hybrid (Kyber-1024 +
+   a classical DH — Pallas here, X25519 in the published PQXDH specification)
    is adopted for note encryption before a CRQC emerges, notes encrypted
    AFTER the migration are protected. The Kyber-1024 shared secret protects
-   the AEAD key even if X25519 is broken. See `script/research/pqxdh/` for
-   the existing research implementation.
+   the AEAD key even if the classical half is broken. See `script/research/pqxdh/`
+   for the existing research implementation.
 
 2. **Nullifier privacy**: Nullifiers reveal only that a commitment was spent, not
    its value or recipient. Current nullifier derivation uses Poseidon
@@ -191,7 +196,7 @@ encryption uses X25519 DH + ChaCha20Poly1305 in `AeadEncryptedNote`.
 
 PQXDH for note encryption SHALL be deployed BEFORE Trigger T1 (1,500 logical
 qubits demonstrated). This closes the HNDL window for post-migration notes.
-Notes can carry a version byte: v1 = X25519-only (vulnerable to retroactive
+Notes can carry a version byte: v1 = classical DH only (vulnerable to retroactive
 decryption), v2 = PQXDH hybrid (protected).
 
 ---
@@ -330,7 +335,7 @@ a collective bet about the future, expressed through the chain they build on.
 ## Further Reading
 
 - [Post-Quantum Proving System Requirements](zk/post-quantum-proving-system.md) — Formal swap-out specification (18 functional requirements)
-- [PQXDH Research](../../../script/research/pqxdh/src/main.rs) — Kyber-1024 + X25519 hybrid key agreement for note encryption
+- [PQXDH Research](../../../script/research/pqxdh/src/main.rs) — Kyber-1024 + X25519 hybrid key agreement, a Signal-`x25519_dalek` port standing in for the note-encryption migration path (the note path itself is Pallas DH)
 - [NIST Post-Quantum Cryptography](https://csrc.nist.gov/projects/post-quantum-cryptography) — Standardization process and timeline
 - [Shor's Algorithm (1994)](https://arxiv.org/abs/quant-ph/9508027) — Original paper establishing polynomial-time quantum factoring and discrete log
 - [STARKs](https://eprint.iacr.org/2018/046) — Scalable, transparent, post-quantum proof system

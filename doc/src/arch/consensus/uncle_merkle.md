@@ -122,7 +122,7 @@ pub fn verify_uncle_proof(
     merkle_root: &[u8; 32],
     target: BlockTarget,          // the target at `header.height`, NOT the current one
 ) -> bool {
-    // Step 1: Re-compute RandomX PoW from the canonical 260-byte mining blob
+    // Step 1: Re-compute RandomX PoW from the canonical 292-byte mining blob
     // (block.rs::to_mining_blob — JSON is variable-length and non-canonical,
     // and cannot be used for merkle proofs).
     let flags = randomx::RandomXFlags::get_recommended_flags();
@@ -410,8 +410,9 @@ is therefore carried in the block header:
   spending key of the miner's `StandardAddress`.
 - It SHALL be included in `to_mining_blob()`, appended **after** the
   `pow_source_disc` byte so the RandomX nonce offset (byte 39, xmrig's Monero
-  rx/0 offset) is preserved. The mining blob is 260 bytes
-  (`BlockHeader::MINING_BLOB_LEN`).
+  rx/0 offset) is preserved. The mining blob is 292 bytes
+  (`BlockHeader::MINING_BLOB_LEN`), of which `miner` occupies bytes 228..260 and
+  `anchor_owner` (generated before mining, so also covered) occupies 260..292.
 - It SHALL be covered by PoW: the miner commits to their own reward address as
   part of the mined header.
 - The canonical miner SHALL set `miner` to its cycled coinbase recipient key
@@ -670,7 +671,7 @@ fn create_uncle(block: Block, depth: u8, base_reward: BlockReward) -> UncleBlock
 
 fn build_uncle_merkle(uncles: &[UncleBlock]) -> Result<([u8; 32], Vec<UncleProof>)> {
     // 1. Compute pow_hash for each uncle using their randomx_key over the
-    //    canonical 260-byte to_mining_blob() (JSON is non-canonical)
+    //    canonical 292-byte to_mining_blob() (JSON is non-canonical)
     let pow_hashes: Vec<[u8; 32]> = uncles.iter().map(|u| {
         let flags = randomx::RandomXFlags::get_recommended_flags();
         let cache = randomx::RandomXCache::new(flags, &u.header.randomx_key)?;

@@ -18,7 +18,10 @@
 
 //! Wallet P2P configuration types.
 //!
-//! Spec: sync-protocol.md §15 (net-wallet tier).
+//! Spec: sync-protocol.md §14.1 (net-wallet tier: dispatch + `BanPolicy::Relaxed`).
+//! The former §15 ("Net-Crate Ownership + Feature Gate") was deleted by `c7512b2269`;
+//! its ownership table now lives in doc/src/arch/sync-conformance.md and its
+//! feature-gate half in doc/src/arch/wallet-vs-daemon.md.
 //!
 //! The wallet uses `dwow_core::net::P2p` via the `net-wallet` feature for
 //! all P2P networking. This module provides the TOML-direct config struct

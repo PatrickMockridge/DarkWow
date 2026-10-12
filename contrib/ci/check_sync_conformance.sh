@@ -28,31 +28,6 @@
 # Zero output on success; explicit FAIL message on violation.
 set -euo pipefail
 
-if [ "${1:-}" = "--self-test" ]; then
-    # Negative control: point the gate at an empty tree, where no sync source
-    # file carries a header. It must FAIL. Before this control existed the gate
-    # had no way to show it could report anything at all.
-    TMP="$(mktemp -d)"
-    trap 'rm -rf "$TMP"' EXIT
-    OUT="$(ROOT="$TMP" "$0" 2>&1)" && {
-        echo "SELF-TEST FAIL: the header check did not notice an empty tree" >&2
-        exit 1
-    }
-    if ! printf '%s' "$OUT" | grep -q 'missing .//! Spec: sync-protocol.md'; then
-        echo "SELF-TEST FAIL: the gate failed, but not on the missing header" >&2
-        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
-        exit 1
-    fi
-    echo "SELF-TEST PASS: a missing '//! Spec:' header is reported"
-    exit 0
-fi
-
-FAILED=0
-# Overridable so the negative control above can point the checks at a temp tree.
-ROOT="${ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
-
-echo "=== Sync conformance (header convention + §14.1 dispatch matrix) ==="
-
 # The sync source files (one per ρ-process role + its supporting types).
 # Each carries a `//! Spec:` header mapping it to its clause(s).
 SYNC_FILES=(
@@ -67,16 +42,108 @@ SYNC_FILES=(
     "bin/dww/src/p2p_wallet.rs"
 )
 
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+
+    # Control 1 — an empty tree, where no sync source file carries a header.
+    OUT="$(ROOT="$TMP" "$0" 2>&1)" && {
+        echo "SELF-TEST FAIL: the header check did not notice an empty tree" >&2
+        exit 1
+    }
+    if ! printf '%s' "$OUT" | grep -q 'missing .//! Spec: sync-protocol.md'; then
+        echo "SELF-TEST FAIL: the gate failed, but not on the missing header" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+
+    # Control 2 — a tree whose headers all exist but one cites a clause the
+    # document does not contain. Added 2026-10-12 with the clause-resolution
+    # check, because the header check alone PASSED while files cited §14.3/§15/§6
+    # (F-329/F-330). A gate that cannot report a dead clause number is the defect
+    # it is meant to catch.
+    mkdir -p "$TMP/doc/src/arch"
+    printf '## 1. A\n## 7. B\n' > "$TMP/doc/src/arch/sync-protocol.md"
+    for f in "${SYNC_FILES[@]}"; do
+        mkdir -p "$TMP/$(dirname "$f")"
+        printf '//! Spec: sync-protocol.md §1\n' > "$TMP/$f"
+    done
+    # The number is built here rather than written literally: scripts/check-authority-resolves.sh
+    # scans the gate scripts for `<document> §N` citations, and a literal dead one in
+    # this file would be reported as a finding against this gate (it excludes only
+    # itself, for exactly this reason).
+    PLANTED=99
+    printf '//! Spec: sync-protocol.md §%s (planted dead clause)\n' "$PLANTED" \
+        > "$TMP/bin/dww/src/p2p_wallet.rs"
+    OUT="$(ROOT="$TMP" "$0" 2>&1)" && {
+        echo "SELF-TEST FAIL: a header citing a non-existent clause was not reported" >&2
+        exit 1
+    }
+    if ! printf '%s' "$OUT" | grep -q 'does not have'; then
+        echo "SELF-TEST FAIL: the gate failed, but not on the dead clause number" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    echo "SELF-TEST PASS: a missing header and a dead clause number are both reported"
+    exit 0
+fi
+
+FAILED=0
+# Overridable so the negative controls above can point the checks at a temp tree.
+ROOT="${ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+
+echo "=== Sync conformance (header convention + §14.1 dispatch matrix) ==="
+
+# The clause numbers `sync-protocol.md` actually has, from its own headings.
+# Used below to resolve a file's cited clause. `c7512b2269` deleted §6, §15 and
+# §16 and renumbered §14, so a header that was right once now cites a section
+# the document does not contain — and the header check alone cannot see that.
+SPEC_DOC="$ROOT/doc/src/arch/sync-protocol.md"
+SPEC_NUMS=""
+if [ -f "$SPEC_DOC" ]; then
+    SPEC_NUMS="$(grep -oE '^#{1,6}[[:space:]]+[0-9]+(\.[0-9]+)*' "$SPEC_DOC" \
+        | grep -oE '[0-9]+(\.[0-9]+)*' | sort -u)"
+fi
+
 for f in "${SYNC_FILES[@]}"; do
     echo -n "[conformance] $f ... "
-    if grep -q "Spec: sync-protocol.md" "$ROOT/$f" 2>/dev/null; then
-        echo "PASS"
-    else
+    if ! grep -q "Spec: sync-protocol.md" "$ROOT/$f" 2>/dev/null; then
         echo "FAIL"
         echo "  missing '//! Spec: sync-protocol.md §N' module header"
         echo "  Repository convention, not a spec clause (see this script's header):"
         echo "  a sync source file declares its clause in a '//! Spec:' module header."
         FAILED=1
+        continue
+    fi
+    if [ ! -f "$SPEC_DOC" ]; then
+        echo "PASS  (clause numbers NOT resolved — $SPEC_DOC not readable)"
+        continue
+    fi
+    # Every `§N`, `§N.M` and range endpoint (`§A-§B`, expanded) must name a heading.
+    header="$(grep -m1 'Spec: sync-protocol.md' "$ROOT/$f")"
+    BAD=""
+    for tok in $(printf '%s' "$header" \
+        | grep -oE '§ ?[0-9]+(\.[0-9]+)*(-§ ?[0-9]+(\.[0-9]+)*)?' \
+        | sed 's/§ *//g'); do
+        lo="${tok%%-*}"
+        hi="${tok##*-}"
+        if [ "$lo" = "$hi" ] || printf '%s' "$lo$hi" | grep -q '\.'; then
+            candidates="$lo $hi"
+        else
+            candidates="$(seq "$lo" "$hi" | tr '\n' ' ')"
+        fi
+        for n in $candidates; do
+            printf '%s\n' "$SPEC_NUMS" | grep -qx "$n" || BAD="$BAD §$n"
+        done
+    done
+    if [ -n "$BAD" ]; then
+        echo "FAIL"
+        echo "  cites$BAD — sync-protocol.md does not have that clause."
+        echo "  Either the clause moved (cite where it moved to) or it was deleted"
+        echo "  (drop it and say so). \`c7512b2269\` deleted §6/§15/§16."
+        FAILED=1
+    else
+        echo "PASS"
     fi
 done
 

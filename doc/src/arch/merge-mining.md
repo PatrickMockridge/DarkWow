@@ -19,7 +19,7 @@ DarkWow merge mining uses three separate protocols: mm_rpc JSON-RPC between p2po
 ### How It Works
 
 1. p2pool connects to dwowd's mm_rpc JSON-RPC handler (port 31348)
-2. p2pool calls `merge_mining_get_aux_block` to get a DarkWow block template (227-byte mining blob with nonce=0)
+2. p2pool calls `merge_mining_get_aux_block` to get a DarkWow block template (292-byte mining blob with nonce=0)
 3. p2pool injects the aux data into Monero blocks and miners find RandomX solutions
 4. When a Monero block is found with DarkWow aux data, p2pool calls `merge_mining_submit_solution`
 5. dwowd reconstructs the block with the found nonce, verifies RandomX PoW, and inserts the block into the linear chain
@@ -141,10 +141,10 @@ itself at `mm_rpc.rs:574` (`TODO(HAZOP F3)`).
 > configures it and stated in the log for one that does not.
 
 Configuration flags `--finality-enable-monero` and `--monerod-rpc-url` exist and are wired into
-`FinalityConfig`. See `OBL-C67` in the [verification obligation register](verification-hazop.md).
-
-Configuration flags `--finality-enable-monero` and `--monerod-rpc-url` exist and are wired into
-`FinalityConfig`. See `OBL-C67` in the [verification obligation register](verification-hazop.md).
+`FinalityConfig`. See `OBL-C67` (**CLOSED** — the anchor is derived and enforced) and `OBL-C80`
+(**ACCEPTED-WITH-REASON**, severity `C`: with `monerod_url` unset — its default — the admission
+policy checks nothing, and the node says so in its log) in the
+[verification obligation register](verification-hazop.md).
 
 ### Finality Configuration
 

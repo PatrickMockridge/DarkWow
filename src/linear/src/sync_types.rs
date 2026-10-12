@@ -18,23 +18,26 @@
 
 //! Shared sync protocol message types.
 //!
-//! Spec: sync-protocol.md §2-§7 (message authority, nominal types, genesis_hash, MAX_BYTES, barbs, wire format).
+//! Spec: sync-protocol.md §2-§5, §7 (message authority, nominal types, MAX_BYTES, genesis_hash, wire format).
 //!
-//! ## Protocol Invariants (sync-protocol.md §1-§7)
+//! ## Protocol Invariants (sync-protocol.md §2-§5, §7)
 //!
-//! §1 — **Message Type Authority.** These types are the single source of truth
+//! §2 — **Message Type Authority.** These types are the single source of truth
 //! for the linear sync wire protocol. All nodes (wallet, mining, observer)
 //! import from this module. No node defines its own copy.
 //!
-//! §2 — **Nominal Types on the Wire.** Every consensus scalar uses its nominal
+//! §3 — **Nominal Types on the Wire.** Every consensus scalar uses its nominal
 //! newtype (`BlockHeight`, not `u64`). Serde is transparent (JSON number).
 //!
-//! §3 — **genesis_hash Validation.** Every `Tip` carries `genesis_hash:
+//! §4 — **MAX_BYTES (unified-rail frame bound).** Canonical values: GetTip=256,
+//! Tip=512, GetBlocks=256, Blocks=32MiB.
+//!
+//! §5 — **genesis_hash Validation.** Every `Tip` carries `genesis_hash:
 //! Option<String>`. Receivers MUST compare against local genesis and skip
 //! mismatched peers.
 //!
-//! §4 — **Unified MAX_BYTES.** Canonical values: GetTip=256, Tip=512,
-//! GetBlocks=256, Blocks=32MiB.
+//! The former §6 ("Message → Barb Declaration") was deleted by `c7512b2269`
+//! along with §15/§16; the document now runs §5 straight to §7.
 //!
 //! (This module doc read `Blocks=16MiB` until 2026-09-25. The constant moved to
 //! 32 MiB and only the comment beside the constant was updated — the same
@@ -391,7 +394,7 @@ mod p2p_impls {
 mod tests {
     use super::*;
 
-    /// §6: Wire Format Stability — golden-file test.
+    /// §7: Wire Format — golden-file test.
     /// Any change to a sync message type that alters the JSON shape breaks this test.
     #[test]
     fn wire_format_golden() {

@@ -97,7 +97,8 @@ dwow_wallet contract invoke dao_escrow enable_drain_protection --params params.j
 - **Algorithm:** RandomX (rx/0)
 - **Difficulty:** 1 (very low, shares found frequently)
 - **Block reward:** 20 DRKW per mined block
-- **Blob structure:** 43 bytes = [2 byte padding][40 byte header with nonce at offset 39]
+- **Blob structure:** 292 bytes (`BlockHeader::MINING_BLOB_LEN`) — see
+  [stratum.md §292-Byte Mining Blob Layout](arch/consensus/stratum.md#292-byte-mining-blob-layout)
 - **Target:** 8 bytes MSB of 32-byte target, padded with zeros to 32 bytes for comparison
 - **Nonce:** 4 bytes at blob byte offset 39 (little-endian u32)
 

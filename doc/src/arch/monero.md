@@ -229,8 +229,10 @@ enforce — `should_enforce` reads only the mode and, in `Signaled` mode, the `F
 they are excluded from the mining blob, so a relaying peer sets them freely; since 2026-09-22 they also do
 not confer finality, which now requires a verified Caribina anchor proof. And the Monero anchor fields
 are never populated in production (`mm_rpc.rs:630-631`), so `FINALITY_MONERO` has never been set on a real
-block. See `OBL-C67` (open, and a block-minting gap rather than a finality one), `OBL-C66`
-(settlement, accepted-with-reason) and `OBL-C63` (closed).
+block. See `OBL-C67` (closed — the anchor is now derived and enforced), `OBL-C80`
+(**accepted-with-reason**, severity `C`, and a block-minting gap rather than a finality one: with
+`monerod_url` unset the admission policy checks nothing), `OBL-C66` (settlement,
+accepted-with-reason) and `OBL-C63` (closed).
 
 ## See Also
 

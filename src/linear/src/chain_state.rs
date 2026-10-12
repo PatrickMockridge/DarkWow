@@ -71,7 +71,7 @@ pub enum BlockConnectOutcome {
     UncleExtended,
     /// Block is already in the chain (height below the current tip) — a
     /// duplicate relayed by a peer. NOT a protocol violation; the caller SHALL
-    /// skip it and SHALL NOT punish/ban the peer. Spec: sync-protocol.md §14.3.
+    /// skip it and SHALL NOT punish/ban the peer. Spec: sync-protocol.md §14.1.
     AlreadyKnown,
 }
 
@@ -918,7 +918,7 @@ impl CChainState {
         // This is normal P2P relay, not a protocol violation: skip it and do
         // NOT re-execute (re-running pow_reward_v1 on an already-committed
         // block hits "Duplicate commitment in output"). Spec: sync-protocol.md
-        // §14.3 — a duplicate SHALL be skipped, never banned.
+        // §14.1 — a duplicate SHALL be skipped, never banned.
         if block_height < current_height {
             return Ok(BlockConnectOutcome::AlreadyKnown);
         }
@@ -1577,7 +1577,7 @@ impl CChainState {
 
     /// Disconnect the canonical block at `height`, reversing all state changes.
     ///
-    /// Spec: sync-protocol.md §19.4 (contracts-tree `CBlockUndo` replay) + §19.2/§19.3
+    /// Spec: sync-protocol.md §19.1 (contracts-tree `CBlockUndo` replay) + §19.2
     /// (disconnect step of `DisconnectBlock`/`ConnectBlock`). This is the reverse of
     /// `connect_block` for a canonical extension. All removals execute in a single
     /// cross-tree sled transaction. Serialisation against concurrent block application

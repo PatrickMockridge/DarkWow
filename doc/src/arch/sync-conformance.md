@@ -29,20 +29,29 @@ One ρ-calculus process net, three roles, one wire path ([§1](sync-protocol.md#
 | `bin/dwowd/src/proto/linear_broadcast.rs` | §11 | one-hop block broadcast (remains on the net rail) |
 | `bin/dwowd/src/proto/mod.rs` | §8.6, §11 | port derivation (`inbound + offset`), `BroadcastTx` tx sink |
 | `bin/dww/src/sync_task.rs` | §1, §13, §17 | wallet `SyncClient` + `BlockSink`; follows the longest chain |
-| `bin/dww/src/p2p_wallet.rs` | §15 | wallet `net-wallet`-tier config (`P2pWalletConfig`, `WalletStream`) |
+| `bin/dww/src/p2p_wallet.rs` | §14.1 | wallet `net-wallet`-tier config (`P2pWalletConfig`, `WalletStream`) |
 
-## Net-crate ownership (§14 / §15)
+## Net-crate ownership (§14.1)
 
 These clauses describe `src/net/` as first-party code (owned, not an upstream dependency); they
-are documented in §14/§15 rather than per-file `//! Spec:` headers:
+are documented in §14.1 rather than per-file `//! Spec:` headers:
 
 | File | Clause | What it implements |
 |------|--------|--------------------|
 | `src/net/hosts.rs` | §14.1 | `HostColor` quarantine states + `BLACKLIST_EXPIRY_SECS` expiry (`refresh`) |
-| `src/net/channel.rs` | §14.2 | `ban()` = move to `Black`; SESSION_OUTBOUND-gated magic/version bans |
-| `src/net/settings.rs` | §14.2, §15 | `BanPolicy::{Strict, Relaxed}` runtime gate |
-| `src/net/protocol/protocol_version.rs` | §14.2 | version-mismatch ban (SESSION_OUTBOUND-gated) |
-| `bin/dww/src/config.rs` | §14.2, §15 | wallet sets `BanPolicy::Relaxed` (never bans its configured peers) |
+| `src/net/channel.rs` | §14.1 | `ban()` = move to `Black`; SESSION_OUTBOUND-gated magic/version bans |
+| `src/net/settings.rs` | §14.1 | `BanPolicy::{Strict, Relaxed}` runtime gate |
+| `src/net/protocol/protocol_version.rs` | §14.1 | version-mismatch ban (SESSION_OUTBOUND-gated) |
+| `bin/dww/src/config.rs` | §14.1 | wallet sets `BanPolicy::Relaxed` (never bans its configured peers) |
+
+This table previously cited `§14.2`/`§14.3` for the ban-policy rows and a `§15` ("Net-Crate
+Ownership + Feature Gate") for the feature-gate rows. Neither section exists: `c7512b2269`
+("collapse node sync to a wallet-shaped pull loop") deleted §15 and folded the former §14.1–§14.3
+into a single **§14.1 Command dispatch matrix + unknown-command drain**, which is where `ban()`,
+`HostColor` and the wallet/node `BanPolicy` difference are stated today. The feature-gate half of
+the old §15 is documented at
+[`type-system.md` §10.1 Three-tier feature gate as ρ-process hierarchy](type-system.md#10-1-three-tier-feature-gate-as-process-hierarchy)
+and in [`wallet-vs-daemon.md`](wallet-vs-daemon.md).
 
 ## Safety properties → witnesses (§9 / §10)
 

@@ -80,7 +80,7 @@ to ensure precise integer formatting that xmrig's rapidjson parser accepts:
     "result": {
         "id": "<client_id>",
         "job": {
-            "blob": "<260-byte hex-encoded mining blob>",
+            "blob": "<292-byte hex-encoded mining blob>",
             "job_id": "linear-job-<height>",
             "target": "FFFFFFFF<target_hex>",
             "algo": "rx/0",
@@ -97,7 +97,7 @@ to ensure precise integer formatting that xmrig's rapidjson parser accepts:
 | Field | Description |
 |-------|-------------|
 | `id` | Stratum client ID: `"{agent}-{timestamp_nanos}"` |
-| `blob` | Hex-encoded 260-byte mining blob (header with nonce=0) |
+| `blob` | Hex-encoded 292-byte mining blob (header with nonce=0) |
 | `job_id` | `"linear-job-{height}"` — must match in submit |
 | `target` | Encoded difficulty target (see Target Encoding below) |
 | `algo` | Always `"rx/0"` |
@@ -153,11 +153,13 @@ Status values: `"OK"` (accepted), `"rejected"` (PoW invalid), `"stale"`
    mempool (`mempool.mark_mined`)
 7. **Push** — generate new template, notify all stratum clients via publisher
 
-## 260-Byte Mining Blob Layout
+## 292-Byte Mining Blob Layout
 
 The mining blob is a compact binary serialization of `BlockHeader`. It is what
-miners hash with RandomX — the PoW covers all fields except anchor data (which
-is set after mining).
+miners hash with RandomX — the PoW covers all fields except the anchor fields
+that are set after mining. `anchor_owner` is the deliberate exception among them
+and **is** inside the blob (bytes 260..292): it is generated before mining, so it
+can be in the preimage, and it is what authenticates the anchor.
 
 | Offset | Size | Field | Encoding |
 |--------|------|-------|----------|
@@ -176,7 +178,8 @@ is set after mining).
 | 195 | 32 | `nullifier_root` | 32 bytes |
 | 227 | 1 | `pow_source` | u8 discriminator (0x00 = Native, 0x01 = Monero) |
 | 228 | 32 | `miner` | 32 bytes (declared mining key) |
-| **260** | | **Total** | |
+| 260 | 32 | `anchor_owner` | Ed25519 public key (generated before mining; **inside** the preimage) |
+| **292** | | **Total** | |
 
 Fields **excluded** from the mining blob (set after PoW is found):
 `anchor_tx_id`, `anchor_monero_height`, `anchor_monero_hash`, `finality_flags`, `fee_window_flags`.
