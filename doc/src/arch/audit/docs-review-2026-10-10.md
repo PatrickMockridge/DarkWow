@@ -1300,4 +1300,21 @@ F-341: doc:doc/src/arch/type-system.md@38e050a123
      edit. And one correction to my own edit is recorded in the commit: I wrote that the pair-proving
      conjunction lived in `Inversion.lean` from the shape of a neighbouring citation, and it is in
      `Distinction.lean` — the document was right. -->
+F-333: partial:the block-anchor leaf formula this row names is no longer in the document, and no doc under doc/src carries it@630cd0cfcc
+F-342: doc:doc/src/arch/contract-wasm-type-system.md@630cd0cfcc
+F-343: doc:doc/src/arch/contract-wasm-type-system.md@630cd0cfcc
+F-344: doc:doc/src/arch/contract-wasm-type-system.md@630cd0cfcc
+F-345: doc:doc/src/arch/contract-wasm-type-system.md#a42-...@630cd0cfcc
+F-346: doc:doc/src/arch/contract-wasm-type-system.md#c94-ceilingderivationlean@630cd0cfcc
+<!-- F-345 is this slice's substantive row: the ACL tables granted `Update` for two host functions and the ACLs
+     allow `Deploy`/`Metadata`/`Exec` only, so a contract built from the table fails at runtime with
+     `CALLER_ACCESS_DENIED` — a table granting a permission the host does not. F-344's signature was the one of
+     four rows in its table that disagreed with the macro, and the other three were already right. F-346 crossed
+     `O_CEILING`'s derivation with `W_CEILING`'s subject. F-333 is stamped `partial:` because what it names is
+     **gone**, not corrected: no document under `doc/src` carries a block-anchor leaf formula, `caribina.md` has
+     none, and `src/linear/src/caribina/` computes an Arweave data-item hash rather than a Poseidon leaf — so
+     the finding was accurate about a section that has since been restructured away, and the obligation the old
+     wording carried (a reader can recompute the anchor leaf) is now covered by *nothing in the docs*. That is
+     recorded rather than repaired here, because reinstating a leaf the code does not have would be the worse
+     error. -->
 <!-- /promotion-log -->
