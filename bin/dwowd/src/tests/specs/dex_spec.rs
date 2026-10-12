@@ -102,24 +102,47 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
     let sig = || SecretKey::from_bytes([1u8; 32]).unwrap();
 
     // Deterministic locks (match CreateSwapCallData::new_deterministic / AcceptSwap).
-    // Both parties use secret `s`, so pubkey and blind are identical.
+    // Bob uses secret `s`, so his pubkey and blind are the same in every swap he accepts.
     let blind = poseidon_hash([s, pallas::Base::from(1u64)]);
     let pub_key = poseidon_hash([pallas::Base::from(7u64), s]);
-    let alice_lock = poseidon_hash([pallas::Base::from(4u64), pub_key, ot, pallas::Base::from(1000u64), pallas::Base::zero(), pallas::Base::zero(), blind]);
 
-    // Four distinct swaps, distinguished by Bob's request amount (swap_id = H(4, alice_lock, rt, bob_amount)).
+    // **Alice (the proposer) needs a distinct identity per swap, and until 2026-10-12 she did not
+    // have one.** `create_swap` derives `proposer_nullifier = H(1, secret, lock_commitment)` and
+    // `create_swap`'s apply stores it as a spend-once marker (`db_mark_spent`); both `execute_swap*`'s
+    // and `cancel_swap`'s apply delete it (`db_del`); and `cancel_swap`'s exec refuses a swap whose
+    // proposer marker is gone (`db_contains_key`). All four swaps offered `ot/1000` under the one
+    // secret `s`, so they shared one lock and therefore one nullifier: the first execution spends the
+    // shared marker, and wherever the rows execute before they cancel, the `CancelSwapV1` row then
+    // reports `[CancelSwapV1] Error: Nullifier does not match any participant`. Four independent
+    // propositions are four independent proposers — each gets its own secret, and so its own lock and
+    // nullifier. Bob keeps `s`: his locks already differ by request amount.
+    let alice_lock_of = |secret: pallas::Base| {
+        let blind = poseidon_hash([secret, pallas::Base::from(1u64)]);
+        let pub_key = poseidon_hash([pallas::Base::from(7u64), secret]);
+        poseidon_hash([pallas::Base::from(4u64), pub_key, ot, pallas::Base::from(1000u64), pallas::Base::zero(), pallas::Base::zero(), blind])
+    };
+    let s_e = pallas::Base::from(101u64);
+    let s_b = pallas::Base::from(102u64);
+    let s_c = pallas::Base::from(103u64);
+    let s_d = pallas::Base::from(104u64);
+    let (alice_lock_e, alice_lock_b, alice_lock_c, alice_lock_d) =
+        (alice_lock_of(s_e), alice_lock_of(s_b), alice_lock_of(s_c), alice_lock_of(s_d));
+
+    // Four distinct swaps, distinguished by Alice's lock and Bob's request amount
+    // (swap_id = H(4, alice_lock, rt, bob_amount)).
     let mk_bob_lock = |amount: u64| {
         poseidon_hash([pallas::Base::from(4u64), pub_key, rt, pallas::Base::from(amount), pallas::Base::zero(), pallas::Base::zero(), blind])
     };
-    let mk_swap_id = |bob_lock: pallas::Base, amount: u64| {
+    let mk_swap_id = |alice_lock: pallas::Base, amount: u64| {
         poseidon_hash([pallas::Base::from(4u64), alice_lock, rt, pallas::Base::from(amount)])
     };
 
-    // Swap E (Create/Accept/Execute endpoints, bob=500), B (fee, bob=600), C (slippage, bob=700), D (cancel, bob=800).
-    let (bob_lock_e, swap_id_e) = (mk_bob_lock(500), mk_swap_id(mk_bob_lock(500), 500));
-    let (bob_lock_b, swap_id_b) = (mk_bob_lock(600), mk_swap_id(mk_bob_lock(600), 600));
-    let (bob_lock_c, swap_id_c) = (mk_bob_lock(700), mk_swap_id(mk_bob_lock(700), 700));
-    let (bob_lock_d, swap_id_d) = (mk_bob_lock(800), mk_swap_id(mk_bob_lock(800), 800));
+    // Swap E (Create/Accept/Execute endpoints, bob=500), B (fee, bob=600), C (slippage, bob=700),
+    // D (cancel, bob=800). D is never accepted, so it needs no Bob's-side lock.
+    let (bob_lock_e, swap_id_e) = (mk_bob_lock(500), mk_swap_id(alice_lock_e, 500));
+    let (bob_lock_b, swap_id_b) = (mk_bob_lock(600), mk_swap_id(alice_lock_b, 600));
+    let (bob_lock_c, swap_id_c) = (mk_bob_lock(700), mk_swap_id(alice_lock_c, 700));
+    let swap_id_d = mk_swap_id(alice_lock_d, 800);
 
     let otc_func_id = FuncRef { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, func_code: 0x04 }.to_func_id().inner();
 
@@ -202,18 +225,19 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
 
                 // Pre-create the swaps the Execute/Cancel endpoints target.
                 // Swap B (accepted, for ExecuteSwapFee) and C (accepted, for Slippage), D (created, for Cancel).
-                for (bob_lock, bob_amount, accept) in [
-                    (bob_lock_b, 600u64, true),
-                    (bob_lock_c, 700u64, true),
-                    (bob_lock_d, 800u64, false),
+                // Each is proposed by Alice under her own secret/lock (`s_b`/`s_c`/`s_d`), so the three
+                // create calls do not contend for one spend-once nullifier; Bob (`s`) accepts B and C.
+                for (proposer_secret, alice_lock, bob_amount, accept) in [
+                    (s_b, alice_lock_b, 600u64, true),
+                    (s_c, alice_lock_c, 700u64, true),
+                    (s_d, alice_lock_d, 800u64, false),
                 ] {
-                    let create = h.create_swap(&[], s, ot, 1000, rt, bob_amount, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let create = h.create_swap(&[], proposer_secret, ot, 1000, rt, bob_amount, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(chain.block()?.with_call(cid, h, &create.call_data, vec![create.proof.clone()])?.submit())?;
                     if accept {
                         let a = h.accept_swap(&[], create.public_inputs.swap_id, alice_lock, s, rt, bob_amount, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         smol::block_on(chain.block()?.with_call(cid, h, &a.call_data, vec![a.proof.clone()])?.submit())?;
                     }
-                    let _ = bob_lock;
                 }
                 Ok(())
             }
@@ -227,12 +251,12 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                 generate_with_coinbase: None,
                 verify_state: dex_vs_swap(swap_id_e),
                 generate: Box::new(move || {
-                    let r = h.create_swap(&[], s, ot, 1000, rt, 500, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.create_swap(&[], s_e, ot, 1000, rt, 500, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             mk_ep("AcceptSwapV1", true, Box::new(move || {
-                let r = h.accept_swap(&[], swap_id_e, alice_lock, s, rt, 500, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.accept_swap(&[], swap_id_e, alice_lock_e, s, rt, 500, sig()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
             EndpointSpec {
@@ -251,7 +275,7 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                         // them, then each child is proven against the commitment the parent returns.
                         let (c0, c0_plan, c0_nonce) = pn_transfer_prepare(pn, &n[0], 1000)?;
                         let (c1, c1_plan, c1_nonce) = pn_transfer_prepare(pn, &n[1], 500)?;
-                        let r = h.execute_swap(&[c0.clone(), c1.clone()], s, ot, 1000, alice_lock, s, rt, 500, bob_lock_e, 499, otc_func_id, otc_func_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.execute_swap(&[c0.clone(), c1.clone()], s_e, ot, 1000, alice_lock_e, s, rt, 500, bob_lock_e, 499, otc_func_id, otc_func_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let d0 = c0_plan.prove(r.commitment, c0_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let d1 = c1_plan.prove(r.commitment, c1_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
@@ -276,7 +300,7 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                     // first execution found, and all four are the same sentence — the rows were
                     // written against a fixture that had never been executed.
                     let (child, child_plan, child_nonce) = pn_transfer_prepare(pn, &n[6], 1000)?;
-                    let r = h.cancel_swap(&[child.clone()], swap_id_d, alice_lock, s, ot, 1000, rt, 800).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let r = h.cancel_swap(&[child.clone()], swap_id_d, alice_lock_d, s_d, ot, 1000, rt, 800).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     let debris = child_plan.prove(r.commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult {
                         children: vec![ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child.data, proofs: debris.proofs, children: vec![] }],
@@ -298,7 +322,7 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let (c0, c0_plan, c0_nonce) = pn_transfer_prepare(pn, &n[2], 1000)?;
                         let (c1, c1_plan, c1_nonce) = pn_transfer_prepare(pn, &n[3], 500)?;
-                        let r = h.execute_swap_fee(&[c0.clone(), c1.clone()], s, ot, pallas::Base::from(1000u64), alice_lock, s, rt, pallas::Base::from(600u64), bob_lock_b, pallas::Base::from(599u64), pallas::Base::from(30u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.execute_swap_fee(&[c0.clone(), c1.clone()], s_b, ot, pallas::Base::from(1000u64), alice_lock_b, s, rt, pallas::Base::from(600u64), bob_lock_b, pallas::Base::from(599u64), pallas::Base::from(30u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let d0 = c0_plan.prove(r.commitment, c0_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let d1 = c1_plan.prove(r.commitment, c1_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
@@ -325,7 +349,7 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let (c0, c0_plan, c0_nonce) = pn_transfer_prepare(pn, &n[4], 1000)?;
                         let (c1, c1_plan, c1_nonce) = pn_transfer_prepare(pn, &n[5], 500)?;
-                        let r = h.execute_swap_slippage(&[c0.clone(), c1.clone()], s, ot, pallas::Base::from(1000u64), alice_lock, s, rt, pallas::Base::from(700u64), bob_lock_c, pallas::Base::from(699u64), pallas::Base::from(50u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let r = h.execute_swap_slippage(&[c0.clone(), c1.clone()], s_c, ot, pallas::Base::from(1000u64), alice_lock_c, s, rt, pallas::Base::from(700u64), bob_lock_c, pallas::Base::from(699u64), pallas::Base::from(50u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let d0 = c0_plan.prove(r.commitment, c0_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let d1 = c1_plan.prove(r.commitment, c1_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {

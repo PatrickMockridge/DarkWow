@@ -59,6 +59,18 @@ fn base_to_bytes(base: pallas::Base) -> [u8; 32] {
     base.to_repr()
 }
 
+/// Helper to narrow a `pallas::Base` back to the `u64` a builder was handed.
+///
+/// `fee_bps` and (for the fee arm) `fee` reach the contract as `u64`s and are proven as field
+/// elements, so a builder that widened them with `pallas::Base::from` must narrow them back for the
+/// params: the low eight little-endian bytes are exactly what the widening wrote.
+fn base_to_u64(base: pallas::Base) -> u64 {
+    let repr = base.to_repr();
+    let mut low = [0u8; 8];
+    low.copy_from_slice(&repr[..8]);
+    u64::from_le_bytes(low)
+}
+
 use dwow_dex_contract::client::{
     accept_swap::{create_accept_swap_proof, AcceptSwapCallData, AcceptSwapPublicInputs},
     cancel_swap::{create_cancel_swap_proof, CancelSwapCallData, CancelSwapPublicInputs},
@@ -78,7 +90,8 @@ use dwow_dex_contract::client::{
     update_config::{create_update_config_proof, UpdateConfigCallData, UpdateConfigPublicInputs},
 };
 use dwow_dex_contract::model::{
-    AcceptSwapParams, CancelSwapParams, CreateSwapParams, ExecuteSwapParams,
+    AcceptSwapParams, CancelSwapParams, CreateSwapParams, ExecuteSwapFeeParams,
+    ExecuteSwapParams, ExecuteSwapSlippageParams,
 };
 
 /// DEX Harness for atomic swap testing
@@ -482,15 +495,48 @@ impl DexHarness {
             alice_secret, alice_token, alice_amount, alice_lock,
             bob_secret, bob_token, bob_amount, bob_lock, fill_amount, fee_bps,
         );
-        // `OBL-C198`: the public inputs first (this fixture writes them as the call data — see the
-        // note in the harness's history), then the commitment over the whole ordered set, then the
-        // proof. The pair the client derives is the stale `H(3, 0, 0)` in those bytes; the arm
-        // publishes the derived one, which is what the proof is bound to.
+        // `OBL-C198`: the params first, the commitment over the whole ordered set next, the proof
+        // last — the reverse order cannot bind to a real transaction.
+        //
+        // **The call data is `ExecuteSwapFeeParams::encode()`, and until 2026-10-12 it was not.**
+        // This builder alone wrote the *public inputs* as the call data: `[0x07]` followed by
+        // `public_inputs.to_vec()` — one selector byte plus `ExecuteSwapFeePublicInputs::to_vec`'s
+        // six field elements, `1 + 6 * 32 = 193` bytes. The arm decodes `ExecuteSwapFeeParams`
+        // (`execute_swap_fee.rs:54`) and that decode is two-sided — it refuses `data.len() < 241`,
+        // then requires exactly `233 + proof_len + 8 + 32`, i.e. 273 with the empty proof this
+        // builder sends (`model/mod.rs`). 193 satisfied neither, so the arm refused the body at
+        // `metadata` and no fee row could commit:
+        //
+        //     metadata() failed for contract <dex> … : ContractError(IoError("Unknown"))
+        //
+        // (the arm's own `ExecuteSwapFeeParams: too short` is reconstructed as `IoError("Unknown")`
+        // across the wasm boundary). That body also carried the client's stale `tx_binding =
+        // H(3, 0, 0)` — the value before `tx_commitment` is set; `OBL-C198` took `tx_binding` off the
+        // wire, so the arm derives it from the real transaction commitment and the params carry only
+        // `tx_nonce`. Nothing caught any of this because `dex_test_spec()` had no caller; every other
+        // builder in this file encodes its params — `bearer_bond`, `promissory_note`, and
+        // `execute_swap` just above — and this one now does too.
         let public_inputs = input.compute_public_inputs();
 
+        let params = ExecuteSwapFeeParams {
+            swap_id: base_to_bytes(public_inputs.swap_id),
+            alice_secret: base_to_bytes(alice_secret),
+            bob_secret: base_to_bytes(bob_secret),
+            alice_lock: to_cap_commitment(public_inputs.alice_lock),
+            bob_lock: to_cap_commitment(public_inputs.bob_lock),
+            alice_nullifier: to_nullifier(public_inputs.alice_nullifier),
+            bob_nullifier: to_nullifier(public_inputs.bob_nullifier),
+            fee_bps: base_to_u64(input.fee_bps),
+            proof: vec![], // placeholder — the arm decodes it and never reads it
+            // The circuit proves `fee = floor(fill_amount * fee_bps / 10000)` and publishes it as
+            // the fourth instance, so the params must carry the proven value, not one the caller
+            // asserted.
+            fee: base_to_u64(public_inputs.fee),
+            tx_nonce: public_inputs.tx_nonce,
+        };
+
         let mut call_data = vec![0x07];
-        call_data.extend_from_slice(&public_inputs.to_vec().iter()
-            .flat_map(|x| x.to_repr().to_vec()).collect::<Vec<u8>>());
+        call_data.extend_from_slice(&params.encode());
 
         let mut calls = children.to_vec();
         calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
@@ -524,12 +570,32 @@ impl DexHarness {
             alice_secret, alice_token, alice_amount, alice_lock,
             bob_secret, bob_token, bob_amount, bob_lock, fill_amount, slippage_bps,
         );
-        // `OBL-C198`: as `execute_swap_fee` above.
+        // `OBL-C198`: as `execute_swap_fee` above — the params first, the commitment next, the proof
+        // last. **This builder carried the same defect.** It wrote `[0x08]` followed by
+        // `public_inputs.to_vec()` — `1 + 5 * 32 = 161` bytes, `ExecuteSwapSlippagePublicInputs`
+        // carrying five field elements — where the arm decodes `ExecuteSwapSlippageParams` and its
+        // decode refuses `data.len() < 241` (273 with the empty proof sent here). The params are now
+        // encoded here, so the body is the 273 bytes the arm reads.
         let public_inputs = input.compute_public_inputs();
 
+        let params = ExecuteSwapSlippageParams {
+            swap_id: base_to_bytes(public_inputs.swap_id),
+            alice_secret: base_to_bytes(alice_secret),
+            bob_secret: base_to_bytes(bob_secret),
+            alice_lock: to_cap_commitment(public_inputs.alice_lock),
+            bob_lock: to_cap_commitment(public_inputs.bob_lock),
+            alice_nullifier: to_nullifier(public_inputs.alice_nullifier),
+            bob_nullifier: to_nullifier(public_inputs.bob_nullifier),
+            slippage_bps: base_to_u64(input.slippage_bps),
+            proof: vec![], // placeholder — the arm decodes it and never reads it
+            // The slippage arm publishes no `fee` instance (`ExecuteSwapSlippagePublicInputs`
+            // carries none), so this field is decoded and read by nobody.
+            fee: 0,
+            tx_nonce: public_inputs.tx_nonce,
+        };
+
         let mut call_data = vec![0x08];
-        call_data.extend_from_slice(&public_inputs.to_vec().iter()
-            .flat_map(|x| x.to_repr().to_vec()).collect::<Vec<u8>>());
+        call_data.extend_from_slice(&params.encode());
 
         let mut calls = children.to_vec();
         calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });

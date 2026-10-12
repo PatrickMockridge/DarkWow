@@ -218,10 +218,23 @@ impl PromissoryNoteHarness {
         // at the next leaf position, in the order the contract's `apply_register_type` appends it —
         // which is the order the caller submits the registrations in, and the caller submits each
         // one before building the next.
-        self.registered
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(asset_id);
+        //
+        // **Deduplicated by `asset_id`, and that is not a tidy-up — it is what makes the list equal
+        // the chain's registry.** This method is not "a token was registered"; it is "a registration
+        // proof was built", and callers build one without submitting it: `promissory_note_spec.rs`
+        // calls it at spec-construction to obtain `asset_id` and the tree key (`:47`), then a
+        // `RegisterTypeV1` **row** calls it again with the same asset to actually submit it (`:128`).
+        // The chain sees one append; a list that counted both would describe a three-leaf registry
+        // against the chain's two, and the `IssueV1` proof would publish a root the contract does
+        // not hold — `TokenNotRegistered`. The row also runs once per chain, so without this the
+        // list would grow again on the second pass. The registry holds distinct asset ids; a repeat
+        // is the same leaf either way.
+        {
+            let mut reg = self.registered.lock().unwrap_or_else(|e| e.into_inner());
+            if !reg.contains(&asset_id) {
+                reg.push(asset_id);
+            }
+        }
 
         Ok(RegisterTypeResult {
             call_data,
