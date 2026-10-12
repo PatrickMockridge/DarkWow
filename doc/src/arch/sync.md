@@ -96,9 +96,15 @@ chain_state.connect_block(&block).await?;
 | `verify_zkp` | `src/zk/verifier.rs` | Pure ZK verification function |
 | `ZkVerifyResult` | `src/zk/verifier.rs` | Verification result enum |
 | `ZkBinEntry` | `src/linear/src/chain_state.rs` | `(ContractId, String, Vec<u8>, Vec<pallas::Base>)` |
-| `ExtendedProposalMessage` | `bin/dwowd/src/proto/protocol_proposal.rs` | P2P message with zkbin_data |
+| `ExtendedProposalMessage` | *(removed — see note below)* | P2P message with zkbin_data |
 | `verify_block` | `bin/dwowd/src/block_acceptor.rs` | Verifies header + ZK proofs |
-| `handle_receive_proposal` | `bin/dwowd/src/proto/protocol_proposal.rs` | Calls verify_block before append |
+| `handle_receive_proposal` | *(removed — see note below)* | Calls verify_block before append |
+
+> **`protocol_proposal.rs` does not exist in the tree.** The pre-migration P2P proposal module and its
+> message types (`ExtendedProposalMessage`, `handle_receive_proposal`) were removed in the linear
+> migration; block propagation is now `bin/dwowd/src/proto/linear_broadcast.rs` and the sync client is
+> `bin/dwowd/src/proto/linear_sync_client.rs`, and no proposal message survives. The `## P2P Protocol`
+> section below is the record of the removed design.
 
 ## API
 

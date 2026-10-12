@@ -514,8 +514,8 @@ holds seven files and the map named two. A File Map that omits files gives the s
 nothing to decide their level, location rule or assertion requirements against, which is
 a gap in the map rather than in the tests — noted rather than filled with a rule I would
 be inventing. Their level assignment is still open.
-| Relayer unit tests (Level 1) | `bin/universal_relayer/src/` |
-| Relayer lightweight test runner | `bin/universal_relayer/test_relayer_lightweight.sh` |
+| Relayer unit tests (Level 1) | removed with the `universal_relayer` crate (`F-605`); no replacement |
+| Relayer lightweight test runner | removed with the `universal_relayer` crate (`F-605`); no replacement |
 | Daemon integration tests | `bin/dwowd/src/tests/` |
 | **Pre-production bridge tests** | `bin/dwowd/src/tests/wallet_integration.rs` (T3, canonical call failure), `bin/dwowd/src/tests/merge_mining.rs` (merge-mined block acceptance + determinism) |
 | **Wallet transfer/spend acceptance (Level 1.5)** | `bin/dwowd/src/tests/wallet_transfer_integration.rs` (`test_transfer_accepts_through_accept_block`) |

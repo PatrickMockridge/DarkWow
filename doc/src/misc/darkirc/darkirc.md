@@ -275,9 +275,10 @@ And send messages to yourself.
 
 ### Running a Fullnode
 
-See the script `script/run_node.sh` for an example of how to deploy
-a full node which does seed session synchronization, and accepts both
-inbound and outbound connections.
+The `run_node.sh` example this section used to cite was removed with the old
+`ircd2` crate and has no in-tree replacement. See `bin/darkirc/README.md` for
+the current instructions on deploying a full node which does seed session
+synchronization and accepts both inbound and outbound connections.
 
 ## Global Buffer
 

@@ -95,7 +95,7 @@ impl BoxRecord {
 | Box | `src/contract/box/src/model/mod.rs` | `PutParams`/`TakeParams` — fixed layout, validating constructors. (This row named a `BoxRecord` that the file does not contain — `F-621`.) |
 | Purse | `src/contract/purse/src/model/mod.rs` | `PurseFunction`'s params — fixed layout, Pedersen commitments. (This row named a `Purse` type; the file holds the `PurseFunction` enum in `lib.rs` and the params in the model.) |
 | Identity | `src/contract/identity/src/model/mod.rs` | Multi-type example with per-field validation |
-| Deployooor | `src/contract/deployooor/src/model/mod.rs` | Clean, simple params encode/decode |
+| Deployooor | `src/contract/deployooor/src/model.rs` | Clean, simple params encode/decode. (This row cited `model/mod.rs`; deployooor is the one crate whose model is the single file `model.rs`.) |
 
 ## 2. No `.unwrap()` in Entrypoint Code
 

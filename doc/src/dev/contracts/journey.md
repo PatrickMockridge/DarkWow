@@ -119,7 +119,7 @@ See the existing contracts for patterns. Specifically:
 
 ## 6. Write the client builder
 
-Client code in `src/client/mod.rs` builds transactions that users can submit.
+Client code in `src/contract/<name>/src/client/mod.rs` builds transactions that users can submit.
 The wallet uses these builders to construct and prove transactions.
 
 Use the typed wrapper constructors:

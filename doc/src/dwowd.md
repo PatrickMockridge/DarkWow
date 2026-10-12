@@ -409,7 +409,7 @@ rewards by declaring the same secret as the mining node in the shared `keys.toml
 | `bin/dwowd/src/rpc/stratum.rs` | Stratum protocol (login, submit) |
 | `bin/dwowd/src/rpc/miner.rs` | Dev mining RPC (mine_linear) |
 | `bin/dwowd/src/registry/model.rs` | Block template generation, plaintext coinbase |
-| `bin/dwowd/src/proto/linear_sync.rs` | P2P sync protocol |
+| `bin/dwowd/src/proto/linear_sync_client.rs` | P2P sync protocol |
 | `bin/dwowd/src/proto/linear_broadcast.rs` | P2P block broadcast |
 | `bin/dwowd/src/task/consensus_linear.rs` | Consensus task (placeholder) |
 | `src/runtime/vm_runtime.rs` | WASM VM runtime (Singlepass compiler, no module cache) |

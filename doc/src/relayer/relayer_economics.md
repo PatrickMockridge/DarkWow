@@ -2,7 +2,7 @@
 
 > **Design Document — Economic Layer Specification**
 >
-> The structs and mechanisms described here (`OnChainRelayer`, `StakePool`, `CombinedStakeProof`) are design concepts for planned on-chain relayer coordination. The current relayer implementation uses off-chain modules: `StakeManager` (`bin/universal_relayer/src/stake.rs`), `FeedManager` (`bin/universal_relayer/src/feed.rs`), `PoolManager` (`bin/universal_relayer/src/pool.rs`), and `CapitalDeployer` (`bin/universal_relayer/src/deployer.rs`).
+> The structs and mechanisms described here (`OnChainRelayer`, `StakePool`, `CombinedStakeProof`) are design concepts for planned on-chain relayer coordination. The off-chain modules this note used to name — `StakeManager`, `FeedManager`, `PoolManager` and `CapitalDeployer` — lived in the `universal_relayer` crate, which was deleted as dead scaffolding on 2026-09-19 (`F-605`); none of them exists in the tree today.
 >
 > **Hardening applied May 2026**: proportional slashing, fee caps, force settlement, and circuit breaker are now live in the bridge and endowment contracts. See [Security Audit](../contract/audit.md).
 

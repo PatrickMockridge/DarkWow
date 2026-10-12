@@ -96,8 +96,9 @@ The same correction reaches the 0x55 row's second clause: it said "range_check a
 safe", and today `less_than_or_equal` has **20 call sites across 14 `.zk` files**, so 37 is a count
 of something else that no command re-derives. The audit's own instrument is the gate —
 `scripts/check-circuit-instance-derivation.sh` — and its measured output is **0 comparison operands
-with no range check beneath them, in 0 circuits, with 1 declared exception** (`proofs/core/lead.zk`,
-registered per entry in `script/circuit_comparison_exceptions.txt`). Quote that command rather than
+with no range check beneath them, in 0 circuits, with no declared exception** — the `lead.zk` entry
+this line used to name was retired on 2026-09-24, when the circuit was deleted
+(`script/circuit_comparison_exceptions.txt` records why it could be). Quote that command rather than
 the phrase.
 
 ### Constraint Operations

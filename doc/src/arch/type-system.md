@@ -1443,8 +1443,8 @@ sync_barrier : Channel<()>
 
 The quarantine boundary SHALL be enforced at compile time: messages carrying
 blockchain barbs (↓spend, ↓nullify, ↓commit, ↓mine) SHALL NOT be routable
-through the event graph channel. The `BarbWitness` trait at
-`src/net/barb_trait.rs` provides the static check.
+through the event graph channel. The `ExhibitsBarb` trait at
+`src/barb.rs` provides the static check.
 
 Event graph as blockchain P2P substrate: blockchain events SHALL be wrapped
 in event content with marker byte `0x42` ('B' for blockchain) and routed
