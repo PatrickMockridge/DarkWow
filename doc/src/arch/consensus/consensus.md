@@ -646,8 +646,12 @@ new_target = clamp(target / (1.0 + delta), min_target, max_target)
 
 - **Genesis / first block**: `timestamps.len() < 2` → no adjustment, target
   remains at `initial_target`.
-- **Instant blocks** (`avg_interval == 0`): ratio clamped to 0.9 (maximum
-  difficulty increase of 10%).
+- **Instant blocks** (`avg_interval == 0`, i.e. every interval in the window is zero): the adjustment
+  is **abandoned** — the target is returned unchanged (`src/linear/src/consensus.rs:252-257`). This
+  bullet described the removed behaviour until 2026-10-12: "ratio clamped to 0.9 (maximum difficulty
+  increase of 10%)" — and that clamp was not merely stale, it had the **sign wrong**, easing the
+  target ~11% where its own comment claimed to harden it. `OBL-C37` is the row; both routes out of
+  the branch are shut, and this description was the last one open (`F-352`).
 - **Window not full** (`< 20 timestamps`): Uses up to 10 most recent
   intervals from whatever timestamps are available.
 

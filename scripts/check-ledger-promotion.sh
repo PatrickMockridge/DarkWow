@@ -74,6 +74,47 @@ def scan(root):
     return rows, refuted, stamped, pending, invalid
 
 
+DOC_STAMP = re.compile(r'doc:([^\s,#@]+)(?:#([^\s@,]+))?@([0-9a-f]{8,})')
+
+
+def _slug(heading):
+    """GitHub's heading anchor: drop punctuation (the em-dash included), spaces to hyphens."""
+    return re.sub(r'\s', '-', re.sub(r'[^\w\s-]', '', heading.strip().lower()))
+
+
+def unresolved(root):
+    """Every `doc:` stamp whose path is absent, or whose anchor names no heading in that file.
+
+    WHY THIS EXISTS (2026-10-12). The vocabulary check above was the whole gate, so a stamp could name
+    a path that does not exist and still read as promoted. Measured on the day the campaign closed:
+    **23 stamps** cited `doc/src/DarkFi/…` for files that live under `proofs/lean/src/`, and **8**
+    named an anchor no heading produces — one of them the literal placeholder `#a42-...`. Every one of
+    those read as a home in the promotion log. They were found by an adversarial re-read, not by a
+    machine, which is precisely the gap this closes: the stamp is a *citation*, and a citation that
+    does not resolve is the disease the ledger's own `F-006`/`F-007` rows are about.
+    """
+    text = (root / "doc" / "src" / "arch" / "audit" / "docs-review-2026-10-10.md").read_text()
+    out = []
+    if BLOCK_OPEN not in text or BLOCK_CLOSE not in text:
+        return out
+    body = text.split(BLOCK_OPEN, 1)[1].split(BLOCK_CLOSE, 1)[0]
+    for line in body.splitlines():
+        line = line.strip()
+        if not line or line.startswith("<!--") or not re.match(r'F-\d+\s*:', line):
+            continue
+        fid = line.split(":", 1)[0]
+        for m in DOC_STAMP.finditer(line):
+            path, anchor = m.group(1), m.group(2)
+            f = root / path
+            if not f.exists():
+                out.append(f"{fid}: doc:{path} — no such file")
+            elif anchor and path.endswith(".md"):
+                slugs = {_slug(h) for h in re.findall(r'^#{1,6}\s+(.*)$', f.read_text(), re.M)}
+                if anchor not in slugs:
+                    out.append(f"{fid}: doc:{path}#{anchor} — no heading produces that anchor")
+    return out
+
+
 def main():
     if "--self-test" in sys.argv:
         import tempfile, shutil
@@ -100,6 +141,20 @@ def main():
                 print("FAIL: --self-test stamped F-999 but it is still pending")
                 return 1
             print("OK: --self-test — a stamped row leaves the pending set")
+
+            # Control 3: a stamp whose path does not exist must be reported. This is the arm the
+            # 2026-10-12 sweep added; without it the gate passes a citation that names nothing.
+            # The path is assembled at run time rather than written literally: `scripts/check-doc-index.sh`
+            # scans this file for `.md` citations and would report a literal dead one as a finding
+            # against this gate — the same trap the sync-conformance control hit, and the same fix.
+            planted_bad = ("F-998: doc:doc/src/""does/not/exist"".md#nope@deadbeef")
+            (t / "doc" / "src" / "arch" / "audit" / "docs-review-2026-10-10.md").write_text(
+                text.replace(BLOCK_CLOSE, planted_bad + "\n" + BLOCK_CLOSE))
+            bad = unresolved(t)
+            if not any("F-998" in b for b in bad):
+                print("FAIL: --self-test planted an unresolvable stamp (F-998) and it was not reported")
+                return 1
+            print("OK: --self-test — a stamp citing a path that does not exist is reported")
         return 0
 
     rows, refuted, stamped, pending, invalid = scan(ROOT)
@@ -107,10 +162,14 @@ def main():
         print(f"FAIL: {fid}: stamp is not from the vocabulary ({stamp!r})")
     for fid in pending:
         print(f"pending: {fid}")
+    unresolved_stamps = unresolved(ROOT)
+    for u in unresolved_stamps:
+        print(f"FAIL: {u}")
     n_ok = len(rows) - len(pending)
-    print(f"[{'PASS' if not pending else 'PENDING'}] rows={len(rows)} promoted={n_ok} "
-          f"refuted={len(refuted)} pending={len(pending)} invalid_stamps={len(invalid)}")
-    if "--check" in sys.argv and (pending or invalid):
+    print(f"[{'PASS' if not pending and not unresolved_stamps else 'PENDING'}] rows={len(rows)} "
+          f"promoted={n_ok} refuted={len(refuted)} pending={len(pending)} "
+          f"invalid_stamps={len(invalid)} unresolved_stamps={len(unresolved_stamps)}")
+    if "--check" in sys.argv and (pending or invalid or unresolved_stamps):
         return 1
     return 0
 

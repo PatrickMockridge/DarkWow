@@ -693,6 +693,70 @@ matrix holds this at risk *n*; the named circuit now carries an explicit `HAZOP 
   verdict is from reading code, manifests, scripts and git history. A remediation fix is the first place
   a run is quoted.
 
+### What the remediation did not establish
+
+The exercise above moved each row to a home and stamped it; what follows is what stands *after* that.
+A named gap is the honest alternative to a gate that cannot soundly exist (`R2`), so each class is
+recorded here rather than quietly dropped.
+
+- **The symbol-existence class has no sound gate, and paths now do.** `scripts/check-doc-code-paths.sh`
+  resolves every `path/to/file.{rs,zk,toml}` a doc cites against HEAD, so a citation to a file that has
+  moved or never existed fails the build. A citation to a *symbol*, a *type* or a *mechanism* cannot be
+  checked the same way: deciding that a name means what the doc says it means is the reading the review
+  did (`R6`), and no script can do it. The largest part of the 270 rows was exactly this class — a doc
+  asserting a phantom method, a phantom module, a `SHALL` the tree does not implement, or a mechanism
+  the code performs differently — and every one was corrected by opening the code. Nothing will catch
+  the next drift of that kind; this is the campaign's largest explicit gap.
+- **14 of the 32 contract docs have no circuit table at all.** `scripts/check-contract-doc-circuits.sh`
+  prints `notes=14` for exactly this (`docs_scanned=32 with_table=18`): `baccarat`, `bearer_bond`,
+  `betting_stake`, `darkbet_exchange`, `darktoshi_dice`, `drain_protection`, `insurance_market`,
+  `lottery`, `native_token`, `pool_stake`, `relayer_endowment`, `roulette`, `subscription`, `tender`.
+  This is a **coverage decision** — whether a contract doc is *required* to carry a table of what it
+  proves — and not a defect. The gate's rule is that a doc which states a circuit table must state it
+  truly; it does not require one, and widening it to would be a corpus convention to agree, not a fix
+  to apply.
+- **Line-number drift is pervasive and uncheckable** (`OBL-Z5`'s class). The docs carry thousands of
+  `file.rs:line` citations, and a line number is not a stable name. The campaign has direct evidence of
+  how fast they rot: F-110 is a bullet that corrected the figure 72 by giving its own 78, which has
+  since become 84, so the bullet now states the argument and no figure; and the register's own `Z23`
+  correction of a moving figure was itself stale — this register's oldest failure mode, arriving inside
+  a fix for it. `check-doc-code-paths.sh` checks the *path* half and stops there; the line half has no
+  gate and none is proposed, because a line citation offers nothing a check could resolve against.
+- **The deferred-by-decision items.** Four were surfaced and deliberately *not* resolved; each needs an
+  owner rather than a silent drop:
+  - **F-313** — PBKDF2 hashes the decoded BIP39 **entropy**, not the mnemonic phrase the document named.
+    Changing it inverts every existing key, so the fix is a versioned migration or a documented
+    divergence, and which is a decision.
+  - **`required_barbs`** — the runtime manifest puts it on the *action*, the Lean puts it on the
+    *resource*; which placement is normative is a modelling decision, not a defect readable out of
+    either side.
+  - **the `string` manifest param type** — no encoder arm implements it, while the CLI's validator
+    carries an explicit `string` arm, so the tree admits and refuses the same token before a user
+    reaches either (`OBL-C239`, `CAUSE-5`). The fix is an encoder arm or the removal of the CLI's
+    acceptance; the two are consistent either way, and choosing is the decision.
+  - **F-337** — the `SHALL NOT` on floats is contradicted by both the Rust and the reference model
+    (`contrib/model/fee_window_model.py`), so the CF path's `f64` is not a defect a gate should pin.
+    The invariant was restated as determinism-via-`ilog2`; making the CF path integer/fixed-point was
+    the available code change and was not taken.
+- **Classes where the disagreement is definitional, not factual.** A doc-vs-doc dispute has no code to
+  read and no scanner that would not be resolving a definition: F-625's "*32* zkVM opcodes" counts the
+  enum's 32 variants including the internal `Noop`, where 31 compute anything — both figures are right
+  under their own reading, so the fix was to name which one the sentence means, not to pick a winner.
+  F-194 ("seven deactivation functions across four contracts", 6 or 7 on a narrow reading) is the same
+  shape. These are recorded as decided-by-naming.
+- **Residues the promotion named and did not sweep.** Several rows corrected the load-bearing site and
+  left a copy it could not cheaply move: `promissory_note`'s own source comments (F-526 — the crate is
+  genesis, so a comment edit moves the pin), `bin/dww`'s `build_fee_and_finalize_tx` comments (F-325,
+  an `src/` edit with artifact cost), and the `manifest.toml` tree lists for `chain_events`/`singleton`
+  (F-543 — repairing a list no gate and no code reads would spend a pin). Every non-genesis crate
+  comment asserting a stale claim is deferred to the next rebuild batch in the same way. Each is
+  recorded at its row rather than left to be rediscovered.
+- **Rows whose subject is gone.** F-333 and F-352 are stamped `partial:` not because a doc was
+  corrected but because what they name no longer exists — the block-anchor leaf formula has been
+  restructured away, and the "instant blocks" ease branch was deleted — so there is no live site to
+  gate and "the dangerous paragraph is gone" is not the same fact as "it was fixed". F-521 is a
+  pointer, not a finding, and carries only the record that the three rows it names are promoted.
+
 ## Promotion log (remediation)
 
 Remediation moves each confirmed finding to its home and records the stamp in the block below;
@@ -1091,7 +1155,7 @@ F-625: doc:doc/src/intro.md@f5efdf4f52, doc:doc/src/for-researchers.md@f5efdf4f5
 <!-- F-625 is four claims in three root documents: the opcode count (32 declared, 31 usable — `noop` computes
      nothing), "26 Lean proof files" against 81, the circuit count (deduplicated into F-007), and a "5-level
      test pipeline" where the tree has four testing levels. -->
-F-628: doc:doc/src/dev/testing/level-2-heavyweight.md#contract-harness-list@670cc41948, doc:doc/src/dev/testing/python-simulations.md#python-consensus-models@670cc41948, doc:doc/src/dev/testing/overview.md@670cc41948
+F-628: doc:doc/src/dev/testing/level-2-heavyweight.md#contract-harness-list@670cc41948, doc:doc/src/dev/testing/python-simulations.md#consensus-level-python-models@670cc41948, doc:doc/src/dev/testing/overview.md@670cc41948
 F-629: doc:doc/src/spec/crypto-schemes.md@f5efdf4f52, doc:doc/src/crypto/rln.md@f5efdf4f52, doc:doc/src/crypto/zk_explainer.md@f5efdf4f52
 F-630: doc:doc/src/arch/circuit-versioning.md#migration-scope@f5efdf4f52
 F-632: gate:scripts/check-doc-index.sh@f5efdf4f52
@@ -1131,7 +1195,7 @@ F-612: doc:doc/src/dev/testing/heavyweight-spec.md#72-heavyweightpipeline@173ef3
 F-613: doc:doc/src/dev/testing/heavyweight-spec.md#54-o-cap-authorization--identity@173ef382ab
 F-614: doc:doc/src/arch/zk-engineering-posture.md@173ef382ab
 F-615: doc:doc/src/arch/legacy/event_graph.md@173ef382ab
-F-616: doc:doc/src/dev/testing/heavyweight-spec.md#heavyweight-block@173ef382ab
+F-616: doc:doc/src/dev/testing/heavyweight-spec.md#73-heavyweightblock@173ef382ab
 <!-- F-612's row was already half false when read: §3.5's convention paragraph had been corrected by an earlier
      remediation and cites `OBL-C117`, so the "two normative docs, opposite rules" framing no longer described the
      page. What still contradicted both the code and §3.5 was PR-2 fifty lines below — the same document, a
@@ -1153,7 +1217,7 @@ F-623: doc:doc/src/arch/contract-trust-model.md#layer-2-wasm-verification@8cb4f4
      raises is sharper against `ProveCoverageV1` than against the fiction. F-623's identity half repeats F-536's
      three defects in a second file — the same mistake copied, which is why the sweep rule exists. F-618's
      `ManualSession` example is the one a reader would copy and then fail to compile. -->
-F-001: doc:doc/src/contract/attestation.md#zk-proof-structure@9a59b8c880
+F-001: doc:doc/src/contract/attestation.md#zk-circuits@9a59b8c880
 F-002: doc:doc/src/contract/escrow.md#zk-circuits@9a59b8c880
 F-003: doc:doc/src/contract/game_room.md#zk-circuits@9a59b8c880
 F-004: doc:doc/src/contract/slot.md@9a59b8c880
@@ -1223,27 +1287,27 @@ F-108: doc:doc/src/arch/verification-hazop.md#the-root-causes--the-open-findings
      "thirty-one" occurs zero times; the gate reports `DECISION=29`; the "declared budget" sentence was replaced
      by "the gate is this assignment rather than a budget". A restated count would have gone stale within the
      week, which is the whole argument Phase C made for deleting rather than maintaining it. -->
-F-135: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19, doc:doc/src/Main.lean@ffb9547d19
-F-136: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-137: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-138: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-139: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-140: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-141: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-142: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-143: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-144: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-145: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-146: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-147: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-148: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-149: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-150: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-151: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-152: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-153: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-154: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
-F-155: doc:doc/src/DarkFi/HAZOP/Critical.lean@ffb9547d19, doc:doc/src/DarkFi/HAZOP/High.lean@ffb9547d19
+F-135: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19, doc:proofs/lean/src/Main.lean@ffb9547d19
+F-136: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-137: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-138: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-139: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-140: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-141: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-142: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-143: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-144: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-145: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-146: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-147: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-148: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-149: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-150: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-151: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-152: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-153: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-154: doc:proofs/lean/src/DarkFi/HAZOP.lean@ffb9547d19
+F-155: doc:proofs/lean/src/DarkFi/HAZOP/Critical.lean@ffb9547d19, doc:proofs/lean/src/DarkFi/HAZOP/High.lean@ffb9547d19
 F-156: gate:script/check_lean_axioms.py@d9b0135acc
 F-157: gate:script/check_lean_axioms.py@d9b0135acc
 F-158: gate:script/check_lean_axioms.py@d9b0135acc
@@ -1300,11 +1364,11 @@ F-341: doc:doc/src/arch/type-system.md@38e050a123
      edit. And one correction to my own edit is recorded in the commit: I wrote that the pair-proving
      conjunction lived in `Inversion.lean` from the shape of a neighbouring citation, and it is in
      `Distinction.lean` — the document was right. -->
-F-333: partial:the block-anchor leaf formula this row names is no longer in the document, and no doc under doc/src carries it@630cd0cfcc
+F-333: doc:doc/src/arch/contract-wasm-type-system.md#c37-block-level-anchoring--two-level-merkle-tree@b74cc6d5bc
 F-342: doc:doc/src/arch/contract-wasm-type-system.md@630cd0cfcc
 F-343: doc:doc/src/arch/contract-wasm-type-system.md@630cd0cfcc
 F-344: doc:doc/src/arch/contract-wasm-type-system.md@630cd0cfcc
-F-345: doc:doc/src/arch/contract-wasm-type-system.md#a42-...@630cd0cfcc
+F-345: doc:doc/src/arch/contract-wasm-type-system.md#a47-acl-enforcement@630cd0cfcc
 F-346: doc:doc/src/arch/contract-wasm-type-system.md#c94-ceilingderivationlean@630cd0cfcc
 <!-- F-345 is this slice's substantive row: the ACL tables granted `Update` for two host functions and the ACLs
      allow `Deploy`/`Metadata`/`Exec` only, so a contract built from the table fails at runtime with
@@ -1317,7 +1381,7 @@ F-346: doc:doc/src/arch/contract-wasm-type-system.md#c94-ceilingderivationlean@6
      wording carried (a reader can recompute the anchor leaf) is now covered by *nothing in the docs*. That is
      recorded rather than repaired here, because reinstating a leaf the code does not have would be the worse
      error. -->
-F-352: partial:the "instant blocks" ease branch `OBL-C37` removed is no longer documented; `OBL-C37` is CLOSED and the text is gone@4ca394c218
+F-352: doc:doc/src/arch/consensus/consensus.md#edge-cases@b74cc6d5bc
 F-353: doc:doc/src/arch/consensus/consensus.md@4ca394c218
 F-354: doc:doc/src/arch/consensus/consensus.md@4ca394c218
 F-355: doc:doc/src/arch/consensus/consensus.md@4ca394c218
@@ -1365,14 +1429,14 @@ F-312: doc:doc/src/arch/privacy.md#l1--full-privacy-merkle-inclusion-proofs@b74c
      `F-323`/`OBL-C145` own on the register side, so correcting it with the register's own resolution (the field
      is declared, the verifier that reads it is named, `OBL-C184` owns the open question) keeps the two
      documents saying one thing. -->
-F-304: doc:doc/src/arch/consensus/fee-spec.md#147-fi-risk-2@c5172fc3eb
+F-304: doc:doc/src/arch/consensus/fee-spec.md#147-risk--dynamic-tracker-multiplier-on-the-fee@c5172fc3eb
 F-307: doc:doc/src/arch/net-node-boundary.md@c5172fc3eb
 F-313: doc:doc/src/arch/key-management.md@c5172fc3eb
 F-323: doc:doc/src/arch/verification-hazop.md@7ff9fe101a
 F-331: doc:contrib/model/wallet_model.py@c5172fc3eb
-F-334: doc:doc/src/arch/consensus-coinbase.md#22-the-per-block-derived-key@c5172fc3eb
-F-336: doc:doc/src/arch/consensus/fee-spec.md#1244-confirmation-factor@c5172fc3eb
-F-337: doc:doc/src/arch/consensus/fee-spec.md#fi-window-2@c5172fc3eb
+F-334: doc:doc/src/arch/consensus-coinbase.md#22-deterministic-key-derivation@c5172fc3eb
+F-336: doc:doc/src/arch/consensus/fee-spec.md#1244-congestion-factor@c5172fc3eb
+F-337: doc:doc/src/arch/consensus/fee-spec.md#14-fee-system-invariants@c5172fc3eb
 F-347: doc:doc/src/arch/privacy.md@c5172fc3eb
 F-348: doc:doc/src/arch/privacy.md@c5172fc3eb
 F-349: doc:doc/src/arch/privacy-model.md@c5172fc3eb
@@ -1409,4 +1473,26 @@ F-521: partial:this row is a POINTER, not a finding — its own text says "see P
      **Two findings the agents produced that are not in this ledger at all**: `OBL-C239` (opened here — a CLI
      validator whose default arm admits any token its encoder will reject) and the `manifest.md` note that
      `validate_field_type` swallows `asset_id`/`func_id` for the same reason. Both are `CAUSE-5`. -->
+<!-- CORRECTIVE PASS, 2026-10-12, from the independent re-audit that closes this campaign. Twenty
+     stamped rows were sampled and re-read adversarially; five failed, in three causes, and all are
+     fixed above rather than annotated. The pass is recorded because it is the only evidence that any
+     of these 270 stamps is true, and because its failures are the campaign's own thesis arriving at
+     its own output.
+       (1) TWO OVER-CLAIMED `partial:` STAMPS. F-333 and F-352 each asserted the thing they name "is
+           gone" — a claim I made from checking the *cited line* rather than grepping the document.
+           Both had a second copy. F-333's surviving formula is the one the SDK module cites as its
+           own reference, and F-352's surviving bullet documented the removed `OBL-C37` ease branch
+           *with the sign error that branch was closed for* — a reader following it would reintroduce
+           the bug. Both documents are corrected and both stamps now name a real site. The lesson is
+           mechanical: "the site is gone" needs a repo-wide grep, and a single-site check is what
+           produced two false closures.
+       (2) EIGHT UNRESOLVABLE ANCHORS, one of them the literal placeholder `#a42-...`. The anchors had
+           been written from clause *labels* rather than heading text, so `#22-the-per-block-derived-key`
+           pointed at a heading called "2.2 Deterministic Key Derivation". All eight re-pointed.
+       (3) TWENTY-THREE STAMPS WITH A WRONG PATH PREFIX: the Lean rows cited `doc/src/DarkFi/…` and
+           `doc/src/Main.lean` for files under `proofs/lean/src/`. All re-pointed.
+     The unifying instrument gap, now closed: `scripts/check-ledger-promotion.sh` validated only the
+     stamp *vocabulary* — never a path, never an anchor — so all 31 malformed citations read as homes.
+     It now resolves both, with a third control that plants an unresolvable stamp. `check-doc-index.sh`
+     resolves relative `.md` links but not anchors, which is why the second class was invisible too. -->
 <!-- /promotion-log -->

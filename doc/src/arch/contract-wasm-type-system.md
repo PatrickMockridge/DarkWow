@@ -2420,9 +2420,15 @@ located. Both proofs are required for full verification.
 
 **Block-Level Anchoring Rule.** The contract-local Merkle tree root SHALL
 be stored as a leaf in the block-level Merkle tree. The leaf key is the
-nullifier; the leaf value is `poseidon_hash(contract_id || contract_tree_root)`.
-The block header SHALL commit to the block tree root via a proper
-incremental Merkle tree (Sinsemilla, depth 32), not a flat blake3 hash.
+nullifier; the leaf value is
+`poseidon_hash(DRK_POSEIDON_DOMAIN_MERKLE_LEAF, nullifier, contract_id, contract_tree_root)` —
+**four arguments**, domain-separated (`src/sdk/src/crypto/merkle_anchor.rs:50-58`, `anchor_leaf`).
+
+This rule stated `poseidon_hash(contract_id || contract_tree_root)` until 2026-10-12 (`F-333`) — two
+arguments, no domain tag, and no nullifier. A re-implementer computing the documented form produces a
+leaf that appears in no tree: the value the block tree stores binds the nullifier as well as the
+root, so the *key* and the *value* are both nullifier-derived, which is what makes an anchor
+attributable rather than merely present.
 
 **Apply-Side Contract Obligation.** Every L1 contract's `process_update`
 SHALL call the block-level `merkle_add` host function AFTER the
