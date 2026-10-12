@@ -28,9 +28,11 @@ reveals nothing by being public* — is applied per element below.
 
 **Fees in particular** are public by design: the fee *total* is plaintext
 (`fees_db[height]`), and the only fee proof material is what the host needs
-to audit the retained Fee_V3 mass-balance proof: `fee_value_commit` and
-`fee_v3_tx_binding` (see
+to audit the retained Fee_V3 mass-balance proof: `fee_value_commit` (see
 [`src/contract/native_token/src/model/fee.rs`](../../../src/contract/native_token/src/model/fee.rs)).
+`fee_v3_tx_binding` was named here too until 2026-10-12 (`F-349`); it is **removed, not moved**
+(`OBL-C198`) — `fee.rs:40` — and `get_metadata` derives the binding instead of reading it as a
+param.
 
 ### 2.1 The AEAD-note caveat
 

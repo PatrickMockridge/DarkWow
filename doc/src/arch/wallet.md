@@ -278,9 +278,9 @@ Additional rules:
 ### 0.1.3 Interface Contracts
 
 The boundary between the wallet core and the Capability SDK SHALL be:
-- `wallet_construct(primitives: &[Primitive], required_barbs: &[Barb]) -> Option<TypedCapability>` — the ONE composition function (type-system.md §6.3, ocap.md §2)
+- `wallet_construct(resource: &str, action: &str, primitives: Vec<Primitive>, required_barbs: &[Barb]) -> Option<TypedCapability>` — the ONE composition function (type-system.md §6.3, ocap.md §2; `src/sdk/src/capability.rs:476`)
 - `ManifestContractClient::build(function, params, wallet_state) -> Result<(Vec<u8>, Vec<Vec<u8>>), String>` — generic action dispatch **and generic proof construction**: the `Vec<Vec<u8>>` it returns *is* the proof set (§6.4.1)
-- `CircuitWitnessMap::from_manifest(entries: &[String]) -> CircuitWitnessMap` — witness-binding rule parser
+- `CircuitWitnessMap::from_manifest(circuit_name: String, namespace: String, entries: &[String]) -> Result<CircuitWitnessMap, ProverError>` — witness-binding rule parser (`src/sdk/src/prover.rs:200`)
 
 *Corrected 2026-10-11 (`F-324`).* A third bullet stood between those two, reading
 `ProverContext::build_proof(cap: &dyn CapabilityProvider, params: &str) -> Result<Vec<Proof>, Error>`
@@ -293,6 +293,17 @@ built by the client, which is why the line above carries both jobs: the dispatch
 `client.build(...)`'s first value as call data and its second as the proof set. The phantom
 bullet named a seam that does not exist between two that do.
 
+*Corrected 2026-10-12 (`F-370`).* Two of the interface bullets above were
+transcribed short of the code. `wallet_construct` takes `resource: &str` and
+`action: &str` ahead of its primitives, and takes `Vec<Primitive>` rather than
+`&[Primitive]` (`src/sdk/src/capability.rs:476`).
+`CircuitWitnessMap::from_manifest` takes `circuit_name: String` and
+`namespace: String` ahead of `entries`, and returns
+`Result<CircuitWitnessMap, ProverError>` — a bare map only on success — not a
+`CircuitWitnessMap` (`src/sdk/src/prover.rs:200`). `ManifestContractClient::build`
+(as `function, params, wallet_state`) and the `WalletStateProvider` bullets were
+checked and match.
+
 The boundary between the Capability SDK and the wallet's state SHALL be the
 `WalletStateProvider` trait (`src/sdk/src/contract_client.rs`) — the ONLY
 surface through which generic contract clients read wallet state. Its
@@ -302,7 +313,15 @@ methods SHALL be exactly:
 - `get_merkle_proof(cap_id: &str) -> Result<MerkleProofInfo, String>` — inclusion proof siblings + leaf position for a held capability
 - `get_secret() -> Result<String, String>` — the default wallet secret (bs58), resolved at the moment of use (§4)
 - `load_zkas_binary(contract_id: &str, namespace: &str, circuit_name: &str) -> Option<Vec<u8>>` — zkas circuit bytes from the wallet's `zkas_binaries` store (§3, §6.4.1 step 3)
-- `generate_proof(contract_id: &str, witness_map: &CircuitWitnessMap, zkas_bytes: &[u8], seed: [u8; 32]) -> Result<Vec<u8>, String>` — proof construction via the wallet's concrete ProverImpl (§6.4.1); the SDK owns witness binding, the wallet owns the ZK machinery
+- `generate_proof(contract_id: &str, witness_map: &CircuitWitnessMap, zkas_bytes: &[u8], seed: [u8; 32], params: &[(String, NoteFieldValue)]) -> Result<(Vec<u8>, Vec<Option<NoteFieldValue>>), String>` — proof construction via the wallet's concrete ProverImpl (§6.4.1); the SDK owns witness binding, the wallet owns the ZK machinery (`src/sdk/src/contract_client.rs:137`; concrete impl `bin/dww/src/lib.rs:921`)
+
+*Corrected 2026-10-12 (`F-370`).* This bullet read
+`generate_proof(contract_id, witness_map, zkas_bytes, seed) -> Result<Vec<u8>, String>`.
+The trait method takes a trailing `params: &[(String, NoteFieldValue)]` (the
+action's typed parameters, bound as `param:<field>` witnesses) and returns
+`Result<(Vec<u8>, Vec<Option<NoteFieldValue>>), String>` — the proof bytes *and*
+the bound produce-side note values, not the bytes alone
+(`src/sdk/src/contract_client.rs:137`).
 
 A contract client that needs wallet state not expressible through this trait
 SHALL NOT be given a side channel — the trait is extended by MoC review, or
@@ -826,6 +845,8 @@ is a parse error. Domain constants are the 7 `DRK_POSEIDON_DOMAIN_*` values
 | `derived:nullifier:<secret>,<id>,<nonce>` | `poseidon(1, w[secret], w[id], w[nonce])` |
 | `derived:tx_binding:<txc>,<txn>` | `poseidon(3, w[txc], w[txn])` |
 | `derived:leaf:<id>,<contents>,<nonce>,<secret>` | `poseidon(5, w[id], w[contents], w[nonce], poseidon(7, w[secret]))` — the fourth operand is the secret, not the `owner_pub` slot: invariant 5 requires a derived rule's operands to be input slots or earlier derived slots, and `owner_pub` is derived |
+| `derived:leaf_increment:<id>,<contents>,<nonce>,<secret>` | `poseidon(5, w[id], w[contents], w[nonce] + 1, poseidon(7, w[secret]))` — produce-side in-circuit nonce increment (HAZOP V1/V2: the produced nonce is a derived value, not a witness), mirroring `derived:leaf` |
+| `derived:increment:<a>` | `w[a] + 1` (base field) — the incremented nonce exposed for the produce note |
 | `derived:merkle_root:<pos>,<path>,<id>,<contents>,<nonce>` | **parsed but not evaluated** — the prover returns "derived:merkle_root is unsupported — bind the root as note:merkle_root" (`bin/dww/src/prover_impl.rs`). The row's `poseidon(5, …)` is therefore a vocabulary entry rather than a derivation the wallet performs, and the leaf it names is the four-operand one. |
 | `derived:owner_pub:<secret>` | `poseidon(7, w[secret])` |
 | `derived:token_commit:<asset_id>,<blind>` | `poseidon(2, w[asset_id], w[blind])` |
@@ -835,6 +856,13 @@ is a parse error. Domain constants are the 7 `DRK_POSEIDON_DOMAIN_*` values
 | `derived:base_add:<a>,<b>` / `derived:base_sub:<a>,<b>` | `w[a] + w[b]` / `w[a] - w[b]` (field) |
 | `derived:blind_sum:<a>,<b>` / `derived:blind_sub:<a>,<b>` | `w[a] + w[b]` / `w[a] - w[b]` (scalar) |
 | `derived:signature_secret:<secret>,<nullifier>` | `poseidon(7, w[secret], w[nullifier])` |
+
+*Corrected 2026-10-12 (`F-370`).* The table read "closed and maps 1:1 to the
+zkas opcode families" while omitting two rules the parser accepts —
+`derived:leaf_increment` and `derived:increment` (`DerivedRule::LeafIncrement`,
+`DerivedRule::Increment`, `src/sdk/src/prover.rs:86,88`; parsed at
+`src/sdk/src/prover.rs:284,285`). Both produce-side nonce derivations are listed
+above now, so the "closed … 1:1" claim holds again.
 
 The capability SDK SHALL type-check every binding against the slot's declared
 `VarType` and SHALL reject the construction with a typed error barb — never a

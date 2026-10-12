@@ -93,9 +93,15 @@ Capability(native_token_transfer, N) ≡ compose(
 
 The predicate language L_{transfer, N} that this capability proves:
 - The holder knows `w = (secret, coin_attributes, merkle_path)`.
-- The commitment `C = poseidon_hash(pk.x, pk.y, value, asset_id, spend_hook, user_data, blind)` matches the one in the Merkle tree.
+- The commitment `C = poseidon_hash(DOMAIN_COMMITMENT, pk.x, pk.y, value, asset_id, spend_hook, user_data, blind)` matches the one in the Merkle tree.
 - The value is ≤ N (the holder's balance).
-- The nullifier `nf = poseidon_hash(secret, C)` has not been published before.
+- The nullifier `nf = poseidon_hash(DOMAIN_NULLIFIER, secret, C)` has not been published before.
+
+*Corrected 2026-10-12 (`F-351`): both preimages above omitted the V2 domain tag.* The canonical
+commitment is 8 arguments — `poseidon_hash(DOMAIN_COMMITMENT, pub_x, pub_y, value, asset_id,
+coin_spend_hook, user_data, commitment_blind)` (`src/contract/native_token/proof/mint.zk:69-78`,
+`src/contract/native_token/src/model/mod.rs:242-251`) — and the nullifier is 3 —
+`poseidon_hash(DOMAIN_NULLIFIER, secret, C)` (`src/sdk/src/crypto/nullifier.rs:96-100`).
 
 The verifier observes: predicate result = 1, nullifier = nf, Merkle root valid.
 The verifier learns: nothing about the holder, the amount (beyond ≤ N), or which
@@ -357,13 +363,17 @@ consumption evidence.
 
 | Phase | DarkWow Mechanism |
 |-------|------------------|
-| **Create** | `poseidon_hash(secret, commitment_parameters)` → Commitment. The commitment is a Pedersen-like hash binding the capability's primitive names without revealing them. |
+| **Create** | `poseidon_hash(DOMAIN_COMMITMENT, pub_x, pub_y, value, asset_id, spend_hook, user_data, blind)` → Commitment. The commitment is a Pedersen-like hash binding the capability's primitive names without revealing them. |
 | **Discover (L1)** | Trajectory identification ([contract-wasm-type-system.md §C.8](contract-wasm-type-system.md)): trial AEAD decryption over new Merkle leaves; the note carries the primitive attributes plus `nullifier`, `merkle_root`, `leaf_position`, `commitment`; the wallet matches the nullifier to a consumed object and records the new leaf. |
 | **Discover (L2)** | Flat note discovery ([contract-wasm-type-system.md §B.8](contract-wasm-type-system.md)): trial AEAD decryption over `ContractCall.data`; the note carries capability-identifying fields (`amount`, `asset_id`, `owner_commit`) only; no trajectory, no Merkle leaf. |
 | **Hold** | `CapRecord` stored in SQLite `held_capabilities` with Merkle inclusion proof in `capability_proofs`. The record carries the typed composition — primitives and barbs — constructed by `wallet_construct`. |
 | **Exercise** | Halo2 `Proof::create` over a `ZkCircuit` whose witness is the capability's private names and whose public inputs are the commitment, nullifier, and Merkle root. |
 | **Verify** | `Proof::verify` against the circuit's public inputs. The verifier (node, mempool) checks the proof without learning the witness. |
-| **Consume** | Nullifier published in `Transaction.nullifiers`. The nullifier is `poseidon_hash(secret, commitment)` — unique per capability instance. A nullifier appearing on-chain SHALL prevent any future exercise of that instance. |
+| **Consume** | Nullifier published in `Transaction.nullifiers`. The nullifier is `poseidon_hash(DOMAIN_NULLIFIER, secret, commitment)` — unique per capability instance. A nullifier appearing on-chain SHALL prevent any future exercise of that instance. |
+
+*The `Create` and `Consume` preimages above carried no domain tag until 2026-10-12 (`F-351`);
+`DOMAIN_COMMITMENT` and `DOMAIN_NULLIFIER` are the V2 tags the circuits prepend — see [§5.2](privacy.md)
+for the vocabulary, `src/sdk/src/crypto/nullifier.rs:96-100` for the nullifier.*
 
 ### 6.3 The Wallet as Type Construction Engine
 
@@ -453,7 +463,9 @@ primitives. The `dleqProof` primitive (carrying `{↓prove}`) covers the
 `↓prove` requirement in `tenderBidType` and `bridgeWithdrawType`. Compositions
 that share the same primitive set (e.g., native token transfer and DAO vote)
 are distinguished by their Actions and by which subset of the composed barbs
-each Action declares as required.
+each Resource's `requiredBarbs` declares (`Composition.lean:104-106`; the
+`Action` carries only a name, `:108-110`) — this said "each Action" until
+2026-10-12 (`F-372`).
 
 ### 9.2 Capability Type Existence
 
@@ -466,8 +478,10 @@ iff there exist primitives whose composition covers the resource's required barb
 That is a statement about `compose`, and it is unconditional. It does **not** establish that a
 circuit exists for the pair, or that any such circuit is sound — those are the premises
 `Capability.CircuitDerivable` carries, and `capabilityType_of_circuitDerivable` consumes only
-its `coversBarbs` field. `#print axioms capabilityType_of_circuitDerivable` is empty, which is
-the honest signal: the theorem is proved, and it is proved about barb coverage.
+its `coversBarbs` field. The axiom collector charges `capabilityType_of_circuitDerivable` only
+`propext` and `Quot.sound` — Lean's own logic, which it discounts — so its budget is 0: the theorem
+is proved, and it is proved about barb coverage. (`#print axioms` is **not** empty; this document
+said it was until 2026-10-12, `F-372` — `Inversion.lean:83-124`.)
 
 ### 9.3 Wallet Constructibility
 
@@ -485,7 +499,7 @@ read from chain, the wallet produces a valid capability type in the calculus.
 ### 9.4 Lean4 Source
 
 All formal verification modules:
-- `proofs/lean/src/DarkFi/Capability/Types.lean` — 14 barbs, 13 types
+- `proofs/lean/src/DarkFi/Capability/Types.lean` — 33 barbs, 17 primitive types (the `Barb` inductive and the `allPrimitiveTypes` list at `:266-269`; `contrib/barb_alphabet_diff.sh` reports `lean 33`). **This said "14 barbs, 13 types" until 2026-10-12 (`F-350`).**
 - `proofs/lean/src/DarkFi/Capability/Composition.lean` — composition + constructions
 - `proofs/lean/src/DarkFi/Capability/Pareto.lean` — pareto-efficiency
 - `proofs/lean/src/DarkFi/Capability/Distinction.lean` — non-unifiable pairs

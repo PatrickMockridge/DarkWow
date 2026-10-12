@@ -113,6 +113,17 @@ DarkWow supports BIP39 mnemonic phrases and BIP32 hardened derivation.
 → 64-byte seed
 ```
 
+*Implementation divergence, 2026-10-12 (`F-313`).* The diagram states the BIP39
+password (the mnemonic sentence). As implemented, `bip39_to_seed`
+(`crates/dwow-accounts/src/lib.rs:1030`) first calls `bip39_words_to_entropy`
+(`:972`) and feeds the resulting **decoded entropy bytes** to PBKDF2
+(`pbkdf2_hmac_sha512(&entropy, …, 2048, …)`, `:1035`) — not the sentence string.
+Consequently the derived seed (and every key beneath it) differs from standard
+BIP39 for the same phrase. Reconciling the two is an **open decision** — either
+migrate the input to BIP39's sentence, or document entropy-as-password as
+intentional. It is not taken here: changing the input inverts every existing
+wallet derivation.
+
 ### BIP32: Seed → Master Key
 
 ```
@@ -190,8 +201,12 @@ keys.toml → AccountManager::open(keys_toml, network, section)   // section = W
     → scan_block_linear() trial-decrypts with the declared secrets
       → AEAD decrypt coinbase + contract call notes
         → insert CapRecord into wallet DB
-          → compute_balance()
+          → capability_balance()
 ```
+
+(The last step was `compute_balance()` — no such function exists; the wallet's
+balance entry point is `capability_balance()`, `bin/dww/src/lib.rs:1550`.
+Corrected 2026-10-12, `F-370`.)
 
 **On startup:** The wallet resolves its identity from `keys.toml` via
 `AccountManager::open(keys_toml, network, section)` where `section` is the

@@ -2528,10 +2528,13 @@ class Primitive(Enum):
     @staticmethod
     def from_name(s: str) -> "Optional[Primitive]":
         # Aliases for backward compatibility with manifests deployed
-        # before the Coin→Commitment, AssetId→AssetId rename.
+        # before the Coin→Commitment, TokenId→AssetId rename.
+        # Mirrors Primitive::from_name (src/sdk/src/capability.rs:337), which
+        # accepts "TokenId" and "Coin" as aliases; a manifest using "TokenId"
+        # parses in Rust, so the model must accept it too (F-371).
         _ALIASES = {
             "Coin": Primitive.Commitment,
-            "AssetId": Primitive.AssetId,
+            "TokenId": Primitive.AssetId,
         }
         try:
             return Primitive(s)
@@ -2643,7 +2646,11 @@ class StateTree:
 
 # Cache mock — holds StateTrees keyed by tree state id
 class Cache:
-    """Models bin/dww/src/cache.rs — SQLite-backed chain state cache (formerly sled)."""
+    """Models the wallet's SQLite-backed chain-state cache (formerly sled).
+    This was bin/dww/src/cache.rs until that module was merged into
+    bin/dww/src/walletdb.rs (commit 7ddae9f2ab, 2026-07-09); the tree store now
+    lives at WalletDb::insert_merkle_trees / get_merkle_tree
+    (bin/dww/src/walletdb.rs:1584,1603)."""
 
     def __init__(self):
         self.trees: Dict[bytes, StateTree] = {}  # state_id -> StateTree

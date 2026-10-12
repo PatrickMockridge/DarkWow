@@ -65,9 +65,23 @@ and in [`wallet-vs-daemon.md`](wallet-vs-daemon.md).
 
 ## Enforcement
 
-`contrib/ci/check_sync_conformance.sh` greps the nine sync source files above for
-`Spec: sync-protocol.md` and fails the build if a header is missing or drifts. Run it directly:
+`contrib/ci/check_sync_conformance.sh` does three things. It greps the nine sync source files
+above for a `Spec: sync-protocol.md` header and fails if one is missing. It resolves every `§N`
+(and `§A-§B` range endpoint) that a header cites against `sync-protocol.md`'s **own headings** and
+fails on a clause the document does not have, so a header that cites a renumbered or deleted
+section is caught, not merely one that is absent. And it checks the `sync-protocol.md §14.1`
+command-registration matrix (the node registers the push commands, the pull-only wallet registers
+neither). The first half enforces a repository convention — a file declaring its clause in a module
+header — and is not itself a spec clause; the clause-resolution and dispatch-matrix halves are
+spec-backed. Run it directly:
 
 ```
 contrib/ci/check_sync_conformance.sh
 ```
+
+This section said the gate "fails the build if a header is missing or drifts" until 2026-10-12
+(`F-375`). "Drifts" was aspirational: the check was a substring grep that never resolved a clause
+number, so it could only report a *missing* header, and every file's header merely had to exist.
+Its failure message now names the offending clause — `cites §N — sync-protocol.md does not have
+that clause` — and a second negative control (`--self-test`) plants a dead clause number and asserts
+the gate reports it.

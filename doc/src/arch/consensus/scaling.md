@@ -8,11 +8,17 @@
 > state. Nothing contradicts existing code; everything described is the natural
 > next step.
 >
-> **Scaffolding:** Type scaffolding and function stubs for every concept in this
-> document exist behind `#[cfg(feature = "sharding")]` — disabled by default,
-> intended as post-mainnet namespace reservation. See `src/sdk/src/crypto/shard.rs`,
-> `src/linear/src/shard.rs`, `src/runtime/import/shard.rs`, and
-> `src/linear/src/block.rs`.
+> **Scaffolding (corrected 2026-10-12, `F-374`):** This note claimed type scaffolding and
+> function stubs for every concept here exist behind `#[cfg(feature = "sharding")]`, naming
+> `src/sdk/src/crypto/shard.rs`, `src/linear/src/shard.rs`, `src/runtime/import/shard.rs` and
+> `src/linear/src/block.rs`. None of it exists now — no `sharding` feature appears in any
+> `Cargo.toml`, no `shard.rs` file exists anywhere in the tree, and none of the types, fields or
+> `todo!()` stubs the notes below name are present. The scaffolding was **removed**, not reserved:
+> `src/sdk/src/wasm/merkle.rs` records it at the site where the cross-shard host functions used to
+> sit — "Removed with the rest of the `sharding` scaffolding: the feature was never enabled, both
+> bodies returned an error unconditionally, and nothing called them." There is no namespace
+> reservation: this document is a design vision with no code behind it. Each later note below is
+> corrected in place to name what it cited.
 
 ## The Hidden Topology of Uncle Merkle
 
@@ -74,12 +80,11 @@ Once an uncle block carries a state root, it becomes a shard. Not a shard assign
 by a protocol committee. A shard formed naturally by the miners whose blocks happen
 to propagate through a particular region of the network.
 
-> **Scaffolding:** `#[cfg(feature = "sharding")]` in `src/linear/src/block.rs`.
-> `UncleBlock` and `UncleProof` carry optional `state_root: Option<[u8; 32]>`
-> fields. `UncleProof` also carries `shard_id: Option<[u8; 32]>`. All fields
-> are `None` (traditional uncle behavior) unless the sharding feature is
-> enabled post-mainnet. See `src/sdk/src/crypto/shard.rs` for the shard
-> identity types (`ShardId`, `ShardStateRoot`).
+> **Scaffolding (corrected 2026-10-12, `F-374`):** This note claimed `UncleBlock`/`UncleProof`
+> carry `state_root`/`shard_id` behind `#[cfg(feature = "sharding")]` in `src/linear/src/block.rs`,
+> with `ShardId`/`ShardStateRoot` in `src/sdk/src/crypto/shard.rs`. No such fields, file or feature
+> flag exist. It was for — the per-uncle state commitment that turns an uncle into a shard. See the
+> note at the top of this document.
 
 ```
             CANONICAL CHAIN (settlement layer)
@@ -153,12 +158,12 @@ publishes a proof of constant (or logarithmic) size regardless of how much state
 being referenced. Verification cost scales with the proof circuit, not with the
 state size.
 
-> **Scaffolding:** `src/sdk/src/crypto/shard.rs`. The O-Cap pattern is encoded
-> as `ShardCommitment` (state root anchored in canonical uncle tree) →
-> `CrossShardProof` (ZK proof + nullifier) → `ShardNullifier` (replay prevention).
-> `verify_aggregate_proof()` is a `todo!()` stub. The canonical chain's
-> `BlockHeader` carries `shard_state_roots_root` and `aggregate_proof_root`
-> behind `#[cfg(feature = "sharding")]`.
+> **Scaffolding (corrected 2026-10-12, `F-374`):** This note claimed the O-Cap shard pattern is
+> encoded in `src/sdk/src/crypto/shard.rs` as `ShardCommitment` → `CrossShardProof` →
+> `ShardNullifier`, with `verify_aggregate_proof()` a `todo!()` stub and `BlockHeader` carrying
+> `shard_state_roots_root`/`aggregate_proof_root` behind `#[cfg(feature = "sharding")]`. The file,
+> the types, the stub and the two header fields all do not exist. It was for — the ZK state-proof
+> mechanism this section specifies. See the note at the top of this document.
 
 ## Git-Type State Proof Import
 
@@ -207,12 +212,11 @@ imported by Shard A. Over time, frequently-referenced state creates a natural ca
 of hot cross-shard references, while cold state remains where it was committed. The
 system does not pay to replicate what nobody is using.
 
-> **Scaffolding:** `src/sdk/src/crypto/shard.rs`. `StateImportProof` encodes the
-> git-import pattern: `source_shard` → `target_shard`, anchored at a
-> `canonical_height` with an `uncle_merkle_proof`, carrying a `zk_predicate_proof`
-> against a `PredicateType` (BalanceGte, ContractState). `verify_state_import()`
-> is a `todo!()` stub. `SettlementTransaction` aggregates `StateImportProof`s
-> across multiple shards with a `ShardNullifier` for replay protection.
+> **Scaffolding (corrected 2026-10-12, `F-374`):** This note claimed
+> `src/sdk/src/crypto/shard.rs` encodes the git-import pattern as `StateImportProof` (with
+> `verify_state_import()` a `todo!()` stub) and `SettlementTransaction`. The file and every type it
+> names are absent. It was for — the lazy state-import mechanism this section specifies. See the
+> note at the top of this document.
 
 ## Inter-Shard Settlement on the Canonical Chain
 
@@ -267,16 +271,15 @@ invalid transition gets nothing because verification fails. Shard miners and
 canonical miners don't need to trust each other. They only need to agree on the
 merkle root and the ZK proof — both of which are mathematically verifiable.
 
-> **Scaffolding:** `src/sdk/src/crypto/shard.rs`. `SettlementBatch` combines
-> `ShardStateCommitment`s (per-shard prev/new state roots with merkle proofs),
-> `CrossShardProof`s, an optional `AggregateProof`, and `SettlementTransaction`s
-> into a single canonical chain submission. `verify_settlement_batch()` is a
-> `todo!()` stub. Validation stubs live in `src/linear/src/shard.rs`
-> (`verify_shard_block`, `verify_shard_merkle_inclusion`,
-> `verify_cross_shard_proofs`). Host function skeletons are at
-> `src/runtime/import/shard.rs` (`merkle_shard_proof_add`,
-> `settlement_batch_verify`). WASM SDK stubs at
-> `src/sdk/src/wasm/merkle.rs`.
+> **Scaffolding (corrected 2026-10-12, `F-374`):** This note claimed
+> `src/sdk/src/crypto/shard.rs` defines `SettlementBatch`/`ShardStateCommitment`/`AggregateProof`
+> (with `verify_settlement_batch()` a `todo!()` stub), that `src/linear/src/shard.rs` holds
+> `verify_shard_block`/`verify_shard_merkle_inclusion`/`verify_cross_shard_proofs`, that
+> `src/runtime/import/shard.rs` holds `merkle_shard_proof_add`/`settlement_batch_verify`, and that
+> `src/sdk/src/wasm/merkle.rs` holds WASM shard stubs. No `shard.rs` file exists; neither host nor
+> WASM sink contains any shard symbol now — `src/sdk/src/wasm/merkle.rs` records the removal where
+> `merkle_shard_proof_add`/`settlement_batch_verify` used to sit. It was for — the settlement-batch
+> validation mechanism this section specifies. See the note at the top of this document.
 
 ## Why This Is Natural Evolution, Not a Bolt-On
 
@@ -301,13 +304,13 @@ structures, the merkle tree, the pin reward formula, the difficulty target, the
 RandomX binding, the deterministic merge logic. No new consensus mechanism. No new
 network protocol. No new validator role.
 
-> **Scaffolding status:** Every primitive in the table above has a corresponding
-> type or stub behind `#[cfg(feature = "sharding")]`. The feature flag is
-> disabled by default — this is post-mainnet architectural scaffolding, not
-> unwired pre-mainnet code. See `src/sdk/src/crypto/shard.rs` (proof types),
-> `src/linear/src/shard.rs` (validation stubs),
-> `src/runtime/import/shard.rs` (host function skeletons), and
-> `src/linear/src/block.rs` (block field additions).
+> **Scaffolding status (corrected 2026-10-12, `F-374`):** This note claimed every primitive in the
+> table above has a type or stub behind `#[cfg(feature = "sharding")]`. None does — there is no
+> `sharding` feature flag and no `shard.rs` file (`src/sdk/src/crypto/shard.rs`,
+> `src/linear/src/shard.rs`, `src/runtime/import/shard.rs` are all absent, and
+> `src/linear/src/block.rs` has no shard fields). The "post-mainnet namespace reservation" is not
+> reserved. It was for — the claim that this design's primitives are already sketched in code. See
+> the note at the top of this document.
 
 Shards do not need their own consensus because they piggyback on the canonical
 chain's consensus via uncle merkle proofs. This avoids the hardest problem in

@@ -196,13 +196,25 @@ sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H.to_le_bytes())
 pk_H = PublicKey::from_secret(sk_H)
 
 derive_instance(sk, cid, data):
-    cid_fp = cid.inner()          // pallas::Base
-    inst   = pad32(data)          // zero-pad to 32 bytes
-    inst_fp = from_repr(inst)    // interpret as field element
-    return poseidon_hash([sk.inner(), cid_fp, inst_fp])
+    inst    = pad32(data)         // first 32 bytes, zero-padded
+    inst_fp = from_repr(inst)     // interpret as field element
+    return poseidon_hash([
+        DRK_POSEIDON_DOMAIN_KEY_DERIVE,   // = 8
+        sk.inner(), cid.inner(), inst_fp,
+    ])
 ```
 
 `NATIVE_TOKEN_CONTRACT_ID = poseidon_hash([42, 0, 4])`.
+`DRK_POSEIDON_DOMAIN_KEY_DERIVE = 8` (`src/sdk/src/crypto/constants.rs:62`).
+
+*Corrected 2026-10-12 (`F-334`): this showed a three-element hash,
+`poseidon_hash([sk.inner(), cid_fp, inst_fp])`, with no domain separator. The SDK's
+`SecretKey::derive_instance` (`src/sdk/src/crypto/keypair.rs:202`) prepends
+`DRK_POSEIDON_DOMAIN_KEY_DERIVE` and hashes four elements, and both the miner
+(`MiningRecipient::from_account`, `crates/dwow-accounts/src/lib.rs:1265`) and the
+wallet (`AccountManager::secrets_for_contract`, same file) derive `sk_H` through it.
+A re-implementer following the three-element form would compute a different `sk_H`
+and could not decrypt the coinbase note.*
 
 The wallet derives `sk_H` identically via `AccountManager::secrets_for_contract()`.
 No shared state between miner and wallet — they compute the same hash independently.
@@ -390,13 +402,18 @@ sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H.to_le_bytes())
 pk_H = PublicKey::from_secret(sk_H)
 
 derive_instance(sk, cid, data):
-    cid_fp = cid.inner()          // pallas::Base
-    inst   = pad32(data)          // zero-pad to 32 bytes
-    inst_fp = from_repr(inst)    // interpret as field element
-    return poseidon_hash([sk.inner(), cid_fp, inst_fp])
+    inst    = pad32(data)         // first 32 bytes, zero-padded
+    inst_fp = from_repr(inst)     // interpret as field element
+    return poseidon_hash([
+        DRK_POSEIDON_DOMAIN_KEY_DERIVE,   // = 8
+        sk.inner(), cid.inner(), inst_fp,
+    ])
 ```
 
 `NATIVE_TOKEN_CONTRACT_ID = poseidon_hash([42, 0, 4])`.
+
+*Same correction as §2.2 (`F-334`): the four-element hash carries the
+`DRK_POSEIDON_DOMAIN_KEY_DERIVE` separator the earlier three-element form lacked.*
 
 The same `sk_H` proves both the coinbase claim (PoWRewardV1 nullifier) and the
 fee-collection claim (FeeCollectV1 nullifier). The nullifiers are distinct

@@ -5,8 +5,8 @@
 | Layer | Status | Location |
 |-------|--------|----------|
 | Specification | Complete | This document |
-| Python model | Complete (13 tests) | `contrib/model/wallet_model.py` |
-| Rust data types | Complete (6/6 unit tests) | `src/sdk/src/manifest.rs` |
+| Python model | Complete | `contrib/model/wallet_model.py` |
+| Rust data types | Complete | `src/sdk/src/manifest.rs` |
 | TOML manifests | Complete (32 contracts) | `src/contract/*/manifest.toml` |
 | Wallet resolver | Complete | `bin/dww/src/manifest_resolver.rs` |
 | CLI `contract show` | Complete | `bin/dww/src/dispatch.rs` |
@@ -14,6 +14,11 @@
 | Scan-side integration | Complete | `bin/dww/src/scan.rs` (DeployV1 handler) |
 | CapabilityResolver fallback | Complete | `bin/dww/src/capability.rs` (resolve()) |
 | On-chain manifest hash | Pending | Deployooor hardening |
+
+The Python and Rust test counts are not restated here — they drift. Count them:
+`grep -c 'def test' contrib/model/wallet_model.py` and
+`grep -c '#\[test\]' src/sdk/src/manifest.rs`. This row said "13 tests" and "6/6 unit tests"
+until 2026-10-12 (`F-369`).
 
 32 contracts have manifests: 9 genesis (see [Genesis Contracts](genesis.md)), plus
 23 user-deployed contracts. All 32 round-trip through the Python parser.
@@ -260,8 +265,17 @@ requires = { type = "threshold", count = 2, total = 3, capabilities = ["a", "b",
 | `public_key` | Compressed public key | 32 bytes |
 | `contract_id` | Contract identifier | 32 bytes |
 | `bool` | Boolean | 1 byte (0 or 1) |
-| `string` | UTF-8 string | Length-prefixed varint |
 | `bytes` | Opaque bytes | Length-prefixed varint |
+
+This table listed a `string` type ("UTF-8 string | Length-prefixed varint") until 2026-10-12
+(`F-368`). No wire arm implements it — `encode_params_by_schema` and `decode_params_from_json`
+(`src/sdk/src/manifest.rs`) and `field_wire_len` (same file) each match only
+`u64`/`bool`/`pallas_base`/`pallas_scalar`/`public_key`/`contract_id`/`bytes`, and reject every other
+token with `unknown type`. A declared `string` param therefore fails before any transaction is built.
+The one arm that names `string` is the CLI's `validate_field_type`
+(`bin/dww/src/manifest_resolver.rs`), a shape-check whose `_ => true` default admits *any* unknown
+token; it encodes nothing. No manifest declares the type (`type = "string"` occurs nowhere in
+`src/`), so dropping the row makes this table the encoder's closed vocabulary.
 
 ### Cost Profiles
 

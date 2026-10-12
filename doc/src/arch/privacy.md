@@ -101,8 +101,11 @@ for a wire that publishes the id (`the_publishing_wire_collapses_the_anonymity_s
 one whose observation does not depend on the object (`the_note_wire_keeps_the_anonymity_set`).
 Where the premise fails, N is 1 and `Transitions.l1_exceeds_l2`'s `N ^ K` is `1 ^ K = 1` — the
 L2 singleton count, which is the sense in which L1 collapses. `OBL-C145` is the register row,
-and `scripts/check-l1-wire-conformance.sh` counts what remains: 10 declared slots across Box and
-Purse, each with the reason it is still there.
+and `scripts/check-l1-wire-conformance.sh` prints what remains rather than this sentence counting
+it — `PASS: 1 declared wire leak(s) in promissory_note, box, purse` — a single slot
+(`box`/`Take`'s `contents_commit`, read by a parent contract through the child call), declared with
+its reason, and the declaration expires when the field leaves the wire. (This said "10 declared
+slots across Box and Purse" until 2026-10-12 (`F-347`); the gate's own line is the citation.)
 
 **Why DAOs are L2.** A DAO contract deployed at L1 would force every DAO into
 the same template — one Merkle tree, one anonymity set, one state machine. This
@@ -212,7 +215,7 @@ behaviorally distinct output from `poseidon_hash(DOMAIN_COIN_COMMIT, ...)`.
 The domain constant IS the type tag — it proves "this hash was computed for
 purpose X, not purpose Y."
 
-The domain constant vocabulary (7 values, cross-circuit):
+The domain constant vocabulary (10 values, cross-circuit; `src/sdk/src/crypto/constants.rs:55-69`):
 
 | Constant | Purpose |
 |---|---|
@@ -222,7 +225,13 @@ The domain constant vocabulary (7 values, cross-circuit):
 | `witness_base(4)` | Commitment commitment |
 | `witness_base(5)` | Merkle leaf |
 | `witness_base(6)` | User data encryption |
-| `witness_base(7)` | Signature secret / key derivation |
+| `witness_base(7)` | Signature secret |
+| `witness_base(8)` | Key derivation |
+| `witness_base(9)` | Capability ID |
+| `witness_base(10)` | Attribute |
+
+This table said "7 values" and folded key derivation into `witness_base(7)` until 2026-10-12
+(`F-348`); the constants are ten.
 
 Every `poseidon_hash` call in every circuit MUST prepend the appropriate
 domain constant as its first argument. Every Rust-side computation of the

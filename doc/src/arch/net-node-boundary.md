@@ -210,11 +210,18 @@ required at L2.
 
 ## 6. Enforcement Points
 
-The barb declarations are enforced at two points in the P2P dispatch path:
+The barb declarations are enforced at the following points in the P2P dispatch
+path (point 1 is specified but not yet active):
 
 1. **Message dispatch** (`src/net/message_publisher.rs`): `MessageDispatcher`
-   implements `barbs()` returning `M::BARBS`. The `MessageSubsystem::notify()`
-   method can check barb compatibility against the channel's session type.
+   is specified to implement `barbs()` returning `M::BARBS`, with
+   `MessageSubsystem::notify()` checking barb compatibility against the
+   channel's session type. **Neither is active**: both `barbs()` declarations are
+   commented out — the trait method (`src/net/message_publisher.rs:246`) and its
+   impl (`src/net/message_publisher.rs:323`) — each tagged "reinstated when
+   quarantine boundary enforcement is activated (§10.4)", and the live `notify()`
+   (`src/net/message_publisher.rs:408`) performs no barb comparison. This said
+   dispatch-time enforcement was active until 2026-10-12 (`F-307`).
 
 2. **Channel subscription** (`src/net/channel.rs`): `subscribe_msg::<M>()`
    checks channel liveness before creating a subscription. Dead channel

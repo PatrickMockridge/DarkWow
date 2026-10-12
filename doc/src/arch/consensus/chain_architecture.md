@@ -56,7 +56,6 @@ CChainState {
     vm_cache: Mutex<HashMap>,       // RandomX VM pool (keyed by randomx_key)
     cache_pool: Mutex<HashMap>,     // RandomXCache pool (256 MB, Arc-shared)
     commitment_set: Mutex<BTreeMap>,// Commitment → creation_height
-    uncle_commitment_set: Mutex<HashMap>, // uncle Pedersen commitment → creation_height
     nullifier_set: Mutex<BTreeMap>, // claim Nullifier → creation_height
     spent_nullifiers: Mutex<BTreeSet>, // spend nullifiers (double-spend prevention)
     block_anchor_tree: Arc<Mutex<MerkleTree>>, // depth-32 anchor tree (Orchard standard)
@@ -82,11 +81,16 @@ competing_block}, Lighter, None}`.
 **Cache restoration on restart:** On node startup, `commitment_set` and
 `nullifier_set` are rebuilt from the `commitment_set` and `nullifiers` sled
 trees, preventing duplicate commitment/nullifier acceptance after a crash
-restart. `uncle_commitment_set` is in-memory only — uncle commitments are
-deterministically recomputable from chain data
-(`r_i = blake3(uncle_hash ‖ u_i ‖ H) mod p`). The `competing_blocks` and
+restart. The `competing_blocks` and
 `competing_seen` caches are NOT restored (in-flight state that is invalidated
 by a restart).
+
+This paragraph, and the `CChainState` diagram above, listed an in-memory
+`uncle_commitment_set` until 2026-10-12 (`F-373`). The field was **deleted**
+(`OBL-C26`, 2026-09-23, in `doc/src/arch/verification-hazop.md`) — nothing read
+it, so it was never a cache whose restoration could matter. `chain_state.rs`
+records the deletion where the construction and the disconnect-path reversal
+used to sit (`src/linear/src/chain_state.rs`).
 
 ### MiningState — Block Production
 

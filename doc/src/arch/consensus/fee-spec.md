@@ -170,7 +170,7 @@ adjustment is capped at ±10% per window — process stability requires slow, da
 response. Two independent control loops run in parallel: one for circuit execution
 congestion (ZK proof complexity) and one for WASM storage congestion (deploy size).
 The controller is deterministic: all nodes compute identical outputs from identical
-inputs. No floating-point arithmetic. No coordination required.
+inputs. No non-reproducible arithmetic (FI-WINDOW-2). No coordination required.
 
 **3. Fouling Detector (ContractRiskTracker).** FI-RISK-1 through FI-RISK-6. In a
 chemical plant, fouling builds up inside pipes over time, increasing the actual
@@ -931,7 +931,9 @@ transactions.
 The wallet SHALL compute a basic trust metric for the target contract — from
 contract age, whether the transaction path has been used before, attestation, and
 wallet-side checks of the WASM — to inform the user's decision. This metric SHALL
-NOT gate consensus or mempool admission (§14.7).
+NOT gate consensus or mempool admission (§14.7; *restated 2026-10-12 (`F-304`): the
+metric is specified but not built — §14.7 records the two-value tier the wallet
+displays instead*).
 
 ## 9. Barbs
 
@@ -1203,19 +1205,28 @@ using logarithmic scaling. Separate factors are computed for the high-priority
 tier and the medium/low tiers:
 
 ```
-CF_premium  = SCALE + α_premium  × floor(SCALE × log₂(P_premium  + 1))
-CF_standard = SCALE + α_standard × floor(SCALE × log₂(P_standard + 1))
+CF_premium  = SCALE + floor(α_premium  × SCALE × log₂(P_premium  + 1))
+CF_standard = SCALE + floor(α_standard × SCALE × log₂(P_standard + 1))
 
 where:
-    SCALE        = 1_000_000          (fixed-point scale for integer arithmetic)
+    SCALE        = 1_000_000          (fixed-point scale)
     P_premium    = pending count in mempool high queue
     P_standard   = pending count in mempool medium + low queues (fee_index
                    holds non-FeeV3 entries and is NOT counted)
     α_premium    = high-priority congestion sensitivity coefficient
     α_standard   = medium/low congestion sensitivity coefficient
+    log₂(.)      = integer binary logarithm, ilog2(.)  (floored; never f64::log2)
     α_premium > α_standard > 0       (high priority always more sensitive)
     CF_premium > CF_standard         (structural invariant, always)
 ```
+
+*Corrected 2026-10-12 (`F-336`): the two formulas read `α × floor(SCALE ×
+log₂(P + 1))`, placing the floor inside the α multiplication. The implementation
+floors once, over the whole product — `compute_cf()` (`src/linear/src/fee_window.rs:459`)
+evaluates `(α × SCALE × ilog2(P + 1)) as u32`, matched by the reference model's
+`int(α × SCALE × int(math.log2(P + 1)))` (`contrib/model/fee_window_model.py:533`).
+The old form also read `log₂` as the real log; both implementations take the integer
+log first.*
 
 **Why logarithmic:** Doubling the queue depth adds at most `α × SCALE` to the
 congestion factor. This prevents both premature saturation (linear) and
@@ -2002,8 +2013,19 @@ block header. Scope: miner_task + FeeWindowState + BlockHeader. Level: L2.
 
 **FI-WINDOW-2: Deterministic CF computation.** `compute_cf(premium_pending,
 standard_pending, alpha_premium, alpha_standard)` SHALL produce identical results
-on all nodes given the same inputs. Floating-point arithmetic SHALL NOT be used.
-Scope: fee_window.rs. Level: L1.
+on all nodes given the same inputs. *Restated 2026-10-12 (`F-337`). This added
+"Floating-point arithmetic SHALL NOT be used." The invariant holds, but not by that
+route — the coefficients are `f64`. `alpha_premium` and `alpha_standard` are `f64`
+fields of `FeeWindowConfig`, `compute_cf()` evaluates `α × SCALE × log₂(P + 1)` in
+`f64`, and the ±10% cap band is computed in `f64` too (`src/linear/src/fee_window.rs:459`,
+`:544`). Determinism survives because of what the float is allowed to touch, not
+because there is none: the binary logarithm is the integer `ilog2(P + 1)`, never
+`f64::log2`, and `f64` appears only as a fixed constant multiplied by integer
+operands and truncated with `as u32`. Same inputs — the same constant bits and the
+same integers — give the same correctly-rounded IEEE-754 product on every node,
+which is what the clause's first sentence asks. The reference model is identical in
+kind (`contrib/model/fee_window_model.py:533`), save that it takes the log with
+`int(math.log2(...))` rather than an integer log.* Scope: fee_window.rs. Level: L1.
 
 **FI-WINDOW-3: CF ordering.** If `premium_pending > 0` or `standard_pending > 0`,
 `cf.premium >= cf.standard`. At zero congestion, equality is acceptable. Scope:
@@ -2115,8 +2137,19 @@ fee_window.rs + mempool + miner. Level: L1.
 **FI-RISK-2: Wallet trust metric (observability).** The wallet SHALL compute a basic
 trust metric for a contract — from contract age, whether the transaction path has
 been used before, attestation, and wallet-side checks of the WASM — to inform the
-user's decision. This metric SHALL NOT gate consensus or mempool admission. Scope:
-wallet. Level: L2.
+user's decision. This metric SHALL NOT gate consensus or mempool admission. *Restated
+2026-10-12 (`F-304`). The four inputs the clause names are not implemented, and no
+function computes them. What the wallet displays today is a two-value trust **tier**:
+`resolve_show_trust()` (`bin/dww/src/dispatch.rs:1200`) returns `TrustTier::Genesis`
+for a contract in its hardcoded genesis-id list and `TrustTier::Unverified` otherwise,
+and `describe_with_trust()` (`bin/dww/src/manifest_resolver.rs:152`) renders it — the
+enum's `SelfDeployed` and `Attested` variants (`src/sdk/src/manifest.rs:1001`) are
+never produced there. The sibling `attestation_risk_factor()`
+(`src/linear/src/fee_window.rs:342`), which the wallet comment calls the "wallet-side
+trust metric", is dead: nothing calls it. The four-input metric remains the
+obligation — contract age and tx-path reuse need wallet-side history the display path
+does not read, and the attested tier needs an on-chain Attestation query the resolver
+defers.* Scope: wallet. Level: L2.
 
 **FI-RISK-3: BlockCharge update loop.** The manifest SHALL declare a per-function
 cost profile — `[[cost_profiles]].circuit_difficulty`, the self-declared expected
