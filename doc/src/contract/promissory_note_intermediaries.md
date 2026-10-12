@@ -433,11 +433,11 @@ call are child calls to Identity (0x06) and DAO-Escrow (0x07), not PN.
 | Independent (no PN) | 11 |
 | Using RegisterTypeV1 (0x00) | 0 |
 | Using RedeemV1 (0x01) | 1 (stablecoin) |
-| Using IssueV1 (0x02) | 0 |
-| Using RevokeV1 (0x03) | 1 (stablecoin, via spend hook) |
+| Using IssueV1 (0x02) | 1 (bridge) |
+| Using RevokeV1 (0x03) | 1 (stablecoin, via spend hook — `SpendHookCallback` 0x0B, not a child call) |
 | Using TransferV1 (0x04) | 21 |
 | Using OtcSwapV1 (0x05) | 0 |
-| Contracts with redemption support | 1 (stablecoin) |
+| Contracts with redemption support | 2 (stablecoin, bridge) |
 | Contracts with balance sheet tracking | 2 (stablecoin, bridge) |
 
 ---

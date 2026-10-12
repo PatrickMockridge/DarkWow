@@ -424,7 +424,7 @@ Like DarkToshi Dice, Baccarat uses player-selected confirmation depth. Economic 
 The [game_room](game_room.md) contract implements a commit-reveal entropy scheme
 via `EntropyMode::TrustedSetup` at `src/contract/game_room/src/entrypoint/entropy.rs`.
 This allows trusted operators or house-selected oracle addresses to contribute
-entropy for multi-player game rooms, using `ContributeEntropyV1` (0x04).
+entropy for multi-player game rooms, using `ContributeEntropyV1` (0x09).
 
 The TrustedSetup mode works as follows:
 1. Game room is initialized with an entropy mode and a list of trusted entropy contributors

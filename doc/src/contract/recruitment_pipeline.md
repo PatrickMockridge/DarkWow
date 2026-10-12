@@ -198,7 +198,7 @@ ZK proofs verify `member_vote` capability. Vote nullifier (`H(capability_secret,
 │  │ DAO-Escrow   │     │  Identity    │     │  Identity    │                          │
 │  │ InitializeV1 │     │ IssueCreden- │     │ RegisterCap- │                          │
 │  │ (0x00)       │     │ tialV1 (0x01)│     │ abilityV1    │                          │
-│  └──────────────┘     └──────────────┘     │ (0x09)       │                          │
+│  └──────────────┘     └──────────────┘     │ (0x04)       │                          │
 │                                             └──────────────┘                          │
 │                                                                                      │
 │  STEP 4: Employer creates job                                                        │

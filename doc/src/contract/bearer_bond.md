@@ -426,7 +426,7 @@ src/contract/bearer_bond/
 ├── Makefile
 ├── src/
 │   ├── lib.rs                 # BearerBondFunction enum, tree constants, circuit bins
-│   ├── error.rs               # BearerBondError (30 variants)
+│   ├── error.rs               # BearerBondError (35 variants)
 │   ├── model/mod.rs           # CommitmentAttributes, BondCommitment, BondSeriesInfo, CoverageReport,
 │   │                           # all Params/Update types, calculate_interest()
 │   ├── entrypoint/mod.rs      # WASM entrypoint (init, exec, apply, metadata)

@@ -164,7 +164,8 @@ and ensure the correct bet or payout amount is transferred.
 
 ## Future Improvements
 
-- [ ] ZK circuits for place_bet and settle_bet
+- [x] ZK circuits for place_bet and settle_bet — `proof/place_bet.zk` and `proof/settle_bet.zk` are
+      built and committed (as are `house_close.zk` and `spin_wheel.zk`)
 - [ ] En prison rule for European even-money bets (reduces HE to 1.35%)
 - [ ] Multi-spin tracking
 - [ ] Progressive jackpot option (separate pool)
