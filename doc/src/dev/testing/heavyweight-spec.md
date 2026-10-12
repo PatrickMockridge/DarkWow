@@ -518,7 +518,7 @@ Does NOT compose from native_token — completely separate.
 - RevokeV1 (0x03): real ZK proof, verify nullifier inserted, commitment destroyed
 - TransferV1: real ZK proof, verify value conservation via Pedersen homomorphism
 - OtcSwapV1 (0x05): real ZK proof, exactly 2 inputs/2 outputs, per-token_commit conservation
-- RedeemV1: real ZK proof, verify receipt commitment has value=0 (is_notequal gate)
+- RedeemV1: real ZK proof, verify receipt commitment has value=0 (`constrain_equal_base` against a witness zero; not an `is_notequal` gate)
 - BlindOutput_V1: every Transfer/OtcSwap output SHALL carry valid blind output proof
 - Token registry: duplicate RegisterTypeV1 SHALL be rejected
 - Spend hooks: verify spend_hook routing when non-zero

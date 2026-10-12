@@ -73,13 +73,13 @@ send_to_channel(channel_id, tx)?;
 ### Join Room (Deposit Stake)
 
 ```rust
-// Player deposits stake
-let tx = client.deposit(room_id, amount)?;
+// Player deposits stake — the client *builds* the call; it does not send it.
+let tx = client.deposit(room_id, amount);
 send_to_channel(channel_id, tx)?;
 
-// Wait for confirmation, check balance
-let account = client.get_account(room_id, user_pubkey).await?;
-println!("Balance: {}, Locked: {}", account.balance, account.locked);
+// There is no `get_account`. `GameRoomClient` builds contract calls and nothing else —
+// it holds an RPC URL, a contract id and a keypair, and every method returns a
+// `ContractCall`. A balance is read from chain state by the caller, not from the client.
 ```
 
 ### Place Bet
@@ -118,12 +118,17 @@ send_to_channel(channel_id, tx)?;
 ### Entropy Contribution (TrustedSetup Mode)
 
 ```rust
+// The client exposes **one** method for both phases — there is no
+// `entropy_commit`/`entropy_reveal` pair. `reveal: None` commits, `reveal: Some(..)` reveals,
+// and the commitment is computed by the caller.
+
 // Commit phase
-let commitment = client.entropy_commit(room_id, secret_nonce)?;
-send_to_channel(channel_id, commitment)?;
+let commitment = /* pallas::Base computed client-side */;
+let tx = client.contribute_entropy(room_id, commitment, None);
+send_to_channel(channel_id, tx)?;
 
 // Reveal phase (after deadline)
-let tx = client.entropy_reveal(room_id, secret_nonce)?;
+let tx = client.contribute_entropy(room_id, commitment, Some(secret_nonce));
 send_to_channel(channel_id, tx)?;
 ```
 

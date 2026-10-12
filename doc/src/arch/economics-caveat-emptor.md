@@ -298,8 +298,9 @@ stale data problem.
 
 **Mechanism:** RedeemV1 (opcode 0x01) is fully implemented at the protocol layer:
 circuit, entrypoint, client builder, wallet scanner. The Redeem_V1 ZK circuit
-constrains the output commitment to have `value = 0` (using the `is_notequal` boolean
-gate), so the receipt commitment is a real ZK proof that redemption occurred. But per
+constrains the output commitment to have `value = 0` (exposed as a public input *and* enforced
+in-circuit against a witness zero — not by an `is_notequal` gate, which the circuit does not
+use), so the receipt commitment is a real ZK proof that redemption occurred. But per
 the [Intermediary Contract Audit](../contract/promissory_note_intermediaries.md),
 only the stablecoin (RedeemStableV1, opcode 0x0A) calls RedeemV1. Every other PN
 token type has zero on-chain redemption evidence. Tokens can be minted,

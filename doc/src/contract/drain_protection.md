@@ -67,23 +67,31 @@ See [Purse](purse.md) and [Box](box.md) for the genesis primitives.
 
 The **contract deployer** chooses which protections to enable at initialization:
 
+`DrainConfig` is built field by field. There are **no** `full()`, `conservative()` or `minimal()`
+presets and no `graduated_tiers` field — this example showed all four until 2026-10-12. The struct
+has seven fields, four of which are optional and default to `None`:
+
 ```rust
-// Example: Enable all protections
-let config = DrainConfig::full();
+pub struct DrainConfig {
+    pub guardian_multisig_group_id: pallas::Base,   // required
+    pub exit_queue: Option<ExitQueueConfig>,
+    pub circuit_breaker: Option<CircuitBreakerConfig>,
+    pub observation_period: Option<ObservationPeriodConfig>,
+    pub split_proposals: Option<SplitProposalsConfig>,
+    pub no_loss_reserve: Option<NoLossReserveConfig>,
+    pub dead_mans_switch: Option<DeadMansSwitchConfig>,
+}
+```
 
-// Example: Conservative - only essential protections
-let config = DrainConfig::conservative();
+`Default` enables `exit_queue` and `circuit_breaker` and leaves the rest `None`, with a zero
+`guardian_multisig_group_id` — so a deployer starting from `DrainConfig::default()` must set the
+guardian group, and opts the other protections in by assignment:
 
-// Example: Minimal - circuit breaker + guardian only
-let config = DrainConfig::minimal();
-
-// Graduated tiers are optional
-config.graduated_tiers = Some(GraduatedTiers { ... });
-
-// Exit queue is optional
-config.exit_queue = Some(ExitQueueConfig { ... });
-
-// etc. for all 8 features
+```rust
+let mut config = DrainConfig::default();
+config.guardian_multisig_group_id = guardian_group;
+config.observation_period = Some(ObservationPeriodConfig { .. });
+config.split_proposals = Some(SplitProposalsConfig { .. });
 ```
 
 ## DAO Member Control

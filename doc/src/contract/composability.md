@@ -50,17 +50,30 @@ if child_call.data[0] != EXPECTED_FUNCTION_CODE {
 
 This check happens **before apply** — if the child call has the wrong function code, the transaction is rejected atomically before any state is mutated.
 
-**Notable detail**: Contracts validate `child_call.data[0]` (the function code byte of the child), not `child_call.contract_id`. This means the calling contract specifies *what function* must be called, but the *which contract* is determined by the transaction builder and enforced by the WASM runtime routing the call.
+**Notable detail**: A parent checks the child's **function code** (`child_call.data[0]`) **and** its
+**contract id** (`validate_child_contract_id`). Both are needed, because two contracts can share an
+opcode — `PromissoryNote::TransferV1` and `Attestation::VerifyClaimV1` are both `0x04` — so the
+function byte alone does not say which contract was called. This paragraph claimed only the
+function byte is checked, and that the contract is left to the transaction builder, until
+2026-10-12; `escrow`, `labor_market`, `betting_stake` and `pool_stake` each validate the child's
+contract id against the id they hold in their own info tree.
 
 ### Promissory Note Child Call Amount Validation
 
-When a promissory_note::TransferV1 call is a child of another contract, the parent needs to verify the transfer amount. PromissoryNote's `Output` struct supports optional `public_value` and `public_asset_id` fields for this purpose, backed by a TransferOutput_V1 ZK proof that constrains these public values equal the encrypted commitment attributes.
+When a `promissory_note::TransferV1` call is a child of another contract, the parent verifies the
+transfer amount by **recomputing the Pedersen commitment it expects** and matching it against the
+child's outputs. There are no `public_value`/`public_asset_id` fields on `Output` and no
+`TransferOutput_V1` circuit — this section described both, and named a
+`validate_child_transfer_value` helper, until 2026-10-12.
+
+The real helper is `validate_child_value_commit(child_call_data, expected_value, blind_seed)`:
 
 ```rust
-// Full validation pattern for promissory_note child transfers:
+use dwow_promissory_note_contract::validation::validate_child_value_commit;
+
 let this_call = &calls[call_idx];
 
-// 1. Validate child call exists and targets TransferV1
+// 1. Validate the child call exists and is a TransferV1
 if this_call.children_indexes.len() != 1 {
     return Err(ContractError::InvalidChildrenIndexes.into())
 }
@@ -70,17 +83,21 @@ if child_call.data[0] != 0x04 {
     return Err(ContractError::InvalidChildCall.into())
 }
 
-// 2. Validate the transfer amount matches expected value
-dwow_promissory_note_contract::entrypoint::validate_child_transfer_value(
-    &child_call.data,
-    params.amount,       // expected amount from parent's params
-    None,                // optional asset_id check
-)?;
+// 2. Validate the transfer amount against the value the parent expects.
+//    `blind_seed` is derived deterministically from the parent's own state
+//    (e.g. poseidon_hash([value, nullifier])), so the child's BlindOutput_V1
+//    proof commits to the same blind this function recomputes.
+validate_child_value_commit(&child_call.data, params.amount, blind_seed)?;
 ```
 
-The `validate_child_transfer_value` helper deserializes the child call's `TransferParamsV1`, verifies each output's `public_value` matches the expected amount, and checks `public_asset_id` if provided. This closes the cross-contract composition gap: parent contracts can now verify that child promissory_note transfers actually move the expected value, not just that a TransferV1 call exists.
+It decodes `TransferParamsV1` from `child_call.data[1..]`, converts `blind_seed` to a scalar, and
+returns `Ok` if **any** output's `value_commit` equals `pedersen_commitment_u64(expected_value,
+value_blind)` — otherwise `PromissoryNoteError::ValueMismatch`. Because the comparison is against a
+commitment, the amount stays private: the parent proves it knows the value without publishing it.
 
-For contracts that don't want to depend on `dwow_promissory_note_contract` directly, the same validation can be performed inline by deserializing `TransferParamsV1` and checking `output.public_value` manually.
+For contracts that don't want to depend on `dwow_promissory_note_contract` directly, the same check
+can be performed inline by deserializing `TransferParamsV1` and comparing `output.value_commit`
+against a locally computed commitment.
 
 ## Current Cross-Contract Call Map
 

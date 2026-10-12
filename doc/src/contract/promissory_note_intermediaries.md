@@ -341,9 +341,10 @@ Create token type    Mint tokens            Transfer tokens       Redeem → rec
 ### Redemption via RedeemV1
 
 `RedeemV1` burns a commitment and creates a **zero-value receipt commitment** as proof of
-redemption. The ZK circuit (`redeem.zk`) constrains `coin_value = 0` using
-the `is_notequal` gate — this proves the receipt has no monetary value without
-revealing the original commitment's value.
+redemption. The ZK circuit (`redeem.zk`) constrains `value = 0` — `constrain_instance(value)`
+for the entrypoint to check, and `constrain_equal_base(value, witness_base(0))` in-circuit
+against a private zero. That proves the receipt has no monetary value without revealing the
+original commitment's value; it is not the `is_notequal` gate.
 
 The receipt commitment's `spend_hook` is set to the issuer contract ID, making it
 **non-transferable** — only the issuer can interact with receipt commitments.

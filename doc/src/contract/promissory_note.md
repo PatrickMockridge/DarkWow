@@ -59,8 +59,8 @@ Three problems were previously considered intractable:
    the entire chain of custody.
 
 Promissory Note solves all three. The key that makes it possible is
-**redemption capability** — and the `is_notequal` boolean logic gate
-available on DarkWow but not upstream.
+**redemption capability** — and a circuit that can prove a receipt's `value`
+is zero without revealing it.
 
 ## The Breakthrough: Capability, Not Access Control
 
@@ -280,23 +280,25 @@ The receipt commitment gives the redeemer a verifiable record. The nullifier in
 the RedeemV1 input gives the issuer a verifiable record. Both sides of the
 double-entry are on-chain.
 
-**The is_notequal gate.** DarkWow's zkas circuit language includes
-`is_notequal` — a boolean logic gate that returns 0 when two field elements
-are equal and 1 when they differ. This gate is not available upstream.
-RedeemV1's circuit uses it to prove that `value == 0` — the receipt
-has no monetary value — without revealing `value` itself:
+**Proving a receipt is worth nothing.** DarkWow's zkas circuit language includes
+`is_not_equal` (`IsNotEqualBase`, opcode `0x62`) — a boolean logic gate returning 0 when two
+field elements are equal and 1 when they differ. **`Redeem_V2` does not use it.** The circuit
+proves `value == 0` two ways, and both keep `value` private:
 
 ```
-# is_notequal(value, 0) returns 0 when value == 0, 1 otherwise
-# The entrypoint verifies zero_check == 0 → receipt is valid
-zero_check = is_notequal(value, 0);
-constrain_instance(zero_check);
+# src/contract/promissory_note/proof/redeem.zk
+constrain_instance(value);          # value is a public input — the entrypoint checks it is 0
+
+ZERO = witness_base(0);             # and the circuit enforces value == 0 internally,
+constrain_equal_base(value, ZERO);  # against a *witness* zero, so nothing is revealed
 ```
 
-Without `is_notequal`, proving value = 0 would require either revealing the
-value (destroying privacy) or a circuit-level constraint that leaks the
-value to the verifier. `is_notequal` makes the proof fully private — the
-verifier learns only that value IS zero, not what value was tested.
+The witness zero is the point: `constrain_equal_base(value, witness_base(0))` is a constraint
+between two private values, so the proof establishes `value == 0` without the verifier learning
+anything beyond that. An earlier version of this section named an `is_notequal` gate — a name
+that does not exist at that spelling in `src/zkas/opcode.rs` — and showed it as
+`zero_check = is_notequal(value, 0); constrain_instance(zero_check)`, a construction this
+circuit does not use.
 
 **Parameters:**
 ```rust
@@ -526,9 +528,10 @@ Promissory Note uses 5 ZK circuits:
 - `token_commit` is ZK-constrained in both RevokeV1 and TransferV1, enabling
   the entrypoint to group by token type for value conservation.
 - **RedeemV2 constrains `value` as a public input** — the entrypoint
-  verifies it is zero, proving the receipt has no monetary value. This is
-  the boolean constraint pattern (`is_notequal`) available on DarkWow's zkas
-  but not upstream.
+  verifies it is zero, proving the receipt has no monetary value. The circuit
+  *also* enforces `value == 0` internally, against a witness zero
+  (`constrain_equal_base(value, witness_base(0))`), so the check does not rest
+  on the entrypoint alone.
 
 ### RevokeV1 Public Input Layout
 
@@ -549,10 +552,9 @@ Promissory Note uses 5 ZK circuits:
 [commitment, value_commit_x, value_commit_y, token_commit, value, spend_hook]
 ```
 
-`value` is constrained to `pallas::Base::zero()` — the entrypoint
-verifies this independently. This is functionally equivalent to the
-`is_notequal` gate: the verifier learns that value IS zero, without
-learning what value was tested.
+`value` is exposed as a public input and the entrypoint verifies independently that it is zero.
+The circuit also enforces `value == 0` internally, against a witness zero, so the verifier learns
+that value IS zero without learning what value was tested.
 
 The receipt commitment's `spend_hook` is exposed as a public input, enabling
 parent contracts to verify it is set to the issuer contract (preventing
