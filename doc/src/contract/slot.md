@@ -131,6 +131,14 @@ Bonus rounds, progressive jackpots, and special features can be added as separat
 
 ## ZK Proof Structure
 
+All **3** circuits compiled to `.zk.bin`:
+
+| Circuit | Purpose |
+|---------|---------|
+| `commit_bet.zk` | Instance `spin_id` and the Pedersen `value_commit` — commit to the spin's parameters without revealing them |
+| `reveal_spin.zk` | Prove the player knows `secret_nonce` via `H(secret_nonce) == secret_nonce_commit`, without revealing the nonce on-chain |
+| `settle_bet.zk` | Re-derive `spin_id` from the committed parameters and instance the settlement `payout` |
+
 ### commit_bet.zk
 Commits to bet parameters without revealing them.
 
@@ -226,9 +234,13 @@ and ensure the correct bet amount is transferred.
 
 ## Security Considerations
 
-- **House edge** is applied in ZK during settle (cannot be manipulated)
+- **House edge** — **not** applied in ZK. `settle_bet.zk` contains no house-edge arithmetic; the
+  paytable is the host's. (This bullet said "applied in ZK during settle (cannot be manipulated)"
+  until 2026-10-12, which contradicted this document's own `settle_bet.zk` section above — `F-547`.)
 - **Randomness** comes from block entropy (decentralized, unpredictable)
-- **Payouts** are constrained by circuit (cannot overpay)
+- **Payouts** — `payout` is **published, not constrained**, by the circuit; a proof establishes that
+  some payout was declared against some spin id, and nothing relates the two. The "cannot overpay"
+  claim this bullet made has no instrument behind it, here or on the host.
 
 ## File Structure
 

@@ -37,6 +37,16 @@ ROOT = pathlib.Path(os.environ["CONTRACT_DOC_CIRCUITS_ROOT"])
 
 TBL_ZK = re.compile(r'`([A-Za-z0-9_]+\.zk)`')
 COUNT = re.compile(r'All\s+\*{0,2}(\d+)\*{0,2}\s+circuits')
+# D1 reads rows under a **circuit** heading, not every table row in the document. Until 2026-10-12 it
+# unioned the `.zk` mentions of any line starting with `|`, so a contract could satisfy it by naming
+# `.zk` files in an unrelated table — `slot.md` did exactly that, scoring `with_table=18` before its
+# circuit table existed, with the "Composability" table's two rows supplying `commit_bet` and
+# `settle_bet` and only `reveal_spin` reported missing. That is the fixture-weaker-than-downstream
+# pattern this campaign keeps finding, one level up: a check whose *name* says "circuit table" and
+# whose test said "a pipe-row somewhere". The heading requirement is modelled on the sibling
+# `check-contract-doc-functions.sh`'s `FUNHEAD`, which has always read rows under a functions heading.
+HEAD = re.compile(r'^(#{2,4})\s+(.*)$')
+CIRHEAD = re.compile(r'circuits?\b|zk\s+proof|proof\s+structure|circuit\s+table', re.I)
 
 
 def scan(root):
@@ -49,8 +59,17 @@ def scan(root):
         docs += 1
         proof = sorted(p.name[:-3] for p in pd.glob("*.zk"))  # strip ".zk"
         txt = doc.read_text()
-        rows = {z[:-3] for line in txt.splitlines() if line.lstrip().startswith('|')
-                for z in TBL_ZK.findall(line)}
+        rows, section = set(), None
+        for line in txt.splitlines():
+            h = HEAD.match(line)
+            if h:
+                section = h.group(2)
+                continue
+            if not line.lstrip().startswith('|'):
+                continue
+            if not (section and CIRHEAD.search(section)):
+                continue
+            rows |= {z[:-3] for z in TBL_ZK.findall(line)}
         if not rows:
             notes.append((name, f"no circuit table (proof/ holds {len(proof)})"))
             continue

@@ -227,6 +227,31 @@ run_gate "a contract doc's function table ↔ its manifest" \
     bash "$SCRIPT_DIR/check-contract-doc-functions.sh"
 run_gate "control: the doc-function-table gate can fail" \
     bash "$SCRIPT_DIR/check-contract-doc-functions.sh" --self-test
+# The circuit census. A doc that states a circuit, contract or opcode count is making a claim about the
+# tree, and every such claim in this repository drifted — the ledger's own two rows (F-006/F-007) had each
+# been corrected once and were stale again, which is why their claim cells no longer quote a number. This
+# gate derives all four figures (`contract_dirs`, `with_proof`, `circuits_contract`, `circuits_gate`) from
+# the tree and checks every claim against them; **flipped from report-only to blocking in Phase F
+# (2026-10-12)**, when the census reached zero findings after E6/E7 corrected the documents that carried
+# the stale figures. Negative-controlled, per the OBL-Z18 lesson.
+run_gate "doc circuit/contract census ↔ the tree" \
+    bash "$SCRIPT_DIR/check-doc-canonical-counts.sh"
+run_gate "control: the census gate can fail" \
+    bash "$SCRIPT_DIR/check-doc-canonical-counts.sh" --self-test
+# A contract doc's circuit table ↔ `proof/`, and its "All N circuits" sentence ↔ the directory. **Flipped
+# from report-only to blocking in Phase F (2026-10-12), after E5/E7 corrected the tables it was red on** —
+# `game_room` was short seven circuits, `escrow` one, `stablecoin` one, `slot` had no table at all.
+# **Its D1 rule was also strengthened at the flip**, and the reason is worth keeping: it read the `.zk`
+# mentions of *any* line starting with `|`, so `slot.md` scored `with_table=18` before it had a circuit
+# table — the "Composability" table's two rows supplied `commit_bet` and `settle_bet`. It now reads rows
+# under a **circuit** heading, modelled on the sibling function-table gate's `FUNHEAD`. The effect of the
+# strengthening is visible in the numbers: `with_table` 18 → 13, and the "no circuit table" notes 14 → 19.
+# That 19 is a *coverage decision* (whether to require a table), not a defect, and the ledger's R7 section
+# records it as such.
+run_gate "a contract doc's circuit table ↔ proof/" \
+    bash "$SCRIPT_DIR/check-contract-doc-circuits.sh"
+run_gate "control: the circuit-table gate can fail" \
+    bash "$SCRIPT_DIR/check-contract-doc-circuits.sh" --self-test
 # OBL-Z1: the Orchard-class rule. The other two circuit gates are structural (counts, prefix
 # presence); this is the only one that asks whether an exposed public input is *determined*.
 # **It is GREEN, re-measured 2026-09-24, and it is the gate the circuits' Lean discharge rests on**:
@@ -529,6 +554,19 @@ run_gate "register status markers"        bash "$SCRIPT_DIR/register-status.sh" 
 # that matters. **It is green.**
 run_gate "register worklist (root-cause assignment)" \
     bash "$SCRIPT_DIR/check-register-worklist.sh" --strict
+# **The gate that proves the docs-vs-code campaign done.** The ledger at
+# `doc/src/arch/audit/docs-review-2026-10-10.md` carries a `<!-- promotion-log -->` block in which every
+# confirmed row is stamped with where its correction landed (`doc:<path>#<anchor>@<commit>`, `row:OBL-…`,
+# `gate:…`, `struck:REFUTED:<id>`, `partial:<the correction applied>`) — or with the honest token for a
+# row whose subject is gone. This gate requires that stamp to exist and to be in the vocabulary, so a
+# finding cannot be closed by being forgotten. Wired blocking 2026-10-12 with the campaign's close-out:
+# `rows=270 promoted=270 refuted=3 pending=0 invalid_stamps=0`. Its `--check` form is the hard one; the
+# default reports. **A `pending` row is the finding**, and the count is the campaign's completion
+# criterion — which is why the pending list is read from this gate rather than remembered.
+run_gate "ledger promotion (every row reaches a home)" \
+    bash "$SCRIPT_DIR/check-ledger-promotion.sh" --check
+run_gate "control: the promotion gate can fail" \
+    bash "$SCRIPT_DIR/check-ledger-promotion.sh" --self-test
 # RG-9, wired 2026-10-08 (`OBL-C142`): every contract's WASM embeds the current bytes of every circuit
 # in its `proof/` directory. Decided by content — the wasm either contains the `.zk.bin` bytes or it
 # does not — so a byte-identical regeneration of a circuit cannot make this fire, which is what its
