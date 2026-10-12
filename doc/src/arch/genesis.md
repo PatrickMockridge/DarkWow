@@ -89,7 +89,7 @@ The full sequence is:
    PromissoryNote, Identity, Oracle, Attestation, Purse, Box, MultiSig.
    **These positions are not the counters in the table above, and the two must not be indexed by
    each other**: NativeToken has counter 4 but is deployed at position 2, and Promissory Note has counter
-   3 at position 3. `genesis_contracts()` (`src/linear/src/execution.rs:915-927`) is the authority for
+   3 at position 3. `genesis_contracts()` (`src/linear/src/execution.rs:949-961`) is the authority for
    the order and `contract_id.rs`'s constants are the authority for the ids; the ordering trap is
    recorded in that file's own comment (`:139-149`), where `GENESIS_CONTRACT_IDS_BYTES` had to be
    reordered to match the deployment array. Deployooor and
@@ -247,6 +247,7 @@ term can be modelled as one, and a term in a dependently-typed language has no c
 panic to hide behind.
 
 
+| Field | Value | Meaning |
 |-------|-------|-----------|
 | `height` | 1 | First block |
 | `previous` | `[0u8; 32]` | No predecessor |
@@ -263,7 +264,9 @@ panic to hide behind.
 | `miner` | `[0u8; 32]` | No miner identity in the header — the coinbase binds the mining key |
 | `commitment_merkle_root` | `[0u8; 32]` | Decorative at genesis (see note below) |
 | `nullifier_root` | `[0u8; 32]` | Decorative at genesis (see note below) |
+| `anchor_owner` | `[0u8; 32]` | Zeroed: genesis is unanchored and never mined, so it commits no anchor author (`bin/dwowd/src/lib.rs:618`) |
 | `anchor_tx_id` | configured `magic_bytes` (`[0x44, 0x52, 0x4B, 0x57, ...]` = "DRKW") | Network magic bytes binding — the first 4 bytes equal the configured `magic_bytes`, not a fixed value |
+| `caribina_anchor` | `None` | No Arweave anchor at genesis |
 | `anchor_monero_height` | `MoneroBlockHeight(0)` | No Monero anchor at genesis |
 | `anchor_monero_hash` | `[0u8; 32]` | No Monero anchor at genesis |
 | `finality_flags` | `0` | No finality anchor at genesis |
@@ -324,8 +327,12 @@ by the miner who created it.
 
 **The hash is PINNED.** `bin/dwowd/genesis_hash.txt` holds the canonical genesis hash —
 `blake3` of the mining blob, 64 lowercase hex, no `0x` — and is compiled in via
-`include_str!`, so `init_genesis` in `bin/dwowd/src/lib.rs` HARD-ERRORS on a mismatch
-("GENESIS HASH MISMATCH") rather than warning. An all-zeros value is the placeholder
+`include_str!`, so the node HARD-ERRORS on a mismatch ("GENESIS HASH MISMATCH") rather than warning.
+**The enforcement is in `init_linear`, not `init_genesis`** — `check_genesis_pin`
+(`bin/dwowd/src/lib.rs:742`) is called twice from `init_linear` (`:936` for the stored hash, `:953`
+for the computed one), while `init_genesis` (`:637`) builds the block and does not compare. This
+paragraph named `init_genesis` until 2026-10-12 (`F-365`), which matters for a reader tracing where
+a mismatch surfaces: it surfaces at the chain-initialisation boundary, after the block is built. An all-zeros value is the placeholder
 sentinel, which warns instead of enforcing; the pin is currently POPULATED, so it enforces.
 
 Because there is exactly ONE pin, there can be exactly one genesis identity for the whole

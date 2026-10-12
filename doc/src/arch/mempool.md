@@ -48,9 +48,15 @@ Admission checks (all REQUIRED, matching `Mempool::add()` at
 - **Dedup.** The transaction's hash SHALL NOT already be in the pool.
 - **Eviction.** If the pool is at capacity, the lowest fee-rate entry SHALL be evicted
   before inserting a higher fee-rate transaction. Stale entries (older than
-  `max_age_secs` = 12,000 (100 blocks at 120s block time, matching
-  [wallet.md §6.5](wallet.md) `MEMPOOL_WINDOW`)) SHALL be evicted before each insertion.
+  `max_age_secs` = **3,600** — one hour, thirty blocks at the 120 s testnet block time —
+  `crates/dwow-mempool/src/lib.rs`'s `Default`) SHALL be evicted before each insertion.
 
+> **It said 12,000, "100 blocks at 120 s, matching `wallet.md` §6.5 `MEMPOOL_WINDOW`"** (`F-364`).
+> Both halves were wrong and they were wrong together: the field's default is 3,600, and
+> `wallet.md`'s `MEMPOOL_WINDOW` is a **block count** — 100 — for the wallet's own scan window, a
+> different mechanism. `wallet.md` agrees with the code; this line was the one out of step, and it
+> borrowed the other document's units to justify it.
+>
 > **Note:** Full ZK proof verification and signature verification occur at the
 > block acceptance layer (`bin/dwowd/src/block_acceptor.rs:116`,
 > `bin/dwowd/src/proto/protocol_tx.rs:133-144`), not in the mempool crate.

@@ -154,6 +154,8 @@ Primary implementation: `src/linear/src/sync_connection.rs` (gated `sync-p2p`).
 |----------|-------|---------|
 | `SYNC_PROTOCOL_VERSION` | `(1, 0)` | exchanged at handshake; mismatch rejected |
 | `SYNC_PORT_OFFSET` | `2` | sync listener = node inbound port + offset |
+| `HANDSHAKE_TIMEOUT` | `15s` | the whole handshake, from dial to `SyncHelloAck` (`sync_connection.rs:70`) |
+| `MAX_SYNC_CONNECTIONS` | `64` | concurrent sync connections a server serves (`sync_connection.rs:74`) |
 | `TIP_TIMEOUT` | `5s` | every `GetTip` request |
 | `BLOCKS_TIMEOUT` | `30s` | every `GetBlocks` request |
 | `BROADCAST_TIMEOUT` | `10s` | every `BroadcastTx` request (single frame, shorter than block fetch) |
@@ -312,10 +314,20 @@ node; Monero/Bitcoin keep separate wallet/daemon transports).
 ## 12. Conformance
 
 The Rust SHALL conform to this spec. The Python model `contrib/model/sync_model.py` is
-the 1:1 executable specification; if the model and Rust disagree, the model is correct
-until proven otherwise.
+the **executable reference for this document's rules** — for the process net, the wire
+shapes, the pull loop and the boundary types — and where it and the Rust disagree, the
+disagreement is the finding to read rather than an automatic verdict.
 
-Production pattern: DarkWow-specific (a runnable Python model as the normative spec,
+**It is not 1:1, and this section said it was until 2026-10-12 (`F-362`).** The one place they
+measurably differ is the state machine the model exists to make checkable: `sync_model.py`'s
+`SyncState` has **five** variants (`Initial`, `Syncing`, `CaughtUp`, `Behind`, `WaitingForGenesis`)
+while `bin/dwowd/src/lib.rs`'s has **two** (`CaughtUp = 2`, `Behind = 3`) — and the Rust's collapse is
+deliberate and recorded at the enum ("Legacy codes 0/1/4 … fold into `Behind` — P2-7"). So on this
+clause the model is the *older* design, and "the model is correct" would have a reader restore three
+states the implementation decided against. Where the model is normative is where this document is:
+over the rules it transcribes, not over decisions the tree took after it was written.
+
+Production pattern: DarkWow-specific (a runnable Python model as the executable reference,
 analogous to Bitcoin Core's functional tests and Monero's regression suite).
 
 ---
