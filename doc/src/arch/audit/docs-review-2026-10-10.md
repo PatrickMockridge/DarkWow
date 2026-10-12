@@ -1358,4 +1358,55 @@ F-367: doc:doc/src/arch/genesis.md@ae15e47cd1
      that builds the block rather than the one that validates it sends a reader to the wrong file. F-366's table
      had lost its own header row, which is the one defect in this ledger that a rendered page shows a reader
      directly. F-364 borrowed another document's units to justify a figure neither document holds. -->
+F-312: doc:doc/src/arch/privacy.md#l1--full-privacy-merkle-inclusion-proofs@b74cc6d5bc
+<!-- F-312 is the last row and the one the delegated batch missed, because my own list of "what remains" was
+     built from a `comm` I ran before that batch started and F-312 was not in it — a reminder that the pending
+     list is the gate's to produce, not mine to remember. It is also the `privacy.md` half of the same leak
+     `F-323`/`OBL-C145` own on the register side, so correcting it with the register's own resolution (the field
+     is declared, the verifier that reads it is named, `OBL-C184` owns the open question) keeps the two
+     documents saying one thing. -->
+F-304: doc:doc/src/arch/consensus/fee-spec.md#147-fi-risk-2@c5172fc3eb
+F-307: doc:doc/src/arch/net-node-boundary.md@c5172fc3eb
+F-313: doc:doc/src/arch/key-management.md@c5172fc3eb
+F-323: doc:doc/src/arch/verification-hazop.md@7ff9fe101a
+F-331: doc:contrib/model/wallet_model.py@c5172fc3eb
+F-334: doc:doc/src/arch/consensus-coinbase.md#22-the-per-block-derived-key@c5172fc3eb
+F-336: doc:doc/src/arch/consensus/fee-spec.md#1244-confirmation-factor@c5172fc3eb
+F-337: doc:doc/src/arch/consensus/fee-spec.md#fi-window-2@c5172fc3eb
+F-347: doc:doc/src/arch/privacy.md@c5172fc3eb
+F-348: doc:doc/src/arch/privacy.md@c5172fc3eb
+F-349: doc:doc/src/arch/privacy-model.md@c5172fc3eb
+F-350: doc:doc/src/arch/ocap.md@c5172fc3eb
+F-351: doc:doc/src/arch/ocap.md@c5172fc3eb
+F-368: doc:doc/src/arch/manifest.md@c5172fc3eb
+F-369: doc:doc/src/arch/manifest.md@c5172fc3eb
+F-370: doc:doc/src/arch/wallet.md@c5172fc3eb, doc:doc/src/arch/key-management.md@c5172fc3eb
+F-371: doc:contrib/model/wallet_model.py@c5172fc3eb
+F-372: doc:doc/src/arch/ocap.md@c5172fc3eb
+F-373: doc:doc/src/arch/consensus/chain_architecture.md@c5172fc3eb
+F-374: doc:doc/src/arch/consensus/scaling.md@c5172fc3eb
+F-375: doc:doc/src/arch/sync-conformance.md#enforcement@c5172fc3eb
+F-631: doc:doc/src/dev/contracts/checklist.md@7ff9fe101a
+F-521: partial:this row is a POINTER, not a finding — its own text says "see Phase 2", and the three rows it names (F-324/F-325/F-326) are promoted@7ff9fe101a
+<!-- Twenty-three rows, worked in parallel by five agents on **disjoint file sets** (no two agents held a file in
+     common) and every result re-verified here before commit — the agent reports were treated as hypotheses, which
+     is the same rule this ledger's rows get. Two agents used the interval to check the *finding* rather than the
+     doc, and both found the finding wanting: F-304's "no such metric exists" is overstated (a two-value
+     `TrustTier` display exists, the four-input metric does not), F-350's "14 barbs, 13 types" is wrong on both
+     counts (33 and **17** — the file's own `allPrimitiveTypes` lists seventeen), and F-631's "~30 items … only two
+     classes are mechanically enforced" is an undercount (48 items, 11 mechanical). One agent corrected an
+     instruction of mine: `bin/dww/src/cache.rs` was merged into `walletdb.rs` (`7ddae9f2ab`), not replaced by
+     `scan.rs`. And one found F-323 already remediated by `7f896c6545` and declined to duplicate it, appending only
+     the cell's reading that the earlier correction left implicit.
+     **Four residuals the agents were told to report rather than act on**, each needing an owner:
+     (i) **F-313** — PBKDF2 hashes the decoded BIP39 *entropy*, not the mnemonic phrase; changing it inverts every
+     existing key. (ii) **F-337** — the `SHALL NOT` on floats is contradicted by both the Rust and the reference
+     model, so the choice is restate-the-invariant (taken) or make the CF path integer/fixed-point (a code
+     change, not taken). (iii) **`required_barbs`** — the runtime manifest puts it on the *action*, the Lean puts
+     it on the *resource*; which is normative is a decision. (iv) **`string`** — no encoder arm implements the
+     param type; the CLI accepts it and the encoder refuses, so the fix is an arm or the removal of the CLI's
+     acceptance.
+     **Two findings the agents produced that are not in this ledger at all**: `OBL-C239` (opened here — a CLI
+     validator whose default arm admits any token its encoder will reject) and the `manifest.md` note that
+     `validate_field_type` swallows `asset_id`/`func_id` for the same reason. Both are `CAUSE-5`. -->
 <!-- /promotion-log -->
