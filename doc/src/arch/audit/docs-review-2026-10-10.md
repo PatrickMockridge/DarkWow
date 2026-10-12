@@ -1344,4 +1344,18 @@ F-361: doc:doc/src/arch/consensus-coinbase.md@56c96130b7
      already records about that mechanism. F-360 is half a million DRKW of disagreement inside one document.
      F-357 is annotated rather than replaced: that section's figure has never been re-derived, and the instrument
      that derives it is `check-doc-canonical-counts.sh`. -->
+F-362: doc:doc/src/arch/sync-protocol.md#12-conformance@ae15e47cd1
+F-363: doc:doc/src/arch/sync-protocol.md#81-constants@ae15e47cd1
+F-364: doc:doc/src/arch/mempool.md@ae15e47cd1
+F-365: doc:doc/src/arch/genesis.md@ae15e47cd1
+F-366: doc:doc/src/arch/genesis.md@ae15e47cd1
+F-367: doc:doc/src/arch/genesis.md@ae15e47cd1
+<!-- F-362 is the tranche's principle: a document that made an executable model unconditionally authoritative, in a
+     tree where the model had fallen behind a deliberate implementation decision (`P2-7`'s three-state collapse).
+     The correction keeps the model's authority where it belongs — over the rules the document states — and says so
+     in one place rather than leaving "the model is correct" to be discovered as false by whoever next refreshes
+     the model. F-365 is the H row and is about *where* a check happens: attributing a hard error to the function
+     that builds the block rather than the one that validates it sends a reader to the wrong file. F-366's table
+     had lost its own header row, which is the one defect in this ledger that a rendered page shows a reader
+     directly. F-364 borrowed another document's units to justify a figure neither document holds. -->
 <!-- /promotion-log -->
