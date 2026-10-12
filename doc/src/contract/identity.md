@@ -279,6 +279,9 @@ src/contract/identity/
 | `issuers` | Trusted issuers |
 | `config` | Configuration |
 | `capabilities` | Capability definitions |
+| `identity_info` | Contract metadata (version and state) |
+
+`identity_info` was missing from this table until 2026-10-12, though the manifest declares it.
 
 ## See Also
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract

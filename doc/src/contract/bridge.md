@@ -79,6 +79,12 @@ carries `spend_hook = bridge`, so it cannot be redeemed through the bridge witho
 | `nullifiers` | spent nullifiers (anti-double-spend) |
 | `chain_events` | external-event uniqueness (anti-double-deposit) |
 
+`chain_events` is real — `BRIDGE_CHAIN_EVENTS_TREE = "chain_events"` in `entrypoint.rs`, initialised
+at `init_contract` and read on both the deposit and withdraw paths — but **`manifest.toml` does not
+declare it** (`F-543`): the manifest lists `info`, `deposits`, `withdrawals` and `nullifiers`. No
+gate reads a manifest's `[[trees]]` block, so nothing notices either way; the disagreement is
+recorded rather than repaired here, because a contract's `manifest.toml` is a build input.
+
 ## 5. Circuits
 
 | Circuit | Proves |

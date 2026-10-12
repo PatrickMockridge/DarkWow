@@ -135,10 +135,23 @@ Bonus rounds, progressive jackpots, and special features can be added as separat
 Commits to bet parameters without revealing them.
 
 ### settle_bet.zk
-Constrains payout calculation:
-- Validates positions are within reel bounds
-- Verifies paytable lookup results
-- Applies house edge correctly
+
+Instances four values, in order: `derived_spin_id`, `payout`, `tx_binding`, `tx_nonce`.
+
+What that does and does not establish — the block above claimed "validates positions are within
+reel bounds", "verifies paytable lookup results" and "applies house edge correctly" until
+2026-10-12, and the circuit does none of the three:
+
+- `derived_spin_id = poseidon_hash(DOMAIN_COMMITMENT, player_pub_x, player_pub_y, bet_value,
+  paylines, secret_nonce, blind, asset_id)` is **constrained** to match the commitment, so the
+  spin's parameters are bound to it.
+- `payout` is **published, not constrained**. `position_0..2`, `match_count` and `payout` are all
+  witnesses, and nothing in the circuit relates them — so a proof establishes that *some* payout
+  was declared against *some* spin id, and the paytable is the host's to check, not the circuit's.
+  There is no reel-bounds check and no house-edge arithmetic here.
+
+This is the `slot` half of `F-547`, and the distinction matters for the same reason F-526's did:
+"the circuit publishes it" and "the circuit verifies it" are different sentences.
 
 ## Extending the Contract
 

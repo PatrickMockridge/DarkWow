@@ -44,8 +44,14 @@ The MVP is a **DAO that coordinates bilateral atomic swaps** - not a full order 
 | `CancelSwapV1` | `0x04` | Cancel swap, refund proposer |
 | `UpdateConfigV1` | `0x05` | Update DEX configuration parameters |
 | `SetTransparencyLevelV1` | `0x06` | Set transparency level per deployment |
-| `ExecuteSwapFeeV1` | `0x07` | Execute swap with fee deduction (BaseDiv) |
-| `ExecuteSwapSlippageV1` | `0x08` | Execute swap with slippage tolerance (BaseDiv) |
+| `ExecuteSwapFeeV1` | `0x07` | Execute swap with fee deduction (exact integer division) |
+| `ExecuteSwapSlippageV1` | `0x08` | Execute swap with slippage tolerance (cross-multiplication) |
+
+Neither circuit uses `base_div`. Both were annotated `(BaseDiv)` until 2026-10-12, and the
+annotation had been false for two revisions — `execute_swap_slippage.zk` says so in its own header
+("RC4: already uses cross-multiplication (no base_div)") and `execute_swap_fee.zk` records the line
+that claimed otherwise being deleted. The fee path reinstates an **exact integer division**; the
+slippage path compares `base_mul(fill_amount, BPS)` against `base_mul(slippage_sub, alice_amount)`.
 
 *Corrected 2026-10-11 (`F-520`).* The `InitializeV1` row said "Initialize DEX with
 config and governance key". Measured: `InitializeParams` has three fields — `timeout`,

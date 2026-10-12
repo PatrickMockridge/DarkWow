@@ -69,11 +69,19 @@ Banker Drawing (after Player):
 
 ## Payout Formula
 
+`calculate_payout` (`src/contract/baccarat/src/model/mod.rs`) applies the **stored
+`house_edge`**, in basis points, to each winning bet — the odds below are the starting point, not
+the whole formula:
+
 ```
-Player bet:     payout = bet_value * 100 / 100        // 1:1
-Banker bet:     payout = bet_value * 95 / 100         // 0.95:1 (house takes 5%)
-Tie bet:        payout = bet_value * 800 / 100        // 8:1
+Player bet:     payout = bet_value * (10000 - house_edge) / 10000
+Banker bet:     payout = bet_value * (9500 - house_edge / 2) / 10000
+Tie bet:        payout = bet_value * (8000 - house_edge * 8) / 1000
 ```
+
+A losing bet pays 0. The block above read `bet_value * 100 / 100`, `* 95 / 100` and `* 800 / 100`
+until 2026-10-12 — fixed odds with no house-edge term, and denominators that matched neither the
+circuit nor the code (`house_edge` is basis points, so 10000 and 1000 are the divisors here).
 
 ## Card Dealing via Block Hash
 

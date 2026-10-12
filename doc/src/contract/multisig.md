@@ -205,7 +205,9 @@ ApprovalCapability = {
 | `groups` | MultiSigGroup records keyed by group_id |
 | `signatures` | PartialSignature records keyed by nullifier |
 | `nullifiers` | Spent signature nullifiers (double-sign prevention) |
-| `info` | Contract metadata |
+
+There is **no `info` tree**. This table listed one until 2026-10-12, and no tree of that name exists
+in `manifest.toml` or in the contract's own constants — multisig's three trees are the three above.
 
 ## Formal Specification
 

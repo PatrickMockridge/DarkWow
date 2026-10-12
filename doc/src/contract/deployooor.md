@@ -101,6 +101,12 @@ where the host reads them back from by namespace.
 | `lock` | Per-contract lock flags |
 | `singleton` | Singleton enforcement — prevents duplicate deployments |
 
+`singleton` is real — `DEPLOY_CONTRACT_SINGLETON_TREE = "singleton"` in `lib.rs` — but
+**`manifest.toml` declares only `info` and `lock`** (`F-543`). No gate reads a manifest's
+`[[trees]]` block, so nothing notices either way; the disagreement is recorded rather than
+repaired here, because a contract's `manifest.toml` is a build input and deployooor is a genesis
+contract, so editing it stales the artifact and re-rolls the pin.
+
 ## Integration with Wallet
 
 The `dwow_wallet` wallet integrates with Deployooor via:

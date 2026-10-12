@@ -489,14 +489,19 @@ reconciles them.
 ## Database Trees
 
 ```
-commitments     - commitment → BondCommitment
-nullifiers      - nullifier → spent
-commitment merkle     - Merkle tree of all commitments
-info            - Contract metadata (version)
-coin_roots      - Historical Merkle roots
-nullifier_roots - Historical nullifier roots
-bonds_info      - BondSeriesInfo + CoverageReport records
+commitment_set      - commitment → BondCommitment
+nullifiers          - nullifier → spent
+commitment_merkle   - Merkle tree of all commitments
+info                - Contract metadata (version)
+commitment_roots    - Historical Merkle roots
+nullifier_roots     - Historical nullifier roots
+bonds_info          - BondSeriesInfo + CoverageReport records
 ```
+
+The tree names are the manifest's and the contract's own constants'. Three of the seven were
+written here as `commitments`, `commitment merkle` and `coin_roots` until 2026-10-12 — prose
+descriptions rather than the keys the contract uses, in a list whose whole purpose is to give a
+reader the key.
 
 The `bonds_info` tree is unique to bearer bond. PN has no equivalent.
 
