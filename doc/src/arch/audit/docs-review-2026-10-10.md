@@ -1044,4 +1044,39 @@ F-550: doc:doc/src/contract/betting_stake.md#data-model@3593851e33
      of one audit disagreeing about their own counts; F-550 is the per-contract instance of F-527's class.
      F-521 is a **pointer**, not a finding — its own text says "see Phase 2" — so it carries no stamp; the three
      rows it points at (F-324/F-325/F-326) are promoted. -->
+F-161: doc:doc/src/arch/security-analysis.md#issue-13-no-formal-verification@d4429a08fb
+F-162: doc:doc/src/arch/security-analysis.md#issue-19-missing-public-key-constraint-major--fixed-in-circuits-below@d4429a08fb
+F-163: doc:doc/src/arch/security-analysis.md#issue-11-membership-expiry-is-witness-not-verified-moderate--fixed@d4429a08fb
+F-164: doc:doc/src/arch/security-analysis.md#issue-17-lock_proof-partially-verified-critical--the-path-is-gone@d4429a08fb
+F-165: doc:doc/src/arch/security-analysis.md#issue-16-public-keys-hardcoded-to-zero-critical--corrected@d4429a08fb
+F-166: doc:doc/src/arch/security-analysis.md#issue-19-missing-public-key-constraint-major--fixed-in-circuits-below@d4429a08fb
+F-167: doc:doc/src/arch/security-analysis.md#summary-table@d4429a08fb
+F-168: doc:doc/src/arch/security-analysis.md#issue-12-weak-range-check-on-amount-moderate--fixed-and-not-in-the-circuit@d4429a08fb, doc:doc/src/arch/security-analysis.md#summary-table@d4429a08fb
+F-169: doc:doc/src/arch/security-analysis.md#issue-8-no-state-verification-on-claim-major--the-quoted-comment-is-a-correction-not-a-defect@d4429a08fb
+F-170: doc:doc/src/arch/security-analysis.md#issue-2-permission-bitmask-checking-is-absent-major--fixed-capability-hash@d4429a08fb
+F-171: doc:doc/src/arch/security-analysis.md#issue-3-no-cancellation-nullifier-verification-moderate--provisional-fix@d4429a08fb
+F-172: doc:doc/src/arch/security-analysis.md#issue-18-zk-proof-verification-returns-empty-critical--no-longer-true@d4429a08fb
+F-173: doc:doc/src/arch/security-analysis.md#issue-19-missing-public-key-constraint-major--fixed-in-circuits-below@d4429a08fb
+F-174: doc:doc/src/arch/security-analysis.md#summary-table@d4429a08fb
+<!-- The security-analysis rows are promoted per section rather than per document because the correction is the
+     same edit fourteen times: this file is an audit written in May 2026 and corrected piecemeal since, and
+     several of its *corrections* had gone stale — which is the failure a "Correction (date)" banner invites.
+     F-174 is the clearest: a correction claiming "fifteen named defects open" whose own five citations are four
+     CLOSED rows and one DECISION. F-161/F-162/F-173 are the checker-count class, now given as names because
+     every number in them had drifted twice. F-163 is a cap presented as applied that is in fact a prover-chosen
+     witness. F-164/F-165/F-172 describe a DEX that has since become a full contract. F-166 named thirty `_v1.zk`
+     files, two of which resolved. -->
+F-175: doc:doc/src/arch/audit/README.md#what-the-corpus-is-worth-remembering@26e6e83228
+F-176: doc:doc/src/arch/sync-red-team-audit.md#r4-high--tip_hash-serves-a-zero-hash-with-a-real-height@26e6e83228
+F-177: doc:doc/src/arch/sync-red-team-audit.md#r3-high--highestpeertip-is-monotonic-and-never-decays@26e6e83228, row:OBL-C238@26e6e83228
+F-178: doc:doc/src/arch/audit/README.md#what-the-corpus-is-worth-remembering@26e6e83228
+F-179: doc:doc/src/arch/sync-red-team-audit.md#resolution-status@26e6e83228
+F-180: doc:doc/src/arch/sync-red-team-audit.md#r5-medium--two-server-implementations-with-divergent-byte-budgets@26e6e83228
+F-181: doc:doc/src/arch/sync-red-team-audit.md#r3-high--highestpeertip-is-monotonic-and-never-decays@26e6e83228
+<!-- F-177 is the one row in E6 that is promoted twice — to the document *and* to a new register row — and the
+     reason is the E6 decision rule doing its work: this finding is live, the audit's own table recorded it as
+     RESOLVED, and no row owned it. Deletion of the audit would have lost it, so the audit is corrected in place
+     (the rule's other branch) and the defect is given `OBL-C238` with a non-empty check cell. F-175/F-178 are
+     the README's two framing claims, both wider than the record: a "the more specific audit won" story that
+     three same-day fixes falsify, and an alias-table scope sentence that does not match the table. -->
 <!-- /promotion-log -->
