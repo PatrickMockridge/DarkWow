@@ -70,6 +70,19 @@ pub struct PromissoryNoteHarness {
     redeem_zkbin: ZkBinary,
     /// Redeem_V1 ProvingKey
     redeem_pk: ProvingKey,
+    /// The token types this harness has registered, **in registration order**.
+    ///
+    /// The `IssueV1` proof publishes the token registry's Merkle root and a path to this token's
+    /// leaf, so the prover has to build the same tree the contract holds. It used to build a
+    /// **fixed two-leaf tree** — the zero guard plus *the one token being issued* — which is only
+    /// that tree when the registry holds exactly one token. The first caller to register two (the
+    /// `dex` spec, `ot` and `rt`) therefore could not issue at all: the proof's root was the
+    /// two-leaf root while the chain's was the three-leaf one, and the contract refused with
+    /// `TokenNotRegistered` (`Custom(24)`, "Token registry root mismatch (stale or replayed
+    /// proof)"). Recorded here rather than in the caller because the assumption was the harness's.
+    ///
+    /// Interior mutability because `register_type` takes `&self`, like every other method here.
+    registered: std::sync::Mutex<Vec<pallas::Base>>,
 }
 
 /// The commitment this harness's calls bind to (`OBL-C198`).
@@ -135,6 +148,7 @@ impl PromissoryNoteHarness {
             transfer_pk,
             redeem_zkbin,
             redeem_pk,
+            registered: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -200,6 +214,15 @@ impl PromissoryNoteHarness {
 
         let token_debris = plan.prove(own_call_commitment(&call_data), pallas::Base::zero())?;
 
+        // The registry tree this harness will build for every later `IssueV1` proof gains this token
+        // at the next leaf position, in the order the contract's `apply_register_type` appends it —
+        // which is the order the caller submits the registrations in, and the caller submits each
+        // one before building the next.
+        self.registered
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(asset_id);
+
         Ok(RegisterTypeResult {
             call_data,
             asset_id,
@@ -231,14 +254,34 @@ impl PromissoryNoteHarness {
     ) -> Result<(Vec<u8>, dwow_promissory_note_contract::client::issue::IssueCallPlan)> {
         // Build Merkle tree matching on-chain token registry structure:
         // init_contract places ZERO guard leaf at position 0, then
-        // apply_token_mint (RegisterTypeV1) appends asset_id at position 1.
-        // The proof must use the tree root AFTER both are committed.
+        // apply_token_mint (RegisterTypeV1) appends each asset_id in turn.
+        // The proof must use the tree root AFTER every registration committed so far — which is why
+        // the harness records them (`registered`) instead of assuming there is one. See that field
+        // for the defect this replaces.
+        let registered = self.registered.lock().unwrap_or_else(|e| e.into_inner());
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero())); // guard leaf @ pos 0
-        tree.append(MerkleNode::from_base(asset_id));           // token leaf @ pos 1
-        let leaf_pos_mark = tree.mark().unwrap();
-
-        // Get Merkle path for the token leaf
+        // The mark is taken **as this token's leaf goes in**, which is the idiom every spec in the
+        // tree uses (`tree.append(..); let mark = tree.mark(); tree.witness(mark, 0)`); the path it
+        // returns is for the tree's current state, which is what the contract verifies against.
+        let mut leaf_pos_mark = None;
+        for a in registered.iter() {
+            tree.append(MerkleNode::from_base(*a));
+            if *a == asset_id {
+                leaf_pos_mark = Some(tree.mark().unwrap());
+            }
+        }
+        let leaf_pos_mark = match leaf_pos_mark {
+            Some(m) => m,
+            // A token this harness never registered: the chain's registry is then not something this
+            // harness can describe, so it appends the token after the ones it knows and uses that
+            // position. If the chain holds more, the root will not match and the contract says so
+            // (`Custom(24)`, `TokenNotRegistered`) — the same refusal, with the tree it built.
+            None => {
+                tree.append(MerkleNode::from_base(asset_id));
+                tree.mark().unwrap()
+            }
+        };
         let token_path = tree.witness(leaf_pos_mark, 0).unwrap();
 
         let issue_input = IssueCallInput {
