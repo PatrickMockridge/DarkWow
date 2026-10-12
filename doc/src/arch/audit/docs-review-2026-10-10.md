@@ -1317,4 +1317,18 @@ F-346: doc:doc/src/arch/contract-wasm-type-system.md#c94-ceilingderivationlean@6
      wording carried (a reader can recompute the anchor leaf) is now covered by *nothing in the docs*. That is
      recorded rather than repaired here, because reinstating a leaf the code does not have would be the worse
      error. -->
+F-352: partial:the "instant blocks" ease branch `OBL-C37` removed is no longer documented; `OBL-C37` is CLOSED and the text is gone@4ca394c218
+F-353: doc:doc/src/arch/consensus/consensus.md@4ca394c218
+F-354: doc:doc/src/arch/consensus/consensus.md@4ca394c218
+F-355: doc:doc/src/arch/consensus/consensus.md@4ca394c218
+F-356: doc:doc/src/arch/consensus/linear_blockchain.md#uncleproof-structure@4ca394c218
+<!-- F-353/F-354 are one shape counted twice: a sentence whose number contradicts its own list. F-353's is worse
+     by a factor of sixteen and the correct value sits in the same section. F-355's row presented a *deleted* rail
+     as inert-but-present, which is the direction that misleads: "inert" invites a reader to trust the bound
+     exists. F-356 is a struct that shows four fields and a cargo feature the type does not have, with the file's
+     own comment recording the cost of carrying them. F-352 is stamped `partial:` because the section it names is
+     **gone** — `OBL-C37` is CLOSED and no "instant blocks" ease branch is documented anywhere — so the risk it
+     describes (a reader following the doc reintroduces the bug) no longer has a site; that is recorded rather
+     than left implied, because "the dangerous paragraph is gone" and "the dangerous paragraph was fixed" are
+     different facts and only one of them is true. -->
 <!-- /promotion-log -->
