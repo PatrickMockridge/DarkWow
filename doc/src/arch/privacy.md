@@ -36,8 +36,23 @@ identity is visible to observers.
 ### L1 — Full Privacy (Merkle Inclusion Proofs)
 
 Resource IDs are in the ZK witness. The ZK circuit proves Merkle inclusion
-against a known root. An observer sees only a nullifier and a Merkle root —
+against a known root. An observer sees a nullifier and a Merkle root —
 not which resource was operated on, not by whom, not how much.
+
+**Not `only`, and this sentence said "only" until 2026-10-12 (`F-312`).** One field is published
+deliberately, and the gate that measures the property declares it rather than hiding it:
+`scripts/check-l1-wire-conformance.sh` prints `PASS: 1 declared wire leak(s) in promissory_note, box,
+purse; none new, none stale`. It is `box::Take`'s `contents_commit`, and it is on the wire for a
+reason a reader should be able to judge: `escrow::ClaimV1` decodes the child call and compares that
+field against `claim_box_contents` on its own record, and that comparison is what makes the child
+call a claim on *this* escrow's box rather than any box. The alternative — a box note the parent can
+read — does not exist, because a parent has no key to the child's note.
+
+So the honest form of the L1 claim is: **resource identity is in the witness, and every field that
+leaves it is declared with the verifier that reads it** — a property the gate checks in both
+directions, since a declared entry that stops appearing fails as stale. `OBL-C145` closed on that
+reading; `OBL-C184` owns the remaining question, which is whether the escrow's check should instead
+bind a parent-visible *owner* term (as `purse`'s `derived_purse_id` does) and retire the field.
 
 L1 is required for **transferable objects-as-capabilities** — resources that
 change hands between parties (commitments, boxes, purses). Exposing the resource ID
