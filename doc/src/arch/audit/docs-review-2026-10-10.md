@@ -1179,4 +1179,12 @@ F-110: doc:doc/src/arch/verification-hazop.md@160399609c
      could not see. F-110 is the register's cleanest self-refuting figure: item 5 corrects the number 72 by
      giving its own 78, and 78 has since become 84, so the bullet now states the argument (a moving figure
      quoted without its date) and no figure. F-103/F-104 are decided policies read as pending work. -->
+F-111: doc:doc/src/arch/verification-hazop.md@45ffd0570a
+F-112: doc:doc/src/arch/verification-hazop.md@45ffd0570a
+F-113: doc:doc/src/arch/verification-hazop.md@45ffd0570a
+F-114: doc:doc/src/arch/verification-hazop.md@45ffd0570a
+<!-- F-111 was fixed by the CAUSE rename (Phase C) and needed only a stamp. F-112/F-113/F-114 are one defect
+     counted three ways — the 2026-10-08 `DECISION` relabel left append-only bodies saying `PARTLY`/`OPEN` — and
+     four of the five sites were corrected on 2026-10-11. The fifth, `OBL-Z13`, was not, and finding it is the
+     value of stamping rather than assuming: a sweep reported over five sites that reached four. -->
 <!-- /promotion-log -->
