@@ -657,8 +657,8 @@ matrix holds this at risk *n*; the named circuit now carries an explicit `HAZOP 
 | F-003 | DOC-STALE | M | `contract/game_room.md:214` — "All 5 circuits"; table lists 5 | `src/contract/game_room/proof/` holds **12**; omits 7 | proposed |
 | F-004 | DOC-STALE | M | `contract/slot.md` — circuit table lists 2 | `src/contract/slot/proof/` holds **3**; `reveal_spin` omitted | proposed |
 | F-005 | DOC-STALE | M | `contract/stablecoin.md:193` — "All 9 circuits"; table lists 9 | `src/contract/stablecoin/proof/` holds **10**; `update_config` omitted | proposed |
-| F-006 | DOC-STALE | M | `arch/verification-hazop.md:461` — "**Inventory: 180 circuits.**" | the gate walks **178**; same file prints 178 at :820 (independently confirmed by F-110/F-127/F-136) | proposed |
-| F-007 | DOC-STALE | M | `for-researchers.md:14` — "**228 ZK circuits**" | `src/contract/*/proof/*.zk` holds **166** (178 walked) | proposed |
+| F-006 | DOC-STALE | M | `arch/verification-hazop.md` — Surface 2's "Inventory: *N* circuits" | the paragraph carried **four** counts (the total, circuits under `src/contract/*/proof/`, the contract-directory pair, and the `proofs/core/` count) and every one had drifted by one; the corrected text no longer states any of them, because `scripts/check-doc-canonical-counts.sh` derives all four from the tree (independently confirmed by F-110/F-127/F-136) | proposed |
+| F-007 | DOC-STALE | M | `for-researchers.md` — the "*N* ZK circuits" bullet | the bullet's figure was nearly 40% high against `src/contract/*/proof/*.zk`; the line now gives the contract-only count and the total separately | proposed |
 
 ## Coverage observations (not findings)
 

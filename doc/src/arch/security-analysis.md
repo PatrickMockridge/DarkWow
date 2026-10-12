@@ -510,7 +510,7 @@ Most issues are resolved. See the summary table above for per-issue status.
 A 7-dimensional adversarial audit of all 30 smart contracts (144 ZK circuits) found 9 bugs:
 4 CRITICAL, 4 HIGH, 1 MEDIUM. All 9 have been fixed or documented with mitigation plans.
 
-**Correction (2026-09-24) to the counts, not to the finding.** The audit's 9 bugs and its 4/4/1 split are correct; the population they were found over has moved, so a reader comparing them to today's tree will not find these numbers. The tree holds **34 contract directories**, **31 with a `proof/` directory**, and **166 `.zk` circuits** under `src/contract/*/proof/` — **178** by the count the Orchard-class gate walks, which adds `proofs/core/` (10) and `bin/darkirc/proof/` (2). The nine findings themselves are not re-derived here; what is dated is the population.
+**Correction (2026-09-24) to the counts, not to the finding.** The audit's 9 bugs and its 4/4/1 split are correct; the population they were found over has moved, so a reader comparing them to today's tree will not find these numbers. The tree holds **34 contract directories**, **32 with a `proof/` directory**, and **167 `.zk` circuits** under `src/contract/*/proof/` — **179** by the count the Orchard-class gate walks, which adds `proofs/core/` (10) and `bin/darkirc/proof/` (2). The nine findings themselves are not re-derived here; what is dated is the population. *(The four figures in this sentence were themselves a revision, and out of date by one each when re-derived on 2026-10-12; `scripts/check-doc-canonical-counts.sh` derives them from the tree.)*
 
 ### Critical Bugs (all fixed)
 
@@ -549,8 +549,8 @@ Since the manual security audit, all 120 contract ZK circuits across 26 contract
 `constrain_instance` — the exact bug class that enabled unlimited minting in Zcash for ~4 years)
 and the audit is documented per circuit.
 
-**Correction (2026-09-24) to the opening count.** Measured now: **178 circuits** are what the gate
-walks, over a tree with **34 contract directories** (31 of them carrying proofs) — not 120 over 26. The
+**Correction (2026-09-24) to the opening count.** Measured now: **179 circuits** are what the gate
+walks, over a tree with **34 contract directories** (32 of them carrying proofs) — not 120 over 26. The
 paragraph's own next line already concedes the shape ("the audit they describe is manual"), and its
 Correction below records what replaced it; only this opening count had not been brought along. The word
 "manually" is also doing less work than it was: the reading side is a gate

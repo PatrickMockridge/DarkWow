@@ -460,11 +460,17 @@ compositional reasoning, and it was being made as an argument that no such space
 
 ## Surface 2 — ZK circuits (`OBL-Z`)
 
-**Inventory: 180 circuits.** `src/contract/*/proof/` holds **166** across **31** contracts (34
-contract directories, 3 without a `proof/`), plus 12 in `proofs/core/` and 2 in
+**Inventory: 179 circuits.** `src/contract/*/proof/` holds **167** across **32** contracts (34
+contract directories, 2 without a `proof/`), plus 10 in `proofs/core/` and 2 in
 `bin/darkirc/proof/`. The figure "120 across 26 contracts" in `arch/zk/opcodes.md`,
 `opcodes-status.md` and `security-analysis.md` is wrong, and the docs' own per-contract table sums
-to 139. All 180 contain at least one `constrain_instance`; 122 use `constrain_equal_base`.
+to 139. All 179 contain at least one `constrain_instance`.
+
+*(Corrected 2026-10-12, `F-006`. This paragraph said 180 circuits / 166 across 31 contracts / 12 in
+`proofs/core/`, and claimed 122 circuits use `constrain_equal_base`. The counts drift because the
+corpus grows; `scripts/check-doc-canonical-counts.sh` derives all four figures from the tree and is
+the only place they should be read from. The `constrain_equal_base` figure is dropped rather than
+replaced with another number this paragraph would have to keep.)*
 
 | ID | Status | Proposition | Enforced at | Checked today by | Sev |
 |---|---|---|---|---|---|

@@ -11,7 +11,9 @@ Halo2 constraints, and executed inside the zkVM.
 
 - **32 opcodes** in the zkVM. Three added by DarkWow: `LessThanOrEqual`,
   `IsNotEqual`, `BaseDiv` — all formally verified in Lean4.
-- **228 ZK circuits** across 32 contracts.
+- **167 ZK circuits** under `src/contract/*/proof/`, across 32 contracts (179 in total, counting
+  `proofs/core/` and `bin/darkirc/proof/`). This line said "228 across 32 contracts" until
+  2026-10-12; see `F-007`.
 - **Poseidon hash** for all commitments (Pallas base field), replacing
   EC Pedersen to eliminate EC heap bugs found in upstream circuits.
 
