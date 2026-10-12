@@ -187,23 +187,26 @@ persisted in the `governance_reports` tree for public auditability.
 
 **Source:** [`src/contract/bridge/src/lib.rs`](../../../src/contract/bridge/src/lib.rs)
 
-The bridge is a token mover with special cross-chain semantics. It uses
-TransferV1 (0x04) exclusively for PN interaction:
+The bridge is a token mover with special cross-chain semantics. It is the one intermediary
+that does **not** use TransferV1 — its PN interaction is mint-and-burn:
 
-- **Deposit:** Mints wrapped tokens via PN::TransferV1 child call. The actual
-  deposit exists on the external chain (BTC, XMR, ZEC, etc.).
-- **Withdrawal:** Burns wrapped tokens via PN::TransferV1 child call, transferring
-  them to the bridge contract. The actual release happens on the external chain.
+- **Deposit** requires one child, `promissory_note::issue_v1 (0x02)` — wrapped tokens are
+  **minted**. The actual deposit exists on the external chain (BTC, XMR, ZEC, etc.).
+- **Withdrawal** requires one child, `promissory_note::redeem_v1 (0x01)` — wrapped tokens are
+  **redeemed** and a zero-value receipt created. The actual release happens on the external chain.
 
-The bridge validates **both** `validate_child_contract_id` and `validate_child_value_commit`.
+The bridge validates the child's **contract id** (`validate_child_contract_id`); it does not
+call `validate_child_value_commit`, because `issue_v1` and `redeem_v1` carry no value commit to
+compare against.
 
 Unlike the stablecoin, the bridge cannot verify collateral coverage on-chain
 since the collateral lives on external chains. The `GovernanceReportV1` proves
 internal accounting consistency only: `outstanding = total_deposited - total_withdrawn`.
 
-**The bridge does not use RevokeV1 or RedeemV1.** Its "burns" are simulated by
-transferring tokens to the bridge contract. The external chain is the source of
-truth for the actual release. This is architecturally correct for a bridge.
+**The bridge does not use RevokeV1**, and this section previously said it used TransferV1
+exclusively and never RedeemV1 — both the opposite of the code. Its "burn" is a real
+`RedeemV1`, not a transfer to the bridge contract, so the receipt rather than the external
+chain is what records the redemption.
 
 ### DEX — OTC Swaps
 

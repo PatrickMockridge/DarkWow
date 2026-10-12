@@ -189,28 +189,28 @@ and privacy. With Identity, DarkWow has governance, labour markets, insurance,
 qualified tendering, subscription access, and reputation — all without
 surrendering privacy.
 
-Here is every contract that uses `VerifyCapabilityV1 (0x06)` as a child call,
-and what it proves:
+Three contracts use `VerifyCapabilityV1 (0x06)` as a child call (measured — see the status note
+below for what that call actually establishes):
 
 | Contract | Capability | What It Enables |
 |----------|-----------|-----------------|
-| **dao_escrow** | `member_vote` | DAO member votes on treasury proposals. One member, one vote, zero identity leakage. |
-| **dao_escrow** | `board_treasury` | Board member authorises treasury spends. Authority is bounded to exactly the spend being approved. |
-| **dao_escrow** | `board_endowment` | Endowment committee manages long-term capital. A different capability from treasury — role separation with no shared identity. |
-| **dao_escrow** | `dispute_arbitrator` | Arbitrator resolves disputes. The arbitrator proves their role; the disputants never learn who they are. |
 | **labor_market** | `verified_contractor` | Worker proves qualification without revealing their work history, portfolio, or identity. The employer sees only: "qualified." |
 | **tender** | `qualified_provider` | Bidder proves they meet the tender's competency requirements. No bidder list. No favoritism. No leak of who bid. |
-| **insurance_market** | `auditor_bond` | Underwriter proves they hold sufficient audit bond to back coverage. Financial strength proven without balance sheet disclosure. |
-| **insurance_market** | `institutional_inv` | Institutional investor proves accredited status. One proof, not a 50-page KYC packet sent to every protocol. |
-| **subscription** | `access_tier` | Subscriber proves they hold a valid subscription tier. Access granted without the service knowing who you are. |
-| **tau** | `task_role` | Worker accepts a delegated task by proving role capability. The task assigner never learns the worker's identity. |
+| **insurance_market** | `auditor_bond`, `institutional_inv` | Underwriter proves they hold sufficient audit bond to back coverage; institutional investor proves accredited status — one proof, not a 50-page KYC packet sent to every protocol. |
+
+Three more rows were listed here and are not callers: `dao_escrow` never makes the call (its
+capabilities are handled by its own circuit), `subscription` proves access with its **own**
+`subscribe.zk` rather than an identity child, and **`tau` is not a contract** — there is no
+`src/contract/tau`; `taud` is an off-chain task daemon (`contract/tau.md`), and no `task_role`
+capability exists in any entrypoint. What the four `dao_escrow` rows described
+(`member_vote`, `board_treasury`, `board_endowment`, `dispute_arbitrator`) is a vocabulary the
+DAO doc still uses, but no child call of that name is made anywhere.
 
 Every one of these uses the same mechanism: a ZK proof that a capability exists
-and has not been revoked. The verifier — the DAO, the employer, the insurance
-market, the tender issuer — learns exactly one bit: "authorised" or "not
-authorised." The capability model means authority is **bounded.** A
-`member_vote` capability cannot authorise a treasury spend. A `verified_contractor`
-cannot vote in the DAO. Each capability is a key that opens exactly one door.
+and has not been revoked. The verifier — the employer, the insurance market, the
+tender issuer — learns exactly one bit: "authorised" or "not authorised." The
+capability model means authority is **bounded.** Each capability is a key that
+opens exactly one door.
 
 > **Status, read 2026-09-20: the mechanism above is the design, not the implementation.** Of the four
 > claims in that paragraph, one holds: the *predicate* is proved (`less_than_or_equal(threshold,

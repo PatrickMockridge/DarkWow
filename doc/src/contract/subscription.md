@@ -221,12 +221,11 @@ This pattern enables:
 
 **Purpose**: Create a subscription with deposit locked in escrow.
 
-**Proves**:
-1. Subscriber knows the secret key
-2. Plan ID is valid (Merkle proof)
-3. `current_block < lock_until_block` (subscription is active)
-4. Deposit commitment is valid
-5. **DAO-Escrow membership** (Merkle proof + expiry + pubkey link)
+**Proves** (what the circuit actually `constrain_instance`s — `derived_id`, `tx_binding` and
+`tx_nonce`; the list previously claimed a DAO-Escrow membership Merkle proof, and no such
+instance exists):
+1. `subscription_id` is the commitment derived from the prover's own inputs (`derived_id`)
+2. The transaction binding pair, `tx_binding` and `tx_nonce`
 
 **Public Inputs**:
 - `subscription_id`: Commitment hash

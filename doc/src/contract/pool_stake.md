@@ -5,9 +5,11 @@ A composable contract that enables pooled coverage for relayer withdrawals. Stak
 ## Token Movement
 
 PoolStake uses [PromissoryNote](promissory_note.md) `TransferV1` (0x04) child calls
-for all token movement. Join, Leave, Slash, and ClaimFees all use `transfer_v1`
-rather than Purse operations. Stakes and coverage allocations are tracked via direct
-DB state.
+for token movement: **Join**, **Leave** and **ClaimFees** each require exactly one such child,
+and validate the child's contract id against the configured promissory-note id. **Slash** does
+not — `process_slash_coverage_instruction` reads no child call at all and debits the allocation
+in DB state. Stakes and coverage allocations are tracked via direct DB state rather than Purse
+operations.
 
 ## Overview
 
