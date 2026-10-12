@@ -25,13 +25,14 @@ This section provides configuration examples for hosting DarkWow P2P nodes.
 ###  `darkirc`
 - `6667`: IRC server (plaintext)
 - `6697`: IRC server (TLS)
-- `9600`: Inbound P2P
+- `26661`: Inbound P2P (`bin/darkirc/darkirc_config.toml`'s commented default)
 - `_ +1`: Inbound Tor/I2p/...
-- `9605`: Public RPC server
-- `9606`: Restricted RPC server
+- `26660`: RPC server
 
 
 ### `fud`
+- The ports below are **unverified**: `bin/fud/` holds only the `fu` and `fud` binaries, with no
+  config file to read a default from. Treat the numbers as historical until a config lands.
 - `9700`: Inbound P2P
 - `_ +1`: Inbound Tor/I2p/...
 - `9705`: Public RPC server
@@ -39,7 +40,10 @@ This section provides configuration examples for hosting DarkWow P2P nodes.
 
 
 ### `taud`
-- `9800`: Inbound P2P
+- `23331`: Inbound P2P (`bin/tau/taud/taud_config.toml`'s commented default; the lilith seeds use it too)
 - `_ +1`: Inbound Tor/I2p/...
-- `9805`: Public RPC server
-- `9806`: Restricted RPC server
+- `23330`: RPC server (`rpc_listen = "tcp://127.0.0.1:23330"`)
+
+`darkirc` and `taud` were listed at `9600` and `9800` with RPC at `9605`/`9606` and `9805`/`9806`
+until 2026-10-12 (`F-611`). Neither number appears in either project's config; the values above are
+the files' own. A node that copies the old ports will not find its seeds.

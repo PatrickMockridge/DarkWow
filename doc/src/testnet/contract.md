@@ -75,8 +75,9 @@ cp -f target/release/membership membership
 ```
 
 Now both the contract and its client are ready to use. Leave this
-terminal open, as we will come back to it later in the guide, and
-return back to your `dwow_wallet` interactive shell.
+terminal open, as we will come back to it later in the guide. (`dwow_wallet` has **no interactive
+shell** — every command is one-shot, `F-604` — so where this guide says "the wallet shell", run the
+command directly.)
 
 ## Creating contracts
 
@@ -209,9 +210,10 @@ key:
 $ ./membership register {CONTRACT_ID} {IDENTITY_SECRET_KEY} > register.call
 ```
 
-Now we need to go back to our `dwow_wallet` interactive shell, to generate the
-actual registration transaction, attach a fee to it and broadcast it to
-the network:
+Now we generate the actual registration transaction, attach a fee to it and broadcast it to
+the network. **`tx-from-calls` does not exist** (`F-604`): the command below is what the guide
+used, and the deployed path is `dwow_wallet contract invoke`, which builds the call from the
+manifest and appends the fee itself.
 
 ```shell
 dww> tx-from-calls < ../smart-contract/register.call | broadcast

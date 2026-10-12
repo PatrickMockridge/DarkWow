@@ -77,7 +77,7 @@ the spec.
 | AccountManager (declared identity) | [IMPLEMENTED] | `crates/dwow-accounts/` |
 | 4-level test pipeline | [IMPLEMENTED] | `contrib/docker/` |
 | Mempool with on-chain nullifier check | [IMPLEMENTED] | `crates/dwow-mempool/` |
-| Universal relayer | [IMPLEMENTED] | `bin/universal_relayer/` |
+| Universal relayer | **[DESIGN]** — `bin/universal_relayer/` does not exist and the workspace entry is commented out (`F-605`) | — |
 | Manifest-driven generic prover (ZK) | [IMPLEMENTED] | `src/sdk/src/prover.rs`, `bin/dww/src/prover_impl.rs` — zkas_binaries store, witness-binding, manifest-driven proof construction for any contract |
 | Manifest parameter encoding (non-ZK) | [IMPLEMENTED] | `src/sdk/src/manifest.rs` — `encode_params_by_schema`, write-path dual of `decode_note_by_schema` |
 | Capability selection by asset_id (write path) | [IMPLEMENTED] | `bin/dww/src/lib.rs` — `resolve_transfer_contract`, dispatch + RPC routing through manifest-driven `invoke_contract` |

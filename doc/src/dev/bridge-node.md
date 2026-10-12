@@ -4,6 +4,14 @@ Run a DarkWow bridge relayer with capital endowment in a single Docker container
 The bridge node combines the dwowd fullnode, bridge + relayer_endowment smart
 contracts, and universal_relayer into one deployable image.
 
+> **The relayer half of this image does not exist.** `bin/universal_relayer/` is absent from the
+> tree and commented out of the workspace (`F-605`), so every line below that names
+> `universal_relayer`, `/app/universal_relayer`, or a `relayer-only` mode describes a component
+> with no source. `contract invoke <bridge_id> get_config` (`F-606`) names a function the bridge
+> does not have — `ContractSubcmd` builds from the manifest, and the bridge's function list is in
+> [bridge.md](../contract/bridge.md). What is real here is the `dwowd` + contracts image; treat
+> the rest as the design it was written as.
+
 ## Architecture
 
 ```

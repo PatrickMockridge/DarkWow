@@ -133,12 +133,21 @@ methods for building and proving contract calls — no blockchain required for
 Level 1 and 2 testing.
 
 ```rust
-// Example: testing a promissory_note mint with the harness
-let harness = PromissoryNoteHarness::new()?;
-let asset_id = harness.create_token("TestToken")?;
-let proof = harness.mint(asset_id, &recipient, 1000)?;
-assert!(harness.verify(&proof));
+// Example: registering a token type and issuing against it, with the harness
+let harness = PromissoryNoteHarness::spawn();
+let asset_id = harness.register_type(/* … see the harness for the parameter list */);
+let proof = harness.issue(
+    issue_secret, asset_id, recipient, 1_000, spend_hook, user_data, commitment_blind,
+);
 ```
+
+This example called `PromissoryNoteHarness::new()`, `create_token("TestToken")`, `mint(asset_id,
+&recipient, 1000)` and `verify(&proof)` until 2026-10-12 (`F-607`). The harness is constructed with
+**`spawn()`** — it loads the contract's `.zk.bin` blobs at compile time, so there is no fallible
+`new()` — and its methods are `register_type`, `issue`, `transfer`, `redeem`, `revoke` and
+`otc_swap`, each taking the field elements explicitly. There is no `create_token`, no `mint` and no
+`verify`; a harness method *builds and proves* a call, and what you assert on is the result it
+returns. `src/contract/test-harness/src/harness/promissory_note.rs` is the parameter list.
 
 → [Contract Development Guide](contracts.md)
 → [Contract Standards](contracts/standards.md)

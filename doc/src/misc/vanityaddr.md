@@ -1,6 +1,12 @@
 vanityaddr
 ==========
 
+> **The tool is not built.** `bin/vanityaddr` is commented out of the workspace
+> (`Cargo.toml`: `#"bin/vanityaddr",  # on hold — needs Promissory Note ContractId architecture
+> decision`), so there is no binary to run and every invocation below fails with "command not
+> found" (`F-608`). The page is kept as the tool's specification — the option list is the intended
+> interface — but nothing here is runnable today.
+
 A tool for Vanity address generation for DarkWow keypairs, contract IDs,
 and token IDs.
 

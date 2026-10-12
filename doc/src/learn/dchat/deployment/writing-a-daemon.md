@@ -14,7 +14,7 @@ multithreaded async executor that can be passed into the given function.
 We use `async_daemonize` as follows:
 
 ```rust
-use dwow_util::{async_daemonize, cli_desc, Result};
+use dwow_core::{async_daemonize, cli_desc, Result};
 use smol::stream::StreamExt;
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 

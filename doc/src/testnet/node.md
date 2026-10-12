@@ -153,10 +153,14 @@ Config file created in "~/.config/dwow/dwowd_config.toml". Please review it and 
 ```
 
 ```shell
-$ ./dwow_wallet interactive
+$ ./dwow_wallet wallet initialize
 
 Config file created in "~/.config/dwow/dww_config.toml". Please review it and try again.
 ```
+
+(The command that stood here was `dwow_wallet interactive` — there is no such command, `F-604`.
+Any `dwow_wallet` invocation creates the config on first run and exits; the message comes from the
+config loader, not from a shell.)
 
 ## Running
 
@@ -330,54 +334,31 @@ pause mining.
 
 ### Wallet sync
 
-From this point forward in the guide we will use `dwow_wallet` in `interactive`
-mode for all our wallet operations. In another terminal, run the
-following command:
+**There is no `interactive` mode.** This section drove a `dww>` shell — `dwow_wallet interactive`,
+then `subscribe` at the prompt — and no such command or prompt exists: `dwow_wallet` is a one-shot
+binary and its command enum has no `Interactive` variant (`F-604`). Everything below ran in that
+shell; the equivalent is a sequence of one-shot commands, and a background process if you want to
+keep receiving blocks.
+
+Initialise the wallet database, then keep it in step with the chain:
 
 ```shell
-$ ./dwow_wallet interactive
-
-dww>
+$ ./dwow_wallet -n darkwow-testnet wallet initialize
+$ ./dwow_wallet -n darkwow-testnet sync init
+$ ./dwow_wallet -n darkwow-testnet scan
 ```
 
-In order to receive incoming commitments, you'll need to use the `dwow_wallet`
-tool to subscribe on `dwowd` so you can receive notifications for
-incoming blocks. The blocks have to be scanned for transactions,
-and to find commitments that are intended for you. In the interactive shell,
-run the following command to subscribe to new blocks:
+`scan` walks the chain against the wallet's subscribed set and inserts what belongs to it — this is
+the step the shell's `subscribe` was doing, and it reports as it goes. Run it again after the chain
+advances, or run the daemon to have blocks scanned as they arrive:
 
 ```shell
-dww> subscribe
-
-Requested to scan from block number: 0
-Last confirmed block reported by dwowd: 1 - da4455f461df6833a68b659d1770f58e44b6bc4abdd934cb22d084c24333255f
-Requesting block 0...
-Block 0 received! Scanning block...
-=======================================
-Header {
-        Hash: b967812a860e8bf43deb03dd4f7cf69258f7719ddb7f2183d4e4fa3559b9f39d
-        Version: 1
-        Previous: 86bbac430a4b3a182f125b37a486e9c486bbfa34d84ef4a66b4a23e5f0c625b1
-        Height: 0
-        Timestamp: 2025-05-12T13:00:24
-        Nonce: 0
-        Transactions Root: 0x081361c364feba0d28a418e2e20c216ce442d5127036e3491ceaf1996fdb3c3b
-        State Root: afc1694dd6b290d8b92c33d3fc746707da9bed857eb9e90f11683d2e243b8047
-        Proof of Work data: DarkWow
-}
-=======================================
-[scan_block] Iterating over 1 transactions
-[scan_block] Processing transaction: 91525ff00a3755a8df93c626b59f6e36cf021d85ebccecdedc38f3f1890a15fc
-Requesting block 1...
-Block 1 received! Scanning block...
-...
-Requested to scan from block number: 2
-Last confirmed block reported by dwowd: 1 - da4455f461df6833a68b659d1770f58e44b6bc4abdd934cb22d084c24333255f
-Finished scanning blockchain
-Subscribing to receive notifications of incoming blocks
-Detached subscription to background
-All is good. Waiting for block notifications...
+$ ./dwow_wallet -n darkwow-testnet daemon
+$ ./dwow_wallet -n darkwow-testnet sync status
 ```
+
+A wallet that has not scanned reports a zero balance; `dwow_wallet wallet balance` is a summary of
+what has been scanned, not of the chain.
 
 
 ## Local Development and Custom Testnets

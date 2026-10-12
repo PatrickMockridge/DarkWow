@@ -128,8 +128,8 @@ cargo build --release -p dwowd -p dwow_wallet
 # Run the test pipeline (Docker required)
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode wallet --fresh
 
-# Generate a wallet keypair
-./target/release/dwow_wallet -c dww_config.toml wallet keygen
+# Initialise the wallet database (there is no `wallet keygen` — identity is declared)
+./target/release/dwow_wallet -c dww_config.toml wallet initialize
 
 # Deploy a contract with a manifest
 ./target/release/dwow_wallet -c dww_config.toml contract deploy <auth> <wasm> --manifest manifest.toml

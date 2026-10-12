@@ -286,7 +286,7 @@ If you're looking for information about your node, including inbound,
 outbound, and seed connections, execute this command in ``${DARKWOW_REPO}/script``:
 
 ```
-$ python node_get-info.py
+$ python script/node_get_info.py
 ```
 
 ### Hostlist issues

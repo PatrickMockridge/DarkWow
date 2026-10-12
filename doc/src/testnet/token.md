@@ -1,216 +1,64 @@
 # Native token
 
-Now that you have your wallet set up, you will need some native `DRKW`
-in order to be able to perform transactions, since `DRKW` is used to pay
-the transaction fees. You can obtain `DRKW` either by successfully
-mining a block that gets confirmed or by asking for some from the
-community on `darkirc`.
+> **Rewritten 2026-10-12 (`F-603`).** This page was an interactive-shell guide — a `dww>` prompt,
+> `alias add`/`alias show`, `token generate-mint`/`token mint`/`token freeze`/`token list`, mint
+> authorities, freeze heights and per-token aliases. **None of that exists.** `dwow_wallet` is a
+> one-shot command-line binary with no shell, `WalletSubcmd` and `ContractSubcmd` have no `token`
+> or `alias` variant between them, and DarkWow has no mint-authority or freeze model at all: there
+> are no coins, and a token is a **promissory-note type** whose supply is whatever has been issued
+> against it. What follows is the real workflow. See
+> [promissory_note.md](../contract/promissory_note.md) for the model and
+> [../contract/native_token.md](../contract/native_token.md) for DRKW itself.
 
-If the latter, don't forget to tell them to add the `--half-split` flag
-when they create the transfer, so you get more than one commitment to play
-with. Once your friend has submitted a transaction to the network, it
-should be in the consensus' mempool, waiting for inclusion in the next
-block(s). Depending on your network configuration, confirmation of the
-blocks could take some time. You'll have to wait for this to happen. If
-your `dwow_wallet` subscription is running, then after some time your new
-balance should be in your wallet.
+## Getting DRKW
 
-![pablo-waiting0](img/pablo0.jpg)
+`DRKW` is the native token and pays transaction fees. There are two ways to get it: mine a block
+that gets confirmed, or be sent some.
 
-You can check your wallet balance using `dwow_wallet`:
+Mining is covered in [node.md](node.md). If someone sends you DRKW, ask them to add the
+**`--half-split`** flag to their transfer, which splits the output into two notes rather than one —
+a wallet with two notes can spend one while the other is still being scanned. That is the whole of
+the advice the old page wrapped in an alias table.
 
-```shell
-dww> wallet balance
-
- Token ID                                     | Aliases | Balance
-----------------------------------------------+---------+---------
- 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRKW     | 20
-```
-
-# Creating tokens
-
-On the DarkWow network, we can mint custom tokens with a given supply.
-To do this, we first need to generate a mint authority keypair, and
-derive a token ID from it.
-
-> Note: The token data shown in the outputs (Token ID, Mint Authority,
-> Token Blind) are placeholders for the data that will be created by
-> you. For the rest of the guide, replace the placeholder token data
-> with the data that you generate.
-
-For this tutorial we will be minting two sets of tokens. For each token
-we will create the mint authority keypair that sets the token ID and
-authorizes you to mint the token supply.
-
-We do this by simply executing the following command:
+## Checking your balance
 
 ```shell
-dww> token generate-mint
-
-Successfully imported mint authority for token ID: {TOKEN1}
+dwow_wallet wallet balance
 ```
 
-You can list your mint authorities with:
+The wallet reports what it has **scanned**: a balance is the sum of the unspent notes the wallet
+holds for a given asset id, so a wallet that has not scanned the chain reports zero. Run
+`dwow_wallet scan` (or `dwow_wallet scan --reset <height>`) first if you expect a balance and see
+none.
+
+`--porcelain` prints the same data in a machine-readable form:
 
 ```shell
-dww> token list
-
- Token ID | Aliases | Mint Authority          | Token Blind    | Frozen | Freeze Height
-----------+---------+-------------------------+----------------+--------+---------------
- {TOKEN1} | -       | {TOKEN1_MINT_AUTHORITY} | {TOKEN1_BLIND} | false  | -
-
+dwow_wallet wallet balance --porcelain
 ```
 
-Now execute the command again to generate the mint authority for a
-second set of tokens.
+## Sending
 
 ```shell
-dww> token generate-mint
-
-Successfully imported mint authority for token ID: {TOKEN2}
+dwow_wallet transfer <amount> <asset-id> <recipient> [--spend-hook <id>] [--user-data <hex>] [--half-split]
 ```
 
-Verify you have two token mint authorities by running:
+`asset-id` is the field element identifying the token — for DRKW it is the native token's id. There
+is no alias layer: the id is the name. `dwow_wallet position` lists the capabilities the wallet
+holds, which is the closest thing to a portfolio view.
+
+## Token types
+
+A new token is a **registered promissory-note type**, issued once with `RegisterTypeV1 (0x00)` on
+the promissory-note contract and then minted with `IssueV1 (0x02)`. Both go through
+`dwow_wallet contract invoke`:
 
 ```shell
-dww> token list
-
- Token ID | Aliases | Mint Authority          | Token Blind    | Frozen | Freeze Height
-----------+---------+-------------------------+----------------+--------+---------------
- {TOKEN1} | -       | {TOKEN1_MINT_AUTHORITY} | {TOKEN1_BLIND} | false  | -
- {TOKEN2} | -       | {TOKEN2_MINT_AUTHORITY} | {TOKEN2_BLIND} | false  | -
-
+dwow_wallet contract invoke <promissory-note-contract-id> register_type
+dwow_wallet contract invoke <promissory-note-contract-id> issue
 ```
 
-## Aliases
-
-To make our life easier, we can create token ID aliases, which we can
-use instead of the token ID when performing transactions. Multiple
-aliases per token ID are supported.
-
-The native token alias `DRKW` should already exist, and we can use that
-to refer to `DRKW` when executing transactions using it.
-
-We can also list all our aliases using:
-
-```shell
-dww> alias show
-
- Alias | Token ID
--------+----------------------------------------------
- DRKW   | 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb
-```
-
-> Note: these aliases are local to your machine. When exchanging with
-> other users, always verify that your aliases' token IDs match.
-
-Now let's create aliases for the two token IDs generated earlier:
-
-```shell
-dww> alias add ANON {TOKEN1}
-
-Generating alias ANON for Token: {TOKEN1}
-```
-
-```shell
-dww> alias add DAWN {TOKEN2}
-
-Generating alias DAWN for Token: {TOKEN2}
-```
-
-```shell
-dww> alias show
-
- Alias | Token ID
--------+---------------------------------------------
- ANON  | {TOKEN1}
- DAWN  | {TOKEN2}
- DRKW   | 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLss
-```
-
-## Mint transaction
-
-Now let's mint some tokens for ourselves. First grab your wallet
-address, then create the token mint transaction,
-and finally - broadcast it:
-
-```shell
-dww> wallet address
-
-{YOUR_ADDRESS}
-```
-
-By default the transaction will be printed in the terminal. Interactive
-mode supports `UNIX` style pipes and exporting/importing to/from files.
-We can either export a transaction to a file by appending
-`> {tx_file_name}.tx`, or broadcast it right away by appending
-`| broadcast`. We will broadcast all transactions in the guide, for
-simplicity.
-
-```shell
-dww> token mint ANON 42.69 {YOUR_ADDRESS} | broadcast
-
-[mark_tx_spend] Processing transaction: e9ded45928f2e2dbcb4f8365653220a8e2346987dd8b75fe1ffdc401ce0362c2
-[mark_tx_spend] Found PromissoryNote contract in call 0
-[mark_tx_spend] Found PromissoryNote contract in call 1
-[mark_tx_spend] Found PromissoryNote contract in call 2
-Broadcasting transaction...
-Transaction ID: e9ded45928f2e2dbcb4f8365653220a8e2346987dd8b75fe1ffdc401ce0362c2
-```
-
-Now the transaction should be published to the network, waiting to be
-included in a block. After the transaction is confirmed, perform the
-next one:
-
-```shell
-dww> token mint DAWN 20.0 {YOUR_ADDRESS} | broadcast
-
-[mark_tx_spend] Processing transaction: e404241902ba0a8825cf199b3083bff81cd518ca30928ca1267d5e0008f32277
-[mark_tx_spend] Found PromissoryNote contract in call 0
-[mark_tx_spend] Found PromissoryNote contract in call 1
-[mark_tx_spend] Found PromissoryNote contract in call 2
-Broadcasting transaction...
-Transaction ID: e404241902ba0a8825cf199b3083bff81cd518ca30928ca1267d5e0008f32277
-```
-
-The transaction is now published to the network. When the transaction
-is confirmed, your wallet should have your new tokens listed when you
-run:
-
-```shell
-dww> wallet balance
-
- Token ID                                     | Aliases | Balance
-----------------------------------------------+---------+-------------
- 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRKW     | 19.98451279
- {TOKEN1}                                     | ANON    | 42.69
- {TOKEN2}                                     | DAWN    | 20
-```
-
-## Freeze transaction
-
-We can lock a token's supply and disallow further mints by executing:
-
-
-```shell
-dww> token freeze DAWN | broadcast
-
-[mark_tx_spend] Processing transaction: 138274448ac3af26f253e0a40d0964dc125b99b3c826ba321bcb989cabfb6df6
-[mark_tx_spend] Found PromissoryNote contract in call 0
-[mark_tx_spend] Found PromissoryNote contract in call 1
-Broadcasting transaction...
-Transaction ID: 138274448ac3af26f253e0a40d0964dc125b99b3c826ba321bcb989cabfb6df6
-```
-
-After the transaction has been confirmed, we will see the token freeze
-flag set to `true`, along with the block height it was frozen on:
-
-```shell
-dww> token list
-
- Token ID | Aliases | Mint Authority          | Token Blind    | Frozen | Freeze Height
-----------+---------+-------------------------+----------------+--------+---------------
- {TOKEN1} | ANON    | {TOKEN1_MINT_AUTHORITY} | {TOKEN1_BLIND} | false  | -
- {TOKEN2} | DAWN    | {TOKEN2_MINT_AUTHORITY} | {TOKEN2_BLIND} | true   | 4
-
-```
+See [promissory_note.md](../contract/promissory_note.md) for the parameters, the five circuits and
+what each entrypoint enforces. There is no freeze: a type's supply grows by issuance and nothing
+retires it, and the closest thing to a cap is the discipline of whoever holds the issuing
+capability.

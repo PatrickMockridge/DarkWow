@@ -1,6 +1,16 @@
 # Universal Relayer
 
-> **Note:** This document describes the full relayer architecture. The universal relayer is implemented with Level 1, 2, and 3 test coverage (113 unit tests, ZK proof lifecycle test, Docker pipeline). See [Security Audit](../contract/audit.md) for the May 2026 hardening details.
+> **NOT IMPLEMENTED — the crate is not in the tree.** `bin/universal_relayer/` **does not exist**,
+> and the workspace entry is commented out (`Cargo.toml`: `# "bin/universal_relayer",`). The prompt
+> that stood here claimed "Level 1, 2, and 3 test coverage (113 unit tests, ZK proof lifecycle test,
+> Docker pipeline)" — none of that is buildable, because there is nothing to build (`F-605`).
+>
+> What follows is a **design document**, and it is kept because the design is the reason the bridge
+> contract has the shape it has: it explains the object-capability model the withdrawal path was
+> built around, and [bridge.md](../contract/bridge.md) is where the enforcement actually lives.
+> Read it as a specification of intent, not of a running service. See
+> [Security Audit](../contract/audit.md) for the May 2026 hardening, whose status table has its own
+> corrections.
 
 *Running a relayer service for DarkWow's cross-chain atomic swaps*
 
