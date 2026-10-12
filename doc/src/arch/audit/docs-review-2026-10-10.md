@@ -1016,4 +1016,16 @@ F-527: doc:doc/src/contract/game_room.md#playeraccount@e7bf3821e1, doc:doc/src/c
      found *different* defects the row did not name: bearer_bond's five missing `receipt_*` fields (`OBL-C199`)
      and oracle's three params carrying a `tx_binding` that `OBL-C198` removed. The comparison is over field
      names only; it does not check types, and a code struct with no doc snippet is outside it. -->
+F-543: doc:doc/src/contract/multisig.md#database-trees@9f698f3a9e, doc:doc/src/contract/identity.md#database-trees@9f698f3a9e, doc:doc/src/contract/bearer_bond.md#database-trees@9f698f3a9e, doc:doc/src/contract/bridge.md#4-trees@9f698f3a9e, doc:doc/src/contract/deployooor.md#database-trees@9f698f3a9e
+<!-- F-543 is two findings wearing one number, and the split is the point. Three docs were simply wrong about
+     their own trees (a fabricated `info`, an omitted `identity_info`, three prose names in place of keys) and are
+     corrected. The other two are the *manifest* being incomplete about trees the code really has — `chain_events`
+     and `singleton` — and those are recorded, not repaired: a contract's `manifest.toml` is in its `SOURCE_MANIFEST`,
+     deployooor is genesis, so the repair costs an artifact rebuild and a pin re-roll for a list no gate and no code
+     reads. Naming the gap is the honest disposition; spending a pin on it would not be. -->
+F-547: doc:doc/src/contract/dex.md#contract-functions@9f698f3a9e, doc:doc/src/contract/baccarat.md#payout-formula@9f698f3a9e, doc:doc/src/contract/slot.md#zk-proof-structure@9f698f3a9e
+<!-- F-547's `slot` half is the strongest of the three because the ledger's own wording ("it instances `payout`") is
+     exactly the distinction the doc erased: instancing a value publishes it, and the doc claimed the circuit
+     *verified* a paytable lookup, ranged the reels and applied the house edge. Reading the circuit shows all three
+     are the host's work and none is in the proof. -->
 <!-- /promotion-log -->
