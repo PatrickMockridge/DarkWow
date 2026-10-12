@@ -267,7 +267,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         SubscriptionFunction::DaoControlV1 | SubscriptionFunction::InitializeV1 => {}
-        _ => {}
+        // `_ => {}` stood here and nothing could reach it: the seven arms above cover every
+        // variant of `SubscriptionFunction`. Removed 2026-10-12 by the workspace-wide
+        // `deny(unreachable_patterns)` (`F-310`, `OBL-C236`) — the third arm that lint found,
+        // after `game_room`'s and the SDK's dao_escrow binding, and the one that shows the
+        // tooling's limit rather than the lint's: `cargo check --workspace` reported clean
+        // while never compiling this crate, and the wasm build is what found it.
     }
 
     let mut metadata = vec![];

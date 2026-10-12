@@ -122,7 +122,11 @@ pub fn decode_dao_escrow_function_params(
             let params = dao_escrow_model::CancelClaimParamsV1::decode(&data[1..])?;
             Box::new(params)
         }
-        _ => return Err(dwow_core::Error::ParseFailed("unsupported DAO-Escrow function")),
+        // `_ => return Err(dwow_core::Error::ParseFailed("unsupported DAO-Escrow function"))`
+        // stood here and nothing could reach it — every variant is matched above. Removed
+        // 2026-10-12 by the workspace-wide `deny(unreachable_patterns)` (`F-310`,
+        // `OBL-C236`), which is the whole argument for that lint being a *deny*: this arm
+        // had been a warning, and it reads as a fallback that does not exist.
     };
 
     Ok(res)

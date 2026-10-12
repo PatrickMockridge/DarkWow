@@ -462,3 +462,12 @@ missing_docs = "warn"
 unused_self = "warn"
 # Future: promote to deny once triaged
 # unsafe_code = "warn"
+
+# Rust lints, workspace-wide. `unreachable_patterns` is a *deny* rather than a warning
+# because of where it earns its place: a contract's dispatch match is the list of
+# functions the chain will run, so an arm that cannot be reached is a function no call
+# can invoke — and a warning among this workspace's hundred-odd is not read.
+# `contract-wasm-type-system.md` asks for the attribute on the dispatch match itself;
+# this is the single home that covers every contract that opts into these lints.
+[workspace.lints.rust]
+unreachable_patterns = "deny"

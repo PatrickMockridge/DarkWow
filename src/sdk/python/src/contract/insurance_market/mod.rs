@@ -139,10 +139,11 @@ pub fn decode_insurance_market_function_params(
             let params = insurance_market_model::PurchaseCoverageWithDAGParamsV1::decode(&data[1..])?;
             Box::new(params)
         }
-        InsuranceMarketFunction::ResolveClaimWithCapabilityV1 => {
-            let params = insurance_market_model::ResolveClaimWithCapabilityParamsV1::decode(&data[1..])?;
-            Box::new(params)
-        }
+        // `ResolveClaimWithCapabilityV1` was removed from the contract on 2026-10-11
+        // (`F-514`, `OBL-C232`) — it resolved claims from the caller's own input with no
+        // authorization — so this binding arm goes with it. The params type is still
+        // imported above because `FunctionParams` is implemented for it, ready for the
+        // endpoint to return once the market can say who may resolve.
         InsuranceMarketFunction::DeactivateUnderwriterV1 => {
             let params = insurance_market_model::DeactivateUnderwriterParamsV1::decode(&data[1..])?;
             Box::new(params)

@@ -175,9 +175,24 @@ define_contract_function!(XxxFunction, u8, ContractError, {
 });
 ```
 
-The dispatch SHALL be exhaustive. `#[deny(unreachable_patterns)]` SHALL be on
-the `match` statement. An unknown selector SHALL return `ContractError::InvalidFunction`
-(`↓bad-gate`). The contract SHALL NOT silently ignore unknown selectors.
+The dispatch SHALL be exhaustive, and an arm that cannot be reached SHALL be a
+compile error: the workspace denies `unreachable_patterns` once, in the root
+`Cargo.toml`'s `[workspace.lints.rust]`, and every contract opts into it with
+`[lints] workspace = true`. An unknown selector SHALL return
+`ContractError::InvalidFunction` (`↓bad-gate`). The contract SHALL NOT silently ignore
+unknown selectors.
+
+*Restated 2026-10-12 (`F-310`).* This asked for `#[deny(unreachable_patterns)]` **on
+the `match` statement**, and no `match` in the tree carried it — so the prohibition was
+absent from the whole contract tree, and an unreachable arm was one warning among
+hundreds. Putting it in force found three: `game_room`'s `get_metadata` matched every
+variant and then had `_ => vec![]` beneath them — worse than a dead line here, because
+in this host an **empty metadata buffer is the rejection signal**, so the arm read as a
+catch-all refusal while being unreachable; `subscription`'s had `_ => {}` under all
+seven of its variants; and `dwow-sdk-py`'s dao_escrow binding had
+`_ => return Err(...)` under an exhaustive match, a fallback that does not exist. One
+home rather than thirty-odd also means a new contract cannot omit it, which an
+attribute on each match could.
 
 ### A.1.3 Contract Call Payload
 
@@ -1403,8 +1418,11 @@ Reference: `wallet.md` §2.2, `composition.md` §4, `capability.rs:342-368`
 ### A.9.1 Compiler-Enforced (Rust Type System)
 
 **I1 — Function dispatch exhaustiveness.** The `match` on function selector SHALL
-cover all enum variants. `#[deny(unreachable_patterns)]` SHALL be on the match
-statement in `process_instruction` and `process_update`.
+cover all enum variants, and an unreachable arm SHALL be a compile error. The
+prohibition is the workspace-wide `deny(unreachable_patterns)` described in §A.1.2 —
+one setting in the root `Cargo.toml` rather than an attribute on each of
+`process_instruction` and `process_update`, which is what this asked for until
+2026-10-12 (`F-310`) and what no `match` in the tree had.
 
 **I2 — ContractResult propagation.** Every fallible operation SHALL use `?`.
 `unwrap()` SHALL only appear where the invariant is locally provable (e.g.,

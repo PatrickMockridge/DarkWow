@@ -293,7 +293,13 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
             let params = model::CreatePotParamsV1::decode(&self_.data[1..])?;
             create_pot_get_metadata_v1(params)?
         }
-        _ => vec![],
+        // `_ => vec![]` stood here and nothing could reach it: every variant of
+        // `GameRoomFunction` is matched above. It mattered more than a dead line, because
+        // in this host an **empty metadata buffer is the rejection signal**, not "no public
+        // inputs" — so the arm read as a catch-all refusal while being unreachable. The
+        // dispatch is exhaustive, which is what `contract-wasm-type-system.md` §A.1.2 asks
+        // for, and the workspace denies `unreachable_patterns` so the next one is a build
+        // error rather than a warning (`F-310`, `OBL-C236`).
     };
 
     wasm::util::set_return_data(&metadata)
