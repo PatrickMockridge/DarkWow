@@ -76,7 +76,7 @@ name = "transfer"
 code = 0
 description = "Transfer tokens"
 requires_proof = true
-proof_circuit = "Transfer_V1"
+proof_circuit = "Transfer_V2"
 
 [[trees]]
 name = "commitments"

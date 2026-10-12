@@ -342,7 +342,8 @@ let stored_house_edge = match wasm::db::db_get(info_db, HOUSE_EDGE_KEY)? {
 };
 ```
 
-Reference fix: `src/contract/baccarat/src/entrypoint/commit_bet_v1.rs:156-163`.
+Reference fix: `src/contract/baccarat/src/entrypoint/commit_bet.rs` (§7.1's naming rule — entrypoint
+module files carry no `_v1` suffix; they are named for the function).
 
 ### 8.2 Dead Imports
 

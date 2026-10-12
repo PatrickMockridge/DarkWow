@@ -10,15 +10,15 @@ If coverage falls below 100%, the terms void and holders can exit early.
 
 | Opcode | Function | Who | Does | ZK Circuits |
 |--------|----------|-----|------|-------------|
-| `0x00` | IssueStakeV1 | Issuer | Create staking pool, mint stake commitments to staker | BlindOutput_V1 |
-| `0x01` | TransferStakeV1 | Holder | Transfer stake to new holder. `last_claim_block` preserved — unclaimed interest travels with the commitment | Burn_V1, BlindOutput_V1 |
-| `0x02` | RequestInterestV1 | Holder | Request interest payment. Proves bond ownership (Burn_V1), provides fresh payment key. Like presenting a physical bond coupon. | Burn_V1 |
-| `0x03` | EmergencyUnstakeV1 | Holder | Exit before maturity when coverage < 100% | Burn_V1, Redeem_V1 |
-| `0x04` | UnstakeV1 | Holder | Withdraw principal at or after maturity. Rejects if `current_block < maturity_block` | Burn_V1, Redeem_V1 |
-| `0x05` | BurnStakeV1 | Issuer | Retire staking pool, destroy remaining stake commitments | Burn_V1 |
+| `0x00` | IssueStakeV1 | Issuer | Create staking pool, mint stake commitments to staker | BlindOutput_V2 |
+| `0x01` | TransferStakeV1 | Holder | Transfer stake to new holder. `last_claim_block` preserved — unclaimed interest travels with the commitment | Burn_V2, BlindOutput_V2 |
+| `0x02` | RequestInterestV1 | Holder | Request interest payment. Proves bond ownership (Burn_V2), provides fresh payment key. Like presenting a physical bond coupon. | Burn_V2 |
+| `0x03` | EmergencyUnstakeV1 | Holder | Exit before maturity when coverage < 100% | Burn_V2, Redeem_V2 |
+| `0x04` | UnstakeV1 | Holder | Withdraw principal at or after maturity. Rejects if `current_block < maturity_block` | Burn_V2, Redeem_V2 |
+| `0x05` | BurnStakeV1 | Issuer | Retire staking pool, destroy remaining stake commitments | Burn_V2 |
 | `0x06` | ProveCoverageV1 | Issuer/Holder | Submit ZK proof that reserves cover principal + interest obligations | ProveCoverage_V1 |
 | `0x07` | VerifyCoverageV1 | Holder | Read latest coverage report from `bonds_info` tree (read-only, no state change) | *(none)* |
-| `0x08` | PayInterestV1 | Issuer | Pay a pending interest claim. Creates fresh payment commitment (BlindOutput_V1) to holder's payment key. Updates `last_claim_block`, marks claim Paid. | BlindOutput_V1 |
+| `0x08` | PayInterestV1 | Issuer | Pay a pending interest claim. Creates fresh payment commitment (BlindOutput_V2) to holder's payment key. Updates `last_claim_block`, marks claim Paid. | BlindOutput_V2 |
 | `0x09` | RegisterSeriesV1 | Anyone | **Create the bond series record every other state-changing endpoint reads.** Keyed by `series_asset_id`; sets the series' `interest_rate_bps`, `maturity_block` and `issuer_contract`. Must be the first call on a fresh chain — `IssueStakeV1` requires the record it writes. | *(none)* |
 
 > **`RegisterSeriesV1` exists because the read had no matching write.** `issue_stake_v1` requires
@@ -39,14 +39,14 @@ struct IssueStakeParamsV1 {
     min_claim: u64,              // Dust protection threshold
     issuer_contract: ContractId, // Parent contract identifier
     asset_id: pallas::Base,      // Staking pool series identifier
-    commitment: BondCommitment,        // Initial stake commitment (BlindOutput_V1)
+    commitment: BondCommitment,        // Initial stake commitment (BlindOutput_V2)
 }
 ```
 
 RequestInterestV1:
 ```rust
 struct RequestInterestParamsV1 {
-    bond_input: BondInput, // Proves bond ownership (Burn_V1)
+    bond_input: BondInput, // Proves bond ownership (Burn_V2)
     claim_block: u64,      // Current block height
     payment_key: pallas::Base, // Fresh one-time key for issuer payment
     min_claim: u64,        // Dust protection
@@ -58,7 +58,7 @@ PayInterestV1:
 struct PayInterestParamsV1 {
     bond_token_commit: pallas::Base, // Identifies the bond
     claim_block: u64,                // Identifies which claim
-    interest_coin: BondCommitment,         // BlindOutput_V1 to holder's payment_key
+    interest_coin: BondCommitment,         // BlindOutput_V2 to holder's payment_key
 }
 ```
 
@@ -111,7 +111,7 @@ cover outstanding claims.
 
 ### Step 1: RequestInterestV1 — Holder Asks
 
-The holder submits a Burn_V1 ZK proof proving they own the bond. This is like
+The holder submits a Burn_V2 ZK proof proving they own the bond. This is like
 presenting a physical bond coupon at the issuer's window. The proof reveals the
 bond's nullifier in the public inputs, identifying which bond is being claimed
 against, but the entrypoint **does not write the nullifier** to the nullifiers
@@ -144,7 +144,7 @@ is the only on-chain trace.
 
 The issuer (or their wallet) scans the `bonds_info` tree for pending `RequestedClaim`
 records on series they issued. For each pending claim, they call `PayInterestV1`
-with a BlindOutput_V1 payment commitment addressed to the holder's `payment_key`.
+with a BlindOutput_V2 payment commitment addressed to the holder's `payment_key`.
 
 The entrypoint:
 1. Looks up the claim record, verifies `status == Pending`
@@ -192,25 +192,31 @@ A pending claim is a liability on their books, visible to all holders.
 
 ## Data Model
 
-### CoinAttributes (ZK-committed)
+### CommitmentAttributes (ZK-committed)
 
 The commitment is a Poseidon hash of these fields — identity is cryptographically
 bound:
 
 ```rust
-struct CoinAttributes {
+struct CommitmentAttributes {
     public_key: pallas::Base,    // H(owner_secret)
     value: u64,                  // Principal
     asset_id: pallas::Base,      // Series identifier
     spend_hook: pallas::Base,    // Cross-contract callback target
     user_data: pallas::Base,     // Application-specific
     blind: pallas::Base,         // Commitment blinding factor
-    maturity_block: u64,         // Block when unstaking is allowed (ZK-committed)
+    maturity_block: u64,         // Stored, NOT committed — see below
 }
-// Commitment = poseidon_hash([public_key, value, asset_id, spend_hook, user_data, blind, maturity_block])
+// Commitment = poseidon_hash([4, public_key, value, asset_id, spend_hook, user_data, blind])
 ```
 
-Maturity is in the hash — the issuer cannot alter it after issuance.
+**Maturity is not in the hash.** This section was headed `CoinAttributes`, listed `maturity_block`
+as `ZK-committed`, and ended "Maturity is in the hash — the issuer cannot alter it after issuance"
+until 2026-10-12. The circuit hashes **seven** arguments and the maturity is not among them: the
+trailing field made `to_commitment` a different function from the one `blind_output.zk` and
+`redeem.zk` compute, so no client could produce a public-input vector the circuit accepted
+(`OBL-Z15`). The maturity is stored on the record and compared against the chain height on the
+unstake path — nothing stops an issuer changing it except that check.
 
 ### BondCommitment (on-chain)
 
@@ -220,7 +226,8 @@ ZK-proven fields (common with PN) plus plaintext governance metadata:
 struct BondCommitment {
     value_commit: pallas::Point,    // Pedersen commitment of principal (private)
     commitment: pallas::Base,       // The note commitment = H(4, pub, value, asset, hook, data, blind)
-    token_commit: pallas::Base,     // H(asset_id, token_blind) — the tree key
+    token_commit: pallas::Base,     // H(2, asset_id, asset_id_blind) — the token commitment
+    series_asset_id: pallas::Base,  // The bond's series — the key `BondSeriesInfo` is stored under
     nullifier: Nullifier,           // H(secret, commitment)
     merkle_root: MerkleNode,        // Tree root at commitment creation
     user_data_enc: pallas::Base,    // H(user_data, user_data_blind)
@@ -238,10 +245,13 @@ Principal is hidden via Pedersen commitment. Two commitments, not one, and the d
 * `commitment` is the note commitment — the value `BlindOutput_V2` and `Redeem_V2` expose as their
   first public input, the same seven-argument hash promissory note uses. It is carried in the record
   because the host cannot recompute it: its preimage holds `commitment_blind`, which is the holder's.
-* `token_commit` is what the contract's commitment *tree* is keyed by, and what the burn path looks a
-  note up with. It binds `(asset_id, asset_id_blind)` and nothing else, so it identifies a note
+* `token_commit` binds `(asset_id, asset_id_blind)` and nothing else, so it identifies a note
   without saying anything about its value or its owner — those are carried by `value_commit` and
-  `signature_public`, which the circuits expose.
+  `signature_public`, which the circuits expose. It is **not** the series key: `OBL-C199` found
+  `issue_stake_v1` writing the series under `params.asset_id` while every later endpoint read it
+  under `token_commit`, so the series was written under one key and read under another. The record
+  now carries `series_asset_id` for that, because `token_commit` cannot supply it — its blind is
+  per-proof, and a bond's `CommitmentAttributes` do not include the asset id.
 
 This section said `maturity_block` appears "in the ZK commitment (cryptographic binding)" until
 2026-09-20. It does not: the circuits hash seven arguments and the maturity is not among them. It is
@@ -390,15 +400,22 @@ the PN validation helpers that work unchanged with bearer bond child calls.
 
 | Circuit | Source | Used For |
 |---------|--------|----------|
-| Burn_V1 | Reused from PN | Spend proofs (TransferStake, Unstake, EmergencyUnstake, BurnStake) + bond ownership proof (RequestInterest — nullifier NOT written to tree) |
-| BlindOutput_V1 | Reused from PN | Output commitment creation (IssueStake, TransferStake) + payment commitment creation (PayInterest — issuer is prover) |
-| Redeem_V1 | Reused from PN | Zero-value receipt commitments (Unstake, EmergencyUnstake). The receipt's note commitment is carried in the params as `receipt_commitment` — a different note from the `bond_input` being consumed, and one the host cannot recompute — and the stored receipt *record* is otherwise empty, because the params carry nothing else about it |
-| ProveCoverage_V2 | Bearer Bond only | Coverage ratio proof, as an integer quotient |
+| Burn_V2 | `proof/burn.zk` | Spend proofs (TransferStake, Unstake, EmergencyUnstake, BurnStake) + bond ownership proof (RequestInterest — nullifier NOT written to tree) |
+| BlindOutput_V2 | `proof/blind_output.zk` | Output commitment creation (IssueStake, TransferStake) + payment commitment creation (PayInterest — issuer is prover) |
+| Redeem_V2 | `proof/redeem.zk` | Zero-value receipt commitments (Unstake, EmergencyUnstake). The receipt's note commitment is carried in the params as `receipt_commitment` — a different note from the `bond_input` being consumed, and one the host cannot recompute — and the stored receipt *record* is otherwise empty, because the params carry nothing else about it |
+| ProveCoverage_V2 | `proof/prove_coverage.zk` | Coverage ratio proof, as an integer quotient |
 
-RequestInterestV1 uses Burn_V1 in a new pattern: the proof proves knowledge of the
+This table's "Source" column read "Reused from PN" for the first three until 2026-10-12, and the
+circuit names carried a `_V1` suffix. All four circuits are **this contract's own**, under
+`src/contract/bearer_bond/proof/` with `_V2` namespaces, and none is byte-identical to its
+PromissoryNote counterpart — what bearer_bond reuses is PN's *validation helpers*
+(`validate_child_contract_id`, `validate_child_value_commit`), which is what the paragraph above
+this section is about.
+
+RequestInterestV1 uses Burn_V2 in a new pattern: the proof proves knowledge of the
 secret (ownership), and the nullifier identifies which bond, but the commitment is NOT
 consumed — the same nullifier appears again when the bond is eventually
-transferred or unstaked. PayInterestV1 shifts BlindOutput_V1 from the holder
+transferred or unstaked. PayInterestV1 shifts BlindOutput_V2 from the holder
 to the issuer: the issuer creates the payment commitment with fresh blinding per payment.
 
 ## Files
@@ -410,21 +427,22 @@ src/contract/bearer_bond/
 ├── src/
 │   ├── lib.rs                 # BearerBondFunction enum, tree constants, circuit bins
 │   ├── error.rs               # BearerBondError (30 variants)
-│   ├── model/mod.rs           # CoinAttributes, BondCommitment, BondSeriesInfo, CoverageReport,
+│   ├── model/mod.rs           # CommitmentAttributes, BondCommitment, BondSeriesInfo, CoverageReport,
 │   │                           # all Params/Update types, calculate_interest()
 │   ├── entrypoint/mod.rs      # WASM entrypoint (init, exec, apply, metadata)
-│   ├── capability.rs          # Capability descriptor (6 capability types)
+│   ├── capability.rs          # Wallet-side capability descriptors (six `CAP_*` discriminants)
 │   ├── validation.rs          # is_coverage_voided(), MIN_COVERAGE_RATIO_BPS
 │   └── client/                # Client-side proof builders (feature = "client")
 │       ├── mod.rs
-│       ├── issue_stake_v1.rs
-│       ├── transfer_stake_v1.rs
-│       ├── request_interest_v1.rs
-│       ├── pay_interest_v1.rs
-│       ├── emergency_unstake_v1.rs
-│       ├── unstake_v1.rs
-│       ├── burn_stake_v1.rs
-│       └── prove_coverage_v1.rs
+│       ├── zkbins.rs          # the circuits' `.zk.bin` blobs, embedded
+│       ├── issue_stake.rs
+│       ├── transfer_stake.rs
+│       ├── request_interest.rs
+│       ├── pay_interest.rs
+│       ├── emergency_unstake.rs
+│       ├── unstake.rs
+│       ├── burn_stake.rs
+│       └── prove_coverage.rs
 ├── proof/
 │   ├── burn.zk
 │   ├── blind_output.zk
@@ -435,6 +453,13 @@ src/contract/bearer_bond/
 ```
 
 ## Capability Types
+
+These six are **wallet-side discriminants** (`capability.rs`, `CapabilityId::derive(contract_id,
+CAP_*, …)`), used to build the position catalogues the wallet resolves. They are not the
+contract's published capability ABI: `manifest.toml` declares **one** capability,
+`bond_holder` (discriminant `0`), and a manifest-driven resolver sees only that. The gap between
+the two is `F-544` — the doc and the manifest disagree about the capability ABI, and nothing
+reconciles them.
 
 | Discriminant | Name | Source | Consumable |
 |---|---|---|---|

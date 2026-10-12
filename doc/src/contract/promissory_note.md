@@ -889,17 +889,18 @@ src/contract/promissory_note/
 │   ├── validation.rs        # Cross-contract validation helpers
 │   └── client/              # Client API (feature = "client")
 │       ├── mod.rs           # PromissoryNote struct, verify_received_capability()
-│       ├── register_type_v1.rs # RegisterTypeCallBuilder
-│       ├── redeem_v1.rs     # RedeemCallBuilder
-│       ├── issue_v1.rs       # IssueCallBuilder
-│       ├── revoke_v1.rs       # RevokeCallBuilder + create_revoke_proof()
-│       └── transfer_v1.rs   # TransferCallBuilder
+│       ├── register_type.rs # RegisterTypeCallBuilder
+│       ├── redeem.rs        # RedeemCallBuilder
+│       ├── issue.rs         # IssueCallBuilder
+│       ├── revoke.rs        # RevokeCallBuilder + create_revoke_proof()
+│       ├── transfer.rs      # TransferCallBuilder
+│       └── zkbins.rs        # the circuits' `.zk.bin` blobs, embedded
 ├── proof/
 │   ├── register_type.zk     # RegisterTypeV2 circuit
 │   ├── redeem.zk          # RedeemV2 circuit (receipt commitment, value=0)
 │   ├── issue.zk           # IssueV2 circuit
-│   ├── revoke.zk           # Revoke_V1 circuit
-│   ├── transfer.zk   # Transfer_V1 circuit
+│   ├── revoke.zk           # RevokeV2 circuit
+│   ├── transfer.zk   # TransferV2 circuit
 │   └── *.zk.bin             # Compiled ZK binaries
 ├── tests/
 │   └── integration.rs       # Integration tests

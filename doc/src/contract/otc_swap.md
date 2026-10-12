@@ -253,12 +253,14 @@ src/contract/otc_swap/
 │   └── cancel_swap.zk       # Alice's timeout refund
 ├── src/
 │   ├── client/                 # Builder structs + proof generation
-│   │   ├── create_swap_v1.rs
-│   │   ├── fund_swap_v1.rs
-│   │   ├── execute_swap_v1.rs
-│   │   └── cancel_swap_v1.rs
+│   │   ├── create_swap.rs
+│   │   ├── fund_swap.rs
+│   │   ├── execute_swap.rs
+│   │   ├── cancel_swap.rs
+│   │   ├── mod.rs
+│   │   └── zkbins.rs           # the circuits' `.zk.bin` blobs, embedded
 │   ├── capability.rs           # Wallet capability descriptor
-│   ├── entrypoint.rs           # WASM entrypoint (274 lines)
+│   ├── entrypoint.rs           # WASM entrypoint (a single module, not a directory)
 │   ├── error.rs                # Error types (26 variants)
 │   ├── lib.rs                  # Contract definitions
 │   └── model/mod.rs            # Data structures
@@ -348,6 +350,14 @@ state machine constants, derive_id, compute_nullifier).
 
 **Wallet resolver**: Descriptor defined in `capability.rs`. Wallet-side resolver
 in `bin/dww/src/capability.rs` pending — follows the [standard integration pattern](../arch/wallet.md#5-1-manifest-discovery-pipeline).
+
+**Two capability vocabularies, and they disagree (`F-544`).** `capability.rs` defines **four**
+wallet-side discriminants — `CAP_ALICE_CREATED` (0x00), `CAP_BOB_CREATED` (0x01),
+`CAP_ALICE_FUNDED` (0x02), `CAP_BOB_FUNDED` (0x03) — while `manifest.toml` publishes **two**
+capabilities, `proposer` and `acceptor`. A manifest-driven resolver (the standard integration
+pattern linked above) sees only the two, so the four client discriminants are reachable from
+neither side. Nothing reconciles them today; this note is here so the next reader finds the
+disagreement rather than one half of it.
 
 ## References
 
