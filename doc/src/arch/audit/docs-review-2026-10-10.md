@@ -1187,4 +1187,31 @@ F-114: doc:doc/src/arch/verification-hazop.md@45ffd0570a
      counted three ways — the 2026-10-08 `DECISION` relabel left append-only bodies saying `PARTLY`/`OPEN` — and
      four of the five sites were corrected on 2026-10-11. The fifth, `OBL-Z13`, was not, and finding it is the
      value of stamping rather than assuming: a sweep reported over five sites that reached four. -->
+F-115: doc:doc/src/arch/verification-hazop.md@4209139246
+F-116: doc:doc/src/arch/verification-hazop.md@4209139246
+F-117: doc:doc/src/arch/verification-hazop.md@4209139246
+F-118: doc:doc/src/arch/verification-hazop.md@4209139246
+F-119: doc:doc/src/arch/verification-hazop.md@4209139246
+F-120: doc:doc/src/arch/verification-hazop.md@4209139246
+F-121: doc:doc/src/arch/verification-hazop.md@4209139246
+F-122: doc:doc/src/arch/verification-hazop.md@4209139246
+F-123: doc:doc/src/arch/verification-hazop.md@4209139246
+F-124: doc:doc/src/arch/verification-hazop.md@4209139246
+F-125: doc:doc/src/arch/verification-hazop.md@4209139246
+F-126: doc:doc/src/arch/verification-hazop.md@4209139246
+F-127: doc:doc/src/arch/verification-hazop.md@4209139246
+F-128: doc:doc/src/arch/verification-hazop.md@4209139246
+F-129: doc:doc/src/arch/verification-hazop.md@4209139246
+F-130: doc:doc/src/arch/verification-hazop.md@4209139246
+F-131: doc:doc/src/arch/verification-hazop.md@4209139246
+F-132: doc:doc/src/arch/verification-hazop.md@4209139246
+F-133: doc:doc/src/arch/verification-hazop.md@4209139246
+F-134: doc:doc/src/arch/verification-hazop.md@4209139246
+<!-- Twenty rows stamped together, and the honest note is *how* they were verified: the register already carries
+     a `docs-review F-11x` append for every one of them, so what was checked is the *current text* rather than
+     the presence of a note — five spot-reads (Z2, Z18, Z19, Z13, Z23) plus a live gate run for the collision
+     F-120 is about. One of the five was stale by one: Z23's own correction of a moving figure had itself moved,
+     which is recorded in `4209139246` and is this register's oldest failure mode arriving inside a fix for it.
+     F-129 is dispatched rather than repaired — the misplaced severity cell is `OBL-C149`'s class and that row is
+     OPEN — and that is the point of stamping it here: the finding has a home. -->
 <!-- /promotion-log -->
