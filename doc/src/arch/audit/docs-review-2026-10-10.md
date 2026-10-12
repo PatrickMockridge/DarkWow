@@ -1214,4 +1214,13 @@ F-134: doc:doc/src/arch/verification-hazop.md@4209139246
      which is recorded in `4209139246` and is this register's oldest failure mode arriving inside a fix for it.
      F-129 is dispatched rather than repaired — the misplaced severity cell is `OBL-C149`'s class and that row is
      OPEN — and that is the point of stamping it here: the finding has a home. -->
+F-101: doc:doc/src/arch/verification-hazop.md#the-root-causes--the-open-findings-reduce-to-six@5d4ca147e1, gate:scripts/check-register-worklist.sh@5d4ca147e1
+F-102: doc:doc/src/arch/verification-hazop.md#the-root-causes--the-open-findings-reduce-to-six@5d4ca147e1, gate:scripts/check-register-worklist.sh@5d4ca147e1
+F-108: doc:doc/src/arch/verification-hazop.md#the-root-causes--the-open-findings-reduce-to-six@5d4ca147e1
+<!-- F-101, F-102 and F-108 are the census rows, and they were fixed the way the plan prescribed rather than by
+     updating the figures: **the counts were deleted**. The register now says "The counts are not restated here;
+     they are derived, and the gate prints them", and the gate does — `open/decision/causes` on every run.
+     "thirty-one" occurs zero times; the gate reports `DECISION=29`; the "declared budget" sentence was replaced
+     by "the gate is this assignment rather than a budget". A restated count would have gone stale within the
+     week, which is the whole argument Phase C made for deleting rather than maintaining it. -->
 <!-- /promotion-log -->
