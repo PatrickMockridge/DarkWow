@@ -989,4 +989,15 @@ F-540: doc:doc/src/contract/dao_escrow.md#zk-circuits@6d94948c87
      is outside it, which is where three pre-`OBL-C198` rows survived. Recorded here as residue rather than
      built as a gate: reading an order out of a prose table is the symbol-mapping class that cannot be checked
      soundly (see the R7 section). -->
+F-541: doc:doc/src/contract/bearer_bond.md#zk-circuits@b354827990, doc:doc/src/contract/promissory_note.md#files@b354827990, doc:doc/src/dev/contracts/journey.md#3-write-the-manifest@b354827990
+F-542: doc:doc/src/contract/bearer_bond.md#data-model@b354827990
+F-544: doc:doc/src/contract/bearer_bond.md#capability-types@b354827990, doc:doc/src/contract/otc_swap.md#implementation-status@b354827990
+<!-- F-541 is promoted wider than the row names, and the sweep is the promotion: the `_v1` suffix had one more
+     home than the ledger listed (`contract-wasm-standards-best-practices.md` cited a `commit_bet_v1.rs` that
+     `circuit-versioning.md` §7.1 says should not exist and does not), and the bearer_bond table's `_V1` names
+     came with a second wrong column — "Reused from PN" — that reading the proof directory falsified. F-542 is
+     the ledger's most valuable row in this family: the doc described the *broken* form, including the sentence
+     the code's own comment quotes when explaining why it could not work. F-544 is the one where the correction
+     is a distinction rather than a fix — the six (and four) discriminants are real, and what disagrees with the
+     manifest is a different vocabulary from the one the doc implies. -->
 <!-- /promotion-log -->
