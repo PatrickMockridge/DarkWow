@@ -874,4 +874,39 @@ F-327: doc:doc/src/arch/manifest.md#3-scanning@595eb7b0eb
 F-328: doc:doc/src/arch/genesis.md#adding-a-new-genesis-contract@595eb7b0eb
 <!-- F-328 is a checklist correction whose old instruction would have added a second writer of state the
      genesis block already carries. -->
+F-335: doc:doc/src/arch/consensus/stratum.md#292-byte-mining-blob-layout@37c8565a05
+<!-- F-335 is promoted at the layout table rather than at the two documents the row names, because the
+     table is the home and the copies are downstream of it: the blob has been 292 bytes since
+     `anchor_owner` was appended (bytes 260..292), and the table's total said 260 and omitted the row
+     entirely. The row's own value — "a client built from the spec never meets target" — is the reason
+     this is corrected rather than annotated. -->
+F-624: doc:doc/src/arch/consensus/stratum.md#292-byte-mining-blob-layout@37c8565a05
+<!-- F-624's four docs and F-335's two are one claim with seven homes; the sweep is the promotion. One
+     of the four (localnet-dev.md's "43 bytes = [2 byte padding][40 byte header]") described neither the
+     blob nor anything else and is replaced by a pointer at the layout table. -->
+F-329: doc:doc/src/arch/sync-conformance.md#net-crate-ownership-141@37c8565a05, gate:contrib/ci/check_sync_conformance.sh@37c8565a05
+<!-- F-329's clause half was the row's smaller half. The finding's real content is the parenthetical —
+     the gate PASSes — and it passed because it greps for the header's presence and never resolves the
+     number. The gate now resolves every `§N` (ranges expanded) against sync-protocol.md's own headings,
+     and gained a second control that plants a dead clause; the first control only proved it could notice
+     an absent header. -->
+F-330: partial:the module headers of sync_types.rs, chain_state.rs and p2p_wallet.rs re-pointed at the clauses that exist, and sync_types.rs's invariant list renumbered to the document it cites@37c8565a05
+<!-- F-330 is the same defect in code comments, and it forced the correction of a detail the row did not
+     name: sync_types.rs's header numbered its own invariants §1..§4 against a document where those
+     subjects are §2/§3/§4/§5, and the range it cited (`§2-§7`) carried the deleted §6 inside it. -->
+F-626: doc:doc/src/arch/quantum-threat.md#retroactive-privacy-protection@37c8565a05
+<!-- F-626's X25519 half was a live claim in four places, not two: the primitive table, the HNDL
+     paragraph, the migration timeline and `for-researchers.md`. Note encryption is Pallas DH
+     (`sapling_ka_agree`/`kdf_sapling`), which matters because the exposure is not a separate break —
+     it is the same curve the commitments rest on, so it falls with them. The circuit count is 167. -->
+F-627: doc:doc/src/arch/network-types.md#darkwow-devnet-formerly-linear-testnet@37c8565a05
+<!-- F-627 is four wrong cells in one table plus a config-file claim. The ledger's own note is the
+     instructive part: "default is testnet" holds for the config file while the CLI default is devnet,
+     so both are now stated. Same shape as F-329 — a document quoting a file that moved. -->
+F-637: doc:doc/src/arch/merge-mining.md#finality-configuration@37c8565a05
+F-633: doc:doc/src/arch/monero.md#see-also@37c8565a05
+<!-- F-633 and F-637 are promoted together because they are the same paragraph's two defects: the
+     monero finality note was duplicated verbatim in merge-mining.md, and both copies plus monero.md
+     cited `OBL-C67` as open. It was re-closed when its residual split out to `OBL-C80`, so the
+     citations now name `OBL-C80` and its actual status — ACCEPTED-WITH-REASON, not open. -->
 <!-- /promotion-log -->
