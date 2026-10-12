@@ -310,15 +310,24 @@ run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instan
 # WHAT A PASS MEANS, and it is narrower than "the circuits are safe": that the committed module is
 # what the generator produces today. The verdicts inside it are the *model's*
 # (`Circuits/InstanceDerivation`'s rule, one theorem per circuit closed by `decide`), and its header
-# decomposes where those verdicts differ from this gate's checker — of the 167 circuits that fail the
-# model's strict rule, **154** are `redundant` to the checker (pinned by another exposed
-# determination, which the model's sequential rule does not follow), **12** are `declared-free` from
-# an entry in script/circuit_free_instances.txt, and **1** is the model's declared-constant boundary.
-# Zero are unclassified by the checker, which is what the gate's own green run above means — so the
-# model does not contradict this gate, it refines it. The counts here read 155 / 11 / 3 / 1 until
-# 2026-09-24, when the checker's last three unclassified sites were adjudicated and that class
-# vanished with them. It is the *data* side of `OBL-T7`'s `(r, s) ↦ circuit` bridge and not the
-# bridge, which the module says it does not supply.
+# decomposes where those verdicts differ from this gate's checker. **The counts below are quoted from
+# the regenerated module (2026-10-12), and they are the module's to state — it prints them on every
+# regeneration, and this comment is only a reader's summary of them.** Of the **168** circuits that
+# fail the model's strict rule, **148** are `redundant` to the checker (pinned by another exposed
+# determination, which the model's sequential rule does not follow), **18** are `declared-free` from
+# an entry in script/circuit_free_instances.txt, **1** is `bound` through a `constrain_equal_base`
+# whose determining side is a declared constant, and **1** is the one instance `OBL-Z16` names where
+# the checker fails it too. Zero are unclassified, which is what the gate's own green run means — so
+# the model does not contradict this gate, it refines it.
+#
+# **This module was stale for the last three weeks and this is the regeneration that caught up**, so
+# the numbers above differ from every set that stood here before: 168/179 circuits against 165/176,
+# and 148/18/1/1 against 154/12/1 — because **28 commits touched `*.zk` after 2026-09-27** (the
+# `OBL-C198`/`C199` binding campaigns and the deployooor `LockV1` proof) and nothing re-ran the
+# generator. The lesson is the one this comment's own last sentence used to carry and no longer needs
+# to: a hand-maintained count in prose goes stale silently, and the gate that would have said so is
+# the `--check` invocation below. It is the *data* side of `OBL-T7`'s `(r, s) ↦ circuit` bridge and
+# not the bridge, which the module says it does not supply.
 run_gate "circuit transcription freshness (OBL-T7)" \
                                           python3 "$REPO_ROOT/scripts/gen_circuit_transcription.py" --check
 # The same sources, joined to the `(r, s)` pairs the capability layer instantiates — the half of
@@ -772,15 +781,19 @@ run_gate "Python: supply chain model"      python3 contrib/model/supply_chain_mo
 # exits non-zero when its first `assert` sits outside the `try`. `test_oracle.py`, which could not be
 # run at all, was repaired the same way.
 #
-# **Two of the models below are wired with a caveat rather than a clean contract, and an independent
+# **One of the models below is wired with a caveat rather than a clean contract, and an independent
 # reader is why this says so rather than asserting they were all falsified.** `vm_state_model.py`
-# *demonstrates* known crash paths, so its printed `FAIL — …` lines are its expected output: it can
-# still fail (through the assertions on its mitigations), but its summary reads like a red gate, and
-# nothing ties its exit status to the findings it prints. **In fact it has no exit call at all** —
-# measured 2026-09-24, `python3 contrib/model/vm_state_model.py` exits 0 while printing
-# `2/5 tests found crash paths`, so the green this gate records is Python's default. That model
-# belongs in the register as a row rather than being rewritten here: what it should assert is a
-# question about the model, not about the wiring — and it is now `OBL-C122`.
+# *demonstrates* known crash paths, so its printed `FAIL — …` lines are its expected output — and
+# since 2026-09-25 its **exit status is tied to those same pre-fix simulations**, so this gate is red
+# by construction and no change can clear it. Corrected here 2026-10-12: the paragraph that stood in
+# this place said the model "has no exit call at all — measured 2026-09-24, exits 0 while printing
+# `2/5 tests found crash paths`". That was true when written and **stopped being true the next day**,
+# when `15ee21b06d` ("ci: make the gates able to fail") added the exit-1 block; the stale sentence
+# survived three weeks in the file that is supposed to be the honest account of what a gate means.
+# What the model should assert is a question about the model, not about the wiring — `OBL-C122` names
+# the defect class and `OBL-C240` records both this inversion and the three unlocked `hash_with_vm`
+# sites the model's verdict does not reach. The gate is left red deliberately rather than re-pointed:
+# changing which assertions an instrument's exit reads is a change to what it asserts.
 #
 # `dockernet_model.py`'s caveat **used to be stated here as a fact and is not one**: it read "likewise
 # counts its own `SKIP`/`FAIL` lines as passes under its runner". Measured the same day by running it

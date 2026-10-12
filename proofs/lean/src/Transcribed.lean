@@ -14,10 +14,10 @@ by the gate as `lake build DarkFi Transcribed`, and is not reachable from `lake 
 that place in the `DarkFi` library until 2026-09-24, when a `LEAN_NUM_THREADS=4` build of that library
 exhausted this host's memory and froze the machine: a thread cap bounds how many `lean` processes run,
 not how much memory one of them uses, and kernel `decide` evaluations at this scale is where in this
-tree that difference bites — 181 of them the day it froze, 176 now. The gate builds it under
+tree that difference bites — 181 of them the day it froze, 179 now. The gate builds it under
 `scripts/lean-build.sh`, which adds the cgroup memory
 ceiling the thread cap never was. **A `lake build DarkFi` therefore does not type-check this file; the
-gate does.** `CheckAxioms.lean` imports it directly, so the axiom walk still covers all 176
+gate does.** `CheckAxioms.lean` imports it directly, so the axiom walk still covers all 179
 theorems.
 
 What is here is one `List Stmt` per circuit in `InstanceDerivation`'s vocabulary, the names the
@@ -27,28 +27,30 @@ asks whether every exposed value is *determined* by what precedes it, while the 
 accepts an exposed value that the circuit pins elsewhere (`redundant`) or that a host-side
 justification declares free (`script/circuit_free_instances.txt`).
 
-Measured: **165** of 176 circuits expose at least one value the model does not
+Measured: **168** of 179 circuits expose at least one value the model does not
 find determined in-circuit, and **11** hold. Each refuted circuit names the first such
 exposure **and the checker's class for that exposure**.
 
-**The 165 are decomposed rather than asserted, and the decomposition is the finding.** For each
+**The 168 are decomposed rather than asserted, and the decomposition is the finding.** For each
 refuted circuit the generator asks the *checker* — `classify`, the gate's own classifier — what it
 made of the exposure the model refused, and the answer is that the two rules disagree by design
 almost everywhere:
 
-* **152** of the 165 — The checker resolves it as `redundant` — pinned by another exposed
+* **148** of the 168 — The checker resolves it as `redundant` — pinned by another exposed
   determination, which the model's sequential rule does not follow.
-* **12** of the 165 — The checker resolves it as `declared-free`, from a host-side justification
+* **18** of the 168 — The checker resolves it as `declared-free`, from a host-side justification
   in `script/circuit_free_instances.txt`.
-* **1** of the 165 — The checker resolves it as `bound`, through a `constrain_equal_base` whose
+* **1** of the 168 — The checker resolves it as `bound`, through a `constrain_equal_base` whose
   determining side is a declared constant.
+* **1** of the 168 — **The checker fails it too** — one of the instances `OBL-Z16` names, where
+  the model and the checker agree.
 
-So the model does not contradict the checker; it **refines** it, and every one of the 165 is the
+So the model does not contradict the checker; it **refines** it, and every one of the 168 is the
 checker's weaker rule or the single boundary the model note names. Two consequences a reader should
 take from this file rather than infer:
 
-* `Axioms.NoFreeInstances`' *name* is a **strict** reading this tree mostly does not meet — 165 of
-  176 circuits are refuted under it — while the property the tree actually enforces is the checker's
+* `Axioms.NoFreeInstances`' *name* is a **strict** reading this tree mostly does not meet — 168 of
+  179 circuits are refuted under it — while the property the tree actually enforces is the checker's
   four-verdict rule, whose failures are the instances `OBL-Z16` names (11 when this sentence was
   written on 2026-09-24, and re-run `scripts/check-circuit-instance-derivation.sh` for the count now —
   it is 4 as of that evening, because one site was repaired and one circuit deleted).
@@ -68,10 +70,10 @@ reason the generator is allowed to predict at all.
 One boundary in the *other* direction stays untested, stated because it would show up as a false
 positive the day a circuit meets it: a bare `constant` exposed by `constrain_instance` would fail the
 model's property, where the checker accepts a constant by declaration. No circuit in this tree exposes
-one — measured, every undetermined exposure across the 165 refutations is a witness and none is a
+one — measured, every undetermined exposure across the 168 refutations is a witness and none is a
 constant — so that direction is untested rather than settled, while the direction above is met.
 
-Not transcribed, and counted rather than dropped silently: 21 bare opcode-call statements
+Not transcribed, and counted rather than dropped silently: 22 bare opcode-call statements
 (`less_than_strict`, `bool_check`, `less_than_loose`) which constrain but expose nothing, so the
 instance property is unaffected — the checker skips them for the same reason. Everything else in the
 sources is here; an unrecognised statement form fails the generator rather than being omitted.
@@ -84,7 +86,7 @@ needs without supplying the bridge. See `OBL-T7` in `doc/src/arch/verification-h
 2026-09-24 this module exceeded 24 GiB in a single `lean` process and was OOM-killed at both a 16 GiB
 and a 24 GiB ceiling, so no `.olean` had ever been produced and the kernel had closed none of the
 verdicts below. Extracting `boundWalk`'s `assign` arm into `bindAssign` removed it: the whole
-transcription — all 176 verdicts as it now stands, 181 when that was measured — builds in
+transcription — all 179 verdicts as it now stands, 181 when that was measured — builds in
 **~71 s and 743 MB** as one module. **Which circuits were
 expensive, and why, is not established** — see `bindAssign`'s docstring, which carries the controlled
 comparison that justifies the change and the rival explanations it does not settle, and retracts the
@@ -100,7 +102,7 @@ open Circuits.InstanceDerivation
 
 /-! ===== The circuits, in source order =====
 
-176 circuits, 2670 statements transcribed; **11** satisfy the model's property and **165** do not, the latter named by the
+179 circuits, 2745 statements transcribed; **11** satisfy the model's property and **168** do not, the latter named by the
 first undetermined exposure in each, with the checker's class for that exposure named beneath it.
 -/
 
@@ -507,7 +509,7 @@ theorem voting_no_free_instance :
   decide
 
 
-/-- `src/contract/attestation/proof/attest_slash.zk` — 2 exposure(s). -/
+/-- `src/contract/attestation/proof/attest_slash.zk` — 4 exposure(s). -/
 
 def attestation_attest_slash_held : List Name := ["NULLIFIER_K", "attester_pub_x", "attester_pub_y", "attester_secret", "tx_binding", "tx_commitment", "tx_nonce"]
 
@@ -516,6 +518,13 @@ def attestation_attest_slash_stmts : List Stmt :=
 [
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .assign "derived_pub" (.op "ec_mul_base" [.var "attester_secret", .var "NULLIFIER_K"]),
+  .assign "derived_pub_x" (.op "ec_get_x" [.var "derived_pub"]),
+  .assign "derived_pub_y" (.op "ec_get_y" [.var "derived_pub"]),
+  .constrainEq (.var "derived_pub_x") (.var "attester_pub_x"),
+  .constrainEq (.var "derived_pub_y") (.var "attester_pub_y"),
+  .constrainInstance (.var "attester_pub_x"),
+  .constrainInstance (.var "attester_pub_y"),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
 ]
@@ -533,14 +542,12 @@ theorem attestation_attest_slash_has_a_free_instance :
 
 /-- `src/contract/attestation/proof/check_not_revoked.zk` — 2 exposure(s). -/
 
-def attestation_check_not_revoked_held : List Name := ["NULLIFIER_K", "nonce", "tx_binding", "tx_commitment", "tx_nonce"]
+def attestation_check_not_revoked_held : List Name := ["NULLIFIER_K", "tx_binding", "tx_commitment", "tx_nonce"]
 
 
 def attestation_check_not_revoked_stmts : List Stmt :=
 [
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
-  .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
-  .assign "leaf" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "nonce"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
@@ -557,7 +564,7 @@ theorem attestation_check_not_revoked_has_a_free_instance :
   decide
 
 
-/-- `src/contract/attestation/proof/commit_fee_schedule.zk` — 2 exposure(s). -/
+/-- `src/contract/attestation/proof/commit_fee_schedule.zk` — 4 exposure(s). -/
 
 def attestation_commit_fee_schedule_held : List Name := ["NULLIFIER_K", "attester_pub_x", "attester_pub_y", "attester_secret", "tx_binding", "tx_commitment", "tx_nonce"]
 
@@ -566,6 +573,13 @@ def attestation_commit_fee_schedule_stmts : List Stmt :=
 [
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .assign "derived_pub" (.op "ec_mul_base" [.var "attester_secret", .var "NULLIFIER_K"]),
+  .assign "derived_pub_x" (.op "ec_get_x" [.var "derived_pub"]),
+  .assign "derived_pub_y" (.op "ec_get_y" [.var "derived_pub"]),
+  .constrainEq (.var "derived_pub_x") (.var "attester_pub_x"),
+  .constrainEq (.var "derived_pub_y") (.var "attester_pub_y"),
+  .constrainInstance (.var "attester_pub_x"),
+  .constrainInstance (.var "attester_pub_y"),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
 ]
@@ -617,7 +631,7 @@ theorem attestation_consume_claim_has_a_free_instance :
   decide
 
 
-/-- `src/contract/attestation/proof/create_attestation.zk` — 2 exposure(s). -/
+/-- `src/contract/attestation/proof/create_attestation.zk` — 4 exposure(s). -/
 
 def attestation_create_attestation_held : List Name := ["NULLIFIER_K", "attester_pub_x", "attester_pub_y", "attester_secret", "tx_binding", "tx_commitment", "tx_nonce"]
 
@@ -626,6 +640,13 @@ def attestation_create_attestation_stmts : List Stmt :=
 [
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .assign "derived_pub" (.op "ec_mul_base" [.var "attester_secret", .var "NULLIFIER_K"]),
+  .assign "derived_pub_x" (.op "ec_get_x" [.var "derived_pub"]),
+  .assign "derived_pub_y" (.op "ec_get_y" [.var "derived_pub"]),
+  .constrainEq (.var "derived_pub_x") (.var "attester_pub_x"),
+  .constrainEq (.var "derived_pub_y") (.var "attester_pub_y"),
+  .constrainInstance (.var "attester_pub_x"),
+  .constrainInstance (.var "attester_pub_y"),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
 ]
@@ -641,15 +662,22 @@ theorem attestation_create_attestation_has_a_free_instance :
   decide
 
 
-/-- `src/contract/attestation/proof/create_claim.zk` — 2 exposure(s). -/
+/-- `src/contract/attestation/proof/create_claim.zk` — 4 exposure(s). -/
 
-def attestation_create_claim_held : List Name := ["NULLIFIER_K", "claim_data", "creator_pub_x", "creator_pub_y", "creator_secret", "tx_binding", "tx_commitment", "tx_nonce"]
+def attestation_create_claim_held : List Name := ["NULLIFIER_K", "creator_pub_x", "creator_pub_y", "creator_secret", "tx_binding", "tx_commitment", "tx_nonce"]
 
 
 def attestation_create_claim_stmts : List Stmt :=
 [
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .assign "derived_pub" (.op "ec_mul_base" [.var "creator_secret", .var "NULLIFIER_K"]),
+  .assign "derived_pub_x" (.op "ec_get_x" [.var "derived_pub"]),
+  .assign "derived_pub_y" (.op "ec_get_y" [.var "derived_pub"]),
+  .constrainEq (.var "derived_pub_x") (.var "creator_pub_x"),
+  .constrainEq (.var "derived_pub_y") (.var "creator_pub_y"),
+  .constrainInstance (.var "creator_pub_x"),
+  .constrainInstance (.var "creator_pub_y"),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
 ]
@@ -665,9 +693,9 @@ theorem attestation_create_claim_has_a_free_instance :
   decide
 
 
-/-- `src/contract/attestation/proof/delegate_attestation.zk` — 3 exposure(s). -/
+/-- `src/contract/attestation/proof/delegate_attestation.zk` — 5 exposure(s). -/
 
-def attestation_delegate_attestation_held : List Name := ["NULLIFIER_K", "delegatee_pub_x", "delegatee_pub_y", "delegator_secret", "tx_binding", "tx_commitment", "tx_nonce"]
+def attestation_delegate_attestation_held : List Name := ["NULLIFIER_K", "delegatee_pub_x", "delegatee_pub_y", "delegator_pub_x", "delegator_pub_y", "delegator_secret", "tx_binding", "tx_commitment", "tx_nonce"]
 
 
 def attestation_delegate_attestation_stmts : List Stmt :=
@@ -677,6 +705,13 @@ def attestation_delegate_attestation_stmts : List Stmt :=
   .assign "delegatee_leaf" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "delegatee_pub_x", .var "delegatee_pub_y"]),
   .constrainInstance (.var "delegatee_leaf"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .assign "derived_pub" (.op "ec_mul_base" [.var "delegator_secret", .var "NULLIFIER_K"]),
+  .assign "derived_pub_x" (.op "ec_get_x" [.var "derived_pub"]),
+  .assign "derived_pub_y" (.op "ec_get_y" [.var "derived_pub"]),
+  .constrainEq (.var "derived_pub_x") (.var "delegator_pub_x"),
+  .constrainEq (.var "derived_pub_y") (.var "delegator_pub_y"),
+  .constrainInstance (.var "delegator_pub_x"),
+  .constrainInstance (.var "delegator_pub_y"),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
 ]
@@ -692,7 +727,69 @@ theorem attestation_delegate_attestation_has_a_free_instance :
   decide
 
 
-/-- `src/contract/attestation/proof/update_delegation.zk` — 2 exposure(s). -/
+/-- `src/contract/attestation/proof/expire_attestation.zk` — 4 exposure(s). -/
+
+def attestation_expire_attestation_held : List Name := ["NULLIFIER_K", "attestor_pub_x", "attestor_pub_y", "attestor_secret", "tx_binding", "tx_commitment", "tx_nonce"]
+
+
+def attestation_expire_attestation_stmts : List Stmt :=
+[
+  .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
+  .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .assign "derived_pub" (.op "ec_mul_base" [.var "attestor_secret", .var "NULLIFIER_K"]),
+  .assign "derived_pub_x" (.op "ec_get_x" [.var "derived_pub"]),
+  .assign "derived_pub_y" (.op "ec_get_y" [.var "derived_pub"]),
+  .constrainEq (.var "derived_pub_x") (.var "attestor_pub_x"),
+  .constrainEq (.var "derived_pub_y") (.var "attestor_pub_y"),
+  .constrainInstance (.var "attestor_pub_x"),
+  .constrainInstance (.var "attestor_pub_y"),
+  .constrainInstance (.var "tx_binding"),
+  .constrainInstance (.var "tx_nonce")
+]
+
+
+/-- **The property fails** for `src/contract/attestation/proof/expire_attestation.zk`: its first undetermined exposure is
+    `.var "tx_nonce"`, which the circuit does not bind before exposing.
+    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
+@[axiom_budget 0]
+theorem attestation_expire_attestation_has_a_free_instance :
+    ¬ NoFreeInstance attestation_expire_attestation_held attestation_expire_attestation_stmts := by
+  unfold NoFreeInstance
+  decide
+
+
+/-- `src/contract/attestation/proof/revoke_attestation.zk` — 4 exposure(s). -/
+
+def attestation_revoke_attestation_held : List Name := ["NULLIFIER_K", "attestor_pub_x", "attestor_pub_y", "attestor_secret", "tx_binding", "tx_commitment", "tx_nonce"]
+
+
+def attestation_revoke_attestation_stmts : List Stmt :=
+[
+  .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
+  .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .assign "derived_pub" (.op "ec_mul_base" [.var "attestor_secret", .var "NULLIFIER_K"]),
+  .assign "derived_pub_x" (.op "ec_get_x" [.var "derived_pub"]),
+  .assign "derived_pub_y" (.op "ec_get_y" [.var "derived_pub"]),
+  .constrainEq (.var "derived_pub_x") (.var "attestor_pub_x"),
+  .constrainEq (.var "derived_pub_y") (.var "attestor_pub_y"),
+  .constrainInstance (.var "attestor_pub_x"),
+  .constrainInstance (.var "attestor_pub_y"),
+  .constrainInstance (.var "tx_binding"),
+  .constrainInstance (.var "tx_nonce")
+]
+
+
+/-- **The property fails** for `src/contract/attestation/proof/revoke_attestation.zk`: its first undetermined exposure is
+    `.var "tx_nonce"`, which the circuit does not bind before exposing.
+    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
+@[axiom_budget 0]
+theorem attestation_revoke_attestation_has_a_free_instance :
+    ¬ NoFreeInstance attestation_revoke_attestation_held attestation_revoke_attestation_stmts := by
+  unfold NoFreeInstance
+  decide
+
+
+/-- `src/contract/attestation/proof/update_delegation.zk` — 4 exposure(s). -/
 
 def attestation_update_delegation_held : List Name := ["NULLIFIER_K", "delegator_pub_x", "delegator_pub_y", "delegator_secret", "tx_binding", "tx_commitment", "tx_nonce"]
 
@@ -701,6 +798,13 @@ def attestation_update_delegation_stmts : List Stmt :=
 [
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .assign "derived_pub" (.op "ec_mul_base" [.var "delegator_secret", .var "NULLIFIER_K"]),
+  .assign "derived_pub_x" (.op "ec_get_x" [.var "derived_pub"]),
+  .assign "derived_pub_y" (.op "ec_get_y" [.var "derived_pub"]),
+  .constrainEq (.var "derived_pub_x") (.var "delegator_pub_x"),
+  .constrainEq (.var "derived_pub_y") (.var "delegator_pub_y"),
+  .constrainInstance (.var "delegator_pub_x"),
+  .constrainInstance (.var "delegator_pub_y"),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
 ]
@@ -718,7 +822,7 @@ theorem attestation_update_delegation_has_a_free_instance :
 
 /-- `src/contract/attestation/proof/verify_chain.zk` — 2 exposure(s). -/
 
-def attestation_verify_chain_held : List Name := ["NULLIFIER_K", "chain_root", "tx_binding", "tx_commitment", "tx_nonce", "verifier_pub_x", "verifier_pub_y", "verifier_secret"]
+def attestation_verify_chain_held : List Name := ["NULLIFIER_K", "tx_binding", "tx_commitment", "tx_nonce"]
 
 
 def attestation_verify_chain_stmts : List Stmt :=
@@ -742,16 +846,12 @@ theorem attestation_verify_chain_has_a_free_instance :
 
 /-- `src/contract/attestation/proof/verify_claim.zk` — 2 exposure(s). -/
 
-def attestation_verify_claim_held : List Name := ["NULLIFIER_K", "attestation_data", "evidence", "nonce", "tx_binding", "tx_commitment", "tx_nonce"]
+def attestation_verify_claim_held : List Name := ["NULLIFIER_K", "tx_binding", "tx_commitment", "tx_nonce"]
 
 
 def attestation_verify_claim_stmts : List Stmt :=
 [
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
-  .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
-  .assign "evidence_hash" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "evidence"]),
-  .assign "attestation_hash" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "attestation_data"]),
-  .assign "leaf" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "nonce"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
@@ -1105,7 +1205,7 @@ theorem bearer_bond_blind_output_has_a_free_instance :
   decide
 
 
-/-- `src/contract/bearer_bond/proof/burn.zk` — 10 exposure(s). -/
+/-- `src/contract/bearer_bond/proof/burn.zk` — 11 exposure(s). -/
 
 def bearer_bond_burn_held : List Name := ["VALUE_COMMIT_RANDOM", "VALUE_COMMIT_VALUE", "asset_id", "asset_id_blind", "coin_spend_hook", "commitment_blind", "leaf_pos", "path", "signature_secret", "spend_secret", "tx_binding", "tx_commitment", "tx_nonce", "user_data", "user_data_blind", "value", "value_blind"]
 
@@ -1120,6 +1220,7 @@ def bearer_bond_burn_stmts : List Stmt :=
   .assign "DOMAIN_SIGNATURE_SECRET" (.op "witness_base" [.lit 7]),
   .assign "pub" (.op "poseidon_hash" [.var "DOMAIN_SIGNATURE_SECRET", .var "spend_secret"]),
   .assign "coin" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "pub", .var "value", .var "asset_id", .var "coin_spend_hook", .var "user_data", .var "commitment_blind"]),
+  .constrainInstance (.var "coin"),
   .assign "nullifier" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "spend_secret", .var "coin"]),
   .constrainInstance (.var "nullifier"),
   .assign "vcv" (.op "ec_mul_short" [.var "value", .var "VALUE_COMMIT_VALUE"]),
@@ -1157,9 +1258,9 @@ theorem bearer_bond_burn_has_a_free_instance :
   decide
 
 
-/-- `src/contract/bearer_bond/proof/prove_coverage.zk` — 4 exposure(s). -/
+/-- `src/contract/bearer_bond/proof/prove_coverage.zk` — 6 exposure(s). -/
 
-def bearer_bond_prove_coverage_held : List Name := ["coverage_ratio_bps", "reserve_amount", "total_interest_obligation", "total_outstanding"]
+def bearer_bond_prove_coverage_held : List Name := ["coverage_ratio_bps", "reserve_amount", "total_interest_obligation", "total_outstanding", "tx_binding", "tx_commitment", "tx_nonce"]
 
 
 def bearer_bond_prove_coverage_stmts : List Stmt :=
@@ -1181,7 +1282,11 @@ def bearer_bond_prove_coverage_stmts : List Stmt :=
   .constrainInstance (.var "reserve_amount"),
   .constrainInstance (.var "total_outstanding"),
   .constrainInstance (.var "total_interest_obligation"),
-  .constrainInstance (.var "coverage_ratio_bps")
+  .constrainInstance (.var "coverage_ratio_bps"),
+  .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
+  .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "tx_binding"),
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -1218,9 +1323,9 @@ def bearer_bond_redeem_stmts : List Stmt :=
   .constrainEq (.var "value") (.var "ZERO"),
   .constrainInstance (.var "value"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "coin_spend_hook"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "coin_spend_hook")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -1285,9 +1390,9 @@ def betting_stake_init_stmts : List Stmt :=
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
   .assign "derived_table_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "betting_contract_id", .var "nonce"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "derived_table_id"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "derived_table_id")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -1396,9 +1501,9 @@ def betting_stake_update_risk_stmts : List Stmt :=
   .rangeCheck 64 (.var "house_edge_bp"),
   .assign "derived_table_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "betting_contract_id", .var "nonce"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "derived_table_id"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "derived_table_id")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -1572,10 +1677,10 @@ def dao_escrow_init_stmts : List Stmt :=
   .assign "owner_pub_y" (.op "ec_get_y" [.var "owner_pub"]),
   .assign "endowment_bulla" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "dao_bulla", .var "owner_pub_x", .var "owner_pub_y", .var "endowment_asset_id", .var "bulla_blind"]),
   .constrainInstance (.var "dao_bulla"),
+  .constrainInstance (.var "endowment_bulla"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "endowment_bulla")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -1589,9 +1694,9 @@ theorem dao_escrow_init_has_a_free_instance :
   decide
 
 
-/-- `src/contract/dao_escrow/proof/pay_premium.zk` — 2 exposure(s). -/
+/-- `src/contract/dao_escrow/proof/pay_premium.zk` — 4 exposure(s). -/
 
-def dao_escrow_pay_premium_held : List Name := ["NULLIFIER_K", "asset_id", "current_block", "dao_escrow_bulla", "expiry", "member_pub_x", "member_pub_y", "member_secret", "membership_blind", "mpc_secret_1", "mpc_secret_2", "mpc_secret_3", "tx_binding", "tx_commitment", "tx_nonce", "value"]
+def dao_escrow_pay_premium_held : List Name := ["NULLIFIER_K", "asset_id", "current_block", "dao_escrow_bulla", "expiry", "member_pub_x", "member_pub_y", "member_secret", "membership_blind", "tx_binding", "tx_commitment", "tx_nonce", "value"]
 
 
 def dao_escrow_pay_premium_stmts : List Stmt :=
@@ -1603,9 +1708,9 @@ def dao_escrow_pay_premium_stmts : List Stmt :=
   .assign "member_pub" (.op "ec_mul_base" [.var "member_secret", .var "NULLIFIER_K"]),
   .constrainEq (.op "ec_get_x" [.var "member_pub"]) (.var "member_pub_x"),
   .constrainEq (.op "ec_get_y" [.var "member_pub"]) (.var "member_pub_y"),
-  .assign "computed_bulla" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "member_pub_x", .var "member_pub_y", .var "mpc_secret_1", .var "mpc_secret_2", .var "mpc_secret_3"]),
-  .constrainEq (.var "computed_bulla") (.var "dao_escrow_bulla"),
+  .constrainInstance (.var "dao_escrow_bulla"),
   .assign "membership_note" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "member_pub_x", .var "member_pub_y", .var "value", .var "asset_id", .var "expiry", .var "membership_blind"]),
+  .constrainInstance (.var "membership_note"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce")
@@ -1613,8 +1718,8 @@ def dao_escrow_pay_premium_stmts : List Stmt :=
 
 
 /-- **The property fails** for `src/contract/dao_escrow/proof/pay_premium.zk`: its first undetermined exposure is
-    `.var "tx_nonce"`, which the circuit does not bind before exposing.
-    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
+    `.var "dao_escrow_bulla"`, which the circuit does not bind before exposing.
+    **The checker fails it too** — one of the instances `OBL-Z16` names, where the model and the checker agree. -/
 @[axiom_budget 0]
 theorem dao_escrow_pay_premium_has_a_free_instance :
     ¬ NoFreeInstance dao_escrow_pay_premium_held dao_escrow_pay_premium_stmts := by
@@ -1638,10 +1743,10 @@ def dao_escrow_propose_claim_stmts : List Stmt :=
   .assign "capability_commit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "capability_id", .var "capability_secret"]),
   .assign "proposal_nullifier" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "capability_secret", .var "dao_escrow_bulla", .var "claim_id"]),
   .assign "claim_commit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "claim_id", .var "claim_amount", .var "claim_blind"]),
+  .constrainInstance (.var "claim_commit"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "claim_commit")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -1703,10 +1808,10 @@ def dao_escrow_vote_claim_stmts : List Stmt :=
   .constrainEq (.op "ec_get_y" [.var "voter_pub"]) (.var "voter_pub_y"),
   .assign "capability_commit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "capability_id", .var "capability_secret"]),
   .assign "vote_nullifier" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "capability_secret", .var "proposal_id", .var "voter_pub_x", .var "voter_pub_y"]),
+  .constrainInstance (.var "vote_nullifier"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "vote_nullifier")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -2147,10 +2252,10 @@ def darktoshi_dice_settle_bet_stmts : List Stmt :=
   .assign "derived_bet_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "player_pub_x", .var "player_pub_y", .var "bet_value", .var "target", .var "secret_nonce", .var "blind", .var "asset_id"]),
   .constrainInstance (.var "derived_bet_id"),
   .assign "roll_hash" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "block_hash", .var "derived_bet_id", .var "secret_nonce"]),
+  .constrainInstance (.var "roll_hash"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "roll_hash")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -2160,6 +2265,37 @@ def darktoshi_dice_settle_bet_stmts : List Stmt :=
 @[axiom_budget 0]
 theorem darktoshi_dice_settle_bet_has_a_free_instance :
     ¬ NoFreeInstance darktoshi_dice_settle_bet_held darktoshi_dice_settle_bet_stmts := by
+  unfold NoFreeInstance
+  decide
+
+
+/-- `src/contract/deployooor/proof/lock.zk` — 4 exposure(s). -/
+
+def deployooor_lock_held : List Name := ["NULLIFIER_K", "deployer_secret", "public_key_x", "public_key_y", "tx_binding", "tx_commitment", "tx_nonce"]
+
+
+def deployooor_lock_stmts : List Stmt :=
+[
+  .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
+  .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .assign "derived_pub" (.op "ec_mul_base" [.var "deployer_secret", .var "NULLIFIER_K"]),
+  .assign "derived_pub_x" (.op "ec_get_x" [.var "derived_pub"]),
+  .assign "derived_pub_y" (.op "ec_get_y" [.var "derived_pub"]),
+  .constrainEq (.var "derived_pub_x") (.var "public_key_x"),
+  .constrainEq (.var "derived_pub_y") (.var "public_key_y"),
+  .constrainInstance (.var "public_key_x"),
+  .constrainInstance (.var "public_key_y"),
+  .constrainInstance (.var "tx_binding"),
+  .constrainInstance (.var "tx_nonce")
+]
+
+
+/-- **The property fails** for `src/contract/deployooor/proof/lock.zk`: its first undetermined exposure is
+    `.var "tx_nonce"`, which the circuit does not bind before exposing.
+    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
+@[axiom_budget 0]
+theorem deployooor_lock_has_a_free_instance :
+    ¬ NoFreeInstance deployooor_lock_held deployooor_lock_stmts := by
   unfold NoFreeInstance
   decide
 
@@ -2825,9 +2961,9 @@ def escrow_cancel_stmts : List Stmt :=
   .constrainInstance (.var "buyer_pub_x"),
   .constrainInstance (.var "buyer_pub_y"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "cancel_nullifier"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "cancel_nullifier")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -2862,9 +2998,9 @@ def escrow_claim_stmts : List Stmt :=
   .constrainInstance (.var "escrow_id"),
   .constrainInstance (.var "escrow_seller_commitment"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "spent_nullifier"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "spent_nullifier")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -2896,9 +3032,9 @@ def escrow_create_escrow_stmts : List Stmt :=
   .assign "C" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "buyer_pub_x", .var "buyer_pub_y", .var "seller_commitment", .var "value", .var "asset_id", .var "timeout"]),
   .constrainInstance (.var "C"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "seller_commitment"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "seller_commitment")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -2927,9 +3063,9 @@ def escrow_fund_stmts : List Stmt :=
   .constrainInstance (.op "ec_get_y" [.var "value_commit"]),
   .constrainInstance (.var "escrow_id"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.op "merkle_root" [.var "merkle_leaf_pos", .var "merkle_path", .var "escrow_id"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.op "merkle_root" [.var "merkle_leaf_pos", .var "merkle_path", .var "escrow_id"])
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -2966,9 +3102,9 @@ def escrow_refund_stmts : List Stmt :=
   .constrainInstance (.var "input_buyer_pub_x"),
   .constrainInstance (.var "input_buyer_pub_y"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "spent_nullifier"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "spent_nullifier")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -3155,10 +3291,10 @@ def game_room_create_room_stmts : List Stmt :=
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
   .assign "derived_room_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "owner_pub_x", .var "owner_pub_y", .var "asset_id", .var "block_height", .var "nonce"]),
+  .constrainInstance (.var "derived_room_id"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "derived_room_id")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -3184,10 +3320,10 @@ def game_room_deposit_stmts : List Stmt :=
   .assign "derived_account_key" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "room_id", .var "player_pub_x"]),
   .constrainInstance (.var "derived_account_key"),
   .assign "derived_player_key" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "player_pub_x", .var "player_pub_y"]),
+  .constrainInstance (.var "derived_player_key"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "derived_player_key")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -3246,10 +3382,10 @@ def game_room_place_bet_stmts : List Stmt :=
   .assign "derived_bet_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "pot_id", .var "player_pub_x", .var "amount", .var "block_height"]),
   .constrainInstance (.var "derived_bet_id"),
   .assign "derived_commitment" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "amount", .var "nonce", .var "block_height"]),
+  .constrainInstance (.var "derived_commitment"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "derived_commitment")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -3308,10 +3444,10 @@ def game_room_settle_pot_stmts : List Stmt :=
   .assign "derived_room_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "house_pub_x", .var "house_pub_y", .var "nonce"]),
   .constrainInstance (.var "derived_room_id"),
   .assign "derived_pot_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "room_id", .var "pot_total", .var "house_pub_x"]),
+  .constrainInstance (.var "derived_pot_id"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "derived_pot_id")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -3492,17 +3628,17 @@ def insurance_market_purchase_coverage_with_capability_stmts : List Stmt :=
   .constrainEq (.var "computed_nullifier") (.var "buyer_nullifier"),
   .constrainInstance (.var "buyer_pub_x"),
   .constrainInstance (.var "buyer_pub_y"),
+  .constrainInstance (.var "required_capability_id"),
+  .constrainInstance (.var "buyer_nullifier"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "required_capability_id"),
-  .constrainInstance (.var "buyer_nullifier")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
 /-- **The property fails** for `src/contract/insurance_market/proof/purchase_coverage_with_capability.zk`: its first undetermined exposure is
-    `.var "tx_nonce"`, which the circuit does not bind before exposing.
-    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
+    `.var "required_capability_id"`, which the circuit does not bind before exposing.
+    The checker resolves it as `declared-free`, from a host-side justification in `script/circuit_free_instances.txt`. -/
 @[axiom_budget 0]
 theorem insurance_market_purchase_coverage_with_capability_has_a_free_instance :
     ¬ NoFreeInstance insurance_market_purchase_coverage_with_capability_held insurance_market_purchase_coverage_with_capability_stmts := by
@@ -3560,16 +3696,16 @@ def insurance_market_underwrite_with_capability_stmts : List Stmt :=
   .constrainEq (.var "capability_predicate_result") (.var "ONE"),
   .constrainInstance (.var "underwriter_pub_x"),
   .constrainInstance (.var "underwriter_pub_y"),
+  .constrainInstance (.var "required_capability_id"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "required_capability_id")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
 /-- **The property fails** for `src/contract/insurance_market/proof/underwrite_with_capability.zk`: its first undetermined exposure is
-    `.var "tx_nonce"`, which the circuit does not bind before exposing.
-    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
+    `.var "required_capability_id"`, which the circuit does not bind before exposing.
+    The checker resolves it as `declared-free`, from a host-side justification in `script/circuit_free_instances.txt`. -/
 @[axiom_budget 0]
 theorem insurance_market_underwrite_with_capability_has_a_free_instance :
     ¬ NoFreeInstance insurance_market_underwrite_with_capability_held insurance_market_underwrite_with_capability_stmts := by
@@ -4047,17 +4183,17 @@ def multisig_create_group_stmts : List Stmt :=
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .rangeCheck 64 (.var "threshold"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
-  .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
   .constrainInstance (.var "group_id"),
   .constrainInstance (.var "threshold"),
-  .constrainInstance (.var "total_keys")
+  .constrainInstance (.var "total_keys"),
+  .constrainInstance (.var "tx_binding"),
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
 /-- **The property fails** for `src/contract/multisig/proof/create_group.zk`: its first undetermined exposure is
-    `.var "tx_nonce"`, which the circuit does not bind before exposing.
-    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
+    `.var "group_id"`, which the circuit does not bind before exposing.
+    The checker resolves it as `declared-free`, from a host-side justification in `script/circuit_free_instances.txt`. -/
 @[axiom_budget 0]
 theorem multisig_create_group_has_a_free_instance :
     ¬ NoFreeInstance multisig_create_group_held multisig_create_group_stmts := by
@@ -4298,17 +4434,17 @@ def native_token_mint_stmts : List Stmt :=
   .rangeCheck 64 (.var "effective_value"),
   .assign "effective_plus_pin" (.op "base_add" [.var "effective_value", .var "total_pin"]),
   .constrainEq (.var "effective_plus_pin") (.var "value"),
+  .constrainInstance (.var "total_pin"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
   .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "total_pin"),
   .rangeCheck 64 (.var "old_cumulative_value")
 ]
 
 
 /-- **The property fails** for `src/contract/native_token/proof/mint.zk`: its first undetermined exposure is
-    `.var "tx_nonce"`, which the circuit does not bind before exposing.
-    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
+    `.var "total_pin"`, which the circuit does not bind before exposing.
+    The checker resolves it as `declared-free`, from a host-side justification in `script/circuit_free_instances.txt`. -/
 @[axiom_budget 0]
 theorem native_token_mint_has_a_free_instance :
     ¬ NoFreeInstance native_token_mint_held native_token_mint_stmts := by
@@ -4492,7 +4628,7 @@ def oracle_register_oracle_held : List Name := ["oracle_id", "oracle_secret", "t
 
 def oracle_register_oracle_stmts : List Stmt :=
 [
-  .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 1]),
+  .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "DOMAIN_OPERATOR_COMMITMENT" (.op "witness_base" [.lit 8]),
   .assign "oracle_commitment" (.op "poseidon_hash" [.var "DOMAIN_OPERATOR_COMMITMENT", .var "oracle_secret", .var "oracle_id"]),
   .constrainInstance (.var "oracle_id"),
@@ -4563,9 +4699,9 @@ def otc_swap_cancel_swap_stmts : List Stmt :=
   .constrainInstance (.var "alice_pub_x"),
   .constrainInstance (.var "alice_pub_y"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "N"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "N")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -4597,9 +4733,9 @@ def otc_swap_create_swap_stmts : List Stmt :=
   .assign "C" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "alice_pub_x", .var "alice_pub_y", .var "bob_commitment", .var "send_value", .var "send_asset_id", .var "recv_value", .var "recv_asset_id", .var "timeout"]),
   .constrainInstance (.var "C"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "bob_commitment"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "bob_commitment")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -4633,9 +4769,9 @@ def otc_swap_execute_swap_stmts : List Stmt :=
   .constrainInstance (.var "swap_id"),
   .constrainInstance (.var "bob_commitment"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "N"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "N")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -4664,9 +4800,9 @@ def otc_swap_fund_swap_stmts : List Stmt :=
   .constrainInstance (.op "ec_get_y" [.var "value_commit"]),
   .constrainInstance (.var "swap_id"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.op "merkle_root" [.var "merkle_leaf_pos", .var "merkle_path", .var "swap_id"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.op "merkle_root" [.var "merkle_leaf_pos", .var "merkle_path", .var "swap_id"])
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -4690,10 +4826,10 @@ def pool_stake_allocate_coverage_stmts : List Stmt :=
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
   .assign "derived_allocation_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "pool_id", .var "member_pub_x", .var "member_pub_y", .var "coverage_amount", .var "withdrawal_id", .var "nonce"]),
+  .constrainInstance (.var "derived_allocation_id"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "derived_allocation_id")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -4717,10 +4853,10 @@ def pool_stake_create_pool_stmts : List Stmt :=
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
   .assign "derived_pool_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "creator_pub_x", .var "creator_pub_y", .var "pool_config_hash", .var "nonce"]),
+  .constrainInstance (.var "derived_pool_id"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "derived_pool_id")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -4749,10 +4885,10 @@ def pool_stake_join_pool_stmts : List Stmt :=
   .assign "vcr" (.op "ec_mul" [.var "value_blind", .var "VALUE_COMMIT_RANDOM"]),
   .assign "value_commit" (.op "ec_add" [.var "vcv", .var "vcr"]),
   .constrainInstance (.op "ec_get_x" [.var "value_commit"]),
+  .constrainInstance (.op "ec_get_y" [.var "value_commit"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.op "ec_get_y" [.var "value_commit"])
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -4776,10 +4912,10 @@ def pool_stake_slash_coverage_stmts : List Stmt :=
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
   .assign "derived_slash_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "allocation_id", .var "slashed_amount", .var "slashed_to_pub_x", .var "slashed_to_pub_y", .var "nonce"]),
+  .constrainInstance (.var "derived_slash_id"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "derived_slash_id")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -4860,9 +4996,9 @@ def promissory_note_redeem_stmts : List Stmt :=
   .assign "ZERO" (.op "witness_base" [.lit 0]),
   .constrainEq (.var "value") (.var "ZERO"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "coin_spend_hook"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "coin_spend_hook")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -5064,6 +5200,7 @@ def purse_deposit_stmts : List Stmt :=
   .assign "DOMAIN_MERKLE_LEAF" (.op "witness_base" [.lit 5]),
   .assign "DOMAIN_SIGNATURE_SECRET" (.op "witness_base" [.lit 7]),
   .assign "ONE" (.op "witness_base" [.lit 1]),
+  .assign "ZERO" (.op "witness_base" [.lit 0]),
   .assign "derived_owner" (.op "poseidon_hash" [.var "DOMAIN_SIGNATURE_SECRET", .var "owner_secret"]),
   .constrainEq (.var "derived_owner") (.var "owner_pub"),
   .assign "nf_circuit" (.op "poseidon_hash" [.var "DOMAIN_NULLIFIER", .var "owner_secret", .var "purse_id", .var "state_nonce"]),
@@ -5100,12 +5237,12 @@ def purse_deposit_stmts : List Stmt :=
   .constrainInstance (.var "new_leaf"),
   .assign "tb_circuit" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainEq (.var "tb_circuit") (.var "tx_binding"),
-  .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
   .assign "dp_circuit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "owner_pub", .var "asset_id", .var "purse_id"]),
   .constrainEq (.var "dp_circuit") (.var "derived_purse_id"),
   .constrainInstance (.var "derived_purse_id"),
+  .constrainInstance (.var "tx_binding"),
+  .constrainInstance (.var "tx_nonce"),
   .rangeCheck 64 (.var "old_balance"),
   .rangeCheck 64 (.var "deposit_amount"),
   .rangeCheck 64 (.var "new_balance")
@@ -5173,12 +5310,12 @@ def purse_withdraw_stmts : List Stmt :=
   .constrainInstance (.var "new_leaf"),
   .assign "tb_circuit" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainEq (.var "tb_circuit") (.var "tx_binding"),
-  .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
   .assign "dp_circuit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "owner_pub", .var "asset_id", .var "purse_id"]),
   .constrainEq (.var "dp_circuit") (.var "derived_purse_id"),
   .constrainInstance (.var "derived_purse_id"),
+  .constrainInstance (.var "tx_binding"),
+  .constrainInstance (.var "tx_nonce"),
   .rangeCheck 64 (.var "old_balance"),
   .rangeCheck 64 (.var "withdraw_amount"),
   .rangeCheck 64 (.var "new_balance")
@@ -5206,9 +5343,9 @@ def relayer_endowment_claim_fees_stmts : List Stmt :=
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
   .assign "derived_claim_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "deployment_id", .var "backer_pub_x", .var "backer_pub_y", .var "fee_share", .var "nonce"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "derived_claim_id"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "derived_claim_id")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -5237,10 +5374,10 @@ def relayer_endowment_deploy_capital_stmts : List Stmt :=
   .assign "vcr" (.op "ec_mul" [.var "value_blind", .var "VALUE_COMMIT_RANDOM"]),
   .assign "value_commit" (.op "ec_add" [.var "vcv", .var "vcr"]),
   .constrainInstance (.op "ec_get_x" [.var "value_commit"]),
+  .constrainInstance (.op "ec_get_y" [.var "value_commit"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.op "ec_get_y" [.var "value_commit"])
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -5265,9 +5402,9 @@ def relayer_endowment_initialize_stmts : List Stmt :=
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
   .assign "derived_endowment_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "relayer_pub_x", .var "relayer_pub_y", .var "config_hash", .var "nonce"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "derived_endowment_id"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "derived_endowment_id")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -5352,16 +5489,16 @@ def roulette_settle_bet_held : List Name := ["bet_id", "payout", "table_id", "tx
 def roulette_settle_bet_stmts : List Stmt :=
 [
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
+  .constrainInstance (.var "payout"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "payout")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
 /-- **The property fails** for `src/contract/roulette/proof/settle_bet.zk`: its first undetermined exposure is
-    `.var "tx_nonce"`, which the circuit does not bind before exposing.
-    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
+    `.var "payout"`, which the circuit does not bind before exposing.
+    The checker resolves it as `declared-free`, from a host-side justification in `script/circuit_free_instances.txt`. -/
 @[axiom_budget 0]
 theorem roulette_settle_bet_has_a_free_instance :
     ¬ NoFreeInstance roulette_settle_bet_held roulette_settle_bet_stmts := by
@@ -5475,16 +5612,16 @@ def slot_settle_bet_stmts : List Stmt :=
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
   .assign "derived_spin_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "player_pub_x", .var "player_pub_y", .var "bet_value", .var "paylines", .var "secret_nonce", .var "blind", .var "asset_id"]),
   .constrainInstance (.var "derived_spin_id"),
+  .constrainInstance (.var "payout"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "payout")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
 /-- **The property fails** for `src/contract/slot/proof/settle_bet.zk`: its first undetermined exposure is
-    `.var "tx_nonce"`, which the circuit does not bind before exposing.
-    The checker resolves it as `redundant` — pinned by another exposed determination, which the model's sequential rule does not follow. -/
+    `.var "payout"`, which the circuit does not bind before exposing.
+    The checker resolves it as `declared-free`, from a host-side justification in `script/circuit_free_instances.txt`. -/
 @[axiom_budget 0]
 theorem slot_settle_bet_has_a_free_instance :
     ¬ NoFreeInstance slot_settle_bet_held slot_settle_bet_stmts := by
@@ -5655,9 +5792,9 @@ def stablecoin_init_stmts : List Stmt :=
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "deployer_auth" (.op "poseidon_hash" [.var "DOMAIN_SIGNATURE_SECRET", .var "deployer_secret", .var "contract_salt"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "deployer_auth"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "deployer_auth")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -6020,10 +6157,10 @@ def subscription_subscribe_stmts : List Stmt :=
   .assign "computed_y" (.op "ec_get_y" [.var "value_commit_computed"]),
   .constrainEq (.var "computed_x") (.var "value_commit_x"),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
-  .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
   .constrainEq (.var "computed_y") (.var "value_commit_y"),
-  .constrainInstance (.var "derived_id")
+  .constrainInstance (.var "derived_id"),
+  .constrainInstance (.var "tx_binding"),
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -6048,9 +6185,9 @@ def subscription_update_usage_stmts : List Stmt :=
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
   .assign "derived_id" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "subscription_id", .var "subscriber_pub_x", .var "subscriber_pub_y", .var "usage_timestamp", .var "nonce"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
+  .constrainInstance (.var "derived_id"),
   .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
-  .constrainInstance (.var "derived_id")
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
@@ -6080,10 +6217,10 @@ def subscription_verify_access_stmts : List Stmt :=
   .constrainEq (.var "derived_pub_y") (.var "subscriber_pub_y"),
   .assign "derived_capability" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "subscriber_pub_x", .var "subscriber_pub_y", .var "plan_id", .var "subscription_id", .var "lock_until_block", .var "nonce"]),
   .assign "tx_binding" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
-  .constrainInstance (.var "tx_binding"),
-  .constrainInstance (.var "tx_nonce"),
   .constrainEq (.var "derived_capability") (.var "expected_capability"),
-  .constrainInstance (.var "derived_capability")
+  .constrainInstance (.var "derived_capability"),
+  .constrainInstance (.var "tx_binding"),
+  .constrainInstance (.var "tx_nonce")
 ]
 
 
