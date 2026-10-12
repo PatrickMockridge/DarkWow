@@ -339,17 +339,28 @@ See [Bridge Contract](bridge.md) for full cross-chain transfer details.
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Subscribe circuit | ✅ Complete | DAO-Escrow integration (all 3 modes) |
-| VerifyAccess circuit | ✅ Complete | Block-based expiry, Merkle proof |
-| DAO treasury integration | ✅ Complete | Via DAO-Escrow `MODE_TREASURY` |
-| Endowment fund | ✅ Complete | Via DAO-Escrow `MODE_TREASURY_ENDOWMENT` |
-| Escrow-only mode | ✅ Complete | Via DAO-Escrow `MODE_ESCROW` |
-| Cross-chain payment | ✅ Complete | Integration with `bridge` via deposit tracking |
+| Subscribe circuit | ✅ Complete | instances `derived_id`, `tx_binding`, `tx_nonce` — **no** DAO-Escrow integration |
+| VerifyAccess circuit | ✅ Complete | instances `derived_capability`, `tx_binding`, `tx_nonce` — **no** block-expiry or Merkle instance |
+| DAO treasury integration | ❌ **Absent** | no `MODE_TREASURY`, no `MODE_*` of any kind, and no `dao_escrow` child call |
+| Endowment fund | ❌ **Absent** | same |
+| Escrow-only mode | ❌ **Absent** | same |
+| Cross-chain payment | ❌ **Absent** | no `bridge` reference in the entrypoint |
 
-**All three DAO-Escrow modes supported:**
-- `MODE_ESCROW`: Pure insurance for subscription deposits
-- `MODE_TREASURY`: Treasury for subscription fees
-- `MODE_TREASURY_ENDOWMENT`: Treasury + Endowment combined
+**Every "Notes" cell in this table described a mechanism the contract does not have**, and the six
+rows all read ✅ Complete until 2026-10-12 (`F-551`). What subscription actually does: `subscribe.zk`
+proves the subscriber's `subscription_id` commitment and the tx pair, and `verify_access.zk` proves
+a derived capability and the tx pair. `subscribe`'s *params* carry a `dao_escrow_bulla` and a
+`dao_escrow_merkle_root`, which is where the DAO-Escrow claims came from — the fields exist and the
+contract uses neither. The capability it verifies is its own circuit's, not identity's (see
+[identity.md](identity.md), whose caller table listed subscription for the same reason).
+
+
+**No DAO-Escrow mode is supported.** The three bullets that stood here until 2026-10-12
+(`MODE_ESCROW`, `MODE_TREASURY`, `MODE_TREASURY_ENDOWMENT`) name constants that occur nowhere in
+`src/contract/subscription`, and that `dao_escrow` no longer defines — its `modes` module of bare
+`u8` constants was replaced by the `EndowmentMode` enum (`Escrow = 0`, `Treasury = 1`,
+`TreasuryEndowment = 2`), and the old names survive in dao_escrow only as a diagram in a comment.
+The design is real and lives in `dao_escrow`; subscription does not consume it.
 
 ## Security Considerations
 

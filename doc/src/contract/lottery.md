@@ -269,6 +269,13 @@ and ensure the correct ticket or payout amount is transferred.
 - [x] ZK circuits (compiled and functional; basic commitment/nulling verified)
 - [x] Standard lottery presets
 - [x] Custom configuration support
-- [ ] Full ZK proof verification for reveal
-- [ ] Merkle tree for ticket commitments
-- [ ] Integration tests
+- [ ] Full ZK proof verification for reveal — the `reveal_ticket` circuit is registered, so what
+      remains is the proof's *use* on the reveal path
+- [x] Merkle tree for ticket commitments — `tickets_smt` / `tickets_roots`
+      (`LOTTERY_CONTRACT_TICKETS_SMT_TREE`), declared in `manifest.toml`
+- [x] Integration tests — `tests/integration.rs`, six `#[test]` functions, plus
+      `tests/zk_circuit_test.sh`
+
+Three boxes were unchecked here until 2026-10-12, and two of the three describe work that is
+present (`F-551`). A reader checking items off a stale list re-does what exists and, worse, may
+conclude the ticket tree is unbuilt when the contract's whole ticket-holding model rests on it.

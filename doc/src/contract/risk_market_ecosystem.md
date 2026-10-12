@@ -111,7 +111,7 @@ struct InsuranceMarket {
 }
 ```
 
-**Functions**:
+**Functions (as proposed — see the note):**
 | Opcode | Function | Description |
 |--------|----------|-------------|
 | 0x00 | RegisterRiskType | Register a new risk category |
@@ -121,6 +121,14 @@ struct InsuranceMarket {
 | 0x04 | FileClaim | Claim when covered event occurs |
 | 0x05 | ResolveClaim | Oracle resolves claim validity |
 | 0x06 | UpdatePremium | Premium adjusts based on loss ratio |
+
+**This table is a proposal, not the ABI**, and it is off by one against the shipped one. The deployed
+`insurance_market` starts at `InitializeV1 (0x00)`, so `RegisterRiskTypeV1` is `0x01`, `CreateMarketV1`
+`0x02`, `UnderwriteV1` `0x03`, `PurchaseCoverageV1` `0x04`, `FileClaimV1` `0x05`, `ResolveClaimV1`
+`0x06` — every selector here is one lower than the contract's, and `InitializeV1` is missing
+entirely. The contract also has seven more endpoints this table does not list. Use
+[insurance_market.md](insurance_market.md) for the ABI; this document is the design that preceded it
+(`F-549`).
 
 ### 2. UnderwriterBond Contract (NEW)
 
@@ -260,17 +268,25 @@ struct EndowmentPool {
 | tender | insurance requirement fields | Projects can require coverage |
 | labor_market | skill certification + underwriting | Engineers certified for risks |
 | dao_escrow | reinsurance pool | Tail risk reinsurance |
-| prediction_market | risk-type markets | P(event) × impact pricing |
 | promissory_note | insurance payouts | Claim payments |
+
+**`prediction_market` is not one of these, and is not a contract.** This table listed it as existing
+until 2026-10-12; there is no `src/contract/prediction_market`, and nothing in the tree derives a
+price from `P(event) × impact`. The rest of this document uses `prediction_market_price` as a
+*modelling variable* in its pricing thesis — which is fine as arithmetic and not as a deployed
+contract, and the two were presented identically.
 
 ## New Contracts to Create
 
-| Contract | Priority | Purpose |
-|----------|----------|---------|
-| insurance_market | P0 | Core insurance marketplace |
-| underwriter_bond | P0 | Bonding and slashing mechanism |
-| escrow_endowment | P1 | LP capital pool |
-| reinsurance_market | P2 | Secondary market for tail risk |
+| Contract | State | Priority | Purpose |
+|----------|----------|---------|---------|
+| insurance_market | **shipped** | P0 | Core insurance marketplace — `src/contract/insurance_market`, 16 endpoints (see [insurance_market.md](insurance_market.md)) |
+| underwriter_bond | absent | P0 | Bonding and slashing mechanism — folded into `insurance_market`'s `UnderwriteV1`/`DeactivateUnderwriterV1` rather than a separate contract |
+| escrow_endowment | absent | P1 | LP capital pool |
+| reinsurance_market | absent | P2 | Secondary market for tail risk |
+
+Only `insurance_market` exists. The priority list below still speaks of creating it, and is left as
+the plan it is rather than rewritten — but a reader should know that Phase 1's first item shipped.
 
 ## Implementation Priority
 
