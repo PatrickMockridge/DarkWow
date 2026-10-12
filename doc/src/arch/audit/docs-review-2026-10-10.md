@@ -1139,4 +1139,18 @@ F-616: doc:doc/src/dev/testing/heavyweight-spec.md#heavyweight-block@173ef382ab
      F-614 is E7's most consequential: a posture document asserting the absence of exceptions, in a tree whose
      manifest lists four. F-615 is the same shape from the other side — a prohibition the code's own comment
      records as having been wrong about what it forbade. -->
+F-617: doc:doc/src/arch/consensus/merge-mining-ffi.md@8cb4f41e99
+F-618: doc:doc/src/dwowd.md@8cb4f41e99, doc:doc/src/arch/monero-merge-mining.md@8cb4f41e99, doc:doc/src/arch/services.md@8cb4f41e99
+F-619: doc:doc/src/arch/zk/spend_hook.md@8cb4f41e99
+F-620: doc:doc/src/arch/economics-caveat-emptor.md@8cb4f41e99
+F-621: doc:doc/src/arch/contract-metadata.md@8cb4f41e99, doc:doc/src/arch/contract-wasm-standards-best-practices.md@8cb4f41e99
+F-622: doc:doc/src/for-researchers.md@8cb4f41e99
+F-623: doc:doc/src/arch/contract-trust-model.md#layer-2-wasm-verification@8cb4f41e99, doc:doc/src/dev/contracts/identity.md@8cb4f41e99
+<!-- F-619 is the family's cleanest instance: five circuit filenames that have never existed, in a table whose
+     *claim* — all five instance `coin_spend_hook` — is true of the real five. That is the shape most of 4C
+     shares: the assertion survives, the names in it do not. F-620 is the one where a whole scenario was built on
+     absent endpoints, and it is rewritten onto the real path rather than struck, because the economic concern it
+     raises is sharper against `ProveCoverageV1` than against the fiction. F-623's identity half repeats F-536's
+     three defects in a second file — the same mistake copied, which is why the sweep rule exists. F-618's
+     `ManualSession` example is the one a reader would copy and then fail to compile. -->
 <!-- /promotion-log -->
