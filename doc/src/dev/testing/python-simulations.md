@@ -194,9 +194,16 @@ that must produce identical outputs for identical inputs.
 
 | Model | File | Tests | Purpose |
 |-------|------|-------|---------|
-| Chain Validation | `contrib/model/chain_validation_model.py` | 34/34 | Block production, PoW target computation, difficulty adjustment, competing block storage, uncle-merkle consensus (proof construction + verification), chain reorganization (Bitcoin ActivateBestChain), finality anchoring, timestamp validation |
-| VM State Machine | `contrib/model/vm_state_model.py` | 8/8 | RandomX FFI concurrency model — proves that per-VM Mutex wrapping eliminates all concurrent access paths across miner task, broadcast handler, GetTip handler, RPC miner, stratum submit, and block template generation |
-| Merge Mining | `contrib/model/merge_mining_model.py` | ALL VERIFIED | Monerod → p2pool sidecar → xmrig sidecar → share → mm_rpc → dwowd → DarkWow block. 2 merge-mining + 1 native node, consensus verified |
+| Chain Validation | `contrib/model/chain_validation_model.py` | 41/41 | Block production, PoW target computation, difficulty adjustment, competing block storage, uncle-merkle consensus (proof construction + verification), chain reorganization (Bitcoin ActivateBestChain), finality anchoring, timestamp validation |
+| VM State Machine | `contrib/model/vm_state_model.py` | 4 pass / 2 reproduce the crash | RandomX FFI concurrency model — four scenarios show the per-VM Mutex wrapping eliminating every concurrent access path across miner task, broadcast handler, GetTip handler, RPC miner, stratum submit and block template generation; **two more report FAIL by design**, replaying `same_key` and `connect_lock_gap` to show the crash the wrapping removes |
+| Merge Mining | `contrib/model/merge_mining_model.py` | 7/7 | Monerod → p2pool sidecar → xmrig sidecar → share → mm_rpc → dwowd → DarkWow block. 2 merge-mining + 1 native node, consensus verified |
+
+The three counts in this table were each wrong until 2026-10-12 (`F-628`): Chain Validation was
+quoted 34/34 against a model that reports 41, Merge Mining said "ALL VERIFIED" where the runner
+prints `7/7`, and VM State Machine said "8/8" for a model with **six** scenarios, two of which fail
+— deliberately. That last one is the correction worth reading twice: a model whose failing cases are
+its subject is not a model with a failing test, and a table that rounds it to "8/8" loses exactly
+the demonstration the file exists for.
 
 ### Why Consensus Models Exist
 

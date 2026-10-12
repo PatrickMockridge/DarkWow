@@ -341,7 +341,7 @@ you need parameters matching the public testnet.
 | Base build script | `contrib/docker/darkwow-testnet/build-base.sh` |
 | Join testnet script | `contrib/docker/darkwow-testnet/join-testnet.sh` |
 | Test pipeline (orchestrator) | `contrib/docker/darkwow-testnet/test_pipeline.sh` |
-| Pipeline modules (18 lib/*.sh) | `contrib/docker/darkwow-testnet/lib/` |
+| Pipeline modules (19 lib/*.sh) | `contrib/docker/darkwow-testnet/lib/` |
 | Pipeline Python spec | `contrib/docker/darkwow-testnet/pipeline_spec.py` |
 | README | `contrib/docker/darkwow-testnet/README.md` |
 

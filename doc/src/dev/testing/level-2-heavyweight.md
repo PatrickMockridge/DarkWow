@@ -269,40 +269,48 @@ use trait defaults — a documented gap tracked for future standardization.
 
 ## Contract Harness List
 
-| Contract | Circuits | Client Module |
+| Contract | `.zk` circuits | Client Module |
 |----------|----------|---------------|
-| attestation | 5 | `src/contract/attestation/src/client/` |
+| attestation | 12 | `src/contract/attestation/src/client/` |
 | auction | 6 | `src/contract/auction/src/client/` |
-| baccarat | 2 | `src/contract/baccarat/src/client/` |
+| baccarat | 4 | `src/contract/baccarat/src/client/` |
 | bearer_bond | 4 | `src/contract/bearer_bond/src/client/` |
 | betting_stake | 5 | `src/contract/betting_stake/src/client/` |
 | box | 2 | `src/contract/box/src/client/` |
 | bridge | 2 | `src/contract/bridge/src/client/` |
-| dao_escrow | 6 | `src/contract/dao_escrow/src/client/` |
-| darkbet_exchange | 4 | `src/contract/darkbet_exchange/src/client/` |
-| darktoshi_dice | 2 | `src/contract/darktoshi_dice/src/client/` |
-| deployooor | 0 | (pure WASM, no ZK) |
-| dex | 4 | `src/contract/dex/src/client/` |
-| drain_protection | 1 | `src/contract/drain_protection/src/client/` |
-| escrow | 4 | `src/contract/escrow/src/client/` |
-| game_room | 5 | `src/contract/game_room/src/client/` |
-| identity | 8 | `src/contract/identity/src/client/` |
-| insurance_market | 2 | `src/contract/insurance_market/src/client/` |
-| labor_market | 7 | `src/contract/labor_market/src/client/` |
-| lottery | 2 | `src/contract/lottery/src/client/` |
+| dao_escrow | 5 | `src/contract/dao_escrow/src/client/` |
+| darkbet_exchange | 10 | `src/contract/darkbet_exchange/src/client/` |
+| darktoshi_dice | 4 | `src/contract/darktoshi_dice/src/client/` |
+| deployooor | 1 | `lock.zk` (the contract also carries no ZK on `DeployV1`) |
+| dex | 8 | `src/contract/dex/src/client/` |
+| drain_protection | 9 | `src/contract/drain_protection/src/client/` |
+| escrow | 5 | `src/contract/escrow/src/client/` |
+| game_room | 12 | `src/contract/game_room/src/client/` |
+| identity | 2 | `src/contract/identity/src/client/` |
+| insurance_market | 4 | `src/contract/insurance_market/src/client/` |
+| labor_market | 9 | `src/contract/labor_market/src/client/` |
+| lottery | 5 | `src/contract/lottery/src/client/` |
 | multisig | 3 | `src/contract/multisig/src/client/` |
 | native_token | 3 | `src/contract/native_token/src/client/` |
-| oracle | 1 | `src/contract/oracle/src/client/` |
+| oracle | 6 | `src/contract/oracle/src/client/` |
 | otc_swap | 4 | `src/contract/otc_swap/src/client/` |
 | pool_stake | 4 | `src/contract/pool_stake/src/client/` |
-| promissory_note | 4 | `src/contract/promissory_note/src/client/` |
+| promissory_note | 5 | `src/contract/promissory_note/src/client/` |
 | purse | 3 | `src/contract/purse/src/client/` |
 | relayer_endowment | 3 | `src/contract/relayer_endowment/src/client/` |
-| roulette | 2 | `src/contract/roulette/src/client/` |
-| slot | 2 | `src/contract/slot/src/client/` |
-| stablecoin | 8 | `src/contract/stablecoin/src/client/` |
-| subscription | 3 | `src/contract/subscription/src/client/` |
-| tender | 4 | `src/contract/tender/src/client/` |
+| roulette | 4 | `src/contract/roulette/src/client/` |
+| slot | 3 | `src/contract/slot/src/client/` |
+| stablecoin | 10 | `src/contract/stablecoin/src/client/` |
+| subscription | 5 | `src/contract/subscription/src/client/` |
+| tender | 5 | `src/contract/tender/src/client/` |
+
+**Every figure in this column was wrong** (`F-628`). Twenty-one of the twenty-two rows had drifted —
+some by one or two, and several by a lot: `identity` claimed 8 against 2, `oracle` 1 against 6,
+`drain_protection` 1 against 9, `attestation` 5 against 12, `darkbet_exchange` 4 against 10, and
+`deployooor` was listed as having no circuits at all when it has `lock.zk`. The counts above are
+`ls src/contract/<name>/proof/*.zk | wc -l`; re-run that rather than editing this column by hand,
+and prefer `scripts/check-doc-canonical-counts.sh`, which derives the whole-corpus figures from the
+tree.
 
 ## Guardrail Registry
 

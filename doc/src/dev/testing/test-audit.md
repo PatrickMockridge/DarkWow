@@ -25,10 +25,10 @@ Verified against the working tree (not documentation claims):
 | `tests/zk_circuit_test.sh` | 31 | `deployooor` (no ZK) and `entropy` (library) excluded |
 | Harness modules (`test-harness/src/harness/*.rs`) | 32 | one per deployable contract |
 | Contract spec files (`bin/dwowd/src/tests/specs/*_spec.rs`) | 33 | 32 contract specs + `fee_integration_spec.rs` |
-| Contract `.zk.bin` files (`src/contract/*/proof/`) | 175 → **166** | docs claim "99 harness-loaded" |
+| Contract `.zk.bin` files (`src/contract/*/proof/`) | 175 → **167** | docs claim "99 harness-loaded" |
 | `sim/contracts/*.py` modules | 8 | `gaming.py` models 7 gambling contracts |
 | `contrib/model/*.py` files | 21 → **22** | incl. `chain_model.py` and `chain_validation_model.py` |
-| Pipeline `lib/*.sh` modules | 18 | matches `level-3-localnet.md` |
+| Pipeline `lib/*.sh` modules | **19** | this row read 18 and said it "matches `level-3-localnet.md`" — both were one low; `ls contrib/docker/darkwow-testnet/lib/*.sh \| wc -l` |
 | `#[test]` fns in `heavyweight_pipeline.rs` | 59 → **55** | `heavyweight.sh --all` selects **45**, not 43 |
 
 **Correction, 2026-09-25.** This table is a dated snapshot (see the header: *"static
@@ -37,7 +37,7 @@ it was written. Re-measured, with the command that measured each:
 
 | Figure | Was | Is | Measured by |
 |---|---|---|---|
-| `.zk.bin` under `src/contract/*/proof/` | 175 | **166** | `ls src/contract/*/proof/*.zk.bin \| wc -l` (a whole-tree `find` gives 180 — `proofs/core` holds 10 and `bin/darkirc/proof` 2, and the cell's own scope is `src/contract/*/proof/`) |
+| `.zk.bin` under `src/contract/*/proof/` | 175 | **167** | `ls src/contract/*/proof/*.zk.bin \| wc -l` (a whole-tree `find` gives 179 — `proofs/core` holds 10 and `bin/darkirc/proof` 2, and the cell's own scope is `src/contract/*/proof/`) |
 | `contrib/model/*.py` | 21 | **22** | `ls contrib/model/*.py \| wc -l` |
 | `#[test]` in `heavyweight_pipeline.rs` | 59 | **55** | `grep -c '#\[test\]' bin/dwowd/src/tests/heavyweight_pipeline.rs` |
 | what `heavyweight.sh --all` selects | 43 | **45** | its filter is `test_heavyweight_` + `test_relayer_lifecycle_heavyweight`; the count is *not* "all" — nine `test_fee_integration_*`/`test_bridge_*` and `test_recruitment_pipeline_call_data` are never selected by any flag, and the script's own help text still says 43 |
@@ -78,7 +78,7 @@ Each row maps a documentation claim to its actual implementation. Status:
 | "all 32 contracts have `integration.rs`" (`overview.md:481`) | 31 `integration.rs`; `native_token` has `unit.rs`; `entropy` none | DRIFT | F-1 |
 | "all 22 ZK-enabled contracts" have `zk_circuit_test.sh` (`overview.md:482`) | 31 `zk_circuit_test.sh` files | DRIFT | F-2 |
 | `cargo test -p dwowd test_pipeline` (Deployooor) | `bin/dwowd/src/tests/pipeline.rs` | OK | — |
-| `test-harness/tests/zk_audit.rs` decodes "99 harness-loaded `.zk.bin`" (`overview.md:260`) | `zk_audit.rs` runs `verify_zk_coverage()` over 32 harnesses; **166** `.zk.bin` under `src/contract/*/proof/` (was 175 when written; see the correction above) | DRIFT | F-3 |
+| `test-harness/tests/zk_audit.rs` decodes "99 harness-loaded `.zk.bin`" (`overview.md:260`) | `zk_audit.rs` runs `verify_zk_coverage()` over 32 harnesses; **167** `.zk.bin` under `src/contract/*/proof/` (was 175 when written; see the correction above) | DRIFT | F-3 |
 | `test-harness/tests/encode_roundtrip.rs` | present | OK | — |
 | Root crate tests `tests/*` | 8 files (`dyn_circuit`, `halo2_vk_ser`, `jsonrpc`, `network_transports`, `smt`, `socks5`, `vdf_eval`, `zkvm_opcodes`) | OK | — |
 | `bin/dwowd/tests/*` | `consensus_coordination.rs` — and nothing else. This cell also named **`calibration_session_filter.rs`, which has never existed** (`ls bin/dwowd/tests/`, measured 2026-09-25) | corrected 2026-09-25 | — |
@@ -94,7 +94,7 @@ deferred.
 
 | Doc claim (source) | Actual | Status | Finding |
 |--------------------|--------|--------|---------|
-| Consensus models "34/34 tests, 8 VM scenarios" (`overview.md:22`) | `contrib/model/chain_validation_model.py`, `vm_state_model.py`, `merge_mining_model.py` present | OK | — |
+| Consensus models — the row checked "34/34 tests, 8 VM scenarios" (`overview.md:22`) | all three models present. **The figures it checked were wrong**: the runners report `41/41` (chain), `7/7` (merge mining) and six VM scenarios, two of which report FAIL by design. Corrected at both sites 2026-10-12 (`F-628`) | **DRIFT** (fixed) | F-628 |
 | "All 27 contracts are modeled" (`overview.md:165`) | 8 `sim/contracts/*.py` modules (`gaming.py` models 7 gambling contracts) | DRIFT | F-4 |
 | Fee model = executable spec (70 tests) | `contrib/model/fee_window_model.py`, `fee_model.py` present | OK | — |
 | Wallet model | `contrib/model/wallet_model.py`, `wallet_simulation.py` present | OK | — |
