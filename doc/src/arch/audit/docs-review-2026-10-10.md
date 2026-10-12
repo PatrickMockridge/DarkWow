@@ -1288,4 +1288,16 @@ F-201: gate:scripts/check-register-worklist.sh@680760a565
      (a name that no longer exists: `Mint_V1` for `Issue_V2`, and a "warning signs" table whose examples read
      as citations when the column holds shapes). `F-200` is the tranche's live finding: the severity legend
      omitted `L`, which seventeen rows carry, so any severity-bucketing instrument drops them silently. -->
+F-332: doc:doc/src/arch/type-system.md@38e050a123
+F-338: doc:doc/src/arch/type-system.md@38e050a123
+F-339: doc:doc/src/arch/type-system.md@38e050a123
+F-340: doc:doc/src/arch/type-system.md@38e050a123
+F-341: doc:doc/src/arch/type-system.md@38e050a123
+<!-- The first slice of the F-3xx block. F-338/F-339 are one defect counted twice — the alphabet is 33 and
+     this file said 32 and 2^22 in three places, one of which (`the 2^33-point space`'s sibling at `:1539`) the
+     ledger did not list. F-341 is a prose list that fell behind its own normative table by three rows. F-332's
+     two "aliases" were Lean names that exist nowhere, with the real declarations beside them. F-340 needed no
+     edit. And one correction to my own edit is recorded in the commit: I wrote that the pair-proving
+     conjunction lived in `Inversion.lean` from the shape of a neighbouring citation, and it is in
+     `Distinction.lean` — the document was right. -->
 <!-- /promotion-log -->
