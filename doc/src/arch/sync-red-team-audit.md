@@ -57,8 +57,20 @@ reorg-to-known-good-height over a full wipe.
 reported a high tip keeps `is_synced()` (`lib.rs:330-346`) treating the wallet as behind forever,
 even after that peer disconnects.
 
-Spec reference: §13.3 says a node-side channel with 3 failures is deprioritised, but the wallet has no
-equivalent. Remediation: decay `HighestPeerTip` toward local height when no live peer confirms it.
+**This finding is NOT resolved.** The status table below says otherwise; it is wrong, and it is the
+reason R3 is still worth reading. `HighestPeerTip::set_max` (`bin/dww/src/sync_task.rs`) is
+`fetch_update` with `if height.get() > c` — it raises or does nothing, so the high-water mark never
+decays, exactly as filed. `Dww::is_synced()` (`bin/dww/src/lib.rs`) compares the local height against
+that value, so a peer that once reported a large height keeps the wallet reporting `synced: false`
+after it disconnects. The row that would carry this is not in the register; it is opened by this
+correction's commit.
+
+Spec reference (corrected): this finding cited §13.3 for "a node-side channel with 3 failures is
+deprioritised". §13.3 says the opposite — a peer that times out "is simply skipped and the next peer
+tried", and the document states plainly that there is *no* deadness/slowness taxonomy and no bounded
+backoff. The wallet's missing decay is a real gap; the clause it was attributed to does not describe
+the mechanism. Remediation (unchanged, and still open): decay `HighestPeerTip` toward local height
+when no live peer confirms it.
 
 ### R4 (HIGH) — `tip_hash()` serves a zero hash with a real height
 
@@ -67,8 +79,11 @@ when the tip hash lookup fails, but still report the real height. The receiver's
 (`sync_task.rs` `detect_reorg`) counts that zero hash as a legitimate candidate, so a peer with a
 corrupt tip index can poison the vote.
 
-Spec reference: §3 nominal-type re-lift — a zero hash at height > 0 SHALL NOT round-trip. Remediation:
-return `Option<BlockHash>` and drop the peer (or mark it unverified) on `None`.
+Spec reference (corrected): this finding attributed to §3 the requirement that "a zero hash at
+height > 0 SHALL NOT round-trip". §3 is the nominal-types table and says nothing of the kind — its
+rule is that `BlockHash` re-lifts only through `from_hex_str`, with the empty string as the genesis
+sentinel. The requirement this finding wants is real; it is not in the clause it cites.
+Remediation: return `Option<BlockHash>` and drop the peer (or mark it unverified) on `None`.
 
 ### R5 (MEDIUM) — Two server implementations with divergent byte budgets
 
@@ -78,8 +93,8 @@ no byte budget. A node serving 20 large blocks over the unified rail can produce
 exceeds `Blocks::MAX_BYTES` (16 MiB) and is dropped at the wire, while the P2P-channel handler protects
 itself. This is a §11 "two implementations" divergence.
 
-Spec reference: §5 (`MAX_BYTES`) + §11 (single implementation). Remediation: one serve path, one byte
-budget.
+Spec reference (corrected): §**4** (`MAX_BYTES`) + §11 (single implementation) — §5 is
+`genesis_hash` validation. Remediation: one serve path, one byte budget.
 
 ### R6 (MEDIUM) — `channels[0]` with no round-robin
 
@@ -136,10 +151,10 @@ machinery compiles into every build. Documented in [`sync-protocol.md` §11](syn
 |---|---|---|
 | R1 wallet PoW-blindness | **RESOLVED** | [`sync-protocol.md` §17](sync-protocol.md#17--wallet-follows-the-longest-chain) — trusted-daemon pattern: the wallet follows the longest (highest) peer-reported tip; PoW-blindness is a documented trust gap, not papered over with peer voting |
 | R2 reorg reset DoS | **RESOLVED** | no reorg detection at all — the wallet follows the longest chain and never resets on disagreement |
-| R3 monotonic HighestPeerTip | **RESOLVED** | `HighestPeerTip` is now the actual tip source — the wallet follows the longest chain; no quorum gate |
+| R3 monotonic HighestPeerTip | **NOT RESOLVED** | `set_max` still only raises; `is_synced()` still compares against it. The "resolution" this cell recorded described a *design choice* (follow the longest chain, no quorum gate) rather than a repair to the monotonicity the finding names |
 | R10 dead ban-policy flag | **RESOLVED** | flag deleted; `ban()` runtime-gated by `BanPolicy` (commit `26f948f6ad`) |
 | R4 zero-hash tip | **RESOLVED** | serve side logs the failure; wallet ignores zero-hash tips |
-| R6 channels[0] | **RESOLVED** | round-robin across healthy channels |
+| R6 channels[0] | **RESOLVED, by decision rather than by round-robin** | there is no round-robin, and §13.3 says there should not be — the pull loop "request[s] each peer's tip and take `max_peer_height = max(...)`", tries the next peer on a failure, and the document states "no round-robin, no bounded backoff, no heartbeat, and no watchdog — those are DarkWow-idiosyncratic machinery with no production analogue". The cell recorded a mechanism the specification explicitly rejects |
 | R8 wallet genesis handshake | **RESOLVED** | wallet learns `local_genesis_hash` from the first tip and passes it to `SyncPeer::dial` |
 | R9 node tip refresh | **RESOLVED** | `max_peer_height` decays to the latest observed max |
 | R5/R7 two servers + dup constants | **RESOLVED** | legacy `sync_handler.rs` + `linear_sync_client.rs` deleted; one serve path (`sync_connection`) + one byte budget (`MAX_BATCH_BYTES`) + one constant set |
