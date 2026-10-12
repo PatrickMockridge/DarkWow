@@ -76,24 +76,33 @@ Open → Closed → Settled
 ### PlayerAccount
 ```rust
 pub struct PlayerAccount {
+    pub version: u8,
     pub pubkey: PublicKey,
-    pub balance: u64,      // Cash available
-    pub locked: u64,       // Currently in pot (not withdrawable)
     pub last_action_block: u64,
     pub has_folded: bool,
     pub entropy_contribution: Option<EntropyContribution>,
+    pub instance_seed: [u8; 32],
 }
 ```
+
+There is **no `balance` and no `locked` field**. This snippet carried both until 2026-10-12
+(`balance: u64 // Cash available`, `locked: u64 // Currently in pot`), and `version`/`instance_seed`
+were missing from it and from `Pot` below. Neither the record nor the room holds a per-player
+balance: value lives in promissory-note commitments and the room tracks participation, folding and
+entropy. A reader who reconstructed the layout from the old snippet read every field after
+`pubkey` at the wrong offset.
 
 ### Pot
 ```rust
 pub struct Pot {
+    pub version: u8,
     pub pot_id: PotId,
     pub room_id: RoomId,
     pub total: u64,
     pub contributions: Vec<PotContribution>,
     pub state: PotState,
     pub betting_round: u8,
+    pub created_at: u64,
 }
 
 pub enum PotState {

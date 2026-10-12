@@ -56,9 +56,9 @@ struct RequestInterestParamsV1 {
 PayInterestV1:
 ```rust
 struct PayInterestParamsV1 {
-    bond_token_commit: pallas::Base, // Identifies the bond
-    claim_block: u64,                // Identifies which claim
-    interest_coin: BondCommitment,         // BlindOutput_V2 to holder's payment_key
+    bond_commitment: pallas::Base,          // Identifies the bond
+    claim_block: u64,                       // Identifies which claim
+    interest_commitment: BondCommitment,    // BlindOutput_V2 to holder's payment_key
 }
 ```
 
@@ -66,7 +66,11 @@ EmergencyUnstakeV1:
 ```rust
 struct EmergencyUnstakeParamsV1 {
     bond_input: BondInput,
-    coverage_report: CoverageReport,  // Must show coverage_ratio_bps < 10000
+    receipt_commitment: pallas::Base,        // the zero-value receipt's note commitment
+    receipt_token_commit: pallas::Base,      // the receipt's own token commitment
+    receipt_spend_hook: pallas::Base,
+    receipt_value_commit_x: pallas::Base,
+    receipt_value_commit_y: pallas::Base,
 }
 ```
 
@@ -75,8 +79,20 @@ UnstakeV1:
 struct UnstakeParamsV1 {
     bond_input: BondInput,
     current_block: u64,  // Checked against maturity_block
+    receipt_commitment: pallas::Base,        // the zero-value receipt's note commitment
+    receipt_token_commit: pallas::Base,      // the receipt's own token commitment
+    receipt_spend_hook: pallas::Base,
+    receipt_value_commit_x: pallas::Base,
+    receipt_value_commit_y: pallas::Base,
 }
 ```
+
+The `receipt_*` fields are the half of `OBL-C199` the doc was missing: `Redeem_V2` instances the
+*receipt's* commitment, token commit, spend hook and value-commitment coordinates, and those are a
+different note from the `bond_input` being consumed — the host cannot recompute any of them. The
+arms published the *stake's* values for all five until that row moved the record onto the receipt.
+`PayInterestParamsV1`'s first and third fields were named `bond_token_commit`/`interest_coin` here;
+they are `bond_commitment`/`interest_commitment`.
 
 ProveCoverageV1:
 ```rust

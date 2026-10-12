@@ -80,6 +80,7 @@ Active ──[NewHigherBid]──> Outbid ──[Refund]──> Refunded
 
 ```rust
 pub struct Auction {
+    pub version: u8,
     pub id: AuctionId,                    // H(seller_pub, item, price, token, deadline)
     pub seller_pubkey: PublicKey,
     pub item_commitment: pallas::Base,    // H(item_description)
@@ -91,6 +92,8 @@ pub struct Auction {
     pub highest_bidder: Option<PublicKey>,
     pub highest_bid_id: Option<BidId>,
     pub bid_count: u64,
+    pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 ```
 
@@ -98,12 +101,15 @@ pub struct Auction {
 
 ```rust
 pub struct Bid {
+    pub version: u8,
     pub id: BidId,                        // H(auction_id, bidder_pub, amount, nonce)
     pub auction_id: AuctionId,
     pub bidder_pubkey: PublicKey,
     pub amount: u64,
-    pub escrow_id: EscrowId,              // Links to escrow holding deposit
+    pub escrow_id: pallas::Base,          // the raw commitment, not an EscrowId nominal
     pub state: BidState,
+    pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 ```
 

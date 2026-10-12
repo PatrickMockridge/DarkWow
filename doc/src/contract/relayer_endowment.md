@@ -66,22 +66,31 @@ This contract enables:
 
 ```rust
 pub struct RelayerEndowmentAccount {
+    pub version: u8,
+    pub instance_seed: [u8; 32],
     pub relayer_pub: PublicKey,
     pub total_deployed: u64,
     pub active_deployments: u64,
     pub accumulated_fees: u64,
     pub default_backer_cut_bp: u32,
     pub created_at: u64,
-    pub last_settlement_height: u64,      // NEW: track settlement activity
-    pub total_collected_fees_log: u64,    // NEW: backer-auditable fee log
+    pub last_settlement_height: u64,      // track settlement activity
+    pub total_collected_fees_log: u64,    // backer-auditable fee log
     pub is_active: bool,
+    pub total_slashed: u64,
+    pub total_successful: u64,
 }
 ```
+
+`version` and `instance_seed` lead every record (`version` is the first byte of every stored
+record), and `total_slashed`/`total_successful` were missing from this snippet and from every other
+struct table in the contract docs until 2026-10-12 (`F-527`).
 
 ### EndowmentDeployment
 
 ```rust
 pub struct EndowmentDeployment {
+    pub version: u8,
     pub deployment_id: pallas::Base,
     pub relayer_pub: PublicKey,
     pub backer_pub: PublicKey,

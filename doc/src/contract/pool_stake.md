@@ -64,6 +64,7 @@ This contract solves the coverage requirements problem for relayer withdrawals:
 
 ```rust
 pub struct PoolStakeRegistry {
+    pub version: u8,
     pub pool_id: pallas::Base,
     pub owner_pub: PublicKey,
     pub total_stake: u64,
@@ -73,6 +74,8 @@ pub struct PoolStakeRegistry {
     pub max_coverage_ratio: u32,
     pub operator_fee_bp: u32,
     pub created_at: u64,
+    pub total_slashed: u64,
+    pub pool_slash_count: u64,
     pub is_active: bool,
 }
 ```
@@ -81,6 +84,8 @@ pub struct PoolStakeRegistry {
 
 ```rust
 pub struct PoolMemberStake {
+    pub version: u8,
+    pub instance_seed: [u8; 32],
     pub stake_id: pallas::Base,
     pub pool_id: pallas::Base,
     pub member_pub: PublicKey,
@@ -92,6 +97,7 @@ pub struct PoolMemberStake {
     pub accumulated_fees: u64,
     pub created_at: u64,
     pub leave_requested_at: Option<u64>,
+    pub slash_count: u64,
     pub is_active: bool,
 }
 ```
@@ -100,6 +106,7 @@ pub struct PoolMemberStake {
 
 ```rust
 pub struct CoverageAllocation {
+    pub version: u8,
     pub allocation_id: pallas::Base,
     pub pool_id: pallas::Base,
     pub withdrawal_nullifier: [u8; 32],

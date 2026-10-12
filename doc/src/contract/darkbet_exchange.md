@@ -136,6 +136,7 @@ Automated market making via constant-product formula:
 
 ```rust
 pub struct Market {
+    pub version: u8,
     pub market_id: pallas::Base,
     pub creator: PublicKey,
     pub description: String,
@@ -159,6 +160,7 @@ pub struct Market {
     pub resolved_at: Option<u64>,
     pub winning_outcome: Option<u8>,
     pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 ```
 
@@ -175,6 +177,7 @@ pub enum MarketType {
 
 ```rust
 pub struct Position {
+    pub version: u8,
     pub position_id: pallas::Base,
     pub market_id: pallas::Base,
     pub owner: PublicKey,
@@ -183,6 +186,7 @@ pub struct Position {
     pub potential_payout: u64,
     pub state: PositionState,
     pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 ```
 
@@ -190,6 +194,7 @@ pub struct Position {
 
 ```rust
 pub struct LpShare {
+    pub version: u8,
     pub lp_share_id: pallas::Base,
     pub market_id: pallas::Base,
     pub provider: PublicKey,
@@ -197,6 +202,7 @@ pub struct LpShare {
     pub earned_fees: u64,
     pub state: LpShareState,
     pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 ```
 

@@ -48,18 +48,21 @@ src/contract/roulette/
 
 ```rust
 pub struct RouletteTable {
+    pub version: u8,
     pub table_id: pallas::Base,
     pub house_pub: PublicKey,
     pub wheel_size: u8,              // 37 (European) or 38 (American)
     pub house_edge_bp: u32,           // 270 (EU) or 526 (US)
     pub house_capital: u64,           // Available for payouts
     pub max_straight_bet: u64,       // Max single number bet
+    pub max_total_bet: u64,          // Max across all of a player's open bets
     pub state: RouletteTableState,    // Active/WaitingForSpin/Spun/Closed
     pub spin_count: u64,
     pub winning_number: Option<u8>,
     pub bets_close_block: u64,
     pub spun_at_block: Option<u64>,
     pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 ```
 
@@ -79,6 +82,7 @@ pub struct Bet {
     pub spin_number: u64,
     pub placed_at: u64,
     pub nullifier: pallas::Base,
+    pub instance_seed: [u8; 32],
 }
 ```
 

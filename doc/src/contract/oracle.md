@@ -70,10 +70,15 @@ pub struct RegisterOracleParamsV1 {
     pub oracle_commitment: pallas::Base,   // H(8, oracle_secret, oracle_id)
     pub name: String,
     pub data_type: String,
-    pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 ```
+
+`tx_binding` is **not** a params field (`OBL-C198`): the transaction commitment is a derivation over
+the call data, so a binding carried inside the params would be computed from a value that covers it.
+`get_metadata` derives `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` and
+exposes it; only `tx_nonce` travels. All three params structs on this page carried a stale
+`tx_binding` until 2026-10-12.
 
 `oracle_commitment` is a **hiding commitment** to the operator's secret, not a public key. It was
 `oracle_pubkey: PublicKey` before OBL-Z9/Z10; that disclosed a static operator identity, which is the
@@ -91,7 +96,6 @@ pub struct PushValueParamsV1 {
     pub oracle_commitment: pallas::Base,   // must equal the registered record
     pub value: pallas::Base,
     pub nullifier: pallas::Base,           // H(1, oracle_secret, oracle_id, value)
-    pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 ```
@@ -108,7 +112,6 @@ pub struct AttestValueParamsV1 {
     pub predicate: u8,      // 0=Matches, 1=GreaterOrEqual, 2=LessOrEqual
     pub threshold: pallas::Base,
     pub nullifier: pallas::Base,           // H(1, oracle_secret, oracle_id, attestation_id)
-    pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 ```

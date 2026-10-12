@@ -24,8 +24,10 @@ An **Attestation** is a party's commitment to a claim or condition:
 
 ```rust
 pub struct Attestation {
+    pub version: u8,
     pub id: AttestationId,           // Commitment hash
-    pub attestor_pubkey: PublicKey,  // Who attests
+    pub attestor_pub: PublicKey,     // Who attests
+    pub attestor_secret: pallas::Base, // The attestor's secret, bound in the record
     pub claim_type: Predicate,        // Type of claim
     pub claim_data: Vec<pallas::Base>, // The commitment/hash data
     pub metadata: Vec<u8>,             // Optional encrypted metadata
@@ -41,9 +43,11 @@ A **Claim** is a claimant's assertion based on an attestation:
 
 ```rust
 pub struct Claim {
+    pub version: u8,
     pub id: ClaimId,
     pub attestation_id: AttestationId, // Links to the attestation
-    pub claimant_pubkey: PublicKey,
+    pub claimant_pub: PublicKey,
+    pub claimant_secret: pallas::Base,
     pub predicate: Predicate,          // What is being proven
     pub evidence_commitment: Vec<u8>,   // H(evidence)
     pub revealed_result: Vec<u8>,       // Minimal result (e.g., true/false)
