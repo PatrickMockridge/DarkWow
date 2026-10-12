@@ -429,13 +429,22 @@ run_gate "circuit tx pair last" bash "$SCRIPT_DIR/check-circuit-tx-pair-last.sh"
 # client codec injected into an unrelated contract it exits 1 naming that struct.
 run_gate "client params alignment"        bash "$SCRIPT_DIR/check-client-params-alignment.sh"
 # OBL-C76: the tests that do not run in their crate's DEFAULT configuration are enumerated and
-# declared. `make test` runs `--release --all-features --workspace`, so this gate's subject is not the gate run — it is the ad-hoc `cargo test -p <crate>` one reaches
-# for to check a single crate, and the claim that follows it: 172 tests where `--all-features` lists
-# 263, with the 91 that differ being the consensus surface. Four mechanisms hide a test here —
-# `#[ignore]`, a feature-gated test fn, a feature-gated test module, and a module gated in its
-# PARENT (which is why walking files alone finds 20 of the 29) — and each site must be declared in
-# `script/hidden_test_exceptions.txt` with a reason and the command that runs it.
+# declared. `make test` runs `--release --all-features --workspace`, so this gate's subject is not
+# the gate run — it is the ad-hoc `cargo test -p <crate>` one reaches for to check a single crate,
+# and the claim that follows it. Four mechanisms hide a test here — `#[ignore]`, a feature-gated
+# test fn, a feature-gated test module, and a module gated in its PARENT (the one walking files
+# alone cannot see) — and each site must be declared in `script/hidden_test_exceptions.txt` with a
+# reason and the command that runs it. **The counts the earlier version of this comment carried
+# (172/263/91) were stale and are deliberately not restated** — the exceptions file's own header
+# records the failure mode and the two `--list` invocations that re-derive them.
 run_gate "hidden tests declared (OBL-C76)" bash "$SCRIPT_DIR/check-hidden-tests.sh"
+# Its control, added 2026-10-12 with the two scanner fixes it guards. The gate had no control and
+# had been reporting two of its own bugs as hidden tests: a `pub mod entrypoint;` DECLARATION read
+# as a test module (`relayer_endowment/src/lib.rs:134`), and a parent gate that already carries
+# `test` as a satisfier under `any(…)`. The control plants both shapes — the false positive, which
+# must stay silent, and a genuine feature-gated module, which must be reported — so it fails in
+# either direction. Verified falsifiable the same day: with the declaration fix reverted it exits 1.
+run_gate "control: hidden tests can fail" bash "$SCRIPT_DIR/check-hidden-tests.sh" --self-test
 # The documentation index. Also seconds, also needs no build: it checks that every
 # doc is listed and every citation resolves, both directions. The 2026-09 docs
 # clean-up removed 25 documents and repointed ~30 referrers by hand; this is what

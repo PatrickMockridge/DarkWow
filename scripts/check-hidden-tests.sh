@@ -29,7 +29,78 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Overridable so the negative control below can point the scanner at a temp tree — the same
+# idiom `contrib/ci/scan_heavyweight_antipatterns.sh` uses with `ROOT`.
+REPO_ROOT="${ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+# ── Negative control (R8) ───────────────────────────────────────────────────────
+# A gate that cannot fail is not a gate, and this one had two ways to *report wrongly* rather
+# than to miss: on 2026-10-12 it reported seven sites of which two were its own bugs, both on
+# `relayer_endowment/src/lib.rs:134`. So the control plants both shapes and requires the
+# scanner to be silent on one and loud on the other — a one-sided control would have passed
+# while the scanner reported a `mod x;` declaration as a hidden test module.
+if [[ "${1:-}" == "--self-test" ]]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+
+    # Shape 1 — the two FALSE POSITIVES. `#[cfg(any(test, not(feature = "no-entrypoint")))]`
+    # on a `pub mod entrypoint;` DECLARATION: a satisfier of `any(…)` is `test`, so under
+    # `cargo test` the module always compiles, and the line names no test module at all.
+    mkdir -p "$TMP/src/contract/fake_any_gate/src"
+    cat > "$TMP/src/contract/fake_any_gate/src/lib.rs" <<'RS'
+#[cfg(any(test, not(feature = "no-entrypoint")))]
+pub mod entrypoint;
+RS
+    cat > "$TMP/src/contract/fake_any_gate/src/entrypoint.rs" <<'RS'
+pub fn handler() {}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn t() {}
+}
+RS
+
+    # Shape 2 — a GENUINE hidden test: the parent gate carries only a feature, so a bare
+    # `cargo test` compiles neither the module nor its tests.
+    mkdir -p "$TMP/src/contract/fake_real_gate/src/client"
+    cat > "$TMP/src/contract/fake_real_gate/src/lib.rs" <<'RS'
+#[cfg(feature = "client")]
+pub mod client;
+RS
+    cat > "$TMP/src/contract/fake_real_gate/src/client/mod.rs" <<'RS'
+pub fn build() {}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn t() {}
+}
+RS
+
+    if OUT="$(ROOT="$TMP" bash "$0" 2>&1)"; then STATUS=0; else STATUS=$?; fi
+
+    SELF_FAIL=0
+    if [[ "$OUT" != *"fake_real_gate"* ]]; then
+        echo "SELF-TEST FAIL: a genuinely feature-gated parent module was NOT reported" >&2
+        SELF_FAIL=1
+    fi
+    if [[ "$OUT" == *"fake_any_gate"* ]]; then
+        echo "SELF-TEST FAIL: a \`any(test, …)\`-gated mod declaration WAS reported as a hidden test" >&2
+        SELF_FAIL=1
+    fi
+    if [[ "$STATUS" -eq 0 ]]; then
+        echo "SELF-TEST FAIL: the scanner exited 0 on a tree carrying an undeclared hidden test" >&2
+        SELF_FAIL=1
+    fi
+    if [[ "$SELF_FAIL" -ne 0 ]]; then
+        echo "--- scanner output on the planted tree ---" >&2
+        printf '%s\n' "$OUT" >&2
+        exit 1
+    fi
+    echo "SELF-TEST PASS: silent on a \`any(test, …)\`-gated declaration, loud on a feature-gated module."
+    exit 0
+fi
 
 REPO_ROOT="$REPO_ROOT" python3 - <<'PYEOF'
 import glob, os, re, sys
@@ -40,7 +111,11 @@ paths = (sorted(glob.glob(f"{repo}/src/**/*.rs", recursive=True))
          + sorted(glob.glob(f"{repo}/bin/**/*.rs", recursive=True)))
 
 DEF_RE = re.compile(r'^\s*(?:pub\s+)?(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)')
-MOD_RE = re.compile(r'^\s*(?:pub\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)')
+# A *block*, not a `mod x;` declaration. The declaration form is the FOURTH MECHANISM's subject
+# (the gate lives in the parent, and the tests are in another file); reading it here reported
+# `relayer_endowment/src/lib.rs:134`'s `pub mod entrypoint;` as a "feature-gated test module"
+# when the line names no module body and therefore holds no test.
+MOD_RE = re.compile(r'^\s*(?:pub\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>]*>)?\s*\{')
 
 hidden = []
 for path in paths:
@@ -100,6 +175,15 @@ for path in paths:
     for i, ln in enumerate(lines):
         m = re.match(r'\s*#\[cfg\(([^\]]*)\)\]\s*$', ln)
         if not m or 'feature' not in m.group(1):
+            continue
+        # A cfg that already carries `test` as a satisfier is not a gate at all under `cargo
+        # test`: `relayer_endowment/src/lib.rs:134` reads
+        # `#[cfg(any(test, not(feature = "no-entrypoint")))]`, which `cargo test` satisfies on
+        # its first alternative, so the module and its tests always compile — that branch was
+        # added on 2026-10-03 precisely so the entrypoint's own control runs. The feature-named
+        # strings are stripped first so a *feature* called e.g. `test-utils` is not mistaken
+        # for the `test` satisfier.
+        if re.search(r'\btest\b', re.sub(r'feature\s*=\s*"[^"]*"', '', m.group(1))):
             continue
         j = i + 1
         while j < len(lines) and (lines[j].strip().startswith("#[")
