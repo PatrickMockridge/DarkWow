@@ -125,8 +125,6 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
-/// Get metadata for verification
-#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 /// `OBL-C198`: the binding is the host's derivation over the enclosing transaction, not a constant.
 /// Ten arms published `poseidon_hash([3, 0, 0])` for every call; they derive now.
 fn darkbet_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractError> {
@@ -137,6 +135,12 @@ fn darkbet_tx_binding(tx_nonce: pallas::Base) -> Result<pallas::Base, ContractEr
     ]))
 }
 
+/// Get metadata for verification
+// `OBL-C194`: this attribute stood above `darkbet_tx_binding` — the *previous* item — where it fired
+// for nothing, because every `xy().expect("pk not identity")` in this file is in the body below. An
+// `#[expect]` attached to the wrong item suppresses nothing, and the census that counts the survivors
+// had read the ten calls as lint-blind rather than as unattributed.
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;

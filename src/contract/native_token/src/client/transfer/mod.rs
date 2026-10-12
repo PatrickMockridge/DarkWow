@@ -296,9 +296,12 @@ impl TransferCallBuilder {
                 // The proof's constrained commitment IS the params commitment — computed
                 // from `output.blind` by `derive_transfer_mint`.
                 commitment: derived.commitment,
-                nullifier: Some(
-                    Nullifier::from_bytes(derived.nullifier.to_repr()).expect("nf zero"),
-                ),
+                // `OBL-C194`: `?` rather than `.expect("nf zero")` — `Nullifier::from_bytes`
+                // returns the `ContractError` this function's `Result` already carries
+                // (`impl From<ContractError> for dwow_core::Error`), so the error path is free and
+                // the panic is not. The value is a mint-proof-derived nullifier and is non-zero in
+                // practice, which is exactly why the branch must not be a panic.
+                nullifier: Some(Nullifier::from_bytes(derived.nullifier.to_repr())?),
                 note: encrypted_note,
             });
         }

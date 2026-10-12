@@ -305,11 +305,6 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
     wasm::util::set_return_data(&metadata)
 }
 
-/// `get_metadata` for CreateRoomV1 — CreateRoomV2 circuit
-///
-/// Circuit constrain_instance order: [tx_binding, tx_nonce, derived_room_id]
-/// derived_room_id = poseidon_hash(DOMAIN_COIN_COMMIT, owner_pub_x, owner_pub_y, asset_id, block_height, nonce)
-#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 /// The transaction binding every arm publishes — the deriving side of `OBL-C198`.
 ///
 /// The commitment comes from the host (`get_tx_commitment`) and **not** from the call data: the
@@ -324,7 +319,6 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
 /// publishes the same binding — a *linking* of that transaction's own proofs, which
 /// `tx-commitment.md` §The Nullifier Scheme exists to avoid. It is still strictly better than the
 /// constant, and a per-proof nonce on the wire is owed.
-#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
 fn game_room_tx_binding(
     tx_nonce: pasta::pallas::Base,
 ) -> Result<pasta::pallas::Base, ContractError> {
@@ -335,6 +329,16 @@ fn game_room_tx_binding(
     ]))
 }
 
+/// `get_metadata` for CreateRoomV1 — CreateRoomV2 circuit
+///
+/// Circuit constrain_instance order: [tx_binding, tx_nonce, derived_room_id]
+/// derived_room_id = poseidon_hash(DOMAIN_COIN_COMMIT, owner_pub_x, owner_pub_y, asset_id, block_height, nonce)
+// `OBL-C194`: the attribute and the doc above both stood on `game_room_tx_binding` — the *previous*
+// item — where the attribute fired for nothing (that function has no `xy()` call), while this
+// function, whose body holds the file's one unattributed `xy().expect("pk not identity")`, had
+// neither. An `#[expect]` attached to the wrong item suppresses nothing; the census had counted this
+// survivor as lint-blind rather than unattributed.
+#[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy()/x()/y() is always Some")]
 fn create_room_get_metadata_v1(
     params: model::CreateRoomParamsV1,
 ) -> Result<Vec<u8>, ContractError> {

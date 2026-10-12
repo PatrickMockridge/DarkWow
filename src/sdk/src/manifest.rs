@@ -1532,7 +1532,7 @@ name = "b"
     // ========================================================================
 
     fn field(name: &str, ty: &str) -> ParameterField {
-        ParameterField { name: name.into(), param_type: ty.into(), optional: false, witness: None, source: None, derived: None, leaf: false }
+        ParameterField { name: name.into(), param_type: ty.into(), optional: false, witness: None, off_wire: false, source: None, derived: None, leaf: false }
     }
 
     #[test]
