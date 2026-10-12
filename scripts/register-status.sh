@@ -12,9 +12,18 @@
 # Two modes:
 #   (default)   report — counts, the unmarked list, the weak-token list, the register's own summary
 #               sentences. Always exits 0 unless the register is unreadable.
-#   --check     gate — exits 1 if any row's *last cell* opens with an ALL-CAPS word that is not a
-#               status in the vocabulary below, i.e. a coined marker no count can find. This is the
-#               mechanical guard for the class that cost three fixes on 2026-09-22.
+#   --check     gate — exits 1 if any row's **Status cell** (its second, after the id) opens with an
+#               ALL-CAPS word that is not a status in the vocabulary below, i.e. a coined marker no
+#               count can find, or carries no status token at all. This is the mechanical guard for
+#               the class that cost three fixes on 2026-09-22.
+#
+#               This paragraph said "*last cell*" until 2026-10-12 (`F-105`), which the code below
+#               has not done since 2026-09-23: an adversarial pass over 107 rows found 31 carrying
+#               their token somewhere other than the last cell and 9 carrying none, so 40 were
+#               invisible to the guard while it reported "107 rows walked". It reads `cells[0]`, the
+#               Status column — the register's own stated repair ("a convention — a status column,
+#               or a generated table — not a better regex"), and the difference between guarding a
+#               form and guarding a fact.
 #
 # HOW IT COUNTS, AND WHY THE COUNTS ARE ONLY A REPORT. A token counts anywhere inside a bold span,
 # case-insensitively:

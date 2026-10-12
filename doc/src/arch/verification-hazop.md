@@ -94,12 +94,18 @@ nobody has made" is itself a false statement. Recorded here once rather than in 
   `insurance_market` (`C203`) — and where a verifier needs a binding it cannot see, a **tag** is added
   rather than a field kept (`nullifier = true`; a box owner term): `C146`, `C171`, `C179`, `C184`,
   `C188`. The four deletions are not all one batch: `C89` is a genesis contract's params and travels
-  with the re-roll, the other three do not.
+  with the re-roll, the other three do not. **The last two of the four have since landed**: `C166`
+  and `C203` are both `FIXED` and their fields are gone from
+  `dao_escrow/src/model/mod.rs` and `insurance_market/src/model/mod.rs`. This sentence listed them as
+  pending until 2026-10-12 (`F-103`), which is how a decided policy reads once part of it is done.
 * **D3 — gate it, or accept it.** Build the gate where one is possible (`C76` feature-gated tests,
   `C125` `bridge_test_helper` build, `C138` dex coverage); record the rest as `ACCEPTED-WITH-REASON`
   with the gap named (`C140`). **`C147` is neither**: its row already says the stated mechanism is
   *unwritable* on this toolchain, so its sentence is corrected — `RESTATED`, which is not a softer
-  `CLOSED` — rather than gated or accepted.
+  `CLOSED` — rather than gated or accepted. **Neither disposition has been taken**: both `C140` and
+  `C147` still read `DECISION`, which is what the 2026-10-08 relabel set and what the gate counts
+  (`F-104`). The paragraph above states a policy; the rows are still blocked on it, and this
+  sentence is the one that says which of the two is true today.
 
 ---
 
@@ -1047,9 +1053,13 @@ different meanings depending on the row's *status*, and the reader cannot tell w
   because its absence would break a stated property. That is legitimate and useful: it is how a
   reader knows what a closure was worth.
 - On an **open** row (`OPEN`, `PARTLY`, `FAILS` with work outstanding) the same letter reads as a
-  **live risk**, and it is frequently not one. `OBL-C44` is the clearest case: severity **H** in the
-  column while its own prose says *"That is a liveness difference from Bitcoin Core … rather than a
-  safety one"* — which by the legend above is `M`.
+  **live risk**, and it is frequently not one. The example this bullet used was `OBL-C44`: severity
+  **H** in the column while its own prose called it *"a liveness difference from Bitcoin Core …
+  rather than a safety one"*. **`OBL-C44` is now `CLOSED` at severity `M`** — the prose won and the
+  row moved — so it no longer illustrates an open row's overstated letter (`F-109`). The letter
+  `H` on a live row is still graded against what it protects rather than what is reachable, and
+  `OBL-C80` (`ACCEPTED-WITH-REASON`, `C`) is the register's standing example of a severity that was
+  re-measured rather than inherited.
 
 **The rule from here, so the column can be trusted again.** An `OPEN`/`PARTLY`/`FAILS` row may carry
 `C` or `H` only if the row states a **path from an untrusted input to the consequence**, and says
@@ -2016,15 +2026,16 @@ they stand as the dated records they are.
   instances" and "181 circuits, 894 instances, 15 unclassified", both dated 2026-09-21, while that
   row's own final append carries today's 905/11 — so the row is internally dated-lagged as well, and
   the fresh measurement belongs in the append rather than as a rewrite of the dated cells.
-* **Item 5 — "72 guards" is low, and a grep count is not the guard count.** `grep -rn
-  'ContractId::ZERO' --include=*.rs src/contract/` finds **78** occurrences across the same **20**
-  contracts; classified by the surrounding line, **75** are comparisons against a stored id (68
-  `promissory_note_cid`, 4 `identity_cid`, 2 `dao_cid`, 1 `multisig_cid`) and **3** are not
-  comparisons at all — a comment and a deploy-path default in `labor_market`, and a
-  `promissory_note_contract_id` struct-literal field in `stablecoin`. `OBL-C16`'s fail-open reading of
-  these sites is that row's own and is not re-adjudicated here; what this pass corrects is the number
-  and the method, because writing the grep's 78 down as the guards' count would be the same error in
-  the other direction.
+* **Item 5 — "72 guards" is low, and a **grep count is not the guard count** — which is the finding;
+  the number is only how it shows.** The bullet used to give its own measurement (`78` occurrences
+  across 20 contracts) and that figure has since drifted too: re-run 2026-10-12, `grep -rn
+  'ContractId::ZERO' --include=*.rs src/contract/` finds **84** occurrences across **36** files. So
+  the register has now carried **72**, **78** and **84** for the same quantity, which is the
+  argument: a figure that moves with the tree and is quoted without its date is the defect, not any
+  one of the three values. `OBL-C16`'s fail-open reading of these sites is that row's own and is not
+  re-adjudicated here; what this bullet corrects is the method, and it no longer states a count of
+  its own — `grep -rn … | wc -l` is the instrument, and it is one command away from any reader
+  (`F-110`).
 * **Item 6 — one of the two is `SATISFIED`.** `OBL-C3` is `SATISFIED` and `OBL-C5` is `PARTLY`, where
   this item says "both are only partly proved". The `reward_monotone` clause survives: it is one of
   the layer's **eight** assumptions today, and `Emission.lean` now also carries the two refutations of
