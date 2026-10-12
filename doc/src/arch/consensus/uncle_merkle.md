@@ -732,7 +732,13 @@ whether the transactions are canonical or uncle.
 
 1. **Uncle depth limit**: Uncle depth SHALL NOT exceed `MAX_UNCLE_DEPTH` (6), preventing infinite uncle chains.
 2. **RandomX PoW binding**: Each `UncleProof.pow_hash` MUST match the re-computed hash over `to_mining_blob()` using `header.randomx_key` — prevents fake proofs without actual RandomX work.
-3. **Difficulty check**: Each uncle's PoW MUST meet the canonical block's target.
+3. **Difficulty check**: Each uncle's PoW MUST meet the target **in force at the uncle's
+   own height** — `block_target_at(uncle.header.height)`, *not* the referencing block's
+   target. The target is recomputed every block from a sliding timestamp window, so the
+   referencing block's target is not the uncle's rule. (Corrected 2026-10-11, `F-318`:
+   this read "the canonical block's target", which §2 of this same document already
+   contradicts, and which `validate_uncle_proofs`'s own contract forbids in as many
+   words.)
 4. **Merkle proof validation**: The uncle header MUST verify against `uncle_merkle_root`.
 5. **Reward math validation**: `total_reward + Σ pin_confirmed_i == base_reward` MUST hold (subtractive mass balance) — prevents over-minting.
 

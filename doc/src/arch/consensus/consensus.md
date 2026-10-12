@@ -550,9 +550,20 @@ A walk exceeding the bound aborts the reorg.
   value, so their `chain_work()` is identical. A competing block at equal work
   is stored as an uncle (`ReorgSignal::Lighter`) — the canonical chain is never
   displaced without strictly more accumulated work.
-- **Finality guard**: An anchored canonical block — Caribina (Arweave) or
-  Monero finality anchors active — SHALL NOT be displaced by reorg. The check
-  runs inside `detect_reorg`, before the work comparison.
+- **Finality guard**: An anchored canonical block **SHALL NOT** be displaced by
+  reorg. The check runs inside `detect_reorg`, before the work comparison, and it
+  reads **Caribina (Arweave)** anchors:
+  `finality_config.should_enforce(header.finality_flags) && caribina::verify_anchor_proof(&header)`.
+
+  *Corrected 2026-10-11 (`F-315`).* This bullet read "Caribina (Arweave) **or
+  Monero** finality anchors active", and **Monero does not participate**:
+  `header.anchor_monero_hash` is a field the header carries that no finality path
+  reads, so a block anchored only on Monero is displaceable. Both call sites of the
+  guard are the same predicate by construction, so this is not a second check someone
+  forgot to write — it is a second *source* the predicate never had. What covers the
+  Monero half is `OBL-C67` and `OBL-C80`, which are about the anchor's derivation and
+  the default configuration's stance rather than about this guard; the doc says so
+  here instead of implying a source the guard does not consult.
 
 ### Relationship to Uncle Merkle
 
@@ -680,7 +691,12 @@ Source: [`src/linear/src/finality.rs`](../../../../src/linear/src/finality.rs).
 
 ### Flag Bits
 
-Block header field `finality_flags` (u8) at offset 145:
+Block header field `finality_flags` (u8) — **it has no offset in the mining blob**,
+because it is excluded from it. *Corrected 2026-10-11 (`F-319`)*: this read "at offset
+145", and no serializer produces that number. `block.rs`'s `to_mining_blob` documents
+the exclusion and its reason — `anchor_tx_id`, `caribina_anchor`, `anchor_monero_height`,
+`anchor_monero_hash` and `finality_flags` are all set *after* PoW is found, so the mining
+hash does not cover them; the paragraph below is the one that already said so.
 
 | Bit | Constant | Meaning |
 |-----|----------|---------|

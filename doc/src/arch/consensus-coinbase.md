@@ -108,7 +108,7 @@ BlockHeader {
     height: BlockHeight,             // Block height, genesis = 1
     timestamp: BlockTimestamp,       // Unix seconds
     uncle_merkle_root: [u8; 32],
-    total_reward: BlockReward,       // expected_reward(height) — verifiable by all nodes
+    total_reward: BlockReward,       // base_reward − Σ pin_confirmed — see §6, "Uncle Split"
     randomx_key: [u8; 32],          // derived from height: blake3(height.to_le_bytes())
     miner: [u8; 32],               // miner's cycled per-block address (pk_H = derive_instance(..).public()); uncle-note encryption target
     commitment_merkle_root: [u8; 32],
@@ -121,6 +121,17 @@ BlockHeader {
     pow_source: PowSource,           // Native or Monero (merge-mined)
 }
 ```
+
+*`total_reward` was documented in this listing as `expected_reward(height)` — corrected
+2026-10-11 (`F-316`), because this document contradicts that 900 lines later and the code
+does not do it.* The field is the **canonical miner's effective reward**:
+`expected_reward(height)` from the emission schedule is the *base*, and the coins minted
+at this height are `base − Σ pin_confirmed`, because an uncle reward is a subtractive
+split of the base rather than an addition to it. `verify_uncle_split` enforces
+`canonical + Σ pin == base` before the block reaches disk — exact equality, not a bound.
+What the old comment promised, that any node can check the field against the emission
+schedule alone, is true of the *base* and not of the field; §6 is the section that says
+which, and it was right.
 
 ### 1.4 Validation Sequence
 
@@ -276,7 +287,10 @@ The `pow_reward_v1` WASM handler performs defense-in-depth verification:
 4. Commitment does not already exist (duplicate commitment prevention)
 5. Nullifier is non-zero (Phase 0 already rejects zero, this is defense-in-depth)
 6. Nullifier is not already in the host nullifier set (duplicate claim prevention)
-7. Reward meets or exceeds `expected_reward(H)` (emission schedule)
+7. Reward **equals** `expected_reward(H)` (emission schedule) — exact equality, not a
+   lower bound. It was `input.value < expected` until the pre-HAZOP-F1 repair, and the
+   handler's own comment says why that was wrong: a lower bound "allowed unlimited
+   over-minting" (corrected 2026-10-11, `F-317`)
 8. Cumulative supply invariant: `S_H = S_{H-1} + value_commit`
 
 ### 2.7 Miner Obligation
