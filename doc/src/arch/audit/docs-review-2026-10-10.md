@@ -1223,4 +1223,42 @@ F-108: doc:doc/src/arch/verification-hazop.md#the-root-causes--the-open-findings
      "thirty-one" occurs zero times; the gate reports `DECISION=29`; the "declared budget" sentence was replaced
      by "the gate is this assignment rather than a budget". A restated count would have gone stale within the
      week, which is the whole argument Phase C made for deleting rather than maintaining it. -->
+F-135: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19, doc:doc/src/Main.lean@ffb9547d19
+F-136: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-137: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-138: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-139: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-140: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-141: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-142: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-143: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-144: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-145: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-146: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-147: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-148: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-149: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-150: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-151: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-152: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-153: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-154: doc:doc/src/DarkFi/HAZOP.lean@ffb9547d19
+F-155: doc:doc/src/DarkFi/HAZOP/Critical.lean@ffb9547d19, doc:doc/src/DarkFi/HAZOP/High.lean@ffb9547d19
+F-156: gate:script/check_lean_axioms.py@d9b0135acc
+F-157: gate:script/check_lean_axioms.py@d9b0135acc
+F-158: gate:script/check_lean_axioms.py@d9b0135acc
+F-159: gate:script/check_lean_axioms.py@d9b0135acc
+F-160: doc:doc/src/arch/verification-hazop.md@d9b0135acc
+<!-- E8, and the largest single tranche of this campaign. F-136 is the one with a run behind it: all twenty-two
+     matrix paths now resolve (`22 entries, 0 unresolved`), where every distinctive one previously failed
+     (`stablecommitment/` and a `_v2.zk` suffix on every file — neither has ever existed). F-137–F-155 are the
+     eighteen findings the circuits have since fixed, annotated per finding; **twelve were verified directly
+     against the circuit** and six from the register plus this campaign's earlier file reads, and that split is
+     the honest one to record rather than implying eighteen reads. F-135 is the coupling the plan named, and its
+     resolution is *not* to prune the fixed findings: `Main.test_hazop_summary` asserts 4/5/6/7, `riskMatrix` is a
+     snapshot of the 2026 audit, and a repaired finding is history this file is the only record of — so the counts
+     stay and the disposition lives in the description. `scripts/lean-build.sh build` and `exe Main` both OK.
+     F-156–F-160's controls already existed; what did not exist was a working gate — see `d9b0135acc`, where the
+     checker was found crashing (`NameError`, so the inventory check had never run) and naming an innocent axiom
+     from a mis-bound doc string. Both fixed; `Passed: 8  Failed: 0`. -->
 <!-- /promotion-log -->
