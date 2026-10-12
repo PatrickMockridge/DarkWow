@@ -285,7 +285,16 @@ def hazopBand (risk : Nat) : String :=
     The counts are read off the data now and the assertions below are the regression guard: if the
     matrix gains or loses a finding, this fails and a human decides whether it was intended. The
     finding names printed are the matrix's own ids (`CRIT-1`, …); the prose names the old lines
-    carried named findings the matrix does not, and were the part nothing could check. -/
+    carried named findings the matrix does not, and were the part nothing could check.
+
+    **And that guard is why the matrix is annotated rather than pruned** (`F-135`). Eighteen of its
+    twenty-two findings have since been fixed in the circuits they name — the fixes are recorded
+    per finding in `HAZOP.riskMatrix`'s own descriptions — and the tempting move is to delete the
+    closed ones. Doing that fails these four assertions, correctly: `riskMatrix` is a **snapshot of
+    the 2026 audit**, not a live inventory, and a finding that was real and is now repaired is
+    history this file is the only record of. The band counts therefore stay at 4/5/6/7 and a
+    finding's disposition lives in its description, in the register (`doc/src/arch/verification-hazop.md`)
+    and in the circuit's own `HAZOP <id> FIX` comment — not in its absence from this list. -/
 def test_hazop_summary : IO Unit := do
   IO.println "=== HAZOP Audit Findings ==="
   let byBand := fun (b : String) =>

@@ -5,7 +5,7 @@ results. It contains ZERO Lean theorems with non-trivial proofs.
 All defs return String or List values for programmatic consumption.
 -/
 /-!
-# HAZOP HIGH Tier — Targeted Vulnerability Proofs (Risk 40-59)
+# HAZOP HIGH Tier — Targeted Vulnerability Analysis (Risk 40-59)
 
 ## HIGH-1/2: burn_v2.zk zero_cond Merkle Bypass (Risk 42/100)
 When commitment_value = 0, zero_cond returns 0 instead of the commitment hash. The Merkle proof

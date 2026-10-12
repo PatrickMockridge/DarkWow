@@ -5,7 +5,7 @@ results. It contains ZERO Lean theorems with non-trivial proofs.
 All defs return String or List values for programmatic consumption.
 -/
 /-!
-# HAZOP CRITICAL Tier — Formal Vulnerability Proofs (Risk >= 60)
+# HAZOP CRITICAL Tier — Audit Findings (Risk >= 60)
 
 Four circuits with confirmed exploit vectors requiring immediate deeper formal verification.
 

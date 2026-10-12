@@ -53,57 +53,65 @@ namespace HAZOP
 Complete risk matrix for all circuits above the LOW threshold.
 -/
 def riskMatrix : List (String × String × Nat × String) := [
+  -- Paths are relative to `src/contract/`. They were written as
+  -- `stablecommitment/…_v2.zk` in the 2026 audit snapshot, and **fourteen of the fourteen
+  -- distinctive ones failed to resolve** — no `stablecommitment/` directory has ever existed, and
+  -- no circuit file carries a `_v2` suffix (the version lives inside the file; see
+  -- `doc/src/arch/circuit-versioning.md` §7). Corrected 2026-10-12 (`F-136`), each path checked
+  -- against the tree. The risk numbers and the findings are the snapshot's and are not revised:
+  -- `Main.test_hazop_summary` asserts the band counts, and `F-137`–`F-155` record, per finding,
+  -- what the circuit carries *now*.
   -- CRITICAL (Risk >= 60)
-  ("CRIT-1", "stablecommitment/governance_report_v2.zk", 80,
-   "total_collateral/total_debt/interest_accrued free witnesses"),
-  ("CRIT-2", "stablecommitment/liquidate_v2.zk", 72,
-   "collateralization check not enforced in circuit"),
-  ("CRIT-3", "bridge/withdraw_v2.zk", 63,
-   "recipient_hash front-running — not bound to depositor"),
-  ("CRIT-4", "oracle/aggregate_v2.zk", 60,
-   "bound checks NO-OP — subtraction unused in constraints"),
+  ("CRIT-1", "stablecoin/proof/governance_report.zk", 80,
+   "total_collateral/total_debt/interest_accrued free witnesses — FIXED: `reporter_pub_x/y` are `constrain_instance`d (OBL-Z14), so the equalities compare against the verifier's values"),
+  ("CRIT-2", "stablecoin/proof/liquidate.zk", 72,
+   "collateralization check not enforced in circuit — FIXED: the file carries a `HAZOP CRIT-2 FIX` guard"),
+  ("CRIT-3", "bridge/proof/withdraw.zk", 63,
+   "recipient_hash front-running — FIXED: `computed_nullifier = poseidon_hash(DOMAIN_NULLIFIER, secret, recipient_hash)`"),
+  ("CRIT-4", "oracle/proof/aggregate.zk", 60,
+   "bound checks NO-OP — FIXED: `range_check`ed under a `HAZOP CRIT-4 FIX` guard"),
 
   -- HIGH (Risk 40-59)
-  ("HIGH-1", "promissory_note/burn_v2.zk", 42,
-   "zero_cond Merkle bypass when commitment_value=0"),
-  ("HIGH-2", "native_token/burn_v2.zk", 42,
-   "same zero_cond bypass as PN burn"),
-  ("HIGH-3", "labor_market/refund_v2.zk", 42,
-   "non-milestone refund amount check skipped"),
-  ("HIGH-4", "labor_market/*", 40,
-   "nullifier collision: confirm/milestone/refund use same H(job_id, secret)"),
-  ("HIGH-5", "governance_report (L2)", 42,
-   "less_than_strict on zero/wrapped ratio values"),
+  ("HIGH-1", "promissory_note/proof/revoke.zk", 42,
+   "zero_cond Merkle bypass when commitment_value=0 — the finding names a PN `burn` circuit; PN has none. `revoke.zk` is the spend circuit, and no `zero_cond` bypass remains there"),
+  ("HIGH-2", "native_token/proof/burn.zk", 42,
+   "same zero_cond bypass — FIXED: `less_than_strict(ZERO, value)` guards the conditional"),
+  ("HIGH-3", "labor_market/proof/refund.zk", 42,
+   "non-milestone refund amount check skipped — the described `cond_select` branch no longer exists; the residual is `OBL-C96`"),
+  ("HIGH-4", "labor_market/proof/{confirm_delivery,submit_deliverable,submit_git_deliverable,refund}.zk", 40,
+   "nullifier collision across actions — FIXED: distinct action tags (`HAZOP HIGH-4` guard)"),
+  ("HIGH-5", "stablecoin/proof/governance_report.zk", 42,
+   "less_than_strict on zero/wrapped ratio values — premise gone: the free `total_debt` and the 15000 floor were both removed (`OBL-C204`)"),
 
   -- ELEVATED (Risk 30-39)
-  ("ELEV-1", "bridge/deposit_v2.zk", 35,
-   "zero_cond bypass for amount=0"),
-  ("ELEV-2", "dex/cancel_swap_v2.zk", 35,
-   "swap_id H(lock_commitment) ≠ create's H(lock, token, amount)"),
-  ("ELEV-3", "drain_protection/exit_v2.zk", 35,
-   "incomplete circuit; dao_escrow_merkle_root unconstrained"),
-  ("ELEV-4", "promissory_note/redeem_v2.zk", 32,
-   "commitment_value not checked for zero in-circuit"),
-  ("ELEV-5", "dex/execute_swap_slippage_v2.zk", 30,
-   "field division produces non-integer for token amounts"),
-  ("ELEV-6", "dex/execute_swap_v2.zk", 30,
-   "bool_check on u64 amounts constrains to 0 or 1"),
+  ("ELEV-1", "bridge/proof/deposit.zk", 35,
+   "zero_cond bypass for amount=0 — neither `zero_cond` nor the Merkle proof the finding describes is in the file"),
+  ("ELEV-2", "dex/proof/cancel_swap.zk", 35,
+   "incompatible `swap_id` derivations — FIXED: the two derivations are now identical"),
+  ("ELEV-3", "drain_protection/proof/exit.zk", 35,
+   "incomplete circuit; `dao_escrow_merkle_root` unconstrained — read against the file; the register's `OBL-C97` row names the residual"),
+  ("ELEV-4", "promissory_note/proof/redeem.zk", 32,
+   "commitment_value not checked for zero — FIXED: `constrain_equal_base(value, witness_base(0))` at `:58-59`"),
+  ("ELEV-5", "dex/proof/execute_swap_slippage.zk", 30,
+   "field division produces non-integer — no `base_div` remains; the tolerance is cross-multiplied"),
+  ("ELEV-6", "dex/proof/execute_swap.zk", 30,
+   "bool_check on u64 amounts — no `bool_check` remains; the file is a rewritten circuit"),
 
   -- MODERATE (Risk 20-29)
-  ("MOD-1", "dex/execute_swap_fee_v2.zk", 27,
-   "field division for fees"),
-  ("MOD-2", "otc_swap/*", 25,
+  ("MOD-1", "dex/proof/execute_swap_fee.zk", 27,
+   "field division for fees — FIXED: an exact integer quotient-remainder (`OBL-Z13`)"),
+  ("MOD-2", "otc_swap/proof/cancel_swap.zk", 25,
    "cancel doesn't verify Alice's pubkey matches creator"),
-  ("MOD-3", "stablecommitment/accrue_interest_v2.zk", 24,
-   "rate_per_second, time_elapsed free witnesses"),
-  ("MOD-4", "pool_stake/*", 22,
+  ("MOD-3", "stablecoin/proof/accrue_interest.zk", 24,
+   "rate_per_second, time_elapsed free witnesses — now range-checked (partly superseded)"),
+  ("MOD-4", "pool_stake/proof/", 22,
    "slash has no authorization; all circuits lack key derivation"),
-  ("MOD-5", "tender/*", 22,
-   "capability bypass; reveal doesn't verify amount"),
-  ("MOD-6", "oracle/* (non-aggregate)", 20,
-   "k=10 under-constrained; oracle_id not bound to pubkey"),
-  ("MOD-7", "dex/create_swap + accept_swap", 20,
-   "NULLIFIER_K used for signature key derivation")
+  ("MOD-5", "tender/proof/reveal_bid.zk", 22,
+   "capability bypass; reveal doesn't verify amount — recorded twice, unlinked: this matrix's MOD-5 (risk 22) and a register ZK row at severity H"),
+  ("MOD-6", "oracle/proof/", 20,
+   "k=10 under-constrained; `oracle_id` not bound to pubkey"),
+  ("MOD-7", "dex/proof/{create_swap,accept_swap}.zk", 20,
+   "`NULLIFIER_K` used for signature key derivation — that constant is the tree-wide generator, not a signature-specific one")
 ]
 
 -- ===========================================================================
