@@ -57,6 +57,8 @@ pub mod create_swap;
 pub mod execute_swap_fee;
 pub mod execute_swap_slippage;
 pub mod execute_swap;
+pub mod set_transparency_level;
+pub mod update_config;
 
 pub use accept_swap::{create_accept_swap_proof, AcceptSwapCallData};
 pub use cancel_swap::{create_cancel_swap_proof, CancelSwapCallData};
@@ -64,6 +66,10 @@ pub use create_swap::{create_create_swap_proof, CreateSwapCallData};
 pub use execute_swap_fee::{create_execute_swap_fee_proof, ExecuteSwapFeeCallData};
 pub use execute_swap_slippage::{create_execute_swap_slippage_proof, ExecuteSwapSlippageCallData};
 pub use execute_swap::{create_execute_swap_proof, ExecuteSwapCallData};
+pub use set_transparency_level::{
+    create_set_transparency_level_proof, SetTransparencyLevelCallData,
+};
+pub use update_config::{create_update_config_proof, UpdateConfigCallData};
 
 use dwow_sdk::{
     crypto::{poseidon_hash, SecretKey},

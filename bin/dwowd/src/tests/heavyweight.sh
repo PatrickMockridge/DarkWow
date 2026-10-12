@@ -51,6 +51,10 @@ while [[ $# -gt 0 ]]; do
         # ── Contract flags ─────────────────────────────────────────────────────
         --promissory-note)      TEST_FILTERS+=("test_heavyweight_promissory_note") ;;
         --purse)                TEST_FILTERS+=("test_heavyweight_purse") ;;
+        # Also selects `test_heavyweight_dex_governance`: the filter is a substring match, and the
+        # two tests share the prefix deliberately — the governance one exists because the hand-written
+        # `test_heavyweight_dex` reaches neither `UpdateConfigV1` nor `SetTransparencyLevelV1`, so a
+        # `--dex` run covers both only if it covers both.
         --dex)                  TEST_FILTERS+=("test_heavyweight_dex") ;;
         --native-token)         TEST_FILTERS+=("test_heavyweight_native_token") ;;
         --auction)              TEST_FILTERS+=("test_heavyweight_auction") ;;

@@ -26,7 +26,7 @@
 //! Provides isolated testing for DEX atomic swap contract.
 
 use dwow_core::{
-    zk::{Proof, ProvingKey, ZkCircuit},
+    zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 use dwow_sdk::{
@@ -71,6 +71,11 @@ use dwow_dex_contract::client::{
         ExecuteSwapSlippagePublicInputs,
     },
     execute_swap::{create_execute_swap_proof, ExecuteSwapCallData, ExecuteSwapPublicInputs},
+    set_transparency_level::{
+        create_set_transparency_level_proof, SetTransparencyLevelCallData,
+        SetTransparencyLevelPublicInputs,
+    },
+    update_config::{create_update_config_proof, UpdateConfigCallData, UpdateConfigPublicInputs},
 };
 use dwow_dex_contract::model::{
     AcceptSwapParams, CancelSwapParams, CreateSwapParams, ExecuteSwapParams,
@@ -539,25 +544,59 @@ impl DexHarness {
     }
 
     /// Set transparency level (function code 0x06)
+    ///
+    /// This proved with `empty_witnesses()` and **no** public inputs, and sent a call data of one
+    /// byte — the selector alone. Both were defects the spec could not see, because
+    /// `dex_test_spec()` was invoked by no test: the arm decodes
+    /// `SetTransparencyLevelParams` from `call_data[1..]`, so a one-byte call could not decode at
+    /// all, and a proof over empty instances could never satisfy a circuit that constrains five.
     pub fn set_transparency_level(
-        &self, level: u8,
+        &self,
+        children: &[dwow_sdk::tx::ContractCall],
+        level: u8,
     ) -> Result<SetTransparencyLevelResult, Box<dyn std::error::Error>> {
-        let w = dwow_core::zk::empty_witnesses(&self.set_transparency_level_zkbin)?;
-        let c = ZkCircuit::new(w, &self.set_transparency_level_zkbin);
-        let proof = Proof::create(&self.set_transparency_level_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-        Ok(SetTransparencyLevelResult { call_data: vec![0x06], proof })
+        let level = dwow_dex_contract::model::TransparencyLevel::try_from(level)?;
+        let mut input = SetTransparencyLevelCallData::new(level);
+
+        let mut call_data = vec![0x06];
+        call_data.extend_from_slice(&input.params().encode());
+
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        input.tx_commitment = commitment_of(&calls);
+
+        let (proof, public_inputs) = create_set_transparency_level_proof(
+            &self.set_transparency_level_zkbin, &self.set_transparency_level_pk, &input,
+        )?;
+
+        Ok(SetTransparencyLevelResult { call_data, proof, public_inputs, commitment: input.tx_commitment })
     }
 
     /// Update DEX configuration (function code 0x05)
+    ///
+    /// As `set_transparency_level` above: the call data carries the encoded params, the witnesses
+    /// are the circuit's own, and the five public inputs are the ones the arm publishes — bound to
+    /// the real transaction commitment (`OBL-C198`).
     pub fn update_config(
-        &self, timeout: u64, fee: u64,
+        &self,
+        children: &[dwow_sdk::tx::ContractCall],
+        timeout: u32,
+        fee: u64,
     ) -> Result<UpdateConfigDexResult, Box<dyn std::error::Error>> {
-        let w = dwow_core::zk::empty_witnesses(&self.update_config_zkbin)?;
-        let c = ZkCircuit::new(w, &self.update_config_zkbin);
-        let proof = Proof::create(&self.update_config_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-        Ok(UpdateConfigDexResult { call_data: vec![0x05], proof })
+        let mut input = UpdateConfigCallData::new(timeout, fee);
+
+        let mut call_data = vec![0x05];
+        call_data.extend_from_slice(&input.params().encode());
+
+        let mut calls = children.to_vec();
+        calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
+        input.tx_commitment = commitment_of(&calls);
+
+        let (proof, public_inputs) = create_update_config_proof(
+            &self.update_config_zkbin, &self.update_config_pk, &input,
+        )?;
+
+        Ok(UpdateConfigDexResult { call_data, proof, public_inputs, commitment: input.tx_commitment })
     }
 }
 
@@ -671,5 +710,20 @@ pub struct ExecuteSwapSlippageResult {
     pub commitment: pallas::Base,
 }
 
-pub struct SetTransparencyLevelResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
-pub struct UpdateConfigDexResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+/// Result of set_transparency_level
+pub struct SetTransparencyLevelResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: SetTransparencyLevelPublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
+}
+
+/// Result of update_config
+pub struct UpdateConfigDexResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: UpdateConfigPublicInputs,
+    /// The commitment every proof in this transaction binds to (`OBL-C198`).
+    pub commitment: pallas::Base,
+}

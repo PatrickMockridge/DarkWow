@@ -482,6 +482,28 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
     })
 }
 
+/// The DEX **governance** endpoints, through the spec runner rather than by hand.
+///
+/// `dex_test_spec()` was invoked by nothing before this test, and the two endpoints it alone
+/// covers — `SetTransparencyLevelV1` and `UpdateConfigV1` — carried two defects apiece because of
+/// it: their harness methods proved over `empty_witnesses()` and NO public inputs, and sent a
+/// one-byte call data (the selector alone) to an arm that decodes its params from `call_data[1..]`.
+/// The hand-written `test_heavyweight_dex` above drives `create_swap`/`accept_swap`/`execute_swap`
+/// and reaches neither endpoint, so a green dex run said nothing about them.
+///
+/// This is the witness for that fix, and it is deliberately the runner rather than another
+/// hand-written chain: the spec is where every other contract's coverage lives, and an orphaned
+/// spec is how this one stayed wrong.
+#[test]
+fn test_heavyweight_dex_governance() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+    dwow_promissory_note_contract::enable_deterministic_zk();
+    dwow_dex_contract::enable_deterministic_zk();
+    use crate::tests::specs::dex_spec::dex_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&dex_test_spec()))?)
+}
+
 // ============================================================================
 // native_token
 // ============================================================================

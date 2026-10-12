@@ -10,17 +10,32 @@ use crate::tests::blockchain::HeavyweightPipeline;
 use crate::tests::uniform_runner::*;
 use super::helpers::mk_ep;
 
-/// Build a PN TransferV1 (0x04) child call spending an issued note. Dex has no
-/// `validate_child_value_commit` — the child's FuncRef (contract_id + 0x04) is the
-/// ZK public input — so `blind_seed` is arbitrary. `note` is
-/// (commitment, leaf pos, merkle path, asset_id, commitment_blind).
-fn pn_transfer_child(
+/// Assemble the PN TransferV1 (0x04) child's call data and **stop, before the proof exists**.
+/// `note` is (commitment, leaf pos, merkle path, asset_id, commitment_blind).
+///
+/// Returns the ordered-set call, the plan to prove once the commitment is known, and the nonce the
+/// plan binds (zero — this contract's calls carry no nonce field).
+///
+/// **This used to build the proof here**, through `transfer_with_value_blinds`, which binds each
+/// call's *own* commitment. A child that binds its own commitment is refused the moment its parent's
+/// arm derives the frame's — the composition red `OBL-C170`/`OBL-C198` measure, and the reason the
+/// PromissoryNote harness grew the `*_prepare` half (`dao_escrow_spec.rs::pn_transfer_prepare` is the
+/// working copy this one follows). Nothing noticed, because this spec had no caller: it was the
+/// first run of `dex_test_spec()` that reached the endpoints and reported
+/// `invalid proof: call[0] namespace 'Revoke_V2'` at block acceptance.
+fn pn_transfer_prepare(
+    pn: &PromissoryNoteHarness,
     note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
     value: u64,
-) -> dwow_core::Result<ChildCall> {
+) -> dwow_core::Result<(
+    dwow_sdk::tx::ContractCall,
+    dwow_promissory_note_contract::client::transfer::TransferCallPlan,
+    pallas::Base,
+)> {
     let (note_commitment, pos, path, asset_id, commitment_blind) = note;
     let leaf_seed = poseidon_hash([pallas::Base::from(value), pallas::Base::from(1u64)]);
     let value_blind = Blind(fp_mod_fv(leaf_seed).unwrap());
+    let nonce = pallas::Base::zero();
     let input = TransferCallInput {
         value,
         asset_id: *asset_id,
@@ -32,7 +47,7 @@ fn pn_transfer_child(
         secret: pallas::Base::from(100u64),
         ephemeral_signature_secret: pallas::Base::from(9u64),
         tx_commitment: pallas::Base::zero(),
-        tx_nonce: pallas::Base::zero(),
+        tx_nonce: nonce,
     };
     let output = TransferCallOutput {
         recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
@@ -43,16 +58,15 @@ fn pn_transfer_child(
         user_data: pallas::Base::zero(),
         commitment_blind: poseidon_hash([leaf_seed, *note_commitment]),
     };
-    let pn = PromissoryNoteHarness::spawn();
-    let child = pn
-        .transfer_with_value_blinds(vec![input], vec![output], Some(vec![value_blind]))
+    let plan = pn
+        .transfer_prepare(vec![input], vec![output], Some(vec![value_blind]))
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall {
-        contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
-        call_data: child.call_data,
-        proofs: child.proofs,
-        children: vec![],
-    })
+    let mut call_data = vec![0x04u8];
+    call_data.extend_from_slice(
+        &plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?,
+    );
+    let call = dwow_sdk::tx::ContractCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, data: call_data };
+    Ok((call, plan, nonce))
 }
 
 /// verify_state: check the swap exists in the dex "swaps" tree under the derived cid.
@@ -76,6 +90,11 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
     let cid = crate::tests::blockchain::derive_contract_id_from_name("dex");
     let harness = Box::leak(Box::new(DexHarness::spawn(cid)));
     let h: &DexHarness = harness;
+    // Leaked and shared, the way `dao_escrow_spec.rs` does it and for the same two reasons: every
+    // `spawn` rebuilds the PromissoryNote proving keys and this spec registers two token types and
+    // issues six notes, and the rows' child transfers must be built by the *same* harness that did
+    // the registrations (it is the harness that records the registry tree, `registered`).
+    let pn: &'static PromissoryNoteHarness = Box::leak(Box::new(PromissoryNoteHarness::spawn()));
     let wasm = include_bytes!("../../../../../src/contract/dex/dwow_dex_contract.wasm");
     let s = pallas::Base::from(100u64);
     let ot = pallas::Base::from(1u64);
@@ -119,10 +138,10 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
         needs_coinbase_coordination: false,
         setup: Some(Box::new({
             let notes = notes.clone();
+            let pn = pn;
             move |chain| {
                 let cid = crate::tests::blockchain::derive_contract_id_from_name("dex");
                 let pn_cid = *PROMISSORY_NOTE_CONTRACT_ID;
-                let pn = PromissoryNoteHarness::spawn();
                 let owner_addr = pub_key;
                 let issue_secret = s;
 
@@ -130,13 +149,13 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                 let token_ot = pn
                     .register_type(issue_secret, pallas::Base::from(2u64), pallas::Base::from(3u64), owner_addr, 1000, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token_ot.call_data, token_ot.token_proofs.clone())?.submit())?;
+                smol::block_on(chain.block()?.with_call(pn_cid, pn, &token_ot.call_data, token_ot.token_proofs.clone())?.submit())?;
                 let asset_id_ot = token_ot.asset_id;
 
                 let token_rt = pn
                     .register_type(issue_secret, pallas::Base::from(4u64), pallas::Base::from(5u64), owner_addr, 500, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                smol::block_on(chain.block()?.with_call(pn_cid, &pn, &token_rt.call_data, token_rt.token_proofs.clone())?.submit())?;
+                smol::block_on(chain.block()?.with_call(pn_cid, pn, &token_rt.call_data, token_rt.token_proofs.clone())?.submit())?;
                 let asset_id_rt = token_rt.asset_id;
 
                 // Merkle tree mirrors the PN commitment tree: zero guard + each commitment in order.
@@ -152,16 +171,32 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                     (token_ot.commitment.inner(), u64::from(mark_ot), path_ot, asset_id_ot, pallas::Base::from(6u64)),
                     (token_rt.commitment.inner(), u64::from(mark_rt), path_rt, asset_id_rt, pallas::Base::from(6u64)),
                 ];
-                // Two more notes of each type (one per remaining Execute endpoint).
-                for (asset_id, value) in [(asset_id_ot, 1000u64), (asset_id_rt, 500u64), (asset_id_ot, 1000u64), (asset_id_rt, 500u64)] {
+                // Two more notes of each type (one per remaining Execute endpoint), plus a fifth for
+                // the `CancelSwapV1` row's refund child — that endpoint requires exactly one
+                // `promissory_note::transfer_v1` child and every other note is spent by the rows
+                // above it.
+                //
+                // **Each needs its own blind, and this loop did not give them one until 2026-10-12.**
+                // It issued all four with the constant `6` — the same blind the two registered types
+                // above used — so note 1 repeated `token_ot`'s commitment and notes 3 and 4 repeated
+                // notes 1 and 2. `promissory_note::issue_v1` refuses a commitment it already holds
+                // (`Custom(14)`, "Commitment already exists"), so the setup could not reach its second
+                // block: the spec failed there and never ran an endpoint. Nothing had run it — this
+                // spec had no caller before `test_heavyweight_dex_governance` — which is why a defect
+                // this plain sat in it.
+                for (idx, (asset_id, value)) in [(asset_id_ot, 1000u64), (asset_id_rt, 500u64), (asset_id_ot, 1000u64), (asset_id_rt, 500u64), (asset_id_ot, 1000u64)]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let blind = pallas::Base::from(7u64 + idx as u64);
                     let n = pn
-                        .issue(issue_secret, asset_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(6u64))
+                        .issue(issue_secret, asset_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), blind)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                    smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit())?;
+                    smol::block_on(chain.block()?.with_call(pn_cid, pn, &n.call_data, n.proofs.clone())?.submit())?;
                     tree.append(MerkleNode::from_base(n.commitment.inner()));
                     let mark = tree.mark().unwrap();
                     let path = tree.witness(mark, 0).expect("w issue");
-                    issued.push((n.commitment.inner(), u64::from(mark), path, asset_id, pallas::Base::from(6u64)));
+                    issued.push((n.commitment.inner(), u64::from(mark), path, asset_id, blind));
                 }
                 *notes.lock().unwrap() = Some(issued);
 
@@ -208,19 +243,46 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                 verify_state: dex_vs_swap(swap_id_e),
                 generate: Box::new({
                     let notes = notes.clone();
+                    let pn = pn;
                     move || {
-                        let r = h.execute_swap(&[], s, ot, 1000, alice_lock, s, rt, 500, bob_lock_e, 499, otc_func_id, otc_func_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let c0 = pn_transfer_child(&n[0], 1000)?;
-                        let c1 = pn_transfer_child(&n[1], 500)?;
-                        Ok(EndpointResult { children: vec![c0, c1], call_data: r.call_data, proofs: vec![r.proof] })
+                        // `OBL-C198`: both children's call data first, so the parent's proof binds
+                        // them, then each child is proven against the commitment the parent returns.
+                        let (c0, c0_plan, c0_nonce) = pn_transfer_prepare(pn, &n[0], 1000)?;
+                        let (c1, c1_plan, c1_nonce) = pn_transfer_prepare(pn, &n[1], 500)?;
+                        let r = h.execute_swap(&[c0.clone(), c1.clone()], s, ot, 1000, alice_lock, s, rt, 500, bob_lock_e, 499, otc_func_id, otc_func_id).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let d0 = c0_plan.prove(r.commitment, c0_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let d1 = c1_plan.prove(r.commitment, c1_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult {
+                            children: vec![
+                                ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: c0.data, proofs: d0.proofs, children: vec![] },
+                                ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: c1.data, proofs: d1.proofs, children: vec![] },
+                            ],
+                            call_data: r.call_data, proofs: vec![r.proof],
+                        })
                     }
                 }),
             },
-            mk_ep("CancelSwapV1", true, Box::new(move || {
-                let r = h.cancel_swap(&[], swap_id_d, alice_lock, s, ot, 1000, rt, 800).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+            mk_ep("CancelSwapV1", true, Box::new({
+                let notes = notes.clone();
+                let pn = pn;
+                move || {
+                    let n = notes.lock().unwrap();
+                    let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
+                    // `cancel_swap_v1` requires exactly one `promissory_note::transfer_v1` child —
+                    // the refund path — and refuses a call with none (`InvalidChildrenIndexes`). This
+                    // row passed `&[]` and could never have run: it is the fourth defect this spec's
+                    // first execution found, and all four are the same sentence — the rows were
+                    // written against a fixture that had never been executed.
+                    let (child, child_plan, child_nonce) = pn_transfer_prepare(pn, &n[6], 1000)?;
+                    let r = h.cancel_swap(&[child.clone()], swap_id_d, alice_lock, s, ot, 1000, rt, 800).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let debris = child_plan.prove(r.commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult {
+                        children: vec![ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child.data, proofs: debris.proofs, children: vec![] }],
+                        call_data: r.call_data, proofs: vec![r.proof],
+                    })
+                }
             })),
             EndpointSpec {
                 name: "ExecuteSwapFeeV1",
@@ -230,13 +292,22 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                 verify_state: dex_vs_swap(swap_id_b),
                 generate: Box::new({
                     let notes = notes.clone();
+                    let pn = pn;
                     move || {
-                        let r = h.execute_swap_fee(&[], s, ot, pallas::Base::from(1000u64), alice_lock, s, rt, pallas::Base::from(600u64), bob_lock_b, pallas::Base::from(599u64), pallas::Base::from(30u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let c0 = pn_transfer_child(&n[2], 1000)?;
-                        let c1 = pn_transfer_child(&n[3], 500)?;
-                        Ok(EndpointResult { children: vec![c0, c1], call_data: r.call_data, proofs: vec![r.proof] })
+                        let (c0, c0_plan, c0_nonce) = pn_transfer_prepare(pn, &n[2], 1000)?;
+                        let (c1, c1_plan, c1_nonce) = pn_transfer_prepare(pn, &n[3], 500)?;
+                        let r = h.execute_swap_fee(&[c0.clone(), c1.clone()], s, ot, pallas::Base::from(1000u64), alice_lock, s, rt, pallas::Base::from(600u64), bob_lock_b, pallas::Base::from(599u64), pallas::Base::from(30u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let d0 = c0_plan.prove(r.commitment, c0_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let d1 = c1_plan.prove(r.commitment, c1_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult {
+                            children: vec![
+                                ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: c0.data, proofs: d0.proofs, children: vec![] },
+                                ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: c1.data, proofs: d1.proofs, children: vec![] },
+                            ],
+                            call_data: r.call_data, proofs: vec![r.proof],
+                        })
                     }
                 }),
             },
@@ -248,22 +319,31 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                 verify_state: dex_vs_swap(swap_id_c),
                 generate: Box::new({
                     let notes = notes.clone();
+                    let pn = pn;
                     move || {
-                        let r = h.execute_swap_slippage(&[], s, ot, pallas::Base::from(1000u64), alice_lock, s, rt, pallas::Base::from(700u64), bob_lock_c, pallas::Base::from(699u64), pallas::Base::from(50u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let c0 = pn_transfer_child(&n[4], 1000)?;
-                        let c1 = pn_transfer_child(&n[5], 500)?;
-                        Ok(EndpointResult { children: vec![c0, c1], call_data: r.call_data, proofs: vec![r.proof] })
+                        let (c0, c0_plan, c0_nonce) = pn_transfer_prepare(pn, &n[4], 1000)?;
+                        let (c1, c1_plan, c1_nonce) = pn_transfer_prepare(pn, &n[5], 500)?;
+                        let r = h.execute_swap_slippage(&[c0.clone(), c1.clone()], s, ot, pallas::Base::from(1000u64), alice_lock, s, rt, pallas::Base::from(700u64), bob_lock_c, pallas::Base::from(699u64), pallas::Base::from(50u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let d0 = c0_plan.prove(r.commitment, c0_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let d1 = c1_plan.prove(r.commitment, c1_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult {
+                            children: vec![
+                                ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: c0.data, proofs: d0.proofs, children: vec![] },
+                                ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: c1.data, proofs: d1.proofs, children: vec![] },
+                            ],
+                            call_data: r.call_data, proofs: vec![r.proof],
+                        })
                     }
                 }),
             },
-            mk_ep("SetTransparencyLevelV1", false, Box::new(move || {
-                let r = h.set_transparency_level(0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+            mk_ep("SetTransparencyLevelV1", true, Box::new(move || {
+                let r = h.set_transparency_level(&[], 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
-            mk_ep("UpdateConfigV1", false, Box::new(move || {
-                let r = h.update_config(200, 50).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+            mk_ep("UpdateConfigV1", true, Box::new(move || {
+                let r = h.update_config(&[], 200, 50).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
         ],

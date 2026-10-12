@@ -89,20 +89,20 @@ purse/withdraw : no client module — `src/client/*.rs` is empty and the fixture
 # fixture defect rather than a contract one. `native_token/fee`'s public inputs are the vector
 # `create_fee_proof` returns, which is not a method and so not something this resolver can find.
 #
-# The last three were declared on 2026-10-04 in the section that used to follow, as "client exists
+# The last two were declared on 2026-10-04 in the section that used to follow, as "client exists
 # but was not matched". They were re-read and the reason was simpler than that: `dex` and
 # `stablecoin` have client files for their *other* circuits and none at all for these, so there is
-# no unmatched vector here — the harness builds the proof. `harness/dex.rs:467,478` does it with
-# `empty_witnesses` and **an empty public-input vector** (`&[]`), which is worth naming: a proof
-# built against no public inputs at all is what stage ④'s `pubvals.len() >= 2` guard refuses
-# first, so these two dex endpoints have to be rebuilt rather than reordered when `dex` migrates.
+# no unmatched vector here — the harness builds the proof. **`dex`'s two are retired on 2026-10-12,
+# and their removal is the record that the reason was true and is not any more**: `harness/dex.rs`
+# built them with `empty_witnesses` and **an empty public-input vector** (`&[]`), which is what
+# stage ④'s `pubvals.len() >= 2` guard refuses first. Both endpoints now have a client module
+# (`client/update_config.rs`, `client/set_transparency_level.rs`) and a validating harness call, so
+# the third leg is checked for them and leaving the lines here would cover nothing.
 box/put : no client `to_vec` — `src/client/mod.rs` builds these calls without one
 box/take : no client `to_vec` — `src/client/mod.rs` builds these calls without one
 attestation/attest_slash : no client module for this circuit — the fixture builds its proof (recorded in OBL-C195)
 attestation/commit_fee_schedule : no client module for this circuit — the fixture builds its proof (recorded in OBL-C195)
 native_token/fee : the vector is `create_fee_proof`'s return value, not a `to_vec` method, so the resolver cannot find it
-dex/set_transparency_level : no client file for this circuit — `harness/dex.rs:467` builds it with `empty_witnesses` and an empty public-input vector
-dex/update_config : no client file for this circuit — `harness/dex.rs:478` builds it with `empty_witnesses` and an empty public-input vector
 stablecoin/update_config : no client file for this circuit — `harness/stablecoin.rs:611` builds it from `trivial_config_witnesses_and_inputs()`
 
 
