@@ -10,10 +10,16 @@ In May 2026, the bridge and relayer_endowment contracts underwent a hardening pa
 
 ### Resolution Status
 
-| Status | Count |
-|--------|-------|
-| **FIXED** | 14 of 17 |
-| **PLANNED** | 3 of 17 (pool reputation, fee discovery, health checks) |
+[`src/contract/AUDIT.md`](../../../src/contract/AUDIT.md) marks **all 17** findings `FIXED`. This
+page said "**FIXED** 14 of 17 / **PLANNED** 3 of 17 (pool reputation, fee discovery, health
+checks)" until 2026-10-12 — so the two records of the same audit disagreed before either was
+checked against the tree, and the three the page called planned include finding #14, which
+`AUDIT.md` records as fixed.
+
+Neither count is defensible. The table below is what the artifacts actually carry, row by row:
+some fixes exist, one was deliberately removed, and several were never written. A count cannot be
+recovered from it without re-adjudicating all seventeen, which is the work that table represents —
+so this page no longer gives one.
 
 ### Key Fixes Applied
 
@@ -29,7 +35,7 @@ an omission would say the same thing less honestly.
 | Token-aware anti-dust floor | Bridge | **Not as this table said.** `token_minimum` was a *circuit public input*, and it was **removed 2026-09-24**: it was a witness the prover chose, so it bounded nothing (`proof/withdraw.zk` records the derivation). The floor is host-checked against the contract's own value. |
 | Force settlement | Relayer Endowment | `ForceSettleV1` (0x06) — present. It could not pay until 2026-10-11, when the log it distributes acquired a writer (`RecordCollectedFeesV1`, `F-513`); before that its pro-rata share was always zero. |
 | Fee logging | Relayer Endowment | `last_settlement_height` and `total_collected_fees_log` — present, with the same caveat: the log had no writer until `F-513`. |
-| HTLC state machine atomicity | Bridge | **Absent.** No `claimed_at` or `refunded_at` exists in the tree. |
+| HTLC state machine atomicity | Bridge | **Absent.** `AUDIT.md` records "Added `claimed_at: Option<u64>` and `refunded_at: Option<u64>` to `HtlcSwapInfo`" — there is no `HtlcSwapInfo` in the bridge, and no `claimed_at`/`refunded_at` field in it. (`lottery` has an unrelated `claimed_at` on its `Claim` record.) |
 | Circuit breaker | Bridge | **Absent.** No `GUARANTEED_PENDING` counter and no `MAX_GUARANTEED_TOTAL`. |
 | Withdrawal reassignment | Bridge | **Absent.** There is no `ReassignWithdrawalV1`. |
 | Proportional slashing | Bridge | **Absent.** No `MIN_SLASH` and no `SLASH_BP`. |

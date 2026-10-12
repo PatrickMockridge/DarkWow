@@ -61,6 +61,7 @@ Tracks aggregate staking for each betting table:
 
 ```rust
 struct TableStakeRegistry {
+    version: u8,                   // record version — the first byte of every record
     betting_contract_id: pallas::Base,
     total_stake: u64,              // Total capital staked
     accumulated_earnings: u64,     // Earnings to distribute
@@ -71,12 +72,18 @@ struct TableStakeRegistry {
 }
 ```
 
+The `version` field was missing from this snippet and from `Stake` below until 2026-10-12. It is
+the first byte of every stored record, so a reader reconstructing the layout from these snippets
+reads every later field at the wrong offset. `Stake` also carries an `instance_seed`.
+
 ### Stake
 
 Individual staker position:
 
 ```rust
 struct Stake {
+    version: u8,                   // record version — the first byte of every record
+    instance_seed: [u8; 32],       // per-capability key derivation seed
     stake_id: pallas::Base,
     table_id: pallas::Base,
     staker_pub: PublicKey,
