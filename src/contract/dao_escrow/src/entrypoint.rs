@@ -265,8 +265,22 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
 }
 
 /// Metadata for PayPremiumV1 (0x02) — PayPremiumV2 circuit
-/// Circuit constrain_instance order: [tx_binding, tx_nonce]
-fn pay_premium_get_metadata(_cid: ContractId, _call_idx: usize, _calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Result<Vec<u8>, ContractError> {
+/// Circuit constrain_instance order: [dao_escrow_bulla, membership_note, tx_binding, tx_nonce]
+fn pay_premium_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Result<Vec<u8>, ContractError> {
+    // The params were not read here before 2026-10-12: this arm published the constant pair alone,
+    // so the two values the circuit now binds — the endowment bulla and the membership note — had
+    // no publisher at all, and `dao_escrow_spec.rs` recorded the endpoint as deferred on a circuit
+    // bug. The decode failure is logged rather than discarded, as `propose_claim_get_metadata`
+    // does: without it a decoder error is indistinguishable from an intended refusal.
+    let self_ = &calls[call_idx].data;
+    let params = match model::PayPremiumParamsV1::decode(&self_.data[1..]) {
+        Ok(p) => p,
+        Err(e) => {
+            msg!("[dao_escrow::pay_premium_get_metadata] PayPremiumParamsV1::decode failed: {:?}", e);
+            return Ok(vec![])
+        }
+    };
+
     // `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` with
     // `DOMAIN_TX_BINDING = 3` (`src/sdk/src/crypto/constants.rs:57`). This contract's tx pair is
     // the constant `(0, 0)` — the convention `attestation` and `identity` use, and one of the 21
@@ -280,9 +294,17 @@ fn pay_premium_get_metadata(_cid: ContractId, _call_idx: usize, _calls: &[dwow_s
     let tx_binding = dao_escrow_tx_binding(pallas::Base::zero())?;
     let tx_nonce_val = pallas::Base::zero();
 
+    // `dao_escrow_bulla` and `membership_note` are the params' own values, republished: the
+    // circuit publishes both, so the arm must publish the same two or the proof's instance vector
+    // and the host's disagree. The pair stays last (`OBL-C198`).
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_PREMIUM_NS_V2.to_string(),
-        vec![tx_binding, tx_nonce_val],
+        vec![
+            params.dao_escrow_bulla.inner(),
+            params.membership_note.inner(),
+            tx_binding,
+            tx_nonce_val,
+        ],
     )];
 
     let mut metadata = vec![];

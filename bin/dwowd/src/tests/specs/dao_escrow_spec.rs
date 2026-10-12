@@ -1,7 +1,10 @@
 //! ContractTestSpec for dao_escrow. Tier: HARVESTABLE.
-//! Ten endpoints: this spec covers all of them except `PayPremiumV1`, which is deferred on a circuit
-//! bug its own header records — the funding path's proof has never been made to verify, so there is no
-//! honest row to write for it and `min_premium` has no reader in this fixture.
+//! Ten endpoints, **all ten covered**. `PayPremiumV1` was the exception until 2026-10-12, and the
+//! deferral was a true statement about the code rather than a missing row: `pay_premium.zk` constrained
+//! `dao_escrow_bulla` to a stale OCap-era membership hash while the endpoint reads that value as the
+//! endowment's storage key, so the proof was *unsatisfiable* and no honest row could exist. The circuit
+//! is repaired, the row is below, and `min_premium` — a field with no reader anywhere until then — is
+//! now the floor that row pays.
 //!
 //! # The lifecycle, which this spec is the first to drive at all
 //!
@@ -105,6 +108,13 @@ const PN_VALUE_EXECUTE_CLAIM: u64 = 10_000;
 /// approved execute needs one of its own — and it cannot differ in amount, because the contract checks
 /// the executed call's value against the proposal's.
 const PN_VALUE_EXECUTE_APPROVED: u64 = PN_VALUE_EXECUTE_CLAIM;
+
+/// The premium `PayPremiumV1_PaysTheFloor` pays, and the value the endowment's `min_premium` floor is
+/// set to — the **same** number on both sides, which is what gives `min_premium` a reader instead of
+/// letting the row pass under a zero floor. The endpoint's floor check is the only thing that makes
+/// the field load-bearing (`entrypoint.rs`), and a row that paid anything over an unrestricted floor
+/// would assert nothing about it.
+const PN_VALUE_PAY_PREMIUM: u64 = 5_000_000;
 
 /// The claim the **lifecycle rows** run on, which is deliberately not `CLAIM_ID`.
 ///
@@ -309,6 +319,9 @@ struct Shared {
     /// A **second** note worth `PN_VALUE_ENDOWMENT_APPROVED`, for the row that pays that amount to a
     /// different recipient. Own note and own blind (16) for the same two reasons as the line above.
     endowment_approved_again: Option<PnNote>,
+    /// The note the membership row pays the premium from. Own amount (the floor) and its own blind,
+    /// for the reasons every line above has its own.
+    pay_premium: Option<PnNote>,
 }
 
 pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
@@ -435,9 +448,13 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
             // gate impossible to pass (`OBL-C154`). This fixture wants that gate to refuse — its rows draw
             // claims from the endowment, which is the `Escrow` path — so it states Escrow.
             //
-            // The floor is zero: no row here pays a premium, so `min_premium` has no reader in this
-            // fixture (`PayPremiumV1` is the deferred endpoint).
-            let r = h.initialize(&[], nullifier_k, dao_bulla, owner_secret, endowment_asset_id, bulla_blind, DaoEscrowMode::Escrow, 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+            // The floor is `PN_VALUE_PAY_PREMIUM`, and the membership row below pays exactly it. It used to
+            // be zero with the note "no row here pays a premium, so `min_premium` has no reader in this
+            // fixture (`PayPremiumV1` is the deferred endpoint)" — true while the endpoint was deferred,
+            // and false from the moment the row landed. A zero floor would have let that row pass while
+            // asserting nothing about the check the endpoint exists to make, which is `min_premium`'s only
+            // reader anywhere in the contract.
+            let r = h.initialize(&[], nullifier_k, dao_bulla, owner_secret, endowment_asset_id, bulla_blind, DaoEscrowMode::Escrow, PN_VALUE_PAY_PREMIUM).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
             Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
         })),
         needs_coinbase_coordination: false,
@@ -556,6 +573,8 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     // recipient**. Same amount as index 3 on purpose — that is what makes the two
                     // children collide — and blind 16, the next free one.
                     PN_VALUE_ENDOWMENT_APPROVED,
+                    // The tenth, for the membership row — the premium, paid from a note of its own.
+                    PN_VALUE_PAY_PREMIUM,
                 ]
                 .iter()
                 .enumerate()
@@ -579,6 +598,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     execute_approved: n.next(),
                     withdraw_owner_again: n.next(),
                     endowment_approved_again: n.next(),
+                    pay_premium: n.next(),
                 };
 
                 // The Identity fixture lived here — an issuer, one credential, one capability and its
@@ -1217,6 +1237,56 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                 }),
             },
+            // ── The endpoint this spec deferred, and the reason it was deferred ─────────────────────
+            //
+            // `PayPremiumV1` had no row because its proof "had never been made to verify", and that was
+            // literally true rather than a client-side mistake: `pay_premium.zk` constrained
+            // `dao_escrow_bulla` to equal `poseidon_hash(4, member_pub_x, member_pub_y, mpc_secret_1,
+            // mpc_secret_2, mpc_secret_3)` — a leftover of the retired OCap membership model — while this
+            // endpoint reads that same value as the **endowment's storage key**, which
+            // `DaoEscrow::derive_bulla` computes from a different six-element preimage. Poseidon is a
+            // random oracle, so the two could not coincide and the proof was unsatisfiable: no amount of
+            // client work could have made this row pass.
+            //
+            // The circuit now publishes the bulla and binds the membership note instead, and this row is
+            // the witness for both. It also carries the **floor**: `initialize` sets `min_premium` to
+            // `PN_VALUE_PAY_PREMIUM` and this row pays exactly that, which is what makes the comparison a
+            // check rather than a field nothing reads.
+            //
+            // This is the last row in the vec on purpose: it adds a membership and increases the
+            // endowment, and the negative controls above are written against the state the earlier rows
+            // leave. The runner aborts at the first failing endpoint, so a state-changing row placed
+            // before them would move their premises instead of failing loudly.
+            mk_ep("PayPremiumV1_PaysTheFloor", true, Box::new({
+                let notes = notes.clone();
+                move || {
+                    let note = notes.lock().unwrap().pay_premium.clone().ok_or_else(|| dwow_core::Error::Custom("setup did not publish the note".into()))?;
+                    let (child_call, child_plan, child_nonce) = pn_transfer_prepare(pn, &note, PN_VALUE_PAY_PREMIUM, child_blind(PN_VALUE_PAY_PREMIUM, endowment_bulla))?;
+                    // The member is `PN_ISSUE_SECRET` — the secret the notes are issued under, so the
+                    // funding child can spend the note it is given — and the circuit multiplies that same
+                    // secret to the member point it constrains.
+                    let r = h.pay_premium(
+                        &[child_call.clone()],
+                        nullifier_k,
+                        endowment_bulla,
+                        // `current_block` and `expiry` are both prover-chosen witnesses here, and the
+                        // circuit's only requirement is `current_block < expiry`; the endpoint stores
+                        // `expiry` and does not compare it to anything. The check is therefore about the
+                        // prover's own two numbers rather than about the chain's height — see the note on
+                        // `current_block` in the register.
+                        1u64,
+                        PN_ISSUE_SECRET,
+                        PN_VALUE_PAY_PREMIUM,
+                        endowment_asset_id,
+                        1_000_000u64,
+                        pallas::Base::from(11u64),
+                        pallas::Scalar::from(12u64),
+                    ).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let debris = child_plan.prove(r.commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: debris.proofs, children: vec![] };
+                    Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                }
+            })),
         ],
     }
 }

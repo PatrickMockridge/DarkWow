@@ -13,9 +13,6 @@ witness "PayPremiumV2" {
     Base member_secret,
     Base member_pub_x,
     Base member_pub_y,
-    Base mpc_secret_1,
-    Base mpc_secret_2,
-    Base mpc_secret_3,
     Base value,
     Base asset_id,
     Base expiry,
@@ -48,16 +45,35 @@ circuit "PayPremiumV2" {
     constrain_equal_base(ec_get_x(member_pub), member_pub_x);
     constrain_equal_base(ec_get_y(member_pub), member_pub_y);
 
-    computed_bulla = poseidon_hash(
-        DOMAIN_COMMITMENT,
-        member_pub_x,
-        member_pub_y,
-        mpc_secret_1,
-        mpc_secret_2,
-        mpc_secret_3,
-    );
-    constrain_equal_base(computed_bulla, dao_escrow_bulla);
+    # `dao_escrow_bulla` is PUBLISHED, not derived, and that is the repair.
+    #
+    # It stood as `constrain_equal_base(computed_bulla, dao_escrow_bulla)` with
+    # `computed_bulla = poseidon_hash(4, member_pub_x, member_pub_y, mpc_secret_1, mpc_secret_2,
+    # mpc_secret_3)` — a leftover of the retired OCap "member capability" model: a six-input hash
+    # of the *member's* key and three MPC secrets. But the endpoint reads this same value as the
+    # **endowment's storage key**: `pay_premium_v1` looks it up in the endowment tree, and the tree
+    # stores what `DaoEscrowBulla::derive_bulla` computes from a different six-element preimage
+    # (`DOMAIN_COMMITMENT, dao_bulla, owner_pub_x, owner_pub_y, pool_asset_id, bulla_blind`).
+    #
+    # Poseidon is a random oracle and the two preimages share no structure, so no assignment of the
+    # witnesses could satisfy the constraint: the proof was UNSATISFIABLE, not merely unbound, and
+    # that — not a client-side mistake — is why this endpoint's proof "had never been made to
+    # verify". It is also the second time this endpoint's circuit attested a bulla the chain never
+    # used; `model/mod.rs` records the first (`OBL-C156`), which was repaired on the *storage* side
+    # while this circuit was left behind.
+    #
+    # Publishing it is the correct shape rather than a weakening: the endowment needs no in-circuit
+    # derivation, because the authorization is the endowment's existence (`db_get` on this key,
+    # which refuses `DaoEscrowNotFound`) and the `min_premium` floor the entrypoint enforces — and
+    # the note below is what binds the payment's own terms to this proof.
+    constrain_instance(dao_escrow_bulla);
 
+    # `membership_note` was computed here and then dropped: never constrained, never exposed. A
+    # value a circuit computes and discards authorizes nothing, so the note the contract *stores*
+    # (`params.membership_note`) was unbound to the proof that was supposed to justify it — any
+    # note could accompany any premium. Publishing it binds the amount, asset, expiry and member
+    # key in one value (all four enter the hash below), which is what makes the stored record
+    # attributable to this proof. `dao_escrow.md` §Membership states the formula.
     membership_note = poseidon_hash(
         DOMAIN_COMMITMENT,
         member_pub_x,
@@ -67,6 +83,7 @@ circuit "PayPremiumV2" {
         expiry,
         membership_blind,
     );
+    constrain_instance(membership_note);
 
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);

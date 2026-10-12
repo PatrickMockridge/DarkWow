@@ -161,7 +161,7 @@ functions used to return `Ok(())` while doing nothing.
 |--------|----------|---------------|-------------|---------------|---------|
 | `0x00` | `InitializeV1` | `InitV2` (4) | none | none — anyone may create an endowment | reachable; a duplicate **derived** bulla is refused (`OBL-C158`) |
 | `0x01` | `UpdateV1` | `SetGovernanceConfigV2` (5) | none | **owner, proved**; one-shot `owner_nullifier`; no rotation | reachable; see the `None` footgun below |
-| `0x02` | `PayPremiumV1` | `PayPremiumV2` (2) | `TransferV1` at slot 0 (exactly one) | none in-contract; `value >= min_premium`, endowment must exist, note must be new | reachable |
+| `0x02` | `PayPremiumV1` | `PayPremiumV2` (4) | `TransferV1` at slot 0 (exactly one) | none in-contract; `value >= min_premium`, endowment must exist, note must be new | reachable |
 | `0x03` | `WithdrawV1` | `SetGovernanceConfigV2` (5) | `TransferV1` only, exactly 1 child | the ownership proof; the payee must be the owner | reachable. The group branch and role 6 retired (`OBL-C168`) — a single `requires_proof` flag cannot describe a path that carries a proof and one that must not |
 | `0x04` | `EndowmentWithdrawV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 (1 or 2 children) | role 4; refuses `Treasury` mode | reachable |
 | `0x05` | `TreasurySpendV1` | — | `TransferV1` at 0, `FinalizeV1` at 1 (1 or 2 children) | role 5; refuses unless the mode is a treasury mode | reachable only for an endowment created in `Treasury` or `TreasuryEndowment` mode |
@@ -250,7 +250,7 @@ that compares the three.
 | Circuit | `constrain_instance` order | Built by |
 |---------|---------------------------|----------|
 | `init.zk` (`InitV2`) | `dao_bulla`, `endowment_bulla`, `tx_binding`, `tx_nonce` | `client/init.rs` |
-| `pay_premium.zk` (`PayPremiumV2`) | `tx_binding`, `tx_nonce` | `client/pay_premium.rs` |
+| `pay_premium.zk` (`PayPremiumV2`) | `dao_escrow_bulla`, `membership_note`, `tx_binding`, `tx_nonce` | `client/pay_premium.rs` |
 | `propose_claim.zk` (`ProposeClaimV2`) | `claim_commit`, `tx_binding`, `tx_nonce` | `client/propose_claim.rs` |
 | `vote_claim.zk` (`VoteClaimV2`) | `vote_nullifier`, `tx_binding`, `tx_nonce` | `client/vote_claim.rs` |
 | `set_governance_config.zk` (`SetGovernanceConfigV2`) | `owner_pub_x`, `owner_pub_y`, `owner_nullifier`, `tx_binding`, `tx_nonce` | `client/update.rs` |
@@ -282,6 +282,25 @@ while `update`, its actual caller, declared no proof at all (`OBL-C155`).
 field (`ProposeClaimParamsV1.claim_blind`); the contract used to substitute
 `capability_proof.capability_secret` for a blind its params did not carry, so the proof's instance
 vector and the published one disagreed (`OBL-C153`).
+
+Two more, both repaired **2026-10-12** when `PayPremiumV1` got a row and its circuit was read
+against the code it runs with.
+
+- `dao_escrow_bulla` is **published by `PayPremiumV2`, not derived in it**. The circuit constrained it
+  to equal `poseidon_hash(4, member_pub_x, member_pub_y, mpc_secret_1, mpc_secret_2, mpc_secret_3)` —
+  a leftover of the retired OCap membership model — while `pay_premium_v1` reads that same value as
+  the **endowment's storage key**, which `DaoEscrow::derive_bulla` computes from a different
+  six-element preimage. Poseidon is a random oracle, so the two could never coincide: **the proof was
+  unsatisfiable**, and that is why this endpoint's proof "had never been made to verify". It is the
+  same divergence as `endowment_bulla` above and the *second* time this endpoint's circuit attested a
+  value the chain never used — `OBL-C156` was repaired on the storage side and the circuit was left
+  behind. Publishing needs no derivation: the authorization is the endowment's existence and the
+  floor below.
+- `membership_note` was computed by the circuit and then **dropped** — never constrained, never
+  exposed. The record the contract stores (`PayPremiumParamsV1.membership_note`) was therefore bound
+  to nothing the proof said, so any note could accompany any premium. It is now a
+  `constrain_instance` target, which binds the amount, asset, expiry and member key in one value
+  (`OBL-Z23`'s class, and `OBL-C78`'s).
 
 `VoteClaimV2` and `ProposeClaimV2` still take a `capability_id`/`capability_secret` witness pair, and
 `VoteClaimParamsV1` still carries a `CapabilityProof`; only `capability_secret` is read, and it is
@@ -439,9 +458,10 @@ The contract's heavyweight integration test is
 `bin/dwowd/src/tests/heavyweight.sh --dao-escrow`.
 
 **The re-wire is green, measured 2026-09-27**: `1 passed; 0 failed`, **730.94s** — the first green run
-of the ten-endpoint contract. It covers every endpoint below except `PayPremiumV1`, which is deferred on
-a circuit bug, and it drives the claim lifecycle end to end for the first time
-(`ProposeClaimV1_Lifecycle` → `VoteClaimV1_Approved` → `ExecuteClaimV1_Approved`).
+of the ten-endpoint contract. It drives the claim lifecycle end to end for the first time
+(`ProposeClaimV1_Lifecycle` → `VoteClaimV1_Approved` → `ExecuteClaimV1_Approved`), and since
+**2026-10-12 it covers `PayPremiumV1` too** — that endpoint was deferred on the circuit bug named
+below, and the deferral is gone.
 
 Two older numbers on this page are history rather than statements about the code here. A run of
 **809.70s** measured the contract *before* the re-wire — seventeen selectors, the capability-requirement

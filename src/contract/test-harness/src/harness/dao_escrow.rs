@@ -219,9 +219,6 @@ impl DaoEscrowHarness {
         expiry: u64,
         membership_blind: pallas::Base,
         value_blind: pallas::Scalar,
-        mpc_secret_1: pallas::Base,
-        mpc_secret_2: pallas::Base,
-        mpc_secret_3: pallas::Base,
     ) -> Result<PayPremiumResult> {
         let mut input = PayPremiumV1CallData::new(
             nullifier_k,
@@ -233,28 +230,16 @@ impl DaoEscrowHarness {
             expiry,
             membership_blind,
             value_blind,
-            mpc_secret_1,
-            mpc_secret_2,
-            mpc_secret_3,
         );
 
         // Derive member public key from secret
         let member_pub =
             PublicKey::from_secret(SecretKey::from_bytes(member_secret.to_repr()).unwrap());
-        let (mx, my) = member_pub.xy().expect("pk not identity");
 
-        // Compute membership_note locally using same formula as circuit:
-        // membership_note = poseidon_hash(DOMAIN_COIN_COMMIT, member_pub_x, member_pub_y,
-        //                                  value, asset_id, expiry, membership_blind)
-        let membership_note = dwow_sdk::crypto::poseidon_hash([
-            pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
-            mx,
-            my,
-            pallas::Base::from(value),
-            pallas::Base::from(asset_id),
-            pallas::Base::from(expiry),
-            membership_blind,
-        ]);
+        // The note now comes from the client's own derivation, which is the formula the circuit
+        // constrains. It is computed here rather than reimplemented because the arm republishes
+        // whatever the params carry, so the two must agree exactly.
+        let membership_note = input.compute_membership_note();
 
         // Build PayPremiumParamsV1 for call_data
         // Note: value_commit uses zero placeholders because EC operations cannot be replicated outside circuit
