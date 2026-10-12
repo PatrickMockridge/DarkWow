@@ -1153,4 +1153,17 @@ F-623: doc:doc/src/arch/contract-trust-model.md#layer-2-wasm-verification@8cb4f4
      raises is sharper against `ProveCoverageV1` than against the fiction. F-623's identity half repeats F-536's
      three defects in a second file — the same mistake copied, which is why the sweep rule exists. F-618's
      `ManualSession` example is the one a reader would copy and then fail to compile. -->
+F-001: doc:doc/src/contract/attestation.md#zk-proof-structure@9a59b8c880
+F-002: doc:doc/src/contract/escrow.md#zk-circuits@9a59b8c880
+F-003: doc:doc/src/contract/game_room.md#zk-circuits@9a59b8c880
+F-004: doc:doc/src/contract/slot.md@9a59b8c880
+F-005: doc:doc/src/contract/stablecoin.md#zk-circuits@9a59b8c880
+<!-- F-001 to F-005 are the contract docs' instance of F-628's class and were found only at the end of E7, by
+     asking what the *same* comparison would say about a different family of tables: the harness table's counts
+     were wrong against the tree, and so are the contracts' own circuit tables. Four of the five turned out to be
+     omissions rather than totals — game_room was missing seven of its twelve — which is the more expensive
+     direction, since a reader using those tables to decide what is proven would conclude that raise, call and
+     fold have no circuit. Noted as a coverage lesson rather than a stray: the review grouped these under its own
+     heading and I worked the tranches by document family, so a class spanning families is the kind that survives
+     a tranche boundary. -->
 <!-- /promotion-log -->
