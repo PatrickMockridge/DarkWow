@@ -968,4 +968,15 @@ F-526: doc:doc/src/contract/promissory_note.md#the-breakthrough-capability-not-a
      "is_not_equal"`) and simply unused by `redeem.zk`, which enforces `value == 0` twice by other means. The
      two source-comment occurrences in `promissory_note` are recorded in this comment and not swept, because
      PromissoryNote is a genesis contract and a comment edit moves the pin. -->
+F-536: doc:doc/src/contract/composability.md#current-cross-contract-call-map@5c53e27b1b, doc:doc/src/contract/recruitment_pipeline.md#how-four-contracts-compose-to-automate-hiring@5c53e27b1b
+<!-- F-536 is the family's most consequential error and its smallest: one byte. `0x0b` is not
+     `VerifyCapabilityV1`; it is a dao_escrow opcode that no longer exists, so the doc's wrong byte and the
+     doc's retired-selector table are the *same* mistake — a client reading either would publish a call the
+     contract refuses. Chasing it also found that the composite-transaction example was a fabricated
+     two-child shape no entrypoint accepts. -->
+F-537: doc:doc/src/contract/oracle.md#zk-circuits@5c53e27b1b
+<!-- F-537 is the doc being wrong on both sides of a variable: the value (4 vs 8) and the reason for it (the
+     capability-commitment slot, when the code deliberately gives the operator commitment its own domain,
+     `OBL-Z19`). The client's own comment at the call already said "not 4", so this was a three-way
+     disagreement the document lost. -->
 <!-- /promotion-log -->
