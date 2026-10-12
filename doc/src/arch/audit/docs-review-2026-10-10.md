@@ -707,14 +707,17 @@ recorded here rather than quietly dropped.
   asserting a phantom method, a phantom module, a `SHALL` the tree does not implement, or a mechanism
   the code performs differently — and every one was corrected by opening the code. Nothing will catch
   the next drift of that kind; this is the campaign's largest explicit gap.
-- **14 of the 32 contract docs have no circuit table at all.** `scripts/check-contract-doc-circuits.sh`
-  prints `notes=14` for exactly this (`docs_scanned=32 with_table=18`): `baccarat`, `bearer_bond`,
-  `betting_stake`, `darkbet_exchange`, `darktoshi_dice`, `drain_protection`, `insurance_market`,
-  `lottery`, `native_token`, `pool_stake`, `relayer_endowment`, `roulette`, `subscription`, `tender`.
-  This is a **coverage decision** — whether a contract doc is *required* to carry a table of what it
-  proves — and not a defect. The gate's rule is that a doc which states a circuit table must state it
-  truly; it does not require one, and widening it to would be a corpus convention to agree, not a fix
-  to apply.
+- **19 of the 32 contract docs have no circuit table at all.** `scripts/check-contract-doc-circuits.sh`
+  prints `notes=19` (`docs_scanned=32 with_table=13`): `baccarat`, `bearer_bond`, `betting_stake`,
+  `box`, `darkbet_exchange`, `darktoshi_dice`, `drain_protection`, `escrow`, `insurance_market`,
+  `lottery`, `multisig`, `native_token`, `otc_swap`, `pool_stake`, `purse`, `relayer_endowment`,
+  `roulette`, `subscription`, `tender`. That is a **coverage decision** — whether to require a
+  table — and not a defect: a doc with no table claims nothing about its circuit set, so there is
+  nothing for the gate to contradict. **The count read 14 and `with_table=18` until 2026-10-12,
+  when the gate's D1 rule was strengthened to read rows under a circuit heading rather than any
+  pipe-row in the document** — five docs were satisfying it with `.zk` names in unrelated tables
+  (`slot.md` was one, scoring `with_table` before it had a circuit table at all). The five moved
+  from `with_table` to `notes`, and the honest figure is this one.
 - **Line-number drift is pervasive and uncheckable** (`OBL-Z5`'s class). The docs carry thousands of
   `file.rs:line` citations, and a line number is not a stable name. The campaign has direct evidence of
   how fast they rot: F-110 is a bullet that corrected the figure 72 by giving its own 78, which has

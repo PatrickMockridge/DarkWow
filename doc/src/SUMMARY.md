@@ -98,7 +98,7 @@
 ## Audit Reports
   - [Audit Index](arch/audit/README.md)
   - [Verification Obligation Register](arch/verification-hazop.md) ← what must be proved, what checks it, and every open obligation
-  - [Documentation Review — Findings Ledger](arch/audit/docs-review-2026-10-10.md) ← docs-vs-code campaign; findings pending remediation
+  - [Documentation Review — Findings Ledger](arch/audit/docs-review-2026-10-10.md) ← docs-vs-code campaign: 486 findings / 239 confirmed rows, remediated — all 270 ledger rows promoted as of 2026-10-12 at `b45b4d02d1`; `scripts/check-ledger-promotion.sh --check` proves it
   - [Consensus Core Map](arch/consensus-core-map.md) ← the consensus mechanisms with no Lean model, their Python specs, and the agreed shape of each
 
 # Contracts

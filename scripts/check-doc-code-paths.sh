@@ -19,6 +19,24 @@
 # `script/register_artifact_exceptions.txt`); a declared path that *does* resolve, or that the corpus
 # no longer cites, is reported as a stale entry.
 #
+# SCOPE. The corpus is `doc/src` — the published book, and exactly the documents the docs-vs-code
+# review (2026-10-10) read and remediated. That is all of what this gate was built for: every
+# citation it was written to catch (F-324/327/328/331/616/617/619/620/621) is in a `doc/src`
+# document. It is deliberately NOT a repo-wide `.md` scan. A citation in a `doc/`-adjacent work
+# product — a dated audit under `contrib/model/`, a campaign plan under `plans/`, a simulation
+# report under `sim/`, an agent's scratch under `.claude/` — is a historical record or a proposal,
+# not a claim about the tree that a reader acts on; a "stale" path in it is evidence of how the tree
+# changed, and rewriting it would corrupt the record. Such trees are not exempted from a check; they
+# are never in scope for one.
+#
+# EXCLUDED TREES. The traversal also refuses generated build caches and fetched/vendored
+# dependencies — `**/.lake/**`, `target/`, `vendor/`, `node_modules/`. This repository does not own
+# their contents and they change underfoot: a vendored README's own `scripts/...` citation (e.g.
+# `proofs/lean/.lake/packages/batteries/README.md`) is a claim about *that* project, and it fails
+# here only because the path is anchored to the wrong root. `doc/src` holds no such tree today; the
+# guard is written out explicitly so that a widened corpus, or an override of
+# `DOC_CODE_PATHS_ROOT`, cannot silently re-admit them.
+#
 # Usage: scripts/check-doc-code-paths.sh
 #        scripts/check-doc-code-paths.sh --self-test   (planted nonexistent path; non-zero exit)
 # Exit status: 1 on any finding; 0 otherwise.
@@ -36,6 +54,11 @@ DOCS = ROOT / "doc" / "src"
 EXC = ROOT / "script" / "doc_path_exceptions.txt"
 
 ROOTS = ("src/", "bin/", "crates/", "proofs/", "contrib/", "script/", "scripts/")
+
+# Path components that mark a tree this repository does not own: generated build caches and
+# fetched/vendored dependencies. See "EXCLUDED TREES" in the header. Matched as a whole path
+# component, so any depth of `**/.lake/**` (or `vendor/`, `target/`, `node_modules/`) is skipped.
+SKIP_PARTS = {".lake", "target", "vendor", "node_modules", ".git"}
 TOKEN = re.compile(
     r'`((?:src|bin|crates|proofs|contrib|script|scripts)/'
     r'[A-Za-z0-9_./-]*?\.(?:rs|zk|toml|md|py|lean|sh|json|txt))(?::[\d-]+)?`')
@@ -60,11 +83,14 @@ def load_exceptions():
     return out
 
 
-def scan(root):
+def scan(corpus, root):
+    """Walk the document `corpus` (`doc/src`), resolving each cited token against repo root `root`."""
     exceptions = load_exceptions()
     findings, cited = [], set()
-    for doc in sorted(root.rglob("*.md")):
+    for doc in sorted(corpus.rglob("*.md")):
         rel = os.path.relpath(doc, root)
+        if SKIP_PARTS & set(pathlib.PurePath(rel).parts):
+            continue                    # a build cache or vendored tree — never in scope
         text = doc.read_text(encoding="utf-8", errors="replace")
         for m in TOKEN.finditer(text):
             tok = m.group(1)
@@ -88,7 +114,7 @@ def main():
             (t / "doc" / "src").mkdir(parents=True)
             dn = "a" + ".md"   # built so check-doc-index.sh's removed-document scan does not read it
             (t / "doc" / "src" / dn).write_text("see `src/does_not_exist_xyz.rs` for details\n")
-            findings, _, _ = scan(t)
+            findings, _, _ = scan(t / "doc" / "src", t)
             if not any("src/does_not_exist_xyz.rs" in f[2] for f in findings):
                 print("FAIL: --self-test planted a nonexistent path citation and it was not reported")
                 return 1
@@ -96,7 +122,7 @@ def main():
             (t / "doc" / "src" / dn).write_text("see `src/tx/mod.rs` for details\n")
             (t / "src" / "tx").mkdir(parents=True)
             (t / "src" / "tx" / "mod.rs").write_text("// x\n")
-            findings2, _, _ = scan(t)
+            findings2, _, _ = scan(t / "doc" / "src", t)
             if findings2:
                 print(f"FAIL: --self-test a resolving path was reported: {findings2}")
                 return 1
@@ -104,14 +130,24 @@ def main():
         return 0
 
     root = pathlib.Path(os.environ["DOC_CODE_PATHS_ROOT"])
-    findings, n_cited, stale = scan(root)
+    findings, n_cited, stale = scan(DOCS, root)
+    # `--report-only` prints the same list and exits 0. WHY IT IS NOT FLIPPED BLOCKING (2026-10-12):
+    # this detector cannot yet tell a *stale* citation from a *negative* one. The campaign's own
+    # corrections are written as sentences saying a path does not exist ("None of it exists now … are
+    # all absent", and every `F-554`-style note), so roughly four fifths of what it reports is a
+    # document being right. Skipping those by string is the weakening this repository's rules forbid,
+    # and the exceptions mechanism this file's header names (`script/doc_path_exceptions.txt`) does not
+    # exist. Flipping it today would fail the tree on non-defects and the cheapest way to green it
+    # would be to blunt it — so it reports, and the split it prints is the thing to act on.
+    report_only = "--report-only" in sys.argv
     for rel, lineno, tok in findings:
-        print(f"FAIL: {rel}:{lineno}: cites {tok}, which does not exist")
+        print(f"{'NOTE' if report_only else 'FAIL'}: {rel}:{lineno}: cites {tok}, which does not exist")
     for p in stale:
-        print(f"FAIL: stale exception for {p} — it resolves, or nothing cites it")
-    tag = "PASS" if not findings and not stale else "FAIL"
+        print(f"{'NOTE' if report_only else 'FAIL'}: stale exception for {p} — it resolves, or nothing cites it")
+    clean = not findings and not stale
+    tag = "PASS" if clean else ("REPORT" if report_only else "FAIL")
     print(f"[{tag}] docs_cited={n_cited} findings={len(findings)} stale_exceptions={len(stale)}")
-    return 1 if findings or stale else 0
+    return 0 if (clean or report_only) else 1
 
 
 sys.exit(main())

@@ -252,6 +252,20 @@ run_gate "a contract doc's circuit table ↔ proof/" \
     bash "$SCRIPT_DIR/check-contract-doc-circuits.sh"
 run_gate "control: the circuit-table gate can fail" \
     bash "$SCRIPT_DIR/check-contract-doc-circuits.sh" --self-test
+# A doc's `path/to/file.rs` citation must resolve in HEAD. **Wired report-only, and the reason is
+# specific rather than caution.** The detector cannot yet tell a *stale* citation from a *negative*
+# one: this campaign's own corrections are sentences saying a path does not exist ("None of it exists
+# now … are all absent"), and roughly four fifths of what it reports is a document being right about
+# that. Skipping those by string is the weakening the repository's rules forbid, and the exceptions
+# mechanism the detector's own header names (`script/doc_path_exceptions.txt`) does not exist. Its
+# **scope** was corrected at the same time and that part is real: it had been walking the entire repo
+# rather than `doc/src`, so it reported vendored build caches (`proofs/lean/.lake/packages/*/README.md`)
+# alongside the documents it was built for. Findings 89 → 61 on that change alone. Flip it once the
+# genuine citations are gone and the negative-citation class has a mechanism.
+run_gate "doc code-path citations resolve (report-only)" \
+    bash "$SCRIPT_DIR/check-doc-code-paths.sh" --report-only
+run_gate "control: the doc-code-path gate can fail" \
+    bash "$SCRIPT_DIR/check-doc-code-paths.sh" --self-test
 # OBL-Z1: the Orchard-class rule. The other two circuit gates are structural (counts, prefix
 # presence); this is the only one that asks whether an exposed public input is *determined*.
 # **It is GREEN, re-measured 2026-09-24, and it is the gate the circuits' Lean discharge rests on**:
