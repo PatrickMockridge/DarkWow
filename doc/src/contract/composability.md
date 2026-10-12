@@ -116,15 +116,20 @@ against a locally computed commitment.
 | `CreateJobWithMilestonesV1` | 0x08 | *none (ZK-only, no child calls)* | — |
 | `InitiateDisputeV1` | 0x0b | `child.data[0] != 0x07` | DAO-Escrow::ProposeClaimV1 |
 | `CreateJobWithCapabilityV1` | 0x0c | `child.data[0] != 0x04` | promissory_note::TransferV1 |
-| `AcceptJobWithCapabilityV1` | 0x0d | `child.data[0] != 0x0b` | Identity::VerifyCapabilityV1 |
+| `AcceptJobWithCapabilityV1` | 0x0d | `child.data[0] != 0x06` | Identity::VerifyCapabilityV1 |
 
 ### DAO-Escrow → Other Contracts
 
 | Source Function | Opcode | Child Validates | Target Function |
 |---|---|---|---|
 | `PayPremiumV1` | 0x02 | `child.data[0] != 0x04` | promissory_note::TransferV1 |
-| `VerifyMemberCapabilityV1` | 0x0b | `child.data[0] != 0x0b` | Identity::VerifyCapabilityV1 |
-| `ResolveDisputeV1` | 0x0c | `!children_indexes.is_empty()` | Attestation + promissory_note (multi-call) |
+| `ProposeClaimV1` | 0x07 | `child.data[0] != 0x03` at slot 0 | MultiSig::FinalizeV1 (the governance approval for *this* claim) |
+
+Three rows stood here until 2026-10-12: two described **retired selectors** —
+`VerifyMemberCapabilityV1` and `ResolveDisputeV1` do not exist in dao_escrow, whose opcode enum
+runs `0x09` straight to `0x0d` (`0x0b`/`0x0c` are unassigned), and it makes no identity child
+call at all (see [identity.md](identity.md)) — and the third attributed a promissory-note
+transfer to `ProposeClaimV1`, whose single child is a MultiSig approval.
 
 ### Function Code Constants
 
@@ -151,28 +156,33 @@ Note: Attestation::VerifyClaimV1 and promissory_note::TransferV1 both use opcode
 
 ## Example: Composite Transaction
 
-A transaction for accepting a capability-gated job with payment escrow:
+A transaction for accepting a capability-gated job:
 
 ```
 Transaction { calls: Vec<DarkLeaf<ContractCall>> }
 │
 ├── [0] DarkLeaf<ContractCall> {
-│       data: ContractCall { contract_id: identity_cid, data: [0x0b, ...VerifyCapabilityParams] }
+│       data: ContractCall { contract_id: identity_cid, data: [0x06, ...VerifyCapabilityParams] }
 │       children_indexes: []
 │   }
 │
-├── [1] DarkLeaf<ContractCall> {
-│       data: ContractCall { contract_id: promissory_note_cid, data: [0x04, ...TransferParams] }
-│       children_indexes: []
-│   }
-│
-└── [2] DarkLeaf<ContractCall> {
+└── [1] DarkLeaf<ContractCall> {
         data: ContractCall { contract_id: labor_market_cid, data: [0x0d, ...AcceptJobParams] }
-        children_indexes: [0, 1]
+        children_indexes: [0]
     }
 ```
 
-Execution order (DFS post-order): identity call → promissory_note transfer → labor market call. The labor market call validates that `calls[0].data[0] == 0x06` (identity VerifyCapabilityV1) and `calls[1].data[0] == 0x04` (promissory_note TransferV1). All three must succeed or the entire transaction is rejected.
+Execution order (DFS post-order): identity call → labor market call. `accept_job_with_capability_v1`
+requires **exactly one** child (`children_indexes.len() != 1`), checks `calls[0].data[0] == 0x06`,
+and validates that the child's `contract_id` equals the identity id stored in labor_market's own
+info tree. Both must succeed or the transaction is rejected.
+
+This example showed a **two-child** root until 2026-10-12 — identity at `[0]` *and* a
+promissory-note transfer at `[1]`, with the root's `children_indexes: [0, 1]` and the identity
+call publishing `0x0b` instead of `0x06`. No labor_market entrypoint takes two children: the
+capability-gated ones (`AcceptJobWithCapabilityV1`, `CreateJobWithCapabilityV1`) each take one,
+and `AcceptJobWithCapabilityV1`'s is the identity call, not a payment. A client built from that
+shape is refused with `InvalidChildrenIndexes`.
 
 ## See Also
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract

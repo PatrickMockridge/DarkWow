@@ -67,7 +67,7 @@ Oracle operators register their data feed:
 pub struct RegisterOracleParamsV1 {
     pub proof: Vec<u8>,
     pub oracle_id: OracleId,
-    pub oracle_commitment: pallas::Base,   // H(4, oracle_secret, oracle_id)
+    pub oracle_commitment: pallas::Base,   // H(8, oracle_secret, oracle_id)
     pub name: String,
     pub data_type: String,
     pub tx_binding: pallas::Base,
@@ -185,9 +185,15 @@ All 6 circuits compiled to `.zk.bin`:
 | `aggregate.zk` | Prove aggregated value + consume a nullifier | oracle_id, oracle_commitment, result, min_result, max_result, nullifier, tx_binding, tx_nonce |
 | `set_oracle_active.zk` | Prove the toggler is the operator (added for OBL-Z10 — the function had no circuit at all before) | oracle_id, oracle_commitment, is_active, tx_binding, tx_nonce |
 
-`DOMAIN_OPERATOR_COMMITMENT = witness_base(4)` (the capability-commitment slot) and
-`DOMAIN_NULLIFIER = witness_base(1)`, both from the fixed domain table in
-`doc/src/arch/circuit-versioning.md`.
+`DOMAIN_OPERATOR_COMMITMENT = witness_base(8)` and `DOMAIN_NULLIFIER = witness_base(1)`.
+
+**8, not 4.** This section gave the operator commitment `witness_base(4)` — the
+capability-commitment slot — until 2026-10-12, and all six circuits use `witness_base(8)`
+(`register_oracle.zk`, `set_oracle_active.zk`, `attest_value.zk`, `push_value.zk`,
+`push_value_commitment.zk`, `aggregate.zk`). The client's own derivation says so at the call:
+`poseidon_hash([pallas::Base::from(8u64), oracle_secret, oracle_id])`, with the comment
+"`witness_base(8)`, not 4: the operator commitment has its own domain (`OBL-Z19`)". A client
+built from the documentation's 4 would publish a public input the circuit does not accept.
 
 ## Use Cases
 

@@ -31,7 +31,7 @@ Think of each contract as a department in a company:
 | **Attestation** | Deliverable Inspector | Employers pre-commit to expected work hashes. Workers prove their deliverable matches. Claims are verified and consumed (cannot be reused). |
 | **DAO Escrow** | HR / Finance | Holds treasury and endowment pools. Members vote on proposals. Disputes resolved by multi-oracle attestation. Payments released on approval. |
 
-None of these contracts knows about the others' internal state. The Labor Market contract doesn't know how Identity verifies credentials — it only knows to check that a child call to `Identity::VerifyCapabilityV1 (0x0b)` is present and valid. The DAO Escrow doesn't know what a "job" is — it only knows to process proposals and votes. **The composition is the product.**
+None of these contracts knows about the others' internal state. The Labor Market contract doesn't know how Identity verifies credentials — it only knows to check that a child call to `Identity::VerifyCapabilityV1 (0x06)` is present and valid. The DAO Escrow doesn't know what a "job" is — it only knows to process proposals and votes. **The composition is the product.**
 
 ### The Pipeline: Step by Step
 
@@ -101,7 +101,7 @@ The job struct includes `required_capability_id`, `attestation_id` (for delivera
 
 **Validation pattern:**
 ```
-labor_market checks: child_call.data[0] != 0x0b  // Must be Identity::VerifyCapabilityV1
+labor_market checks: child_call.data[0] != 0x06  // Must be Identity::VerifyCapabilityV1
 ```
 
 If the child call is missing or has the wrong function code, the transaction is rejected atomically — no state mutation occurs.
