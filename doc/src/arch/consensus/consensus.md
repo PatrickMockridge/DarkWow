@@ -19,8 +19,8 @@ rationale and architectural divergence.
 | Uncle block creation + merkle tree | [IMPLEMENTED] | `src/linear/src/block.rs` |
 | Uncle proof verification (stateless) | [IMPLEMENTED] | `src/linear/src/validation.rs` |
 | Pin reward (value-level) | [IMPLEMENTED] | `src/linear/src/chain_state.rs` |
-| Pin reward (Pedersen commitment split) | [IMPLEMENTED] | `chain_state.rs:736-760` |
-| Exponential reward schedule | [IMPLEMENTED] | `src/sdk/src/blockchain.rs:106-137` |
+| Pin reward (Pedersen commitment split) | [IMPLEMENTED] | `validation.rs` (`check_uncles`, the derived `pin_confirmed` check at `:406-415`; the split is *verified* as integer arithmetic, not as a commitment equation — see `uncle_merkle.md`) |
+| Exponential reward schedule | [IMPLEMENTED] | `src/sdk/src/blockchain.rs` (`expected_reward` `:1045`, `fixed_pow_decay` `:1067`) |
 | nullifier_root block header verification | **[RESERVED — not implemented]** | The field is `[0u8; 32]` at every construction site and is in the PoW preimage; nothing compares it. See Phase 6 below. |
 | Supply audit (Pedersen mass balance) | [IMPLEMENTED] | `src/linear/src/proof_of_token_balance.rs` |
 | Target adjustment algorithm | [IMPLEMENTED] | `src/linear/src/consensus.rs` |

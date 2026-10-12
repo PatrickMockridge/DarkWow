@@ -1447,7 +1447,9 @@ pattern as every other transaction.
 ### Absolute Supply Under Tail
 
 The tail means supply is technically unbounded. After 100 years the total is
-~37.8M DRKW (still under 2× cap), and the annual rate is 0.56% and falling.
+**37,326,004 DRKW** (still under 2× cap), and the annual rate is 0.56% and falling. This read
+"~37.8M" until 2026-10-12 (`F-360`); §4.5's own table, a few hundred lines above, gives the exact
+figure, and the two had disagreed by half a million DRKW inside one document.
 Whether this matters depends on whether you view the tail as a security
 mechanism (intent) or an inflation source (side effect).
 
@@ -1614,9 +1616,19 @@ entrypoint mints whatever clear value the host-approved call carries.
 | 3 | Value commit matches | `pedersen_commitment_u64(um.input.value, um.input.value_blind) == um.output.value_commit` | `ValueMismatch` | ↓bad-commit | Primary |
 | 4 | Token commit matches | `poseidon_hash([DOMAIN_TOKEN_COMMIT, asset_id, token_blind]) == um.output.token_commit` | `TokenMismatch` | ↓bad-commit | Primary |
 | 5 | Commitment not duplicate | `!db_contains_key(commitment_set, &um.output.commitment)` | `DuplicateCommitment` | ↓duplicate-commitment | Primary |
-| 6 | Nullifier non-zero | `um.nullifier != Nullifier::zero()` | `InvalidFunction` | ↓bad-nullifier | Defense-in-depth |
+| 6 | Spendable-note value binding | the note's value is consensus-checked against the declared `input.value` | `ValueMismatch` | ↓bad-commit | **Primary** |
 
 **Return**: `UncleMintUpdateV1 { commitment, height }` encoded.
+
+**Check 6 is not a nullifier check, and the mint publishes no nullifier** (`F-361`). The table's last
+row read "Nullifier non-zero | `um.nullifier != Nullifier::zero()` | `InvalidFunction`" until
+2026-10-12, which describes a ZK-era mint. The real handler (`uncle_mint_v1`,
+`src/contract/native_token/src/entrypoint/mod.rs`) has no nullifier check and cannot have one: the
+client's own comment records that it "cannot compute the note's nullifier, so the mint publishes
+none (`Output::nullifier == None`)" — the nullifier is revealed at **spend** time, which is where
+double-spend prevention lives. What check 6 is instead is the consensus-critical one the table was
+missing: a spendable-note value binding, so a minter cannot declare a compliant `input.value` while
+committing the note to a different amount.
 
 #### 17.4.2 State Mutations (`apply_uncle_mint`)
 
@@ -1652,9 +1664,12 @@ Input:  value (uncle pin reward), uncle_miner (uncle.header.miner),
 7.  total_pin = 0 (an uncle note is not split further)
 8.  Encrypt AEAD note deterministically to uncle_miner (ephemeral_secret) —
     the note hides the blinds, not the value (value is plaintext)
-9.  nullifier = poseidon(DOMAIN_NULLIFIER, spend_secret, commitment)
-10. Construct UncleMintParamsV1 { input, total_pin: 0, output, nullifier,
-    tx_binding, tx_nonce }
+9. **Do not compute a nullifier.** The builder cannot: the note's nullifier derives from a spend
+    secret it does not hold in a form the mint may publish, so `Output::nullifier` is `None` and
+    the nullifier is revealed at spend time. (This step read
+    `nullifier = poseidon(DOMAIN_NULLIFIER, spend_secret, commitment)` — `F-361`.)
+10. Construct UncleMintParamsV1 { input, total_pin: 0, output, tx_nonce }
+    — **no `tx_binding`**: it left these params in `OBL-C198` and `get_metadata` derives it.
 11. Pack call_data: [0x07] + UncleMintParamsV1::encode()
 12. Return UncleMintCallDebris — parameters only, no ZK proof (plaintext)
 ```

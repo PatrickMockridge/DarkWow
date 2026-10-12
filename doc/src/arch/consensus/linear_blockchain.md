@@ -256,7 +256,9 @@ genesis initialization). Contracts MUST handle an empty `ix` byte slice in
 contract's own constants. When `ix` is non-empty, decode and use the
 provided parameters as normal (the production Deployooor path).
 
-25 of 28 contracts already follow this convention. The contract author
+25 of 28 contracts already follow this convention (the figure is this section's and has not been
+re-derived — the tree holds **32** contracts with a `proof/` directory out of 34, so both numbers
+have moved; `scripts/check-doc-canonical-counts.sh` derives them — `F-357`). The contract author
 should verify any new `init_contract` against the survey below.
 
 ### Host Functions
