@@ -309,3 +309,21 @@ src/contract/oracle/proof/attest_value.zk : threshold : host: oracle entrypoint.
 src/contract/insurance_market/proof/underwrite_with_capability.zk : required_capability_id : host: insurance_market entrypoint/underwrite_with_capability.rs:148-164 the requirement is read from the market's stored record and compared against the `capability_id` the child `Identity::VerifyCapabilityV1 (0x06)` verified, with the child routed to the configured Identity contract
 # --- the same rule for the buyer side, and this arm is the fail-closed one ----------------------
 src/contract/insurance_market/proof/purchase_coverage_with_capability.zk : required_capability_id : host: insurance_market entrypoint/purchase_coverage_with_capability.rs:131-144 `market.required_buyer_capability` is checked `is_none()` first (fail-closed) and then compared against the child's verified `capability_id` -> reject on mismatch
+
+# --- joining an endowment is open, and the host is what makes the name real ------------------
+# Added 2026-10-12 with the `pay_premium` circuit repair (`OBL-C78`). The circuit used to bind
+# `dao_escrow_bulla` to `poseidon_hash(4, member_pub_x, member_pub_y, mpc_secret_1, mpc_secret_2,
+# mpc_secret_3)` — a stale OCap membership hash — while the endpoint reads that same value as the
+# endowment's *storage key*; the two preimages could not coincide, so the proof was unsatisfiable
+# and no call could be built. It is published now instead of derived, which is what puts it here.
+#
+# The host mechanism, read rather than inferred: `pay_premium_v1` looks the value up with
+# `db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())` and refuses `DaoEscrowNotFound` when
+# there is no such record (`entrypoint.rs:621-622`), so a prover-chosen bulla that names nothing is
+# rejected. The record it finds then supplies the floor: `params.value < endowment.min_premium`
+# refuses `InsufficientPremium` (`:642-644`). The freedom the prover keeps is *which* endowment to
+# join, and that is the endpoint's design — membership is open to anyone who pays the creator's
+# floor — not an unbound parameter. The member's own terms (amount, asset, expiry, key) travel in
+# `membership_note`, which the same circuit derives and constrains, so the exposure here is the
+# endowment's name and nothing else.
+src/contract/dao_escrow/proof/pay_premium.zk : dao_escrow_bulla : host: dao_escrow entrypoint.rs:621-622 `db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())` -> DaoEscrowNotFound, then :642-644 `params.value < endowment.min_premium` -> InsufficientPremium

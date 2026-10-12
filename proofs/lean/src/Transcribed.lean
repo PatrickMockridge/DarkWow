@@ -38,12 +38,10 @@ almost everywhere:
 
 * **148** of the 168 — The checker resolves it as `redundant` — pinned by another exposed
   determination, which the model's sequential rule does not follow.
-* **18** of the 168 — The checker resolves it as `declared-free`, from a host-side justification
+* **19** of the 168 — The checker resolves it as `declared-free`, from a host-side justification
   in `script/circuit_free_instances.txt`.
 * **1** of the 168 — The checker resolves it as `bound`, through a `constrain_equal_base` whose
   determining side is a declared constant.
-* **1** of the 168 — **The checker fails it too** — one of the instances `OBL-Z16` names, where
-  the model and the checker agree.
 
 So the model does not contradict the checker; it **refines** it, and every one of the 168 is the
 checker's weaker rule or the single boundary the model note names. Two consequences a reader should
@@ -1719,7 +1717,7 @@ def dao_escrow_pay_premium_stmts : List Stmt :=
 
 /-- **The property fails** for `src/contract/dao_escrow/proof/pay_premium.zk`: its first undetermined exposure is
     `.var "dao_escrow_bulla"`, which the circuit does not bind before exposing.
-    **The checker fails it too** — one of the instances `OBL-Z16` names, where the model and the checker agree. -/
+    The checker resolves it as `declared-free`, from a host-side justification in `script/circuit_free_instances.txt`. -/
 @[axiom_budget 0]
 theorem dao_escrow_pay_premium_has_a_free_instance :
     ¬ NoFreeInstance dao_escrow_pay_premium_held dao_escrow_pay_premium_stmts := by

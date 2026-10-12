@@ -314,17 +314,24 @@ run_gate "circuit instance derivation"    bash "$SCRIPT_DIR/check-circuit-instan
 # the regenerated module (2026-10-12), and they are the module's to state — it prints them on every
 # regeneration, and this comment is only a reader's summary of them.** Of the **168** circuits that
 # fail the model's strict rule, **148** are `redundant` to the checker (pinned by another exposed
-# determination, which the model's sequential rule does not follow), **18** are `declared-free` from
-# an entry in script/circuit_free_instances.txt, **1** is `bound` through a `constrain_equal_base`
-# whose determining side is a declared constant, and **1** is the one instance `OBL-Z16` names where
-# the checker fails it too. Zero are unclassified, which is what the gate's own green run means — so
-# the model does not contradict this gate, it refines it.
+# determination, which the model's sequential rule does not follow), **19** are `declared-free` from
+# an entry in script/circuit_free_instances.txt, and **1** is `bound` through a
+# `constrain_equal_base` whose determining side is a declared constant. Zero are unclassified, which
+# is what the gate's own green run means — so the model does not contradict this gate, it refines it.
 #
 # **This module was stale for the last three weeks and this is the regeneration that caught up**, so
 # the numbers above differ from every set that stood here before: 168/179 circuits against 165/176,
-# and 148/18/1/1 against 154/12/1 — because **28 commits touched `*.zk` after 2026-09-27** (the
+# and 148/19/1 against 154/12/1 — because **28 commits touched `*.zk` after 2026-09-27** (the
 # `OBL-C198`/`C199` binding campaigns and the deployooor `LockV1` proof) and nothing re-ran the
-# generator. The lesson is the one this comment's own last sentence used to carry and no longer needs
+# generator.
+#
+# **The fourth class this decomposition used to carry — one instance where the checker failed it too,
+# the one `OBL-Z16` names — closed on 2026-10-12 with the `pay_premium` circuit repair.** The circuit
+# published the endowment bulla derived from a stale OCap hash, so the checker could classify neither
+# the derivation nor the exposure; publishing it instead (`OBL-C78`) made the exposure a `declared-
+# free` entry with the host mechanism written out (`script/circuit_free_instances.txt`), and the
+# class went with it. The three weeks this file spent stale are also what let that instance sit
+# unclassified in the first place: the `--check` gate below would have said so on the next run. The lesson is the one this comment's own last sentence used to carry and no longer needs
 # to: a hand-maintained count in prose goes stale silently, and the gate that would have said so is
 # the `--check` invocation below. It is the *data* side of `OBL-T7`'s `(r, s) ↦ circuit` bridge and
 # not the bridge, which the module says it does not supply.
