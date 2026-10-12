@@ -56,10 +56,10 @@ Cross-contract dependencies verified from entrypoint code (not assumed):
 | deployooor | Infrastructure | 2 | 0 | None |
 | box | L1 O-Cap Primitive | 3 | 2 | None |
 | purse | L1 O-Cap Primitive | 4 | 3 | None |
-| oracle | Standalone Oracle | 6 | 5 | None |
+| oracle | Standalone Oracle | 6 | 6 | None |
 | multisig | O-Cap Authorization | 4 | 3 | None |
 | promissory_note | DeFi Capability Primitive | 6 | 5 | None |
-| identity | O-Cap Authorization | 9 | 3 | None (stores BOX_CONTRACT_ID; Box::Put/Take is architectural intent, not yet implemented) |
+| identity | O-Cap Authorization | 8 | 2 | None (stores BOX_CONTRACT_ID; Box::Put/Take is architectural intent, not yet implemented) |
 | attestation | O-Cap Authorization | 13 | 10 | None (manifest declares deps on promissory_note + native_token_v1 but entrypoint shows zero child calls — likely manifest error) |
 
 ### 1.2 Category Definitions
@@ -114,7 +114,7 @@ May compose from genesis contracts via spend_hook or child calls.
 
 | Term | Definition |
 |------|-----------|
-| **accept_block** | The production block acceptance path at `src/linear/src/block_acceptor.rs`. All five mining entry points route through this single path. A test that does not exercise `accept_block` is NOT a heavyweight test. |
+| **accept_block** | The production block acceptance path at `bin/dwowd/src/block_acceptor.rs` (this cell cited `src/linear/src/block_acceptor.rs`, a path that does not exist — `F-616`; nothing under `src/linear/` accepts blocks). All five mining entry points route through this single path. A test that does not exercise `accept_block` is NOT a heavyweight test. |
 | **ContractHarness** | A struct implementing the `ContractHarness` trait, providing `spawn()`, `circuits()`, `get_zkbin()`, `get_pk()`, `verify_zk_coverage()`, and endpoint methods. Each method SHALL map to exactly one variant in the contract's function enum. |
 | **HeavyweightPipeline** | Shared chain state. Owns a temp sled DB, `CChainState`, cached ZK coinbase keys, deterministic test mining key. Created once per test. |
 | **HeavyweightBlock** | Fluent per-block builder. Accumulates contract calls and uncles, seals, and submits through `accept_block`. |
@@ -450,13 +450,18 @@ BalanceV1 (0x03). 3 ZK circuits.
 
 ### 5.4 O-Cap Authorization — identity
 
-**Role:** Credentials, ZK claims (5 modes via unified CreateClaimV2 circuit),
-capabilities. 9 functions, 3 ZK circuits. Stores BOX_CONTRACT_ID at init
-(architectural intent for Box::Put/Take — not yet implemented in entrypoint).
+**Role:** Credentials and capabilities. **8 functions, 2 ZK circuits.** Stores BOX_CONTRACT_ID at
+init (architectural intent for Box::Put/Take — not yet implemented in entrypoint).
+
+This section read "Credentials, ZK claims (5 modes via unified CreateClaimV2 circuit), …
+9 functions, 3 ZK circuits" until 2026-10-12 (`F-613`). **The claim path is gone**: `create_claim`
+(code `0x03`) and the `CreateClaimV2` circuit were removed, `IdentityFunction::try_from(0x03)`
+returns `Err`, and `manifest.toml` records the removal at the top of the file with the instruction
+not to reintroduce it. Only `IssueCredential_V2` and `VerifyCapability_V2` are registered.
 
 **Test SHALL:**
 - Use `IDENTITY_CONTRACT_ID`
-- Bootstrap order: RegisterIssuerV1 (0x08) → IssueCredentialV1 (0x01) → CreateClaimV1 (0x03)
+- Bootstrap order: RegisterIssuerV1 (0x08) → IssueCredentialV1 (0x01) → VerifyCapabilityV1 (0x06)
 - InitializeV1 (0x00): verify circuit registration, tree creation
 - IssueCredentialV1: real ZK proof, verify credential stored, nullifier inserted
 - RevokeCredentialV1 (0x02): verify issuer signature check, credential marked revoked
@@ -605,7 +610,12 @@ Every harness SHALL:
 ### 7.2 HeavyweightPipeline
 
 - **PR-1:** `strict_zk` SHALL be immutable (`true` always)
-- **PR-2:** `with_fee_collect()` SHALL be unconditional — always appends FeeCollectV1
+- **PR-2:** `with_fee_collect()` SHALL append FeeCollectV1 **iff** the block carries a FeeV3 call — the
+  chain rule, which is what the method implements (`bin/dwowd/src/tests/blockchain.rs`: it returns
+  `Ok(self)` unchanged when no FeeV3 call is present). The *harness convention* that every generated
+  block carries a collection is arranged one level up, by adding a non-zero fee before collecting —
+  see §3.5. This rule read "SHALL be unconditional — always appends FeeCollectV1" until 2026-10-12
+  (`F-612`), which contradicted both the code and §3.5 on the same page.
 - **PR-3:** Expose state inspection API: `query_contract_tree()`, `cumulative_supply()`
 - **PR-4:** Per-function ZK gating enforced by the uniform runner's `submit_block()` (function-level, not harness-level). `with_call()` is a data accumulation method, not a security gate. `is_zk` SHALL come from `EndpointSpec::is_zk` — authoritative contract metadata, never a heuristic.
 - **PR-5:** Expose `block_hash()` post-submission for determinism verification

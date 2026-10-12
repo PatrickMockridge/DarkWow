@@ -66,9 +66,20 @@ Shipping unnecessary ZK is a completeness surplus. Shipping insufficient ZK is
 a security deficit. The former is a performance cost we can optimize later; the
 latter is a vulnerability that can't be patched without a hard fork. When the
 choice is between over-engineering and under-engineering a privacy system, we
-choose over-engineering every time. Users can verify that every contract call
-path carries a ZK proof — no asterisks, no exceptions, no "trust us, a
-signature is enough here."
+choose over-engineering every time.
+
+**But "every contract call path carries a ZK proof — no asterisks, no exceptions" is not true, and
+the exceptions are named rather than denied** (`F-614`). `native_token` publishes eight endpoints and
+**four** carry no proof: `mint` (0x01), `pow_reward` (0x05), `fee_collect` (0x06) and `uncle_mint`
+(0x07). They are plaintext by design and their circuits were deleted — the coinbase, the fee pot and
+the uncle mint are consensus accounting that the host computes from values the block already
+commits to, and a proof over them would attest to arithmetic the validator performs anyway.
+
+So the honest form of the claim is narrower and stronger: **every path that carries *private*
+state — every note, commitment, nullifier or capability — is proven**, and the unproven endpoints are
+the ones whose inputs are already public. `requires_proof` in each manifest is the field that says
+which is which, and `bin/dwowd/src/tests/specs/native_token_spec.rs`'s `is_zk: false` on
+`FeeCollectV1` is the same fact from the test side.
 
 ### 3. Uniform verification path
 

@@ -109,12 +109,18 @@ semantics on top of sled). This introduces non-determinism in DAG operations
 - Events are idempotent (keyed by blake3 hash) — replay heals any inconsistency
 - No consensus or state-machine replication depends on the event graph
 
-**Quarantine boundary:** `sled-overlay` is gated behind the `event-graph`
-Cargo feature flag. It must **never** be enabled by any blockchain
-execution-layer feature (`blockchain`, `linear`) or binary (`dwowd`).
-The execution layer follows a strictly deterministic design philosophy:
-plain `sled` trees with direct writes, no overlays, no speculative state,
-no rollback. Same input = same result every time.
+**Quarantine boundary — tree-level, not binary-level.** `sled-overlay` is gated behind the
+`event-graph` Cargo feature flag, and the rule is about **which trees it writes to**: overlay writes
+go to the DAG tree (e.g. `dwowd_dag`) and never to blockchain trees (`blocks`, `contracts`,
+`commitment_set`, `nullifiers`, …). `src/lib.rs` states this at the feature gate itself, and records
+that the earlier reading — "must never be enabled by any binary" — "did not match §10.4's own
+wording".
+
+This paragraph carried that binary-level prohibition until 2026-10-12 (`F-615`), and **`dwowd`
+enables the feature deliberately**, so the prohibition contradicted the code it sat beside. The
+execution layer keeps the discipline that matters: plain `sled` trees with direct writes for the
+blockchain, no overlays, no speculative state, no rollback over consensus state. Same input = same
+result every time.
 
 This boundary is enforced in:
 - `Cargo.toml` — the `event-graph` feature is the only feature that enables `sled-overlay`
