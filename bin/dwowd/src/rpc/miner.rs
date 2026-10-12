@@ -136,8 +136,25 @@ impl DwowNode {
         // Hash the PREVIOUS block with its own stored RandomX key, not the
         // new height's key. RandomX is a keyed hash — wrong key = garbage hash
         // that will be rejected as InvalidPreviousHash on apply.
-        #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
-        let previous = chain_state.hash_block_with_cached_vm(&latest_block).expect("hash failed");
+        // A RandomX hash failure is a typed RPC error, not a panic. The `#[expect]` this
+        // replaces justified itself by citing `safety.md C1` — but `C1` is that document's
+        // *finding* that these `.expect()` sites make the node panic under memory pressure or
+        // a bad key, so the dispensation was citing the hazard as its licence. The genesis
+        // and sync paths in `bin/dwowd/src/lib.rs` were retired the same way, and this is the
+        // last production call site that finding names — the rest are test code or already
+        // handled with `.ok()?`. `F-189`.
+        let previous = match chain_state.hash_block_with_cached_vm(&latest_block) {
+            Ok(h) => h,
+            Err(e) => {
+                error!(target: "dwowd::rpc::miner", "RandomX hash of the previous block failed: {e}");
+                return JsonError::new(
+                    InternalError,
+                    Some(format!("Miner: hashing the previous block failed: {e}")),
+                    id,
+                )
+                .into()
+            }
+        };
         // VM for the NEW block's PoW — keyed to the new height.
         let randomx_key = dwow_chain::Miner::derive_key_from_height(height);
         // Defence-in-depth: create a FRESH VM for mining (never from cache).

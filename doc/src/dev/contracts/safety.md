@@ -760,6 +760,15 @@ contract ID and relevant keys.
 > same sites. Not the red-team finding `C-1`, not HAZOP root cause `RC1`. The tiers were `C1`, `C2`
 > (`unwrap_or([0u8; N])` PoW bypass), `H3` (`Scalar::from_repr().unwrap()`), `H4` (precision loss),
 > `M1–M7` (mutex poison, daemon/miner/client unwraps).
+>
+> **As of 2026-10-11 the collision is historical (`F-189`).** Every production `.expect()` on a
+> RandomX hash has been retired for a typed error — the genesis and sync paths in
+> `bin/dwowd/src/lib.rs`, and the mining RPC in `bin/dwowd/src/rpc/miner.rs` — so no `#[expect]`
+> cites `C1` as a licence any more. The citation was backwards while it lasted: the finding says
+> those sites make the node panic, so citing it dispensed with the hazard by naming it. What
+> remains of the collision is this note, and the distinction it draws is still worth keeping if
+> the tiers are ever cited again. The surviving `.expect()`/`.unwrap()` calls on that function are
+> in test code, where the invariant is the test's own setup.
 
 **Detection.** `cargo clippy` with the two denies above is the instrument. Beyond it: is every
 `Result` from a host function propagated or explicitly matched? Does any `Err` path share the
