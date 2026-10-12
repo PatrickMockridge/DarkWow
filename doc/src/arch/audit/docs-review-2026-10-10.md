@@ -1104,4 +1104,10 @@ F-636: doc:doc/src/arch/consensus/transfer-spec.md@f5efdf4f52
      far wider than its row: the row cites two harness counts and **every one of the twenty-two rows** in the
      table it points at was wrong. F-629's `⊕_b` is the sharpest single defect in E7: two identical cases, so
      the defining formula said the function ignores its parameter. -->
+F-601: doc:doc/src/localnet-dev.md#mining-details@3bfed30427, doc:doc/src/localnet-dev.md#dwow_wallet-cli-wallet@3bfed30427
+F-602: doc:doc/src/localnet-dev.md#dwow_wallet-cli-wallet@3bfed30427
+<!-- F-601/F-602 are the 4A family's densest instance and its archetype: a guide whose first command cannot run
+     (the config path does not exist), whose reward figure is wrong at both sites, and which lists ten CLI
+     subcommands that are not variants of either enum. F-602's `wallet import-secret` is one of the ten, so the
+     two rows are one document and one method — read the enum, run the command. -->
 <!-- /promotion-log -->
