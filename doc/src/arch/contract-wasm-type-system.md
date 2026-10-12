@@ -130,7 +130,7 @@ specific `ContractSection` which governs ACL access to host functions.
 | `init` | `__initialize` | `init:` | `fn(ContractId, &[u8]) -> ContractResult` | `↓dispatch` | `Deploy` |
 | `exec` | `__entrypoint` | `exec:` | `fn(ContractId, &[u8]) -> ContractResult` | `↓dispatch`, `↓gate`, function-specific barbs | `Exec` |
 | `apply` | `__update` | `apply:` | `fn(ContractId, &[u8]) -> ContractResult` | `↓commit` (state writes) | `Update` |
-| `metadata` | `__metadata` | `metadata:` | `fn(ContractId, &[u8]) -> Vec<u8>` | `↓verify` (returns ZK public inputs; signature pubkeys SHALL be empty) | `Metadata` |
+| `metadata` | `__metadata` | `metadata:` | `fn(ContractId, &[u8]) -> ContractResult` (the return data is written with `set_return_data`) | `↓verify` (returns ZK public inputs; signature pubkeys SHALL be empty) | `Metadata` |
 
 A variant macro `define_contract_with_spend_hook!` (`entrypoint.rs:101`) adds a
 fifth export `__spend_hook` for contracts that receive burn callbacks from
@@ -794,8 +794,14 @@ arguments and `i64` return values.
 | Function | Signature | Returns | ACL Section |
 |----------|-----------|---------|-------------|
 | `set_return_data_` | `fn(ptr: *const u8, len: u32) -> i64` | `0` (success) | `Metadata`, `Exec` |
-| `get_object_bytes_` | `fn(ptr: *const u8, len: u32) -> i64` | `0` (success) | `Deploy`, `Metadata`, `Exec`, `Update` |
-| `get_object_size_` | `fn(len: u32) -> i64` | size as i64 | `Deploy`, `Metadata`, `Exec`, `Update` |
+| `get_object_bytes_` | `fn(ptr: *const u8, len: u32) -> i64` | `0` (success) | `Deploy`, `Metadata`, `Exec` |
+| `get_object_size_` | `fn(len: u32) -> i64` | size as i64 | `Deploy`, `Metadata`, `Exec` |
+
+Both rows listed `Update` as an allowed section until 2026-10-12 (`F-345`); the ACLs in
+`src/runtime/import/util.rs` allow `Deploy`, `Metadata` and `Exec` only, for both functions. A
+caller that trusted this table would have deployed a contract reading its own objects during
+`apply` and hit `CALLER_ACCESS_DENIED` at runtime — the ACL is the authority, and a table that
+grants more than it is why the divergence is worth correcting rather than noting.
 | `get_verifying_block_height_` | `fn() -> i64` | height as i64 | `Deploy`, `Metadata`, `Exec` |
 | `get_block_target_` | `fn() -> i64` | target as i64 | `Deploy`, `Metadata`, `Exec` |
 | `get_tx_hash_` | `fn() -> i64` | object index | `Deploy`, `Metadata`, `Exec` |
@@ -835,7 +841,8 @@ object store is cleared between WASM invocations.
 
 Host functions signal errors via the `to_builtin!` macro
 (`src/sdk/src/error.rs:112-116`): `i64::MIN + error_code`. Error codes are
-small positive integers (1-24). Success is `0_i64`. Normal return values
+small positive integers (**1-37** — `ContractError` has thirty-seven variants;
+this said 1-24, which was the count before several were added — `F-343`). Success is `0_i64`. Normal return values
 (indices, handles) are non-negative, so `i64::MIN + error_code` cannot collide
 with valid returns.
 
@@ -2752,7 +2759,7 @@ the external report's finding 16; the correction is at §C.7.1 above and in `pri
 
 - **`P_CEILING = 9`** — derived from Halo2 circuit structure (k≤15, instance column proportion 1/7)
 - **`W_CEILING = 13`** — derived from witness cell budget per operation
-- **`O_CEILING = 3`** — derived from Merkle proof cost (34 witness values per inclusion)
+- **`O_CEILING = 3`** — derived from **operation count**, not from proof cost: the minimum viable L1 contract is 1 consume + 1 create = 2 operations, plus one optional read-only query = 3, and `purse`'s three endpoints (Deposit, Withdraw, Balance) are the ceiling's instance (`CeilingDerivation.lean:144-150`). This line said "derived from Merkle proof cost (34 witness values per inclusion)" until 2026-10-12 (`F-346`); the Lean states the derivation in full at `CeilingDerivation.lean:144-150`, and proof cost appears nowhere in it.
 - **`p_ceiling_ge_minimum`, `w_ceiling_ge_minimum`, `o_ceiling_ge_minimum`** — formal
   verification that ceilings meet minimum requirements for L1 contract functionality
 
