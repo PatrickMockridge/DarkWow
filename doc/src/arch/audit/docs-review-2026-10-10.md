@@ -1127,4 +1127,16 @@ F-611: doc:doc/src/misc/nodes/node-configurations.md@8b94a73747
      rewritten rather than bannered because its subject (DRKW: getting it, checking it, sending it) is real.
      F-604 sweeps two phantom commands across four documents; F-611's `fud` row is left marked **unverified**
      rather than guessed at, since `bin/fud/` holds no config to read. -->
+F-612: doc:doc/src/dev/testing/heavyweight-spec.md#72-heavyweightpipeline@173ef382ab
+F-613: doc:doc/src/dev/testing/heavyweight-spec.md#54-o-cap-authorization--identity@173ef382ab
+F-614: doc:doc/src/arch/zk-engineering-posture.md@173ef382ab
+F-615: doc:doc/src/arch/legacy/event_graph.md@173ef382ab
+F-616: doc:doc/src/dev/testing/heavyweight-spec.md#heavyweight-block@173ef382ab
+<!-- F-612's row was already half false when read: §3.5's convention paragraph had been corrected by an earlier
+     remediation and cites `OBL-C117`, so the "two normative docs, opposite rules" framing no longer described the
+     page. What still contradicted both the code and §3.5 was PR-2 fifty lines below — the same document, a
+     different clause, which is why the row is promoted to the pipeline section rather than to §3.5.
+     F-614 is E7's most consequential: a posture document asserting the absence of exceptions, in a tree whose
+     manifest lists four. F-615 is the same shape from the other side — a prohibition the code's own comment
+     records as having been wrong about what it forbade. -->
 <!-- /promotion-log -->
