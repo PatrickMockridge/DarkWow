@@ -792,4 +792,23 @@ F-518: doc:doc/src/contract/otc_swap.md#cancel_swapzk@4808b9b824, row:OBL-C230@4
      check the enforcement it claimed to have moved actually exists — it does, in the host, against the
      stored swap and the chain height — so the correction names that site instead of leaving a reader to
      infer that the timelock is unenforced. -->
+F-514: row:OBL-C232@3faf7a4e6a, doc:doc/src/contract/insurance_market.md#o-cap-enabled-functions-0x09-0x0f@3faf7a4e6a
+<!-- F-514 is the ledger's most understated row and is promoted as a *security* repair. It was recorded
+     as an unread field; measured, the field was the symptom of an endpoint that resolved claims from the
+     caller's own `is_valid` and `payout_amount` with no authorization of any kind, which is why the
+     register row carries C where the ledger carried M. The promotion names the removal and what the
+     endpoint's return needs, so that the feature is not simply gone. -->
+F-515: doc:doc/src/contract/dex.md#signature-verification@3faf7a4e6a, row:OBL-C234@3faf7a4e6a
+<!-- F-515 is promoted as a restatement of a section that contradicted itself: it claimed a host
+     `schnorr_verify` and, in the same breath, that no such opcode exists. The circuit half is real and is
+     the whole binding, so the correction names the mechanism rather than the missing half. -->
+F-516: doc:doc/src/contract/stablecoin.md#configurable-models@3faf7a4e6a, row:OBL-C231@3faf7a4e6a
+<!-- F-516 is promoted as a restatement: the contract accepts a model and ignores it, so the document's
+     "the deployer selects the model" was the falsifiable claim. The table now separates the one
+     implemented model from the three intended ones, and the row says out loud that building them is a
+     feature rather than a repair. -->
+F-520: doc:doc/src/contract/dex.md#contract-functions@3faf7a4e6a, row:OBL-C233@3faf7a4e6a
+<!-- F-520 is promoted with a code half as well as a doc half: the constant the row leaned on was dead in
+     the tree — written and read nowhere — so it is removed rather than left as the explanation of a
+     registration that does not happen. -->
 <!-- /promotion-log -->
