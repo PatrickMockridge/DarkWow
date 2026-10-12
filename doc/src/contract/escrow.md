@@ -330,10 +330,11 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 | `fund.zk` | `fund.zk.bin` | Compiled — Pedersen value commitment verified |
 | `claim.zk` | `claim.zk.bin` | Compiled — seller secret proof + nullifier derivation |
 | `refund.zk` | `refund.zk.bin` | Compiled — timeout check + buyer secret proof + nullifier |
+| `cancel.zk` | `cancel.zk.bin` | Compiled — buyer cancels before funding |
 
 ### What's Done
 
-1. **ZK Circuit Compilation**: All 4 circuits compiled to `.zk.bin` via zkas
+1. **ZK Circuit Compilation**: All 5 circuits compiled to `.zk.bin` via zkas
 2. **Entry Point Implementation**: Full `get_metadata()` + `process_instruction()` wired with ZK proof verification
 3. **State Management**: 5-state state machine (Created → Funded → Claimed/Refunded/Cancelled) with 30 error variants
 4. **PromissoryNote Integration**: Phase 1 standalone value pool; Phase 2 spend_hook integration for promissory_note

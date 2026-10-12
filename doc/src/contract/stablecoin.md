@@ -201,7 +201,7 @@ uses `validate_child_redeem_v1` for RedeemV1 child call validation.
 
 ## ZK Circuits
 
-All 9 circuits compiled to `.zk.bin`:
+All **10** circuits compiled to `.zk.bin`:
 
 | Circuit | Purpose |
 |---------|---------|
@@ -214,6 +214,7 @@ All 9 circuits compiled to `.zk.bin`:
 | `liquidate.zk` | Prove liquidation conditions met |
 | `governance_report.zk` | Prove precise ratio report (quotient-remainder) |
 | `accrue_interest.zk` | Prove precise interest calculation (quotient-remainder) |
+| `update_config.zk` | Prove a configuration update is authorized (missing from this table and from its count until 2026-10-12 — `F-005`) |
 
 ## Multi-Collateral Support
 

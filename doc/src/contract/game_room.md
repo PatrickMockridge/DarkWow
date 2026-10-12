@@ -223,15 +223,28 @@ pub const GAME_ROOM_ENTROPY_TREE: &str = "game_room_entropy";     // trusted set
 
 ## ZK Circuits
 
-All 5 circuits compiled to `.zk.bin`:
+All **12** circuits compiled to `.zk.bin`:
 
 | Circuit | Purpose |
 |---------|---------|
 | `create_room.zk` | Prove room creation with owner authorization |
+| `create_pot.zk` | Prove pot creation for a room |
 | `deposit.zk` | Prove stake deposit with account derivation |
 | `place_bet.zk` | Prove bet placement with commitment binding |
+| `raise.zk` | Prove a raise into the pot |
+| `call.zk` | Prove a call for the current bet |
+| `fold.zk` | Prove the folder's account update |
+| `close_pot.zk` | Prove the pot closes and the room's current-pot fields clear |
 | `settle_pot.zk` | Prove DAO-authorized pot settlement |
+| `contribute_entropy.zk` | Prove an entropy commitment or reveal (TrustedSetup mode) |
 | `claim.zk` | Prove winner claim with payout verification |
+| `withdraw.zk` | Prove a balance withdrawal from the room |
+
+**This table listed five and said "All 5 circuits"** until 2026-10-12 (`F-003`); the tree holds
+twelve, and the seven added here — `create_pot`, `raise`, `call`, `fold`, `close_pot`,
+`contribute_entropy`, `withdraw` — are the ones whose endpoints the state machine above
+documents. A reader checking which operations are proven against this table would have concluded
+that raising, calling and folding have no circuit at all.
 
 ## Promissory Note Lifecycle Integration
 

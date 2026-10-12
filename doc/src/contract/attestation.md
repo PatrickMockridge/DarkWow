@@ -268,7 +268,7 @@ Attestor (oracle) attests to external data (push model):
 
 ## ZK Circuits
 
-All 10 circuits compiled to `.zk.bin`:
+All 12 circuits compiled to `.zk.bin`:
 
 | Circuit | Purpose |
 |---------|---------|

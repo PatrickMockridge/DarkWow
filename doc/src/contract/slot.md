@@ -237,6 +237,7 @@ src/contract/slot/
 ├── Cargo.toml
 ├── proof/
 │   ├── commit_bet.zk      # ZK proof for committing
+│   ├── reveal_spin.zk     # ZK proof for the reveal step (missing from this tree until 2026-10-12 — `F-004`)
 │   └── settle_bet.zk      # ZK proof for settlement
 └── src/
     ├── lib.rs                # Function enum, constants
