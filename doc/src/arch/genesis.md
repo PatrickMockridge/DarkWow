@@ -115,11 +115,19 @@ be updated:
 |------|--------|
 | `src/sdk/src/crypto/contract_id.rs` | Add `lazy_static!` for new ContractId, update `GENESIS_CONTRACT_IDS_BYTES` array size |
 | `src/sdk/src/crypto/mod.rs` | Add new ContractId to `pub use` re-exports |
-| `bin/dwowd/src/lib.rs` | Add `include_bytes!` + `set_contract_data` block in `init_linear()` |
+| `bin/dwowd/src/lib.rs` | Add the contract's `(include_bytes!(wasm), include_bytes!(manifest), "Name")` entry to the genesis table, in `genesis_contracts()`'s order. The bytes are written through the DeployV1 path (`execution.rs`), not by a block in `init_linear()` — see below |
 | `bin/dwowd/src/tests/genesis.rs` | Add to `GenesisHarness::new()` |
 | `contrib/docker/darkwow-testnet/Dockerfile` | Add `zkas rebuild` + WASM `cargo build` + `cp` lines |
 | `Cargo.toml` | Add contract to workspace members |
 | **This page** | Add row to the contract table |
+
+*Corrected 2026-10-11 (`F-328`).* The `bin/dwowd/src/lib.rs` row read "Add
+`include_bytes!` + `set_contract_data` block in `init_linear()`", and **`init_linear()`
+never calls `set_contract_data`**. The method exists (`src/linear/src/store.rs:157`), but
+the genesis path reaches the store through DeployV1 processing: `execution.rs` writes the
+contract's manifest host-side as the deployment is applied, and `bin/dwowd`'s own
+contribution is the table entry that names the bytes. Following the old instruction
+literally would have added a second writer of state the block already carries.
 
 That's it. No other documentation needs updating — every other page references
 this one rather than repeating the list.

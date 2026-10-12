@@ -32,7 +32,7 @@ architecture described in §§0-9 below. This section documents what works today
 - **Trust tiers:** Genesis / SelfDeployed / Attested / Unverified — implemented
   in `capability.rs` with CLI display.
 - **Provisional state (§6.5):** The capability spend-state lifecycle
-  (Unspent/Pending/Processing/Spent) via the `CapStatus` enum
+  (Pending/Processing/Spent) via the `CapStatus` enum
   (`bin/dww/src/capability.rs`). The wallet tracks Pending (broadcast, in mempool),
   Processing (mined, immature) and Spent (confirmed, ≥100 blocks), with
   `CONFIRMATION_DEPTH=100` and `MEMPOOL_WINDOW=100` as the confirmation window.
@@ -279,9 +279,19 @@ Additional rules:
 
 The boundary between the wallet core and the Capability SDK SHALL be:
 - `wallet_construct(primitives: &[Primitive], required_barbs: &[Barb]) -> Option<TypedCapability>` — the ONE composition function (type-system.md §6.3, ocap.md §2)
-- `ManifestContractClient::build(function, params, wallet_state) -> Result<(Vec<u8>, Vec<Vec<u8>>), String>` — generic action dispatch
-- `ProverContext::build_proof(cap: &dyn CapabilityProvider, params: &str) -> Result<Vec<Proof>, Error>` — generic proof construction (§6.4.1)
+- `ManifestContractClient::build(function, params, wallet_state) -> Result<(Vec<u8>, Vec<Vec<u8>>), String>` — generic action dispatch **and generic proof construction**: the `Vec<Vec<u8>>` it returns *is* the proof set (§6.4.1)
 - `CircuitWitnessMap::from_manifest(entries: &[String]) -> CircuitWitnessMap` — witness-binding rule parser
+
+*Corrected 2026-10-11 (`F-324`).* A third bullet stood between those two, reading
+`ProverContext::build_proof(cap: &dyn CapabilityProvider, params: &str) -> Result<Vec<Proof>, Error>`
+— "generic proof construction (§6.4.1)". **`ProverContext` has no such method**: its whole
+public surface is `new(...)`. The two types its signature named are real but do other work —
+`CapabilityProvider` (`src/sdk/src/prover.rs`) is the *data* trait a capability answers
+questions through (its note fields, its spending secrets, its Merkle path and root), and
+`CircuitWitnessMap::from_manifest` is the parser the bullet beneath already lists. Proofs are
+built by the client, which is why the line above carries both jobs: the dispatch site takes
+`client.build(...)`'s first value as call data and its second as the proof set. The phantom
+bullet named a seam that does not exist between two that do.
 
 The boundary between the Capability SDK and the wallet's state SHALL be the
 `WalletStateProvider` trait (`src/sdk/src/contract_client.rs`) — the ONLY
@@ -328,7 +338,6 @@ local_wallet.rs      — SQLite-only handle (no sled, no P2P)
 contract_imports.rs  — native_token constants, client registry, contract-id lookup
 contract_metadata.rs — contract metadata record types
 manifest_resolver.rs — on-chain manifest queries (RPC-free; wallet IS a full node)
-manifest_verify.rs   — manifest-vs-WASM verification
 deploy.rs            — DeployV1 transaction data extraction
 prover_impl.rs       — ResolvedCapProvider (generic manifest-driven proving)
 p2p_wallet.rs        — wallet-owned P2P client (P2pWalletConfig/SeedAddr)
@@ -336,6 +345,15 @@ rpc_server.rs        — unix-socket JSON-RPC server (wallet daemon IPC)
 wallet_rpc_client.rs — connect-per-call unix-socket JSON-RPC client
 sync_task.rs         — P2P chain sync loop (dwow_chain::sync_connection::SyncPeer)
 integrity.rs         — DB integrity check types
+
+*Corrected 2026-10-11 (`F-326`).* This listing had a line reading `manifest_verify.rs —
+manifest-vs-WASM verification`, and **no such module exists** — in this tree or anywhere
+else. Nor is the check it described performed elsewhere: `scan.rs` does not compare a
+manifest to the WASM it names, the manifest-vs-entrypoint agreement that *is* enforced
+runs at build time over the source tree (`scripts/check-manifest-entrypoint-agreement.sh`)
+rather than in the wallet over a deployed binary, and `contract-trust-model.md`'s own
+"Layer 1" is a *trust tier* rather than a verification. The line was a statement of
+intent that read as a statement of fact; `OBL-C237` is where its absence is recorded.
 ffi.rs               — C ABI for language bindings
 ```
 
@@ -579,7 +597,7 @@ Delivery). Held capabilities discovered through Path 2
 (§2.2) store their AccountManager key *coordinates* (§0.1), never raw secrets.
 
 The write path adds **provisional** stores (§6.5): a pending-transaction record and a
-per-capability spend-state (`Unspent`/`Reserved`/`Spent`). These hold no confirmed
+per-capability spend-state (`Pending`/`Processing`/`Spent`). These hold no confirmed
 authority — they are reconciled into the tables above when a block is scanned.
 
 ## 4. Authority: Name Possession Only
@@ -698,7 +716,7 @@ Selection by asset value alone SHALL NOT satisfy this requirement: a capability 
 eligible only if its constructed type's barbs cover the action's `requires`. This is the
 write-path use of the soundness invariant `walletConstruct_sound` (§7.1) — the read path
 proves the invariant when it *constructs* a held type; the write path enforces it when it
-*exercises* one. A capability in the `Reserved` state (§6.5) SHALL NOT be selected.
+*exercises* one. A capability whose spend-state is `Pending` or `Processing` SHALL NOT be selected — those are the two states in which its authority is not yet confirmed (§6.5). *Corrected 2026-10-11 (`F-320`): this said "a capability in the `Reserved` state", and `CapStatus` has no such variant, so the SHALL named a state nothing can be in.*
 
 ### 6.3 The Construction Pipeline
 
@@ -846,7 +864,7 @@ WritePath(cid, action, params) =
       . createProof!(circuit, seed)                              // Halo2 Proof::create
       . assembleParams!(bound, schema)                           // params assembly (witness-tagged fields)
       . publish!(note!(new_state), nullifier!)                   // Create: produce-side note + nullifier
-      . finalize!(fee)                                           // build_fee_and_finalize_tx
+      . finalize!(fee)                                           // prepare_fee_call → FeeHandoff::finish
   )
 ```
 
@@ -890,12 +908,21 @@ commitment `pedersen_commit(fee, fee_blind)` is computed with its own blind, not
 zero. The wallet SHALL ensure Pedersen homomorphic balance:
 `input_blind = output_blind + fee_blind`.
 
-**Integration point.** The wallet's `build_fee_and_finalize_tx()` in
-`bin/dww/src/fee_builder.rs` SHALL use `FeeV3CallBuilder` (the NativeToken client
-builder at `src/contract/native_token/src/client/fee.rs`). The builder SHALL
-receive the selected DRKW capability, its Merkle proof (from `capability_proofs`),
-and resolved secret (from `AccountManager`, §4). The builder SHALL NOT construct
-Merkle proofs manually — proofs SHALL be retrieved from the wallet's SQLite store.
+**Integration point.** The wallet's fee path in `bin/dww/src/fee_builder.rs` is
+`prepare_fee_call(...)`, which returns a `FeeHandoff`, and `FeeHandoff::finish(...)`,
+which proves the fee call once the transaction's frame commitment exists. It SHALL use
+`FeeV3CallBuilder` (the NativeToken client builder at
+`src/contract/native_token/src/client/fee.rs`). The builder SHALL receive the selected
+DRKW capability, its Merkle proof (from `capability_proofs`), and its resolved secret
+(from `AccountManager`, §4). The builder SHALL NOT construct Merkle proofs manually —
+proofs SHALL be retrieved from the wallet's SQLite store.
+
+*Corrected 2026-10-11 (`F-325`).* This named `build_fee_and_finalize_tx()`, and **no
+such function exists** — the name survives only in comments in `bin/dww` (`deploy.rs`,
+`lib.rs`), which is how it reached this document and stayed. The two-call shape above is
+not stylistic: the fee call must exist *before* the transaction's commitment does, so its
+proof can bind that commitment (`OBL-C198`), and `FeeHandoff` is what carries it across
+that gap.
 
 **Nullifier publication.** The fee input's nullifier SHALL be published in
 `Transaction.nullifiers` for mempool double-spend detection.

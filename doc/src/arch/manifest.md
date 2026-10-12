@@ -11,7 +11,7 @@
 | Wallet resolver | Complete | `bin/dww/src/manifest_resolver.rs` |
 | CLI `contract show` | Complete | `bin/dww/src/dispatch.rs` |
 | Deploy `--manifest` flag | Complete | `bin/dww/src/dispatch.rs` (build_deploy_ix) |
-| Scan-side integration | Complete | `bin/dww/src/rpc.rs` (DeployV1 handler) |
+| Scan-side integration | Complete | `bin/dww/src/scan.rs` (DeployV1 handler) |
 | CapabilityResolver fallback | Complete | `bin/dww/src/capability.rs` (resolve()) |
 | On-chain manifest hash | Pending | Deployooor hardening |
 
@@ -552,7 +552,7 @@ to the user before any deploy transaction is built.
 
 When the wallet scans a block and encounters a `DeployV1` call:
 
-Implementation: `bin/dww/src/rpc.rs` — `scan_block_linear()`, DeployV1 handler.
+Implementation: `bin/dww/src/scan.rs` — `scan_block_linear()`, DeployV1 handler.
 
 1. Extract `ix` from `DeployParamsV1` (already decoded from contract call data)
 2. Call `ContractManifest::from_deploy_ix(&params.ix)` — returns `None` if no
@@ -676,7 +676,7 @@ modules — no new async, no new dependencies. The data pipeline is:
 
 ```
 DeployV1 tx on chain
-  → scan_block_linear() detects 0x4D prefix        [rpc.rs]
+  → scan_block_linear() detects 0x4D prefix        [scan.rs]
   → ContractManifest::from_deploy_ix() parses TOML  [sdk/src/manifest.rs]
   → wallet.store_manifest() stores in SQLite        [walletdb.rs]
   → CapabilityResolver reads manifest               [capability.rs]

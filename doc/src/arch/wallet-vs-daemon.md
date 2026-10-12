@@ -187,7 +187,7 @@ is cheap (decryption, Merkle proof verification) and belongs in the wallet.
 | FeeBuilder | `bin/dww/src/fee_builder.rs` | FeeV3 / storage fee computation |
 | Deploy | `bin/dww/src/deploy.rs` | DeployV1 transaction data extraction |
 | ManifestResolver | `bin/dww/src/manifest_resolver.rs` | On-chain ABI queries |
-| ManifestVerify | `bin/dww/src/manifest_verify.rs` | Manifest-vs-WASM verification |
+| *(removed)* | — | `manifest_verify.rs` was listed here and **does not exist**; the check it describes has no home. `F-326`, `OBL-C237`. |
 | ContractMetadata | `bin/dww/src/contract_metadata.rs` | Contract metadata record types |
 | SyncTask | `bin/dww/src/sync_task.rs` | P2P block sync loop |
 | P2pWallet | `bin/dww/src/p2p_wallet.rs` | Wallet-owned P2P client config |
