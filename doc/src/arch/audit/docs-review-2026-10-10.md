@@ -979,4 +979,14 @@ F-537: doc:doc/src/contract/oracle.md#zk-circuits@5c53e27b1b
      capability-commitment slot, when the code deliberately gives the operator commitment its own domain,
      `OBL-Z19`). The client's own comment at the call already said "not 4", so this was a three-way
      disagreement the document lost. -->
+F-538: doc:doc/src/contract/promissory_note.md#zk-circuits@6d94948c87
+F-539: doc:doc/src/contract/promissory_note.md#transferv1-0x04@6d94948c87, doc:doc/src/contract/otc_swap.md#zk-circuits@6d94948c87, doc:doc/src/contract/escrow.md#zk-circuits@6d94948c87
+F-540: doc:doc/src/contract/dao_escrow.md#zk-circuits@6d94948c87
+<!-- F-538/F-539/F-540 are one claim — the trailing `tx_binding`/`tx_nonce` pair is the *position* the node
+     reads — and the fix is the same edit in three documents. F-540 is the one with a gate beside it:
+     `check-circuit-metadata-alignment.sh` promotes exactly this position to a hard FAIL, comparing the client
+     against the circuit rather than against a convention, and it is green. Its scope is circuit↔client; the doc
+     is outside it, which is where three pre-`OBL-C198` rows survived. Recorded here as residue rather than
+     built as a gate: reading an order out of a prose table is the symbol-mapping class that cannot be checked
+     soundly (see the R7 section). -->
 <!-- /promotion-log -->
