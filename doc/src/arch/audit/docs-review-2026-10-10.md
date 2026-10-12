@@ -1331,4 +1331,17 @@ F-356: doc:doc/src/arch/consensus/linear_blockchain.md#uncleproof-structure@4ca3
      describes (a reader following the doc reintroduces the bug) no longer has a site; that is recorded rather
      than left implied, because "the dangerous paragraph is gone" and "the dangerous paragraph was fixed" are
      different facts and only one of them is true. -->
+F-357: doc:doc/src/arch/consensus/linear_blockchain.md@56c96130b7
+F-358: doc:doc/src/arch/consensus-core-map.md@56c96130b7
+F-359: doc:doc/src/arch/consensus/consensus.md#implementation-status@56c96130b7
+F-360: doc:doc/src/arch/consensus-coinbase.md@56c96130b7
+F-361: doc:doc/src/arch/consensus-coinbase.md@56c96130b7
+<!-- F-361 is the one that matters: the section documented a nullifier check that cannot exist (`Output::nullifier
+     == None` on the mint, revealed at spend time) and omitted the consensus-critical value binding the handler
+     *does* perform. A reader following it would hunt for the wrong check and miss the one that stops a minter
+     committing a note to a different amount than it declares. F-359 is two citations to code that does something
+     else — and the corrected one for the pin split points at integer arithmetic, which is what `uncle_merkle.md`
+     already records about that mechanism. F-360 is half a million DRKW of disagreement inside one document.
+     F-357 is annotated rather than replaced: that section's figure has never been re-derived, and the instrument
+     that derives it is `check-doc-canonical-counts.sh`. -->
 <!-- /promotion-log -->
