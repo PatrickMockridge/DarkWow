@@ -1166,4 +1166,17 @@ F-005: doc:doc/src/contract/stablecoin.md#zk-circuits@9a59b8c880
      fold have no circuit. Noted as a coverage lesson rather than a stray: the review grouped these under its own
      heading and I worked the tranches by document family, so a class spanning families is the kind that survives
      a tranche boundary. -->
+F-103: doc:doc/src/arch/verification-hazop.md#the-root-causes--the-open-findings-reduce-to-six@160399609c
+F-104: doc:doc/src/arch/verification-hazop.md#the-root-causes--the-open-findings-reduce-to-six@160399609c
+F-105: doc:doc/src/arch/verification-hazop.md@160399609c, partial:scripts/register-status.sh usage header corrected to the Status cell@160399609c
+F-106: partial:the documented control was verified against the script and holds; only the usage header was stale@160399609c
+F-107: partial:the prose was already correct — `--check` does fail a missing status; only the usage header was stale@160399609c
+F-109: doc:doc/src/arch/verification-hazop.md@160399609c
+F-110: doc:doc/src/arch/verification-hazop.md@160399609c
+<!-- Cluster 1's first slice, and the shape is instructive: F-106 and F-107 were *already fixed* — the prose named
+     the Status column, documented the real control, and claimed both form and existence — and what still said
+     otherwise was the script's own usage header, which no document gate reads and which the review's citer
+     could not see. F-110 is the register's cleanest self-refuting figure: item 5 corrects the number 72 by
+     giving its own 78, and 78 has since become 84, so the bullet now states the argument (a moving figure
+     quoted without its date) and no figure. F-103/F-104 are decided policies read as pending work. -->
 <!-- /promotion-log -->
