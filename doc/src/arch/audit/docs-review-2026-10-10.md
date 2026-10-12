@@ -1261,4 +1261,31 @@ F-160: doc:doc/src/arch/verification-hazop.md@d9b0135acc
      F-156–F-160's controls already existed; what did not exist was a working gate — see `d9b0135acc`, where the
      checker was found crashing (`NameError`, so the inventory check had never run) and naming an innocent axiom
      from a mis-bound doc string. Both fixed; `Passed: 8  Failed: 0`. -->
+F-182: doc:doc/src/dev/contracts/safety.md@680760a565
+F-183: doc:doc/src/dev/contracts/safety.md@680760a565
+F-184: doc:doc/src/dev/contracts/safety.md@680760a565
+F-185: doc:doc/src/dev/contracts/safety.md@680760a565
+F-186: doc:doc/src/dev/contracts/safety.md#warning-signs@680760a565
+F-187: doc:doc/src/dev/contracts/safety.md@680760a565
+F-188: doc:doc/src/dev/contracts/safety.md@680760a565
+F-189: doc:doc/src/dev/contracts/safety.md@680760a565
+F-190: doc:doc/src/arch/verification-hazop.md@680760a565, doc:doc/src/dev/contracts/safety.md@680760a565
+F-191: doc:doc/src/dev/contracts/safety.md@680760a565
+F-192: doc:doc/src/dev/contracts/safety.md@680760a565
+F-193: doc:doc/src/dev/contracts/safety.md@680760a565
+F-194: doc:doc/src/dev/contracts/safety.md@680760a565
+F-195: doc:doc/src/dev/contracts/safety.md@680760a565
+F-196: row:OBL-C229@e9e0d2567a, doc:doc/src/dev/contracts/safety.md@680760a565
+F-197: doc:doc/src/dev/contracts/safety.md@680760a565
+F-198: gate:scripts/check-wallet-kernel.sh@680760a565
+F-199: gate:scripts/check-register-artifacts.sh@680760a565
+F-200: doc:doc/src/arch/verification-hazop.md#id-naming-and-why-it-is-a-new-scheme@680760a565
+F-201: gate:scripts/check-register-worklist.sh@680760a565
+<!-- Clusters 8 and 9, and the method was the point: **every gate these rows name was run** rather than
+     described, which is how Cluster 9 turned out to be done — `check-wallet-kernel.sh --self-test` reports
+     both controls, the artifacts header no longer disclaims symbol checking, the worklist docstring no longer
+     repeats the census. Cluster 8 was nearly all fixed too; two edits were needed and both are the same shape
+     (a name that no longer exists: `Mint_V1` for `Issue_V2`, and a "warning signs" table whose examples read
+     as citations when the column holds shapes). `F-200` is the tranche's live finding: the severity legend
+     omitted `L`, which seventeen rows carry, so any severity-bucketing instrument drops them silently. -->
 <!-- /promotion-log -->
