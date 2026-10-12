@@ -1028,4 +1028,13 @@ F-547: doc:doc/src/contract/dex.md#contract-functions@9f698f3a9e, doc:doc/src/co
      exactly the distinction the doc erased: instancing a value publishes it, and the doc claimed the circuit
      *verified* a paytable lookup, ranged the reels and applied the house edge. Reading the circuit shows all three
      are the host's work and none is in the proof. -->
+F-549: doc:doc/src/contract/risk_market_ecosystem.md#existing-contracts-to-extend@d246f02eec
+F-551: doc:doc/src/contract/subscription.md#mvp-status@d246f02eec, doc:doc/src/contract/lottery.md#status@d246f02eec, doc:doc/src/contract/roulette.md#future-improvements@d246f02eec
+<!-- F-551 is promoted across three documents, two of which are already stamped for other rows: `roulette`'s
+     unchecked "ZK circuits for place_bet and settle_bet" was corrected with F-545 and is the same defect, and
+     `subscription`'s table is F-506's document seen from the status side rather than the circuit side. What the
+     class shares is that none of it is a *description* defect — a status page asserts present state, so every
+     wrong cell is a claim that something is done (or not) rather than a stale number. `lottery` is the one where
+     the misreport costs work: two of three unchecked boxes describe shipped things, and one of them is the
+     ticket Merkle tree the contract's model rests on. -->
 <!-- /promotion-log -->
