@@ -1741,8 +1741,15 @@ of the *sources*, not a Halo2 model, and it does not by itself discharge
 `CircuitDerivable`.
 
 `capabilityPredicateBypass_prevention`: A capability requiring `↓prove`
-MUST have that barb covered by its composition. This closes HAZOP Pattern 4
-("capability predicate result is free witness; provenance unverified").
+MUST have that barb covered by its composition. This closes **half** of HAZOP
+Pattern 4 ("capability predicate result is free witness; provenance unverified") —
+the *carrier* half. The provenance half is open, and the Lean says so where the
+theorem is stated: `Capability/Inversion.lean` records that the lemma "establishes
+that the barb is exhibited by a declared primitive; it does not establish that the
+primitive's circuit constrains the result. That is `Axioms.NoFreeInstances`'s
+territory (`OBL-T7`), and it is not discharged." *Corrected 2026-10-11 (`F-321`):
+this read "This closes HAZOP Pattern 4", which the theorem it names does not do —
+and the pattern is named for the half that is left.*
 
 `verifierLearnsOnlyRequiredBarbs` (`verifierMinimumDisclosure`): The verifier
 learns NO barbs beyond those explicitly declared as required. This is the

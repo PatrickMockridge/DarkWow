@@ -145,6 +145,21 @@ capability composes it as a sub-capability — the holder must prove BOTH that
 they hold the identity credential AND that they can submit the bid. This is
 capability chaining: types compose, and the composition is itself a type.
 
+*Corrected 2026-10-11 (`F-322`): this example is a **design sketch**, and the type
+the Lean proves under that name is not it.* `tenderBidType`
+(`proofs/lean/src/DarkFi/Capability/Composition.lean`) composes eight **primitives**
+— `[secretKey, commitment, nullifier, contractId, funcId, assetId, merkleNode,
+dleqProof]` — and contains **no sub-capability**, while the sketch above composes six
+members and makes one of them an emergent type. The two are not the same object, and
+the "…PROVED" table below was reading this example as though they were.
+
+The difference is not a typo in either: `CapabilityType` is a list of primitives plus
+a proof that they cover the required barbs, and **there is no composition member that
+is itself a `CapabilityType`** — so an emergent sub-capability is a statement this
+model does not make. Which of the two is the tender bid's real shape is a modelling
+question rather than a correction, so the sketch is labelled here instead of rewritten:
+the example is what it was, and the table now says what the Lean proves.
+
 ## 3. The Authorization Inversion Theorem as Type Construction
 
 The Authorization Inversion Theorem states ([type-system.md §6](type-system.md)):
