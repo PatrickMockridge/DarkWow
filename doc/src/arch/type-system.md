@@ -1470,7 +1470,7 @@ profiles which are architecturally gated from event-graph. The
 
 The barb system is implemented across three modules:
 
-**BarbId enum** (`src/barb.rs`): all 32 of §1.1's observable actions — 14
+**BarbId enum** (`src/barb.rs`): all **33** of §1.1's observable actions — 14
 authorization barbs (Spend, View, Nullify, Commit, Prove, Verify, Dispatch,
 Gate, Denominate, ProveInclusion, Encrypt, Derive, Discover, Mine), 8
 concurrency barbs (Concurrent, Merge, SyncBarrier, Broadcast, RateLimit,
@@ -1519,7 +1519,7 @@ extracts the payload.
 P2P is one instance of a general principle — every channel with an in and an
 out, a send and a receive per the ρ-calculus (§0), acts as a shock absorber
 where the exponential cost of compositionally verifying every pair of
-process types against the 22-dimensional barb space collapses to a per-channel
+process types against the 2³³-point barb space (33 barbs, §1.1) collapses to a per-channel
 obligation. The collapse is purchased in exchange for four runtime obligations
 at the boundary.
 
@@ -1536,7 +1536,8 @@ runtime representation of the ρ-calculus channel name.
 parallel composition `P₁ | … | Pₙ` synchronizes on named channels. Without
 channel-typing, verifying the composite requires reasoning about all pairwise
 interactions against all reachable barb combinations — O(n²) pairs against a
-2^22 space. A channel that declares a barb set S ⊆ B factors this: each
+2^33 space (§1.1's 33 barbs; this said 2^22 when the alphabet's count and this
+sentence were both written against an older one — `F-339`). A channel that declares a barb set S ⊆ B factors this: each
 process is checked once against each channel it uses (does its point lie
 inside S?), and channels are checked once against the quarantine predicate
 (`bridge_safe`). Obligation drops to Σ|Sₖ| — linear in channels, bounded per
@@ -1698,12 +1699,16 @@ pareto-efficiency — no accidental unification is possible.
 
 **Status:** PROVED. `proofs/lean/src/DarkFi/Capability/Distinction.lean`
 
-All 10 pairs in §8.4 are proved distinct (`native_decide`). The conjunction
+All **13** pairs in §8.4 are proved distinct (`native_decide`). The conjunction
 `allUnifiablePairsProved` bundles them for single-reference verification:
 Nullifier ≠ [u8; 32], Commitment ≠ [u8; 32], SecretKey ≠ [u8; 32], ContractId ≠
 [u8; 32], PublicKey ≠ pallas::Point, SecretKey ≠ pallas::Base, FuncId ≠
 pallas::Base, AssetId ≠ pallas::Base, Nullifier ≠ IntentNullifier,
-OwnedSecretKey ≠ SecretKey.
+OwnedSecretKey ≠ SecretKey, and the three `MassBalance*CallData` pairs against `Vec<u8>`.
+
+This paragraph said "All 10 pairs" and listed ten, while §8.4's table has thirteen — the three
+`MassBalance` rows were added to the table and not to this list (`F-341`). The status line's
+citation is correct: `allUnifiablePairsProved` is in `Capability/Distinction.lean:136`.
 
 ### 11.3 Barb Preservation Under Composition
 
@@ -1751,7 +1756,7 @@ territory (`OBL-T7`), and it is not discharged." *Corrected 2026-10-11 (`F-321`)
 this read "This closes HAZOP Pattern 4", which the theorem it names does not do —
 and the pattern is named for the half that is left.*
 
-`verifierLearnsOnlyRequiredBarbs` (`verifierMinimumDisclosure`): The verifier
+`verifierLearnsOnlyRequiredBarbs` (`Capability/Inversion.lean:330`): The verifier
 learns NO barbs beyond those explicitly declared as required. This is the
 privacy property of the Authorization Inversion — the ZK proof reveals only
 the predicate result, not the witness.
@@ -1823,7 +1828,7 @@ discovers nothing. This is the invariant the transfer receive path preserves;
 the Docker transfer-receive divergence must therefore be a key/address or
 sync-ordering defect, not a decrypt-logic defect.
 
-`window_boundary_emission` (`pre_boundary_no_emission`, fee-spec.md §12): a node
+`pre_boundary_no_emission` (`Fee/Window.lean:27`, fee-spec.md §12): a node
 at height < `WINDOW` has not yet emitted a fee-window boundary log. That
 pre-boundary state is legal, so the multi-node consensus check treats it as
 "not yet reached" (warn + continue), never an abort.
