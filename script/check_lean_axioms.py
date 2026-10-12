@@ -219,14 +219,33 @@ def assumptions(path=None):
     """
     raw = open(path or AXIOMS_FILE, encoding="utf-8").read()
     live = strip_comments(raw)
+    live_lines = live.splitlines()
+    # Positions are taken on `raw`, **not** on `live`: `strip_comments` preserves line structure but
+    # removes comment *text*, so offsets after the first doc block differ between the two strings.
+    # The earlier form searched forward from the file's first `/--` for a block that could reach the
+    # declaration, and `.*?` then spanned every intervening definition — so the doc attributed to a
+    # late axiom was an earlier one's. `coinbase_blind` (Axioms.lean:344) was reported as citing
+    # `DarkFi.HAZOP.High`, a sentence belonging to a declaration 140 lines above it, which made this
+    # check name an innocent axiom (found 2026-10-12 while working `F-156`, and itself an instance of
+    # the class this script exists to catch: an instrument reporting a verdict it did not compute).
+    docs = [(m.end(), m.group(1)) for m in re.finditer(r"/--(.*?)-/", raw, re.DOTALL)]
     out = []
-    for m in DECL_RE.finditer(live):
+    for m in DECL_RE.finditer(raw):
         name = m.group(1)
-        lineno = live[: m.start()].count("\n") + 1
-        dm = re.search(
-            r"/--(.*?)-/\s*(?:@\[[^\]]*\]\s*)?(?:(?:private|protected|noncomputable)\s+)*"
-            r"(?:axiom|opaque)\s+" + re.escape(name) + r"\b", raw, re.DOTALL)
-        out.append((name, lineno, dm.group(1) if dm else ""))
+        lineno = raw[: m.start()].count("\n") + 1
+        # Liveness is the other pass: a commented-out assumption is not in the theory. `strip_comments`
+        # preserves newlines, so the declaration's own line is the place to compare.
+        if lineno - 1 >= len(live_lines) or name not in live_lines[lineno - 1]:
+            continue
+        doc = ""
+        for dend, body in docs:
+            if dend > m.start():
+                break
+            between = raw[dend : m.start()]
+            if "axiom" in between or "opaque" in between or between.strip().startswith("--"):
+                continue
+            doc = body
+        out.append((name, lineno, doc))
     return out
 
 
@@ -446,9 +465,10 @@ def check_inventory():
         return False
     declared = {l.strip() for l in m.group(1).splitlines() if l.strip()}
     actual = {name for name, _, _ in assumptions()}
-    for p in inventory_problems(declared, actual):
+    problems = inventory_problems(declared, actual)
+    for p in problems:
         fail(p)
-    if absent or undeclared:
+    if problems:
         return False
     ok(f"the register's inventory matches Axioms.lean ({len(actual)} assumptions)")
     return True
