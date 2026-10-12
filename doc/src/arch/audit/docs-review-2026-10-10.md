@@ -811,4 +811,10 @@ F-520: doc:doc/src/contract/dex.md#contract-functions@3faf7a4e6a, row:OBL-C233@3
 <!-- F-520 is promoted with a code half as well as a doc half: the constant the row leaned on was dead in
      the tree — written and read nowhere — so it is removed rather than left as the explanation of a
      registration that does not happen. -->
+F-189: row:OBL-C235@cf09d131a3, doc:doc/src/dev/contracts/safety.md#rc12--an-error-dropped-panicked-on-or-made-indistinguishable@cf09d131a3
+<!-- F-189 is promoted as a repair plus a correction. The repair retires the last production `.expect()`
+     the finding `C1` names; the correction is to the *citation*, which used a finding as a licence.
+     Promoting it also forced a re-measurement of OBL-C194's census, which is RED — twelve survivors in
+     three contracts, wired into the umbrella — and was red before this change: a gate I had not been
+     running, and the reason the row now says so. -->
 <!-- /promotion-log -->
