@@ -123,23 +123,33 @@ The labor market uses the [Attestation Contract](./attestation.md) for deliverab
 
 ## State Machine
 
+Each edge below is the guard its handler enforces — three of them accept more than the
+`Delivered`-only shape an earlier version of this diagram drew, and Cancel accepts less:
+
 ```
-Created ──[Accept]──> InProgress ──[Deliver]──> Delivered
-                                              │
-                      ┌───────────┬───────────┴───────────┬───────────┐
-                      │           │                       │           │
-              [Confirm]     [Dispute]               [Timeout]   [Cancel]
-                  │           │                       │           │
-                  ▼           ▼                       ▼           ▼
-            Confirmed    Disputed                  Refunded    Cancelled
-                         │
-                         ▼
-                   DAO Resolution
-                         │
-              ┌──────────┴──────────┐
-              │                     │
-         Release               Refund
+Created ──[Accept]──> InProgress ──[Deliver]──> Delivered ──[ConfirmDelivery]──> Confirmed
+   │                      │                         │
+   │                      ├────[Dispute]────────────┤
+   │                      ├────[Refund]─────────────┤
+   │                      │                         │
+   └──[CancelJob]──> Cancelled      [Dispute] / [Refund] ──> Disputed / Refunded
+         (Created only)                   │
+                                          ▼
+                                    DAO Resolution
+                                          │
+                             ┌────────────┴────────────┐
+                        Release                    Refund
 ```
+
+| Handler | Accepted states | Writes |
+|---|---|---|
+| `confirm_delivery_v1` | `Delivered` | `Confirmed` |
+| `dispute_v1` | `Delivered` **or** `InProgress` | `Disputed` |
+| `refund_v1` | `InProgress` **or** `Delivered` | `Refunded` |
+| `cancel_job_v1` | `Created` **only** | `Cancelled` |
+
+So **Cancel is not reachable from `Delivered`** — it cancels a job before any worker accepts it —
+while Dispute and Refund both reach back to `InProgress`.
 
 ## Delivery Verification
 

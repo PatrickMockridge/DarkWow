@@ -121,8 +121,14 @@ derived at read time from `expires_at` — `consume`/`validate`/`check_attestati
 ```
 Pending ──[Verify:valid]──> Verified ──[Consume]──> Consumed
     │
-    └──[Verify:invalid]──> Rejected
+    └──[Verify:invalid]──> (reverts; the claim stays Pending)
 ```
+
+`ClaimState::Rejected` **exists in the enum and is never assigned.** The invalid-verdict arm
+returns `Err` rather than writing the state — its handler carries the comment recording that it
+"used to write `ClaimState::Rejected` and return `Ok`", which is the shape this diagram drew. So a
+failed verification leaves the claim `Pending` (and re-verifiable) rather than terminal, and
+`Rejected` is currently unreachable.
 
 ## Contract Functions
 

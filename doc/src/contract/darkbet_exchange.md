@@ -242,53 +242,38 @@ Final State:
 
 ## State Machines
 
+Every diagram below drew a **`None` start state** until 2026-10-12. No `None` variant exists in
+any of the three enums — a record is `MarketState::Open` / `OrderState::Open` /
+`PositionState::Active` from the moment it is written. States marked *unreachable* are declared in
+the enum and assigned by no handler.
+
 ### Market Lifecycle
 
 ```
-┌─────────┐   CreateMarket   ┌─────────┐   CloseBlock   ┌───────────┐
-│  None   │ ───────────────▶│   Open   │ ─────────────▶│  Closed   │
-└─────────┘                 └─────────┘                └───────────┘
-                               │                            │
-                               │ ResolveMarket              │ (if no resolution)
-                               ▼                            ▼
-                          ┌───────────┐              ┌────────────┐
-                          │ Resolved  │              │ Cancelled  │
-                          └───────────┘              └────────────┘
-                               │
-                               │ SettleMarket
-                               ▼
-                          ┌──────────┐
-                          │ Settled  │
-                          └──────────┘
+Open ──[ResolveMarket]──> Resolved ──[SettleMarket]──> Settled
 ```
+- **Open** (initial) → **Resolved** (`entrypoint.rs:1557`) → **Settled** (`:1708`).
+- **Closed** and **Cancelled** are *unreachable*: both appear only in read-side guards
+  (`:1536`, `:1539`), and no handler writes either. The `CloseBlock → Closed` and
+  `→ Cancelled (if no resolution)` edges this diagram showed have no code behind them.
 
 ### Order Lifecycle (Order-Book Mode)
 
 ```
-┌─────────┐   PlaceBack/Lay   ┌─────────┐   MatchOrders   ┌──────────┐
-│  None   │ ─────────────────▶│   Open   │ ─────────────▶│  Matched  │
-└─────────┘                   └─────────┘                └──────────┘
-                                   │
-                                   │ CancelOrder
-                                   ▼
-                              ┌───────────┐
-                              │ Cancelled │
-                              └───────────┘
+Open ──[MatchOrders]──> Matched
+  └───[CancelOrder]───> Cancelled
 ```
+- **Open** (initial) → **Matched** (`:882`, `:884`) or → **Cancelled** (`:1820`).
+- **Expired** is declared and never assigned.
 
 ### Position Lifecycle (AMM Mode)
 
 ```
-┌─────────┐   BuyPosition    ┌─────────┐   ResolveMarket   ┌──────────┐
-│  None   │ ───────────────▶│  Active  │ ────────────────▶│  Claimed │
-└─────────┘                 └─────────┘                   └──────────┘
-                                   │
-                                   │ (market cancelled)
-                                   ▼
-                              ┌───────────┐
-                              │ Refunded  │
-                              └───────────┘
+Active ──[ClaimWinnings]──> Claimed
 ```
+- **Active** (initial) → **Claimed** (`:1485`).
+- **Refunded** is declared and never assigned — there is no market-cancellation path that writes
+  it, because the `Cancelled` market state it would follow is itself unreachable.
 
 ## Composability Details
 

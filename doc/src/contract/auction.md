@@ -57,17 +57,22 @@ Created ──[PlaceBid]──> Active ──[Close]──> Closed ──[Settle
 
 ### Bid State
 
+`BidState` has exactly four variants and `Won` and `Refunded` are both terminal — there is no
+`Claimed` state (the diagram below showed one until 2026-10-12, and `ClaimWinningsV1` moves the
+bid to nothing further):
+
 ```
 Active ──[NewHigherBid]──> Outbid ──[Refund]──> Refunded
    │
-   └──[Close]──> Won ──[Claim]──> Claimed
+   └──[Close]──> Won
 ```
 
 | State | Description | Transitions |
 |-------|-------------|-------------|
 | Active | Currently highest bid | → Outbid (new higher bid) |
 | Outbid | Another bid is higher | → Refunded (refund claimed) |
-| Won | Won the auction | → Claimed (item claimed) |
+| Won | Won the auction | terminal — `ClaimWinningsV1` pays and leaves the bid `Won` |
+| Refunded | Bid amount returned | terminal |
 
 ## Data Structures
 

@@ -12,11 +12,18 @@ DarkToshi Dice allows players to bet on random rolls with the following mechanic
 
 ## State Machine
 
+`BetState` has five variants, and there is **no** `SETTLED`: settlement is split by who won
+(`SettledPlayer` / `SettledHouse`). This diagram drew a single `SETTLED` until 2026-10-12.
+
 ```
-COMMITTED ──[RevealRoll]──> REVEALED ──[SettleBet]──> SETTLED
-     │                                                   │
-     └──[HouseClose after timeout]──> CANCELLED <───────┘
+COMMITTED ──[RevealRoll]──> REVEALED ──[SettleBet]──┬─> SETTLED_PLAYER
+    │                                               └─> SETTLED_HOUSE
+    │
+    └──[HouseClose: timeout]──> CANCELLED <──[HouseClose: from REVEALED]
 ```
+
+`HouseCloseV1` accepts `Committed` **only once its timeout has passed** and `Revealed`
+unconditionally, and writes `Cancelled` in both cases.
 
 ## Contract Functions
 

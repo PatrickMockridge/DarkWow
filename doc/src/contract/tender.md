@@ -101,11 +101,14 @@ The tender uses the [Attestation Contract](./attestation.md) for competency veri
 │  Sealed ──[Reveal]──> Revealed ──[Accept]──> Accepted                       │
 │    │                           │                                            │
 │    │                           └──[Reject]──> Rejected                       │
-│    │                                                                           │
-│    └──[Timeout]──> Expired                                                    │
 │                                                                              │
+│  (Expired — a variant no handler assigns; see below)                          │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+`BidState::Expired` is declared (`= 4`) and **never set** — no entrypoint assigns it, and there is
+no timeout handler that writes it, so an unrevealed bid stays `Sealed` rather than expiring. The
+`[Timeout] ──> Expired` edge this diagram drew until 2026-10-12 has no code behind it.
 
 ## Integration with Existing Contracts
 

@@ -54,11 +54,14 @@ Private chat groups on DarkIRC can organize staked games with partial and reveal
 
 ### Room State
 ```
-Open → Active → Concluded
+Open → Active        (Concluded exists in the enum; nothing assigns it)
 ```
 - **Open**: Players can deposit, room accepts initial bets
 - **Active**: Game in progress, betting rounds occur
-- **Concluded**: Room closed, no further actions
+- **Concluded**: declared (`= 2`) and **unreachable** — `ClosePot` closes the *pot*
+  (`pot.state = PotState::Closed`) and clears the room's current-pot fields, but never writes
+  `room.state`. The only reads of `Concluded` are a `withdraw.rs` guard and an error name, so a
+  room stays `Active` after its pot closes.
 
 ### Pot State
 ```

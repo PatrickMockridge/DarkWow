@@ -67,25 +67,15 @@ These mechanisms work but introduce counterparty risk and undermine the trustles
 
 ## State Machine
 
+`LotteryState` has **three** variants. There is no `TICKETS_SOLD` state — buying a ticket does not
+change the lottery's state, and this diagram drew a four-state machine until 2026-10-12.
+
 ```
-┌─────────────┐
-│ INITIALIZED │
-└──────┬──────┘
-       │ BuyTicket
-       ▼
-┌─────────────┐
-│ TICKETS_SOLD │
-└──────┬──────┘
-       │ DrawWinners
-       ▼
-┌─────────────────┐
-│ WINNERS_DRAWN  │◄──────── RevealTicket
-└──────┬─────────┘
-       │ ExpireLottery
-       ▼
-┌─────────────┐
-│   EXPIRED   │
-└─────────────┘
+┌─────────────┐   DrawWinners   ┌─────────────────┐   ExpireLottery   ┌─────────────┐
+│ INITIALIZED │ ──────────────▶ │  WINNERS_DRAWN  │ ────────────────▶ │   EXPIRED   │
+└─────────────┘                 └─────────────────┘                   └─────────────┘
+       ▲                                ▲
+       │ BuyTicket (no state change)    └── RevealTicket
 ```
 
 ## Data Structures
