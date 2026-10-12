@@ -929,4 +929,16 @@ F-509: doc:doc/src/contract/game_room.md#stake-lifecycle@2d09ea7313
      gate that guards the table side of these docs (`check-contract-doc-functions.sh`) also needed a correction
      here: it was firing on `insurance_market`'s row for the endpoint F-514 removed, so a retirement row is now
      skipped — a row that says a function is gone makes no claim about the manifest. -->
+F-504: doc:doc/src/contract/identity.md#the-o-cap-universe--what-identity-unlocks@a392209ec8
+<!-- F-504 is the sharpest instance of the family, because two of its three bad rows were not stale claims about
+     a contract but a contract that is not there: `tau` has no `src/contract/` directory at all, and the
+     `task_role` capability it was listed for exists in no entrypoint. The four `dao_escrow` rows were a
+     vocabulary rather than calls, which is why they are recorded here rather than deleted silently. -->
+F-506: doc:doc/src/contract/subscription.md#circuits@a392209ec8
+F-508: doc:doc/src/contract/promissory_note_intermediaries.md#bridge--cross-chain-token-mover@a392209ec8
+F-510: doc:doc/src/contract/pool_stake.md#token-movement@a392209ec8
+<!-- F-506/F-508/F-510 are one method again — read the circuit's `constrain_instance` lines or the entrypoint's
+     `children_indexes` checks, then write those. F-508 is the one that reverses the row's direction: the bridge
+     does not use TransferV1, it mints with `issue_v1` and burns with `redeem_v1`, so the doc's "does not use
+     RedeemV1" was exactly backwards. -->
 <!-- /promotion-log -->
