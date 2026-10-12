@@ -208,7 +208,7 @@ intended, and the gap is silent — the proof verifies.
 
 **How it has manifested.**
 
-* *The Orchard class: an unconstrained witness in a published position.* PromissoryNote's `Mint_V1`
+* *The Orchard class: an unconstrained witness in a published position.* PromissoryNote's `Issue_V2`
   declared `mint_public` as a witness and exposed it via `constrain_instance` with **no constraint**
   relating it to `poseidon_hash(backing_secret)` — the `backing_secret` witness did not exist. The
   comment above the witness block asserted the derivation; a comment is not a constraint. A prover
@@ -798,6 +798,13 @@ Every flakey pattern has three characteristics:
    logic that makes it look safe. `Option<u64>` *looks* like privacy is preserved.
 
 ### Warning signs
+
+**The "Example" column holds *shapes*, not citations.** Read it as "a thing that looks like this",
+not "a thing in the tree that is like this" — several entries name fields and types that were never
+written (`public_value`, `TransferOutput_V1`) and one has since been repaired (`DrainConfig`'s
+`Default` now enables `exit_queue` and `circuit_breaker`; this table carried the old shape until
+2026-10-12 — `F-186`). The shape is what the signal is for, and grepping the example is not the
+signal.
 
 | Signal | Example | Root cause |
 |---|---|---|

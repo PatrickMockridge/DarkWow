@@ -39,7 +39,14 @@ one of the seven existing schemes: those collide with each other, so reusing one
 citation ambiguous. Each entry instead names the historical findings it subsumes.
 
 **Severity**: **C** = a violation mints, destroys or steals consensus value; **H** = a violation
-breaks a stated safety property; **M** = defence-in-depth or liveness.
+breaks a stated safety property; **M** = defence-in-depth or liveness; **L** = hygiene — a
+statement that is wrong without being reachable, such as a comment whose figure the gates disagree
+with or a recorded figure that has moved.
+
+**`L` was missing from this line and seventeen rows carry it** (`F-200`). A legend that omits a
+token in use is the reason the review could not partition the register by severity: an instrument
+bucketing on C/H/M silently drops those seventeen, and a reader sees a threshold where the register
+has a scale. The four levels are ordered C > H > M > L, and every row's cell is one of them.
 
 ---
 
