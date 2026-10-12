@@ -852,4 +852,26 @@ F-322: doc:doc/src/arch/ocap.md#23-construction-example-tender-bid@3075defa7f
 <!-- F-322 is promoted as a labelling rather than a rewrite. The example and the Lean's type genuinely
      differ, and deciding which is the tender bid's real shape is a modelling question, so the example
      keeps its content and gains the fact that it is a sketch. -->
+F-320: doc:doc/src/arch/wallet.md#62-barb-cover-input-selection@595eb7b0eb, row:OBL-C126
+<!-- F-320 is a duplicate of an already-open row, and the ledger said so itself: OBL-C126 was filed
+     2026-09-24 against the same sentence. The promotion therefore names the existing row rather than
+     creating a second one, and the row records the defect's one-row home. The ledger's own citation was
+     also wrong — privacy.md:701 for a sentence in wallet.md — which its notes already correct. -->
+F-324: doc:doc/src/arch/wallet.md#013-interface-contracts@595eb7b0eb
+<!-- F-324 is a doc-only correction: the interface bullet named a method `ProverContext` does not have,
+     and the two types its signature used are real and do different work. -->
+F-325: doc:doc/src/arch/wallet.md#64-one-bespoke-citizen-write-side@595eb7b0eb
+<!-- F-325 is a doc-only correction, and the phantom name is instructive: `build_fee_and_finalize_tx`
+     survives in comments in `bin/dww`, so the document inherited it from the code rather than inventing
+     it. Correcting the document leaves the comments; they are a smaller version of the same drift and
+     are noted rather than swept here, since sweeping them is an src edit with artifact consequences. -->
+F-326: doc:doc/src/arch/wallet.md#014-module-map-per-component@595eb7b0eb, doc:doc/src/arch/wallet-vs-daemon.md
+<!-- F-326 is a doc correction plus a row: the module named in two listings does not exist *and* the check
+     it describes is performed nowhere, so this is an absence to record (OBL-C237) rather than a rename. -->
+F-327: doc:doc/src/arch/manifest.md#3-scanning@595eb7b0eb
+<!-- F-327 is a citation correction: three references to a file that does not exist, repointed at the one
+     that holds `scan_block_linear`. -->
+F-328: doc:doc/src/arch/genesis.md#adding-a-new-genesis-contract@595eb7b0eb
+<!-- F-328 is a checklist correction whose old instruction would have added a second writer of state the
+     genesis block already carries. -->
 <!-- /promotion-log -->
