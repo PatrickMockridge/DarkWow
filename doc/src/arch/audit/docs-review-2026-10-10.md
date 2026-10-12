@@ -1110,4 +1110,21 @@ F-602: doc:doc/src/localnet-dev.md#dwow_wallet-cli-wallet@3bfed30427
      (the config path does not exist), whose reward figure is wrong at both sites, and which lists ten CLI
      subcommands that are not variants of either enum. F-602's `wallet import-secret` is one of the ten, so the
      two rows are one document and one method — read the enum, run the command. -->
+F-603: doc:doc/src/testnet/token.md@8b94a73747
+F-604: doc:doc/src/testnet/node.md#wallet-sync@8b94a73747, doc:doc/src/testnet/bootstrapping.md#wallet-setup@8b94a73747, doc:doc/src/testnet/contract.md@8b94a73747, doc:doc/src/arch/formal-specification.md@8b94a73747
+F-605: doc:doc/src/relayer/relayer.md@8b94a73747, doc:doc/src/intro.md@8b94a73747, doc:doc/src/dev/bridge-node.md@8b94a73747
+F-606: doc:doc/src/dev/bridge-node.md@8b94a73747
+F-607: doc:doc/src/dev/quickstart.md@8b94a73747
+F-608: doc:doc/src/misc/vanityaddr.md@8b94a73747, doc:doc/src/misc/network-troubleshooting.md@8b94a73747
+F-609: doc:doc/src/learn/dchat/deployment/writing-a-daemon.md@8b94a73747
+F-610: doc:doc/src/learn/dchat/network-tools/using-dnet.md@8b94a73747
+F-611: doc:doc/src/misc/nodes/node-configurations.md@8b94a73747
+<!-- F-605 and F-608 are promoted as *banners rather than deletions*, and the distinction is the plan's E6 rule
+     applied where it fits: neither document is an audit whose open items are already rows, both are the only
+     written form of a design (the relayer's o-cap withdrawal model; vanityaddr's option list), and in each case
+     the program is absent from the tree rather than superseded. F-603 is the one where the whole document was
+     the defect — 216 lines of an interactive shell over a token model DarkWow does not have — and it is
+     rewritten rather than bannered because its subject (DRKW: getting it, checking it, sending it) is real.
+     F-604 sweeps two phantom commands across four documents; F-611's `fud` row is left marked **unverified**
+     rather than guessed at, since `bin/fud/` holds no config to read. -->
 <!-- /promotion-log -->
