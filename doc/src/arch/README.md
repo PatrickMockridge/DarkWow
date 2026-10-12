@@ -48,7 +48,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 ## Protocol
 
 - [consensus](./consensus/consensus.md) - Uncle Merkle consensus with RandomX PoW (replaces upstream overlay/diff)
-- [sync](./sync.md) - Block synchronization
+- [sync](./sync.md) - Block synchronization — **SUPERSEDED**, pre-migration `src/validator/sync/` API retained for reference; the authoritative spec is [sync-protocol.md](./sync-protocol.md)
 - [entropy](../contract/entropy.md) - Randomness generation
 - [tau](../contract/tau.md) - Staking and token distribution
 - [slashing](./slashing.md) - Validator punishment

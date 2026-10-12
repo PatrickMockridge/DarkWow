@@ -34,8 +34,9 @@ Per type-system.md §8.1, the primitive types available for composition are:
 | `MerkleNode` | `↓prove-inclusion` | proves inclusion in the recognized set |
 
 There is **no value-unit primitive**. The native token's output is a *specific capability instance*
-whose `Commitment` carries value and whose `AssetId` is DRKW. (The Lean4 `Capability/Types.lean`
-currently uses a legacy identifier for the `Commitment` primitive; it SHALL be read as `Commitment`.)
+whose `Commitment` carries value and whose `AssetId` is DRKW. (`Capability/Types.lean` declares the
+primitive as `Commitment`; the parenthetical that stood here — a caveat about a "legacy identifier"
+for it — described something the model no longer has, and is removed. `F-636`.)
 
 ## 2. The capability lifecycle (the "transfer" is Exercise + Consume)
 
@@ -66,7 +67,11 @@ fresh (Consume) and the commitment is new (Create).
 Some capabilities are **value-denominated**: their `Commitment` carries a hidden value and their
 `AssetId` denominates it (the native token DRKW, and PromissoryNote's wrapped/stablecoin tokens). For
 these, exercise MUST conserve value per asset: `Σ input value_commit == Σ output value_commit`
-(Pedersen homomorphism) — mechanized as `CrossCutting.pedersen_value_conservation`. This is the
+(Pedersen homomorphism) — mechanized as `CrossCutting.pedersen_sum_equality_implies_value_equality`.
+This theorem was named `pedersen_value_conservation` and the citation was not updated with it; the
+Lean file records why the old name overstated the result — what it proves is the *congruence* step
+(given equal Pedersen sums, the `.value` fields are equal), not the homomorphism, which is the
+hypothesis `h_sum_eq` rather than a consequence the proof establishes. This is the
 anti-inflation gate and applies **only** where a capability carries value.
 
 State capabilities (Box contents, Purse balance) carry **no** value; their transition (old_state →

@@ -69,13 +69,13 @@ the spec.
 | Supply audit (Pedersen mass balance) | [IMPLEMENTED] | `src/linear/src/proof_of_token_balance.rs` |
 | 9 genesis contracts | [IMPLEMENTED] | `src/contract/<name>/` |
 | 32 contracts (code + manifests) | [IMPLEMENTED] | `src/contract/<name>/` |
-| 32 zkVM opcodes | [IMPLEMENTED] | `src/zkas/opcode.rs` |
+| 32 zkVM opcodes (31 usable — `noop` computes nothing) | [IMPLEMENTED] | `src/zkas/opcode.rs` |
 | dwowd daemon (mining, P2P, RPC) | [IMPLEMENTED] | `bin/dwowd/` |
 | dwow_wallet — DRKW scan + transfer | [IMPLEMENTED] | `bin/dww/` |
 | dwow_wallet — manifest discovery (read) | [IMPLEMENTED] | `bin/dww/src/scan.rs` |
 | wallet_construct (Rust + Lean4) | [IMPLEMENTED] | `src/sdk/src/capability.rs` |
 | AccountManager (declared identity) | [IMPLEMENTED] | `crates/dwow-accounts/` |
-| 5-level test pipeline | [IMPLEMENTED] | `contrib/docker/` |
+| 4-level test pipeline | [IMPLEMENTED] | `contrib/docker/` |
 | Mempool with on-chain nullifier check | [IMPLEMENTED] | `crates/dwow-mempool/` |
 | Universal relayer | [IMPLEMENTED] | `bin/universal_relayer/` |
 | Manifest-driven generic prover (ZK) | [IMPLEMENTED] | `src/sdk/src/prover.rs`, `bin/dww/src/prover_impl.rs` — zkas_binaries store, witness-binding, manifest-driven proof construction for any contract |

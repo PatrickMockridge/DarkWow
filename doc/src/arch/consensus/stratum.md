@@ -142,11 +142,13 @@ Status values: `"OK"` (accepted), `"rejected"` (PoW invalid), `"stale"`
 3. **Height check** — reject if `submitted_height != current_height + 1`
 4. **PoW verify** — reconstruct block with found nonce, hash with RandomX,
    check `u32_le(hash[0..4]) <= target`
-5. **Anchor** — if Caribina enabled, anchor to Arweave. **Not non-blocking on this
-   path**: `anchor_block` is called synchronously while `linear_submit_lock` is still held
-   (`rpc/stratum.rs:561`, guard taken at `:348`), so one slow ArDrive Turbo POST serialises every
-   stratum submission for up to its 30-second timeout each. The built-in miner does this correctly, in
-   a detached `smol::unblock` task (`rpc/miner.rs:293-307`). See `OBL-C68`
+5. **Anchor** — if Caribina enabled, anchor to Arweave. `anchor_block` is called **with the submit
+   lock released**: `rpc/stratum.rs` takes `linear_submit_lock` (`mut` for exactly this reason),
+   `drop`s the guard around the ArDrive Turbo POST, and re-takes it before `accept_block`, which
+   needs the VM — the code says so at the guard's own comment. So one slow POST does not serialise
+   every stratum submission. This step claimed the opposite until 2026-10-12 (that `anchor_block` ran
+   "while `linear_submit_lock` is still held", serialising submissions for up to 30 s each); the
+   release-and-re-take is `OBL-C68`, which is **FIXED**.
 6. **Accept** — `block_acceptor::accept_block()` (single unified path). On
    `BlockConnectOutcome::CanonicalExtension`, record the block time
    (`last_block_time.set_now()`) and remove the mined transactions from the

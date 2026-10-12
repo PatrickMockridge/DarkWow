@@ -47,7 +47,7 @@ into capabilities.
 
 ## Formal verification: Lean4
 
-DarkWow has 26 Lean4 proof files verifying:
+DarkWow has 81 Lean4 proof files under `proofs/lean/src/` verifying:
 - **36 capability-type pairs** are pairwise non-bisimilar (zero `sorry`)
 - `LessThanOrEqual`, `IsNotEqual`, `BaseDiv` opcodes are sound
 - The Authorization Inversion Theorem: `∀a,b. bisimilar(a,b) ⟹ barbs(a) = barbs(b)`

@@ -124,6 +124,16 @@ $$ a_0 = \sum_{j=0}^{k-1} y_j \prod_{\begin{smallmatrix} m\,=\,0 \\ m\,\ne\,j \e
 
 ## Circuits
 
+> **The circuits below are v2, and the narrative above is the classic v1 construction.** They embed
+> from `script/research/rlnv2/`, not from a `rln/` tree, and the difference is one idea: the rate
+> limit is a **per-user parameter, not a global constant**. v2's `RlnSignal` still builds the linear
+> polynomial — `a₀ = poseidon(identity_nullifier, identity_trapdoor)`,
+> `a₁ = poseidon(a₀, external_nullifier, message_id)`, `y = a₀ + x·a₁` — so the Shamir recovery the
+> prose describes is unchanged. What is added is `user_message_limit`: `external_nullifier` folds in
+> a `message_id`, and `identity_commitment = poseidon(a₀, user_message_limit)`, so a user's limit
+> travels with their commitment rather than being fixed at "one message per second" for everyone.
+> A reader following only the prose would take that sentence as the rule. (`F-629`.)
+
 ### Interaction
 
 ```zkas

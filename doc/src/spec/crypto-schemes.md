@@ -190,8 +190,13 @@ $⊕ : 𝔽ₚ × 𝔽ₚ → 𝔽ₚ$. Denote by $⊕_b$ where $b ∈ ℤ₂$, 
 swaps both arguments before calling $⊕$, that is
 $$ ⊕_b(X₁, X₂) = \begin{cases}
 ⊕(X₁, X₂) & \text{if } b = 0 \\
-⊕(X₁, X₂) & \text{if } b = 1 \\
+⊕(X₂, X₁) & \text{if } b = 1 \\
 \end{cases} $$
+
+*(Corrected 2026-10-12, `F-629`: the two cases were identical, so the definition said `⊕_b = ⊕`
+for every `b` while the sentence above it described a swap. The `b = 1` case is the swap, and the
+implementation must agree with it — a tree built from the formula as written would be `b`-agnostic,
+which is what the swap exists to prevent.)*
 
 We correspondingly define the types
 $$ \t{MerklePos} = ℤ₂^{ℓᴹ} $$

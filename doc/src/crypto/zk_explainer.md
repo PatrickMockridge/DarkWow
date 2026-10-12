@@ -1,5 +1,14 @@
 # Zero-knowledge explainer
 
+> **Written against `bellman`; this project uses `halo2`.** The API names below —
+> `LinearCombination`, the `~one` variable at index 0, and the `lc0`/`lc1`/`lc2` polynomial
+> arguments — are `bellman`'s. DarkWow's circuits are halo2 circuits, where the same three
+> polynomials are named `a`, `b` and `c` and the constant is reached through the region/assignment
+> API rather than through a synthesizer's `lc0`/`lc1`/`lc2` out-params. The *arithmetic* the page
+> teaches — R1CS, the constraint rows, why a constant needs a variable — is the same in both, which
+> is why the page is kept as written rather than translated; what a reader should not do is look for
+> these identifiers in `src/zk/`. (`F-629`.)
+
 We start with this algorithm as an example:
 
 ```python

@@ -53,9 +53,17 @@ suffix marks the domain separation hardening, not a replacement or redesign.
 ### Migration Scope
 
 All circuits across all 32 contracts were migrated. V1 circuit source files
-(`*.zk` with V1 circuit declarations) were deleted. Only V2 circuits exist on
-disk. The migration is tracked in git history under the HAZOP RC3 hardening
-commits.
+(`*.zk` with V1 circuit declarations) were deleted. The migration is tracked in
+git history under the HAZOP RC3 hardening commits.
+
+**"Only V2 circuits exist on disk" is not quite true, and the exceptions are worth knowing** —
+this sentence stood unqualified until 2026-10-12 (`F-630`). Five circuits under
+`src/contract/*/proof/` carry no version suffix at all: `box`'s `Put` and `Take`, and `purse`'s
+`Deposit`, `Withdraw` and `Balance`. They are the genesis primitives whose circuits predate the
+campaign, and they were not migrated — so a reader who takes this section's naming rule as absolute
+will look for a `Put_V2` that does not exist. (`proofs/core/` and `bin/darkirc/proof/` hold more
+unsuffixed names — `Arith`, `Encrypt`, `InclusionProof`, `SMT` and others — but those trees are not
+contract circuits and this section's rule is about `src/contract/*/proof/`.)
 
 ## Naming Conventions
 

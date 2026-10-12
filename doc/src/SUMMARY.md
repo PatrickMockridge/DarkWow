@@ -82,7 +82,7 @@
   - [P2P Network](arch/net/p2p-network.md)
   - [Network Types](arch/network-types.md)
   - [Services](arch/services.md)
-  - [Sync Module](arch/sync.md)
+  - [Sync Module (SUPERSEDED)](arch/sync.md)
     - [Sync Protocol (ρ-calculus)](arch/sync-protocol.md)
     - [Sync Conformance](arch/sync-conformance.md)
     - [Sync Red-Team Audit](arch/sync-red-team-audit.md)
