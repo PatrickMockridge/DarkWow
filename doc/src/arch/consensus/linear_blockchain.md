@@ -65,16 +65,20 @@ When an uncle is referenced in a canonical block, an **UncleProof** is construct
 
 ```rust
 pub struct UncleProof {
-    pub header: BlockHeader,         // Uncle's header (includes PoW)
-    pub pow_hash: [u8; 32],          // RandomX PoW hash computed from header
-    pub merkle_path: Vec<[u8; 32]>,  // Merkle proof path to uncle root
-    pub position: u32,               // Uncle's position in merkle tree
-    #[cfg(feature = "sharding")]
-    pub state_root: Option<[u8; 32]>, // shard state root (shard uncle)
-    #[cfg(feature = "sharding")]
-    pub shard_id: Option<[u8; 32]>,   // shard identifier
+    pub merkle_path: Vec<[u8; 32]>,  // Merkle proof path from uncle to root
+    pub position: u32,               // Uncle's position in merkle tree (leaf index)
 }
 ```
+
+**That is the whole struct.** It carried `header`, `pow_hash`, a `state_root` and more until
+2026-10-12 (`F-356`); the real one is `src/linear/src/block.rs:297-302` and has two fields. The
+removal is not incidental — the file's own comment above the struct records what carrying them cost:
+a full RandomX cache+VM initialisation **per uncle**, purely to fill a field the verifier then
+recomputed, which is 2N initialisations of the deliberately expensive step per block on the accept
+path. The uncle's header travels in `UncleBlock`, which is what the verifier has; a proof does not
+need to restate it — and the fields this section used to show (`header`, `pow_hash`, a `state_root`,
+a `shard_id`) name four things the struct does not have and a `sharding` feature that is not in the
+tree.
 
 ## Uncle Proof Verification
 
@@ -82,13 +86,24 @@ The critical security property: **UncleProof must bind the RandomX PoW to the pr
 
 ### Verification Steps
 
-When verifying an `UncleProof`:
+When verifying an `UncleProof` — the header it is about arrives as an argument, not in the proof
+(`verify_uncle_proof(header, proof, merkle_root, target)`, `src/linear/src/block.rs:502`):
 
-1. **PoW Hash Verification**: Re-compute the RandomX PoW hash from the proof's header using the header's `randomx_key`. Compare against the stored `pow_hash`.
+1. **PoW Hash Verification**: re-compute the RandomX PoW hash from the **header argument** using its
+   `randomx_key`. There is no stored `pow_hash` to compare against; the computed hash is used in
+   step 2 and then as the merkle leaf in step 3.
 
-2. **Target Check**: Verify the PoW hash meets the target (`hash_u32 <= target`). Higher target = easier mining.
+2. **Target Check**: verify the PoW hash meets the target (`hash_u32 <= target`). Higher target =
+   easier mining. The target is the one at **the uncle's own height**, not the canonical block's
+   (`verify_uncle_proof`'s parameter doc says so).
 
-3. **Merkle Proof**: Verify the header is included in the uncle merkle tree rooted at the canonical block's `uncle_merkle_root`.
+3. **Merkle Proof**: verify `blake3(header.to_mining_blob())` — not the header's serialization — is
+   included at `proof.position` along `proof.merkle_path`, under the canonical block's
+   `uncle_merkle_root`.
+
+Steps 1 and 3 read differently from what this list said until 2026-10-12, and both differences come
+from the same removal: the proof carries a path and a position, so the values its verification needs
+are the ones the caller already holds.
 
 ```rust
 pub fn verify_uncle_proof(

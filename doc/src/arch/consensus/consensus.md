@@ -113,7 +113,7 @@ section asserted that they did.** An adversarial audit refuted it. The truth:
 | sync frame (`MAX_FRAME_PAYLOAD`) | 32 MiB | yes — rejected before allocating |
 | `Blocks` message (`MAX_BLOCK_BATCH`) | 32 MiB | yes |
 | block broadcast, receive (`MAX_GENESIS_SIZE`) | **100 MB** | yes — the decode-side `take` |
-| block broadcast, boundary codec | 32 MiB | **no — inert** |
+| block broadcast, boundary codec | — | **removed.** `dwow_core::impl_boundary_codec!` has no reader anywhere in the tree and the macro's arguments were dropped with it; the enforced bound is `Message::MAX_BYTES`, set by the `impl_p2p_message!` calls (`src/linear/src/sync_types.rs:362-366`). This row read "32 MiB — **no — inert**" until 2026-10-12 (`F-355`), presenting a rail that had been deleted. |
 | transaction (`TX_MAX_BYTES`) | 32 MiB | yes |
 | unknown-command drain (`MAX_INBOUND_PAYLOAD`) | 32 MiB | yes |
 | `MAX_BATCH_BYTES` (batching target) | 12 MiB | trims a batch, never rejects |
@@ -670,9 +670,10 @@ min_target = 1                # hardest possible
 max_target = 4294967295       # u32::MAX, easiest possible
 ```
 
-Default `initial_target` was recently increased from `0x0000FFFF` to
-`0x00FFFFFF` to make the first few blocks trivially mineable (~1/256
-hashes pass vs ~1/65536).
+The default `initial_target` is **`0x0FFFFFFF` = 268435455**, which makes the first few blocks easy to
+mine: about **1 in 16** hashes passes. This said `0x00FFFFFF` (~1/256) until 2026-10-12 (`F-353`) —
+one fewer `F` than the config, and the file's own table a few lines above gives `0x0FFFFFFF` with
+`~16 hashes expected per block`. The two disagreed by a factor of sixteen, and the table was right.
 
 ## Finality Layers
 
@@ -814,10 +815,12 @@ return a nominal enum. `Result<()>` SHALL NOT be used where the `Ok` variant
 collapses multiple states.
 
 **Applied:** `BlockConnectOutcome` at `src/linear/src/chain_state.rs` replaces
-`Result<()>` with five variants: `CanonicalExtension{new_height}`,
+`Result<()>` with **four** variants: `CanonicalExtension{new_height}`,
 `CompetingStored`, `UncleExtended`, `AlreadyKnown`. Every caller MUST match all
-five — the compiler rejects any code path that calls `mark_mined` on a
-non-canonical block. Reorg detection is separate and pre-connect: `detect_reorg`
+four — the compiler rejects any code path that calls `mark_mined` on a
+non-canonical block. (This said "five" and then listed four, until 2026-10-12 —
+`F-354`. The enum is `src/linear/src/chain_state.rs:65-75`, and the count is the
+listing's, not the sentence's.) Reorg detection is separate and pre-connect: `detect_reorg`
 returns `ReorgSignal::{Heavier{fork_height, competing_block}, Lighter, None}`.
 This prevents HAZID H-H7 (mempool transaction loss on competing blocks) and
 H-H8 (competing block permanent loss) at the type level — no runtime check, no
