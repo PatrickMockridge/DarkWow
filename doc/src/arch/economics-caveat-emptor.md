@@ -102,12 +102,20 @@ self-reported numbers are consistent with each other. It does NOT prove:
 - That `total_outstanding` matches the actual circulating supply
 - That the issuer hasn't withdrawn the reserves after filing the report
 
-Profits are [self-reported](../contract/bearer_bond.md#coverage)
-via `DeclareProfitsV1` with no ZK proof at all. The entrypoint only checks
-`profit_amount > 0` and `start_block < end_block`. The trust model, per the
-Bearer Bond documentation, is: "if the issuer lies, holders sell, and the stake
-commitment price goes to zero." This is correct but incomplete — it works **if and
-only if** holders detect the lie before they exit.
+**`DeclareProfitsV1` does not exist.** Bearer Bond's endpoints are `IssueStakeV1` (0x00),
+`TransferStakeV1` (0x01), `RequestInterestV1` (0x02), `EmergencyUnstakeV1` (0x03), `UnstakeV1`
+(0x04), `BurnStakeV1` (0x05), `ProveCoverageV1` (0x06), `VerifyCoverageV1` (0x07), `PayInterestV1`
+(0x08) and `RegisterSeriesV1` (0x09) — there is no profit declaration and no profit claim
+(`F-620`). The real analogue is the **interest** path: the holder calls `RequestInterestV1` and the
+issuer pays through `PayInterestV1`, and what the issuer self-reports is the *coverage* the bond's
+series claims, proved by `ProveCoverageV1` as an integer ratio rather than by an attestation the
+host trusts.
+
+The concern this paragraph raises survives the rename, and is sharper against the real shape: a
+coverage proof shows the series' arithmetic is internally consistent, not that reserves exist off
+chain, and `bearer_bond.md` says as much under its own Limitations. The trust model — "if the issuer
+lies, holders sell, and the stake commitment price goes to zero" — is correct but incomplete, and it
+works **if and only if** holders detect the lie before they exit.
 
 ### The Correlation: Why These Prices Move Together
 
@@ -176,10 +184,11 @@ instantly — likely before most holders can exit.
 
 **Actor:** Dishonest issuer (or issuer disguising a ponzi).
 
-**Mechanism:** DeclareProfitsV1 submits a fake `profit_amount` with no ZK proof.
-The entrypoint only checks `profit_amount > 0` and `start_block < end_block`.
-Holders call ClaimProfitsV1 and receive pro-rata shares of phantom profits. The
-output commitments are well-formed (BlindOutput_V1 ZK proof passes) — they just aren't
+**Mechanism (corrected — see the note above; `DeclareProfitsV1` and `ClaimProfitsV1` are not
+endpoints of Bearer Bond, `F-620`):** the issuer submits a coverage claim whose ratio is
+internally consistent but whose reserves do not exist off chain, and holders are paid pro-rata
+shares of phantom earnings through the real `PayInterestV1` path. The
+output commitments are well-formed (their circuits prove what they prove) — they just aren't
 backed by real earnings. The mechanism is: new investor capital enters → gets
 declared as "profit" → gets distributed to earlier holders → requires continuous
 new inflow to sustain.
@@ -198,7 +207,7 @@ get real value from later investors. Last claimants get nothing.
 | Existing | Needed |
 |----------|--------|
 | `issuer_contract` field exists on BondCoin (placeholder for future oracle) | Profit attestation: ZK proof that declared revenue corresponds to on-chain events |
-| Market discipline ("if the issuer lies, holders sell") | Require DeclareProfitsV1 to reference on-chain revenue events (DEX fee logs, bridge fee records) |
+| Market discipline ("if the issuer lies, holders sell") | Require the coverage claim (`ProveCoverageV1`) to reference on-chain revenue events (DEX fee logs, bridge fee records) — there is no `DeclareProfitsV1` to constrain (`F-620`) |
 | | Multi-issuer profit sign-off: require N-of-M signatures from independent parties |
 
 ### 3. The Supply Explosion
@@ -412,7 +421,7 @@ without requiring trust in a central regulator:
   `reserve_amount` actually exists at a specific on-chain location.
 - **Supply cap enforcement:** Optional `max_supply` parameter on RegisterTypeV1,
   checked cumulatively across all IssueV1 calls for that token type.
-- **Profit attestation:** Require DeclareProfitsV1 to reference on-chain revenue
+- **Coverage attestation:** Require `ProveCoverageV1`'s claim to reference on-chain revenue
   events (DEX fee records, bridge fee logs) with ZK proofs of revenue inclusion.
 - **Maturity enforcement at entrypoint level:** Add `require(current_height >=
   commitment.maturity_block)` to `unstake_v1` — the simplest fix in this document,
@@ -486,7 +495,7 @@ They depend entirely on issuer honesty:
 | Property | Why It's Not Guaranteed |
 |----------|------------------------|
 | Reserves actually exist | ProveCoverageV1 verifies arithmetic on self-reported numbers. Off-chain reserves are invisible. |
-| Profits correspond to real revenue | DeclareProfitsV1 has no ZK proof. Issuer self-reports. |
+| Profits correspond to real revenue | The coverage ratio is proved (`ProveCoverageV1`), but the reserves it counts are off chain. Issuer self-reports. |
 | Coverage is current | No report freshness requirement. A report filed at block 1000 is treated as valid at block 50000. |
 | Anyone will redeem your notes | RedeemV1 exists but is unused by most token types. Redemption is purely voluntary. |
 | Stake commitments will pay yield or hold principal | Profits can be zero. Coverage can be fraudulent. |

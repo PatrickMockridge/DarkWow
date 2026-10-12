@@ -36,7 +36,12 @@ its named constructor (`from_bytes`, `from_repr`).
 ### 1.2 The Pattern
 
 ```rust
-// AFTER (compliant) — see src/contract/box/src/model/mod.rs
+// AFTER (compliant) — ILLUSTRATION. `BoxRecord` is not a type in this tree (`F-621`): box's model
+// holds `BoxId`, `MerklePosition`, `StateNonce`, `PutParams`, `PutUpdate` and `TakeParams`, and the
+// leaf it stores is a `MerkleNode`, not a per-box record. The shape below is the pattern §1.3
+// states; for a real instance of it read `src/contract/box/src/model/mod.rs`'s `PutParams`
+// (which the doc's own `tx_binding` note explains) or `src/contract/subscription/src/model/mod.rs`'s
+// `Plan`.
 pub struct BoxRecord {
     pub version: u8,
     pub box_id: BoxId,
@@ -87,8 +92,8 @@ impl BoxRecord {
 
 | Contract | File | Notes |
 |----------|------|-------|
-| Box | `src/contract/box/src/model/mod.rs` | `BoxRecord` — 66-byte fixed, validating constructors |
-| Purse | `src/contract/purse/src/model/mod.rs` | `Purse` — 129-byte fixed, Pedersen commitments |
+| Box | `src/contract/box/src/model/mod.rs` | `PutParams`/`TakeParams` — fixed layout, validating constructors. (This row named a `BoxRecord` that the file does not contain — `F-621`.) |
+| Purse | `src/contract/purse/src/model/mod.rs` | `PurseFunction`'s params — fixed layout, Pedersen commitments. (This row named a `Purse` type; the file holds the `PurseFunction` enum in `lib.rs` and the params in the model.) |
 | Identity | `src/contract/identity/src/model/mod.rs` | Multi-type example with per-field validation |
 | Deployooor | `src/contract/deployooor/src/model/mod.rs` | Clean, simple params encode/decode |
 

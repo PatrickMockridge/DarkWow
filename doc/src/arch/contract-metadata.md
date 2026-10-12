@@ -114,33 +114,34 @@ impl ContractMetadata {
 | attestations_json | TEXT | JSON array of AttestationRef (empty `[]` for MVP) |
 | lock_status | TEXT | `"unlocked"` or `"locked"` |
 
-### contract_interactions
+### There is no `contract_interactions` table, and no `transactions_history`
 
-Records wallet-initiated contract calls for history display.
-
-| Column | Type | Purpose |
-|--------|------|---------|
-| contract_id | TEXT | Target contract |
-| function_name | TEXT | Function called |
-| tx_hash | TEXT | Transaction hash |
-| block_height | INTEGER | Block height (null if pending) |
-| timestamp | INTEGER | Unix timestamp |
+This page described two more SQL tables — `contract_interactions` (wallet-initiated calls, "for
+history display") and `transactions_history` (wallet-relevant transactions) — until 2026-10-12
+(`F-621`). Neither exists: `bin/dww/wallet.sql` declares eight tables (`scanned_blocks`,
+`chain_blocks`, `held_capabilities`, `capability_proofs`, `merkle_trees`, `key_lifecycle`,
+`contract_metadata`, `zkas_binaries`), and `contract_metadata` is the only one of the ten this page
+names that the wallet has. There is no per-contract call history and no transaction log; what the
+wallet knows about a contract is its metadata row and the capabilities it holds.
 
 ## Current Implementation
 
 | Component | File | Status |
 |-----------|------|--------|
 | Metadata types + serialization | `src/sdk/src/deploy.rs` | Done |
-| DB schema (2 tables + indices) | `bin/dww/wallet.sql` | Done |
+| DB schema (8 tables + indices) | `bin/dww/wallet.sql` | Done |
 | DB CRUD operations | `bin/dww/src/walletdb.rs` | Done |
-| Scan detection (DeployV1 → metadata) | `bin/dww/src/rpc.rs` | Done |
-| Transaction history recording | `bin/dww/src/rpc.rs` | Done |
-| Contract interaction recording | `bin/dww/src/rpc.rs` | Done |
+| Scan detection (DeployV1 → metadata) | `bin/dww/src/scan.rs` | Done |
 | Unit tests (serialization + DB) | `bin/dww/tests/contract_metadata_tests.rs` | 9 tests |
 | Level 1 blockchain test | `bin/dwowd/src/tests/pipeline.rs` | Done |
 | Level 2 blockchain test (ZK proofs) | `bin/dwowd/src/tests/heavyweight_pipeline.rs` | Done |
 | CLI views (per-category, contract info) | — | Deferred |
 | Terminal attestation display | — | Deferred |
+
+Three rows stood here for "Transaction history recording", "Contract interaction recording" and a
+`bin/dww/src/rpc.rs` scan path. The first two have no implementation to point at, and `rpc.rs` does
+not exist — `scan.rs` is the file that holds `scan_block_linear` (the same correction `F-327` made
+in `manifest.md`).
 
 ### Wallet Flow
 
@@ -149,11 +150,7 @@ Records wallet-initiated contract calls for history display.
    `contract_metadata` table. Contracts without metadata get a generic `Contract-XXXX`
    name and `Other` category with `public: false`.
 
-2. **History**: Wallet-relevant transactions are recorded to `transactions_history`
-   during scan with the serialized transaction blob.
-
-3. **Interactions**: `broadcast_tx()` records each contract call to
-   `contract_interactions` for per-contract history views.
+There is no step 2 and no step 3. The scan writes what it recognises and stops.
 
 ## Future Expansion: Verified Attestations
 

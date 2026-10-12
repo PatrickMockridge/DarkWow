@@ -45,28 +45,7 @@ pub struct ManualSession {
 }
 
 impl ManualSession {
-    pub fn new(p2p: Weak<P2p>) -> ManualSessionPtr {
-        Arc::new(Self {
-            p2p,
-            connect_slots: Mutex::new(Vec::new()),
-            // ...
-        })
-    }
-
-    pub async fn connect(self: Arc<Self>, addr: Url) {
-        let ex = self.p2p().executor();
-        let task = StoppableTask::new();
-
-        task.clone().start(
-            self.clone().channel_connect_loop(addr),
-            // Ignore stop handler
-            |_| async {},
-            Error::NetworkServiceStopped,
-            ex,
-        );
-
-        self.connect_slots.lock().await.push(task);
-    }
+    pub fn new(p2p: Weak<P2p>) -> ManualSessionPtr { /* … */ }
 
     pub async fn stop(&self) {
         let connect_slots = &*self.connect_slots.lock().await;
@@ -75,9 +54,16 @@ impl ManualSession {
             slot.stop().await;
         }
     }
-    
+
     // ...
 }
+```
+
+**The `connect` method this example used to show does not exist** (`F-618`): `ManualSession` has
+exactly two methods, `new` and `stop` (`src/net/session/manual_session.rs`). The version that stood
+here printed `pub async fn connect(self: Arc<Self>, addr: Url)`, starting a `StoppableTask` around
+`channel_connect_loop` and pushing it onto `connect_slots` — a shape the struct suggests but the
+implementation does not have, which is the kind of sample a reader copies and then cannot find.
 ```
 
 The method in `start()` is a future that returns `Result<()>`. If you

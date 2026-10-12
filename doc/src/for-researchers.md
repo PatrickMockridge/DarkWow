@@ -28,8 +28,8 @@ DarkWow's type system derives from the **ρ-calculus** (reflective higher-order
 
 | Primitive Type | Wraps | Barb | Prevents |
 |---------------|-------|------|----------|
-| `Nullifier` | `pallas::Base` | ↓nullify | Confusion with CoinCommitment; zero-as-nullifier injection |
-| `CoinCommitment` | `pallas::Base` | ↓commit | Confusion with Nullifier; non-canonical field elements |
+| `Nullifier` | `pallas::Base` | ↓nullify | Confusion with `Commitment`; zero-as-nullifier injection |
+| `Commitment` | `pallas::Base` | ↓commit | Confusion with `Nullifier`; non-canonical field elements |
 | `ContractId` | `pallas::Base` | ↓dispatch | Confusion with AssetId, FuncId |
 | `AssetId` | `pallas::Base` | ↓denominate | Confusion with ContractId |
 | `FuncId` | `pallas::Base` | ↓gate | Confusion with ContractId |
@@ -37,8 +37,13 @@ DarkWow's type system derives from the **ρ-calculus** (reflective higher-order
 | `SecretKey` | `pallas::Base` | ↓spend, ↓derive | Confusion with Nullifier |
 
 The **Type Distinction Principle**: two types unify only if their barbs
-match. `Nullifier` and `CoinCommitment` are both `pallas::Base` but the
+match. `Nullifier` and `Commitment` are both `pallas::Base` but the
 compiler rejects swapping them — they are not bisimilar.
+
+(The table said `CoinCommitment` until 2026-10-12 — a survivor of the no-coins rename, `F-622`. The
+type is `Commitment`: `src/linear/src/transaction.rs`, and `↓commit` in
+[type-system.md](arch/type-system.md) §2. `CapCommitment` is the promissory-note specialization of
+it, not a second primitive.)
 
 See [Type System Specification](arch/type-system.md) for the formal
 specification (RFC 2119 SHALL/MUST) and the Authorization Inversion Theorem.

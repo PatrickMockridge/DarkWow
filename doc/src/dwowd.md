@@ -54,7 +54,7 @@ Bitcoin Core's CChainState pattern and gETH's single-state design.
 |----------|-------------------|---------|
 | Architecture | Two `LinearBlockchain` instances (P2P layer + daemon wrapper), shared sled store | Single `CChainState` (strongly-typed, all state self-contained) |
 | Height tracking | Independent (diverged caches) | Single `AtomicU64` — always consistent |
-| WASM execution | `blockchain.rs` wrapper (766 lines) | `execution.rs` TxBackend + `CChainState::apply_block_with_uncles()` |
+| WASM execution | `blockchain.rs` wrapper (766 lines) | `execution::execute_block()` (its `TxBackend` overlay), driven by `CChainState::connect_block()` |
 | Block insertion | `apply_block()` (dead code) | `connect_block()` — single insertion path |
 
 The CChainState owns all chain data: sled trees, PoW consensus, VM caches,
@@ -63,7 +63,7 @@ caches, and no independent height counters.
 
 ### State Atomicity
 
-Block execution in `apply_block_with_uncles()` is **atomic**: all contract
+Block execution in `execute_block()` is **atomic**: all contract
 state changes within a block either commit together or not at all. This is
 achieved via the [`sled-overlay`](https://docs.rs/sled-overlay/latest/sled_overlay/)
 crate — the same atomicity mechanism used in the upstream project's fork-aware
@@ -93,7 +93,7 @@ consensus.
    been written to sled.
 
 ```
-apply_block_with_uncles()
+execute_block()          # `CChainState::connect_block` drives it; there is no `apply_block_with_uncles` (`F-618`)
  ├── Create base SledTreeOverlay on contracts tree
  ├── For each call (block + uncles, executed sequentially):
  │    ├── Clone overlay from base → TxBackend { overlay, store }

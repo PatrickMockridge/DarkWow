@@ -26,11 +26,19 @@ All 5 PN ZK circuits expose `coin_spend_hook` as a public input:
 
 | Circuit | Role | spend_hook public? |
 |---------|------|--------------------|
-| `burn_v1.zk` | Input/Spend | YES |
-| `mint_v1.zk` | Mint new commitments | YES |
-| `token_mint_v1.zk` | Token create + initial mint | YES |
-| `blind_output_v1.zk` | Transfer/OTC outputs | YES |
-| `redeem_v1.zk` | Redeem receipt commitment | YES |
+| `revoke.zk` (`Revoke_V2`) | Input/Spend | YES |
+| `issue.zk` (`Issue_V2`) | Mint new commitments | YES |
+| `register_type.zk` (`RegisterType_V2`) | Token create + initial mint | YES |
+| `transfer.zk` (`Transfer_V2`) | Transfer/OTC outputs | YES |
+| `redeem.zk` (`Redeem_V2`) | Redeem receipt commitment | YES |
+
+No circuit is named `burn_v1.zk`, `mint_v1.zk`, `token_mint_v1.zk`, `blind_output_v1.zk` or
+`redeem_v1.zk` — those five were the table's names until 2026-10-12 (`F-619`), and none of them has
+ever existed in this tree. The names on the left are the files under
+`src/contract/promissory_note/proof/`, with the circuit's own namespace in parentheses; a circuit's
+version lives inside the file, never in its path
+([circuit-versioning.md](../circuit-versioning.md) §7). All five do instance `coin_spend_hook`, which
+is the claim the table exists to make and the one that survived the rename.
 
 This means parent contracts can verify the `spend_hook` of any commitment — input,
 output, or receipt — by inspecting the ZK proof's public inputs. The value is

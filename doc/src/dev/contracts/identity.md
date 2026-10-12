@@ -37,7 +37,7 @@ All 9 entrypoints (0x00-0x08) are fully implemented and compiled.
 | 0x00 | `InitializeV1` | Initialize identity registry | Complete |
 | 0x01 | `IssueCredentialV1` | Issuer issues credential to holder | Complete |
 | 0x02 | `RevokeCredentialV1` | Issuer revokes a credential | Complete |
-| 0x03 | `CreateClaimV1` | Holder creates claim from credential | Complete |
+| 0x03 | *(unassigned)* | **`CreateClaimV1` was removed**, with the `CreateClaimV2` circuit. `try_from(0x03)` returns `Err`; `manifest.toml` records the removal and says not to reintroduce it (`F-623`) | — |
 | 0x04 | `RegisterCapabilityV1` | Register a new capability type | Complete |
 | 0x05 | `IssueCapabilityV1` | Issue a capability to a holder | Complete |
 | 0x06 | `VerifyCapabilityV1` | Verify a capability proof (cross-contract) | Complete |
@@ -76,16 +76,29 @@ The Identity contract serves as the authorization backbone for the entire DarkWo
 
 ### Cross-Contract Call Patterns
 
-`VerifyCapabilityV1 (0x0b)` is the primary entrypoint called by other contracts via cross-contract child calls. Each calling contract validates the child call's function code in its instruction phase (before any state mutation):
+`VerifyCapabilityV1 (0x06)` is the primary entrypoint called by other contracts via cross-contract
+child calls. Each calling contract validates the child call's function code in its instruction phase
+(before any state mutation):
 
 | Calling Contract | Calling Function | Validates |
 |---|---|---|
-| **labor_market** | `AcceptJobWithCapabilityV1` (0x0d) | `child.data[0] != 0x0b` |
-| **dao_escrow** | `VerifyMemberCapabilityV1` (0x0b) | `child.data[0] != 0x0b` |
+| **labor_market** | `AcceptJobWithCapabilityV1` (0x0d) | `child.data[0] != 0x06` |
+| **tender** | `SubmitBidWithCapabilityV1` | `child.data[0] != 0x06` |
+| **insurance_market** | `UnderwriteWithCapabilityV1` (0x09) | `child.data[0] != 0x06` |
 
-Both follow the same pattern: a ZK proof in the calling contract's params proves the capability predicate, and the child call to Identity provides on-chain verification that the capability exists and has not been revoked.
+This section said `0x0b` for the selector and listed `dao_escrow` for
+`VerifyMemberCapabilityV1 (0x0b)` — a retired selector that exists in no enum, and a call dao_escrow
+does not make. `identity::VerifyCapabilityV1` is `0x06`, and `tender` and `insurance_market` are
+callers rather than future work (`F-623`, the same defects `F-536` corrected in
+[contract/identity.md](../../contract/identity.md)). Each caller also validates the child's
+**contract id**, not only its function byte — see
+[composability.md](../../contract/composability.md).
 
-Note: `tender` and `insurance_market` are listed in the composability table above but their child call wiring to Identity is not yet implemented (future work).
+Both follow the same pattern: a ZK proof in the calling contract's params proves the capability
+predicate, and the child call to Identity provides on-chain verification that the capability exists
+and has not been revoked — *modulo the status note in
+[contract/identity.md](../../contract/identity.md)'s caller table*, which records what the call
+actually establishes today.
 
 For the complete cross-contract call mechanism, see [Composability](../../contract/composability.md).
 

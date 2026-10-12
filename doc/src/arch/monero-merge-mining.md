@@ -193,7 +193,7 @@ When the test fails, check in order:
 | `src/linear/src/monero/mod.rs` | MoneroPowData, extract_aux_merkle_root, is_coinbase_valid_merkle_root |
 | `src/linear/src/monero/merkle_proof.rs` | MerkleProof (Kecak-based, Monero-compatible) |
 | `src/linear/src/block.rs` | BlockHeader, PowSource, verify_merkle_root |
-| `src/linear/src/chain_state.rs` | CChainState::apply_block_with_uncles() — delegates to accept_block, skips native PoW for PowSource::Monero |
+| `src/linear/src/chain_state.rs` | `CChainState::connect_block()` — the single insertion path, which skips native PoW for `PowSource::Monero`. This row named `apply_block_with_uncles()`, a function that exists nowhere in the tree (`F-618`) |
 | `bin/dwowd/src/block_acceptor.rs` | accept_block() — full block acceptance, native PoW skip for Monero source |
 | `bin/dwowd/src/registry/model.rs` | LinearBlockTemplate, generate_linear_block_template |
 | `contrib/docker/darkwow-testnet/test_merge_mining_p2pool.sh` | E2E test script |

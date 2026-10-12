@@ -37,6 +37,17 @@ See [Contract Manifest](manifest.md) for how manifests are discovered and stored
 
 ## Layer 2: WASM Verification
 
+> **Not implemented.** This layer is a *design*: nothing in the tree downloads a contract's WASM
+> from `dwowd`, extracts its export section, or cross-references it against the manifest. The module
+> that was supposed to (`bin/dww/src/manifest_verify.rs`, cited in `wallet.md` and
+> `wallet-vs-daemon.md`) does not exist — no file, no symbol, no mention (`F-326`, `F-623`), and
+> `bin/dww/src/scan.rs` never compares a manifest against the code the chain will run.
+>
+> The check that *is* enforced is a **build-time** gate over this repository's own contracts
+> (`scripts/check-manifest-entrypoint-agreement.sh`), which is a different proposition: it says the
+> manifest here matches the entrypoint here, not that a deployed binary matches the manifest a
+> wallet read. `OBL-C237` carries the gap. What follows is what the layer would establish.
+
 This layer answers a mechanical question: does the manifest accurately describe
 the binary? It downloads the contract WASM from dwowd, extracts the export
 section and ZK circuit data, and cross-references against the manifest.
