@@ -941,4 +941,19 @@ F-510: doc:doc/src/contract/pool_stake.md#token-movement@a392209ec8
      `children_indexes` checks, then write those. F-508 is the one that reverses the row's direction: the bridge
      does not use TransferV1, it mints with `issue_v1` and burns with `redeem_v1`, so the doc's "does not use
      RedeemV1" was exactly backwards. -->
+F-528: doc:doc/src/contract/game_room.md#room-state@2d7cf04507
+F-529: doc:doc/src/contract/attestation.md#claim-state@2d7cf04507
+F-530: doc:doc/src/contract/auction.md#bid-state@2d7cf04507
+F-531: doc:doc/src/contract/tender.md#bid-state-machine@2d7cf04507
+F-532: doc:doc/src/contract/darktoshi_dice.md#state-machine@2d7cf04507
+F-533: doc:doc/src/contract/darkbet_exchange.md#state-machines@2d7cf04507
+F-534: doc:doc/src/contract/lottery.md#state-machine@2d7cf04507
+F-535: doc:doc/src/contract/labor_market.md#state-machine@2d7cf04507
+<!-- The 3D family is one method eight times, and it splits cleanly into two kinds. F-528/F-529/F-531 (and part
+     of F-533) are *declared and unreachable* — the enum has the variant, the diagram draws the box, and no
+     handler writes it; a reader cannot tell from either side that it is dead. F-530/F-532/F-534 (and darkbet's
+     three `None` start states) are states that do not exist at all. F-533 is narrower than the ledger's
+     wording: `Resolved` and `Settled` *are* assigned, so the correction names which half of the market enum is
+     live rather than marking all of it dead. F-535 is the one wrong in both directions — Cancel accepts less
+     than drawn, Dispute and Refund accept more. -->
 <!-- /promotion-log -->
