@@ -844,4 +844,12 @@ F-319: doc:doc/src/arch/consensus/consensus.md#flag-bits@d0ae4f9b1a
 <!-- F-319 is an offset with no serializer behind it, contradicted by the paragraph directly beneath the
      claim. Correcting it also removes the invitation to look for a byte the mining blob does not
      contain. -->
+F-321: doc:doc/src/arch/type-system.md#114-authorization-inversion-type-level@3075defa7f
+<!-- F-321 is promoted as a doc-only correction to an overclaim: the theorem closes the carrier half of the
+     pattern and the Lean names the provenance half as open (OBL-T7). No code and no Lean changed — the
+     Lean was already the careful one. -->
+F-322: doc:doc/src/arch/ocap.md#23-construction-example-tender-bid@3075defa7f
+<!-- F-322 is promoted as a labelling rather than a rewrite. The example and the Lean's type genuinely
+     differ, and deciding which is the tender bid's real shape is a modelling question, so the example
+     keeps its content and gains the fact that it is a sketch. -->
 <!-- /promotion-log -->
