@@ -1008,4 +1008,12 @@ F-546: doc:doc/src/contract/recruitment_pipeline.md#how-four-contracts-compose-t
      class again, and its shape is worth naming: the two documents published each other's value — 0x09 where
      0x04 belongs and 0x04 where 0x09 does — so neither is a copy of a stale source, and the swap is only
      visible with both open. -->
+F-527: doc:doc/src/contract/game_room.md#playeraccount@e7bf3821e1, doc:doc/src/contract/relayer_endowment.md#data-model@e7bf3821e1, doc:doc/src/contract/pool_stake.md#data-model@e7bf3821e1, doc:doc/src/contract/roulette.md#data-model@e7bf3821e1, doc:doc/src/contract/darkbet_exchange.md#data-model@e7bf3821e1, doc:doc/src/contract/auction.md#data-structures@e7bf3821e1, doc:doc/src/contract/attestation.md#core-concepts@e7bf3821e1
+<!-- F-527 is the campaign's largest sweep and the one where the method mattered most: fifteen structs in seven
+     documents were diffed *field by field against the code* rather than read, which is how the row's own two
+     errors surfaced — bearer_bond and oracle are named by it and carry no `version`/`instance_seed` in the
+     structs they document (oracle's are Params), so those two sub-cites are wrong. Sweeping into them anyway
+     found *different* defects the row did not name: bearer_bond's five missing `receipt_*` fields (`OBL-C199`)
+     and oracle's three params carrying a `tx_binding` that `OBL-C198` removed. The comparison is over field
+     names only; it does not check types, and a code struct with no doc snippet is outside it. -->
 <!-- /promotion-log -->
