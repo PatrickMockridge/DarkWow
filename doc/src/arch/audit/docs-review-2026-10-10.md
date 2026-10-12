@@ -817,4 +817,10 @@ F-189: row:OBL-C235@cf09d131a3, doc:doc/src/dev/contracts/safety.md#rc12--an-err
      Promoting it also forced a re-measurement of OBL-C194's census, which is RED — twelve survivors in
      three contracts, wired into the umbrella — and was red before this change: a gate I had not been
      running, and the reason the row now says so. -->
+F-310: doc:doc/src/arch/contract-wasm-type-system.md#a12-function-dispatch@0df2e754b0, row:OBL-C236@0df2e754b0
+<!-- F-310 is promoted as a gate that now exists where the clause asked for an attribute. It found three
+     unreachable arms on its first run — and the third by a *different* tool than the first two, because
+     `cargo check --workspace` had reported clean without ever compiling that crate. The promotion records
+     that, and it also records a regression of mine the same run exposed: the F-514 removal broke
+     `dwow-sdk-py`, which that row's own verification had missed. -->
 <!-- /promotion-log -->
