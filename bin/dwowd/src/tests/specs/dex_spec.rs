@@ -349,7 +349,19 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let (c0, c0_plan, c0_nonce) = pn_transfer_prepare(pn, &n[4], 1000)?;
                         let (c1, c1_plan, c1_nonce) = pn_transfer_prepare(pn, &n[5], 500)?;
-                        let r = h.execute_swap_slippage(&[c0.clone(), c1.clone()], s_c, ot, pallas::Base::from(1000u64), alice_lock_c, s, rt, pallas::Base::from(700u64), bob_lock_c, pallas::Base::from(699u64), pallas::Base::from(50u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        // The tolerance must be one the circuit accepts. `execute_swap_slippage.zk`
+                        // (PHASE 6) proves `(BPS - slippage_bps) * alice_amount <= fill_amount * BPS`,
+                        // `BPS = 10000` — the fill may fall short of Alice's *offer* by at most
+                        // `slippage_bps`. This row fills 699 of Alice's 1000, a 30.1% shortfall, so the
+                        // tolerance must be >= 3010; the 50 bps it carried is refuted at `L2 proof
+                        // verify` as an *unsatisfiable witness* (`right = 9950 * 1000 = 9_950_000`,
+                        // `left = 699 * 10000 = 6_990_000`, `right <= left` false) — the exec itself had
+                        // already returned `Swap executed successfully with slippage`, so this is not an
+                        // instance mismatch. 3500 clears the bound with margin and stays under the
+                        // circuit's 100% cap. (The fee row needs no such value: `execute_swap_fee.zk`
+                        // carries only `fill <= alice_amount` and `fill < bob_amount`, both of which
+                        // 599/1000 and 599/600 satisfy.)
+                        let r = h.execute_swap_slippage(&[c0.clone(), c1.clone()], s_c, ot, pallas::Base::from(1000u64), alice_lock_c, s, rt, pallas::Base::from(700u64), bob_lock_c, pallas::Base::from(699u64), pallas::Base::from(3500u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let d0 = c0_plan.prove(r.commitment, c0_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let d1 = c1_plan.prove(r.commitment, c1_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
