@@ -1037,4 +1037,11 @@ F-551: doc:doc/src/contract/subscription.md#mvp-status@d246f02eec, doc:doc/src/c
      wrong cell is a claim that something is done (or not) rather than a stale number. `lottery` is the one where
      the misreport costs work: two of three unchecked boxes describe shipped things, and one of them is the
      ticket Merkle tree the contract's model rests on. -->
+F-548: doc:doc/src/contract/audit.md#resolution-status@3593851e33
+F-550: doc:doc/src/contract/betting_stake.md#data-model@3593851e33
+<!-- F-548 and F-550 are stamped late, in the commit after their corrections landed, because reading them as
+     "handled" while working them is exactly the failure the promotion gate exists to catch. F-548 is two records
+     of one audit disagreeing about their own counts; F-550 is the per-contract instance of F-527's class.
+     F-521 is a **pointer**, not a finding — its own text says "see Phase 2" — so it carries no stamp; the three
+     rows it points at (F-324/F-325/F-326) are promoted. -->
 <!-- /promotion-log -->
