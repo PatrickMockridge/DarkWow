@@ -15,8 +15,14 @@ A local development network (devnet) for DarkWow testing, funded via block minin
 ## Quick Start
 
 ```bash
-# Terminal 1: Start dwowd with localnet config
-./target/release/dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml
+# Terminal 1: Start a single node.
+#
+# This line pointed at `contrib/localnet/dwowd-single-node/dwowd.toml` until 2026-10-12, and
+# **that path does not exist** — nor does `contrib/localnet/` (`F-601`). The daemon's config
+# carries a `[network_config."localnet"]` section, but `--network` accepts only
+# `darkwow-devnet` and `darkwow-testnet` (`bin/dwowd/src/main.rs`: anything else is
+# `Error::UnsupportedChain`). The runnable single-node configuration is devnet:
+./target/release/dwowd -c bin/dwowd/dwowd_config.toml --network darkwow-devnet
 
 # Terminal 2: Mine blocks to your wallet
 ./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet mine
@@ -32,7 +38,8 @@ A local development network (devnet) for DarkWow testing, funded via block minin
 3. dwowd sends mining jobs (RandomX blob + target)
 4. dwow_wallet mines RandomX hashes in a background thread
 5. Shares found are submitted back to stratum server
-6. Accepted shares = mined blocks = PoW rewards (20 DRKW per block)
+6. Accepted shares = mined blocks = PoW rewards (~13.8 DRKW at height 1, decaying — see the
+   emission curve's `expected_reward`)
 7. Wallet scanning discovers the commitments
 
 ## Key Components
@@ -53,33 +60,50 @@ A local development network (devnet) for DarkWow testing, funded via block minin
 -v                         Increase verbosity (-vvv supported)
 ```
 
-**Wallet subcommands:**
+**Top-level commands** (`bin/dww/src/args.rs`, the `WalletCommand` enum):
+
 ```
-dwow_wallet wallet address            Get the default address
-dwow_wallet wallet addresses          Print all addresses
-dwow_wallet wallet balance            Query known balances
-dwow_wallet wallet commitments              Print all commitments
-dwow_wallet wallet default-address    Set default address
-dwow_wallet wallet import-secrets     Import secret keys from stdin
-dwow_wallet wallet initialize         Initialize wallet database
-dwow_wallet wallet keygen             Generate new keypair
-dwow_wallet wallet mining-config      Print wallet address mining configuration
-dwow_wallet wallet secrets            Print all secret keys
-dwow_wallet wallet tree               Print Merkle tree
+dwow_wallet transfer <amount> <asset-id> <recipient>   Send a note
+dwow_wallet redeem <cap-id>                            Redeem a capability
+dwow_wallet burn <cap-id>...                           Burn capabilities
+dwow_wallet broadcast                                  Broadcast a raw transaction
+dwow_wallet scan [--reset <height>]                    Rescan the chain
+dwow_wallet sync <init|status>                         Sync bookkeeping
+dwow_wallet daemon                                     Run the wallet daemon
+dwow_wallet position                                   List positions from the capability catalogues
+dwow_wallet diagnostic                                 Print diagnostic information
+dwow_wallet wallet <subcommand>                        Wallet database operations (below)
+dwow_wallet contract <subcommand>                      Contract operations (below)
 ```
 
-**Contract subcommands:**
+**Wallet subcommands** (`WalletSubcmd`) — the enum has exactly these eight:
+
 ```
-dwow_wallet contract dao-escrow-init <dao-bulla> <token-id>    Initialize a DAO-Escrow endowment
-dwow_wallet contract drain-protection-init <fund-id> <spend-auth> <dao-bulla>  Initialize DrainProtection
-dwow_wallet contract enable-drain-protection <dao-bulla> <drain-bulla>          Enable drain protection
-dwow_wallet contract deploy <auth> <wasm-path> [deploy-ix]    Deploy a smart contract
-dwow_wallet contract export-data <tx-hash>                     Export wasm bincode + deploy ix
-dwow_wallet contract generate-deploy                          Generate new deploy authority
-dwow_wallet contract invoke <contract-id> <function>           Invoke a contract function
-dwow_wallet contract list [contract-id]                        List deploy authorities
-dwow_wallet contract lock <deploy-auth>                        Lock a smart contract
+dwow_wallet wallet initialize               Initialize the wallet database
+dwow_wallet wallet address                  Get the default address
+dwow_wallet wallet addresses                Print all addresses
+dwow_wallet wallet default-address <index>  Set the default address
+dwow_wallet wallet balance [--porcelain]    Query known balances
+dwow_wallet wallet secrets                  Print all secret keys
+dwow_wallet wallet tree                     Print the Merkle tree
+dwow_wallet wallet capabilities             List the wallet's capabilities
 ```
+
+**Contract subcommands** (`ContractSubcmd`):
+
+```
+dwow_wallet contract deploy <deploy-auth> <wasm-path> [deploy-ix] [manifest]  Deploy a contract
+dwow_wallet contract show <contract-id>                                       Print a contract
+dwow_wallet contract lock <deploy-auth>                                       Lock a contract
+dwow_wallet contract invoke <contract-id> <function> [params] [recipient]     Call a function
+```
+
+**This reference listed subcommands the parser rejects** (`F-601`/`F-602`). The wallet block named
+four that are not variants of `WalletSubcmd` — `commitments`, `import-secrets`, `keygen` and
+`mining-config` — and the contract block named six more that are not variants of `ContractSubcmd`
+(`dao-escrow-init`, `drain-protection-init`, `enable-drain-protection`, `export-data`,
+`generate-deploy`, `list`). Ten rows, none of which resolves. The lists above are the enums' own
+variants; run `dwow_wallet wallet --help` rather than trusting a copied list.
 
 **Universal Contract Invocation:**
 ```
@@ -96,7 +120,10 @@ dwow_wallet contract invoke dao_escrow enable_drain_protection --params params.j
 
 - **Algorithm:** RandomX (rx/0)
 - **Difficulty:** 1 (very low, shares found frequently)
-- **Block reward:** 20 DRKW per mined block
+- **Block reward:** ~**13.8 DRKW** per mined block at height 1 — `INITIAL_REWARD` is
+  `1_383_764_049` base units and a DRKW is `10^8`, so the emission curve's first block is 13.83764049
+  DRKW, and it decays from there. This line said "20 DRKW" until 2026-10-12 (`F-601`); the figure for
+  any given height is `expected_reward(h)` in `src/sdk/src/blockchain.rs`.
 - **Blob structure:** 292 bytes (`BlockHeader::MINING_BLOB_LEN`) — see
   [stratum.md §292-Byte Mining Blob Layout](arch/consensus/stratum.md#292-byte-mining-blob-layout)
 - **Target:** 8 bytes MSB of 32-byte target, padded with zeros to 32 bytes for comparison
