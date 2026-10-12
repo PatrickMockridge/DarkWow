@@ -909,4 +909,24 @@ F-633: doc:doc/src/arch/monero.md#see-also@37c8565a05
      monero finality note was duplicated verbatim in merge-mining.md, and both copies plus monero.md
      cited `OBL-C67` as open. It was re-closed when its residual split out to `OBL-C80`, so the
      citations now name `OBL-C80` and its actual status — ACCEPTED-WITH-REASON, not open. -->
+F-501: doc:doc/src/contract/drain_protection.md#composition@2d09ea7313, doc:doc/src/contract/betting_stake.md#composition@2d09ea7313, doc:doc/src/contract/labor_market.md#composition@2d09ea7313, doc:doc/src/contract/relayer_endowment.md#composition@2d09ea7313, doc:doc/src/contract/escrow.md#composition@2d09ea7313
+<!-- F-501 is the ledger's own 3A header for the family, and measuring it is why the row is promoted per-document
+     rather than as one claim: "none call Purse" is false for escrow, whose `FundV1` requires a Purse child and
+     validates its contract id — the ledger's parenthetical "(all use promissory_note::transfer_v1 0x04)" holds
+     for the four that do not, and not for escrow, drain_protection's multisig child or labor_market's two
+     attestation children. The four false docs keep the composition they were written for, marked as not
+     implemented, since the intent is real and the present tense was the defect. -->
+F-502: doc:doc/src/contract/auction.md#composition-with-promissorynote@2d09ea7313
+<!-- F-502's promotion is the one case where the doc's intended composition was a different contract rather than a
+     missing feature: the auction re-implements no escrow because it calls no escrow, and the note that it
+     "composes with escrow" was a design note that outlived the design. -->
+F-503: doc:doc/src/contract/box.md#composing-contracts@2d09ea7313
+F-505: doc:doc/src/contract/tender.md#breaking-changes-v2@2d09ea7313
+F-507: doc:doc/src/contract/insurance_market.md#integration-with-other-contracts@2d09ea7313
+F-509: doc:doc/src/contract/game_room.md#stake-lifecycle@2d09ea7313
+<!-- F-503/F-505/F-507/F-509 are promoted together as one method applied four times — read the entrypoint's
+     `children_indexes` checks, name the contract whose id the child is validated against, and write that. The
+     gate that guards the table side of these docs (`check-contract-doc-functions.sh`) also needed a correction
+     here: it was firing on `insurance_market`'s row for the endpoint F-514 removed, so a retirement row is now
+     skipped — a row that says a function is gone makes no claim about the manifest. -->
 <!-- /promotion-log -->
