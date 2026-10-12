@@ -1079,4 +1079,29 @@ F-181: doc:doc/src/arch/sync-red-team-audit.md#r3-high--highestpeertip-is-monoto
      (the rule's other branch) and the defect is given `OBL-C238` with a non-empty check cell. F-175/F-178 are
      the README's two framing claims, both wider than the record: a "the more specific audit won" story that
      three same-day fixes falsify, and an alias-table scope sentence that does not match the table. -->
+F-006: doc:doc/src/arch/verification-hazop.md#surface-2--zk-circuits-obl-z@fdd853deae, gate:scripts/check-doc-canonical-counts.sh@fdd853deae
+F-007: doc:doc/src/for-researchers.md@fdd853deae, gate:scripts/check-doc-canonical-counts.sh@fdd853deae
+<!-- F-006/F-007 are the two rows whose *claim cells in this ledger* quoted the stale figures, and each also
+     carried a stale correction of its own ("the gate walks 178", "holds 166 (178 walked)"). Both cells are
+     rewritten to describe the defect without quoting a number, which is the Phase F trap taken early: a row
+     that restates a drifting figure becomes the next stale source the moment it is read as current. The
+     instrument that now owns all four figures is `check-doc-canonical-counts.sh`, which is GREEN as of these
+     stamps — the gate Phase F was going to flip. -->
+F-625: doc:doc/src/intro.md@f5efdf4f52, doc:doc/src/for-researchers.md@f5efdf4f52
+<!-- F-625 is four claims in three root documents: the opcode count (32 declared, 31 usable — `noop` computes
+     nothing), "26 Lean proof files" against 81, the circuit count (deduplicated into F-007), and a "5-level
+     test pipeline" where the tree has four testing levels. -->
+F-628: doc:doc/src/dev/testing/level-2-heavyweight.md#contract-harness-list@670cc41948, doc:doc/src/dev/testing/python-simulations.md#python-consensus-models@670cc41948, doc:doc/src/dev/testing/overview.md@670cc41948
+F-629: doc:doc/src/spec/crypto-schemes.md@f5efdf4f52, doc:doc/src/crypto/rln.md@f5efdf4f52, doc:doc/src/crypto/zk_explainer.md@f5efdf4f52
+F-630: doc:doc/src/arch/circuit-versioning.md#migration-scope@f5efdf4f52
+F-632: gate:scripts/check-doc-index.sh@f5efdf4f52
+F-634: doc:doc/src/arch/README.md@f5efdf4f52, doc:doc/src/SUMMARY.md@f5efdf4f52
+F-635: doc:doc/src/arch/consensus/stratum.md@f5efdf4f52
+F-636: doc:doc/src/arch/consensus/transfer-spec.md@f5efdf4f52
+<!-- F-632 is promoted against the *gate* rather than a document, and that is the outcome the plan's Phase B
+     aimed at: the thirteen malformed links are gone, and `check-doc-index.sh` now carries the link-syntax
+     check written for them — its malformed-link arm is what proves the class cannot return. F-628's sweep is
+     far wider than its row: the row cites two harness counts and **every one of the twenty-two rows** in the
+     table it points at was wrong. F-629's `⊕_b` is the sharpest single defect in E7: two identical cases, so
+     the defining formula said the function ignores its parameter. -->
 <!-- /promotion-log -->
