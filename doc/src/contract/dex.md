@@ -37,7 +37,7 @@ The MVP is a **DAO that coordinates bilateral atomic swaps** - not a full order 
 
 | Function | Opcode | Description |
 |----------|--------|-------------|
-| `InitializeV1` | `0x00` | Initialize DEX with config and governance key |
+| `InitializeV1` | `0x00` | Initialize DEX with its fee, swap timeout and transparency config |
 | `CreateSwapV1` | `0x01` | Proposer locks funds, creates swap proposal |
 | `AcceptSwapV1` | `0x02` | Acceptor locks matching funds |
 | `ExecuteSwapV1` | `0x03` | Execute atomic swap (partial fill support) |
@@ -46,6 +46,16 @@ The MVP is a **DAO that coordinates bilateral atomic swaps** - not a full order 
 | `SetTransparencyLevelV1` | `0x06` | Set transparency level per deployment |
 | `ExecuteSwapFeeV1` | `0x07` | Execute swap with fee deduction (BaseDiv) |
 | `ExecuteSwapSlippageV1` | `0x08` | Execute swap with slippage tolerance (BaseDiv) |
+
+*Corrected 2026-10-11 (`F-520`).* The `InitializeV1` row said "Initialize DEX with
+config and governance key". Measured: `InitializeParams` has three fields — `timeout`,
+`fee` and `transparency_config` — and **no governance key**, so none is initialized;
+and `DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY`, which the old wording leaned on, was
+declared and never written or read anywhere in the tree, so it has been removed
+rather than left as an explanation. Governance authority in this contract is proven
+per call, not registered at init: `update_config` and
+`set_transparency_level` each verify a ZK proof from the authority the caller holds,
+which is the same shape the rest of the tree uses.
 
 ```
 Alice wants: 100 DRKW ↔ 1 ETH (Bob's offer)
@@ -165,14 +175,27 @@ Nullifier = H(secret)
 
 ## Signature Verification
 
-The DEX uses split verification (host + circuit):
+The DEX binds the signer **in the circuit**. There is no host half:
 
 ```
-Host verifies: schnorr_verify(public, signature)
-Circuit constrains: ec_mul_base(sig_secret, K) == public
+Circuit constrains: ec_mul_base(sig_secret, K) == signature_public
+                    (both coordinates exposed as public inputs)
 ```
 
-This exists because no `schnorr_verify` opcode exists yet.
+*Corrected 2026-10-11 (`F-515`).* This section described a "split verification (host
++ circuit)" whose host half was `schnorr_verify(public, signature)`, and closed by
+saying it "exists because no `schnorr_verify` opcode exists yet" — which contradicts
+itself, since the function it names is the thing it concedes is missing. Measured:
+**`schnorr_verify` appears nowhere in the tree**, and the host's import table carries
+no signature function of any kind. The circuit half exists and is the *whole*
+binding: `create_swap.zk` derives the public key from a witnessed `signature_secret`
+with `ec_mul_base`, constrains its two coordinates equal to the ones the call
+publishes, and `constrain_instance`s both — so a prover can produce the proof only
+for a key it holds. It is the same derive-and-expose shape `deployooor`'s lock uses
+(`F-511`).
+
+The signer is therefore bound without a signature scheme, which is why this
+section's premise — that a host check is needed — is gone rather than deferred.
 
 ## Capabilities Enabled by Opcodes
 

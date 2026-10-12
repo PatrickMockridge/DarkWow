@@ -99,8 +99,6 @@ pub const DEX_CONTRACT_TIMEOUT: &[u8] = b"swap_timeout";
 pub const DEX_CONTRACT_FEE: &[u8] = b"dex_fee";
 /// Transparency level key
 pub const DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY: &[u8] = b"transparency_level";
-/// Governance public key for authorization
-pub const DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY: &[u8] = b"governance_pubkey";
 /// Promissory Note contract ID for cross-contract routing validation
 pub const PROMISSORY_NOTE_CONTRACT_ID_KEY: &[u8] = b"promissory_note_cid";
 

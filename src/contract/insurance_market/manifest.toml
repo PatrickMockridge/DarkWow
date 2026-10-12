@@ -64,10 +64,6 @@ requires_proof = true
 proof_circuit = "PurchaseCoverageWithDAGV2"
 
 [[functions]]
-name = "resolve_claim_with_capability"
-code = 12
-
-[[functions]]
 name = "deactivate_underwriter"
 code = 13
 

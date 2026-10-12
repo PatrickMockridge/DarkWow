@@ -41,14 +41,25 @@ The DarkWow stablecoin is a privacy-preserving collateralized stablecoin that su
 
 ## Configurable Models
 
-The stablecoin deployer selects the model at initialization:
+**One model is implemented, and the field that would select another is not read.**
+*Corrected 2026-10-11 (`F-516`).* This section said "The stablecoin deployer selects
+the model at initialization" and tabulated four. Measured: `InitializeParams` carries
+a `model: StablecoinModel` field, and `init_contract` **decodes it and never stores
+it** — it writes the version, the PI state, the ratios, the contract ids and the
+governance key, and `params.model` reaches no tree and no branch. Every engine path
+is the pooled one.
 
-| Model | Min Collateral | Liquidation | Governance |
-|-------|---------------|-------------|------------|
-| **PooledDebt** | 150% | Global pool | PI Controller |
-| **Liquity** | 110% | Stability pool | None |
-| **Fractional** | 80% | Mixed | Partial algorithmic |
-| **IndividualCDP** | 150% | Per-position | Per-asset |
+| Model | Min Collateral | Liquidation | Governance | Implemented |
+|-------|---------------|-------------|------------|-------------|
+| **PooledDebt** | 150% | Global pool | PI Controller | **yes** |
+| **Liquity** | 110% | Stability pool | None | no |
+| **Fractional** | 80% | Mixed | Partial algorithmic | no |
+| **IndividualCDP** | 150% | Per-position | Per-asset | no |
+
+A deployment naming `Liquity` therefore gets pooled-debt behaviour, and cannot tell
+from the result: the parameter is accepted, encoded, decoded and dropped. The
+columns above describe the models as *intended*; only the first row is what the
+contract does. Recorded as `OBL-C231`.
 
 ## Contract Functions
 

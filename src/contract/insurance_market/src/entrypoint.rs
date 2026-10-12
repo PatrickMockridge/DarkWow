@@ -56,7 +56,6 @@ mod update_premium;
 mod underwrite_with_capability;
 mod purchase_coverage_with_capability;
 mod purchase_coverage_with_dag;
-mod resolve_claim_with_capability;
 mod deactivate_underwriter;
 mod close_market;
 mod retire_risk_type;
@@ -72,7 +71,6 @@ use update_premium::*;
 use underwrite_with_capability::*;
 use purchase_coverage_with_capability::*;
 use purchase_coverage_with_dag::*;
-use resolve_claim_with_capability::*;
 use deactivate_underwriter::*;
 use close_market::*;
 use retire_risk_type::*;
@@ -157,7 +155,6 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         | InsuranceMarketFunction::ResolveClaimV1
         | InsuranceMarketFunction::WithdrawPremiumV1
         | InsuranceMarketFunction::UpdatePremiumV1
-        | InsuranceMarketFunction::ResolveClaimWithCapabilityV1
         | InsuranceMarketFunction::DeactivateUnderwriterV1
         | InsuranceMarketFunction::CloseMarketV1
         | InsuranceMarketFunction::RetireRiskTypeV1 => {
@@ -288,9 +285,6 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         InsuranceMarketFunction::PurchaseCoverageWithDAGV1 => {
             insurance_market_purchase_coverage_with_dag_process_instruction_v1(cid, call_idx, calls)?
         }
-        InsuranceMarketFunction::ResolveClaimWithCapabilityV1 => {
-            insurance_market_resolve_claim_with_capability_process_instruction_v1(cid, call_idx, calls)?
-        }
         InsuranceMarketFunction::DeactivateUnderwriterV1 => {
             insurance_market_deactivate_underwriter_process_instruction_v1(cid, call_idx, calls)?
         }
@@ -355,10 +349,6 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         InsuranceMarketFunction::PurchaseCoverageWithDAGV1 => {
             let update: PurchaseCoverageWithDAGUpdateV1 = PurchaseCoverageWithDAGUpdateV1::decode(&update_data[1..])?;
             insurance_market_purchase_coverage_with_dag_process_update_v1(cid, update)
-        }
-        InsuranceMarketFunction::ResolveClaimWithCapabilityV1 => {
-            let update: ResolveClaimWithCapabilityUpdateV1 = ResolveClaimWithCapabilityUpdateV1::decode(&update_data[1..])?;
-            insurance_market_resolve_claim_with_capability_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::DeactivateUnderwriterV1 => {
             let update: DeactivateUnderwriterUpdateV1 = DeactivateUnderwriterUpdateV1::decode(&update_data[1..])?;

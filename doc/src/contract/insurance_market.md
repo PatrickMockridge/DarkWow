@@ -176,10 +176,32 @@ PREMIUM_COVERAGE (up to $1M):
 | 0x09 | UnderwriteWithCapabilityV1 | Underwrite with capability proof | Restricted markets requiring verified underwriters |
 | 0x0a | PurchaseCoverageWithCapabilityV1 | Buy coverage with capability proof | Buyers must prove qualification (e.g., low risk) |
 | 0x0b | PurchaseCoverageWithDAGV1 | Buy coverage with DAG proof | Coverage tiers gated by competency DAGs |
-| 0x0c | ResolveClaimWithCapabilityV1 | Resolve with capability proof | Authorized resolvers only |
+| 0x0c | *(removed)* | **Was `ResolveClaimWithCapabilityV1`; removed 2026-10-11 — see below** | — |
 | 0x0d | DeactivateUnderwriterV1 | Deactivate an underwriter | Remove underwriting authority |
 | 0x0e | CloseMarketV1 | Close an active market | Retire a market that is no longer active |
 | 0x0f | RetireRiskTypeV1 | Retire a risk type | Mark a risk type as no longer insurable |
+
+**`0x0c` was removed, and this is why (`F-514`, `OBL-C232`).** The row said
+"Authorized resolvers only". Measured, nothing authorized it: the manifest declared
+it with no `requires_proof`, **no circuit exists for it**, and its handler's only
+error return was `ClaimAlreadyResolved` — no authority comparison, no nullifier, no
+signature, no proof check. The caller supplied `is_valid: bool` and
+`payout_amount: u64`, and the handler resolved the claim and computed the payout and
+the underwriter's slash from them. Any caller could therefore resolve any filed
+claim as valid. Its params also carried `capability_proof`, `capability_secret` and
+`attestation`, **none of which it read** — the unread proof is the missing
+authorization, not a separate defect. The handler had a comment reading
+`// Authorization verified by caller signature (runtime-managed)`; there is no such
+runtime check anywhere in the tree, which `F-511` and `F-196` establish independently.
+
+The function, its dispatch arms and its manifest entry are gone, so a call to
+`0x0c` now fails as an invalid function rather than resolving anything. The params,
+the update and the SDK binding for them are **kept**: the endpoint is meant to
+return once the market can say who may resolve — `underwrite_with_capability`
+carries the template, and the comment there records the same class being closed
+once already (`OBL-Z16`). This contract's market has `required_underwriter_capability`
+and `required_buyer_capability` and no resolver equivalent, which is the field the
+return needs.
 
 ## Data Structures
 

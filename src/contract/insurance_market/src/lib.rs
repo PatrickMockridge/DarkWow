@@ -62,7 +62,13 @@ pub enum InsuranceMarketFunction {
     UnderwriteWithCapabilityV1 = 0x09,
     PurchaseCoverageWithCapabilityV1 = 0x0a,
     PurchaseCoverageWithDAGV1 = 0x0b,
-    ResolveClaimWithCapabilityV1 = 0x0c,
+    // `ResolveClaimWithCapabilityV1 = 0x0c` stood here. It is REMOVED, not disabled in
+    // place: the handler decoded the caller's `is_valid` and `payout_amount` and resolved
+    // the claim from them, with no authority comparison, no nullifier, no proof circuit
+    // and no `requires_proof` in the manifest — so any caller could resolve any filed
+    // claim as valid. `OBL-C232` carries the measurement. The params, the update and the
+    // SDK binding for them are kept, because the endpoint is meant to return once the
+    // market has a capability that authorizes resolution; only its reachability is gone.
     DeactivateUnderwriterV1 = 0x0d,
     CloseMarketV1 = 0x0e,
     RetireRiskTypeV1 = 0x0f,
@@ -86,7 +92,6 @@ impl TryFrom<u8> for InsuranceMarketFunction {
             0x09 => Ok(Self::UnderwriteWithCapabilityV1),
             0x0a => Ok(Self::PurchaseCoverageWithCapabilityV1),
             0x0b => Ok(Self::PurchaseCoverageWithDAGV1),
-            0x0c => Ok(Self::ResolveClaimWithCapabilityV1),
             0x0d => Ok(Self::DeactivateUnderwriterV1),
             0x0e => Ok(Self::CloseMarketV1),
             0x0f => Ok(Self::RetireRiskTypeV1),
