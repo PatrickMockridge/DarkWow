@@ -956,4 +956,16 @@ F-535: doc:doc/src/contract/labor_market.md#state-machine@2d7cf04507
      wording: `Resolved` and `Settled` *are* assigned, so the correction names which half of the market enum is
      live rather than marking all of it dead. F-535 is the one wrong in both directions — Cancel accepts less
      than drawn, Dispute and Refund accept more. -->
+F-522: doc:doc/src/contract/composability.md#promissory-note-child-call-amount-validation@7665e7d754
+F-523: doc:doc/src/contract/composability.md#promissory-note-child-call-amount-validation@7665e7d754
+F-524: doc:doc/src/contract/game_room_app_layer.md#sdk-usage@7665e7d754
+F-525: doc:doc/src/contract/drain_protection.md#deployer-control@7665e7d754
+F-526: doc:doc/src/contract/promissory_note.md#the-breakthrough-capability-not-access-control@7665e7d754
+<!-- F-522/F-523 are one section describing a mechanism that is the opposite of the real one: the doc taught
+     public value fields and a commitment-comparison helper, and the helper IS a commitment comparison — so the
+     correction is smaller than a rewrite and the reason the amount is private is now stated. F-526 is the
+     family's phantom *name* rather than a phantom symbol: the opcode is real (`IsNotEqualBase = 0x62,
+     "is_not_equal"`) and simply unused by `redeem.zk`, which enforces `value == 0` twice by other means. The
+     two source-comment occurrences in `promissory_note` are recorded in this comment and not swept, because
+     PromissoryNote is a genesis contract and a comment edit moves the pin. -->
 <!-- /promotion-log -->
