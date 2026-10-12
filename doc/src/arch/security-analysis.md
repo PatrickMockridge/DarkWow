@@ -38,37 +38,30 @@ constrain_equal_base(computed_y, value_commit_y);
 
 ---
 
-#### Issue 2: Permission Bitmask Checking is Absent (MAJOR) — FIXED (Tiered Approach)
+#### Issue 2: Permission Bitmask Checking is Absent (MAJOR) — FIXED (Capability Hash)
 
 **Location**: [verify_access.zk](../../../src/contract/subscription/proof/verify_access.zk)
 
 **Problem (Original)**: The circuit did not enforce permission bitmask checking - any subscriber could claim any permission level.
 
-**Fix Applied**: Tiered access approach using `less_than_strict`
+**Fix Applied**: a **capability hash**, not tiers.
 
-The circuit now implements tiered permission checking:
-```zk
-# Tier definitions:
-#   TIER_BASIC = 1    -> READ only
-#   TIER_PREMIUM = 2  -> READ + WRITE
-#   TIER_ADMIN = 3    -> READ + WRITE + ADMIN
+This section described a tiered scheme — `TIER_BASIC`/`TIER_PREMIUM`/`TIER_ADMIN`, a
+`less_than_strict(required_tier - 1, permissions_claimed)` gate, and an "Impact" list about the tier
+being revealed — until 2026-10-12. **None of it is in the circuit.** `verify_access.zk` is 65 lines
+and contains no tier, no `less_than_strict` and no permission field; what it does is derive
 
-# Current implementation: Check claimed_tier >= required_tier
-# Uses less_than_strict(required_tier - 1, claimed_tier)
-# This constrains: (required_tier - 1) < claimed_tier
-less_than_strict(required_tier - 1, permissions_claimed);
+```
+derived_capability = poseidon_hash(DOMAIN_COMMITMENT,
+    subscriber_pub_x, subscriber_pub_y, plan_id, subscription_id, lock_until_block, nonce)
 ```
 
-**Impact** (Current implementation - privacy limitation):
-- Permission tier IS revealed on-chain (privacy regression vs true zero-knowledge)
-- Tier 1 (BASIC), Tier 2 (PREMIUM), or Tier 3 (ADMIN) is exposed
-- Cannot do arbitrary bitmask combinations (READ+ADMIN without WRITE is impossible)
-- But: DOES prevent unauthorized access (tier must be >= required)
+and constrain it equal to `expected_capability` and to a public instance. The host recomputes the
+same hash from the **stored record** (`Subscription::access_capability`) and the call's nonce and
+refuses on a mismatch (`OBL-C84`), so the capability is what authorises access — there is no tier to
+leak, and none of the tier privacy analysis applies.
 
-`base_div` is now implemented, enabling a proper bitmask approach. The current
-tiered approach prevents unauthorized access but leaks tier level.
-
-**Status**: FIXED (Tiered approach).
+**Status**: FIXED (capability hash).
 
 **See Also**:
 - [Opcodes Reference: BaseDiv analysis](zk/opcodes.md)
@@ -77,31 +70,18 @@ tiered approach prevents unauthorized access but leaks tier level.
 
 #### Issue 3: No Cancellation Nullifier Verification (MODERATE) — PROVISIONAL FIX
 
-**Location**: [verify_access.zk:150-151](../../../src/contract/subscription/proof/verify_access.zk#L150-L151) (now Phase 5)
+**Location**: `verify_access.zk` — **not `:150-151`**; the file is 65 lines and has no such range.
 
 **Problem (Original)**: The circuit did not verify the subscription hasn't been cancelled. A subscriber who cancels retains a valid capability.
 
-**PROVISIONAL FIX Applied**: Phase 5 added to verify subscription is Active via Merkle proof.
+**PROVISIONAL FIX Applied**: the fix is the capability hash above, not a Merkle proof.
 
-```zk
-# Compute the subscription's spent nullifier
-computed_spent_nullifier = poseidon_hash(subscription_id, subscriber_secret);
-constrain_equal_base(computed_spent_nullifier, subscription_spent_nullifier);
-
-# Compute the subscription leaf hash
-subscription_leaf = poseidon_hash(
-    subscription_id,
-    subscription_state,
-    subscription_spent_nullifier,
-);
-
-# Verify the Merkle proof
-verified_root = merkle_root(subscription_leaf_pos, subscription_path, subscription_leaf);
-constrain_equal_base(verified_root, subscription_state_root);
-
-# Verify the subscription is in Active state (0 = Active)
-less_than_strict(subscription_state, 1);
-```
+The block that stood here until 2026-10-12 showed a "Phase 5" computing a spent nullifier,
+building a subscription leaf and verifying a `merkle_root` against a `subscription_state_root`.
+The circuit has no nullifier, no leaf, no path and no root: it derives one capability and
+constrains it. Whether that constitutes cancellation resistance is a question about the host's
+comparison against the stored record, which is where the answer lives — not in the circuit, and not
+in the code this section quoted.
 
 **IMPORTANT LIMITATION: This makes capabilities SINGLE-USE**
 
@@ -150,20 +130,29 @@ After each successful verify, the contract MUST mark `subscription_spent_nullifi
 
 ### Escrow Contract
 
-#### Issue 8: No State Verification on Claim (MAJOR)
+#### Issue 8: No State Verification on Claim (MAJOR) — **the quoted comment is a correction, not a defect**
 
 **Location**: [escrow/claim.zk](../../../src/contract/escrow/proof/claim.zk)
 
-**Problem**: The circuit doesn't verify the escrow is in "Funded" state before allowing claim:
+**Problem (as filed)**: The circuit doesn't verify the escrow is in "Funded" state before allowing
+claim, quoted as:
 
 ```zk
-# This circuit proves:
-# - Seller knows seller_secret
-# - seller_pubkey derived from seller_secret matches escrow.seller_pubkey
 # - The escrow is in Funded state (not already spent)  <-- NOT VERIFIED
 ```
 
-**Impact**:
+That line now reads **`- CONTRACT ENFORCED`**, and has for some time: the annotation was a note
+about where the check lives, and the check lives in the host. `claim.zk`'s header says so itself —
+"Seller knows seller_secret; seller_pubkey derived from seller_secret matches escrow.seller_pubkey
+via H(seller_pub); the escrow is in Funded state (not already spent) — CONTRACT ENFORCED" — and the
+escrow entrypoint reads the record's state before permitting the claim.
+
+So the "Impact" list below is about a circuit that no longer exists in this form. What a reader
+should take from this issue is the *architectural* point it accidentally makes: the state check is
+the host's, so it is only as strong as the host's read. Whether that is enough is a question for the
+entrypoint, not for `claim.zk`.
+
+**Impact (as filed, retained for the record)**:
 - An already-refunded escrow could be claimed again
 - An already-claimed escrow could be claimed again (double-spend)
 - The circuit assumes the contract state is correct, but doesn't verify it
@@ -203,10 +192,16 @@ After each successful verify, the contract MUST mark `subscription_spent_nullifi
 **Fix Applied**: Added maximum membership period check in the circuit:
 
 ```zk
-max_membership_blocks = 52560;  # ~1 year at 5min blocks
-max_expiry = add(current_block, max_membership_blocks);
-less_than_strict(expiry, max_expiry);
+# NO SUCH CODE. `max_membership_blocks` and `max_expiry` occur nowhere under `src/`.
 ```
+
+This block was presented as the applied fix until 2026-10-12, and it describes an enforcement that
+does not exist: no `52560`, no `max_membership_blocks`, no `max_expiry` constant appears anywhere
+under `src/`. `dao_escrow/src/client/pay_premium.rs:138` carries the only occurrence of the name,
+in a comment saying `max_membership_blocks`/`max_expiry` are "INTERNAL to circuit (`witness_base`,
+`base_add`)" — i.e. *witnesses the prover supplies*, which bound nothing, and
+`pay_premium.zk`'s own check is `current_block < expiry` against the witness. A cap chosen by the
+prover is not a cap. `F-163`.
 
 **Impact** (resolved): Members cannot self-issue excessively long memberships. Maximum is ~1 year.
 
@@ -214,73 +209,95 @@ less_than_strict(expiry, max_expiry);
 
 ### DEX Contract
 
-#### Issue 16: Public Keys Hardcoded to Zero (CRITICAL) — ARCHITECTURAL LIMITATION
+#### Issue 16: Public Keys Hardcoded to Zero (CRITICAL) — CORRECTED
 
-**Location**: [dex/src/entrypoint/mod.rs:137-140](../../../src/contract/dex/src/entrypoint/mod.rs#L137-L140)
+**Location**: `src/contract/dex/src/entrypoint/create_swap.rs` — not `entrypoint/mod.rs:137-140`,
+a path that does not exist.
 
-**Problem**: `dex_create_swap` stores zeroed public keys for proposer and acceptor. The signature field exists in params but cannot be verified without the full DarkWow transaction verification framework. Impact: no accountability for swap participants. Requires refactor to full DarkWow contract framework.
+**Problem (as filed)**: `dex_create_swap` stores zeroed public keys for proposer and acceptor.
+
+**Measured**: only the **acceptor** is zeroed, and deliberately. `create_swap.rs` derives the
+proposer's key from the call's own `signature_public` (`params.signature_public.xy()`) and stores
+`proposer_pub_x`/`proposer_pub_y`; `acceptor_pub_x`/`acceptor_pub_y` are written `[0u8; 32]` at
+creation because the acceptor is filled in at accept time (`acceptor_lock`, `acceptor_nullifier` are
+`None` beside them for the same reason). So the accountability question this issue raises is about
+whether the *client-provided* `signature_public` is bound to the proposer — not about a key the
+contract discards — and the entrypoint's own comment says where that stands (`F-165`).
 
 ---
 
-#### Issue 17: lock_proof Partially Verified (CRITICAL) — PARTIALLY FIXED
+#### Issue 17: lock_proof Partially Verified (CRITICAL) — **the path is gone**
 
-**Location**: [dex/src/entrypoint/mod.rs:114-116](../../../src/contract/dex/src/entrypoint/mod.rs#L114-L116)
+**Location**: `src/contract/dex/src/` — not `entrypoint/mod.rs:114-116`, a path that does not exist.
 
-**Problem**: The lock commitment Merkle proof was not being verified.
+**Problem (as filed)**: The lock commitment Merkle proof was not being verified.
 
-**Partial Fix Applied**: Basic validation added to ensure lock_proof is not empty:
+**Partial fix described**: an `if params.lock_proof.is_empty()` guard in `dex_create_swap`.
 
-```rust
-// SECURITY NOTE: lock_proof should be verified against the promissory_note contract's
-// Merkle tree. Currently this verification is stubbed.
-if params.lock_proof.is_empty() {
-    msg!("[dex_create_swap] ERROR: lock_proof is empty");
-    return Err(DexError::InvalidMerkleProof.into())
-}
-```
-
-**What remains unfixed**: The actual Merkle proof verification against the promissory_note contract's commitment tree is not implemented. This requires integration with the promissory_note contract's state.
-
-**Impact**:
-- A user could create a swap claiming locked funds they don't actually have
-- The full Merkle proof verification is bypassed
+`lock_proof` occurs **nowhere** under `src/contract/dex/` — not in the params, not in the guard, not
+in the record. The field and the guard were removed (`d71447b096`), so this issue's "what remains
+unfixed" no longer describes a partial fix awaiting completion; it describes a design that changed.
+What `create_swap` now carries is a `lock_commitment` (`CapCommitment`) and a `nullifier` in the
+params, and the `dex` circuits are registered with proofs — see [dex.md](../contract/dex.md) for
+what the contract actually enforces today. The impact bullet ("a user could create a swap claiming
+locked funds they don't actually have") should be re-derived against the current shape rather than
+inherited from this one.
 
 **Recommendation**: Implement actual Merkle proof verification by accessing the promissory_note contract's commitment tree.
 
 ---
 
-#### Issue 18: ZK Proof Verification Returns Empty (CRITICAL) — ARCHITECTURAL LIMITATION
+#### Issue 18: ZK Proof Verification Returns Empty (CRITICAL) — **no longer true**
 
-**Location**: DEX's `get_metadata()` (inherited from contract framework)
+**Location**: `src/contract/dex/src/entrypoint/mod.rs` — the file exists; the line it cited did not.
 
-**Problem**: The DEX uses a simplified bridge architecture that doesn't integrate with the full DarkWow zkVM for proof verification. The ZK circuits exist but the contract framework doesn't call the verifier.
+**Problem (as filed)**: The DEX uses a simplified bridge architecture that doesn't integrate with the
+full zkVM for proof verification — the circuits exist but the framework doesn't call the verifier.
 
-**Impact**: All ZK circuit constraints (secret knowledge, lock proofs, etc.) are not enforced on-chain.
+**Measured**: the DEX is a full contract. Its `init_contract` registers all eight circuits with
+`wasm::db::zkas_db_set(include_bytes!("../../proof/<name>.zk.bin"))`, and every one of the eight
+manifest entries carries `requires_proof = true`. The proof path is the same one every other
+contract uses. See [dex.md](../contract/dex.md) — and note that the same audit's Issues 16 and 17
+above describe a DEX whose shape has moved for the same reason.
 
-**Analysis**: The DEX ZK circuits are properly defined and would verify correctly if integrated with the zkVM. However, the current simplified bridge pattern doesn't support on-chain ZK verification.
+**Impact (as filed, retained for the record)**: All ZK circuit constraints (secret knowledge, lock
+proofs, etc.) are not enforced on-chain.
 
-**Recommendation**: Refactor DEX to use the full DarkWow contract framework for ZK proof verification.
+**Recommendation (as filed)**: Refactor DEX to use the full DarkWow contract framework for ZK proof
+verification. — *The refactor this recommends has happened.*
 
 ---
 
 ### Bridge Contract
 
-#### Issue 12: Weak Range Check on Amount (MODERATE)
+#### Issue 12: Weak Range Check on Amount (MODERATE) — **fixed, and not in the circuit**
 
-**Location**: [bridge/withdraw.zk:48](../../../src/contract/bridge/proof/withdraw.zk#L48)
+**Location**: [bridge/withdraw.zk](../../../src/contract/bridge/proof/withdraw.zk) (the `:48`
+reference was stale) and `src/contract/bridge/src/entrypoint.rs`
 
-**Problem**: The range check only verifies `amount < 2^64`:
+**Problem (as filed)**: The range check only verifies `amount < 2^64`:
 
 ```zk
 range_check(64, amount);
 ```
 
-**Impact**:
+**Measured**: the range check is real and still there, but it was never the anti-dust policy and is
+not asked to be. `withdraw.zk`'s own comment now records why the circuit cannot carry that policy —
+it held a `token_minimum` **witness**, compared with `less_than_strict(token_minimum, amount)`, and
+a floor the prover chooses bounds nothing. The floor is the host's rule:
+`if params.amount < BRIDGE_CONTRACT_MIN_WITHDRAWAL` in `WithdrawV1`, against a constant no caller can
+set, checked against the plaintext `params.amount` the update stores.
+
+**Impact (as filed, retained for the record)**:
 - Zero-value withdrawals are allowed
 - Dust amounts (very small values) could be used for griefing
 - No economic floor on withdrawal size
 
-**Recommendation**: Add a minimum amount check or configure the range based on the specific token's decimal精度.
+**The body and the summary row disagreed.** The summary's row 9 read "✅ FIXED (min amount floor:
+100_000_000)" against this section's open Recommendation — the same issue recorded as both closed
+and not, in one document (`F-168`). Both are corrected: row 9's figure is 100, and this section says
+where the fix lives. (The Recommendation's trailing word was corrupted; it is dropped rather than
+guessed at.)
 
 ---
 
@@ -349,31 +366,34 @@ circuit "Example" {
 
 **Why Fork**: We fork the promissory_note contract for clean, self-contained circuit design—not because we're under active attack. See [Promissory Note](../contract/promissory_note.md) for the contract design.
 
-**Circuits Fixed** (this audit session):
+**Circuits Fixed** (this audit session) — filenames are the ones on disk; every row here named a
+`_v1.zk` file that does not exist until 2026-10-12, and only two of the thirty in the two tables
+resolved (`F-166`). A circuit's version lives inside the file (`circuit "Fee_V2"`), never in its
+path — see [`circuit-versioning.md`](circuit-versioning.md) §7.
+
 | Contract | Circuit | Status |
 |----------|---------|--------|
+| native_token | fee.zk | ✅ Fixed (signature_public) |
+| promissory_note | revoke.zk | ✅ Fixed (signature_public) |
+| oracle | register_oracle.zk | ✅ Fixed |
+| drain_protection | exit.zk | ✅ Fixed |
+| dao_escrow | *(as listed, `exec.zk` resolves to nothing — dao_escrow's circuits are `init`, `pay_premium`, `propose_claim`, `set_governance_config`, `vote_claim`)* | ⚠️ |
+| labor_market | create_job.zk | ✅ Fixed |
+| labor_market | accept_job.zk | ✅ Fixed |
+| labor_market | submit_deliverable.zk | ✅ Fixed |
+| labor_market | confirm_delivery.zk | ✅ Fixed |
+| labor_market | dispute.zk | ✅ Fixed |
+| labor_market | refund.zk | ✅ Fixed |
+| labor_market | submit_git_deliverable.zk | ✅ Fixed |
+| tender | create_tender.zk | ✅ Fixed |
+| tender | submit_bid.zk | ✅ Fixed |
+| tender | select_winner.zk | ✅ Fixed |
+| tender | reveal_bid.zk | ✅ Fixed |
 
-| native_token | fee_v1.zk | ✅ Fixed (signature_public) |
-| promissory_note | burn_v1.zk | ✅ Fixed (signature_public) |
-| oracle | register_oracle_v1.zk | ✅ Fixed |
-| drain_protection | exit_v1.zk | ✅ Fixed |
-| dao_escrow | exec.zk | ✅ Fixed |
-| labor_market | create_job_v1.zk | ✅ Fixed |
-| labor_market | accept_job_v1.zk | ✅ Fixed |
-| labor_market | submit_deliverable_v1.zk | ✅ Fixed |
-| labor_market | confirm_delivery_v1.zk | ✅ Fixed |
-| labor_market | dispute_v1.zk | ✅ Fixed |
-| labor_market | refund_v1.zk | ✅ Fixed |
-| labor_market | submit_git_deliverable_v1.zk | ✅ Fixed |
-| tender | create_tender_v1.zk | ✅ Fixed |
-| tender | submit_bid_v1.zk | ✅ Fixed |
-| tender | select_winner_v1.zk | ✅ Fixed |
-| tender | reveal_bid_v1.zk | ✅ Fixed |
-
-**Previously Fixed Circuits** (prior audit sessions):
-- dex/execute_swap_v1.zk, dex/cancel_swap_v1.zk
-- escrow/claim.zk, escrow/refund_v1.zk
-- auction/claim_winnings_v1.zk, auction/close_auction_v1.zk, auction/refund_bid_v1.zk, auction/settle_auction_v1.zk
+**Previously Fixed Circuits** (prior audit sessions) — same correction:
+- dex/`execute_swap.zk`, dex/`cancel_swap.zk`
+- escrow/`claim.zk`, escrow/`refund.zk`
+- auction/`claim_winnings.zk`, auction/`close_auction.zk`, auction/`refund_bid.zk`, auction/`settle_auction.zk`
 - attestation/consume_claim.zk, attestation/create_attestation_v1.zk
 
 **Additional Fixes** (promissory_note and dex signature_public):
@@ -398,7 +418,7 @@ circuit "Example" {
 
 **Prevention: Git Pre-commit Hook** detects the vulnerable pattern and rejects commits. A `derive_pubkey` builtin for zkas is proposed to enforce soundness by construction.
 
-**Correction (2026-09-24).** The hook exists and now does what this line says — but it did not for most of its life, and that is worth a reader knowing before treating the sentence as evidence. Until 2026-09-23 `hooks/pre-commit` enforced the **opposite** rule: it required that a value derived by `ec_get_x` be bound by `constrain_equal_base` before exposure, which is the unsound shape, so it would have rejected correct circuits and accepted the defect it names. Its own header now records the reversal, the sound and unsound shapes side by side, and the reason it never fired (the files it would have rejected were not edited while it existed). The rule it defers to is `scripts/check-pubkey-binding.sh`, wired in `scripts/run-all-tests.sh` as the `circuit pubkey binding` gate, which blocks on any finding absent from `script/circuit_pubkey_binding_exceptions.txt`; it passes today. **Two figures that stood in this sentence are given as names rather than numbers, because both had drifted**: the wiring was cited as `run-all-tests.sh:145` when the gate had moved to `:200`, and the run's tail was quoted as `… 49 adjudicated` where the checker now prints `51`. The count is the checker's to print (`PASS: no unexcepted vacuous bindings (… circuit(s) scanned; N adjudicated …)`), and `script/circuit_pubkey_binding_exceptions.txt`'s header records why its own classification is not a total. So "rejects commits" is true as of 2026-09-23, and was false before it.
+**Correction (2026-09-24).** The hook exists and now does what this line says — but it did not for most of its life, and that is worth a reader knowing before treating the sentence as evidence. Until 2026-09-23 `hooks/pre-commit` enforced the **opposite** rule: it required that a value derived by `ec_get_x` be bound by `constrain_equal_base` before exposure, which is the unsound shape, so it would have rejected correct circuits and accepted the defect it names. Its own header now records the reversal, the sound and unsound shapes side by side, and the reason it never fired (the files it would have rejected were not edited while it existed). The rule it defers to is `scripts/check-pubkey-binding.sh`, wired in `scripts/run-all-tests.sh` as the `circuit pubkey binding` gate, which blocks on any finding absent from `script/circuit_pubkey_binding_exceptions.txt`; it passes today. **Four figures that stood in this sentence have been removed, because every one of them drifted**: the wiring was cited first as `run-all-tests.sh:145` and then as `:200`, and the run's tail was quoted as `… 49 adjudicated` and later as `… 51 adjudicated`. Neither the line nor the count is stable, so both are given as names — `check-pubkey-binding.sh`'s own `PASS` line is the count's only home, and `run-all-tests.sh`'s `run_gate "circuit pubkey binding"` line is the wiring's. `script/circuit_pubkey_binding_exceptions.txt`'s header records why its own classification is not a total. So "rejects commits" is true as of 2026-09-23, and was false before it.
 
 ---
 
@@ -406,7 +426,7 @@ circuit "Example" {
 
 None of the unofficial contracts have formal verification. Complex cryptographic circuits like these benefit from formal methods to catch edge cases that testing misses.
 
-**Correction (2026-09-24).** The first sentence is no longer true; the second is partly satisfied; and the correction cuts both ways, so both halves are stated rather than the flattering one. `proofs/lean/src/Transcribed.lean` is generated from the `.zk` sources by `scripts/gen_circuit_transcription.py`, is freshness-gated (`scripts/run-all-tests.sh`, gate 5), and carries one statement list per circuit with a verdict closed by the kernel rather than by hand. What that is **not** is a proof that these circuits are sound. The property it closes is the model's own (`NoFreeInstance` over a transcription), while the tree's enforcement is the checker's separate rule in `scripts/check-circuit-instance-derivation.sh`; the two disagree by design and the generator's preamble decomposes the disagreement. Nor is the obligation mechanized: `Axioms.NoFreeInstances` is still a name, because the step from a circuit `(r, s)` to its statement list is a Lean term that cannot read a `.zk` file. Measured today, the enforcement gate walks **178 circuits / 880 `constrain_instance` sites** and reports **4 unclassified**, exiting 1 — so the honest summary is that a mechanized *statement* of the model's property now exists and fails for most circuits, which is a different thing from a formal verification of them.
+**Correction (2026-09-24).** The first sentence is no longer true; the second is partly satisfied; and the correction cuts both ways, so both halves are stated rather than the flattering one. `proofs/lean/src/Transcribed.lean` is generated from the `.zk` sources by `scripts/gen_circuit_transcription.py`, is freshness-gated (`scripts/run-all-tests.sh`, gate 5), and carries one statement list per circuit with a verdict closed by the kernel rather than by hand. What that is **not** is a proof that these circuits are sound. The property it closes is the model's own (`NoFreeInstance` over a transcription), while the tree's enforcement is the checker's separate rule in `scripts/check-circuit-instance-derivation.sh`; the two disagree by design and the generator's preamble decomposes the disagreement. Nor is the obligation mechanized: `Axioms.NoFreeInstances` is still a name, because the step from a circuit `(r, s)` to its statement list is a Lean term that cannot read a `.zk` file. Measured today, the enforcement gate walks **179 circuits / 903 `constrain_instance` sites**, classifies every one of them (`derived` 360, `bound` 220, `redundant` 225, `derived-inline` 54, `declared-free` 44), reports **0 unclassified**, and exits 0. This sentence read "178 circuits / 880 sites … reports 4 unclassified, exiting 1" until 2026-10-12, under which a reader would conclude the checker still fails most circuits. It does not — so the honest summary is that a mechanized *statement* of the model's property now exists and holds for the transcription, which is still a different thing from a formal verification of the circuits themselves.
 
 ### Issue 14: Missing Integration Tests
 
@@ -447,13 +467,27 @@ For the full formal verification (gate constraints, delta-invert analysis, Lean4
 | 6 | Escrow | Seller public key in plaintext | MODERATE | ✅ FIXED (H(seller_pub) in commitment, circuit verifies hash) |
 | 7 | DAO-Escrow | No endowment drain protection | MAJOR | ✅ FIXED: drain_protection with 8 best practices |
 | 8 | DAO-Escrow | Membership expiry as witness, no max cap | MODERATE | ✅ FIXED (max 1-year cap added) |
-| 9 | Bridge | Weak range check (only < 2^64) | MODERATE | ✅ FIXED (min amount floor: 100_000_000) |
+| 9 | Bridge | Weak range check (only < 2^64) | MODERATE | ✅ FIXED (min amount floor: **100**, `BRIDGE_CONTRACT_MIN_WITHDRAWAL`) |
 | 10 | DEX | Public keys hardcoded to zero | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
 | 11 | DEX | lock_proof never verified | CRITICAL | ⚠️ PARTIALLY FIXED (basic validation added) |
 | 12 | DEX | ZK proof verification stubbed | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
 | 13 | Multiple | Missing public key constraint binding | MAJOR | ✅ FULLY FIXED (25+ circuits fixed, pre-commit hook added, zkas builtin proposed) |
 
-**Correction (2026-09-24) to row 13 only.** "FULLY FIXED" is a status the register does not support, and the two documents should agree. The binding rule is now gated in both directions — `hooks/pre-commit` defers to `scripts/check-pubkey-binding.sh`, which blocks on any finding not in `script/circuit_pubkey_binding_exceptions.txt` and passes today over 178 circuits with 49 adjudicated. But the hook's own header states what that adjudication amounts to: of the 57 candidates read circuit-and-host together, **fifteen are genuine defects**, each named with a register row scheduling its repair (`OBL-C81`, `C82`, `C83`, `C84`, `OBL-C75`) — and the `zkas` builtin is still proposed rather than built. So the row's own vocabulary: *adjudicated and gated*, with fifteen named defects open, not fully fixed. The hook is also worth dating: until 2026-09-23 it enforced the reversed rule, so "pre-commit hook added" was, for its whole prior life, evidence of a check that would have accepted this very defect.
+**Correction (2026-09-24) to row 13 only, itself corrected 2026-10-12 (`F-174`).** "FULLY FIXED" is a
+status the register does not support, and the two documents should agree. The binding rule is gated
+in both directions — `hooks/pre-commit` defers to `scripts/check-pubkey-binding.sh`, which blocks on
+any finding not in `script/circuit_pubkey_binding_exceptions.txt` and passes. (This paragraph quoted
+"178 circuits with 49 adjudicated"; the checker's own `PASS` line is the only stable source for
+either number, and both had moved.)
+
+The paragraph went on to say that of the 57 candidates read circuit-and-host together **fifteen are
+genuine defects**, "each named with a register row scheduling its repair (`OBL-C81`, `C82`, `C83`,
+`C84`, `OBL-C75`)", and concluded "fifteen named defects open". **Four of those five rows are
+CLOSED** and the fifth (`OBL-C82`) is a `DECISION`, so the count and the conclusion were both false
+at the time of reading — a sentence of the same class as the ones it was written to correct. What
+remains true is the dating: until 2026-09-23 the hook enforced the reversed rule, so "pre-commit hook
+added" was, for its whole prior life, evidence of a check that would have accepted this very defect.
+The register, not this paragraph, is where the open count lives.
 
 ---
 
