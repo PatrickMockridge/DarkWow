@@ -140,8 +140,15 @@ the timeout requirement in the Cancel ZK circuit, not in the capability graph.
 ### create_swap.zk
 
 Proves the swap commitment is correctly formed:
-- **Public inputs**: `commitment = H(alice_pub, H(bob_pub), send_value, send_token, recv_value, recv_token, timeout)`, `bob_commitment = H(bob_pub)`
-- **Private inputs**: `alice_pub_x, alice_pub_y, bob_pub_x, bob_pub_y, send_value, send_asset_id, recv_value, recv_asset_id, timeout, alice_secret`
+- **Public inputs** (in `constrain_instance` order): `commitment`, `bob_commitment`, `tx_binding`, `tx_nonce`
+- **Private inputs**: `alice_pub_x, alice_pub_y, bob_pub_x, bob_pub_y, send_value, send_asset_id, recv_value, recv_asset_id, timeout, alice_secret, tx_commitment`
+- **Commitments**: `bob_commitment = poseidon_hash(DOMAIN_COMMITMENT, bob_pub_x, bob_pub_y)` and
+  `commitment = poseidon_hash(DOMAIN_COMMITMENT, alice_pub_x, alice_pub_y, bob_commitment, send_value, send_asset_id, recv_value, recv_asset_id, timeout)`
+
+The formula here previously read `commitment = H(alice_pub, H(bob_pub), …)` — no
+`DOMAIN_COMMITMENT` tag on either hash, and the asset fields named `send_token`/`recv_token`
+rather than `send_asset_id`/`recv_asset_id`. The `bob_commitment` hash is what keeps Bob's
+public key off-chain, so its domain tag is load-bearing rather than cosmetic.
 - **Verification**: Alice's pubkey derivation + commitment hash + Bob commitment privacy
 
 ### fund_swap.zk

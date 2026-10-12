@@ -119,35 +119,48 @@ Three variants exist in the wild. DarkWow uses Variant 3:
 ### create_escrow.zk
 
 Proves the escrow commitment is correctly formed:
-- **Public inputs**: `commitment = H(buyer_pub.x, buyer_pub.y, seller_pub.x, seller_pub.y, value, asset_id, timeout)`
-- **Private inputs**: `buyer_pub_x, buyer_pub_y, seller_pub_x, seller_pub_y, value, asset_id, timeout, buyer_secret`
+- **Public inputs** (in `constrain_instance` order): `commitment`, `seller_commitment`, `tx_binding`, `tx_nonce`
+- **Private inputs**: `buyer_pub_x, buyer_pub_y, seller_pub_x, seller_pub_y, value, asset_id, timeout, buyer_secret, tx_commitment`
+- **Commitments**: `seller_commitment = poseidon_hash(DOMAIN_COMMITMENT, seller_pub_x, seller_pub_y)` and
+  `commitment = poseidon_hash(DOMAIN_COMMITMENT, buyer_pub_x, buyer_pub_y, seller_commitment, value, asset_id, timeout)`
+
+The formula here previously read `H(buyer_pub.x, buyer_pub.y, seller_pub.x, seller_pub.y, value,
+asset_id, timeout)` — no `DOMAIN_COMMITMENT` tag, and the seller's raw coordinates where the
+circuit hashes a pre-computed `seller_commitment` instead. A client hashing the documented form
+produces a commitment the circuit does not accept.
 - **Verification**: Public key derivation + commitment hash
 
 ### fund.zk
 
 Proves the value commitment is valid:
-- **Public inputs**: `escrow_id`, `value_commit.x`, `value_commit.y`
-- **Private inputs**: `value`, `value_blind`
-- **Verification**: Pedersen commitment `C = value * G + value_blind * H`
+- **Public inputs** (in `constrain_instance` order): `value_commit.x`, `value_commit.y`, `escrow_id`, `merkle_root`, `tx_binding`, `tx_nonce`
+- **Private inputs**: `value`, `value_blind`, `merkle_leaf_pos`, `merkle_path`, `tx_commitment`
+- **Verification**: Pedersen commitment `C = value * G + value_blind * H`, plus a Merkle proof that `escrow_id` is in the escrows tree
 
 ### claim.zk
 
 Proves the seller legitimately claims funds:
-- **Public inputs**: `escrow_id`, `seller_pub_x`, `seller_pub_y`, `spent_nullifier`
-- **Private inputs**: `seller_secret`
+- **Public inputs** (in `constrain_instance` order): `escrow_id`, `escrow_seller_commitment`, `spent_nullifier`, `tx_binding`, `tx_nonce`
+- **Private inputs**: `seller_pub_x`, `seller_pub_y`, `seller_secret`, `tx_commitment`
 - **Verification**:
-  1. `seller_pub = seller_secret * G` matches escrow.seller_pubkey
-  2. `spent_nullifier = H(escrow_id, seller_secret)`
+  1. `seller_commitment = poseidon_hash(DOMAIN_COMMITMENT, seller_pub_x, seller_pub_y)` must equal `escrow_seller_commitment` (the escrow record's `seller_pubkey`)
+  2. `spent_nullifier = poseidon_hash(DOMAIN_NULLIFIER, escrow_id, seller_secret)`
+
+The row above it previously listed `seller_pub_x`, `seller_pub_y` as the public inputs; the circuit
+exposes the **commitment** made from them, not the coordinates.
 
 ### refund.zk
 
 Proves the buyer legitimately refunds:
-- **Public inputs**: `escrow_id`, `timeout`, `current_block`, `buyer_pub_x`, `buyer_pub_y`, `spent_nullifier`
-- **Private inputs**: `buyer_secret`
+- **Public inputs** (in `constrain_instance` order): `escrow_id`, `timeout`, `current_block`, `buyer_pub_x`, `buyer_pub_y`, `spent_nullifier`, `tx_binding`, `tx_nonce`
+- **Private inputs**: `buyer_secret`, `tx_commitment`
 - **Verification**:
   1. `less_than_strict(timeout, current_block)` — timeout passed
   2. `buyer_pub = buyer_secret * G` matches escrow.buyer_pubkey
-  3. `spent_nullifier = H(escrow_id, buyer_secret)`
+  3. `spent_nullifier = poseidon_hash(DOMAIN_NULLIFIER, escrow_id, buyer_secret)`
+
+**All four circuits end with `tx_binding`, `tx_nonce`** — the last two instances, in that order.
+The layouts above omitted the pair (`OBL-C198`).
 
 ## Opcode Requirements
 

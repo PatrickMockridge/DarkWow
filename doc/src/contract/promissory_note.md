@@ -377,10 +377,17 @@ ownership); the blind output side creates new capabilities for the recipients.
 **Parameters:**
 ```rust
 struct TransferParamsV1 {
-    inputs: Vec<Input>,    // Commitments being consumed
-    outputs: Vec<Output>,  // Commitments being created
+    inputs: Vec<Input>,          // Commitments being consumed
+    outputs: Vec<Output>,        // Commitments being created
+    tx_nonce: pallas::Base,      // chosen by the prover; the trailing public input
 }
 ```
+
+`tx_binding` is **not** a field here. The transaction commitment is a derivation over the call
+data, so a binding carried inside the params would be computed from a value that covers it —
+`get_metadata` derives `tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`
+from the commitment the host exposes and the params' `tx_nonce`. `tx_nonce` stays because the
+prover chooses it and it does not depend on the commitment (`OBL-C198`).
 
 Where each `Output` carries:
 ```rust
@@ -509,11 +516,16 @@ Promissory Note uses 5 ZK circuits:
 
 | Circuit | Namespace | Public Inputs | Purpose |
 |---------|-----------|---------------|---------|
-| `register_type.zk` | `RegisterTypeV2` | `asset_id`, `token_auth_parent`, `commitment`, `vc_x`, `vc_y`, `spend_hook` | Create token type |
-| `redeem.zk` | `RedeemV2` | `commitment`, `vc_x`, `vc_y`, `token_commit`, `value`, `spend_hook` | Redeem receipt (value=0) |
-| `issue.zk` | `IssueV2` | `token_root`, `mint_public`, `commitment`, `vc_x`, `vc_y`, `asset_id`, `spend_hook` | Mint with backing proof |
+| `register_type.zk` | `RegisterTypeV2` | `asset_id`, `token_auth_parent`, `commitment`, `vc_x`, `vc_y`, `spend_hook`, `tx_binding`, `tx_nonce` | Create token type |
+| `redeem.zk` | `RedeemV2` | `commitment`, `vc_x`, `vc_y`, `token_commit`, `value`, `spend_hook`, `tx_binding`, `tx_nonce` | Redeem receipt (value=0) |
+| `issue.zk` | `IssueV2` | `token_root`, `mint_public`, `commitment`, `vc_x`, `vc_y`, `asset_id`, `spend_hook`, `tx_binding`, `tx_nonce` | Mint with backing proof |
 | `revoke.zk` | `RevokeV2` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public`, `tx_binding`, `tx_nonce` | Spend commitments |
-| `transfer.zk` | `TransferV2` | `commitment`, `vc_x`, `vc_y`, `token_commit`, `spend_hook` | Create output commitments |
+| `transfer.zk` | `TransferV2` | `commitment`, `vc_x`, `vc_y`, `token_commit`, `spend_hook`, `tx_binding`, `tx_nonce` | Create output commitments |
+
+**Every circuit ends with the pair `tx_binding`, `tx_nonce`** — the last two `constrain_instance`
+calls, in that order, in all five. It is the position the node reads, and there is no per-circuit
+index map (`OBL-C198`): a layout that omits it, or places it anywhere but last, describes a public
+input vector no verifier will accept.
 
 **Design principles:**
 - Value commitments use **Pedersen** (not Poseidon). Pedersen is additively
@@ -537,19 +549,22 @@ Promissory Note uses 5 ZK circuits:
 
 ```
 [nullifier, value_commit_x, value_commit_y, token_commit,
- merkle_root, user_data_enc, spend_hook, signature_public]
+ merkle_root, user_data_enc, spend_hook, signature_public,
+ tx_binding, tx_nonce]
 ```
 
 ### TransferV1 Public Input Layout
 
 ```
-[commitment, value_commit_x, value_commit_y, token_commit, spend_hook]
+[commitment, value_commit_x, value_commit_y, token_commit, spend_hook,
+ tx_binding, tx_nonce]
 ```
 
 ### RedeemV1 Public Input Layout
 
 ```
-[commitment, value_commit_x, value_commit_y, token_commit, value, spend_hook]
+[commitment, value_commit_x, value_commit_y, token_commit, value, spend_hook,
+ tx_binding, tx_nonce]
 ```
 
 `value` is exposed as a public input and the entrypoint verifies independently that it is zero.
@@ -563,13 +578,15 @@ transfer of receipt commitments).
 ### IssueV1 Public Input Layout
 
 ```
-[token_registry_root, mint_public, commitment, value_commit_x, value_commit_y, asset_id, spend_hook]
+[token_registry_root, mint_public, commitment, value_commit_x, value_commit_y, asset_id, spend_hook,
+ tx_binding, tx_nonce]
 ```
 
 ### RegisterTypeV1 Public Input Layout
 
 ```
-[asset_id, token_auth_parent, commitment, value_commit_x, value_commit_y, spend_hook]
+[asset_id, token_auth_parent, commitment, value_commit_x, value_commit_y, spend_hook,
+ tx_binding, tx_nonce]
 ```
 
 ## Capability Lifecycle

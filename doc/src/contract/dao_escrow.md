@@ -249,11 +249,17 @@ that compares the three.
 
 | Circuit | `constrain_instance` order | Built by |
 |---------|---------------------------|----------|
-| `init.zk` (`InitV2`) | `dao_bulla`, `tx_binding`, `tx_nonce`, `endowment_bulla` | `client/init.rs` |
+| `init.zk` (`InitV2`) | `dao_bulla`, `endowment_bulla`, `tx_binding`, `tx_nonce` | `client/init.rs` |
 | `pay_premium.zk` (`PayPremiumV2`) | `tx_binding`, `tx_nonce` | `client/pay_premium.rs` |
-| `propose_claim.zk` (`ProposeClaimV2`) | `tx_binding`, `tx_nonce`, `claim_commit` | `client/propose_claim.rs` |
-| `vote_claim.zk` (`VoteClaimV2`) | `tx_binding`, `tx_nonce`, `vote_nullifier` | `client/vote_claim.rs` |
+| `propose_claim.zk` (`ProposeClaimV2`) | `claim_commit`, `tx_binding`, `tx_nonce` | `client/propose_claim.rs` |
+| `vote_claim.zk` (`VoteClaimV2`) | `vote_nullifier`, `tx_binding`, `tx_nonce` | `client/vote_claim.rs` |
 | `set_governance_config.zk` (`SetGovernanceConfigV2`) | `owner_pub_x`, `owner_pub_y`, `owner_nullifier`, `tx_binding`, `tx_nonce` | `client/update.rs` |
+
+**The pair is always last.** Three rows above it (`init`, `propose_claim`, `vote_claim`) published
+the **pre-`OBL-C198`** order — `tx_binding`, `tx_nonce` before the circuit's own instance — until
+2026-10-12. The migration moved the pair to the end of every circuit uniformly, because the node
+reads that position to recompute the binding from the enclosing transaction and there is no
+per-circuit index map. A client publishing the old order is refused.
 
 `SetGovernanceConfigV2` is called by **`UpdateV1` (0x01)**, and `manifest.toml` declares it there.
 Until 2026-09-27 the manifest declared it on the retired `set_governance_config` (0x0e) — a no-op —
