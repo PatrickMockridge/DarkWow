@@ -1000,4 +1000,12 @@ F-544: doc:doc/src/contract/bearer_bond.md#capability-types@b354827990, doc:doc/
      the code's own comment quotes when explaining why it could not work. F-544 is the one where the correction
      is a distinction rather than a fix — the six (and four) discriminants are real, and what disagrees with the
      manifest is a different vocabulary from the one the doc implies. -->
+F-545: doc:doc/src/contract/promissory_note_intermediaries.md#contract-inventory@29d879b87f, doc:doc/src/contract/bearer_bond.md#files@29d879b87f, doc:doc/src/contract/roulette.md#future-improvements@29d879b87f
+F-546: doc:doc/src/contract/recruitment_pipeline.md#how-four-contracts-compose-to-automate-hiring@29d879b87f, doc:doc/src/contract/provable_randomness.md#contracts-using-block-hash-entropy@29d879b87f
+<!-- F-545's most useful cell is the one that measured 0 and is 1: the ecosystem table said no contract uses
+     `IssueV1`, in the same document whose bridge section F-508 had just corrected *to* `issue_v1`. Two sections
+     of one file disagreeing, which is the case a reader cannot resolve without the code. F-546 is the one-byte
+     class again, and its shape is worth naming: the two documents published each other's value — 0x09 where
+     0x04 belongs and 0x04 where 0x09 does — so neither is a copy of a stale source, and the swap is only
+     visible with both open. -->
 <!-- /promotion-log -->
