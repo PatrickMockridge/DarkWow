@@ -139,7 +139,16 @@ pub mod entrypoint;
 /// Client API for interaction with this smart contract
 pub mod client;
 
-#[cfg(all(feature = "relayer", not(feature = "no-entrypoint")))]
+// `relayer.rs` calls `crate::entrypoint::compute_relayer_key` (its line 42), so this module exists
+// only where the entrypoint does — which is `any(test, not(feature = "no-entrypoint"))`, the gate on
+// `entrypoint` immediately above, **not** `not(feature = "no-entrypoint")` alone. The narrower gate
+// that stood here was the producer of a producer/consumer mismatch: `entrypoint.rs` gates its twelve
+// uses on `feature = "relayer"` alone, so under `cargo test --all-features` — which enables both
+// `relayer` and `no-entrypoint` — the uses were compiled and the module was not, and the crate failed
+// to build with `error[E0433]: cannot find `relayer` in `crate``. Because `test` is false in every
+// contract build, this gate is *unchanged* there, so the wasm is byte-identical and no re-roll is
+// implied.
+#[cfg(all(feature = "relayer", any(test, not(feature = "no-entrypoint"))))]
 /// Optional relayer-registry submodule
 pub mod relayer;
 
