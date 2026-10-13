@@ -697,13 +697,29 @@ mod tests {
             .collect();
         let root = tree.root(0).expect("root").inner();
 
-        let provider = ResolvedCapProvider::new(vec![], secret.clone(), path, leaf_pos)
+        // `Put`'s witness map sources slots 0, 1 and 3 through `note:` — `box_id`, `state_nonce`, and
+        // the consumed box's contents (`user_data`) — so this provider must carry them as **note**
+        // fields. The empty note vector here is what produced the failure this fixes:
+        //
+        //     witness[0]: note field 'box_id' not found
+        //
+        // `with_params` cannot satisfy a `note:` source, so the `box_id` / `old_state_nonce` /
+        // `old_contents_commit` params this builder used to hold were inert. The wallet's real path
+        // builds exactly these three from the manifest's `note_schema`
+        // (`bin/dww/src/lib.rs:1013-1016`); the fixture now names them directly, and the params that
+        // no slot reads are dropped rather than left to look load-bearing.
+        let provider = ResolvedCapProvider::new(
+            vec![
+                ("box_id".to_string(), NoteFieldValue::Base(bid)),
+                ("state_nonce".to_string(), NoteFieldValue::Base(osn)),
+                ("user_data".to_string(), NoteFieldValue::Base(occ)),
+            ],
+            secret.clone(),
+            path,
+            leaf_pos,
+        )
             .with_merkle_root(root)
             .with_params(vec![
-                ("box_id".to_string(), NoteFieldValue::Base(bid)),
-                ("old_state_nonce".to_string(), NoteFieldValue::Base(osn)),
-                ("new_state_nonce".to_string(), NoteFieldValue::Base(nsn)),
-                ("old_contents_commit".to_string(), NoteFieldValue::Base(occ)),
                 ("new_contents_commit".to_string(), NoteFieldValue::Base(ncc)),
                 ("tx_nonce".to_string(), NoteFieldValue::Base(tn)),
             ]);
