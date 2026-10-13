@@ -125,8 +125,17 @@ impl AuctionHarness {
         }
     }
 
-    /// Create an auction (function code 0x00)
-    pub fn create_auction(
+    /// Assemble the create_auction call's data (function code 0x00) and stop — **before** any proof
+    /// exists (`OBL-C212`).
+    ///
+    /// A call's data does not depend on the transaction commitment — the entrypoint derives
+    /// `tx_binding` from the host's commitment and the params carry no such field — so the call can
+    /// be built here and proven later, once the caller has taken ONE commitment over the finished
+    /// call set. `auction_id` and `seller_commitment` are derivations over the call's own inputs
+    /// (`compute_public_inputs`), so they need no proof. The second half is
+    /// [`Self::create_auction_prove`]. Returns the assembled `call_data` and the `input` the prove
+    /// phase needs.
+    pub fn create_auction_prepare(
         &self,
         seller_secret: pallas::Base,
         item_commitment: pallas::Base,
@@ -135,7 +144,7 @@ impl AuctionHarness {
         deadline_block: u64,
         current_block: u64,
         seller_public: PublicKey,
-    ) -> Result<CreateAuctionResult, Box<dyn std::error::Error>> {
+    ) -> Result<(Vec<u8>, CreateAuctionV1CallData), Box<dyn std::error::Error>> {
         // `OBL-C212`: the V2 circuit witnesses `block_height` (the block the proof is made in — the
         // entrypoint stores it as `created_at`) and a per-auction `nonce`, and hashes both into
         // `auction_id`; `item_commitment`/`reserve_price`/`deadline_block` are wire fields, not
@@ -148,11 +157,7 @@ impl AuctionHarness {
             seller_public,
         );
 
-        let (proof, public_inputs) = create_auction_v1_proof(
-            &self.create_auction_zkbin,
-            &self.create_auction_pk,
-            &input,
-        )?;
+        let public_inputs = input.compute_public_inputs();
 
         let params = CreateAuctionParamsV1 {
             seller_pubkey: seller_public,
@@ -170,11 +175,33 @@ impl AuctionHarness {
         let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
-        Ok(CreateAuctionResult { call_data, auction_id: public_inputs.auction_id, proof, public_inputs })
+        Ok((call_data, input))
     }
 
-    /// Place a bid (function code 0x01)
-    pub fn place_bid(
+    /// Prove a prepared create_auction against `tx_commitment` (`OBL-C212`).
+    ///
+    /// The commitment is the caller's — taken over the whole finished call set, children before the
+    /// parent — so a proof made here binds to the frame carrying it, never to a constant.
+    pub fn create_auction_prove(
+        &self,
+        input: &CreateAuctionV1CallData,
+        tx_commitment: pallas::Base,
+    ) -> Result<(dwow_core::zk::Proof, CreateAuctionV1PublicInputs), Box<dyn std::error::Error>> {
+        let mut input = input.clone();
+        input.tx_commitment = tx_commitment;
+        let (proof, public_inputs) = create_auction_v1_proof(
+            &self.create_auction_zkbin,
+            &self.create_auction_pk,
+            &input,
+        )?;
+
+        Ok((proof, public_inputs))
+    }
+
+    /// Assemble the place_bid call's data (function code 0x01) and stop — **before** the proof
+    /// (`OBL-C212`). `bid_id` is a derivation over the call's own inputs (`compute_public_inputs`);
+    /// the second half is [`Self::place_bid_prove`].
+    pub fn place_bid_prepare(
         &self,
         auction_id: pallas::Base,
         bidder_secret: pallas::Base,
@@ -184,7 +211,7 @@ impl AuctionHarness {
         current_block: u64,
         current_high_bid: u64,
         bidder_public: PublicKey,
-    ) -> Result<PlaceBidResult, Box<dyn std::error::Error>> {
+    ) -> Result<(Vec<u8>, PlaceBidV1CallData), Box<dyn std::error::Error>> {
         let input = PlaceBidV1CallData::new(
             auction_id,
             bidder_secret,
@@ -196,11 +223,7 @@ impl AuctionHarness {
             bidder_public,
         );
 
-        let (proof, public_inputs) = place_bid_v1_proof(
-            &self.place_bid_zkbin,
-            &self.place_bid_pk,
-            &input,
-        )?;
+        let public_inputs = input.compute_public_inputs();
 
         let params = PlaceBidParamsV1 {
             auction_id,
@@ -216,11 +239,30 @@ impl AuctionHarness {
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(PlaceBidResult { call_data, bid_id: public_inputs.bid_id, proof, public_inputs })
+        Ok((call_data, input))
     }
 
-    /// Close an auction (function code 0x02)
-    pub fn close_auction(
+    /// Prove a prepared place_bid against `tx_commitment` (`OBL-C212`).
+    pub fn place_bid_prove(
+        &self,
+        input: &PlaceBidV1CallData,
+        tx_commitment: pallas::Base,
+    ) -> Result<(dwow_core::zk::Proof, PlaceBidV1PublicInputs), Box<dyn std::error::Error>> {
+        let mut input = input.clone();
+        input.tx_commitment = tx_commitment;
+        let (proof, public_inputs) = place_bid_v1_proof(
+            &self.place_bid_zkbin,
+            &self.place_bid_pk,
+            &input,
+        )?;
+
+        Ok((proof, public_inputs))
+    }
+
+    /// Assemble the close_auction call's data (function code 0x02) and stop — **before** the proof
+    /// (`OBL-C212`). The params carry no field derived from the public inputs, so no
+    /// `compute_public_inputs` call is needed; the second half is [`Self::close_auction_prove`].
+    pub fn close_auction_prepare(
         &self,
         auction_id: pallas::Base,
         winner_bid_id: pallas::Base,
@@ -228,7 +270,7 @@ impl AuctionHarness {
         deadline_block: u64,
         current_block: u64,
         seller_public: PublicKey,
-    ) -> Result<CloseAuctionResult, Box<dyn std::error::Error>> {
+    ) -> Result<(Vec<u8>, CloseAuctionV1CallData), Box<dyn std::error::Error>> {
         let input = CloseAuctionV1CallData::new(
             auction_id,
             winner_bid_id,
@@ -237,12 +279,6 @@ impl AuctionHarness {
             pallas::Base::from(current_block),
             seller_public,
         );
-
-        let (proof, public_inputs) = close_auction_v1_proof(
-            &self.close_auction_zkbin,
-            &self.close_auction_pk,
-            &input,
-        )?;
 
         let params = CloseAuctionParamsV1 {
             auction_id,
@@ -254,29 +290,42 @@ impl AuctionHarness {
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(CloseAuctionResult { call_data, proof, public_inputs })
+        Ok((call_data, input))
     }
 
-    /// Claim winnings (function code 0x03)
-    pub fn claim_winnings(
+    /// Prove a prepared close_auction against `tx_commitment` (`OBL-C212`).
+    pub fn close_auction_prove(
+        &self,
+        input: &CloseAuctionV1CallData,
+        tx_commitment: pallas::Base,
+    ) -> Result<(dwow_core::zk::Proof, CloseAuctionV1PublicInputs), Box<dyn std::error::Error>> {
+        let mut input = input.clone();
+        input.tx_commitment = tx_commitment;
+        let (proof, public_inputs) = close_auction_v1_proof(
+            &self.close_auction_zkbin,
+            &self.close_auction_pk,
+            &input,
+        )?;
+
+        Ok((proof, public_inputs))
+    }
+
+    /// Assemble the claim_winnings call's data (function code 0x03) and stop — **before** the proof
+    /// (`OBL-C212`). The params carry no field derived from the public inputs; the second half is
+    /// [`Self::claim_winnings_prove`].
+    pub fn claim_winnings_prepare(
         &self,
         auction_id: pallas::Base,
         winner_bid_id: pallas::Base,
         winner_secret: pallas::Base,
         winner_public: PublicKey,
-    ) -> Result<ClaimWinningsResult, Box<dyn std::error::Error>> {
+    ) -> Result<(Vec<u8>, ClaimWinningsV1CallData), Box<dyn std::error::Error>> {
         let input = ClaimWinningsV1CallData::new(
             auction_id,
             winner_bid_id,
             winner_secret,
             winner_public,
         );
-
-        let (proof, public_inputs) = claim_winnings_v1_proof(
-            &self.claim_winnings_zkbin,
-            &self.claim_winnings_pk,
-            &input,
-        )?;
 
         let params = ClaimWinningsParamsV1 {
             auction_id,
@@ -288,17 +337,36 @@ impl AuctionHarness {
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(ClaimWinningsResult { call_data, proof, public_inputs })
+        Ok((call_data, input))
     }
 
-    /// Settle an auction (function code 0x04)
-    pub fn settle_auction(
+    /// Prove a prepared claim_winnings against `tx_commitment` (`OBL-C212`).
+    pub fn claim_winnings_prove(
+        &self,
+        input: &ClaimWinningsV1CallData,
+        tx_commitment: pallas::Base,
+    ) -> Result<(dwow_core::zk::Proof, ClaimWinningsV1PublicInputs), Box<dyn std::error::Error>> {
+        let mut input = input.clone();
+        input.tx_commitment = tx_commitment;
+        let (proof, public_inputs) = claim_winnings_v1_proof(
+            &self.claim_winnings_zkbin,
+            &self.claim_winnings_pk,
+            &input,
+        )?;
+
+        Ok((proof, public_inputs))
+    }
+
+    /// Assemble the settle_auction call's data (function code 0x04) and stop — **before** the proof
+    /// (`OBL-C212`). `settlement_nullifier` is a derivation over the call's own inputs
+    /// (`compute_public_inputs`); the second half is [`Self::settle_auction_prove`].
+    pub fn settle_auction_prepare(
         &self,
         auction_id: pallas::Base,
         seller_secret: pallas::Base,
         highest_bid_amount: u64,
         seller_public: PublicKey,
-    ) -> Result<SettleAuctionResult, Box<dyn std::error::Error>> {
+    ) -> Result<(Vec<u8>, SettleAuctionV1CallData), Box<dyn std::error::Error>> {
         let input = SettleAuctionV1CallData::new(
             auction_id,
             seller_secret,
@@ -306,11 +374,7 @@ impl AuctionHarness {
             seller_public,
         );
 
-        let (proof, public_inputs) = settle_auction_v1_proof(
-            &self.settle_auction_zkbin,
-            &self.settle_auction_pk,
-            &input,
-        )?;
+        let public_inputs = input.compute_public_inputs();
 
         let params = SettleAuctionParamsV1 {
             auction_id,
@@ -323,27 +387,42 @@ impl AuctionHarness {
         let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(SettleAuctionResult { call_data, proof, public_inputs })
+        Ok((call_data, input))
     }
 
-    /// Refund a bid (function code 0x05)
-    pub fn refund_bid(
+    /// Prove a prepared settle_auction against `tx_commitment` (`OBL-C212`).
+    pub fn settle_auction_prove(
+        &self,
+        input: &SettleAuctionV1CallData,
+        tx_commitment: pallas::Base,
+    ) -> Result<(dwow_core::zk::Proof, SettleAuctionV1PublicInputs), Box<dyn std::error::Error>> {
+        let mut input = input.clone();
+        input.tx_commitment = tx_commitment;
+        let (proof, public_inputs) = settle_auction_v1_proof(
+            &self.settle_auction_zkbin,
+            &self.settle_auction_pk,
+            &input,
+        )?;
+
+        Ok((proof, public_inputs))
+    }
+
+    /// Assemble the refund_bid call's data (function code 0x05) and stop — **before** the proof
+    /// (`OBL-C212`). `refund_nullifier` is a derivation over the call's own inputs
+    /// (`compute_public_inputs`); the second half is [`Self::refund_bid_prove`].
+    pub fn refund_bid_prepare(
         &self,
         bid_id: pallas::Base,
         bidder_secret: pallas::Base,
         bidder_public: PublicKey,
-    ) -> Result<RefundBidResult, Box<dyn std::error::Error>> {
+    ) -> Result<(Vec<u8>, RefundBidV1CallData), Box<dyn std::error::Error>> {
         let input = RefundBidV1CallData::new(
             bid_id,
             bidder_secret,
             bidder_public,
         );
 
-        let (proof, public_inputs) = refund_bid_v1_proof(
-            &self.refund_bid_zkbin,
-            &self.refund_bid_pk,
-            &input,
-        )?;
+        let public_inputs = input.compute_public_inputs();
 
         let params = RefundBidParamsV1 {
             bid_id,
@@ -355,7 +434,24 @@ impl AuctionHarness {
         let mut call_data = vec![0x05];
         call_data.extend_from_slice(&params.encode());
 
-        Ok(RefundBidResult { call_data, proof, public_inputs })
+        Ok((call_data, input))
+    }
+
+    /// Prove a prepared refund_bid against `tx_commitment` (`OBL-C212`).
+    pub fn refund_bid_prove(
+        &self,
+        input: &RefundBidV1CallData,
+        tx_commitment: pallas::Base,
+    ) -> Result<(dwow_core::zk::Proof, RefundBidV1PublicInputs), Box<dyn std::error::Error>> {
+        let mut input = input.clone();
+        input.tx_commitment = tx_commitment;
+        let (proof, public_inputs) = refund_bid_v1_proof(
+            &self.refund_bid_zkbin,
+            &self.refund_bid_pk,
+            &input,
+        )?;
+
+        Ok((proof, public_inputs))
     }
 }
 
@@ -400,46 +496,3 @@ impl super::ContractHarness for AuctionHarness {
     }
 }
 
-/// Result of create_auction
-pub struct CreateAuctionResult {
-    pub call_data: Vec<u8>,
-    pub auction_id: pallas::Base,
-    pub proof: dwow_core::zk::Proof,
-    pub public_inputs: CreateAuctionV1PublicInputs,
-}
-
-/// Result of place_bid
-pub struct PlaceBidResult {
-    pub call_data: Vec<u8>,
-    pub bid_id: pallas::Base,
-    pub proof: dwow_core::zk::Proof,
-    pub public_inputs: PlaceBidV1PublicInputs,
-}
-
-/// Result of close_auction
-pub struct CloseAuctionResult {
-    pub call_data: Vec<u8>,
-    pub proof: dwow_core::zk::Proof,
-    pub public_inputs: CloseAuctionV1PublicInputs,
-}
-
-/// Result of claim_winnings
-pub struct ClaimWinningsResult {
-    pub call_data: Vec<u8>,
-    pub proof: dwow_core::zk::Proof,
-    pub public_inputs: ClaimWinningsV1PublicInputs,
-}
-
-/// Result of settle_auction
-pub struct SettleAuctionResult {
-    pub call_data: Vec<u8>,
-    pub proof: dwow_core::zk::Proof,
-    pub public_inputs: SettleAuctionV1PublicInputs,
-}
-
-/// Result of refund_bid
-pub struct RefundBidResult {
-    pub call_data: Vec<u8>,
-    pub proof: dwow_core::zk::Proof,
-    pub public_inputs: RefundBidV1PublicInputs,
-}

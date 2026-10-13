@@ -228,6 +228,16 @@ The wallet computes `tx_commitment` from the transaction's call set and
 generates a random `tx_nonce` for each proof. These are passed to each
 contract's client builder during transaction construction.
 
+*Corrected 2026-10-13.* "from the transaction's call set" was not true of every call
+until then. `ManifestContractClient::build` took the commitment over the single call it
+was itself building, so a manifest-driven **leaf** placed in a multi-call transaction —
+the fee-bearing `invoke_contract` path — was bound to a narrower value than the node
+reconciles, and the node refused it at `tx_binding_mismatch`. The client is split for
+that case: `prepare` assembles the call data and binds the witnesses with no proof, and
+`ManifestCallPlan::prove` takes the commitment the caller derived over the whole call
+set. `invoke_contract` uses that form now. `build` remains, and is correct only for a
+transaction that carries nothing else.
+
 ---
 
 ## Scope

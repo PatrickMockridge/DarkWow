@@ -1203,3 +1203,79 @@ mod deployooor_lock {
         );
     }
 }
+
+/// `auction`'s `CreateAuctionV2` client — the proof is bound to the transaction commitment it was
+/// made with, and the binding is the **last two** instances (`OBL-C212`).
+///
+/// All six auction clients published `tx_binding = poseidon_hash([3, 0, 0])` unconditionally — the
+/// proof builders hardcoded `tx_commitment: pallas::Base::zero()` in each `*CallData::new()` — while
+/// the entrypoint arm derives the binding over the host's real commitment (`auction_tx_binding`), so
+/// every auction proof was refused at `tx_binding_mismatch` (`src/linear/src/zk_verifier.rs`). This
+/// is the local instrument for that defect, and it can fail: the negative half proves the binding is
+/// *load-bearing* — a proof made over one commitment must not verify under another, which a constant
+/// binding could never satisfy.
+const AUCTION_CREATE_AUCTION_ZKBIN: &[u8] =
+    include_bytes!("../../auction/proof/create_auction.zk.bin");
+
+#[test]
+fn auction_create_auction_proof_is_bound_to_its_tx_commitment() {
+    use dwow_auction_contract::client::create_auction::{
+        create_auction_v1_proof, CreateAuctionV1CallData,
+    };
+
+    let zkbin = ZkBinary::decode(AUCTION_CREATE_AUCTION_ZKBIN, false)
+        .expect("create_auction.zk.bin decodes");
+    let pk = proving_key(&zkbin);
+
+    let tx_commitment = pallas::Base::from(0xC0FFEEu64);
+    // Every auction arm publishes a zero nonce (`auction_tx_binding`), and the client's default is
+    // zero too, so the pair the proof binds is `(commitment, 0)`.
+    let tx_nonce = pallas::Base::zero();
+
+    let mut input = CreateAuctionV1CallData::new(
+        pallas::Base::from(10u64), // seller_secret
+        pallas::Base::from(1u64),  // asset_id
+        pallas::Base::zero(),      // block_height
+        pallas::Base::zero(),      // nonce
+        PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(10u64))),
+    );
+    input.tx_commitment = tx_commitment;
+    input.tx_nonce = tx_nonce;
+
+    let (proof, public_inputs) =
+        create_auction_v1_proof(&zkbin, &pk, &input).expect("the client must build a proof");
+    let own = public_inputs.to_vec();
+
+    // Three instances: auction_id, tx_binding, tx_nonce — the binding pair is last, which is where
+    // `tx_binding_mismatch` reads it (`pubvals[len-2]`/`[len-1]`).
+    assert_eq!(own.len(), 3, "create_auction instances auction_id, tx_binding and tx_nonce");
+    assert_eq!(own[2], tx_nonce, "the last instance is the nonce the proof was made with");
+    assert_eq!(
+        own[1],
+        dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]),
+        "the instance before it is poseidon_hash([3, tx_commitment, tx_nonce]) for the pair the \
+         proof was made with — not the constant poseidon_hash([3, 0, 0]) the clients published \
+         before OBL-C212"
+    );
+
+    match verify_zkp(&proof, AUCTION_CREATE_AUCTION_ZKBIN, &own) {
+        ZkVerifyResult::Ok => {}
+        other => panic!(
+            "OBL-C212: a create_auction proof bound to a non-zero tx pair does not verify \
+             ({other:?}) — the client's `to_vec` order and the circuit's `constrain_instance` \
+             order disagree."
+        ),
+    }
+
+    // The negative control (R8): the same proof, verified against a *different* commitment's
+    // instances, must be refused. If it verified, the binding would not be binding.
+    let mut other_input = input.clone();
+    other_input.tx_commitment = pallas::Base::from(0xDEADBEEFu64);
+    let other = other_input.compute_public_inputs().to_vec();
+    assert_ne!(own[1], other[1], "two commitments must publish different tx_bindings");
+    assert!(
+        !matches!(verify_zkp(&proof, AUCTION_CREATE_AUCTION_ZKBIN, &other), ZkVerifyResult::Ok),
+        "a create_auction proof made over one tx_commitment must not verify under another — the \
+         binding would not be load-bearing"
+    );
+}

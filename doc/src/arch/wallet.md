@@ -198,7 +198,10 @@ the dwowd-sdk. It owns ALL manifest paths: manifest parsing and resolution
 (the type declarations, §5), `wallet_construct` (the one composition function,
 §7.1), generic action dispatch (`ManifestContractClient`), and generic proof
 construction (§6.4). The wallet core calls the capability SDK; it SHALL NOT
-reimplement, inline, or bypass any of these functions.
+reimplement, inline, or bypass any of these functions. A caller that needs a
+multi-call transaction uses the SDK's own two-phase form, not a second assembly
+composed outside it: `ManifestContractClient::prepare` assembles and binds with no
+proof, and `ManifestCallPlan::prove` takes the commitment over the whole call set.
 
 **Interface rules (normative):**
 
@@ -279,7 +282,7 @@ Additional rules:
 
 The boundary between the wallet core and the Capability SDK SHALL be:
 - `wallet_construct(resource: &str, action: &str, primitives: Vec<Primitive>, required_barbs: &[Barb]) -> Option<TypedCapability>` — the ONE composition function (type-system.md §6.3, ocap.md §2; `src/sdk/src/capability.rs:476`)
-- `ManifestContractClient::build(function, params, wallet_state) -> Result<(Vec<u8>, Vec<Vec<u8>>), String>` — generic action dispatch **and generic proof construction**: the `Vec<Vec<u8>>` it returns *is* the proof set (§6.4.1)
+- `ManifestContractClient::build(function, params, wallet_state) -> Result<(Vec<u8>, Vec<Vec<u8>>), String>` — generic action dispatch **and generic proof construction**: the `Vec<Vec<u8>>` it returns *is* the proof set (§6.4.1). It binds **one** call; a caller assembling a multi-call transaction (a fee call, a parent call) uses `prepare` + `ManifestCallPlan::prove` instead, so that every proof in the transaction binds the whole call set (`OBL-C198`)
 - `CircuitWitnessMap::from_manifest(circuit_name: String, namespace: String, entries: &[String]) -> Result<CircuitWitnessMap, ProverError>` — witness-binding rule parser (`src/sdk/src/prover.rs:200`)
 
 *Corrected 2026-10-11 (`F-324`).* A third bullet stood between those two, reading
@@ -951,6 +954,20 @@ such function exists** — the name survives only in comments in `bin/dww` (`dep
 not stylistic: the fee call must exist *before* the transaction's commitment does, so its
 proof can bind that commitment (`OBL-C198`), and `FeeHandoff` is what carries it across
 that gap.
+
+**The generic manifest leaf obeys the same rule**, and until 2026-10-13 the statement
+above reached only the fee. `ManifestContractClient::build` took the commitment over the
+call it was building **alone**, so `invoke_contract`'s manifest path produced a leaf proof
+bound to `tx_commitment([leaf])` and then assembled a transaction committed over
+`[leaf, fee]` — two Poseidon preimages of different arity, which can never agree, so the
+node refused the leaf at `tx_binding_mismatch` (`src/linear/src/zk_verifier.rs`). The
+manifest path is split the same way the fee path is: `ManifestContractClient::prepare`
+assembles the call data and binds the witnesses **without proving**, and
+`ManifestCallPlan::prove` takes the commitment the caller derived over the whole call set.
+`invoke_contract` prepares the leaf, prepares the fee, takes one commitment over
+`[leaf, fee]`, and proves both against it — the order `build_native_transfer` already
+used. `ManifestContractClient::build` remains as the one-call special case, correct only
+when the transaction carries nothing else.
 
 **Nullifier publication.** The fee input's nullifier SHALL be published in
 `Transaction.nullifiers` for mempool double-spend detection.

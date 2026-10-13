@@ -247,6 +247,17 @@ builds the `put` proof from the manifest and it is on-chain valid through `accep
 and B discovers the transferred `box_capability`). The remaining wallet-driven fidelity gap (box
 take/purse/PN harness-driven only) is **F-15**.
 
+The **fee-funded** form of that path is a separate witness, because the four tests above deliberately
+**bypass** it: they call `ManifestContractClient::build` directly and submit a fee-less *single-call*
+block, so the client's one-call commitment is the correct one there. That is exactly why `OBL-C243`'s
+single-call-commitment defect (the manifest path of `Dww::invoke_contract`) survived them.
+`test_invoke_contract_box_put_with_fee_accepts_through_accept_block` and its mirror
+`test_single_call_manifest_build_is_refused_in_a_two_call_tx` (`wallet_transfer_integration.rs`) close
+it: both drive `Dww::invoke_contract` on box `put` with a real FeeV3 call and a `FeeCollectV1` through
+`accept_block`, and the mirror asserts that a leaf proved against a single call is **refused** in a
+two-call transaction. **Written 2026-10-13; the run is pending** — the binary is heavy and the
+artifact/pin pass must land first.
+
 **F-7 — Fee invariant matrix has 0-test rows.** FI-GEN, FI-RISK (Rust), FI-TIME are
 untested; FI-WASM is a stub. `fee-testing.md` itself documents these. L3 fee-window
 tests (`L3-FW-1/2/3`) cover the multi-node window boundary, so these L1/L2 gaps do not

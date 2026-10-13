@@ -1854,7 +1854,6 @@ impl Dww {
             // ManifestContractClient (D2: circuit_registry removed;
             // proofs via the generic prover, wallet.md §6.4.1).
             if let Some(ref manifest) = _manifest_full {
-                use dwow_sdk::contract_client::ContractClient;
                 // Canonical field-element seed: MUST be < p (a raw 256-bit seed
                 // is >= p ~73% of the time and collapses to zero in from_repr,
                 // reusing blinds across txs — linkability break). Drawn once,
@@ -1878,16 +1877,18 @@ impl Dww {
                     seed,
                     recipient,
                 );
-                let (contract_call_data, builder_proofs) = mc
-                    .build(function, params.unwrap_or("{}"), self)
+                // `OBL-C198`: the transaction commitment is a derivation over the whole call
+                // set, so no call may be proved until every call is built. Prepare the leaf
+                // (assemble + bind, no proof), then the fee, then take the commitment over
+                // both and prove both against that one value — the order
+                // `build_native_transfer` uses above, and the reason `build` is not used
+                // here: it would bind the leaf to this call alone.
+                let plan = mc
+                    .prepare(function, params.unwrap_or("{}"), self)
                     .map_err(|e| Error::Custom(e))?;
-                call_data.extend_from_slice(&contract_call_data);
+                call_data.extend_from_slice(plan.call_data());
 
                 let contract_call = ContractCall { contract_id, data: call_data };
-                let leaf = ContractCallLeaf {
-                    call: contract_call,
-                    proofs: builder_proofs.into_iter().map(|p| Proof::new(p)).collect(),
-                };
                 // Read declared circuit_difficulty from the contract's manifest
                 // [[cost_profiles]] for the called function.
                 let circuit_costs: Vec<u64> = {
@@ -1896,15 +1897,22 @@ impl Dww {
                         .map(|cp| vec![cp.circuit_difficulty])
                         .unwrap_or_default()
                 };
-                // `OBL-C198`: as in the registry path above — the commitment is a derivation
-                // over the whole call set, so the fee is prepared here and proved against it.
                 let fee = crate::fee_builder::prepare_fee_call(
                     &self.wallet, &self.account_mgr, None, seed, &circuit_costs, self.contract_risk_factor(&contract_id, _manifest_full.is_some()), WasmKb::ZERO, self.latest_fee_window_flags(),
                     FeeTier::LOW,
                 )?;
                 let fee_call = fee.contract_call();
+                // One commitment over the leaf and the fee. The leaf's proof and the
+                // fee's proof must both bind to this value, or the node refuses both.
                 let tx_commitment =
-                    dwow_sdk::crypto::util::tx_commitment([&leaf.call, &fee_call]);
+                    dwow_sdk::crypto::util::tx_commitment([&contract_call, &fee_call]);
+                let builder_proofs = plan
+                    .prove(self, tx_commitment)
+                    .map_err(|e| Error::Custom(e))?;
+                let leaf = ContractCallLeaf {
+                    call: contract_call,
+                    proofs: builder_proofs.into_iter().map(|p| Proof::new(p)).collect(),
+                };
                 let tx = fee.finish(leaf, tx_commitment)?;
                 // Per-call signature rows (see the Path A exit above).
                 // Schnorr signatures removed per contract-standards.md §3.

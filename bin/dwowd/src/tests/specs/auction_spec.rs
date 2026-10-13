@@ -17,13 +17,26 @@ use crate::tests::uniform_runner::{
     ChildCall, ContractTestSpec, EndpointResult, EndpointSpec, EndpointExpectation,
 };
 
-fn pn_transfer_child(
+/// Assemble the PN TransferV1 (0x04) child's call data and **stop, before the proof exists**
+/// (`OBL-C212`). `note` is (commitment, leaf pos, merkle path, asset_id, commitment_blind).
+///
+/// Returns the ordered-set call, the plan to prove once the commitment is known, and the nonce the
+/// plan binds (zero — this contract's calls carry no nonce field). The shape is `dex_spec.rs`'s
+/// `pn_transfer_prepare`, which is the working copy this one follows: a child that binds its own
+/// call commitment is refused the moment its parent's arm derives the frame's, so the child has to
+/// wait for the caller to take one commitment over the finished `[child, parent]` set.
+fn pn_transfer_prepare(
     note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
     value: u64,
     blind_seed: pallas::Base,
-) -> dwow_core::Result<ChildCall> {
+) -> dwow_core::Result<(
+    dwow_sdk::tx::ContractCall,
+    dwow_promissory_note_contract::client::transfer::TransferCallPlan,
+    pallas::Base,
+)> {
     let (note_commitment, pos, path, asset_id, commitment_blind) = note;
     let value_blind = Blind(fp_mod_fv(blind_seed).unwrap());
+    let nonce = pallas::Base::zero();
     let input = TransferCallInput {
         value,
         asset_id: *asset_id,
@@ -35,7 +48,7 @@ fn pn_transfer_child(
         secret: pallas::Base::from(100u64),
         ephemeral_signature_secret: pallas::Base::from(9u64),
         tx_commitment: pallas::Base::zero(),
-        tx_nonce: pallas::Base::zero(),
+        tx_nonce: nonce,
     };
     let output = TransferCallOutput {
         recipient: poseidon_hash([pallas::Base::from(7u64), pallas::Base::from(200u64)]),
@@ -47,21 +60,26 @@ fn pn_transfer_child(
         commitment_blind: poseidon_hash([blind_seed, *note_commitment]),
     };
     let pn = PromissoryNoteHarness::spawn();
-    let child = pn
-        .transfer_with_value_blinds(vec![input], vec![output], Some(vec![value_blind]))
+    let plan = pn
+        .transfer_prepare(vec![input], vec![output], Some(vec![value_blind]))
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-    Ok(ChildCall {
-        contract_id: *PROMISSORY_NOTE_CONTRACT_ID,
-        call_data: child.call_data,
-        proofs: child.proofs,
-        children: vec![],
-    })
+    let mut call_data = vec![0x04u8];
+    call_data.extend_from_slice(
+        &plan.params().encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?,
+    );
+    let call = dwow_sdk::tx::ContractCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, data: call_data };
+    Ok((call, plan, nonce))
 }
 
 pub fn auction_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(AuctionHarness::spawn()));
     let h: &AuctionHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/auction/dwow_auction_contract.wasm");
+
+    // `OBL-C212`: the harness no longer proves with a zero commitment — every row must frame its own
+    // transaction. The commitment is derived over the finished call set *including* the contract id,
+    // so the spec needs the id the pipeline will assign, which `deploy` derives purely from the name.
+    let cid = crate::tests::blockchain::derive_contract_id_from_name("auction");
 
     let seller_sk = pallas::Base::from(10u64);
     let seller_pk = PublicKey::from_secret(SecretKey::from_base(seller_sk));
@@ -102,7 +120,6 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
             let auction_b = auction_b.clone();
             let bid_c_id = bid_c_id.clone();
             move |chain| {
-                let cid = crate::tests::blockchain::derive_contract_id_from_name("auction");
                 let pn_cid = *PROMISSORY_NOTE_CONTRACT_ID;
                 let pn = PromissoryNoteHarness::spawn();
                 let owner_addr = poseidon_hash([pallas::Base::from(7u64), issue_secret]);
@@ -133,30 +150,66 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
                 *notes.lock().unwrap() = Some(issued);
 
                 // Pre-create auction B (settle): Create + PlaceBid(bid_b) + Close.
-                let r = h.create_auction(seller_sk, pallas::Base::from(100u64), reserve_price, asset_id, deadline, 0, seller_pk)
+                // `OBL-C212`: each is its own single-call transaction, so the commitment is taken
+                // over that one assembled call and the proof is made against it.
+                //
+                // The 6th argument is the `block_height` witness. It feeds `auction_id` and
+                // nothing else: `create_auction.zk:11` uses it only in the id hash, and the
+                // entrypoint records `created_at` from `get_verifying_block_height()`
+                // (`entrypoint.rs:396,412`) rather than from this witness. It must therefore be
+                // DISTINCT per create — with the seller and `asset_id` shared and the harness's
+                // `nonce` fixed at zero, three creates at one height hash to a single
+                // `auction_id`, and the second is refused ("Auction already exists",
+                // `entrypoint.rs:390-393`). Until 2026-10-13 all three passed 0, which the
+                // `tx_binding` failure was masking.
+                let (call_data, input) = h.create_auction_prepare(seller_sk, pallas::Base::from(100u64), reserve_price, asset_id, deadline, 1, seller_pk)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                smol::block_on(chain.block()?.with_call(cid, h, &r.call_data, vec![r.proof.clone()])?.submit())?;
-                let ab = r.auction_id;
-                let pb = h.place_bid(ab, bidder_sk, bid_b, pallas::Base::from(1u64), deadline, 0, 0, bidder_pk)
+                let call = dwow_sdk::tx::ContractCall { contract_id: cid, data: call_data.clone() };
+                let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&call]);
+                let (proof, pi) = h.create_auction_prove(&input, tx_commitment)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                smol::block_on(chain.block()?.with_call(cid, h, &pb.call_data, vec![pb.proof.clone()])?.submit())?;
-                let cl = h.close_auction(ab, pb.bid_id, seller_sk, deadline, 0, seller_pk)
+                smol::block_on(chain.block()?.with_call(cid, h, &call_data, vec![proof])?.submit())?;
+                let ab = pi.auction_id;
+                let (call_data, input) = h.place_bid_prepare(ab, bidder_sk, bid_b, pallas::Base::from(1u64), deadline, 0, 0, bidder_pk)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                smol::block_on(chain.block()?.with_call(cid, h, &cl.call_data, vec![cl.proof.clone()])?.submit())?;
+                let call = dwow_sdk::tx::ContractCall { contract_id: cid, data: call_data.clone() };
+                let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&call]);
+                let (proof, pi) = h.place_bid_prove(&input, tx_commitment)
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                smol::block_on(chain.block()?.with_call(cid, h, &call_data, vec![proof])?.submit())?;
+                let (call_data, input) = h.close_auction_prepare(ab, pi.bid_id, seller_sk, deadline, 0, seller_pk)
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let call = dwow_sdk::tx::ContractCall { contract_id: cid, data: call_data.clone() };
+                let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&call]);
+                let (proof, _pi) = h.close_auction_prove(&input, tx_commitment)
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                smol::block_on(chain.block()?.with_call(cid, h, &call_data, vec![proof])?.submit())?;
                 *auction_b.lock().unwrap() = Some(ab);
 
                 // Pre-create auction C (refund): Create + PlaceBid(bid_c) + PlaceBid(2000, outbids).
-                let r = h.create_auction(seller_sk, pallas::Base::from(101u64), reserve_price, asset_id, deadline, 0, seller_pk)
+                let (call_data, input) = h.create_auction_prepare(seller_sk, pallas::Base::from(101u64), reserve_price, asset_id, deadline, 2, seller_pk)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                smol::block_on(chain.block()?.with_call(cid, h, &r.call_data, vec![r.proof.clone()])?.submit())?;
-                let ac = r.auction_id;
-                let pc1 = h.place_bid(ac, bidder_sk, bid_c, pallas::Base::from(1u64), deadline, 0, 0, bidder_pk)
+                let call = dwow_sdk::tx::ContractCall { contract_id: cid, data: call_data.clone() };
+                let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&call]);
+                let (proof, pi) = h.create_auction_prove(&input, tx_commitment)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                smol::block_on(chain.block()?.with_call(cid, h, &pc1.call_data, vec![pc1.proof.clone()])?.submit())?;
-                *bid_c_id.lock().unwrap() = Some(pc1.bid_id);
-                let pc2 = h.place_bid(ac, winner_sk, 2000, pallas::Base::from(2u64), deadline, 0, bid_c, winner_pk)
+                smol::block_on(chain.block()?.with_call(cid, h, &call_data, vec![proof])?.submit())?;
+                let ac = pi.auction_id;
+                let (call_data, input) = h.place_bid_prepare(ac, bidder_sk, bid_c, pallas::Base::from(1u64), deadline, 0, 0, bidder_pk)
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                smol::block_on(chain.block()?.with_call(cid, h, &pc2.call_data, vec![pc2.proof.clone()])?.submit())?;
+                let call = dwow_sdk::tx::ContractCall { contract_id: cid, data: call_data.clone() };
+                let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&call]);
+                let (proof, pi) = h.place_bid_prove(&input, tx_commitment)
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                smol::block_on(chain.block()?.with_call(cid, h, &call_data, vec![proof])?.submit())?;
+                *bid_c_id.lock().unwrap() = Some(pi.bid_id);
+                let (call_data, input) = h.place_bid_prepare(ac, winner_sk, 2000, pallas::Base::from(2u64), deadline, 0, bid_c, winner_pk)
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let call = dwow_sdk::tx::ContractCall { contract_id: cid, data: call_data.clone() };
+                let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&call]);
+                let (proof, _pi) = h.place_bid_prove(&input, tx_commitment)
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                smol::block_on(chain.block()?.with_call(cid, h, &call_data, vec![proof])?.submit())?;
                 Ok(())
             }
         })),
@@ -171,10 +224,15 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let auction_a = auction_a.clone();
                     move || {
-                        let r = h.create_auction(seller_sk, pallas::Base::from(102u64), reserve_price, asset_id, deadline, 0, seller_pk)
+                        // Single-call row: the commitment is over this one assembled call (`OBL-C212`).
+                        let (call_data, input) = h.create_auction_prepare(seller_sk, pallas::Base::from(102u64), reserve_price, asset_id, deadline, 3, seller_pk)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        *auction_a.lock().unwrap() = Some(r.auction_id);
-                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                        let call = dwow_sdk::tx::ContractCall { contract_id: cid, data: call_data.clone() };
+                        let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&call]);
+                        let (proof, pi) = h.create_auction_prove(&input, tx_commitment)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        *auction_a.lock().unwrap() = Some(pi.auction_id);
+                        Ok(EndpointResult { children: vec![], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -189,10 +247,15 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
                     let bid_a_id = bid_a_id.clone();
                     move || {
                         let aid = auction_a.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("auction A not created".into()))?;
-                        let r = h.place_bid(aid, bidder_sk, bid_a, pallas::Base::from(1u64), deadline, 0, 0, bidder_pk)
+                        // Single-call row: the commitment is over this one assembled call (`OBL-C212`).
+                        let (call_data, input) = h.place_bid_prepare(aid, bidder_sk, bid_a, pallas::Base::from(1u64), deadline, 0, 0, bidder_pk)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        *bid_a_id.lock().unwrap() = Some(r.bid_id);
-                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                        let call = dwow_sdk::tx::ContractCall { contract_id: cid, data: call_data.clone() };
+                        let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&call]);
+                        let (proof, pi) = h.place_bid_prove(&input, tx_commitment)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        *bid_a_id.lock().unwrap() = Some(pi.bid_id);
+                        Ok(EndpointResult { children: vec![], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -208,9 +271,14 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let aid = auction_a.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("auction A not created".into()))?;
                         let bid = bid_a_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("bid A not placed".into()))?;
-                        let r = h.close_auction(aid, bid, seller_sk, deadline, 0, seller_pk)
+                        // Single-call row: the commitment is over this one assembled call (`OBL-C212`).
+                        let (call_data, input) = h.close_auction_prepare(aid, bid, seller_sk, deadline, 0, seller_pk)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
-                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                        let call = dwow_sdk::tx::ContractCall { contract_id: cid, data: call_data.clone() };
+                        let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&call]);
+                        let (proof, _pi) = h.close_auction_prove(&input, tx_commitment)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult { children: vec![], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -227,13 +295,25 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let aid = auction_a.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("auction A not created".into()))?;
                         let bid = bid_a_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("bid A not placed".into()))?;
-                        let r = h.claim_winnings(aid, bid, winner_sk, winner_pk)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(bid_a), aid]);
-                        let child = pn_transfer_child(&n[0], bid_a, blind_seed)?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        // `OBL-C212`: build BOTH calls first, take ONE commitment over `[child, parent]`
+                        // (DFS post-order), then prove both against it — the dex_spec framing.
+                        let (child, child_plan, child_nonce) = pn_transfer_prepare(&n[0], bid_a, blind_seed)?;
+                        let (call_data, input) = h.claim_winnings_prepare(aid, bid, winner_sk, winner_pk)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let parent = dwow_sdk::tx::ContractCall { contract_id: cid, data: call_data.clone() };
+                        let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&child, &parent]);
+                        let debris = child_plan.prove(tx_commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let (proof, _pi) = h.claim_winnings_prove(&input, tx_commitment)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult {
+                            children: vec![ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child.data, proofs: debris.proofs, children: vec![] }],
+                            call_data,
+                            proofs: vec![proof],
+                        })
                     }
                 }),
             },
@@ -248,13 +328,25 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
                     let auction_b = auction_b.clone();
                     move || {
                         let aid = auction_b.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("auction B not pre-created".into()))?;
-                        let r = h.settle_auction(aid, seller_sk, bid_b, seller_pk)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(bid_b), aid]);
-                        let child = pn_transfer_child(&n[1], bid_b, blind_seed)?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        // `OBL-C212`: build BOTH calls first, take ONE commitment over `[child, parent]`
+                        // (DFS post-order), then prove both against it — the dex_spec framing.
+                        let (child, child_plan, child_nonce) = pn_transfer_prepare(&n[1], bid_b, blind_seed)?;
+                        let (call_data, input) = h.settle_auction_prepare(aid, seller_sk, bid_b, seller_pk)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let parent = dwow_sdk::tx::ContractCall { contract_id: cid, data: call_data.clone() };
+                        let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&child, &parent]);
+                        let debris = child_plan.prove(tx_commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let (proof, _pi) = h.settle_auction_prove(&input, tx_commitment)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult {
+                            children: vec![ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child.data, proofs: debris.proofs, children: vec![] }],
+                            call_data,
+                            proofs: vec![proof],
+                        })
                     }
                 }),
             },
@@ -269,13 +361,25 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
                     let bid_c_id = bid_c_id.clone();
                     move || {
                         let bid = bid_c_id.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("bid C not placed".into()))?;
-                        let r = h.refund_bid(bid, bidder_sk, bidder_pk)
-                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(bid_c), bid]);
-                        let child = pn_transfer_child(&n[2], bid_c, blind_seed)?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        // `OBL-C212`: build BOTH calls first, take ONE commitment over `[child, parent]`
+                        // (DFS post-order), then prove both against it — the dex_spec framing.
+                        let (child, child_plan, child_nonce) = pn_transfer_prepare(&n[2], bid_c, blind_seed)?;
+                        let (call_data, input) = h.refund_bid_prepare(bid, bidder_sk, bidder_pk)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let parent = dwow_sdk::tx::ContractCall { contract_id: cid, data: call_data.clone() };
+                        let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&child, &parent]);
+                        let debris = child_plan.prove(tx_commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let (proof, _pi) = h.refund_bid_prove(&input, tx_commitment)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult {
+                            children: vec![ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child.data, proofs: debris.proofs, children: vec![] }],
+                            call_data,
+                            proofs: vec![proof],
+                        })
                     }
                 }),
             },

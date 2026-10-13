@@ -126,6 +126,14 @@ Tests". They MUST pass before the Docker pipeline (`genesis-is-sacred`: no mocki
    — **DONE:** `test_box_take_wallet_driven_generic_prover` (`capability_scan_integration.rs`) submits a
    `ManifestContractClient::build("take", …)` proof through `accept_block` and asserts the take
    nullifier lands on-chain.
+5. **Fee-funded manifest invocation** — the generic-prover write path is exercised *with a fee*, which
+   items 3 and 4 bypass: they submit a fee-less single-call block, where the client's one-call
+   commitment is correct. — **WRITTEN 2026-10-13; the run is pending** (see `OBL-C243`):
+   `test_invoke_contract_box_put_with_fee_accepts_through_accept_block` and its mirror
+   `test_single_call_manifest_build_is_refused_in_a_two_call_tx` (`wallet_transfer_integration.rs`)
+   drive `Dww::invoke_contract(...)` on box `put` with a FeeV3 call and a `FeeCollectV1` through
+   `accept_block`, and the mirror asserts a leaf proved against a **single** call is refused in a
+   two-call transaction. The artifact/pin pass must land before either can run.
 
 **Deferred (blocked — see §4.2):** PN transfer/redeem wallet-driven witnesses require multi-proof
 (burn+mint) support and a `note:user_data_blind` schema mapping. (Purse deposit/withdraw is no longer
