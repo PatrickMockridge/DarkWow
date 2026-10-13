@@ -2,8 +2,10 @@
 # The wallet reads this manifest to construct capability types per wallet.md §2.2.
 # Box is L1: two ZK circuits, Merkle inclusion proofs, nullifier per state transition.
 #
-# **The wire carries the public inputs, the Merkle path, the proof, `tx_binding`, `tx_nonce` and
-# — on `Take` only — `contents_commit`.** `box_id`, `state_nonce` and `Put`'s consumed contents
+# **The wire carries the public inputs, the Merkle path, the proof, `tx_nonce` and — on `Take`
+# only — `contents_commit`.** `tx_binding` left the wire in `OBL-C198`: `get_metadata` derives it
+# from the host, so it is a public *input* the node publishes and not a field a caller sends.
+# `box_id`, `state_nonce` and `Put`'s consumed contents
 # come from the wallet's own record through the `note:` sources, `new_state_nonce` is
 # `derived:increment:1` of the consumed nonce, and `Put`'s produced contents is a parameter
 # carrying `off_wire`. That is `privacy.md` §2's promise, which says an observer learns "not which
@@ -138,7 +140,13 @@ fields = [
     { name = "leaf_pos", type = "u32", witness = 9 },
     { name = "merkle_path", type = "merkle_path", witness = 10 },
     { name = "proof", type = "proof" },
-    { name = "tx_binding", type = "pallas_base", witness = 13 },
+    # `tx_binding` was here until 2026-10-13. It left the wire in `OBL-C198` — `get_metadata`
+    # derives it from the host's transaction commitment and `PutParams::decode` reads only
+    # `tx_nonce` (`box/src/model/mod.rs:169-171`) — so a manifest that still wrote it shifted
+    # `tx_nonce` by 32 bytes and the arm decoded the binding's bytes as the nonce. Deleted rather
+    # than marked `off_wire`: nothing reads it from `[[parameters]]` (the slot is bound from
+    # `[[circuits]] witness_map`), which is the same call this file already made for
+    # `new_state_nonce` and `old_contents_commit`.
     { name = "tx_nonce", type = "pallas_base" },
 ]
 
@@ -156,7 +164,8 @@ fields = [
     { name = "leaf_pos", type = "u32", witness = 6 },
     { name = "merkle_path", type = "merkle_path", witness = 7 },
     { name = "proof", type = "proof" },
-    { name = "tx_binding", type = "pallas_base", witness = 10 },
+    # `tx_binding` was here until 2026-10-13 — same removal as `Put` above. `TakeParams::decode`
+    # reads `tx_nonce` where the pair used to start (`box/src/model/mod.rs:263-265`).
     { name = "tx_nonce", type = "pallas_base" },
 ]
 

@@ -119,10 +119,15 @@ public_inputs = [
     "slot:13",
     "slot:14",
     "slot:10",
+    # `OBL-C198`: the tx pair is the **last two** instances. `deposit.zk:127-135` records the
+    # reordering — the pair "sat before `derived_purse_id`", and the node reads that final position
+    # to recompute the binding, so the position IS the convention (`zk_verifier.rs:258-266`). The
+    # purse identity therefore comes first, and this list must agree with `deposit_metadata`
+    # (`purse/src/entrypoint/mod.rs:92`) and with the circuit. It did not until 2026-10-13, which
+    # made every wallet-built deposit fail at L2 with the pair and the identity transposed.
+    "slot:23",
     "slot:21",
     "slot:20",
-    # The purse identity, last in the circuit's instance sequence.
-    "slot:23",
 ]
 [[circuits]]
 name = "Withdraw"
@@ -165,10 +170,11 @@ public_inputs = [
     "slot:13",
     "slot:14",
     "slot:10",
+    # As `Deposit`: the tx pair is last (`withdraw.zk`, and `withdraw_metadata` at
+    # `purse/src/entrypoint/mod.rs:110`), so the purse identity precedes it.
+    "slot:23",
     "slot:21",
     "slot:20",
-    # The purse identity, last in the circuit's instance sequence.
-    "slot:23",
 ]
 [[circuits]]
 name = "Balance"
@@ -191,9 +197,13 @@ witness_map = [
     "merkle_path",
     "tx_commitment",
     "param:tx_nonce",
-    "param:tx_binding",
+    # `param:tx_binding` was here until 2026-10-13. It asked the caller to invent the value the arm
+    # derives (`balance_metadata`, `purse/src/entrypoint/mod.rs:122`), which no caller can satisfy —
+    # and as an untagged parameter it was *required* in the params JSON, so the only way to build a
+    # balance call was to supply a value the node then rejected. Same derivation as `Deposit` and
+    # `Withdraw` above.
+    "derived:tx_binding:15,16",
 ]
-
 [[parameters]]
 function = "deposit"
 fields = [
@@ -216,7 +226,9 @@ fields = [
     { name = "leaf_pos", type = "u32", witness = 17 },
     { name = "merkle_path", type = "merkle_path", witness = 18 },
     { name = "proof", type = "proof" },
-    { name = "tx_binding", type = "pallas_base", witness = 21 },
+    # `tx_binding` was here until 2026-10-13. It left the wire in `OBL-C198` — `get_metadata`
+    # derives it from the host and the model no longer decodes it, so writing it shifted every
+    # field after it, `tx_nonce` and `derived_purse_id` included.
     { name = "tx_nonce", type = "pallas_base" },
     # `asset_id` was here, on the wire and undeclared by `scripts/check-l1-wire-conformance.sh` — its
     # rule covers witness-map `param:` slots, and a plain params field is invisible to it. It is slot 22
@@ -246,7 +258,9 @@ fields = [
     { name = "leaf_pos", type = "u32", witness = 17 },
     { name = "merkle_path", type = "merkle_path", witness = 18 },
     { name = "proof", type = "proof" },
-    { name = "tx_binding", type = "pallas_base", witness = 21 },
+    # `tx_binding` was here until 2026-10-13. It left the wire in `OBL-C198` — `get_metadata`
+    # derives it from the host and the model no longer decodes it, so writing it shifted every
+    # field after it, `tx_nonce` and `derived_purse_id` included.
     { name = "tx_nonce", type = "pallas_base" },
     # `asset_id` was here, on the wire and undeclared by `scripts/check-l1-wire-conformance.sh` — its
     # rule covers witness-map `param:` slots, and a plain params field is invisible to it. It is slot 22
@@ -269,7 +283,9 @@ fields = [
     { name = "leaf_pos", type = "u32", witness = 13 },
     { name = "merkle_path", type = "merkle_path", witness = 14 },
     { name = "proof", type = "proof" },
-    { name = "tx_binding", type = "pallas_base" },
+    # `tx_binding` was here until 2026-10-13 — untagged, so it was *required* in the caller's JSON
+    # and the wallet was asked to invent the value the arm derives. It is bound from the
+    # `[[circuits]]` witness map now (`derived:tx_binding:15,16`), not from a parameter.
     { name = "tx_nonce", type = "pallas_base" },
 ]
 

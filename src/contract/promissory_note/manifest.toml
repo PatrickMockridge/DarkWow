@@ -222,9 +222,14 @@ public_inputs = [
     "derived:pedersen_y:1,6",
     "derived:token_commit:2,7",
     "slot:1",
+    # The spend hook precedes the pair; the tx pair is last, as `redeem.zk:63-68`,
+    # `redeem_metadata` (`src/entrypoint/mod.rs:1062-1066`) and the contract's own client
+    # (`client/redeem.rs:122-138`) all have it. This list was the one source that disagreed, so a
+    # wallet building a redeem through the generic prover emitted the pair early. Latent until
+    # 2026-10-13: no test drives redeem through that path, and the native pn client is unaffected.
+    "slot:3",
     "derived:tx_binding:8,9",
     "slot:9",
-    "slot:3",
 ]
 
 [[circuits]]
