@@ -460,10 +460,20 @@ fn every_contract_manifest_agrees_with_its_own_circuits() {
     // relayer_endowment and darkbet_exchange), and the site count grew with them. A count that
     // fails loudly on drift is the opposite of the hardcoded-coverage failure `OBL-C79` records;
     // what it must not become is a number nobody re-measures.
+    // **Re-measured 2026-10-13: 31 → 32, and the baseline is what was wrong, not the tree.** The
+    // 2026-09-24 measurement read 25 and named six additions that brought it to 31; the tree has
+    // 32, and `git log --diff-filter=A` shows **no `manifest.toml` added since 2026-08-01** (the
+    // `entropy` stub's, whose directory carries neither a manifest nor a `proof/` today). So no
+    // contract has joined since the baseline was taken — it was short by one from the start, the
+    // same class this comment already records twice above. The enumeration itself is clean: of the
+    // 34 directories under `src/contract/`, exactly 32 have both a `manifest.toml` and a `proof/`,
+    // and the two that do not are `entropy` and `test-harness`. The `sites` value below has drifted
+    // independently — 676 → 671 — and is re-measured in its own right further down.
     assert_eq!(
         contracts.len(),
-        31,
-        "31 contracts ship both a manifest.toml and a proof/ directory (measured 2026-09-24); a \
+        32,
+        "32 contracts ship both a manifest.toml and a proof/ directory (re-measured 2026-10-13; the \
+         2026-09-24 baseline of 31 was short by one, no contract having joined since 2026-08-01); a \
          different count means either the enumeration above changed or a contract moved — and the \
          contract list is printed above, so the reader can tell which"
     );
@@ -487,11 +497,19 @@ fn every_contract_manifest_agrees_with_its_own_circuits() {
     // (each migrated contract that gains a `requires_proof`, a `[[circuits]]` entry or a built
     // circuit moves (A), (B) or (C)); the control was **already red at HEAD** before this unit, so
     // this is a re-measurement of drift, not a consequence of the change that records it.
+    // **Re-measured 2026-10-13: 676 → 671, and the movement is declarations, not a parser.** Six
+    // manifests moved since the 2026-10-05 baseline. The largest single cause is `1249fa949a`
+    // (2026-10-08), *"manifests: stop claiming four circuits that were never written (OBL-C91)"*,
+    // which retires four (B) sites by dropping the claims from `labor_market` and `stablecoin`;
+    // `bearer_bond`, `deployooor`, `relayer_endowment` and `insurance_market` moved their own
+    // declarations in the same window (each a manifest that stopped making a claim, or changed one's
+    // value — the legitimate direction this comment names). So this is a re-measurement of drift,
+    // not evidence that a parser stopped seeing sites.
     assert_eq!(
-        sites, 676,
-        "the four checks walk 676 sites over those manifests (re-measured 2026-10-05; 666 on \
-         2026-09-28 after the dao_escrow re-wire, 673 on 2026-09-24 before it). A different count \
-         means a parser stopped seeing sites, or a manifest's declarations moved — the latter is \
-         legitimate for the OBL-C198 pass, so re-measure before assuming the former"
+        sites, 671,
+        "the four checks walk 671 sites over those manifests (re-measured 2026-10-13; 676 on \
+         2026-10-05, 666 on 2026-09-28 after the dao_escrow re-wire, 673 on 2026-09-24 before it). A \
+         different count means a parser stopped seeing sites, or a manifest's declarations moved — \
+         the latter is legitimate for the OBL-C198 pass, so re-measure before assuming the former"
     );
 }
