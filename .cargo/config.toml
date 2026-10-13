@@ -6,6 +6,25 @@
 # will SIGSEGV on default ~8MB OS thread stacks.
 RUST_MIN_STACK = "67108864"
 
+# glibc keeps freed arenas rather than returning them to the OS, so a test process that allocates
+# and frees in waves — which is what the heavyweight contract tests do, ~1.4 GB of halo2 proof
+# buffers per test — grows monotonically toward an OOM instead of reusing what it freed. Measured
+# 2026-10-13 on the `dwowd` lib-test binary, which had reached ~29 GB RSS:
+#
+#   no tuning                  monotonic climb; killed by the memory guard after ~4 min with no
+#                              test completing
+#   these two, without ARENA_MAX   sawtooth 0.7 → 3.6 → 1.3 → 3.5 → 1.2 GB; 4 passed / 0 failed
+#
+# Both thresholds make `free` return memory to the OS. They are deliberately the *pair* and not
+# `MALLOC_ARENA_MAX`: that variable forces every thread onto a single arena, which is a real
+# contention cost, and in this file it would apply to every `rustc` invocation too. The A/B above
+# shows it is not needed — do not add it without re-measuring.
+#
+# Byte counts. Trim: hand a free()d top-of-heap chunk back once it exceeds 128 KiB. Mmap: keep
+# allocations of 128 KiB and up on mmap, so they are munmap'd on free rather than retained.
+MALLOC_TRIM_THRESHOLD_ = "131072"
+MALLOC_MMAP_THRESHOLD_ = "131072"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Why the reproducible-build remap is NOT in this file.
 #
