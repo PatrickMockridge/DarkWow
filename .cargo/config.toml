@@ -25,6 +25,29 @@ RUST_MIN_STACK = "67108864"
 MALLOC_TRIM_THRESHOLD_ = "131072"
 MALLOC_MMAP_THRESHOLD_ = "131072"
 
+# Test *concurrency* is bounded for the same reason, and it is the larger of the two levers. A
+# heavyweight contract test's live set is ~6 GB — the k=14 circuits in `labor_market`,
+# `bridge/withdraw` and `slot/settle_bet` are the big ones — and libtest runs `RUST_TEST_THREADS`
+# of them at once, so the process peak scales with it directly. Measured 2026-10-13 on the
+# `dwowd` lib-test binary, with the two malloc thresholds above already in force:
+#
+#   4 threads    reached ~25 GB and was still climbing at 21 minutes
+#   2 threads    peaked at ~16 GB and released between tests (but a two-hour run on 2026-10-13
+#                was still stopped by the memory guard, on a host carrying ~13 GB of desktop
+#                session with swap fully used)
+#
+# The remaining floor is the tests themselves: the k=14 circuits peak at ~6 GB of live set each,
+# so the process peak is roughly `threads x 6 GB`. **Treat a full run as a batch job** — start it
+# on an otherwise idle host, not beside a working desktop session. Pin this to 1 if more headroom
+# is needed; it doubles the wall clock of the `dwowd` lib binary.
+#
+# This bounds every test binary rather than only the heavy one: libtest reads it before `main`,
+# and cargo cannot scope an `[env]` entry to a single target. Light binaries finish faster than
+# concurrency can matter, so the practical cost is paid by CPU-bound ones. Raise it deliberately
+# — the numbers to beat are above, and the plain `cargo test` default (core count) is what made a
+# desktop unable to run this suite at all.
+RUST_TEST_THREADS = "2"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Why the reproducible-build remap is NOT in this file.
 #
