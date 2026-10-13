@@ -141,8 +141,29 @@ pub trait WalletStateProvider: Send + Sync {
         _zkas_bytes: &[u8],
         _seed: [u8; 32],
         _params: &[(String, crate::manifest::NoteFieldValue)],
+        _tx_commitment: crate::pasta::pallas::Base,
     ) -> Result<(Vec<u8>, Vec<Option<crate::manifest::NoteFieldValue>>), String> {
         Err("generate_proof not implemented — wallet must provide concrete ProverImpl".to_string())
+    }
+
+    /// Bind the witness slots and return the circuit-computed values, **without proving**.
+    ///
+    /// `OBL-C198` requires the proof to be created over the transaction commitment, and
+    /// that commitment is a derivation over call data which the prover itself computes —
+    /// so the two have a fixed order: bind, assemble the wire, take the commitment over
+    /// it, *then* prove. This is the first half and [`generate_proof`](Self::generate_proof)
+    /// is the second. A wallet that cannot split them returns an error here, and `build`
+    /// reports it rather than proving against a commitment it cannot know.
+    fn bind_witness_values(
+        &self,
+        _contract_id: &str,
+        _witness_map: &crate::prover::CircuitWitnessMap,
+        _zkas_bytes: &[u8],
+        _seed: [u8; 32],
+        _params: &[(String, crate::manifest::NoteFieldValue)],
+    ) -> Result<Vec<Option<crate::manifest::NoteFieldValue>>, String> {
+        Err("bind_witness_values not implemented — wallet must provide concrete ProverImpl"
+            .to_string())
     }
 }
 
@@ -409,7 +430,7 @@ impl ContractClient for ManifestContractClient {
         #[cfg(feature = "json")]
         let mut bound_values: Vec<Option<crate::manifest::NoteFieldValue>> = Vec::new();
         #[cfg(feature = "json")]
-        let proof_bytes: Vec<u8> = if func.requires_proof {
+        if func.requires_proof {
             let circuit_name = func.proof_circuit.as_deref().unwrap_or("none");
             let circuit = self.manifest.circuits.iter()
                 .find(|c| c.name == circuit_name)
@@ -439,17 +460,19 @@ impl ContractClient for ManifestContractClient {
             ))?;
 
             // Delegate to the wallet's concrete ProverImpl (§6.4.1 steps 4-6);
-            // it returns the proof plus the circuit-computed witness values.
-            let (proof, bv) = wallet_state.generate_proof(
+            // Bound only — the proof comes later, and it has to. `OBL-C198`'s order is
+            // bind → assemble the wire → take the commitment over it → prove, because
+            // the commitment covers call data this step computes. See the
+            // `generate_proof` call at the end of this function.
+            bound_values = wallet_state.bind_witness_values(
                 &self.contract_id,
                 &witness_map,
                 &zkas_bytes,
                 self.seed, // §6.1 — the shell's Seed, never hardcoded
                 &decoded_params,
             ).map_err(|e| format!(
-                "{}: '{}' generic prover failed: {}", self.name, function, e,
+                "{}: '{}' generic prover failed to bind witnesses: {}", self.name, function, e,
             ))?;
-            bound_values = bv;
 
             // Params assembly: fill the circuit-computed (witness-tagged) wire
             // fields from the prover's bound values (typed — Base or Scalar).
@@ -463,10 +486,7 @@ impl ContractClient for ManifestContractClient {
                 }
             }
 
-            proof
-        } else {
-            Vec::new()
-        };
+        }
 
         // Encode the full (user + computed) params into positional wire bytes.
         // (The no-json build returned above — this path is json-only.)
@@ -489,11 +509,77 @@ impl ContractClient for ManifestContractClient {
             let mut call_data = encoded_params;
             call_data.extend_from_slice(&note_bytes);
 
-            if proof_bytes.is_empty() {
-                Ok((call_data, vec![]))
-            } else {
-                Ok((call_data, vec![proof_bytes]))
+            if !func.requires_proof {
+                return Ok((call_data, vec![]))
             }
+
+            // `OBL-C198`, and the reason the bind above is separated from this: the proof
+            // must be created over the transaction commitment, and that commitment is a
+            // derivation over the call data — which only became complete on the line
+            // above, because the prover itself computes part of it. Proving earlier binds
+            // the proof to a value the node cannot reproduce, which is exactly how the
+            // wallet-driven box and purse tests came to fail at L2.
+            //
+            // The wire the node hashes is `[selector] ++ params ++ note` — the same bytes
+            // the caller submits — so the selector must be this function's own code.
+            let tx_commitment = {
+                let raw = bs58::decode(&self.contract_id).into_vec().map_err(|e| format!(
+                    "{}: '{}' contract_id bs58 decode: {}", self.name, function, e,
+                ))?;
+                let arr: [u8; 32] = raw.try_into().map_err(|_| format!(
+                    "{}: '{}' contract_id is not 32 bytes", self.name, function,
+                ))?;
+                let contract_id = crate::crypto::ContractId::from_bytes(arr).map_err(|e| format!(
+                    "{}: '{}' contract_id invalid: {e:?}", self.name, function,
+                ))?;
+                let mut wire = vec![func.code];
+                wire.extend_from_slice(&call_data);
+                crate::crypto::util::tx_commitment([&crate::tx::ContractCall {
+                    contract_id,
+                    data: wire,
+                }])
+            };
+
+            // The circuit is re-resolved because the binding above is scoped to the `if`
+            // — the proof needs the same witness map and zkas bytes that bind used.
+            let proof_bytes = {
+                let circuit_name = func.proof_circuit.as_deref().unwrap_or("none");
+                let circuit = self.manifest.circuits.iter()
+                    .find(|c| c.name == circuit_name)
+                    .ok_or_else(|| format!(
+                        "{}: '{}' requires proof circuit '{}' but manifest has no [[circuits]] \
+                         entry for it", self.name, function, circuit_name,
+                    ))?;
+                let witness_map = crate::prover::CircuitWitnessMap::from_manifest(
+                    circuit.name.clone(),
+                    circuit.namespace.clone(),
+                    &circuit.witness_map,
+                ).map_err(|e| format!(
+                    "{}: '{}' witness_map error for circuit '{}': {}",
+                    self.name, function, circuit_name, e,
+                ))?;
+                let zkas_bytes = wallet_state.load_zkas_binary(
+                    &self.contract_id,
+                    &circuit.namespace,
+                    circuit_name,
+                ).ok_or_else(|| format!(
+                    "{}: '{}' requires ZK proof (circuit: {}) but zkas binary not found in store",
+                    self.name, function, circuit_name,
+                ))?;
+                let (proof, _) = wallet_state.generate_proof(
+                    &self.contract_id,
+                    &witness_map,
+                    &zkas_bytes,
+                    self.seed,
+                    &decoded_params,
+                    tx_commitment,
+                ).map_err(|e| format!(
+                    "{}: '{}' generic prover failed: {}", self.name, function, e,
+                ))?;
+                proof
+            };
+
+            Ok((call_data, vec![proof_bytes]))
         }
 
         // No-json build: no parameter-encoding route exists — the proof and

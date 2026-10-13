@@ -214,6 +214,45 @@ pub fn create_generic_proof(
     provider: &dyn CapabilityProvider,
     zkas_bytes: &[u8],
 ) -> Result<(Vec<u8>, Vec<Option<NoteFieldValue>>), String> {
+    let bound = bind_generic_witnesses(ctx, provider, zkas_bytes)?;
+    let proof_bytes = prove_bound_circuit(&bound, zkas_bytes, ctx.seed)?;
+    Ok((proof_bytes, bound.bound_values))
+}
+
+/// A circuit whose witnesses are bound and whose public inputs are computed, but
+/// which has not been proven yet.
+///
+/// The split exists because of `OBL-C198`. The transaction commitment is a
+/// derivation over the call data, and part of that call data is prover-computed —
+/// so the proof cannot be created until the call data has been assembled, and the
+/// commitment taken over it. `ManifestContractClient::build` therefore binds here,
+/// assembles the wire, computes the commitment, and only then proves, which is the
+/// order the migration states: *"prove LAST over the finished call data"*.
+pub struct BoundCircuit {
+    /// The bound witnesses, in the circuit's declared order.
+    pub witnesses: Vec<Witness>,
+    /// The circuit's `constrain_instance` values, in order.
+    pub instances: Vec<pallas::Base>,
+    /// The witness values keyed by slot — what the wire params and the produce-side
+    /// note are filled from.
+    pub bound_values: Vec<Option<NoteFieldValue>>,
+    /// The circuit's `k`, carried so the prover need not re-decode to find it.
+    pub k: u32,
+}
+
+/// Bind every witness slot per the manifest's `witness_map` and compute the public
+/// inputs — everything a proof needs except the proof itself.
+///
+/// The provider's transaction commitment is bound into the circuit like any other
+/// witness, and the `derived:tx_binding` slots are computed from it. A caller that
+/// wants only the wire-visible bound values may therefore pass a **placeholder**:
+/// since `OBL-C198` removed `tx_binding` from every migrated manifest's parameters,
+/// no wire field is derived from it, so the placeholder cannot leak.
+pub fn bind_generic_witnesses(
+    ctx: &ProverContext,
+    provider: &dyn CapabilityProvider,
+    zkas_bytes: &[u8],
+) -> Result<BoundCircuit, String> {
     // Step 4: decode the zkas binary → ordered witness list
     let zkbin = ZkBinary::decode(zkas_bytes, false)
         .map_err(|e| format!("ZkBinary::decode: {:?}", e))?;
@@ -261,23 +300,6 @@ pub fn create_generic_proof(
     // from the witness-slot `constrain_instance` opcodes (box/purse).
     let instances = evaluate_public_inputs(ctx, &zkbin, &bound, witness_count)?;
 
-    // Step 6: build proving key (cacheable per circuit — not yet cached) →
-    // create proof with Seed-derived RNG.
-    let circuit = ZkCircuit::new(witnesses, &zkbin);
-    let pk = ProvingKey::build(zkbin.k, &circuit)
-        .map_err(|e| format!("ProvingKey::build: {:?}", e))?;
-    let mut rng = rand::rngs::StdRng::from_seed(ctx.seed);
-    let proof = Proof::create(&pk, &[circuit], &instances, &mut rng)
-        .map_err(|e| format!("Proof::create: {:?}", e))?;
-
-    // Return the RAW proof bytes (the transcript), NOT the length-prefixed
-    // `Encodable` encoding. Callers wrap these bytes with `Proof::new(bytes)`,
-    // and the tx witness then length-prefixes them once more at serialization.
-    // Returning the `Encodable` form here double-prefixes the proof, so the
-    // verifier's transcript starts with a spurious VarInt and `verify_zkp`
-    // fails with "invalid proof" (T1 wire congruence — proof bytes, not params).
-    let proof_bytes = proof.as_ref().to_vec();
-
     // The circuit-computed (derived / merkle_root / merkle_path) values, keyed by
     // witness slot index — returned typed (Base/Scalar/U64/U32/MerklePath) so the
     // caller can inject them into the wire params and the produce-side note.
@@ -293,7 +315,34 @@ pub fn create_generic_proof(
         })
     }).collect();
 
-    Ok((proof_bytes, bound_values))
+    Ok(BoundCircuit { witnesses, instances, bound_values, k: zkbin.k })
+}
+
+/// Prove a circuit [`bind_generic_witnesses`] has already bound.
+///
+/// Step 6: build the proving key (cacheable per circuit — not yet cached) and
+/// create the proof with the Seed-derived RNG.
+///
+/// Returns the RAW proof bytes (the transcript), NOT the length-prefixed
+/// `Encodable` encoding. Callers wrap these bytes with `Proof::new(bytes)`,
+/// and the tx witness then length-prefixes them once more at serialization.
+/// Returning the `Encodable` form here double-prefixes the proof, so the
+/// verifier's transcript starts with a spurious VarInt and `verify_zkp`
+/// fails with "invalid proof" (T1 wire congruence — proof bytes, not params).
+pub fn prove_bound_circuit(
+    bound: &BoundCircuit,
+    zkas_bytes: &[u8],
+    seed: [u8; 32],
+) -> Result<Vec<u8>, String> {
+    let zkbin = ZkBinary::decode(zkas_bytes, false)
+        .map_err(|e| format!("ZkBinary::decode: {:?}", e))?;
+    let circuit = ZkCircuit::new(bound.witnesses.clone(), &zkbin);
+    let pk = ProvingKey::build(bound.k, &circuit)
+        .map_err(|e| format!("ProvingKey::build: {:?}", e))?;
+    let mut rng = rand::rngs::StdRng::from_seed(seed);
+    let proof = Proof::create(&pk, &[circuit], &bound.instances, &mut rng)
+        .map_err(|e| format!("Proof::create: {:?}", e))?;
+    Ok(proof.as_ref().to_vec())
 }
 
 /// Bind one witness slot to its source, producing the `Witness` (for the

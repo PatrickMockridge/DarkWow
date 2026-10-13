@@ -925,7 +925,61 @@ impl WalletStateProvider for Dww {
         zkas_bytes: &[u8],
         seed: [u8; 32],
         params: &[(String, dwow_sdk::manifest::NoteFieldValue)],
+        tx_commitment: pallas::Base,
     ) -> std::result::Result<(Vec<u8>, Vec<Option<dwow_sdk::manifest::NoteFieldValue>>), String> {
+        self.with_resolved_prover(
+            contract_id, witness_map, zkas_bytes, seed, params, tx_commitment,
+            |ctx, provider, z| crate::prover_impl::create_generic_proof(ctx, provider, z),
+        )
+    }
+
+    /// Bind the witness slots and return the circuit-computed values, **without proving**.
+    ///
+    /// `ManifestContractClient::build` needs these to assemble the wire before a proof
+    /// can exist: the proof must be created over the transaction commitment, and the
+    /// commitment covers call data that the prover itself computes. The commitment
+    /// passed here is a placeholder — no migrated manifest publishes a `tx_binding`
+    /// parameter any more (`OBL-C198`), so the value reaches no wire field.
+    fn bind_witness_values(
+        &self,
+        contract_id: &str,
+        witness_map: &dwow_sdk::prover::CircuitWitnessMap,
+        zkas_bytes: &[u8],
+        seed: [u8; 32],
+        params: &[(String, dwow_sdk::manifest::NoteFieldValue)],
+    ) -> std::result::Result<Vec<Option<dwow_sdk::manifest::NoteFieldValue>>, String> {
+        self.with_resolved_prover(
+            contract_id, witness_map, zkas_bytes, seed, params, pallas::Base::zero(),
+            |ctx, provider, z| {
+                crate::prover_impl::bind_generic_witnesses(ctx, provider, z).map(|b| b.bound_values)
+            },
+        )
+    }
+}
+
+impl Dww {
+    /// Resolve the capability, secret, Merkle proof and note fields for a call, build the
+    /// prover context and provider over them, and hand both to `f`.
+    ///
+    /// The context borrows the manifest, which is a local here, so this cannot return the
+    /// pair — every caller runs its proof work inside the closure. That is also why
+    /// `generate_proof` and `bind_witness_values` share one resolution path: the committed
+    /// order (`OBL-C198`) is *bind → assemble the call data → take the commitment over it →
+    /// prove*, and only the last step differs between them.
+    fn with_resolved_prover<R>(
+        &self,
+        contract_id: &str,
+        witness_map: &dwow_sdk::prover::CircuitWitnessMap,
+        zkas_bytes: &[u8],
+        seed: [u8; 32],
+        params: &[(String, dwow_sdk::manifest::NoteFieldValue)],
+        tx_commitment: pallas::Base,
+        f: impl FnOnce(
+            &dwow_sdk::prover::ProverContext,
+            &crate::prover_impl::ResolvedCapProvider,
+            &[u8],
+        ) -> std::result::Result<R, String>,
+    ) -> std::result::Result<R, String> {
         // The concrete ProverImpl needs a CapabilityProvider. For the
         // initial wiring, construct one from the wallet's held capabilities
         // Select the capability for THIS contract (write-path invariant 2):
@@ -1015,13 +1069,20 @@ impl WalletStateProvider for Dww {
             None => Vec::new(),
         };
 
-        // §6.1 seed-derived tx binding — must match build_fee_and_finalize_tx's
-        // first two BaseBlind draws so the proof's tx_binding commits to the
-        // values the finalized transaction publishes (single-call binding).
+        // `tx_commitment` is the **caller's**, and it has to be: it is a derivation over
+        // the call data, which only the caller can have assembled. It used to be drawn
+        // here as a seed-derived random element, and that is precisely the defect
+        // `OBL-C198` exists to prevent — the contract derives its published `tx_binding`
+        // from the *host's* commitment, so a proof bound to an invented value can never
+        // verify. Callers must finish the call data first and take
+        // `util::tx_commitment([call])` over it.
+        //
+        // `tx_nonce` is still seed-derived: it does not depend on the commitment, and the
+        // migrated manifests take their nonce from the params JSON (`param:tx_nonce`)
+        // rather than from the provider.
         use dwow_sdk::crypto::BaseBlind;
         use rand::{rngs::StdRng, SeedableRng};
         let mut rng = StdRng::from_seed(seed);
-        let tx_commitment = BaseBlind::random(&mut rng).inner();
         let tx_nonce = BaseBlind::random(&mut rng).inner();
 
         let provider = crate::prover_impl::ResolvedCapProvider::new(
@@ -1043,7 +1104,7 @@ impl WalletStateProvider for Dww {
             seed,
         );
 
-        crate::prover_impl::create_generic_proof(&ctx, &provider, zkas_bytes)
+        f(&ctx, &provider, zkas_bytes)
     }
 }
 
