@@ -183,11 +183,26 @@ mod client_side {
         ];
         assert_eq!(witnesses.len(), 15, "one per declared witness");
 
-        let instances = vec![
-            public_inputs.tx_binding,
-            public_inputs.tx_nonce,
-            public_inputs.subscription_id,
-        ];
+        // The instances are the *constant* in this experiment — the doc above says "the same
+        // instance vector" — so they come from the client rather than being re-typed here. What
+        // stood in this slot was a hand-typed
+        //
+        //     vec![tx_binding, tx_nonce, subscription_id]
+        //
+        // which is the reverse of both the circuit's `constrain_instance` order
+        // (`subscribe.zk:71,74,75` — `derived_id`, `tx_binding`, `tx_nonce`) and the client's own
+        // `to_vec` (`client/subscribe.rs:65`). A proof built against a misordered instance vector
+        // cannot satisfy the constraints, so this test failed for a reason that had nothing to do
+        // with the witness vector it was written to isolate — and its sibling
+        // `subscribe_proof_verifies_against_its_own_circuit`, which takes the same instances from
+        // `to_vec()`, passed throughout. That the two disagreed was the tell that the fault was
+        // here and not in what `zkas` emits.
+        let instances = public_inputs.to_vec();
+        assert_eq!(
+            instances,
+            vec![public_inputs.subscription_id, public_inputs.tx_binding, public_inputs.tx_nonce],
+            "instances must be the client's, in the circuit's constrain_instance order"
+        );
 
         let proof = Proof::create(
             &pk,
