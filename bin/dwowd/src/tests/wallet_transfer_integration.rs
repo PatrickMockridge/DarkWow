@@ -792,7 +792,11 @@ fn box_put_params_json() -> String {
 /// immature cap, or an immature one could be selected and the whole block refused. The
 /// maturity window is therefore mined by `node0`, whose coinbases `boxowner` cannot decrypt
 /// and so never holds.
-async fn box_owner_scenario() -> TestResult<BoxOwnerScenario> {
+/// `tag` distinguishes the two tests that call this. libtest runs them as threads of ONE
+/// process, so `std::process::id()` alone is identical for both — they would share a keys
+/// file and one test's cleanup would delete the other's while it was still running, which
+/// is exactly how the positive test failed the first time these were run.
+async fn box_owner_scenario(tag: &str) -> TestResult<BoxOwnerScenario> {
     use dwow_contract_test_harness::harness::BoxHarness;
     use dwow_sdk::crypto::BOX_CONTRACT_ID;
 
@@ -802,7 +806,7 @@ async fn box_owner_scenario() -> TestResult<BoxOwnerScenario> {
         [boxowner]\nwallet_secret = \
         \"2a00000000000000000000000000000000000000000000000000000000000000\"\n";
     let keys_path = std::env::temp_dir()
-        .join(format!("dwow_box_fee_keys_{}.toml", std::process::id()));
+        .join(format!("dwow_box_fee_keys_{tag}_{}.toml", std::process::id()));
     std::fs::write(&keys_path, keys_toml).expect("write test keys");
 
     let boxowner_mgr = crate::accounts::AccountManager::open(
@@ -897,7 +901,7 @@ async fn box_owner_scenario() -> TestResult<BoxOwnerScenario> {
 
     // ── The ONE wallet: boxowner discovers the box note and its mature coinbases. ──
     let wallet_dir = std::env::temp_dir()
-        .join(format!("dwow_box_fee_db_{}", std::process::id()));
+        .join(format!("dwow_box_fee_db_{tag}_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&wallet_dir);
     let dww = Dww::new(
         Network::Testnet, Some(&keys_path), "boxowner",
@@ -960,7 +964,7 @@ fn test_invoke_contract_box_put_with_fee_accepts_through_accept_block() -> TestR
         use dwow_sdk::crypto::{BOX_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 
         let BoxOwnerScenario { har, dww, box_put_height, keys_path, wallet_dir } =
-            box_owner_scenario().await?;
+            box_owner_scenario("invoke_contract_fee").await?;
 
         // The subject call: box `put` through the manifest path of `invoke_contract`. The
         // wallet holds the box capability to spend and mature DRKW to pay the fee, so this
@@ -1056,7 +1060,7 @@ fn test_single_call_manifest_build_is_refused_in_a_two_call_tx() -> TestResult<(
         use dwow_sdk::tx::ContractCall;
 
         let BoxOwnerScenario { har, dww, box_put_height, keys_path, wallet_dir } =
-            box_owner_scenario().await?;
+            box_owner_scenario("single_call_mirror").await?;
 
         // The leaf, through the retained single-call path — `build` proves it against the
         // commitment over this call ALONE (contract_client.rs: "the commitment a transaction

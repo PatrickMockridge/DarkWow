@@ -128,7 +128,7 @@ Tests". They MUST pass before the Docker pipeline (`genesis-is-sacred`: no mocki
    nullifier lands on-chain.
 5. **Fee-funded manifest invocation** — the generic-prover write path is exercised *with a fee*, which
    items 3 and 4 bypass: they submit a fee-less single-call block, where the client's one-call
-   commitment is correct. — **WRITTEN 2026-10-13; the run is pending** (see `OBL-C243`):
+   commitment is correct. — **DONE 2026-10-14** (`OBL-C243`):
    `test_invoke_contract_box_put_with_fee_accepts_through_accept_block` and its mirror
    `test_single_call_manifest_build_is_refused_in_a_two_call_tx` (`wallet_transfer_integration.rs`)
    drive `Dww::invoke_contract(...)` on box `put` with a FeeV3 call and a `FeeCollectV1` through

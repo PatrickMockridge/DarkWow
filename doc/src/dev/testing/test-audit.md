@@ -255,8 +255,11 @@ single-call-commitment defect (the manifest path of `Dww::invoke_contract`) surv
 `test_single_call_manifest_build_is_refused_in_a_two_call_tx` (`wallet_transfer_integration.rs`) close
 it: both drive `Dww::invoke_contract` on box `put` with a real FeeV3 call and a `FeeCollectV1` through
 `accept_block`, and the mirror asserts that a leaf proved against a single call is **refused** in a
-two-call transaction. **Written 2026-10-13; the run is pending** — the binary is heavy and the
-artifact/pin pass must land first.
+two-call transaction. **Green 2026-10-14**: `2 passed; 0 failed` (1425.59s), together with the
+pre-existing `test_transfer_accepts_through_accept_block` as the control. Both ran only after
+`short-coinbase-maturity` (src/linear/Cargo.toml) cut the maturity window from 101 mined blocks to
+~7 — before that the scaffold reached 28-32 GB of anonymous RSS and every attempt was OOM-killed,
+which is why this and the ~20 remaining heavyweight suites were unrunnable.
 
 **F-7 — Fee invariant matrix has 0-test rows.** FI-GEN, FI-RISK (Rust), FI-TIME are
 untested; FI-WASM is a stub. `fee-testing.md` itself documents these. L3 fee-window
