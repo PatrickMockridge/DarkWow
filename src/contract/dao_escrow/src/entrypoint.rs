@@ -1463,13 +1463,28 @@ fn propose_claim_v1(
     // ...and the group must have approved *this* claim (`OBL-C151`). The role tag is load-bearing: the
     // vote below keys on the same `claim_id`, and a MultiSig approval is spend-once, so an untagged
     // message would make the vote's approval name nullifiers this one had already spent.
+    //
+    // `OBL-C165`: the action id is the `(claim_id, value, recipient_x)` triple, not the bare claim id.
+    // An id-only message is one-shot but unbound in *content* — whoever presents the approval chooses
+    // the `value` and the `recipient_pubkey` the update below writes, so the group would authorise an
+    // amount and a payee it never saw. Same shape, and the same reason, as the money endpoints'
+    // `(bulla, value, recipient_x)` triple.
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+    let (rx, _ry) = params.recipient_pubkey.xy().expect("pk not identity");
     require_governance_child(
         cid,
         call_idx,
         &calls,
         &endowment,
         0,
-        model::governance_message(model::governance_role::PROPOSE_CLAIM, params.claim_id.inner()),
+        model::governance_message(
+            model::governance_role::PROPOSE_CLAIM,
+            poseidon_hash([
+                params.claim_id.inner(),
+                pallas::Base::from(params.value),
+                rx,
+            ]),
+        ),
     )?;
 
     // Verify proposal does not already exist

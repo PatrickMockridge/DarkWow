@@ -373,13 +373,26 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
     // is spend-once, and `propose_claim` and `vote_claim` both key on the same `claim_id`, which is
     // exactly why the message carries a role tag in the first place, and why `vote_claim`'s action id is
     // the `(claim_id, voter_x, voter_y, direction)` quadruple rather than the bare id (`OBL-C160`).
-    let msg_propose = governance_message(governance_role::PROPOSE_CLAIM, claim_id);
-    let msg_wrong = governance_message(governance_role::PROPOSE_CLAIM, pallas::Base::from(9999u64));
+    // `OBL-C165`: the propose action id is the contract's `(claim_id, value, recipient_x)` triple, not
+    // the bare claim id. An id-only approval is one-shot but unbound in *content* — whoever presents it
+    // chooses the `value` and the `recipient_pubkey`, so the group would authorise an amount and a payee
+    // it never saw. Both propose rows pay `owner_pub`; their values are below.
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+    let owner_x = owner_pub.xy().expect("pk not identity").0;
+    let msg_propose = governance_message(
+        governance_role::PROPOSE_CLAIM,
+        poseidon_hash([claim_id, pallas::Base::from(PN_VALUE_EXECUTE_CLAIM), owner_x]),
+    );
+    // The negative control: the **same** claim id and recipient, and a different amount, which the
+    // contract must refuse. Binding the value *is* `OBL-C165`, so the control that varies the value is
+    // the one that proves it.
+    let msg_wrong = governance_message(
+        governance_role::PROPOSE_CLAIM,
+        poseidon_hash([claim_id, pallas::Base::from(PN_VALUE_EXECUTE_CLAIM + 1), owner_x]),
+    );
     // The money endpoints' action ids: the contract's own `(bulla, value, recipient_x)` triple, not the
     // claim/proposal id — and not each other's, because the role tag separates them. Computed here with
     // the contract's own functions so the signed message and the checked one cannot disagree.
-    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
-    let owner_x = owner_pub.xy().expect("pk not identity").0;
     let action_endowment_withdraw = governance_message(
         governance_role::ENDOWMENT_WITHDRAW,
         poseidon_hash([
@@ -407,7 +420,11 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
     // There is no `action_withdraw`: `withdraw_v1` has no group branch and therefore no governed action.
     // Its authority is the ownership proof, which is not a message a group signs.
     let action_cancel_claim = governance_message(governance_role::CANCEL_CLAIM, claim_id);
-    let msg_propose_2 = governance_message(governance_role::PROPOSE_CLAIM, CLAIM_ID_LIFECYCLE);
+    // The same `(value, recipient)` as `msg_propose` and a different claim id — `OBL-C165`'s triple.
+    let msg_propose_2 = governance_message(
+        governance_role::PROPOSE_CLAIM,
+        poseidon_hash([CLAIM_ID_LIFECYCLE, pallas::Base::from(PN_VALUE_EXECUTE_APPROVED), owner_x]),
+    );
 
     // The voter, and the vote's own action id. `VOTE_CLAIM`'s id is the
     // `(claim_id, voter_x, voter_y, direction)` quadruple — direction 0 for Yes, matching

@@ -419,9 +419,15 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
     // the same ids.
     let dispute_claim_id = pallas::Base::from(205u64);
     let dispute_proposal_blind = pallas::Base::from(10u64);
-    // The one message the endowment's group signs. Computed with the contract's own derivation so the
-    // message signed and the message checked cannot disagree.
-    let msg_propose = governance_message(governance_role::PROPOSE_CLAIM, dispute_claim_id);
+    // The one message the endowment's group signs: `OBL-C165`'s `(claim_id, value, recipient_x)` triple,
+    // matching the `10_000` and the `owner_pub` the `DisputeV1` child proposes below. Computed with the
+    // contract's own derivation so the message signed and the message checked cannot disagree.
+    #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
+    let owner_x = owner_pub.xy().expect("pk not identity").0;
+    let msg_propose = governance_message(
+        governance_role::PROPOSE_CLAIM,
+        poseidon_hash([dispute_claim_id, pallas::Base::from(10_000u64), owner_x]),
+    );
 
     let job_id = pallas::Base::from(100u64);
     // **A second job, because the capability row cannot take the first one.** A job that
