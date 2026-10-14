@@ -22,6 +22,30 @@ sync-p2p = ["dwow_core/net-wallet", "futures-rustls"]
 # trusts the synced block hash, never re-hashes PoW, and never executes WASM, so
 # it must not compile the RandomX or wasmer stacks.
 pow = ["dep:randomx"]
+# Lowers `COINBASE_MATURITY` (src/linear/src/lib.rs) from 100 to 5 for devnet and test
+# builds.
+#
+# The maturity *rule* is untouched: `check_coinbase_maturity` still runs on every
+# `connect_block` and still refuses an immature coinbase spend. Only the height it
+# measures against changes. Nothing reads the number independently — the miner's
+# mempool gate (`bin/dwowd/src/lib.rs`) and the in-memory pruning horizon
+# (`chain_state.rs`) both name the same constant, so a build cannot half-adopt it.
+#
+# **Why test code needs it.** DRKW can only originate from a coinbase: `MintV1` is
+# disabled, genesis is structurally one pinned coinbase, and there is no faucet or
+# premine. So funding a wallet at all costs `COINBASE_MATURITY + 2` mined blocks —
+# and this scaffold's per-block cost is ~256 MiB (a fresh RandomX cache), measured at
+# 28-32 GB for the 101-block window. Lowering it makes wallet tests that need mature
+# DRKW cost ~7 blocks instead of 101.
+#
+# **This is consensus-visible.** A build with it enabled disagrees with a production
+# node about when a coinbase spend is legal, *while sharing the same genesis pin* —
+# so it must be enabled for every node of a given network or none of them. It is
+# enabled only by dev-dependencies (never by a `[dependencies]` entry or a release
+# build): dev-dependencies are not in the graph of a contract WASM build, and
+# `src/linear` is in no contract's `SOURCE_MANIFEST`, so enabling it here can neither
+# stale an artifact nor move the genesis pin.
+short-coinbase-maturity = []
 
 [dependencies]
 sled = "0.34"

@@ -74,6 +74,12 @@ dwow-sdk = {path = "../../src/sdk", features = ["json", "test-support"]}
 # about the padding having broken the module.
 wasmparser = "0.243.0"
 dwow-contract-test-harness = {path = "../../src/contract/test-harness"}
+# `short-coinbase-maturity` lowers the chain's coinbase maturity for this crate's test
+# build only — see that feature's comment in src/linear/Cargo.toml for why the wallet
+# tests cannot fund a wallet without it. Declared here, never in `[dependencies]`: a
+# release `dwowd` must enforce the production value, and a dev-dependency is not in the
+# graph of a contract WASM build.
+dwow_chain = {path = "../../src/linear", features = ["short-coinbase-maturity"]}
 # `deterministic-zk` is declared here as well as in the harness, on purpose.
 #
 # The heavy fixtures call `<contract>::enable_deterministic_zk()`, and that call is a

@@ -54,8 +54,19 @@ impl CapStatus {
     }
 }
 
-/// Blocks before a mined spend is confirmed.
-/// Matches the chain's COINBASE_MATURITY (src/linear/src/lib.rs:53).
+/// Blocks before a spend the wallet has already made is treated as confirmed.
+///
+/// This is the wallet's own tracking of caps **it has spent**: `set_cap_status` marks a
+/// spent cap `processing` and `check_confirmations` promotes it to `spent`. It is
+/// deliberately independent of the chain's `COINBASE_MATURITY`, which gates when a
+/// coinbase's *output* may be spent — a different question about a different set of caps.
+///
+/// *Corrected 2026-10-14.* The comment here claimed this "Matches the chain's
+/// COINBASE_MATURITY" and cited `src/linear/src/lib.rs:53`, a line that had long since
+/// moved. The two agreeing at 100 was a coincidence, and `short-coinbase-maturity`
+/// (src/linear/Cargo.toml) now makes them diverge on purpose for devnet and test builds:
+/// a chain that matures coinbases in 5 blocks still leaves this wallet-side lifecycle at
+/// 100, which is correct because it measures a different thing.
 pub const CONFIRMATION_DEPTH: u64 = 100;
 
 /// Blocks before a pending cap is considered abandoned (never mined).

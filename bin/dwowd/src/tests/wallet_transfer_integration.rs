@@ -488,11 +488,17 @@ fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
             dwow_sdk::blockchain::BlockTarget::MAX, None,
         ).expect("accept_block height 2");
 
-        // ── Mine blocks 3..=101 so the genesis (h1) and height-2 coinbases
-        // mature past COINBASE_MATURITY (100 blocks). A coinbase cannot be
-        // spent before maturity (block_acceptor.rs coinbase-maturity gate), so
-        // the transfer must spend a mature commitment.
-        for h in 3u64..=101 {
+        // ── Mine the filler blocks so the genesis (h1) and height-2 coinbases
+        // mature past `COINBASE_MATURITY`. A coinbase cannot be spent before
+        // maturity (`check_coinbase_maturity` in chain_state.rs, run from
+        // `connect_block`), so the transfer must spend a mature commitment.
+        //
+        // Both the window and the spend height are derived from the constant rather
+        // than hardcoded. The test build lowers it via `short-coinbase-maturity`
+        // (src/linear/Cargo.toml); at the production value this loop is 99 blocks of
+        // pure filler, each costing a ~256 MiB RandomX cache — which is what made
+        // these tests need 28-32 GB and go unrunnable.
+        for h in 3u64..=(dwow_chain::COINBASE_MATURITY + 1) {
             let height = BlockHeight::new(h);
             let recipient = crate::accounts::MiningRecipient::from_account(&miner_mgr, height)
                 .expect("MiningRecipient");
@@ -540,10 +546,10 @@ fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
         ).expect("wallet-1 init");
         dww1.initialize_wallet().expect("wallet-1 schema init");
         let mut tree1 = dww1.get_capability_commitment_tree().expect("tree1");
-        // Insert ALL blocks (1..=101) so reconstruct_global_coin_map can replay
+        // Insert every block up to the spend height so reconstruct_global_coin_map can replay
         // the full global coin tree; scan only the coinbase blocks the wallet
         // receives (1..=2) so it holds exactly the two mature DRKW caps.
-        for h in 1u64..=101 {
+        for h in 1u64..=(dwow_chain::COINBASE_MATURITY + 1) {
             let block = har.chain_state.get_block(BlockHeight::new(h)).expect("block");
             let scan_block = dwow_chain::Block {
                 header: block.header.clone(), transactions: block.transactions.clone(),
@@ -585,15 +591,15 @@ fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
             witness: dwow_serial::serialize(&wtx),
         };
 
-        // ── Block 102: [coinbase, transfer, fee_collect] → accept_block ────
-        let height_xfer = BlockHeight::new(102);
+        // ── The spend block: [coinbase, transfer, fee_collect] → accept_block ────
+        let height_xfer = BlockHeight::new(dwow_chain::COINBASE_MATURITY + 2);
         let recipient_xfer = crate::accounts::MiningRecipient::from_account(
             &miner_mgr, height_xfer,
-        ).expect("MiningRecipient height 102");
+        ).expect("MiningRecipient");
         let (coinbase_xfer, pow_reward_call_xfer, _blindx) =
             crate::registry::model::build_linear_coinbase(
                 recipient_xfer.clone(), dwow_sdk::blockchain::expected_reward(height_xfer), &har.chain_state, height_xfer,
-            ).await.expect("build_linear_coinbase height 102");
+            ).await.expect("build_linear_coinbase");
         let coinbase_tx_xfer = dwow_chain::Transaction {
             version: dwow_sdk::blockchain::BlockVersion::CURRENT,
             inputs: vec![],
@@ -640,7 +646,7 @@ fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
         crate::block_acceptor::accept_block(
             &har.chain_state, &block_xfer, &[], &vm_xfer,
             target_xfer, None,
-        ).expect("accept_block height 102 (transfer)");
+        ).expect("accept_block (transfer)");
 
         // The write-path gate: the transfer block must be ACCEPTED (height
         // advanced), which only happens if the transfer input's merkle_root is
@@ -654,7 +660,7 @@ fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
         // scan runs separately via `wal scan → scan_blocks`. Exercise that exact
         // path (not the direct scan_block_linear) to witness the Docker
         // divergence deterministically (l1-capability-write-path-spec.md §4.1).
-        for h in 1u64..=102 {
+        for h in 1u64..=(dwow_chain::COINBASE_MATURITY + 2) {
             let block = har.chain_state.get_block(BlockHeight::new(h)).expect("block");
             let scan_block = dwow_chain::Block {
                 header: block.header.clone(), transactions: block.transactions.clone(),
@@ -860,8 +866,8 @@ async fn box_owner_scenario() -> TestResult<BoxOwnerScenario> {
         dwow_sdk::blockchain::BlockTarget::MAX, None,
     ).expect("accept_block height 2");
 
-    // ── Blocks 3..=101: the maturity window, mined by node0. ─────────────────
-    for h in 3u64..=101 {
+    // ── The maturity window, mined by node0 (height derived from the constant). ─
+    for h in 3u64..=(dwow_chain::COINBASE_MATURITY + 1) {
         let height = BlockHeight::new(h);
         let recipient = crate::accounts::MiningRecipient::from_account(&node0_mgr, height)
             .expect("MiningRecipient");
@@ -869,13 +875,13 @@ async fn box_owner_scenario() -> TestResult<BoxOwnerScenario> {
         submit_block(&har, height, vec![cb]).expect("accept_block (maturity mining)");
     }
 
-    // ── Block 102: node0's coinbase + the harness-seeded box put. ────────────
+    // ── node0's coinbase + the harness-seeded box put. ──────────────────────
     // node0 mines it so boxowner's scan of this block finds the box note and no immature
     // coinbase of its own.
-    let box_put_height = BlockHeight::new(102);
-    let recipient_102 = crate::accounts::MiningRecipient::from_account(&node0_mgr, box_put_height)
+    let box_put_height = BlockHeight::new(dwow_chain::COINBASE_MATURITY + 2);
+    let recipient_for_spend = crate::accounts::MiningRecipient::from_account(&node0_mgr, box_put_height)
         .expect("MiningRecipient height 102");
-    let coinbase_tx_102 = coinbase_tx(&har, recipient_102, box_put_height).await;
+    let coinbase_tx_for_spend = coinbase_tx(&har, recipient_for_spend, box_put_height).await;
 
     let harness = BoxHarness::spawn();
     let put = harness.put().expect("seed box put");
@@ -886,8 +892,8 @@ async fn box_owner_scenario() -> TestResult<BoxOwnerScenario> {
     box_put_tx.witness = crate::tests::heavyweight_pipeline::build_witness(
         *BOX_CONTRACT_ID, &box_put_call_data, vec![put.proof],
     );
-    submit_block(&har, box_put_height, vec![coinbase_tx_102, box_put_tx])
-        .expect("accept_block height 102 (seed box put)");
+    submit_block(&har, box_put_height, vec![coinbase_tx_for_spend, box_put_tx])
+        .expect("accept_block (seed box put)");
 
     // ── The ONE wallet: boxowner discovers the box note and its mature coinbases. ──
     let wallet_dir = std::env::temp_dir()
@@ -992,7 +998,7 @@ fn test_invoke_contract_box_put_with_fee_accepts_through_accept_block() -> TestR
             witness: dwow_serial::serialize(&tx),
         };
 
-        // ── Block 103: [coinbase, subject, fee_collect] → accept_block. ──────────
+        // ── The fee block:[coinbase, subject, fee_collect] → accept_block. ──────────
         let height = box_put_height.succ();
         let miner_mgr = crate::accounts::AccountManager::open(
             &keys_path, Network::Testnet, "node0",
@@ -1110,7 +1116,7 @@ fn test_single_call_manifest_build_is_refused_in_a_two_call_tx() -> TestResult<(
             witness: dwow_serial::serialize(&tx),
         };
 
-        // ── Block 103: the SAME [coinbase, subject, fee_collect] shape. ──────────
+        // ── The fee block:the SAME [coinbase, subject, fee_collect] shape. ──────────
         let height = box_put_height.succ();
         let miner_mgr = crate::accounts::AccountManager::open(
             &keys_path, Network::Testnet, "node0",

@@ -70,7 +70,25 @@ mod serial_sync;
 
 /// Number of blocks before coinbase rewards can be moved.
 /// Matches Bitcoin Core's COINBASE_MATURITY.
+///
+/// This is the **production** value and the default. `short-coinbase-maturity`
+/// lowers it for devnet and test builds — see that feature's comment in
+/// `Cargo.toml` for why, and for the consensus caveat that comes with it.
+///
+/// The rule is the same either way: `check_coinbase_maturity` runs on every
+/// `connect_block` and refuses an immature spend. Only the height it measures
+/// against differs.
+#[cfg(not(feature = "short-coinbase-maturity"))]
 pub const COINBASE_MATURITY: u64 = 100;
+
+/// Number of blocks before coinbase rewards can be moved, for devnet and test
+/// builds — see `short-coinbase-maturity` in `Cargo.toml`.
+///
+/// Deliberately small: a wallet test needs two mature coinbases (one to spend, one
+/// for the fee), and the only origin of DRKW is a coinbase, so the production value
+/// forces `100 + 2` mined blocks per test at ~256 MiB each.
+#[cfg(feature = "short-coinbase-maturity")]
+pub const COINBASE_MATURITY: u64 = 5;
 
 /// Consensus chain identifier — scopes transactions to this network.
 /// Prepended to every transaction hash to prevent cross-network replay.
