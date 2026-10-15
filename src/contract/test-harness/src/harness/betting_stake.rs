@@ -43,6 +43,7 @@ use rand::rngs::OsRng;
 use dwow_betting_stake_contract::client::proof_gen::{
     init_v1_proof, stake_v1_proof, unstake_v1_proof, claim_v1_proof, update_risk_v1_proof,
     InitV1CallData, StakeV1CallData, UnstakeV1CallData, ClaimV1CallData, UpdateRiskV1CallData,
+    StakeV1PublicInputs, UnstakeV1PublicInputs, ClaimV1PublicInputs,
 };
 use dwow_betting_stake_contract::model::{
     ClaimEarningsParamsV1, InitializeParamsV1, StakeParamsV1, UnstakeParamsV1, UpdateRiskParamsV1,
@@ -171,6 +172,10 @@ impl BettingStakeHarness {
     }
 
     /// Stake capital against a table (0x01)
+    ///
+    /// Binds the commitment over this call **alone**, so it is correct only when the transaction
+    /// carries nothing beside it. A spec that frames this call next to a child must use
+    /// [`Self::stake_prepare`] — see it for what the one-call form costs.
     pub fn stake(
         &self,
         table_id: pallas::Base,
@@ -180,12 +185,42 @@ impl BettingStakeHarness {
         spend_hook: pallas::Base,
         user_data: pallas::Base,
     ) -> Result<StakeResult> {
+        let plan = self.stake_prepare(
+            table_id, staker_pub, staker_secret, amount, spend_hook, user_data,
+        )?;
+        let call_data = plan.call_data.clone();
+        let commitment = commitment_of(&self.contract_id, &call_data);
+        let (proof, _public_inputs) = plan.prove(commitment, pallas::Base::zero())?;
+        Ok(StakeResult { call_data, proof })
+    }
+
+    /// `OBL-C198`: assemble the Stake call's data and stop, **before** the proof exists.
+    ///
+    /// The proof binds the **transaction** commitment — a derivation over the whole ordered call
+    /// set, this call's siblings included — so it cannot be built until the frame is known, and
+    /// only the caller knows what else its transaction carries. [`Self::stake`] settles for the
+    /// commitment over this call alone, which agrees with the frame only in a one-call transaction.
+    ///
+    /// **What the one-call form costs when it is wrong is an unreadable verdict, not a wrong one.**
+    /// This contract's spec framed the call beside its `promissory_note` child and the block was
+    /// refused at the L2 verify with `invalid proof: call[0] namespace 'Revoke_V2'` — the *child's*
+    /// proof, blamed at the child's index, while this side's commitment was the cause. The spec now
+    /// takes both halves from here and proves each against the frame's own value.
+    ///
+    /// The params read `input.staker_nullifier`, so the input precedes them.
+    pub fn stake_prepare(
+        &self,
+        table_id: pallas::Base,
+        staker_pub: PublicKey,
+        staker_secret: SecretKey,
+        amount: u64,
+        spend_hook: pallas::Base,
+        user_data: pallas::Base,
+    ) -> Result<StakePlan> {
         let nonce = 0u64;
         let asset_id = pallas::Base::zero();
         let value_blind = pallas::Scalar::from(7u64);
 
-        // The call data is built before the proof so the commitment can be derived over it
-        // (`OBL-C198`); the params read `input.staker_nullifier`, so `input` precedes both.
         let input = StakeV1CallData::new(
             table_id,
             staker_pub,
@@ -212,14 +247,13 @@ impl BettingStakeHarness {
         let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
-        let mut input = input;
-        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
-        let (proof, _public_inputs) = stake_v1_proof(&self.stake_zkbin, &self.stake_pk, &input)?;
-
-        Ok(StakeResult { call_data, proof })
+        Ok(StakePlan { call_data, input, zkbin: self.stake_zkbin.clone(), pk: self.stake_pk.clone() })
     }
 
     /// Unstake and withdraw (0x02)
+    ///
+    /// Binds the commitment over this call **alone** — see [`Self::stake`]. A spec that frames this
+    /// call beside a child must use [`Self::unstake_prepare`].
     pub fn unstake(
         &self,
         stake_id: pallas::Base,
@@ -228,9 +262,25 @@ impl BettingStakeHarness {
         spend_hook: pallas::Base,
         user_data: pallas::Base,
     ) -> Result<UnstakeResult> {
+        let plan = self.unstake_prepare(stake_id, stake, staker_secret, spend_hook, user_data)?;
+        let call_data = plan.call_data.clone();
+        let commitment = commitment_of(&self.contract_id, &call_data);
+        let (proof, _public_inputs) = plan.prove(commitment, pallas::Base::zero())?;
+        Ok(UnstakeResult { call_data, proof })
+    }
+
+    /// `OBL-C198`: assemble the Unstake call's data and stop — see [`Self::stake_prepare`] for why
+    /// the split exists, and for what the one-call form costs when the frame carries a child.
+    pub fn unstake_prepare(
+        &self,
+        stake_id: pallas::Base,
+        stake: &UnstakeStakeInfo,
+        staker_secret: SecretKey,
+        spend_hook: pallas::Base,
+        user_data: pallas::Base,
+    ) -> Result<UnstakePlan> {
         let value_blind = pallas::Scalar::from(7u64);
 
-        // Generate ZK proof for Unstake circuit
         let input = UnstakeV1CallData::new(
             stake.table_id,
             stake.staker_pub,
@@ -258,24 +308,37 @@ impl BettingStakeHarness {
         let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
 
-        // Call first, commitment second, proof third (`OBL-C198`).
-        let mut input = input;
-        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
-        let (proof, _public_inputs) = unstake_v1_proof(&self.unstake_zkbin, &self.unstake_pk, &input)?;
-
-        Ok(UnstakeResult { call_data, proof })
+        Ok(UnstakePlan { call_data, input, zkbin: self.unstake_zkbin.clone(), pk: self.unstake_pk.clone() })
     }
 
     /// Claim accumulated earnings (0x03)
+    ///
+    /// Binds the commitment over this call **alone** — see [`Self::stake`]. A spec that frames this
+    /// call beside a child must use [`Self::claim_earnings_prepare`].
     pub fn claim_earnings(
         &self,
         stake_id: pallas::Base,
         stake: &ClaimStakeInfo,
         staker_secret: SecretKey,
     ) -> Result<ClaimEarningsResult> {
+        let plan = self.claim_earnings_prepare(stake_id, stake, staker_secret)?;
+        let call_data = plan.call_data.clone();
+        let commitment = commitment_of(&self.contract_id, &call_data);
+        let (proof, _public_inputs) = plan.prove(commitment, pallas::Base::zero())?;
+        Ok(ClaimEarningsResult { call_data, proof })
+    }
+
+    /// `OBL-C198`: assemble the ClaimEarnings call's data and stop — see [`Self::stake_prepare`]
+    /// for why the split exists, and for what the one-call form costs when the frame carries a
+    /// child.
+    pub fn claim_earnings_prepare(
+        &self,
+        stake_id: pallas::Base,
+        stake: &ClaimStakeInfo,
+        staker_secret: SecretKey,
+    ) -> Result<ClaimEarningsPlan> {
         let value_blind = pallas::Scalar::from(7u64);
 
-        // Generate ZK proof for Claim circuit
         let input = ClaimV1CallData::new(
             stake.table_id,
             stake.staker_pub,
@@ -300,12 +363,7 @@ impl BettingStakeHarness {
         let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
-        // Call first, commitment second, proof third (`OBL-C198`).
-        let mut input = input;
-        input.tx_commitment = commitment_of(&self.contract_id, &call_data);
-        let (proof, _public_inputs) = claim_v1_proof(&self.claim_zkbin, &self.claim_pk, &input)?;
-
-        Ok(ClaimEarningsResult { call_data, proof })
+        Ok(ClaimEarningsPlan { call_data, input, zkbin: self.claim_zkbin.clone(), pk: self.claim_pk.clone() })
     }
 
     /// Update risk after payout (0x04)
@@ -398,6 +456,65 @@ impl ClaimStakeInfo {
         nonce: u64,
     ) -> Self {
         Self { table_id, staker_pub, current_amount, accumulated_earnings, asset_id, nonce }
+    }
+}
+
+// ============================================================================
+// Prepared calls (`OBL-C198`)
+// ============================================================================
+
+/// A prepared StakeV1: the call data exists, the proof does not.
+///
+/// The split is what a caller needs when its transaction carries more than this call — see
+/// [`BettingStakeHarness::stake_prepare`].
+pub struct StakePlan {
+    pub call_data: Vec<u8>,
+    input: StakeV1CallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl StakePlan {
+    /// Prove the call, binding its proof to `tx_commitment` — the commitment over the whole call
+    /// set the transaction carries, this call and its siblings included.
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(Proof, StakeV1PublicInputs)> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        stake_v1_proof(&self.zkbin, &self.pk, &self.input)
+    }
+}
+
+/// A prepared Unstake. See [`StakePlan`].
+pub struct UnstakePlan {
+    pub call_data: Vec<u8>,
+    input: UnstakeV1CallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl UnstakePlan {
+    /// Prove the call against the frame's commitment. See [`StakePlan::prove`].
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(Proof, UnstakeV1PublicInputs)> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        unstake_v1_proof(&self.zkbin, &self.pk, &self.input)
+    }
+}
+
+/// A prepared ClaimEarnings. See [`StakePlan`].
+pub struct ClaimEarningsPlan {
+    pub call_data: Vec<u8>,
+    input: ClaimV1CallData,
+    zkbin: ZkBinary,
+    pk: ProvingKey,
+}
+
+impl ClaimEarningsPlan {
+    /// Prove the call against the frame's commitment. See [`StakePlan::prove`].
+    pub fn prove(mut self, tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Result<(Proof, ClaimV1PublicInputs)> {
+        self.input.tx_commitment = tx_commitment;
+        self.input.tx_nonce = tx_nonce;
+        claim_v1_proof(&self.zkbin, &self.pk, &self.input)
     }
 }
 

@@ -7,6 +7,15 @@
 //!
 //! Note: endpoint order is Initialize → Stake → UpdateRisk → Claim → Unstake (the state machine
 //! needs `accumulated_earnings > 0` before ClaimEarningsV1 can succeed, so UpdateRisk precedes it).
+//!
+//! **Every child-bearing row proves both halves against the frame** (`OBL-C198`). The parent's call
+//! data exists before either proof does, because both bind `tx_commitment` over the ordered call
+//! set — children first, the parent last. This spec used the one-pass forms on both sides, and
+//! neither binds that value: `h.stake`/`h.claim_earnings`/`h.unstake` bind the commitment over the
+//! parent's call *alone* (the same value only in a one-call transaction), and `pn_transfer_child`/
+//! `pn_transfer_payout_child` bind a **zero** commitment. Measured 2026-10-13, block 6:
+//! `invalid proof: call[0] namespace 'Revoke_V2'` — the child's proof, named at the child's index,
+//! while the cause was that it bound nothing. The `*_prepare` halves are used here instead.
 
 use dwow_contract_test_harness::harness::{BettingStakeHarness, ClaimStakeInfo, UnstakeStakeInfo};
 use dwow_sdk::crypto::{
@@ -16,11 +25,18 @@ use dwow_sdk::pasta::pallas;
 use std::sync::{Arc, Mutex};
 
 use crate::tests::modules::child_calls::{
-    pn_transfer_child, pn_transfer_payout_child, PnNote,
+    pn_transfer_payout_prepare, pn_transfer_prepare, PnNote,
 };
 use crate::tests::uniform_runner::{
-    ContractTestSpec, EndpointExpectation, EndpointResult, EndpointSpec,
+    ChildCall, ContractTestSpec, EndpointExpectation, EndpointResult, EndpointSpec,
 };
+
+/// The `ContractCall` a prepared parent frames as. `OBL-C198`'s commitment is taken over the call
+/// set the transaction will carry — children first, the parent last, post-order — so the fixture
+/// must hand the derivation the same shape the node hashes.
+fn parent_call(cid: dwow_sdk::crypto::ContractId, data: &[u8]) -> dwow_sdk::tx::ContractCall {
+    dwow_sdk::tx::ContractCall { contract_id: cid, data: data.to_vec() }
+}
 
 pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
     // `OBL-C198`: the harness must know the id its call will carry, because the transaction
@@ -137,13 +153,27 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
                     let notes = notes.clone();
                     let sk = staker_secret.clone();
                     move || {
-                        let r = h.stake(table_id, staker_pub, sk.clone(), amount, pallas::Base::zero(), pallas::Base::zero())
+                        // `OBL-C198`: the parent's call data must exist before *either* proof can be
+                        // built. Both bind the commitment over the frame — children first, the
+                        // parent last, post-order — which is a derivation over the whole call set
+                        // and therefore a value neither half can know alone. Proving the child
+                        // one-pass (`pn_transfer_child` binds a zero commitment) is what made this
+                        // row red: the block was refused at the L2 verify with
+                        // `invalid proof: call[0] namespace 'Revoke_V2'` — the child's proof, blamed
+                        // at the child's index, while the cause was that it bound nothing.
+                        let plan = h.stake_prepare(table_id, staker_pub, sk.clone(), amount, pallas::Base::zero(), pallas::Base::zero())
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
+                        let cid = crate::tests::blockchain::derive_contract_id_from_name("betting_stake");
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(amount), stake_id]);
-                        let child = pn_transfer_child(&n[0], amount, blind_seed, pallas::Base::zero())?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(&n[0], amount, blind_seed, pallas::Base::zero())?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &call_data)]);
+                        let (proof, _) = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -179,13 +209,21 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
                             asset_id: pallas::Base::zero(),
                             nonce: 0u64,
                         };
-                        let r = h.claim_earnings(stake_id, &info, sk.clone())
+                        // Both halves stop before the proof and are proved below against the frame's
+                        // own commitment — see the `OBL-C198` note on `StakeV1`.
+                        let plan = h.claim_earnings_prepare(stake_id, &info, sk.clone())
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
+                        let cid = crate::tests::blockchain::derive_contract_id_from_name("betting_stake");
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(claimable), stake_id]);
-                        let child = pn_transfer_payout_child(&n[1], 1000, claimable, blind_seed)?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        let (child_call, child_plan, child_nonce) = pn_transfer_payout_prepare(&n[1], 1000, claimable, blind_seed)?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &call_data)]);
+                        let (proof, _) = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![proof] })
                     }
                 }),
             },
@@ -208,13 +246,21 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
                             asset_id: pallas::Base::zero(),
                             nonce: 0u64,
                         };
-                        let r = h.unstake(stake_id, &info, sk.clone(), pallas::Base::zero(), pallas::Base::zero())
+                        // Both halves stop before the proof and are proved below against the frame's
+                        // own commitment — see the `OBL-C198` note on `StakeV1`.
+                        let plan = h.unstake_prepare(stake_id, &info, sk.clone(), pallas::Base::zero(), pallas::Base::zero())
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let call_data = plan.call_data.clone();
+                        let cid = crate::tests::blockchain::derive_contract_id_from_name("betting_stake");
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
                         let blind_seed = poseidon_hash([pallas::Base::from(unstake_payout), stake_id]);
-                        let child = pn_transfer_payout_child(&n[2], 2000, unstake_payout, blind_seed)?;
-                        Ok(EndpointResult { children: vec![child], call_data: r.call_data, proofs: vec![r.proof] })
+                        let (child_call, child_plan, child_nonce) = pn_transfer_payout_prepare(&n[2], 2000, unstake_payout, blind_seed)?;
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&child_call, &parent_call(cid, &call_data)]);
+                        let (proof, _) = plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let debris = child_plan.prove(commitment, child_nonce).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data.clone(), proofs: debris.proofs, children: vec![] };
+                        Ok(EndpointResult { children: vec![child], call_data, proofs: vec![proof] })
                     }
                 }),
             },
