@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use crate::tests::uniform_runner::*;
 
 /// Replicate the bridge's deterministic wrapped-token derivation (mint-authority Option 1).
-fn derive_issue_secret(bridge_cid: pallas::Base, chain: ExternalChain) -> pallas::Base {
+pub(crate) fn derive_issue_secret(bridge_cid: pallas::Base, chain: ExternalChain) -> pallas::Base {
     poseidon_hash([
         bridge_cid,
         pallas::Base::from(chain as u64),
@@ -28,14 +28,14 @@ fn derive_issue_secret(bridge_cid: pallas::Base, chain: ExternalChain) -> pallas
     ])
 }
 
-fn derive_token_blind(chain: ExternalChain) -> pallas::Base {
+pub(crate) fn derive_token_blind(chain: ExternalChain) -> pallas::Base {
     poseidon_hash([
         pallas::Base::from(chain as u64),
         pallas::Base::from(0x626c6e64u64), // "blnd"
     ])
 }
 
-fn derive_wrapped_asset_id(bridge_cid: pallas::Base, chain: ExternalChain) -> pallas::Base {
+pub(crate) fn derive_wrapped_asset_id(bridge_cid: pallas::Base, chain: ExternalChain) -> pallas::Base {
     let token_auth_parent = poseidon_hash([pallas::Base::from(7u64), derive_issue_secret(bridge_cid, chain)]);
     poseidon_hash([
         pallas::Base::from(2u64),
@@ -48,12 +48,12 @@ fn derive_wrapped_asset_id(bridge_cid: pallas::Base, chain: ExternalChain) -> pa
 /// The `ContractCall` a prepared child frames as. `OBL-C198`'s commitment is taken over the call
 /// set the transaction will carry, so the fixture must hand the derivation the same shape the node
 /// hashes — not the harness's own result struct.
-fn frame_call(c: &ChildCall) -> dwow_sdk::tx::ContractCall {
+pub(crate) fn frame_call(c: &ChildCall) -> dwow_sdk::tx::ContractCall {
     dwow_sdk::tx::ContractCall { contract_id: c.contract_id, data: c.call_data.clone() }
 }
 
 /// The `ContractCall` a prepared parent frames as.
-fn parent_call(contract_id: dwow_sdk::crypto::ContractId, data: &[u8]) -> dwow_sdk::tx::ContractCall {
+pub(crate) fn parent_call(contract_id: dwow_sdk::crypto::ContractId, data: &[u8]) -> dwow_sdk::tx::ContractCall {
     dwow_sdk::tx::ContractCall { contract_id, data: data.to_vec() }
 }
 
@@ -61,7 +61,7 @@ fn parent_call(contract_id: dwow_sdk::crypto::ContractId, data: &[u8]) -> dwow_s
 /// **frame** commitment, which the row computes once it holds both the child's and the parent's
 /// call data. Proving here instead would bind the child's *own* call commitment, which the node
 /// refuses the moment the parent's arm derives — the composition red `OBL-C170`/`OBL-C198` measure.
-fn pn_issue_child_prepare(
+pub(crate) fn pn_issue_child_prepare(
     bridge_cid: pallas::Base,
     chain: ExternalChain,
     recipient: pallas::Base,
@@ -113,7 +113,7 @@ fn pn_issue_child_prepare(
 ///
 /// `value` must likewise be the note's **full** value: the commitment binds it, so a partial redeem
 /// reconstructs the wrong leaf for the same reason.
-fn pn_redeem_child_prepare(
+pub(crate) fn pn_redeem_child_prepare(
     bridge_cid: pallas::Base,
     chain: ExternalChain,
     note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),

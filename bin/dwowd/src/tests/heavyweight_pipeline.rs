@@ -1733,25 +1733,49 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
 // relayer lifecycle — cross-contract bridge + relayer_endowment
 // ============================================================================
 
-/// Full lifecycle: bridge deposit → withdraw → double-spend prevention,
-/// plus relayer_endowment initialization and capital deployment.
+/// The bridge's **deposit**, refused as its policy requires, plus the relayer_endowment lifecycle:
+/// initialize → deploy_capital.
 ///
-/// Deploys both bridge and relayer_endowment contracts into the same
-/// GenesisHarness, then exercises them across multiple blocks with ZK proofs.
-/// Routes through `accept_block` (production path) with real coinbases.
+/// Deploys both contracts into the same GenesisHarness and exercises them across blocks with ZK
+/// proofs. Routes through the pipeline's own `submit` (the production `accept_block` path).
+///
+/// **What this test does not do, and where that coverage lives.** It used to drive
+/// deposit → withdraw → double-spend. Three defects made every one of those frames unmeasurable
+/// (`OBL-C246`): no frame carried the child its endpoint requires, every parent used a one-pass
+/// builder that binds its *own* call commitment rather than the frame's (`OBL-C198`), and the
+/// double-spend assertion could not fail — it was satisfied by the missing child's `Custom(19)`,
+/// reached before any nullifier is read. Two of those are repaired here rather than removed: the
+/// deposit's child is attached and both halves are proved against the frame, and the refusal is
+/// asserted by name so it cannot pass for another call's reason.
+///
+/// The withdraw is **not** repaired here, because a deposit cannot be accepted at all under this
+/// tree's policy: no build enables `bridge-verify`, so `verify_chain_proof` is fail-closed for every
+/// chain (`OBL-C21`) and no wrapped note is ever minted by a deposit. `bridge_spec.rs` covers the
+/// withdrawal path with a note its own setup issues, and covers the anti-dust floor; duplicating
+/// that here would be a second copy of the same fixture. **A correct double-spend control is owed**
+/// and its construction is recorded in `OBL-C246` — it needs the *same* secret and the *same*
+/// recipient hash against a *fresh* note, since the bridge's nullifier is
+/// `poseidon_hash(DOMAIN_NULLIFIER, secret, recipient_hash)` while the redeem child's is
+/// `Nullifier::new(secret, commitment)`; this fixture varied the recipient hash, so the two were
+/// never the same value and the assertion was wrong as well as vacuous.
 #[test]
 // Integration test: cross-contract bridge + relayer_endowment lifecycle.
-// Deploys both contracts, exercises deposit→withdraw→double-spend rejection
-// then relayer_endowment initialize→deploy_capital. Uses accept_block directly.
+// Deploys both contracts, asserts the deposit's policy refusal, then exercises
+// relayer_endowment initialize→deploy_capital. Uses the production accept path.
 // RG-10 compliant: zero match-Err-skip (fixed 2026-08-05).
 fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::{BridgeHarness, RelayerEndowmentHarness};
-    use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
-    
+    use dwow_contract_test_harness::harness::{BridgeHarness, PromissoryNoteHarness, RelayerEndowmentHarness};
+    use dwow_sdk::crypto::{poseidon_hash, PublicKey, SecretKey, PROMISSORY_NOTE_CONTRACT_ID};
+
     use dwow_sdk::pasta::pallas;
     use dwow_bridge_contract::model::ExternalChain;
     use crate::tests::blockchain::HeavyweightPipeline;
     use super::harness::{build_contract_tx, build_test_block};
+    use crate::tests::specs::bridge_spec::{
+        derive_issue_secret, derive_token_blind, derive_wrapped_asset_id, frame_call, parent_call,
+        pn_issue_child_prepare,
+    };
+    use crate::tests::uniform_runner::ChildCall;
 
     println!("=== Relayer Lifecycle Heavyweight ===");
 
@@ -1788,81 +1812,126 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         let start_height = chain.height();
         println!("Start height: {}", start_height);
 
-        // --- Block 1: Bridge deposit ---
-        println!("\n--- Block 1: Bridge deposit ---");
+        // --- Setup: register the wrapped token the deposit's child will mint ---
+        //
+        // `DepositV1` requires its one child to be a `promissory_note::issue_v1` of the *wrapped*
+        // asset for the deposit's chain (`bridge/src/entrypoint.rs:283-313`), and an issue checks the
+        // token registry — so the type must exist before the frame. Children execute post-order, so
+        // the issue runs *before* the endpoint; this is load-bearing even though the deposit itself
+        // is refused below.
         let secret = pallas::Base::from(100u64);
         let recipient = PublicKey::from_secret(SecretKey::from_bytes([3u8; 32]).unwrap());
-        let deposit = bridge_harness.deposit(
-            secret, 10000, recipient, 1,
-            pallas::Base::from(200u64),
-            ExternalChain::Monero, vec![], 0,
+        let pn_cid = *PROMISSORY_NOTE_CONTRACT_ID;
+        let pn = PromissoryNoteHarness::spawn();
+        let wrapped_asset_id = derive_wrapped_asset_id(bridge_id.inner(), ExternalChain::Monero);
+        let wrapped_issue_secret = derive_issue_secret(bridge_id.inner(), ExternalChain::Monero);
+        // The issue's `recipient` is dead (`OBL-C245`): the issued commitment's `public_key` is
+        // `H(7, issue_secret)`, so whatever is passed is computed and discarded. It is filled in the
+        // shape the other fixtures use rather than invented here.
+        let owner_addr = poseidon_hash([pallas::Base::from(7u64), secret]);
+        println!("  wrapped Monero asset id: {wrapped_asset_id:?}");
+        let registered = pn
+            .register_type(
+                wrapped_issue_secret,
+                pallas::Base::zero(),
+                derive_token_blind(ExternalChain::Monero),
+                owner_addr,
+                10000,
+                pallas::Base::zero(),
+                pallas::Base::zero(),
+                pallas::Base::from(6u64),
+            )
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        chain
+            .block()?
+            .with_call(pn_cid, &pn, &registered.call_data, registered.token_proofs.clone())?
+            .submit()
+            .await?;
+        println!("  wrapped token registered (height {})", chain.height());
+
+        // --- Block 1: the bridge deposit, refused ---
+        //
+        // `OBL-C21`: no build in this tree enables `bridge-verify`, so `verify_chain_proof` is
+        // fail-closed on every chain and nothing about a deposit is verified. The endpoint says so
+        // itself (`entrypoint.rs:346-354`), and its child mints a *value-bearing* note — which is why
+        // the permissive arm that once stood there mattered. The expectation is refusal, and the
+        // assertion **names the refuser**: a frame refused by its child would satisfy a bare
+        // `is_err()` for a reason that is not this policy, which is the vacuity `OBL-C246` records.
+        println!("\n--- Block 1: Bridge deposit (policy refusal) ---");
+        let (child, child_plan) = pn_issue_child_prepare(
+            bridge_id.inner(), ExternalChain::Monero, owner_addr, 10000,
+        )?;
+        let plan = bridge_harness
+            .deposit_prepare(
+                secret, 10000, recipient, 1,
+                pallas::Base::from(200u64),
+                ExternalChain::Monero, vec![], 0,
+            )
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        // `OBL-C198`: both call data exist first, one commitment is taken over the ordered set, and
+        // only then are both proofs made — so each binds the *frame* rather than its own call.
+        let parent_data = plan.call_data.clone();
+        let commitment = dwow_sdk::crypto::util::tx_commitment([
+            &frame_call(&child),
+            &parent_call(bridge_id, &parent_data),
+        ]);
+        let child_debris = child_plan
+            .prove(commitment, pallas::Base::zero())
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let (proof, _) = plan
+            .prove(commitment)
+            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let child = ChildCall { proofs: child_debris.proofs, ..child };
+        println!(
+            "  deposit call_data={}B, child call_data={}B",
+            parent_data.len(),
+            child.call_data.len()
         );
-        let deposit = deposit.map_err(|e| format!("deposit proof failed: {}", e))?;
-        assert!(!deposit.call_data.is_empty(), "deposit call_data must not be empty");
-        println!("  Deposit call_data={}B", deposit.call_data.len());
 
-        let height1 = start_height.succ();
-        {
-            let cb = chain.build_coinbase_for_height(height1, dwow_sdk::blockchain::expected_reward(height1)).await?;
-            let mut deposit_tx = build_contract_tx(bridge_id, deposit.call_data);
-            deposit_tx.witness = build_witness(bridge_id, &deposit_tx.contract_calls[0].data, vec![]);
-            let block1 = build_test_block(&chain.chain_state, height1, vec![cb.tx,deposit_tx])?;
-            let vm = build_accept_vm(&block1)?;
-            crate::block_acceptor::accept_block(
-                &chain.chain_state, &block1, &[], &vm,
-                BlockTarget::MAX, None,
-            ).map_err(|e| dwow_core::Error::Custom(format!("accept_block deposit: {}", e)))?;
-        }
-        assert_eq!(chain.height(), height1, "height must advance after deposit");
-        println!("  deposit executed OK (height {} -> {})", start_height, height1);
+        let refused = chain
+            .block()?
+            .with_call_tree(bridge_id, &parent_data, vec![proof], vec![child])?
+            .submit()
+            .await;
+        let err = refused.expect_err(
+            "OBL-C21: the deposit must be refused — `bridge-verify` is compiled out, so \
+             `verify_chain_proof` is fail-closed on every chain, and accepting it would mint a \
+             wrapped note against no external backing",
+        );
+        let text = format!("{err}");
+        let who = format!("(contract {bridge_id})");
+        assert!(
+            text.contains(&who),
+            "the refusal must be the bridge's own — it was refused by some other call in the frame, \
+             so the endpoint's fail-closed arm was never reached. Full error: {text}"
+        );
+        assert!(
+            text.contains("ContractError(Custom(1))"),
+            "the refusal must be the deposit's fail-closed arm (`InvalidDeposit` → `Custom(1)`). \
+             Full error: {text}"
+        );
+        assert_eq!(chain.height(), start_height, "a refused block must not advance the height");
+        println!("  deposit refused, as the policy requires: {text}");
 
-        // --- Block 2: Bridge withdraw ---
-        println!("\n--- Block 2: Bridge withdraw ---");
-        let withdraw = bridge_harness.withdraw(
-            secret, 5000,
-            pallas::Base::from(400u64),
-            1,
-        ).map_err(|e| format!("withdraw proof failed: {}", e))?;
-        assert!(!withdraw.call_data.is_empty(), "withdraw call_data must not be empty");
-        println!("  Withdraw call_data={}B", withdraw.call_data.len());
-
-        let height2 = chain.height().succ();
-        {
-            let cb = chain.build_coinbase_for_height(height2, dwow_sdk::blockchain::expected_reward(height2)).await?;
-            let mut withdraw_tx = build_contract_tx(bridge_id, withdraw.call_data);
-            withdraw_tx.witness = build_witness(bridge_id, &withdraw_tx.contract_calls[0].data, vec![]);
-            let block2 = build_test_block(&chain.chain_state, height2, vec![cb.tx,withdraw_tx])?;
-            let vm = build_accept_vm(&block2)?;
-            crate::block_acceptor::accept_block(
-                &chain.chain_state, &block2, &[], &vm,
-                BlockTarget::MAX, None,
-            ).map_err(|e| dwow_core::Error::Custom(format!("accept_block withdraw: {}", e)))?;
-        }
-        assert_eq!(chain.height(), height2, "height must advance after withdraw");
-        println!("  withdraw executed OK (height {} -> {})", height1, height2);
-
-        // --- Block 3: Double-spend attempt (same secret = same nullifier) ---
-        println!("\n--- Block 3: Double-spend attempt ---");
-        let double_withdraw = bridge_harness.withdraw(
-            secret, 3000,
-            pallas::Base::from(999u64),
-            1,
-        ).map_err(|e| format!("double-withdraw proof failed: {}", e))?;
-
-        let height3 = chain.height().succ();
-        {
-            let cb = chain.build_coinbase_for_height(height3, dwow_sdk::blockchain::expected_reward(height3)).await?;
-            let mut double_tx = build_contract_tx(bridge_id, double_withdraw.call_data);
-            double_tx.witness = build_witness(bridge_id, &double_tx.contract_calls[0].data, vec![]);
-            let block3 = build_test_block(&chain.chain_state, height3, vec![cb.tx,double_tx])?;
-            let vm = build_accept_vm(&block3)?;
-            let double_result = crate::block_acceptor::accept_block(
-                &chain.chain_state, &block3, &[], &vm,
-                BlockTarget::MAX, None,
-            );
-            assert!(double_result.is_err(), "double-spend must be rejected (nullifier already spent)");
-        }
-        println!("  double-spend correctly rejected");
+        // --- The withdrawal path, and why it is not driven here ---
+        //
+        // This fixture used to drive `withdraw` and then a double-spend of it. Neither frame carried
+        // the `promissory_note::redeem_v1` child `WithdrawV1` requires, both parents used a one-pass
+        // builder (`OBL-C198`), and the double-spend assertion could not fail — it was satisfied by
+        // the missing child's `Custom(19)`, which is reached before any nullifier is read. Its premise
+        // was wrong as well: the bridge's nullifier is
+        // `poseidon_hash(DOMAIN_NULLIFIER, secret, recipient_hash)` (`bridge/src/client/withdraw.rs:84`)
+        // while the redeem child's is `Nullifier::new(secret, commitment)`, and the frame varied the
+        // recipient hash — so "same secret = same nullifier" was never true here, and the bridge's own
+        // double-spend check was not what would have refused it.
+        //
+        // A deposit cannot be accepted under this tree's policy anyway — `OBL-C21`, asserted above —
+        // so no wrapped note is ever minted by one, and the withdrawal path is covered where the
+        // fixture issues that note itself: `bridge_spec.rs` has `WithdrawV1` (a `Success` row) and
+        // `WithdrawV1BelowMinimum` (the anti-dust floor). A *correct* double-spend control is owed, and
+        // `OBL-C246` records its construction: the same secret **and** the same recipient hash against
+        // a **fresh** note, so the child executes and the bridge's own nullifier check is what refuses.
+        println!("\n--- Bridge withdrawal: covered by bridge_spec.rs (OBL-C246) ---");
 
         // --- Block 4: RelayerEndowment initialize + deploy_capital ---
         println!("\n--- Block 4: RelayerEndowment initialize + deploy_capital ---");
@@ -1905,11 +1974,17 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         }
         assert_eq!(chain.height(), height4,
             "height must advance after relayer_endowment calls");
-        println!("  initialize + deploy_capital executed OK (height {} -> {})", height3, height4);
+        println!("  initialize + deploy_capital executed OK (height {} -> {})", height4.pred().unwrap_or(height4), height4);
 
         // --- Verify final state ---
         let final_height = chain.height();
-        assert!(final_height.get() >= 3, "must have at least 3 successful blocks (deposit + withdraw + relayer)");
+        assert_eq!(
+            final_height.get(),
+            start_height.get() + 2,
+            "exactly two blocks commit: the wrapped-token registration and the relayer_endowment \
+             pair. The refused deposit commits nothing — that is what the height assertion above \
+             checks — and the withdrawal path is not driven here (`OBL-C246`)"
+        );
         println!(
             "\n=== Relayer Lifecycle Heavyweight: All assertions passed (final height: {}) ===",
             final_height
