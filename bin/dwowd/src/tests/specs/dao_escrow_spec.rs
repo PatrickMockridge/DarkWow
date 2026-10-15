@@ -275,6 +275,9 @@ struct Governance {
     /// message is named by no other row, so that row's second child is a valid call rather than a
     /// replay — which is what keeps the control from being refused by the child instead of the guard.
     propose_extra: Vec<Nullifier>,
+    /// The endowment's group on `msg_cancel_extra` — the second unspent approval the `OBL-C165` (b)
+    /// control's *extra* child needs. An approval is spend-once, so one set cannot serve both children.
+    cancel_extra: Vec<Nullifier>,
     /// The endowment's group on the endowment-withdraw action — role 4 over the
     /// `(bulla, value, recipient_x)` triple its row uses. Distinct from every other message, including
     /// the other money endpoints' triples: the role tag is what keeps them apart.
@@ -442,6 +445,11 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
         governance_role::PROPOSE_CLAIM,
         poseidon_hash([CLAIM_ID_EXTRA, pallas::Base::from(PN_VALUE_EXECUTE_CLAIM), owner_x]),
     );
+    // `OBL-C165` (b)'s control needs **two** unspent approvals, not one: an approval is spend-once, so
+    // its first child cannot reuse `propose` (the positive row has consumed it) and its second must
+    // name a different valid action. This is the second — a different role over the same claim id, so
+    // it collides with no other row's message.
+    let msg_cancel_extra = governance_message(governance_role::CANCEL_CLAIM, CLAIM_ID_EXTRA);
 
     // The voter, and the vote's own action id. `VOTE_CLAIM`'s id is the
     // `(claim_id, voter_x, voter_y, direction)` quadruple — direction 0 for Yes, matching
@@ -542,6 +550,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let cancel_claim = sign_for(chain, action_cancel_claim)?;
                 let propose_2 = sign_for(chain, msg_propose_2)?;
                 let propose_extra = sign_for(chain, msg_propose_extra)?;
+                let cancel_extra = sign_for(chain, msg_cancel_extra)?;
                 let vote = sign_for(chain, action_vote)?;
 
                 // A second group — one member, threshold one — approves the proposal. Its approval is
@@ -564,6 +573,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     propose,
                     wrong_message,
                     propose_extra,
+                    cancel_extra,
                     endowment_withdraw,
                     endowment_withdraw_2,
                     cancel_claim,
@@ -1273,14 +1283,19 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let (approvals, extra_approvals) = {
                             let g = gov.lock().unwrap();
-                            (g.propose.clone(), g.propose_extra.clone())
+                            (g.propose_extra.clone(), g.cancel_extra.clone())
                         };
-                        // The real approval: the message this proposal's action id names.
-                        let ms_plan = ms.finalize_prepare(DaoEscrowHarness::governance_group(), msg_propose, approvals)
+                        // Slot 0's approval: **fresh**, and over the message this proposal's action id
+                        // names. It must not be `gov.propose` — the positive row consumed that one, and
+                        // an approval is spend-once, so reusing it makes the *child* the refuser and the
+                        // guard is never reached. The first version of this row did exactly that, and the
+                        // run said so: `Custom(7)` from the multisig, "approval names no signature
+                        // record", with `call_idx=0` — the child, before the endpoint ran.
+                        let ms_plan = ms.finalize_prepare(DaoEscrowHarness::governance_group(), msg_propose_extra, approvals)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let ms_call = dwow_sdk::tx::ContractCall { contract_id: *MULTISIG_CONTRACT_ID, data: ms_plan.call_data.clone() };
-                        // The extra child: a valid finalize for a different action id.
-                        let ms_extra = ms.finalize_prepare(DaoEscrowHarness::governance_group(), msg_propose_extra, extra_approvals)
+                        // The extra child: its own fresh approval, over a different valid action.
+                        let ms_extra = ms.finalize_prepare(DaoEscrowHarness::governance_group(), msg_cancel_extra, extra_approvals)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let ms_extra_call = dwow_sdk::tx::ContractCall { contract_id: *MULTISIG_CONTRACT_ID, data: ms_extra.call_data.clone() };
                         // `OBL-C198`: both children's call data first, then the parent's — which binds
