@@ -806,13 +806,25 @@ fn scan_block(
                         // derive_public(deploy_key) (wallet.md §3, manifest.md
                         // Circuit Binary Delivery — M2). Key the zkas/manifests
                         // under the well-known id so the generic prover finds them.
-                        let contract_id = match &manifest_result {
-                            Some(Ok(m)) => match crate::contract_imports::get_contract_id(&m.name) {
-                                Some(id) => id,
-                                None => ContractId::derive_public(params.public_key),
-                            },
-                            _ => ContractId::derive_public(params.public_key),
+                        //
+                        // **But only for the genesis block** (`OBL-C244`). `get_contract_id` resolves a
+                        // manifest's *name*, and the genesis deploy is the one place the chain ignores the
+                        // deploy key — `build_genesis_deployment_txs` fixes a key the genesis rule ignores,
+                        // binding by its hard-coded table. Every later `DeployV1` is bound by
+                        // `ContractId::derive_public(params.public_key)` in the chain's own arm
+                        // (`src/contract/deployooor/src/entrypoint/deploy.rs`), and the chain never reads
+                        // the manifest name at all — so consulting the name outside genesis keys a
+                        // deployer's own manifest under a genesis contract's id and shadows the real one.
+                        let named_id = if height == BlockHeight::new(1) {
+                            match &manifest_result {
+                                Some(Ok(m)) => crate::contract_imports::get_contract_id(&m.name),
+                                _ => None,
+                            }
+                        } else {
+                            None
                         };
+                        let contract_id = named_id
+                            .unwrap_or(ContractId::derive_public(params.public_key));
                         let contract_id_str = bs58::encode(contract_id.to_bytes()).into_string();
 
                         let manifest_json = match manifest_result {
@@ -2262,6 +2274,128 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         assert_eq!(cap.value, 0, "P8: synthetic capability must carry zero value");
         assert_eq!(cap.created_at_height, BlockHeight::new(height_call),
             "P8: created_at_height must match call block height");
+    }
+
+    /// `OBL-C244` — only the genesis block may let a manifest's *name* choose the
+    /// contract id.
+    ///
+    /// `ContractId::derive_public(deploy_key)` is what the chain binds every
+    /// `DeployV1` to (`src/contract/deployooor/src/entrypoint/deploy.rs`); the genesis
+    /// deploy is the single exception, because `build_genesis_deployment_txs` fixes a
+    /// key the genesis rule ignores and binds by its hard-coded table. Resolving the
+    /// name at any other height keys a deployer's own manifest under a genesis
+    /// contract's id and shadows the real one.
+    #[test]
+    fn test_deployv1_name_chooses_genesis_id_only_in_genesis_block() {
+        use dwow_sdk::crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
+        use dwow_sdk::deploy::DeployParamsV1;
+        use dwow_serial::Encodable;
+        use dwow_chain::Transaction as ChainTransaction;
+
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_c244.toml");
+        std::fs::write(&keys_path,
+            "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(
+            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
+        ).expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+
+        // A manifest that *claims* to be the genesis `native_token`.
+        let manifest_toml = r#"
+[contract]
+name = "native_token"
+category = "Testing"
+description = "Claims to be the genesis native token"
+version = "1.0.0"
+dependencies = []
+
+[[functions]]
+name = "do_thing"
+code = 7
+requires_proof = true
+proof_circuit = "Test_V1"
+
+[[capabilities]]
+discriminant = 1
+name = "thing_cap"
+description = "A capability produced by do_thing"
+primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
+note_schema = [
+    { name = "value", type = "u64" },
+    { name = "commitment", type = "pallas_base" },
+]
+
+[[actions]]
+function = "do_thing"
+requires = { type = "none" }
+produces = [{ name = "thing_cap" }]
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","ProveInclusion"]
+"#;
+        let mut deploy_ix = vec![0x4Du8];
+        deploy_ix.extend_from_slice(manifest_toml.as_bytes());
+
+        let deployer_kp = dwow_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng);
+
+        // The contract id the wallet assigns to this deploy, at a given block height.
+        let scan_at = |height: u64| -> ContractId {
+            let params = DeployParamsV1 {
+                wasm_bincode: vec![0x00, 0x61, 0x73, 0x6d],
+                public_key: deployer_kp.public,
+                ix: deploy_ix.clone(),
+                singleton: false,
+                singleton_name: String::new(),
+            };
+            let mut call_data = vec![0x00u8];
+            params.encode(&mut call_data).expect("DeployParamsV1 must encode");
+            let tx = ChainTransaction {
+                version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
+                contract_calls: vec![dwow_chain::ContractCall {
+                    contract_id: *DEPLOYOOOR_CONTRACT_ID,
+                    data: call_data,
+                }],
+                lock_time: 0, nullifiers: vec![], witness: vec![],
+            };
+            let block = dwow_chain::Block {
+                header: dwow_chain::BlockHeader {
+                    version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
+                    merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                    timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
+                    height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
+                    total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32], miner: [0u8; 32],
+                    commitment_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                    anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
+                    anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                    fee_window_flags: FeeWindowFlags::default(),
+                    pow_source: dwow_chain::PowSource::Native,
+                    anchor_owner: [0u8; 32],
+                    caribina_anchor: None,
+                },
+                transactions: vec![tx],
+            };
+            let mut tree = MerkleTree::new(32);
+            let empty_manifests = BTreeMap::new();
+            let r = scan_block(
+                &mut tree, &account_mgr, &empty_manifests, &block,
+                &std::collections::HashSet::new(),
+            );
+            assert_eq!(r.deployments.len(), 1,
+                "OBL-C244: one DeployV1 call must yield exactly one deployment");
+            r.deployments[0].contract_id
+        };
+
+        // Outside genesis the chain binds by the deploy key, so the wallet must too:
+        // the claimed name must NOT be able to select a genesis contract's id.
+        assert_eq!(
+            scan_at(100), ContractId::derive_public(deployer_kp.public),
+            "OBL-C244: a non-genesis deploy must be keyed by derive_public(deploy_key), \
+             not by the name its manifest claims",
+        );
+        // In the genesis block the name *is* the binding, and the genesis id is the answer.
+        assert_eq!(
+            scan_at(1), *NATIVE_TOKEN_CONTRACT_ID,
+            "OBL-C244: the genesis block's deploys are still keyed by the hard-coded table",
+        );
     }
 
     /// P9 — Nullifier publication and revocation.
