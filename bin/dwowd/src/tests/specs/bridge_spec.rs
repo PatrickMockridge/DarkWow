@@ -1,6 +1,14 @@
 //! ContractTestSpec for bridge-core. DepositV1 requires one promissory_note::issue_v1 (0x02)
 //! child call (mint the wrapped PN against the external deposit). WithdrawV1 requires one
 //! promissory_note::redeem_v1 (0x01) child call (burn the wrapped PN → zero-value receipt).
+//!
+//! **Every child-bearing row proves both halves against the frame, and the redeem presents the
+//! note's *issue* secret rather than one of the fixture's choosing.** Both are load-bearing, and
+//! both were wrong here. The one-pass forms bind a single call's commitment where the node verifies
+//! the frame's, and a redeem that rebuilds the spent leaf from any other secret publishes a merkle
+//! root the contract has never held (`Custom(13)`, "Merkle root not found"). The withdrawal path
+//! was recorded as unsatisfiable because of the second one. It was not: it is a fixture defect, and
+//! `pn_redeem_child_prepare` now carries the derivation in full.
 use dwow_contract_test_harness::harness::{BridgeHarness, ContractHarness, PromissoryNoteHarness};
 use dwow_sdk::crypto::{
     poseidon_hash, pasta_prelude::PrimeField, MerkleNode, MerkleTree,
@@ -86,8 +94,28 @@ fn pn_issue_child_prepare(
 
 /// `OBL-C198`: build the PN RedeemV1 (0x01) child's call data and stop, for the reason
 /// [`pn_issue_child_prepare`] records.
+///
+/// **The `secret` is the note's *issue* secret, and it is not a free choice.** Both sides rebuild the
+/// capability the same way, from the same attributes: the issue side takes the commitment's
+/// `public_key` as `poseidon_hash([7, issue_secret])` (`client/issue.rs::prepare`), and the redeem
+/// side rebuilds the spent commitment as `poseidon_hash([7, secret])` and folds it into the merkle
+/// root it publishes (`client/redeem.rs::derive_redeem_burn`). Every other attribute — value,
+/// asset_id, spend_hook, user_data, blind — is passed through identically. So a redeem presenting any
+/// secret but the issue secret reconstructs a *different* leaf, publishes a root the contract has
+/// never held, and is refused `TransferMerkleRootNotFound` — `Custom(13)`, "Merkle root not found" —
+/// which is exactly how this fixture was red at height 4.
+///
+/// This helper used to pass a literal `pallas::Base::from(100u64)`, commented as "the wrapped PN
+/// owner secret". It was not: the wrapped note is issued under the *mint authority*, whose secret is
+/// `derive_issue_secret(bridge_cid, chain)` — the same value `derive_wrapped_asset_id` is itself
+/// built from. That literal made the note the setup issues unspendable by the only fixture that
+/// spends it, and it is why the withdrawal path was recorded as unsatisfiable rather than repaired.
+///
+/// `value` must likewise be the note's **full** value: the commitment binds it, so a partial redeem
+/// reconstructs the wrong leaf for the same reason.
 fn pn_redeem_child_prepare(
     bridge_cid: pallas::Base,
+    chain: ExternalChain,
     note: &(pallas::Base, u64, Vec<MerkleNode>, pallas::Base, pallas::Base),
     value: u64,
 ) -> dwow_core::Result<(ChildCall, dwow_promissory_note_contract::client::redeem::RedeemCallPlan)> {
@@ -100,7 +128,7 @@ fn pn_redeem_child_prepare(
             bridge_cid,           // spend_hook = bridge
             pallas::Base::zero(), // user_data
             *commitment_blind,
-            pallas::Base::from(100u64), // secret (the wrapped PN owner secret)
+            derive_issue_secret(bridge_cid, chain), // the mint authority's secret — see above
             bridge_cid,           // receipt recipient (issuer-visible)
             *pos,
             path.clone(),
@@ -161,6 +189,18 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n1.call_data, n1.proofs.clone())?.submit())?;
 
+                // A **second** wrapped note, for `WithdrawV1BelowMinimum`. That row's child must
+                // execute for the frame to reach the endpoint's anti-dust floor, and a redeem spends
+                // the note it burns — so the row cannot share `n1` with the `WithdrawV1` row above it.
+                // Reusing it would refuse the frame inside the child a second time, masking the floor
+                // again for a reason that is not the floor (the shape `OBL-C165`'s control records).
+                // Its blind differs so the commitment does: the same value and blind would collide
+                // with `n1`'s leaf, which `transfer_v1`/`issue_v1` refuse as a duplicate.
+                let n2 = pn
+                    .issue(issue_secret, asset_id, owner_addr, 5000, bridge_cid, pallas::Base::zero(), pallas::Base::from(8u64))
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n2.call_data, n2.proofs.clone())?.submit())?;
+
                 let mut tree = MerkleTree::new(1);
                 tree.append(MerkleNode::from_base(pallas::Base::zero()));
                 tree.append(MerkleNode::from_base(token0.commitment.inner()));
@@ -169,9 +209,13 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 tree.append(MerkleNode::from_base(n1.commitment.inner()));
                 let mark1 = tree.mark().unwrap();
                 let path1: Vec<MerkleNode> = tree.witness(mark1, 0).expect("w1");
+                tree.append(MerkleNode::from_base(n2.commitment.inner()));
+                let mark2 = tree.mark().unwrap();
+                let path2: Vec<MerkleNode> = tree.witness(mark2, 0).expect("w2");
                 *notes.lock().unwrap() = Some(vec![
                     (token0.commitment.inner(), u64::from(mark0), path0, asset_id, pallas::Base::from(6u64)),
                     (n1.commitment.inner(), u64::from(mark1), path1, asset_id, pallas::Base::from(7u64)),
+                    (n2.commitment.inner(), u64::from(mark2), path2, asset_id, pallas::Base::from(8u64)),
                 ]);
                 Ok(())
             }
@@ -238,7 +282,7 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let (child, child_plan) = pn_redeem_child_prepare(bridge_cid, &n[1], 5000)?;
+                        let (child, child_plan) = pn_redeem_child_prepare(bridge_cid, ExternalChain::Ethereum, &n[1], 5000)?;
                         let plan = h.withdraw_prepare(secret, 5000, pallas::Base::from(400u64), 10).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         // `OBL-C198`: framed as the deposit row is — one commitment over the
                         // ordered call set, both proofs made against it.
@@ -263,20 +307,25 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 // and the assertion would hold either way. 1 is the smallest amount the old path
                 // accepted and the floor refuses.
                 //
-                // MASKED END-TO-END, and said rather than implied: `OBL-C21` records that the
-                // withdrawal path fails at height 4 inside the child
-                // `promissory_note::redeem_v1` (`Custom(13)`, "Merkle root not found"), and a broken
-                // child aborts the transaction independently of the parent's own check — so today
-                // this rejection cannot be *attributed* to the floor. What is verified until that
-                // fixture is repaired is the check itself, both sides, plus the metadata gate's
-                // agreement at 4/4/4. The endpoint is here so the control exists the day the child
-                // works, and so its absence is visible rather than assumed.
+                // The refusal is the **parent's**, and it took two repairs to make it so.
+                // `process_withdraw_instruction` checks the floor itself and, per its own comment
+                // there, places that check first among the function's checks so a below-floor
+                // withdrawal is named as such rather than surfacing later as a child-call error.
+                //
+                // Two independent fixture defects had it surfacing as the child's anyway, and both
+                // are now fixed. The redeem presented a literal `secret` instead of the mint
+                // authority's (`pn_redeem_child_prepare`); and this row asked the child to redeem
+                // `1` from a note worth `5000`, which the commitment binds, so the child could not
+                // reconstruct the leaf either. Each defect alone refused the frame inside the child,
+                // before the parent ran — and the old `RejectionByChild(&["Custom(13)"])` accepted
+                // that refusal for a reason that was not the floor. This row's subject was never
+                // measured, which is the vacuity `OBL-C193` names.
+                //
+                // With both fixed the child executes, the frame reaches the parent, and the refusal
+                // is the endpoint's own: `InvalidWithdrawal` → `Custom(2)`.
                 name: "WithdrawV1BelowMinimum",
                 is_zk: true,
-                // The refusal is the child's: the first generated child is `pn_redeem_child`
-                // (`promissory_note::redeem_v1`), which fails `Custom(13)` ("Merkle root not found")
-                // before the endpoint's anti-dust floor is reached. `RejectionByChild` names it.
-                expectation: EndpointExpectation::RejectionByChild(&["ContractError(Custom(13))"]),
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(2))"]),
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new(move |chain| {
                     let r = chain.query_contract_state(cid, "withdrawals", &[])?;
@@ -288,7 +337,12 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                     move || {
                         let n = notes.lock().unwrap();
                         let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
-                        let (child, child_plan) = pn_redeem_child_prepare(bridge_cid, &n[1], 1)?;
+                        // The child redeems the note's **full** value while the parent asks for 1.
+                        // The two need not agree: the commitment binds the redeemed value, so a
+                        // partial redeem reconstructs the wrong leaf, and nothing cross-checks the
+                        // child's amount against `params.amount` — the floor is what refuses this
+                        // frame, one check before the child is even read.
+                        let (child, child_plan) = pn_redeem_child_prepare(bridge_cid, ExternalChain::Ethereum, &n[2], 5000)?;
                         let plan = h.withdraw_prepare(secret, 1, pallas::Base::from(401u64), 10).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let parent_data = plan.call_data.clone();
                         let pcall = parent_call(cid, &parent_data);
