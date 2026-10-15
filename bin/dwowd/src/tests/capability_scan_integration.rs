@@ -1317,7 +1317,7 @@ fn test_promissory_note_transfer_accepts_through_accept_block() {
             .submit().await
             .expect("submit register_type");
 
-        let issue = harness.issue(auth_parent, asset_id, recipient,
+        let issue = harness.issue(auth_parent, asset_id,
             500, spend_hook, user_data, commitment_blind).expect("issue");
         chain.block()
             .expect("block")
@@ -1405,7 +1405,7 @@ fn test_promissory_note_redeem_accepts_through_accept_block() {
             .submit().await
             .expect("submit register_type");
 
-        let issue = harness.issue(auth_parent, asset_id, recipient,
+        let issue = harness.issue(auth_parent, asset_id,
             500, spend_hook, user_data, commitment_blind).expect("issue");
         chain.block()
             .expect("block")

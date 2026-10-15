@@ -47,7 +47,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
     let register_result = h.register_type(auth_parent, user_data, blind, recipient,
         1000, spend_hook, user_data, commitment_blind)
         .expect("pre-compute register_type");
-    let issue_result = h.issue(auth_parent, asset_id, recipient,
+    let issue_result = h.issue(auth_parent, asset_id,
         500, spend_hook, user_data, commitment_blind)
         .expect("pre-compute issue");
 
@@ -139,7 +139,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new({
                     let issue_commitment = issue_commitment.clone();
                     move || {
-                        let r = h.issue(auth_parent, asset_id, recipient,
+                        let r = h.issue(auth_parent, asset_id,
                             500, spend_hook, user_data, commitment_blind)
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         *issue_commitment.lock().unwrap() = Some(r.commitment.to_bytes().to_vec());

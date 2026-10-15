@@ -120,7 +120,7 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                 let asset_id = token0.asset_id;
 
                 let n1 = pn
-                    .issue(issue_secret, asset_id, owner_addr, 1000, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(7u64))
+                    .issue(issue_secret, asset_id, 1000, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(7u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n1.call_data, n1.proofs.clone())?.submit())?;
 

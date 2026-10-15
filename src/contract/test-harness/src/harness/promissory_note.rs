@@ -259,7 +259,6 @@ impl PromissoryNoteHarness {
         &self,
         issue_secret: pallas::Base,
         asset_id: pallas::Base,
-        recipient: pallas::Base,
         value: u64,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
@@ -301,7 +300,6 @@ impl PromissoryNoteHarness {
             issue_secret,
             token_leaf_pos: u64::from(leaf_pos_mark).try_into().unwrap(),
             token_path,
-            recipient,
             value,
             asset_id,
             spend_hook,
@@ -329,13 +327,12 @@ impl PromissoryNoteHarness {
         &self,
         issue_secret: pallas::Base,
         asset_id: pallas::Base,
-        recipient: pallas::Base,
         value: u64,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
         commitment_blind: pallas::Base,
     ) -> Result<IssueResult> {
-        let (call_data, plan) = self.issue_prepare(issue_secret, asset_id, recipient, value, spend_hook, user_data, commitment_blind)?;
+        let (call_data, plan) = self.issue_prepare(issue_secret, asset_id, value, spend_hook, user_data, commitment_blind)?;
 
         let debris = plan.prove(own_call_commitment(&call_data), pallas::Base::zero())?;
 

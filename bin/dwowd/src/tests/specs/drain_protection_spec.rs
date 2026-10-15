@@ -158,7 +158,7 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                 // a duplicate commitment) rather than by the parent check it exists to test.
                 for (value, cb) in [(1000u64, 11u64), (100, 12), (100, 13)] {
                     let n = pn
-                        .issue(issue_secret, asset_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(cb))
+                        .issue(issue_secret, asset_id, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(cb))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(
                         chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit(),

@@ -592,7 +592,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             let mark_token = tree.mark().ok_or_else(|| oh("tree.mark (token)".into()))?;
 
             let n1 = pn.issue(
-                pn_secret, asset_id, owner_addr, PAYMENT,
+                pn_secret, asset_id, PAYMENT,
                 pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(8u64),
             ).map_err(|e| oh(format!("issue: {e}")))?;
             smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n1.call_data, n1.proofs.clone())?.submit())?;
@@ -634,7 +634,7 @@ pub fn labor_market_test_spec() -> ContractTestSpec<'static> {
             ] {
                 let blind = pallas::Base::from(blind_seed);
                 let n = pn.issue(
-                    pn_secret, asset_id, owner_addr, amount,
+                    pn_secret, asset_id, amount,
                     pallas::Base::zero(), pallas::Base::zero(), blind,
                 ).map_err(|e| oh(format!("issue (extra): {e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit())?;

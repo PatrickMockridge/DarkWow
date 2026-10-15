@@ -1859,7 +1859,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         // `is_err()` for a reason that is not this policy, which is the vacuity `OBL-C246` records.
         println!("\n--- Block 1: Bridge deposit (policy refusal) ---");
         let (child, child_plan) = pn_issue_child_prepare(
-            bridge_id.inner(), ExternalChain::Monero, owner_addr, 10000,
+            bridge_id.inner(), ExternalChain::Monero, 10000,
         )?;
         let plan = bridge_harness
             .deposit_prepare(

@@ -64,7 +64,6 @@ pub(crate) fn parent_call(contract_id: dwow_sdk::crypto::ContractId, data: &[u8]
 pub(crate) fn pn_issue_child_prepare(
     bridge_cid: pallas::Base,
     chain: ExternalChain,
-    recipient: pallas::Base,
     value: u64,
 ) -> dwow_core::Result<(ChildCall, dwow_promissory_note_contract::client::issue::IssueCallPlan)> {
     let asset_id = derive_wrapped_asset_id(bridge_cid, chain);
@@ -74,7 +73,6 @@ pub(crate) fn pn_issue_child_prepare(
         .issue_prepare(
             issue_secret,
             asset_id,
-            recipient,
             value,
             bridge_cid,           // spend_hook = bridge
             pallas::Base::zero(), // user_data
@@ -185,7 +183,7 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
 
                 // Issue the initial wrapped PN that WithdrawV1 will later redeem.
                 let n1 = pn
-                    .issue(issue_secret, asset_id, owner_addr, 5000, bridge_cid, pallas::Base::zero(), pallas::Base::from(7u64))
+                    .issue(issue_secret, asset_id, 5000, bridge_cid, pallas::Base::zero(), pallas::Base::from(7u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n1.call_data, n1.proofs.clone())?.submit())?;
 
@@ -197,7 +195,7 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 // Its blind differs so the commitment does: the same value and blind would collide
                 // with `n1`'s leaf, which `transfer_v1`/`issue_v1` refuse as a duplicate.
                 let n2 = pn
-                    .issue(issue_secret, asset_id, owner_addr, 5000, bridge_cid, pallas::Base::zero(), pallas::Base::from(8u64))
+                    .issue(issue_secret, asset_id, 5000, bridge_cid, pallas::Base::zero(), pallas::Base::from(8u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n2.call_data, n2.proofs.clone())?.submit())?;
 
@@ -250,7 +248,7 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                         // proof was *empty* — so an empty one here would be refused by that shape
                         // check in both the old and the new code, and the rejection assertion
                         // below would hold either way: a control that cannot fail (OBL-C21).
-                        let (child, child_plan) = pn_issue_child_prepare(bridge_cid, ExternalChain::Ethereum, poseidon_hash([pallas::Base::from(7u64), secret]), 10000)?;
+                        let (child, child_plan) = pn_issue_child_prepare(bridge_cid, ExternalChain::Ethereum, 10000)?;
                         let plan = h.deposit_prepare(secret, 10000, recipient, 1, pallas::Base::from(200u64), ExternalChain::Ethereum, vec![[4u8; 32], [5u8; 32], [6u8; 32]], 0).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         // `OBL-C198`: both call data exist first, one commitment is taken over the
                         // ordered set, and only then are both proofs made — so each binds the

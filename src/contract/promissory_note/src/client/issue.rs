@@ -66,6 +66,15 @@ pub struct IssueRevealed {
 }
 
 /// Input for building a issue call
+///
+/// **The `recipient` field that stood here is deleted, and it was dead (`OBL-C245`).** An issued
+/// commitment's `public_key` is `poseidon_hash([7, issue_secret])` — the *mint authority*, set in
+/// this module's `prepare` — and not the note's owner, so every caller filled the field and nothing
+/// ever read it. `RegisterTypeCallInput` still carries a `recipient` and still **uses** it as its
+/// commitment's `public_key`; that contrast is the evidence this one was vestigial rather than
+/// deliberate. The note's owner is whoever holds the authority secret, and that is the only value
+/// which can later spend it (`client/redeem.rs`'s `derive_redeem_burn` rebuilds the same
+/// `public_key` from `secret`).
 pub struct IssueCallInput {
     /// Backing capability secret (proves right to issue this token)
     pub issue_secret: pallas::Base,
@@ -73,8 +82,6 @@ pub struct IssueCallInput {
     pub token_leaf_pos: u32,
     /// Token registry Merkle path
     pub token_path: Vec<dwow_sdk::crypto::MerkleNode>,
-    /// Recipient public key (poseidon_hash of secret)
-    pub recipient: pallas::Base,
     /// Value to issue
     pub value: u64,
     /// Token ID (hidden commitment)

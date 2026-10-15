@@ -291,7 +291,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                 let mark_token = tree.mark().unwrap();
 
                 let n1 = pn
-                    .issue(pn_issue_secret, asset_id, owner_addr, BOND_AMOUNT,
+                    .issue(pn_issue_secret, asset_id, BOND_AMOUNT,
                         pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(8u64))
                     .map_err(|e| oh(format!("issue: {e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n1.call_data, n1.proofs.clone())?.submit())?;

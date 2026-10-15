@@ -213,7 +213,7 @@ pub fn dex_test_spec() -> ContractTestSpec<'static> {
                 {
                     let blind = pallas::Base::from(7u64 + idx as u64);
                     let n = pn
-                        .issue(issue_secret, asset_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), blind)
+                        .issue(issue_secret, asset_id, value, pallas::Base::zero(), pallas::Base::zero(), blind)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(chain.block()?.with_call(pn_cid, pn, &n.call_data, n.proofs.clone())?.submit())?;
                     tree.append(MerkleNode::from_base(n.commitment.inner()));

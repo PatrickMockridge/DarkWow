@@ -123,14 +123,14 @@ pub fn subscription_test_spec() -> ContractTestSpec<'static> {
 
                 // The note the subscribe child spends: worth the plan's price, in the plan's asset.
                 let n = pn
-                    .issue(issue_secret, asset_id, owner_addr, PLAN_PRICE, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(12u64))
+                    .issue(issue_secret, asset_id, PLAN_PRICE, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(12u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(
                     chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit(),
                 )?;
                 // The second note, for `renew`'s child: the first is spent by `subscribe`.
                 let n2 = pn
-                    .issue(issue_secret, asset_id, owner_addr, PLAN_PRICE, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(13u64))
+                    .issue(issue_secret, asset_id, PLAN_PRICE, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(13u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(
                     chain.block()?.with_call(pn_cid, &pn, &n2.call_data, n2.proofs.clone())?.submit(),

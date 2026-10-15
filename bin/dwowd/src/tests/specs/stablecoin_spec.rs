@@ -139,7 +139,7 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 // promissory note for *that* reason instead of by the ratio check.
                 for (value, cb) in [(5000u64, 11u64), (1000, 12), (1000, 13), (500, 14), (5500, 15)] {
                     let n = pn
-                        .issue(issue_secret, asset_id, owner_addr, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(cb))
+                        .issue(issue_secret, asset_id, value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(cb))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(
                         chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit(),

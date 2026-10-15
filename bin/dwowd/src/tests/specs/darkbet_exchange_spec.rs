@@ -189,7 +189,6 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                         .issue(
                             issue_secret,
                             asset_id,
-                            owner_addr,
                             value,
                             pallas::Base::zero(),
                             pallas::Base::zero(),

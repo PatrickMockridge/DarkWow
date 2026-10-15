@@ -140,7 +140,7 @@ pub fn auction_test_spec() -> ContractTestSpec<'static> {
 
                 for (idx, val) in [bid_b, bid_c].iter().enumerate() {
                     let n = pn
-                        .issue(issue_secret, tid, owner_addr, *val, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(8u64 + idx as u64))
+                        .issue(issue_secret, tid, *val, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(8u64 + idx as u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit())?;
                     tree.append(MerkleNode::from_base(n.commitment.inner()));

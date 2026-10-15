@@ -96,7 +96,7 @@ pub fn pool_stake_test_spec() -> ContractTestSpec<'static> {
                 // needs a note of its own — the spec previously issued one note and then called
                 // LeavePoolV1 with `children: vec![]`.
                 let n1 = pn
-                    .issue(issue_secret, asset_id, owner_addr, amount, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(8u64))
+                    .issue(issue_secret, asset_id, amount, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(8u64))
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n1.call_data, n1.proofs.clone())?.submit())?;
                 tree.append(MerkleNode::from_base(n1.commitment.inner()));

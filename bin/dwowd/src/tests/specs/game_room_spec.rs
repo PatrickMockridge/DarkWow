@@ -74,7 +74,7 @@ pub fn game_room_test_spec() -> ContractTestSpec<'static> {
 
                 for commitment_blind in [7u64, 8u64, 9u64] {
                     let n = pn
-                        .issue(issue_secret, derived_asset_id, owner_addr, amount, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(commitment_blind))
+                        .issue(issue_secret, derived_asset_id, amount, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(commitment_blind))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit())?;
                     tree.append(MerkleNode::from_base(n.commitment.inner()));

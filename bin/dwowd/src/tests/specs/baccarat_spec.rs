@@ -93,7 +93,7 @@ pub fn baccarat_test_spec() -> ContractTestSpec<'static> {
                 ];
                 for coin_blind in [7u64, 8u64, 9u64, 10u64] {
                     let n = pn
-                        .issue(issue_secret, asset_id, owner_addr, bet_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(coin_blind))
+                        .issue(issue_secret, asset_id, bet_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(coin_blind))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n.call_data, n.proofs.clone())?.submit())?;
                     tree.append(MerkleNode::from_base(n.commitment.inner()));
