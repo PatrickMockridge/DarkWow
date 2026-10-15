@@ -57,20 +57,22 @@ reorg-to-known-good-height over a full wipe.
 reported a high tip keeps `is_synced()` (`lib.rs:330-346`) treating the wallet as behind forever,
 even after that peer disconnects.
 
-**This finding is NOT resolved.** The status table below says otherwise; it is wrong, and it is the
-reason R3 is still worth reading. `HighestPeerTip::set_max` (`bin/dww/src/sync_task.rs`) is
-`fetch_update` with `if height.get() > c` — it raises or does nothing, so the high-water mark never
-decays, exactly as filed. `Dww::is_synced()` (`bin/dww/src/lib.rs`) compares the local height against
-that value, so a peer that once reported a large height keeps the wallet reporting `synced: false`
-after it disconnects. The row that would carry this is not in the register; it is opened by this
-correction's commit.
+**This finding is RESOLVED — 2026-10-15, in `bin/dww/src/sync_task.rs`.** `HighestPeerTip::set_max`
+(`fetch_update` with `if height.get() > c`, which could only raise) is replaced by
+`observe(best_tip, local)`, a plain `store` that can lower the value, and the sync loop publishes
+**once per tick** — after the peer loop, not inside it — passing the `best_tip` it already computes as
+the per-tick maximum over the peers that answered. When no peer answers, the mark decays to the local
+height rather than keeping a departed peer's tip. `Dww::is_synced()` (`bin/dww/src/lib.rs`) needed no
+change: it already compared `local >= peer_tip`, so a mark that tracks the live peers corrects it at
+the source. The register row is `OBL-C238` — opened by this correction, and now `FIXED`, with the
+pinned `test_highest_peer_tip_monotonic` replaced rather than weakened.
 
 Spec reference (corrected): this finding cited §13.3 for "a node-side channel with 3 failures is
 deprioritised". §13.3 says the opposite — a peer that times out "is simply skipped and the next peer
 tried", and the document states plainly that there is *no* deadness/slowness taxonomy and no bounded
 backoff. The wallet's missing decay is a real gap; the clause it was attributed to does not describe
-the mechanism. Remediation (unchanged, and still open): decay `HighestPeerTip` toward local height
-when no live peer confirms it.
+the mechanism. Remediation (done 2026-10-15): decay `HighestPeerTip` toward local height when no live
+peer confirms it — which is what `observe` now does.
 
 ### R4 (HIGH) — `tip_hash()` serves a zero hash with a real height
 
@@ -151,7 +153,7 @@ machinery compiles into every build. Documented in [`sync-protocol.md` §11](syn
 |---|---|---|
 | R1 wallet PoW-blindness | **RESOLVED** | [`sync-protocol.md` §17](sync-protocol.md#17--wallet-follows-the-longest-chain) — trusted-daemon pattern: the wallet follows the longest (highest) peer-reported tip; PoW-blindness is a documented trust gap, not papered over with peer voting |
 | R2 reorg reset DoS | **RESOLVED** | no reorg detection at all — the wallet follows the longest chain and never resets on disagreement |
-| R3 monotonic HighestPeerTip | **NOT RESOLVED** | `set_max` still only raises; `is_synced()` still compares against it. The "resolution" this cell recorded described a *design choice* (follow the longest chain, no quorum gate) rather than a repair to the monotonicity the finding names |
+| R3 monotonic HighestPeerTip | **RESOLVED** | `set_max` (raise-only `fetch_update`) is replaced by `observe(best_tip, local)`, published once per sync tick over the peers that answered and decaying to the local height when none did (`bin/dww/src/sync_task.rs`, 2026-10-15); `is_synced()` needed no change, having already compared `local >= peer_tip`. The distinction this cell drew still stands — the *earlier* "resolution" described a design choice (follow the longest chain, no quorum gate) rather than a repair to the monotonicity the finding names, and the repair is now the one described here |
 | R10 dead ban-policy flag | **RESOLVED** | flag deleted; `ban()` runtime-gated by `BanPolicy` (commit `26f948f6ad`) |
 | R4 zero-hash tip | **RESOLVED** | serve side logs the failure; wallet ignores zero-hash tips |
 | R6 channels[0] | **RESOLVED, by decision rather than by round-robin** | there is no round-robin, and §13.3 says there should not be — the pull loop "request[s] each peer's tip and take `max_peer_height = max(...)`", tries the next peer on a failure, and the document states "no round-robin, no bounded backoff, no heartbeat, and no watchdog — those are DarkWow-idiosyncratic machinery with no production analogue". The cell recorded a mechanism the specification explicitly rejects |

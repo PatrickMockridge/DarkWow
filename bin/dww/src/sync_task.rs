@@ -40,26 +40,37 @@ use crate::DwwPtr;
 const DIAL_TIMEOUT: Duration = Duration::from_secs(15);
 
 // ============================================================================
-// HighestPeerTip — atomic, monotonic, BlockHeight-typed
+// HighestPeerTip — atomic, BlockHeight-typed
 // ============================================================================
 
-/// Highest peer tip seen. Updated on each Tip response.
+/// The highest tip any **reachable** peer reported, refreshed on each sync tick.
+///
+/// This is a *measurement*, not a high-water mark (`OBL-C238`). It used to be
+/// monotonic — `set_max` raised the value and never lowered it — so a peer that once
+/// reported a large height kept `Dww::is_synced()` (`bin/dww/src/lib.rs`) answering
+/// `false` indefinitely after it disconnected, gating the RPC surface, the FFI and the
+/// dispatch paths on evidence from a peer that was no longer there. `observe` replaces
+/// it, and can lower the mark.
 pub struct HighestPeerTip(AtomicU64);
 
 impl HighestPeerTip {
     pub fn new() -> Self { Self(AtomicU64::new(0)) }
 
-    /// Returns the highest peer tip as a BlockHeight.
+    /// Returns the recorded peer tip as a BlockHeight.
     pub fn get(&self) -> BlockHeight {
         BlockHeight::new(self.0.load(Ordering::Relaxed))
     }
 
-    /// Updates the highest peer tip if the given height exceeds the current value.
-    #[allow(unused_results)]
-    pub fn set_max(&self, height: BlockHeight) {
-        let _ = self.0.fetch_update(Ordering::Release, Ordering::Relaxed, |c| {
-            if height.get() > c { Some(height.get()) } else { None }
-        });
+    /// Records this tick's measurement: `best_tip` is the highest tip any reachable
+    /// peer reported this tick (`BlockHeight::new(0)` when none answered) and `local`
+    /// is the local chain height.
+    ///
+    /// When no peer answers there is no evidence the wallet is behind, so the mark
+    /// decays to the local height rather than keeping a departed peer's value.
+    pub fn observe(&self, best_tip: BlockHeight, local: BlockHeight) {
+        let zero = BlockHeight::new(0);
+        let measured = if best_tip > zero { best_tip } else { local };
+        self.0.store(measured.get(), Ordering::Release);
     }
 }
 
@@ -169,7 +180,6 @@ pub async fn run_wallet_sync(
             match peer.request_tip().await {
                 Ok(tip) => {
                     debug!(target: "dww::wallet::sync", "Peer tip: height={}", tip.height.get());
-                    highest_peer_tip.set_max(tip.height);
                     // Learn the local genesis hash from the first peer that reports
                     // it, so the next tick's handshake can validate chain identity.
                     if let Some(genesis) = &tip.genesis_hash {
@@ -188,6 +198,13 @@ pub async fn run_wallet_sync(
                 }
             }
         }
+
+        // Publish this tick's measurement (`OBL-C238`). `best_tip` is the per-tick
+        // maximum over the peers that answered — the same value the fetch decision
+        // below uses — and it may be *lower* than the previous tick's, which is the
+        // point: a stale high mark must not keep `is_synced()` false about a peer that
+        // has gone.
+        highest_peer_tip.observe(best_tip, local);
 
         if best_tip <= local {
             debug!(target: "dww::wallet::sync",
@@ -257,13 +274,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_highest_peer_tip_monotonic() {
+    fn test_highest_peer_tip_tracks_reachable_peers() {
+        // This test **replaces** `test_highest_peer_tip_monotonic`, which pinned the
+        // opposite: that a departed peer's tip was kept forever. That was the defect
+        // `OBL-C238` records, so the old assertion is the thing being fixed, not a
+        // test being weakened to let a fix pass.
         let tip = HighestPeerTip::new();
-        tip.set_max(BlockHeight::new(42));
+        tip.observe(BlockHeight::new(42), BlockHeight::new(42));
         assert_eq!(tip.get(), BlockHeight::new(42));
-        tip.set_max(BlockHeight::new(10));
-        assert_eq!(tip.get(), BlockHeight::new(42));
-        tip.set_max(BlockHeight::new(100));
+        // A later tick whose reachable peers report a LOWER tip must come down.
+        tip.observe(BlockHeight::new(10), BlockHeight::new(10));
+        assert_eq!(tip.get(), BlockHeight::new(10));
+        tip.observe(BlockHeight::new(100), BlockHeight::new(100));
         assert_eq!(tip.get(), BlockHeight::new(100));
+        // No peer answered this tick: there is no evidence the wallet is behind, so
+        // the mark decays to the local height rather than keeping the departed 100.
+        tip.observe(BlockHeight::new(0), BlockHeight::new(57));
+        assert_eq!(tip.get(), BlockHeight::new(57));
     }
 }
