@@ -125,6 +125,13 @@ const PN_VALUE_PAY_PREMIUM: u64 = 5_000_000;
 /// against a second set of approvals.
 const CLAIM_ID_LIFECYCLE: pallas::Base = pallas::Base::from_raw([200, 0, 0, 0]);
 
+/// A **fourth** claim id, existing only for the `OBL-C165` (b) control's second child.
+///
+/// That control must attach a second child that is *itself a valid call*, or the refusal would come
+/// from that child rather than from the child-count guard the control exists to exercise. An approval
+/// is spend-once, so the second child needs an action id no other row names — hence its own.
+const CLAIM_ID_EXTRA: pallas::Base = pallas::Base::from_raw([300, 0, 0, 0]);
+
 /// Build a `promissory_note::transfer_v1` (0x04) child spending an issued note.
 ///
 /// Copied from `escrow_spec.rs:21-59` — the working example — with one deliberate change: the PN harness
@@ -264,6 +271,10 @@ struct Governance {
     propose: Vec<Nullifier>,
     /// The endowment's group on a *different* message — valid approvals of the wrong thing.
     wrong_message: Vec<Nullifier>,
+    /// The endowment's group on a **fourth** action id, spent only by `OBL-C165` (b)'s control. Its
+    /// message is named by no other row, so that row's second child is a valid call rather than a
+    /// replay — which is what keeps the control from being refused by the child instead of the guard.
+    propose_extra: Vec<Nullifier>,
     /// The endowment's group on the endowment-withdraw action — role 4 over the
     /// `(bulla, value, recipient_x)` triple its row uses. Distinct from every other message, including
     /// the other money endpoints' triples: the role tag is what keeps them apart.
@@ -425,6 +436,12 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
         governance_role::PROPOSE_CLAIM,
         poseidon_hash([CLAIM_ID_LIFECYCLE, pallas::Base::from(PN_VALUE_EXECUTE_APPROVED), owner_x]),
     );
+    // `OBL-C165` (b)'s control message: the same triple shape over `CLAIM_ID_EXTRA`, so it is a valid
+    // governance action that no other row spends and that no other row's refusal is about.
+    let msg_propose_extra = governance_message(
+        governance_role::PROPOSE_CLAIM,
+        poseidon_hash([CLAIM_ID_EXTRA, pallas::Base::from(PN_VALUE_EXECUTE_CLAIM), owner_x]),
+    );
 
     // The voter, and the vote's own action id. `VOTE_CLAIM`'s id is the
     // `(claim_id, voter_x, voter_y, direction)` quadruple — direction 0 for Yes, matching
@@ -524,6 +541,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 let endowment_withdraw_2 = sign_for(chain, action_endowment_withdraw_2)?;
                 let cancel_claim = sign_for(chain, action_cancel_claim)?;
                 let propose_2 = sign_for(chain, msg_propose_2)?;
+                let propose_extra = sign_for(chain, msg_propose_extra)?;
                 let vote = sign_for(chain, action_vote)?;
 
                 // A second group — one member, threshold one — approves the proposal. Its approval is
@@ -545,6 +563,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                 *gov.lock().unwrap() = Governance {
                     propose,
                     wrong_message,
+                    propose_extra,
                     endowment_withdraw,
                     endowment_withdraw_2,
                     cancel_claim,
@@ -1228,6 +1247,53 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
                         let ms_debris = ms_plan.prove(r.commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         Ok(EndpointResult {
                             children: vec![ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: ms_debris.call_data, proofs: vec![ms_debris.proof], children: vec![] }],
+                            call_data: r.call_data, proofs: vec![r.proof],
+                        })
+                    }
+                }),
+            },
+            // ── `OBL-C165` (b): the child-count guard, exercised. ────────────────────────────────
+            //
+            // A frame carrying a **second** child: the real approval, and one for a fourth action id
+            // that no other row spends. Both are valid calls in their own right — a multisig finalize
+            // checks only its own group, message and threshold, and knows nothing about this contract —
+            // so without the guard the frame would be *accepted* and the extra call would ride along
+            // inside a governance-gated transaction unvalidated by this contract. That is what makes
+            // the control non-vacuous, and why the expectation is `RejectionByEndpoint` rather than
+            // `RejectionNaming`: the refusal must be this contract's, from the guard, and not either
+            // child's. `InvalidChildrenIndexes` is `Custom(33)` in this contract's error mapping.
+            EndpointSpec {
+                name: "ProposeClaimV1_ExtraChild",
+                is_zk: true,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(33))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new({
+                    let gov = gov.clone();
+                    move || {
+                        let (approvals, extra_approvals) = {
+                            let g = gov.lock().unwrap();
+                            (g.propose.clone(), g.propose_extra.clone())
+                        };
+                        // The real approval: the message this proposal's action id names.
+                        let ms_plan = ms.finalize_prepare(DaoEscrowHarness::governance_group(), msg_propose, approvals)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_call = dwow_sdk::tx::ContractCall { contract_id: *MULTISIG_CONTRACT_ID, data: ms_plan.call_data.clone() };
+                        // The extra child: a valid finalize for a different action id.
+                        let ms_extra = ms.finalize_prepare(DaoEscrowHarness::governance_group(), msg_propose_extra, extra_approvals)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_extra_call = dwow_sdk::tx::ContractCall { contract_id: *MULTISIG_CONTRACT_ID, data: ms_extra.call_data.clone() };
+                        // `OBL-C198`: both children's call data first, then the parent's — which binds
+                        // its proof to the commitment over the whole set — then the children prove
+                        // against that same value.
+                        let r = h.propose_claim(&[ms_call.clone(), ms_extra_call], nullifier_k, endowment_bulla, CLAIM_ID_EXTRA, capability_id, capability_secret, proposer_secret, PN_VALUE_EXECUTE_CLAIM, pallas::Base::from(50u64), owner_pub, pallas::Base::from(13u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_debris = ms_plan.prove(r.commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let ms_extra_debris = ms_extra.prove(r.commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        Ok(EndpointResult {
+                            children: vec![
+                                ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: ms_debris.call_data, proofs: vec![ms_debris.proof], children: vec![] },
+                                ChildCall { contract_id: *MULTISIG_CONTRACT_ID, call_data: ms_extra_debris.call_data, proofs: vec![ms_extra_debris.proof], children: vec![] },
+                            ],
                             call_data: r.call_data, proofs: vec![r.proof],
                         })
                     }
