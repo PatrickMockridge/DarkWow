@@ -199,6 +199,17 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                     .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n2.call_data, n2.proofs.clone())?.submit())?;
 
+                // A **third** wrapped note, for `WithdrawV1DoubleSpend`. That row's child must burn a
+                // note the chain has never seen spent — otherwise the child refuses on its own
+                // nullifier and the endpoint's double-spend check is never reached, which is the
+                // vacuity the row exists to remove. `n1` is spent by the `WithdrawV1` row and `n2` is
+                // the floor row's; this one is nobody's. A distinct blind again, for the duplicate-leaf
+                // reason above.
+                let n3 = pn
+                    .issue(issue_secret, asset_id, 5000, bridge_cid, pallas::Base::zero(), pallas::Base::from(9u64))
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                smol::block_on(chain.block()?.with_call(pn_cid, &pn, &n3.call_data, n3.proofs.clone())?.submit())?;
+
                 let mut tree = MerkleTree::new(1);
                 tree.append(MerkleNode::from_base(pallas::Base::zero()));
                 tree.append(MerkleNode::from_base(token0.commitment.inner()));
@@ -210,10 +221,14 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 tree.append(MerkleNode::from_base(n2.commitment.inner()));
                 let mark2 = tree.mark().unwrap();
                 let path2: Vec<MerkleNode> = tree.witness(mark2, 0).expect("w2");
+                tree.append(MerkleNode::from_base(n3.commitment.inner()));
+                let mark3 = tree.mark().unwrap();
+                let path3: Vec<MerkleNode> = tree.witness(mark3, 0).expect("w3");
                 *notes.lock().unwrap() = Some(vec![
                     (token0.commitment.inner(), u64::from(mark0), path0, asset_id, pallas::Base::from(6u64)),
                     (n1.commitment.inner(), u64::from(mark1), path1, asset_id, pallas::Base::from(7u64)),
                     (n2.commitment.inner(), u64::from(mark2), path2, asset_id, pallas::Base::from(8u64)),
+                    (n3.commitment.inner(), u64::from(mark3), path3, asset_id, pallas::Base::from(9u64)),
                 ]);
                 Ok(())
             }
@@ -342,6 +357,51 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                         // frame, one check before the child is even read.
                         let (child, child_plan) = pn_redeem_child_prepare(bridge_cid, ExternalChain::Ethereum, &n[2], 5000)?;
                         let plan = h.withdraw_prepare(secret, 1, pallas::Base::from(401u64), 10).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let parent_data = plan.call_data.clone();
+                        let pcall = parent_call(cid, &parent_data);
+                        let commitment = dwow_sdk::crypto::util::tx_commitment([&frame_call(&child), &pcall]);
+                        let child_debris = child_plan.prove(commitment, pallas::Base::zero()).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let (proof, _) = plan.prove(commitment).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child = ChildCall { proofs: child_debris.proofs, ..child };
+                        Ok(EndpointResult { children: vec![child], call_data: parent_data, proofs: vec![proof] })
+                    }
+                }),
+            },
+            // ── The double-spend control the relayer fixture never had (`OBL-C246`). ─────────────
+            //
+            // The fixture that stood in `heavyweight_pipeline.rs` asserted `is_err()` on a second
+            // withdrawal, and could not fail: its frame carried no child, so the endpoint refused it
+            // for that instead. Worse, its premise was false — it varied the recipient hash, and the
+            // nullifier is `poseidon_hash([DOMAIN_NULLIFIER, secret, recipient_hash])`, so the two
+            // frames never shared a nullifier at all and the endpoint's double-spend check was never
+            // the thing being exercised.
+            //
+            // This row is the control that claim needed. It is the same as `WithdrawV1` in exactly the
+            // two fields that derivation reads — `secret` and `recipient_hash` — and different in the
+            // one that makes it a *second* withdrawal rather than a replay: the note it burns. So the
+            // child is valid and executes, the frame reaches the endpoint, and the refusal is the
+            // endpoint's own by construction rather than by assertion.
+            EndpointSpec {
+                name: "WithdrawV1DoubleSpend",
+                is_zk: true,
+                // `RejectionByEndpoint` asserts the run's error names *this* contract's id, so a frame
+                // whose child refused first cannot satisfy it — the vacuity, excluded structurally.
+                // `BridgeError::DoubleSpend` → `Custom(12)`.
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(12))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new({
+                    let notes = notes.clone();
+                    move || {
+                        let n = notes.lock().unwrap();
+                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
+                        // A valid redeem of a **fresh** note (`n3`), so the child executes and the
+                        // endpoint is reached. Neither the amount nor the fee is a term of the
+                        // nullifier, and neither is the note — which is why this frame can burn a note
+                        // the chain has never seen while colliding on the value the `WithdrawV1` row's
+                        // apply already marked spent (`entrypoint.rs:739`).
+                        let (child, child_plan) = pn_redeem_child_prepare(bridge_cid, ExternalChain::Ethereum, &n[3], 5000)?;
+                        let plan = h.withdraw_prepare(secret, 5000, pallas::Base::from(400u64), 10).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                         let parent_data = plan.call_data.clone();
                         let pcall = parent_call(cid, &parent_data);
                         let commitment = dwow_sdk::crypto::util::tx_commitment([&frame_call(&child), &pcall]);

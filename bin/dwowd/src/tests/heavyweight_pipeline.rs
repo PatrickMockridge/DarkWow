@@ -1752,12 +1752,13 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
 /// tree's policy: no build enables `bridge-verify`, so `verify_chain_proof` is fail-closed for every
 /// chain (`OBL-C21`) and no wrapped note is ever minted by a deposit. `bridge_spec.rs` covers the
 /// withdrawal path with a note its own setup issues, and covers the anti-dust floor; duplicating
-/// that here would be a second copy of the same fixture. **A correct double-spend control is owed**
-/// and its construction is recorded in `OBL-C246` — it needs the *same* secret and the *same*
-/// recipient hash against a *fresh* note, since the bridge's nullifier is
-/// `poseidon_hash(DOMAIN_NULLIFIER, secret, recipient_hash)` while the redeem child's is
-/// `Nullifier::new(secret, commitment)`; this fixture varied the recipient hash, so the two were
-/// never the same value and the assertion was wrong as well as vacuous.
+/// that here would be a second copy of the same fixture. **A correct double-spend control exists, and
+/// it lives in `bridge_spec.rs`** (`WithdrawV1DoubleSpend`, `OBL-C246`): the same `secret` and the
+/// same `recipient_hash` against a **fresh** note, so the redeem child executes and the bridge's own
+/// nullifier check is what refuses. It is there rather than here because the uniform runner's
+/// `RejectionByEndpoint` asserts the refusal names the endpoint's own contract — the non-vacuity this
+/// fixture's `is_err()` could not express, and the reason the old assertion was wrong as well as
+/// vacuous: it varied the recipient hash, so the two frames never shared a nullifier at all.
 #[test]
 // Integration test: cross-contract bridge + relayer_endowment lifecycle.
 // Deploys both contracts, asserts the deposit's policy refusal, then exercises
@@ -1928,9 +1929,10 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         // A deposit cannot be accepted under this tree's policy anyway — `OBL-C21`, asserted above —
         // so no wrapped note is ever minted by one, and the withdrawal path is covered where the
         // fixture issues that note itself: `bridge_spec.rs` has `WithdrawV1` (a `Success` row) and
-        // `WithdrawV1BelowMinimum` (the anti-dust floor). A *correct* double-spend control is owed, and
-        // `OBL-C246` records its construction: the same secret **and** the same recipient hash against
-        // a **fresh** note, so the child executes and the bridge's own nullifier check is what refuses.
+        // `WithdrawV1BelowMinimum` (the anti-dust floor), and the correct double-spend control is
+        // `bridge_spec.rs`'s `WithdrawV1DoubleSpend` (`OBL-C246`) — there rather than here because its
+        // attribution needs the runner's `RejectionByEndpoint`, which names the endpoint's own
+        // contract and so cannot be satisfied by a child's refusal.
         println!("\n--- Bridge withdrawal: covered by bridge_spec.rs (OBL-C246) ---");
 
         // --- Block 4: RelayerEndowment initialize + deploy_capital ---
