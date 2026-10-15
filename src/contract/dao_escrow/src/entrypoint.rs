@@ -1471,6 +1471,16 @@ fn propose_claim_v1(
     // `(bulla, value, recipient_x)` triple.
     #[expect(clippy::expect_used, reason = "PublicKey constructor rejects identity, so xy() is always Some")]
     let (rx, _ry) = params.recipient_pubkey.xy().expect("pk not identity");
+    // `OBL-C165` (b): the frame is the approval and nothing else. `require_governance_child` needs slot 0
+    // and bounds only the *lower* end, so without this any further call rides along in a
+    // governance-gated transaction unvalidated by this contract. The endpoints that already pin their
+    // count state the same rule; this is a bundling guard rather than a forgery one — each child is
+    // validated by its own contract.
+    if calls[call_idx].children_indexes.len() != 1 {
+        msg!("[dao_escrow::propose_claim_v1] ERROR: expected exactly 1 child (the governance approval), got {}",
+             calls[call_idx].children_indexes.len());
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
     require_governance_child(
         cid,
         call_idx,
@@ -1612,6 +1622,12 @@ fn vote_claim_v1(
         model::VoteType::No => pallas::Base::from(1u64),
     };
     let vote_id = poseidon_hash([params.claim_id.inner(), voter_x, voter_y, direction]);
+    // `OBL-C165` (b): the approval and nothing else — see the sibling note in `propose_claim_v1`.
+    if calls[call_idx].children_indexes.len() != 1 {
+        msg!("[dao_escrow::vote_claim_v1] ERROR: expected exactly 1 child (the governance approval), got {}",
+             calls[call_idx].children_indexes.len());
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
     require_governance_child(
         cid,
         call_idx,
@@ -1818,6 +1834,12 @@ fn cancel_claim_v1(
         .transpose()?
         .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
 
+    // `OBL-C165` (b): the approval and nothing else — see the sibling note in `propose_claim_v1`.
+    if calls[call_idx].children_indexes.len() != 1 {
+        msg!("[dao_escrow::cancel_claim_v1] ERROR: expected exactly 1 child (the governance approval), got {}",
+             calls[call_idx].children_indexes.len());
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
     require_governance_child(
         cid,
         call_idx,
