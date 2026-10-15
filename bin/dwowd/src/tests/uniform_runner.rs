@@ -226,10 +226,25 @@ impl<'a> ContractTestSpec<'a> {
     /// exactly that state and were selected by this function: `bridge`, `drain_protection`,
     /// `insurance_market`, `dao_escrow` (`OBL-C193`).
     pub fn first_zk_index(&self) -> Option<usize> {
-        // Skip endpoints that need coinbase params — they can't be generated
-        // standalone for nullifier replay (HAZOP H-UR-013).
+        self.first_zk_index_of(None)
+    }
+
+    /// As `first_zk_index`, restricted to a `DWOW_ENDPOINTS` selection when one is in force.
+    ///
+    /// **The restriction is load-bearing.** The §3.6 control is built on *this* row. Left
+    /// unrestricted under a narrowed run, it would regenerate a row the run skipped, submit it to a
+    /// chain that never accepted its original, and assert that the resubmission was refused — which
+    /// it would be, for a reason that has nothing to do with nullifiers. That is the same vacuity
+    /// the `expectation` filter below exists to prevent, one level up.
+    pub fn first_zk_index_of(&self, only: Option<&[&'static str]>) -> Option<usize> {
         self.endpoints.iter().position(|e| {
-            e.is_zk && e.generate_with_coinbase.is_none() && !e.expectation.is_rejection()
+            let selected = match only {
+                None => true,
+                Some(sel) => sel.contains(&e.name),
+            };
+            // Skip endpoints that need coinbase params — they can't be generated
+            // standalone for nullifier replay (HAZOP H-UR-013).
+            selected && e.is_zk && e.generate_with_coinbase.is_none() && !e.expectation.is_rejection()
         })
     }
 }
@@ -270,6 +285,87 @@ pub(crate) fn init_contract_logging() {
 
 // ── Runner ─────────────────────────────────────────────────────────────────
 
+/// The rows `DWOW_ENDPOINTS` names, or `None` for a full run — which is the default, and what every
+/// run does when the variable is unset or empty.
+///
+/// A narrowed run exists because a spec can otherwise only be run whole, so verifying one corrected
+/// fixture row costs the whole spec. It is a **diagnostic, not a verdict on the spec**: rows share
+/// chain state — an approval is spend-once, which is why the fixtures give each row its own set —
+/// so a selection speaks for the rows it ran and for no others.
+///
+/// A name the spec does not have is an error rather than an empty selection. A silently-empty run
+/// would report `ok` having asserted nothing, which is the failure mode this whole mechanism is
+/// meant to avoid inflicting on the suite.
+fn selected_endpoints(spec: &ContractTestSpec<'_>) -> Result<Option<Vec<&'static str>>> {
+    let Ok(raw) = std::env::var("DWOW_ENDPOINTS") else {
+        return Ok(None);
+    };
+    let requested: Vec<&str> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .collect();
+    if requested.is_empty() {
+        return Ok(None);
+    }
+
+    let rows: Vec<&'static str> = spec.endpoints.iter().map(|e| e.name).collect();
+    select_rows(spec.name, &rows, &requested).map(Some)
+}
+
+/// The pure core of `selected_endpoints`: normalise a requested row list against the rows a spec
+/// has. Kept separate from the environment read so its rules are exercised by a millisecond test
+/// rather than inferred from a narrowed heavyweight run — the same reason `first_divergence` is its
+/// own function rather than inline in the assertion that uses it.
+fn select_rows<'a>(spec_name: &str, rows: &[&'a str], requested: &[&str]) -> Result<Vec<&'a str>> {
+    // Taken in the **spec's own order**, not the order they were typed, so a narrowed run's block
+    // sequence does not depend on how the names happened to be written. Duplicates collapse here.
+    let selected: Vec<&'a str> = rows
+        .iter()
+        .copied()
+        .filter(|name| requested.iter().any(|r| r == name))
+        .collect();
+
+    // A name the spec does not have is an error, never a simply-absent row. A typo that selected
+    // nothing would leave a run reporting `ok` having asserted nothing at all — which is worse than
+    // a wrong answer, because it looks like an answer.
+    for name in requested {
+        if !selected.iter().any(|s| s == name) {
+            return Err(dwow_core::Error::Custom(format!(
+                "DWOW_ENDPOINTS names {name:?}, which is not a row of spec {spec_name:?} — the rows \
+                 are: {}",
+                rows.join(", ")
+            )));
+        }
+    }
+    Ok(selected)
+}
+
+/// Announce a narrowed run, and say what it does **not** cover.
+///
+/// Printed for the same reason the runner prints the skipped-§3.6 warning rather than staying
+/// silent: a run that covered two rows of twenty-three must not be readable as a verdict on the
+/// spec. The skipped rows are named, not counted, so the gap can be seen in the log itself.
+fn announce_selection(spec: &ContractTestSpec<'_>, selected: &[&'static str]) {
+    let skipped: Vec<&str> = spec
+        .endpoints
+        .iter()
+        .map(|e| e.name)
+        .filter(|name| !selected.iter().any(|s| s == name))
+        .collect();
+    eprintln!(
+        "NARROWED RUN [{}]: DWOW_ENDPOINTS selected {} of {} rows ({}). {} skipped and NOT a \
+         verdict on them: {}. Rows share chain state, so this run speaks only for the rows it ran \
+         — and the §3.6 replay control covers only those.",
+        spec.name,
+        selected.len(),
+        spec.endpoints.len(),
+        selected.join(", "),
+        skipped.len(),
+        skipped.join(", ")
+    );
+}
+
 /// The uniform test runner for spec-based heavyweight tests. Spec-based
 /// tests (32 contracts) call this. Standalone tests (block execution,
 /// relayer lifecycle, fee_v3, metadata) use direct HeavyweightPipeline.
@@ -277,6 +373,13 @@ pub(crate) fn init_contract_logging() {
 pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     spec.validate()?;
     init_contract_logging();
+
+    // `None` unless `DWOW_ENDPOINTS` names rows — so an ordinary run takes the same path it always
+    // did, and every loop below skips nothing.
+    let only = selected_endpoints(spec)?;
+    if let Some(ref selected) = only {
+        announce_selection(spec, selected);
+    }
 
     // ── Pipeline A (primary) ────────────────────────────────────────
     let mut chain_a = modules::chain_setup::init_test_chain().await?;
@@ -334,6 +437,11 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
 
     // ── Exercise every endpoint (one per block) ────────────────────
     for endpoint in &spec.endpoints {
+        // A narrowed run skips the rows it did not name. In a full run `only` is `None` and this
+        // never fires, so nothing about an ordinary run changes.
+        if !only.as_ref().is_none_or(|sel| sel.contains(&endpoint.name)) {
+            continue;
+        }
         // Coinbase-dependent endpoints re-prefetch the coinbase at the CURRENT
         // height — each such endpoint mints a fresh commitment at its own block, so a
         // single pre-fetched coinbase (height N) would be reused at height N+1
@@ -442,7 +550,8 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     }
 
     // ── Nullifier replay rejection (spec §3.6) ─────────────────────
-    if let Some(idx) = spec.first_zk_index() {
+    // Restricted to the selection, so a narrowed run builds the control on a row it actually ran.
+    if let Some(idx) = spec.first_zk_index_of(only.as_deref()) {
         let endpoint = &spec.endpoints[idx];
         // Regenerate for the block the replay will actually land in, not the one the original
         // call landed in: a height-bound proof made for the old height would be rejected as an
@@ -458,7 +567,10 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             &chain_a, cid, spec.harness,
             &result.call_data, result.proofs, endpoint.is_zk, result.children, blamed,
         ).await?;
-    } else if spec.endpoints.iter().any(|e| e.is_zk) {
+    } else if only.is_none() && spec.endpoints.iter().any(|e| e.is_zk) {
+        // Gated on a full run: under a selection there is no row here to build the control on, and
+        // warning that the *contract's* replay rejection is unverified would be false — this run
+        // simply did not exercise it. The narrowed-run banner already says what was skipped.
         // Loud, not silent: §3.6 requires this control for every contract with a ZK-gated function,
         // and a spec that cannot host it has an *unverified* replay rejection rather than a passing
         // one. The alternative — picking a row that is expected to be rejected anyway — is the
@@ -505,6 +617,12 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     // Replay all endpoints on chain B
     let mut h_b = chain_b.height();
     for endpoint in &spec.endpoints {
+        // The **same** selection as chain A. Filtering only one of the two loops would leave PI-7
+        // comparing block hashes over different transaction sets, which is either a meaningless
+        // pass or a divergence for a reason that is not a determinism defect.
+        if !only.as_ref().is_none_or(|sel| sel.contains(&endpoint.name)) {
+            continue;
+        }
         if endpoint.generate_with_coinbase.is_some() {
             // Coinbase-coordinated endpoint: re-prefetch at chain B's CURRENT
             // height (mirrors chain A) so the coinbase coin + on-chain tree
@@ -754,5 +872,44 @@ mod expectation_rules {
             .validate_expectation()
             .is_ok());
         assert!(spec_with(EndpointExpectation::Success).validate_expectation().is_ok());
+    }
+}
+
+/// Negative control for `DWOW_ENDPOINTS`, in the shape `pi7_diagnostic` uses: the selector is a
+/// pure function of the rows and the request, so its rules cost milliseconds to check here instead
+/// of being discovered after a narrow run. What it must show is that a selection narrows, that it
+/// is taken in the spec's order rather than the typed one, and — the one that matters — that a name
+/// the spec does not have is refused rather than silently selecting nothing.
+#[cfg(test)]
+mod selection {
+    use super::select_rows;
+
+    const ROWS: [&str; 3] = ["AlphaV1", "BetaV1", "GammaV1"];
+
+    #[test]
+    fn a_selection_is_taken_in_the_specs_order_and_collapses_duplicates() {
+        // Typed in reverse; taken in `ROWS` order, so the block sequence does not depend on how the
+        // variable happened to be written.
+        assert_eq!(
+            select_rows("s", &ROWS, &["GammaV1", "AlphaV1"]).ok(),
+            Some(vec!["AlphaV1", "GammaV1"])
+        );
+        assert_eq!(select_rows("s", &ROWS, &["BetaV1", "BetaV1"]).ok(), Some(vec!["BetaV1"]));
+        assert_eq!(select_rows("s", &ROWS, &ROWS).ok(), Some(ROWS.to_vec()));
+    }
+
+    /// The failure this exists to prevent: a typo'd row name that selects nothing, leaving a run
+    /// that reports `ok` having asserted nothing. The error must name both the row it could not
+    /// find and the rows that do exist — the second is what makes it fixable without the source.
+    #[test]
+    fn a_row_the_spec_does_not_have_is_refused_not_skipped() {
+        match select_rows("s", &ROWS, &["AlphaV2", "BetaV1"]) {
+            Ok(rows) => panic!("a row the spec does not have was accepted: {rows:?}"),
+            Err(e) => {
+                let text = format!("{e}");
+                assert!(text.contains("AlphaV2"), "the error must name the missing row: {text}");
+                assert!(text.contains("GammaV1"), "the error must list the rows that exist: {text}");
+            }
+        }
     }
 }
