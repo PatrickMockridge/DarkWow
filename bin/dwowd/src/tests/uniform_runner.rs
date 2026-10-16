@@ -215,23 +215,19 @@ impl<'a> ContractTestSpec<'a> {
     }
 
 
-    /// Index of the first ZK endpoint (for nullifier replay testing).
-    /// Index of the first ZK endpoint the nullifier-replay control can be built on.
+    /// Index of the first ZK endpoint the nullifier-replay control can be built on, restricted to a
+    /// `DWOW_ENDPOINTS` selection when one is in force — `None` is a full run, which selects the same
+    /// row it always did.
     ///
     /// **The `expectation` filter is not incidental.** The control asserts that a *second* submission
     /// is refused, and `nullifier_replay`'s own contract says "First submission must have already
     /// succeeded (caller's responsibility)" — a responsibility nothing checked. A row that is
     /// expected to be rejected anyway was never accepted, so its "replay" is refused for whatever
     /// refused the original, and the control proves nothing about replay at all. Four specs were in
-    /// exactly that state and were selected by this function: `bridge`, `drain_protection`,
+    /// exactly that state and were selected by this predicate: `bridge`, `drain_protection`,
     /// `insurance_market`, `dao_escrow` (`OBL-C193`).
-    pub fn first_zk_index(&self) -> Option<usize> {
-        self.first_zk_index_of(None)
-    }
-
-    /// As `first_zk_index`, restricted to a `DWOW_ENDPOINTS` selection when one is in force.
     ///
-    /// **The restriction is load-bearing.** The §3.6 control is built on *this* row. Left
+    /// **The selection restriction is load-bearing too.** The §3.6 control is built on *this* row. Left
     /// unrestricted under a narrowed run, it would regenerate a row the run skipped, submit it to a
     /// chain that never accepted its original, and assert that the resubmission was refused — which
     /// it would be, for a reason that has nothing to do with nullifiers. That is the same vacuity
