@@ -1849,6 +1849,10 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             .submit()
             .await?;
         println!("  wrapped token registered (height {})", chain.height());
+        // The registration is a committed block and legitimately advances the height. Capture it
+        // here: the assertion below is about the *refused deposit* committing nothing, and comparing
+        // against `start_height` (taken before the registration) measured the registration instead.
+        let height_before_deposit = chain.height();
 
         // --- Block 1: the bridge deposit, refused ---
         //
@@ -1911,7 +1915,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             "the refusal must be the deposit's fail-closed arm (`InvalidDeposit` → `Custom(1)`). \
              Full error: {text}"
         );
-        assert_eq!(chain.height(), start_height, "a refused block must not advance the height");
+        assert_eq!(chain.height(), height_before_deposit, "a refused block must not advance the height");
         println!("  deposit refused, as the policy requires: {text}");
 
         // --- The withdrawal path, and why it is not driven here ---
