@@ -3,7 +3,7 @@
 ## Overview
 
 This document tracks the *claimed* verification status of all **31 zkVM opcodes**,
-**10 gadgets**, and **120 contract ZK circuits** across 26 contracts.
+**10 gadget files**, and **167 contract ZK circuits** under `src/contract/*/proof/` — across **32** contracts carrying a `proof/` directory (34 contract directories in all). The Orchard-class gate walks **179**, adding `proofs/core/` 10 and `bin/darkirc/proof/` 2; both counts are derived by `scripts/check-doc-canonical-counts.sh`, and the canonical table is in `proofs/README.md`.
 
 Read it with the corrections in `arch/zk/opcodes.md`: the 120-circuit Orchard-class audit is a
 **manual audit**, not a Lean result — `proofs/lean/src/DarkFi/Circuits/` contains no Lean
@@ -77,7 +77,7 @@ The **Zcash Orchard bug** (May 2024, discovered by AI-assisted audit) was an und
 EC base point that enabled unlimited minting for ~4 years. The vulnerability class: **any
 `constrain_instance` without an in-circuit derivation constraint is a potential exploit.**
 
-All 120 contract circuits were audited for this pattern:
+All 167 contract circuits — 179 by the gate's own walk — were audited for this pattern, and the audit is a gate that **passes** (0 unclassified, 2026-10-18):
 
 | Contract Group | Circuits | Free Instances | Status |
 |---------------|----------|----------------|--------|

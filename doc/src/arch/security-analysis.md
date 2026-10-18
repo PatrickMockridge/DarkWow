@@ -426,7 +426,7 @@ path — see [`circuit-versioning.md`](circuit-versioning.md) §7.
 
 None of the unofficial contracts have formal verification. Complex cryptographic circuits like these benefit from formal methods to catch edge cases that testing misses.
 
-**Correction (2026-09-24).** The first sentence is no longer true; the second is partly satisfied; and the correction cuts both ways, so both halves are stated rather than the flattering one. `proofs/lean/src/Transcribed.lean` is generated from the `.zk` sources by `scripts/gen_circuit_transcription.py`, is freshness-gated (`scripts/run-all-tests.sh`, gate 5), and carries one statement list per circuit with a verdict closed by the kernel rather than by hand. What that is **not** is a proof that these circuits are sound. The property it closes is the model's own (`NoFreeInstance` over a transcription), while the tree's enforcement is the checker's separate rule in `scripts/check-circuit-instance-derivation.sh`; the two disagree by design and the generator's preamble decomposes the disagreement. Nor is the obligation mechanized: `Axioms.NoFreeInstances` is still a name, because the step from a circuit `(r, s)` to its statement list is a Lean term that cannot read a `.zk` file. Measured today, the enforcement gate walks **179 circuits / 903 `constrain_instance` sites**, classifies every one of them (`derived` 360, `bound` 220, `redundant` 225, `derived-inline` 54, `declared-free` 44), reports **0 unclassified**, and exits 0. This sentence read "178 circuits / 880 sites … reports 4 unclassified, exiting 1" until 2026-10-12, under which a reader would conclude the checker still fails most circuits. It does not — so the honest summary is that a mechanized *statement* of the model's property now exists and holds for the transcription, which is still a different thing from a formal verification of the circuits themselves.
+**Correction (2026-09-24).** The first sentence is no longer true; the second is partly satisfied; and the correction cuts both ways, so both halves are stated rather than the flattering one. `proofs/lean/src/Transcribed.lean` is generated from the `.zk` sources by `scripts/gen_circuit_transcription.py`, is freshness-gated (`scripts/run-all-tests.sh`, gate 5), and carries one statement list per circuit with a verdict closed by the kernel rather than by hand. What that is **not** is a proof that these circuits are sound. The property it closes is the model's own (`NoFreeInstance` over a transcription), while the tree's enforcement is the checker's separate rule in `scripts/check-circuit-instance-derivation.sh`; the two disagree by design and the generator's preamble decomposes the disagreement. Nor is the obligation mechanized: `Axioms.NoFreeInstances` is still a name, because the step from a circuit `(r, s)` to its statement list is a Lean term that cannot read a `.zk` file. Re-measured **2026-10-18**, the enforcement gate walks **179 circuits / 905 `constrain_instance` sites**, classifies every one of them (`derived` 361, `bound` 220, `redundant` 225, `derived-inline` 54, `declared-free` 45), reports **0 unclassified**, and exits 0. On 2026-09-24 it was 903 sites, split 360/220/225/54/44 — the split moved by two sites since, which is why the command is the stable source. This sentence read "178 circuits / 880 sites … reports 4 unclassified, exiting 1" until 2026-10-12, under which a reader would conclude the checker still fails most circuits. It does not — so the honest summary is that a mechanized *statement* of the model's property now exists and holds for the transcription, which is still a different thing from a formal verification of the circuits themselves.
 
 ### Issue 14: Missing Integration Tests
 
@@ -612,10 +612,13 @@ refuted, and two of them by the section immediately above them in this same file
   **documented with a TODO**, both recorded as such in their own rows. "Formally verified" also
   cannot attach to the circuits: the Correction above records that `proofs/lean/src/DarkFi/Circuits/`
   contains no declarations at all.
-- **"zero additional under-constrained instances across all 120 contract circuits."** Measured today,
-  `scripts/check-circuit-instance-derivation.sh` walks **178 circuits / 880 `constrain_instance`
-  sites** and names **4 unclassified** — `insurance_market`'s two `required_capability_id`,
-  `labor_market` `create_job`'s `attestation_id` and `oracle/attest_value`'s `threshold` — exiting 1.
+- **"zero additional under-constrained instances across all 120 contract circuits."** Re-measured
+  **2026-10-18**, `scripts/check-circuit-instance-derivation.sh` walks **179 circuits / 905
+  `constrain_instance` sites**, reports **0 unclassified**, and exits 0. The four it named on
+  2026-09-24 — `insurance_market`'s two `required_capability_id`, `labor_market` `create_job`'s
+  `attestation_id` and `oracle/attest_value`'s `threshold` — are now classified. What stays true is
+  the bullet's premise: this is a gate over `.zk` sources, not a Lean proof, and it walks 179 rather
+  than the 120 the quoted claim names.
   It has never reported zero.
 - **"The Lean 4 verification suite provides ongoing regression protection against ZK circuit
   constraint omissions."** The mechanism that does this is a Python gate, not the Lean suite; and what
