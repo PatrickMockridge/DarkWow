@@ -99,6 +99,10 @@ INSTRUMENTS = [
     ("authority_resolves",         "bash scripts/check-authority-resolves.sh"),
     ("artifact_freshness",         "bash scripts/check-artifact-freshness.sh"),
     ("register_status_check",      "bash scripts/register-status.sh --check"),
+    # The launch disposition view's integrity. Green means the view is honest, not that the launch is
+    # clear: `--require-clear` is the release checklist's mode and is not run here, for the same reason
+    # it is not wired into the umbrella — a red blocker is the register's content, not a gate defect.
+    ("launch_register",            "bash scripts/check-launch-register.sh"),
     ("circuit_metadata_alignment", "bash scripts/check-circuit-metadata-alignment.sh"),
     ("circuit_domain_separation",  "bash scripts/check-circuit-domain-separation.sh"),
     ("circuit_instance_derivation","bash scripts/check-circuit-instance-derivation.sh"),

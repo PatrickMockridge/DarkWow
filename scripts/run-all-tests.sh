@@ -606,6 +606,16 @@ run_gate "ledger promotion (every row reaches a home)" \
     bash "$SCRIPT_DIR/check-ledger-promotion.sh" --check
 run_gate "control: the promotion gate can fail" \
     bash "$SCRIPT_DIR/check-ledger-promotion.sh" --self-test
+# The launch disposition view over the obligation register. It stores no obligation status; the gate
+# reads the cited status cells live and rejects a restatement. It fails when a new unsettled
+# severity-C/H obligation is neither ranked nor excluded, so the launch view cannot silently stop
+# covering the register. **Green means the view is honest, not that the launch is clear**:
+# `--require-clear TESTNET|MAINNET` is the release checklist's mode and is deliberately not wired
+# here, because a register that records a blocker must not make the ordinary test run permanently red.
+run_gate "launch risk register (dispositions cite live obligations)" \
+    bash "$SCRIPT_DIR/check-launch-register.sh"
+run_gate "control: the launch register gate can fail" \
+    bash "$SCRIPT_DIR/check-launch-register.sh" --self-test
 # RG-9, wired 2026-10-08 (`OBL-C142`): every contract's WASM embeds the current bytes of every circuit
 # in its `proof/` directory. Decided by content — the wasm either contains the `.zk.bin` bytes or it
 # does not — so a byte-identical regeneration of a circuit cannot make this fire, which is what its

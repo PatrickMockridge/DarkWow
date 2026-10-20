@@ -368,6 +368,7 @@ after `genesis.md` and read the corresponding source in `src/contract/<name>/`.
 | Find a formal proof | [GeneralTheorem.lean](../../../proofs/lean/src/DarkFi/Combinatorial/GeneralTheorem.lean) |
 | Review security audit findings | [Contract Safety](../dev/contracts/safety.md) |
 | Check what is still open | [Verification Obligation Register](verification-hazop.md) |
+| Assess public-testnet/mainnet launch risk | [Launch Risk Register](launch-risk-register.md) |
 
 ---
 
@@ -380,6 +381,9 @@ after `genesis.md` and read the corresponding source in `src/contract/<name>/`.
 - **[Verification Obligation Register](verification-hazop.md)** — every property the system
   must hold, what checks it, and **every open obligation**, including the residue promoted from
   the HAZOP corpus's remediated documents.
+- **[Launch Risk Register](launch-risk-register.md)** — the ranked, stage-partitioned disposition
+  view over the obligation register: what blocks public testnet, what blocks mainnet, and what a
+  recorded decision accepts. It cites `OBL-*` rows; it never restates their status.
 - **[Contract Safety Checklist](../dev/contracts/checklist.md)** — the operative pre-commit
   gates, one or more per root cause.
 
