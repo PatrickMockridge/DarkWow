@@ -88,8 +88,12 @@
 #   contrib/wasm_artifact_check.sh <wasm> [<wasm> ...]     # check named artifacts
 #   contrib/wasm_artifact_check.sh --genesis               # check all nine genesis contracts
 #   contrib/wasm_artifact_check.sh --genesis --report-only  # print the verdict and exit 0
+#   contrib/wasm_artifact_check.sh --self-test              # planted controls, two-sided
 #
 # Exit status: 0 if every artifact is clean, 1 if any carries panic machinery or an embedded path.
+# A **missing** artifact is a failure, not a skip: `--genesis` used to print MISSING and continue, so a
+# fresh clone or a post-`make clean` tree exited 0 with zero artifacts checked. That fail-open is the
+# reason this gate could not be flipped blocking before the 2026-10-20 remediation.
 # `--report-only` forces 0 and says so, so the finding stays visible on every run without failing the
 # umbrella — the posture every gate in this tree takes while its finding is unadjudicated. It was added
 # on 2026-10-08 together with this script's first wiring (OBL-C140): the check had existed since
@@ -98,15 +102,22 @@
 
 set -uo pipefail
 
-# Split `--report-only` out before the artifact list is read.
+# Split the mode flags out before the artifact list is read.
 REPORT_ONLY=0
+SELF_TEST=0
 ARGS=()
 for a in "$@"; do
-    if [ "$a" = "--report-only" ]; then REPORT_ONLY=1; else ARGS+=("$a"); fi
+    case "$a" in
+        --report-only) REPORT_ONLY=1 ;;
+        --self-test)   SELF_TEST=1 ;;
+        *)             ARGS+=("$a") ;;
+    esac
 done
 set -- ${ARGS[@]+"${ARGS[@]}"}
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SELF="$ROOT/contrib/wasm_artifact_check.sh"
+GENESIS_ROOT="${GENESIS_ROOT:-$ROOT}"
 cd "$ROOT"
 
 GENESIS=(
@@ -121,12 +132,70 @@ PANIC_MARKERS=(
     "core::panicking"
 )
 
+# A two-sided control: every detection must be able to fire, and a clean artifact must pass. The
+# fixtures are plain files; `strings -a` reads them, so this controls the marker/path detector, not
+# wasm validity. `GENESIS_ROOT` lets the missing-artifact control use an empty root.
+SELFTEST_TMP=""
+selftest() {
+    local tmp out rc
+    tmp="$(mktemp -d)"
+    SELFTEST_TMP="$tmp"
+    trap 'rm -rf "$SELFTEST_TMP"' EXIT
+    printf 'hello\n' > "$tmp/clean"
+    printf 'rust_begin_unwind\n' > "$tmp/marker"
+    printf 'src/sdk/src/crypto/merkle_node.rs\n' > "$tmp/path"
+    printf 'rust_begin_unwind\nsrc/sdk/src/crypto/merkle_node.rs\n' > "$tmp/both"
+    : > "$tmp/empty"
+
+    expect() {
+        local label="$1" want="$2" needle="$3"
+        shift 3
+        out="$("$@" 2>&1)"; rc=$?
+        if [ "$rc" -ne "$want" ]; then
+            echo "FAIL: --self-test: $label exited $rc, expected $want"; echo "$out"; return 1
+        fi
+        if [ -n "$needle" ] && ! printf '%s' "$out" | grep -q -- "$needle"; then
+            echo "FAIL: --self-test: $label did not name '$needle'"; echo "$out"; return 1
+        fi
+        echo "OK: --self-test — $label"
+    }
+
+    expect "a clean artifact passes" 0 "CLEAN" "$SELF" "$tmp/clean" || return 1
+    expect "a marker is DIRTY" 1 "rust_begin_unwind" "$SELF" "$tmp/marker" || return 1
+    expect "a first-party path is DIRTY" 1 "src/sdk/src/crypto/merkle_node.rs" "$SELF" "$tmp/path" || return 1
+    expect "both are DIRTY" 1 "panic machinery" "$SELF" "$tmp/both" || return 1
+    expect "an empty file fails" 1 "empty file" "$SELF" "$tmp/empty" || return 1
+    expect "--report-only exits 0 on a dirty artifact" 0 "REPORT-ONLY" "$SELF" "$tmp/both" --report-only || return 1
+
+    out="$(GENESIS_ROOT="$tmp/none" "$SELF" --genesis 2>&1)"; rc=$?
+    if [ "$rc" -ne 1 ] || ! printf '%s' "$out" | grep -q "MISSING"; then
+        echo "FAIL: --self-test: a missing genesis artifact did not fail and name MISSING"; echo "$out"; return 1
+    fi
+    echo "OK: --self-test — a missing genesis artifact fails and names MISSING"
+    echo "OK: --self-test — 7 controls passed"
+    rm -rf "$SELFTEST_TMP"
+    trap - EXIT
+    return 0
+}
+
+if [ "$SELF_TEST" = 1 ]; then
+    selftest || exit 1
+    exit 0
+fi
+
+fail=0
 if [ "${1:-}" = "--genesis" ]; then
     ARTIFACTS=()
     for c in "${GENESIS[@]}"; do
-        f="src/contract/$c/dwow_${c}_contract.wasm"
-        [ -f "$f" ] && ARTIFACTS+=("$f") || echo "wasm_artifact_check: MISSING $f (not built)" >&2
+        f="$GENESIS_ROOT/src/contract/$c/dwow_${c}_contract.wasm"
+        if [ -f "$f" ]; then
+            ARTIFACTS+=("$f")
+        else
+            echo "wasm_artifact_check: MISSING $f (not built)" >&2
+            fail=1
+        fi
     done
+    [ "${#ARTIFACTS[@]}" -eq 0 ] && { echo "wasm_artifact_check: no genesis artifacts found under $GENESIS_ROOT" >&2; fail=1; }
 elif [ $# -gt 0 ]; then
     ARTIFACTS=("$@")
 else
@@ -134,7 +203,6 @@ else
     exit 2
 fi
 
-fail=0
 for w in "${ARTIFACTS[@]}"; do
     [ -f "$w" ] || { echo "wasm_artifact_check: no such file: $w" >&2; fail=1; continue; }
     [ "$(stat -c%s "$w")" -gt 0 ] || { echo "wasm_artifact_check: empty file: $w" >&2; fail=1; continue; }
