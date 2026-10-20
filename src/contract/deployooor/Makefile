@@ -118,8 +118,8 @@ all: check-source-hash $(WASM_BIN) $(ZK_BINS)
 # `$(ZK_BINS)` is a prerequisite, not a sibling of it in `all`: the wasm embeds each circuit with
 # `include_bytes!` (from `init_contract`), so compiling it before the circuits exist fails outright
 # with "couldn't read .../proof/lock.zk.bin". Listing both under `all` does not order them.
-$(WASM_BIN): $(ZK_BINS) $(WASM_SRC)
-	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) build --target=$(WASM_TARGET) \
+$(WASM_BIN): $(ZK_BINS) $(WASM_SRC) ../../../script/contract_build_recipe.txt ../../../script/contract-build-recipe.mk Makefile
+	RUSTFLAGS="$(WASM_RUSTFLAGS)" RUSTC_BOOTSTRAP=$(CONTRACT_RUSTC_BOOTSTRAP) $(CARGO) build --target=$(WASM_TARGET) \
 		--release --package $(PKGNAME)
 	cp -f ../../../target/$(WASM_TARGET)/release/$@ $@
 	@echo "$(COMPUTE_SOURCE_HASH)" > $(SOURCE_HASH_FILE)
@@ -147,3 +147,4 @@ clean:
 	rm -f $(WASM_BIN) $(SOURCE_HASH_FILE) proof/*.zk.bin $(ZKAS_VERSION_FILE)
 
 .PHONY: all test-integration test clippy clean check-source-hash
+include ../../../script/contract-build-recipe.mk

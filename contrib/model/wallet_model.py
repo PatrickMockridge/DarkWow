@@ -8648,10 +8648,9 @@ CONTRACT_STRUCTS = {
     # `d670b522ef` (unit 4) while left witness-tagged in `[[parameters]]`, because a `witness = N`
     # tag does not keep a field off the wire (`OBL-C179`, corrected 2026-09-28). That commit also
     # renumbered this file's box fixtures from the param-list widths (1288, 1192) to the struct
-    # widths (1192, 1160) — so the table below and `test_wire_layout_matches_contract_structs`
-    # now describe **different wires**, and both pass. Unit 7 removes the three from the manifest
-    # and the two tables converge; until then this table is manifest-shaped and the claim that it
-    # equals the contract struct is false.
+    # widths (1192, 1160). `tx_binding` left the box and purse wire in `OBL-C198`; the entries below
+    # are the post-removal structs, which is what the decoder and the manifest now agree on. The
+    # 2026-10-20 `box.put` failure was this table still carrying the retired field.
     "box": {
         # **The structs' own 8 and 7 fields (2026-09-28).** The manifest now declares 9 for `put`
         # and 7 for `take`: `new_contents_commit` is the one carrying `off_wire`, so it is excluded
@@ -8664,7 +8663,7 @@ CONTRACT_STRUCTS = {
             ("nullifier", "pallas_base"),
             ("expected_root", "pallas_base"), ("new_leaf", "pallas_base"),
             ("leaf_pos", "u32"), ("merkle_path", "merkle_path"), ("proof", "proof"),
-            ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
+            ("tx_nonce", "pallas_base"),
         ],
         "take": [
             # `contents_commit` is published, and read by a *parent* — `escrow::ClaimV1` decodes the
@@ -8674,7 +8673,7 @@ CONTRACT_STRUCTS = {
             ("nullifier", "pallas_base"),
             ("expected_root", "pallas_base"), ("leaf_pos", "u32"),
             ("merkle_path", "merkle_path"), ("proof", "proof"),
-            ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
+            ("tx_nonce", "pallas_base"),
         ],
     },
     "purse": {
@@ -8689,7 +8688,7 @@ CONTRACT_STRUCTS = {
             ("old_commit_y", "pallas_base"), ("new_commit_x", "pallas_base"),
             ("new_commit_y", "pallas_base"), ("leaf_pos", "u32"),
             ("merkle_path", "merkle_path"), ("proof", "proof"),
-            ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
+            ("tx_nonce", "pallas_base"),
             # `asset_id` left the wire in the same change: it is witness slot 22 now and the note reads
             # it from there. What replaced it is the purse identity, a one-way function of the id — the
             # only form `privacy.md` §5.5 permits to be public.
@@ -8701,7 +8700,7 @@ CONTRACT_STRUCTS = {
             ("old_commit_y", "pallas_base"), ("new_commit_x", "pallas_base"),
             ("new_commit_y", "pallas_base"), ("leaf_pos", "u32"),
             ("merkle_path", "merkle_path"), ("proof", "proof"),
-            ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
+            ("tx_nonce", "pallas_base"),
             # `asset_id` left the wire in the same change: it is witness slot 22 now and the note reads
             # it from there. What replaced it is the purse identity, a one-way function of the id — the
             # only form `privacy.md` §5.5 permits to be public.
@@ -8712,7 +8711,7 @@ CONTRACT_STRUCTS = {
             ("expected_root", "pallas_base"), ("token_commit", "pallas_base"),
             ("balance_commit_x", "pallas_base"), ("balance_commit_y", "pallas_base"),
             ("leaf_pos", "u32"), ("merkle_path", "merkle_path"), ("proof", "proof"),
-            ("tx_binding", "pallas_base"), ("tx_nonce", "pallas_base"),
+            ("tx_nonce", "pallas_base"),
         ],
     },
 }

@@ -157,6 +157,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             // predicate as instruction data the proof said nothing about, which is what
             // `process_verify_capability_instruction` now compares against the capability record.
             let proof = &params.capability_proof;
+            // The proof binds `tx_binding` to the call's own nonce; the metadata must compute the
+            // same value. The outer `tx_binding` is the zero-nonce form used by IssueCredentialV1,
+            // which has no nonce field.
+            let tx_binding = identity_tx_binding(params.tx_nonce)?;
             let (issuer_x, issuer_y) = match proof.issuer_pub.xy() {
                 Some(coords) => coords,
                 None => {
@@ -185,7 +189,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     Base::from(proof.predicate_result as u64),
                     proof.commitment.inner(),
                     tx_binding,
-                    Base::zero(),
+                    params.tx_nonce,
                 ],
             ));
         }
@@ -625,6 +629,24 @@ fn process_verify_capability_instruction(
         msg!("[identity::verify_capability] Error: credential expired at {} (now {})",
              credential.expires_at, now);
         return Err(IdentityError::CredentialExpired.into())
+    }
+
+    // 1b. Possession. Knowing the credential preimage is not holding the credential: the holder's
+    //     long-term key signs this call's nonce and verifier, and the host checks that signature
+    //     against the `holder_pub` stored in the credential record — not against a params copy.
+    //     The nonce is the circuit's last public instance, so the signature and the proof bind the
+    //     same call. `OBL-C171` / `LR-08`.
+    let holder_sig = dwow_sdk::crypto::schnorr::Signature::decode(&params.holder_sig)
+        .ok_or(IdentityError::InvalidSignature)?;
+    let holder_msg = capability_verify_message(
+        &params.capability_proof.capability_id,
+        &params.capability_proof.nullifier,
+        &params.verifier_pub,
+        params.tx_nonce,
+    );
+    if !credential.holder_pub.verify(&holder_msg, &holder_sig) {
+        msg!("[identity::verify_capability] Error: holder signature invalid");
+        return Err(IdentityError::InvalidSignature.into())
     }
 
     // 2. The credential's own record must satisfy the capability — the *stored* schema and issuer,

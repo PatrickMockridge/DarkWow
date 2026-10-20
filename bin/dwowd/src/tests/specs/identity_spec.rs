@@ -3,7 +3,7 @@
 use dwow_contract_test_harness::harness::{ContractHarness, IdentityHarness};
 use dwow_sdk::crypto::{IDENTITY_CONTRACT_ID, IntentNullifier, PublicKey, SecretKey, pasta_prelude::PrimeField, poseidon_hash};
 use dwow_sdk::pasta::pallas;
-use dwow_identity_contract::model::{CapabilityId, CapabilitySecret, CredentialRequirement};
+use dwow_identity_contract::model::{CapabilityId, CredentialRequirement};
 
 use crate::tests::blockchain::HeavyweightPipeline;
 use crate::tests::uniform_runner::{
@@ -21,7 +21,6 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
     let credential_secret = pallas::Base::from(20u64);
     let schema_hash = pallas::Base::from(30u64);
     let claim_type = pallas::Base::from(50u64);
-    let capability_secret = pallas::Base::from(777u64);
 
     // Pre-compute credential commitment (deterministic from harness seeds)
     let issuer_pub = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
@@ -139,7 +138,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                             b"role", pallas::Base::from(100u64),
                             b"tenure", pallas::Base::from(200u64),
                             pallas::Base::from(300u64),
-                            capability_secret, pk, holder_pub, schema_hash, 0, 100000, true)?;
+                            pk, holder_pub, schema_hash, 0, 100000, true)?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
@@ -185,7 +184,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
                         let r = h.revoke_capability(CapabilityId(cap_id), pk,
-                            CapabilitySecret(capability_secret), b"test".to_vec())?;
+                            b"test".to_vec())?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                     }
                 }),

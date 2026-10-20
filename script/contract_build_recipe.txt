@@ -1,0 +1,5 @@
+rustc 4fdff2578428e9c5c08ddd7a0d3079c1a106b1cdaa46e73e46f7cd32b0fb9cad
+cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+target wasm32-unknown-unknown
+bootstrap 1
+rustflags --remap-path-prefix=HOME/.cargo=/cargo --remap-path-prefix=HOME/.rustup=/rustup -C link-arg=--max-memory=268435456 -C strip=symbols -Zlocation-detail=none

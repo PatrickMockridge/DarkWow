@@ -362,7 +362,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(50u64),
                         b"role", pallas::Base::from(100u64),
                         b"tenure", pallas::Base::from(200u64),
-                        attribute_blind, capability_secret,
+                        attribute_blind,
                         issuer_pub, holder_b, schema_b, 0, EXPIRES_AT, true)
                     .map_err(|e| oh(format!("verify_capability B (control): {e}")))?;
                 smol::block_on(chain.block()?.with_call(id_cid, &id, &b_check.call_data, vec![b_check.proof.clone()])?.submit())?;
@@ -451,7 +451,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                                 pallas::Base::from(50u64),
                                 b"role", pallas::Base::from(100u64),
                                 b"tenure", pallas::Base::from(200u64),
-                                s.attribute_blind, s.capability_secret,
+                                s.attribute_blind,
                                 PublicKey::from_secret(SecretKey::from_base(s.issuer_secret)),
                                 holder_b, s.schema_b, 0, EXPIRES_AT, true)
                             .map_err(|e| dwow_core::Error::Custom(format!("verify_capability B: {e}")))?;
@@ -552,7 +552,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
                                 pallas::Base::from(50u64),
                                 b"role", pallas::Base::from(100u64),
                                 b"tenure", pallas::Base::from(200u64),
-                                s.attribute_blind, s.capability_secret,
+                                s.attribute_blind,
                                 PublicKey::from_secret(SecretKey::from_base(s.issuer_secret)),
                                 holder_a, s.schema_a, 0, EXPIRES_AT, true)
                             .map_err(|e| dwow_core::Error::Custom(format!("verify_capability A: {e}")))?;

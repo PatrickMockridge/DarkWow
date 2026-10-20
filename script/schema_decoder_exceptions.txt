@@ -1,0 +1,8 @@
+# Manifest/decoder comparison exceptions.
+#
+# `promissory_note`'s [[parameters]] are a client API, not the decoder's wire struct; the wallet
+# model table checks that representation. `scripts/check-schema-decoder-agreement.py` therefore
+# compares only the contracts whose [[parameters]] describe the decoder (box and purse). There are
+# no per-function exceptions today.
+#
+# Format: <contract> <function|*> <reason>. A stale entry is reported.

@@ -110,8 +110,8 @@ check-source-hash:
 all: check-source-hash $(ZK_BINS) $(WASM_BIN)
 
 # WASM build depends on ZK binaries
-$(WASM_BIN): $(ZK_BINS) $(WASM_SRC)
-	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) build --target=$(WASM_TARGET) \
+$(WASM_BIN): $(ZK_BINS) $(WASM_SRC) ../../../script/contract_build_recipe.txt ../../../script/contract-build-recipe.mk Makefile
+	RUSTFLAGS="$(WASM_RUSTFLAGS)" RUSTC_BOOTSTRAP=$(CONTRACT_RUSTC_BOOTSTRAP) $(CARGO) build --target=$(WASM_TARGET) \
 		--release --package $(PKGNAME)
 	cp -f ../../../target/$(WASM_TARGET)/release/$@ $@
 	@echo "$(COMPUTE_SOURCE_HASH)" > $(SOURCE_HASH_FILE)
@@ -124,3 +124,4 @@ clean:
 	rm -f $(ZK_BINS) $(WASM_BIN) $(SOURCE_HASH_FILE) $(ZKAS_VERSION_FILE)
 
 .PHONY: all clean check-source-hash check-zkas-version
+include ../../../script/contract-build-recipe.mk

@@ -365,7 +365,7 @@ fn capability_child_prepare(
         pallas::Base::from(50u64),
         b"role", pallas::Base::from(100u64),
         b"tenure", pallas::Base::from(200u64),
-        s.attribute_blind, s.capability_secret,
+        s.attribute_blind,
         PublicKey::from_secret(SecretKey::from_base(s.issuer_secret)),
         holder, schema, 0, EXPIRES_AT, true)
         .map_err(|e| dwow_core::Error::Custom(format!("verify_capability: {e}")))?;

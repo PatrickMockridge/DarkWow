@@ -133,6 +133,8 @@ INSTRUMENTS = [
     ("sync_conformance",           "bash contrib/ci/check_sync_conformance.sh"),
     ("heavyweight_coverage",       "bash contrib/ci/check_heavyweight_coverage.sh"),
     ("manifest_entrypoint",        "bash scripts/check-manifest-entrypoint-agreement.sh"),
+    ("schema_decoder",             "python3 scripts/check-schema-decoder-agreement.py"),
+    ("genesis_purity",             "bash scripts/check-genesis-purity.sh"),
     ("length_cast_counter",        "bash contrib/length_cast_counts.sh"),
 ]
 
@@ -555,9 +557,11 @@ CRITERIA = [
  dict(g="Genesis", id="G1",
       st="The ceremony reads no ambient authority — no clock, RNG, network, or undeclared file",
       v=NOTEST, src="declared",
-      inst="`init_genesis` → `build_genesis_block` → `build_genesis_deployment_txs`",
-      ev=f"the genesis path is a reading task; `genesis.md:153-165` states the clause. "
-         f"declared, not derived: no instrument decides it",
+      inst="`scripts/check-genesis-purity.sh` (syntactic) + `init_genesis` → `build_genesis_block` → `build_genesis_deployment_txs`",
+      ev=f"the syntactic probe scans the five genesis function bodies for a denylisted ambient call: "
+         f"{ev('genesis_purity', 1)}. **It is not the whole clause**: aliases, macros, dependencies and "
+         f"callees outside those bodies are invisible, so the semantic reading at `genesis.md:153-165` "
+         f"remains a reading and the verdict stays declared.",
       settle="read the three clauses at doc/src/arch/genesis.md:153-165 against the path"),
  dict(g="Genesis", id="G2",
       st="Embedded contract code is a quoted argument, not an effect",
@@ -574,26 +578,34 @@ CRITERIA = [
  dict(g="Genesis", id="G3",
       st="The ceremony's stages are pure transitions whose composition is a pure transition",
       v=NOTEST, src="declared",
-      inst="—",
-      ev="no instrument; this is the third normative clause and it is a reading",
+      inst="`scripts/check-genesis-purity.sh` (syntactic, per stage)",
+      ev=f"the probe scans the stage bodies: {ev('genesis_purity', 1)}. The **composition** of the "
+         f"stages and the semantic purity remain a reading; a dynamic environment-determinism driver "
+         f"is not part of this static budget.",
       settle="read genesis.md:153-165 clause 2 against the stage boundaries"),
  dict(g="Genesis", id="G4",
-      st="Totality — no panic path reaches the genesis artifacts",
+      st="The genesis artifacts carry no marker name and no first-party source path — the artifact invariant, not totality",
       v=FAIL if v_of("wasm_artifact_genesis") == FAIL else (PASS if v_of("wasm_artifact_genesis") == PASS else MISSING),
       src="derived", inst="`contrib/wasm_artifact_check.sh --genesis`",
-      ev=ev("wasm_artifact_genesis", 1),
-      settle="cargo test --release -p dwowd -- test_heavyweight_<c>  (x9)"),
+      ev=f"{ev('wasm_artifact_genesis', 1)}. 2026-10-20: 9/9 CLEAN and 32/32 byte-identical across "
+         f"two clean builds. **This is not a totality proof**: `alloc`/`core::fmt` panic machinery is "
+         f"still linked, as the checker's own header states. Totality is measured by the nine "
+         f"heavyweight tests (G11), not by this gate.",
+      settle="the artifact invariant: this instrument; totality: the nine heavyweight tests"),
  dict(g="Genesis", id="G5",
       st="Determinism — the same inputs yield the same hash",
-      v=NOTEST, src="declared", inst="—",
-      ev="the test that decides it is behind a build, which constraint 1 excludes",
+      v=NOTEST, src="declared", inst="`cargo test -p dwowd --all-features test_genesis_determinism`",
+      ev="run 2026-10-20 outside this static budget: 1 passed; the two-hash assertion held. "
+         "The static report does not re-run it.",
       settle="cargo test -p dwowd --all-features test_genesis_determinism"),
  dict(g="Genesis", id="G6",
       st="Reproducibility — the artifact is a function of the source, not of the host",
       v=FAIL if v_of("wasm_artifact_genesis") == FAIL else (PASS if v_of("wasm_artifact_genesis") == PASS else MISSING),
       src="derived", inst="`wasm_artifact_check.sh --genesis` + the absolute-path probe",
-      ev=f"gate: {ev('wasm_artifact_genesis',1)}  ·  purity probe (absolute host paths): {probes['abs_paths']['out']}",
-      settle="see OBL-C140 and the row minted by this pass — the two readings differ and both matter"),
+      ev=f"gate: {ev('wasm_artifact_genesis',1)}  ·  purity probe (absolute host paths): {probes['abs_paths']['out']}. "
+         f"2026-10-20: two clean rebuilds of all 32 contracts were byte-identical (sha256), and the "
+         f"nine genesis artifacts are CLEAN. The two-build equality is a run, not a static probe.",
+      settle="the purity gate + the two-pass rebuild; see OBL-C140/C210/T26"),
  dict(g="Genesis", id="G7",
       st="The pin is populated, committed, and clean against HEAD",
       v=PASS if (probes["pin_git"]["out"] == "" and probes["pin_placeholder"]["out"] == "0") else FAIL,
@@ -603,8 +615,9 @@ CRITERIA = [
       settle="— (this is provenance, not currency — G8 is the currency criterion)"),
  dict(g="Genesis", id="G8",
       st="The pin is CURRENT — this build computes the hash the pin records",
-      v=NOTEST, src="declared", inst="—",
-      ev="only the test asserts it; a static reading cannot decide currency",
+      v=NOTEST, src="declared", inst="`cargo test -p dwowd --all-features genesis`",
+      ev="run 2026-10-20 outside this static budget: the pin test and its wrong-hash control passed "
+         "after the single re-record. The static report does not re-run it.",
       settle="cargo test -p dwowd --all-features genesis_pin_is_current"),
  dict(g="Genesis", id="G9",
       st="The nine genesis ids agree across their three enumerations, in consensus order",
@@ -619,8 +632,10 @@ CRITERIA = [
       settle="—"),
  dict(g="Genesis", id="G11",
       st="The nine genesis contracts pass their heavyweight tests",
-      v=NOTEST, src="declared", inst="—",
-      ev="needs a release build of dwowd and nine proving runs — outside this budget",
+      v=NOTEST, src="declared", inst="`cargo test --release --all-features -p dwowd -- test_heavyweight_<c>` (x9)",
+      ev="run 2026-10-20 outside this static budget: all nine passed in release "
+         "(deployooor 104 s, native_token 157 s, promissory_note 222 s, identity 146 s, oracle 308 s, "
+         "attestation 311 s, purse 124 s, box 99 s, multisig 150 s). The static report does not re-run them.",
       settle="cargo test --release -p dwowd -- test_heavyweight_deployooor … (x9)"),
  # ── Consensus ────────────────────────────────────────────────────────────────────────────────────
  dict(g="Consensus", id="C1",

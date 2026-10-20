@@ -1152,6 +1152,27 @@ a typed error barb (`↓bad-proof`), never a fallback. The mapping from
 hatch that disables type checking. A circuit that uses `Any` witnesses SHALL
 document why static typing is insufficient.
 
+### A.6.3.1 The `[[parameters]]` tags — two independent properties
+
+A manifest parameter has two orthogonal tags, and reading either as the other is the `OBL-C179`
+split-source defect:
+
+| | **On the wire** | **Off the wire** |
+|---|---|---|
+| **Caller supplies** | a plain field: the caller's JSON supplies it and the encoder writes it | `off_wire = true`: the caller supplies it in the params JSON, the prover binds it, and the encoder does **not** write it |
+| **Client fills** | `witness = <slot>`: the caller's JSON need not supply it; the client fills it from the prover's bound value and the encoder **writes it to call data anyway** | `witness = <slot>, off_wire = true`: the client fills it and the encoder skips it; legal only if the circuit binds the value |
+
+`witness` is **not** an off-wire tag. It says "the caller does not supply this; the client fills it",
+and the client publishes it. `off_wire` is the only tag that keeps a field out of call data
+(`src/sdk/src/manifest.rs:284-327`; `src/sdk/src/contract_client.rs:456-474`). The decoder must
+require exactly the on-wire fields, in order; the published subset is the manifest's field list with
+`off_wire` excluded.
+
+`scripts/check-schema-decoder-agreement.py` compares that subset to the Rust `*Params` struct for
+`box` and `purse` and has a planted-drift control. `promissory_note`'s `[[parameters]]` are a client
+API rather than the decoder, so that contract is outside the checker's scope and its representation
+is checked by `contrib/model/wallet_model.py`.
+
 ### A.6.4 Circuit Binary Delivery
 
 Genesis contracts' zkas binaries travel in the genesis `DeployV1` payload (the

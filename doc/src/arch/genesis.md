@@ -185,29 +185,37 @@ unwrap" as a lint campaign, "determinism" as two hashes compared at runtime, "re
 that happened to match on one machine. Stated as purity, they are one property with one failure mode,
 and a violation is a specific unaccounted effect rather than a test that went red somewhere.
 
-**How the reproducibility clause is met, measured 2026-09-24.** It is not free, and it is not a
-convention. A panic location is `Location { file, line, col }` — a data-section string and two
-integers, none of them debuginfo — so a *comment-only* edit shifts the line numbers of every panic site
-after it and moves the artifact. Two build settings remove that dependence, and together they take all
-nine genesis contracts to clean under `contrib/wasm_artifact_check.sh --genesis`:
+**How the reproducibility clause is met, measured 2026-09-24 and applied 2026-10-20.** It is not free,
+and it is not a convention. A panic location is `Location { file, line, col }` — a data-section string
+and two integers, none of them debuginfo — so a *comment-only* edit shifts the line numbers of every
+panic site after it and moves the artifact. Two build flags remove that dependence, and together they
+take all nine genesis contracts to clean under `contrib/wasm_artifact_check.sh --genesis`:
 
-* **`[profile.release] strip = "symbols"`** in the workspace root, which drops the wasm *name* section
-  — where the panic-marker strings live (`panic_bounds_check`, `rust_begin_unwind`, `core::panicking`).
-  It removes those strings and nothing about the code: the Code section is byte-identical afterwards.
-  A profile setting rather than a Makefile flag, deliberately — the container builds contracts with
-  bare cargo, not through the Makefiles, so a flag would have to be mirrored or the container's genesis
-  hash would diverge from the host's.
+* **`-C strip=symbols`** on the contract build, which drops the wasm *name* section — where the
+  panic-marker strings live (`panic_bounds_check`, `rust_begin_unwind`, `core::panicking`). It removes
+  those strings and nothing about the code: the Code section is byte-identical afterwards.
 * **`-Zlocation-detail=none`** on the contract build, which empties the file and line of every
   `Location` built by a first-party crate. This is the real removal of the embedded `src/…` paths:
   measured on `native_token`, its three (`sdk/src/crypto/pedersen.rs`, `sdk/src/crypto/merkle_node.rs`,
   `contract/native_token/src/model/mod.rs`) go to zero, and with `strip` applied alongside it the
   artifact drops 417,500 → 373,496 bytes.
 
-Neither is sufficient alone — `strip` leaves the paths, and the location flag leaves the marker
+The flags live in one shared recipe, `script/contract-build-recipe.mk`, and are mirrored in the
+container's contract build RUN. `-Zlocation-detail=none` is a nightly-only flag on the pinned 1.95.0;
+the recipe sets `RUSTC_BOOTSTRAP=1` for the wasm build only, and records the setting in
+`script/contract_build_recipe.txt`, which is inside every contract's `SOURCE_MANIFEST`. A toolchain,
+flag or Makefile change therefore stales all 32 artifacts rather than passing silently.
+
+Neither flag is sufficient alone — `strip` leaves the paths, and the location flag leaves the marker
 strings — and the combination's measured effect is the one this section requires: inserting a comment
 into `sdk/src/crypto/merkle_node.rs` changes the artifact *without* the levers (`1c89c9d4…` against
 `27ad85fc…`) and does **not** change it with them (`e539f88c…` either way). That retires the stated
 cost of every comment-only deferred item whose price was "a comment still moves the pin".
+
+**The 2026-10-20 application, measured.** All nine genesis artifacts are CLEAN; all 32 contracts
+rebuilt byte-identically across two clean passes; `bin/dwowd/genesis_hash.txt` was re-recorded once
+from the resulting build; the pin test and its negative controls pass; the nine genesis heavyweight
+tests pass in release. `OBL-C140` and `OBL-C147` are the rows that record the repair.
 
 What it does **not** buy is totality: `alloc`'s `handle_alloc_error` and `core::fmt` panic by design and
 are linked into all nine, which is why four of them carry no first-party panic site and still carry
@@ -325,9 +333,12 @@ genesis block — the coinbase is plaintext (no ZK proof), so no
 randomness enters the block. The network's genesis is identified by its block hash, not
 by the miner who created it.
 
-**The hash is PINNED.** `bin/dwowd/genesis_hash.txt` holds the canonical genesis hash —
-`blake3` of the mining blob, 64 lowercase hex, no `0x` — and is compiled in via
-`include_str!`, so the node HARD-ERRORS on a mismatch ("GENESIS HASH MISMATCH") rather than warning.
+**The hash is PINNED.** `bin/dwowd/genesis_hash.txt` holds the canonical genesis hash — the
+**RandomX** hash of the mining blob (`Block::hash_with_vm`), displayed as 64 lowercase hex characters,
+no `0x` — and is compiled in via `include_str!`, so the node HARD-ERRORS on a mismatch
+("GENESIS HASH MISMATCH") rather than warning. The `blake3` in the path is the RandomX key derivation
+(`randomx_key = blake3(height)`) and the merkle/tx hashes, not the block hash itself; the earlier
+wording here called the pin "blake3 of the mining blob", which was the wrong primitive.
 **The enforcement is in `init_linear`, not `init_genesis`** — `check_genesis_pin`
 (`bin/dwowd/src/lib.rs:742`) is called twice from `init_linear` (`:936` for the stored hash, `:953`
 for the computed one), while `init_genesis` (`:637`) builds the block and does not compare. This

@@ -140,6 +140,15 @@ run_gate "control: a row split across lines is reported" \
 # proof-bearing function with no dispatch arm, must each be caught.
 run_gate "control: manifest↔entrypoint agreement can fail" \
     bash "$SCRIPT_DIR/check-manifest-entrypoint-agreement.sh" --self-test
+# OBL-C179/LR-17: the manifest's published [[parameters]] must equal the Rust decoder's struct. The
+# control removes a published field from a temp copy and requires the checker to name it; the clean
+# pair must pass, so the control is two-sided.
+run_gate "control: manifest/decoder agreement can fail" \
+    python3 "$SCRIPT_DIR/check-schema-decoder-agreement.py" --self-test
+# The artifact-purity checker's control: a planted marker and a planted first-party path must each
+# be DIRTY, a clean file must pass, and a missing genesis artifact must fail (the 2026-10-20 fix).
+run_gate "control: wasm artifact purity can fail" \
+    bash "$REPO_ROOT/contrib/wasm_artifact_check.sh" --self-test
 # The unwrap/expect census's control: a planted unwrap+expect in a dependency-free temp crate must
 # be caught and a clean twin cleared. The instrument that found the rollout's survivors must itself
 # be able to fail, or its "clean" verdict means nothing.
@@ -217,6 +226,16 @@ run_gate "circuit metadata alignment"     bash "$SCRIPT_DIR/check-circuit-metada
 # function needs (C1/C2/C3/C4; the circuit-side checks are OBL-C91's, deliberately not re-derived).
 run_gate "manifest ↔ entrypoint agreement" \
     bash "$SCRIPT_DIR/check-manifest-entrypoint-agreement.sh"
+# The manifest's published parameter subset against the decoder's struct (OBL-C179, LR-17). The
+# wallet model table was the only instrument that saw `box.put` keep `tx_binding` after OBL-C198.
+run_gate "manifest ↔ decoder agreement" \
+    python3 "$SCRIPT_DIR/check-schema-decoder-agreement.py"
+# G1/G3's syntactic half: no denylisted ambient call in the five genesis function bodies. It is not
+# the semantic clause; the report says so. The control plants a clock in a temp copy and requires it.
+run_gate "genesis purity (syntactic)" \
+    bash "$SCRIPT_DIR/check-genesis-purity.sh"
+run_gate "control: genesis purity can fail" \
+    bash "$SCRIPT_DIR/check-genesis-purity.sh" --self-test
 run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain-separation.sh"
 # The docs-vs-code review's doc-fact gates (2026-10-10). Nothing read a doc's prose claim about a code
 # fact; `check-contract-doc-functions.sh` compares a contract doc's function/opcode table to its manifest
@@ -644,17 +663,10 @@ run_gate "clippy unwrap/expect census (40 crates)" \
 # (gate 1) names it. What was missing is exactly this: nobody checked the *output* is well-formed.
 run_gate "ZK binaries well-formed"        bash "$SCRIPT_DIR/validate_zk_bins.sh"
 # OBL-C140: the artifact-level invariant — a contract wasm carries no panic machinery and no
-# first-party source path. The checker has existed since 2026-09-24 and **ran nowhere** until here:
-# not this runner, not `hooks/pre-commit`. That is the register's recurring "a gate nobody runs"
-# shape, and wiring it is the repair. **REPORT-ONLY, and the reason is the finding rather than a
-# preference**: its first run reports **9 of 9 genesis artifacts DIRTY** — `panic_bounds_check`,
-# `rust_begin_unwind` and embedded `src/…` paths — and exits 1, so wiring it blocking would redden the
-# umbrella on a repair that is not this line's to make. The levers that clear it (`strip`,
-# `-Zlocation-detail=none`) are `OBL-C147`'s, and they are not in force because the pinned toolchain
-# cannot pass the flag without a genesis re-roll. Publishing the count on every run is what this line
-# buys; flipping it to blocking is what `OBL-C140` closes on.
-run_gate "wasm artifact purity (report-only)" \
-    bash "$REPO_ROOT/contrib/wasm_artifact_check.sh" --genesis --report-only
+# first-party source path. The blocking gate is below `make test`, which builds the artifacts it
+# judges; on a fresh clone the wasms do not exist yet, and the checker now fails closed on a missing
+# artifact rather than passing with zero checked. The `--self-test` control is in the controls
+# section above. It was report-only until the 2026-10-20 re-roll made all nine CLEAN.
 # OBL-C122's shape in the circuit layer, and the two halves of what the comment above does not claim.
 # It walks *sources* — 178 of them, the same set `script/circuit_instance_derivation.py` analyses, so
 # the two cannot drift — compiles each with the compiler's `-e`, and compares the decoded bytecode
@@ -671,6 +683,11 @@ run_gate "circuit fidelity (source vs compiled)" \
 run_gate "pre-build guard (dwowd + wallet + 32 contracts→wasm32)" \
                                           "$SCRIPT_DIR/check_pipeline_build.sh"
 run_gate "Rust tests (make test)"          make test
+# OBL-C140, blocking: `make test` has built the 32 contract artifacts, including the nine genesis
+# ones. A missing artifact is a failure (the 2026-10-20 fix); the `--self-test` control above proves
+# the detector can fail and pass. This line closes the "gate nobody enforces" half of the row.
+run_gate "wasm artifact purity (genesis)" \
+    bash "$REPO_ROOT/contrib/wasm_artifact_check.sh" --genesis
 
 # Lake requires its own working directory.
 #

@@ -35,6 +35,56 @@ cd "$REPO_ROOT"
 FURNITURE_UNSTALE=0
 NEW_GENERATED=0
 
+# The build recipe is an input to every artifact. It records the compiler, cargo, target, bootstrap
+# setting and flags; the source hash covers the tracked file, and this check proves the tracked file
+# still matches the toolchain that is about to build. A recipe-only change must move the verdict
+# (OBL-C210/T26), so the comparison is the instrument, not a comment.
+check_recipe() {
+    local current
+    if [ -n "${RECIPE_CURRENT:-}" ]; then
+        current="$RECIPE_CURRENT"
+    else
+        current="$(make -s -C src/contract/native_token recipe 2>/dev/null)"
+    fi
+    if [ ! -f "$RECIPE_FILE" ]; then
+        echo "  MISSING $RECIPE_FILE"
+        return 1
+    fi
+    if ! diff -u "$RECIPE_FILE" <(printf '%s\n' "$current") >/dev/null 2>&1; then
+        echo "  STALE build recipe: $RECIPE_FILE does not match the current toolchain/flags."
+        echo "  A toolchain or flag change invalidates every artifact built before it (OBL-C210/T26)."
+        echo "  Regenerate with: make -s -C src/contract/native_token recipe > $RECIPE_FILE"
+        echo "  then rebuild all 32 with: make -C src/contract/<name> clean all"
+        return 1
+    fi
+    echo "  recipe current: $RECIPE_FILE"
+    return 0
+}
+
+RECIPE_FILE="${RECIPE_FILE:-script/contract_build_recipe.txt}"
+
+if [ "${1:-}" = "--self-test" ]; then
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    cp "$RECIPE_FILE" "$tmp/good"
+    current="$(cat "$tmp/good")"
+    if ! RECIPE_FILE="$tmp/good" RECIPE_CURRENT="$current" check_recipe >/dev/null; then
+        echo "FAIL: --self-test: an unchanged recipe failed"; exit 1
+    fi
+    echo "OK: --self-test — an unchanged recipe passes"
+    printf 'rustc deadbeef\n' > "$tmp/bad"
+    if RECIPE_FILE="$tmp/bad" RECIPE_CURRENT="$current" check_recipe >/dev/null; then
+        echo "FAIL: --self-test: a changed recipe passed"; exit 1
+    fi
+    echo "OK: --self-test — a changed recipe fails"
+    if RECIPE_FILE="$tmp/missing" RECIPE_CURRENT="$current" check_recipe >/dev/null; then
+        echo "FAIL: --self-test: a missing recipe passed"; exit 1
+    fi
+    echo "OK: --self-test — a missing recipe fails"
+    rm -rf "$tmp"; trap - EXIT
+    exit 0
+fi
+
 echo "=== 1. contract artifact freshness (.source_hash vs sources) ==="
 STALE=()
 FRESH=0
@@ -95,11 +145,16 @@ if [ "$DEAD_LEGACY" -gt 0 ]; then
 fi
 
 echo ""
+echo "=== 3. build recipe matches the tracked recipe ==="
+RECIPE_OK=0
+check_recipe || RECIPE_OK=1
+
+echo ""
 echo "========================================"
-if [ "${#STALE[@]}" -eq 0 ] && [ "${#DEAD_V2[@]}" -eq 0 ]; then
-    echo "PASS: $FRESH artifacts fresh, all live namespace constants resolve"
+if [ "${#STALE[@]}" -eq 0 ] && [ "${#DEAD_V2[@]}" -eq 0 ] && [ "$RECIPE_OK" -eq 0 ]; then
+    echo "PASS: $FRESH artifacts fresh, all live namespace constants resolve, recipe current"
     exit 0
 fi
-echo "FAIL: ${#STALE[@]} stale artifact(s), ${#DEAD_V2[@]} dead _V2 constant(s)"
+echo "FAIL: ${#STALE[@]} stale artifact(s), ${#DEAD_V2[@]} dead _V2 constant(s), recipe_stale=$RECIPE_OK"
 echo "========================================"
 exit 1

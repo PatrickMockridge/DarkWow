@@ -41,7 +41,7 @@ use dwow_identity_contract::client::{
     verify_capability::{VerifyCapabilityCallData, create_verify_capability_proof, VerifyCapabilityPublicInputs},
 };
 use dwow_identity_contract::model::{
-    CapabilityId, CapabilitySecret, InitializeParams, IssueCredentialParams,
+    CapabilityId, InitializeParams, IssueCredentialParams,
     RegisterCapabilityParams, IssueCapabilityParams, VerifyCapabilityParams,
     RevokeCapabilityParams, RevokeCredentialParams,
 };
@@ -214,7 +214,6 @@ impl IdentityHarness {
         attribute_2_name: &[u8],
         attribute_2: pallas::Base,
         attribute_blind: pallas::Base,
-        capability_secret: pallas::Base,
         issuer_public: PublicKey,
         holder_public: PublicKey,
         schema_hash: pallas::Base,
@@ -231,17 +230,26 @@ impl IdentityHarness {
             dwow_identity_contract::model::attribute_name_field(attribute_2_name)
                 .ok_or_else(|| dwow_core::Error::Custom("attribute_2_name is longer than 31 bytes".into()))?,
         );
-        let input = VerifyCapabilityCallData::new(
+        let mut input = VerifyCapabilityCallData::new(
             credential_secret, a1_name, attribute_1, threshold, a2_name, attribute_2, attribute_blind,
             issuer_public, holder_public, schema_hash, issued_at, expires_at, predicate_result,
         );
+        // The holder signs the call's nonce and verifier; the circuit binds the same nonce as its
+        // last instance. The fixture's holder key is the credential secret (the spec derives
+        // `holder_public` from it); the host checks the signature against the stored `holder_pub`.
+        let tx_nonce = pallas::Base::from(1u64);
+        input.tx_nonce = tx_nonce;
         let public_inputs = input.compute_public_inputs();
+        let nullifier = dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap();
+        let holder_msg = dwow_identity_contract::model::capability_verify_message(
+            &CapabilityId(capability_id), &nullifier, &issuer_public, tx_nonce,
+        );
+        let holder_sig = SecretKey::from_base(credential_secret).sign(&holder_msg).encode();
 
         let params = VerifyCapabilityParams {
             capability_proof: dwow_identity_contract::model::CapabilityProof {
                 capability_id: CapabilityId(capability_id),
-                capability_secret: CapabilitySecret(capability_secret),
-                nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
+                nullifier,
                 issuer_pub: issuer_public,
                 schema_hash: schema_hash.to_repr(),
                 // The commitment the client derived from the preimage. It is a public input of the
@@ -269,6 +277,8 @@ impl IdentityHarness {
                 created_at: 0,
             },
             verifier_pub: issuer_public,
+            tx_nonce,
+            holder_sig,
             fee: 0,
         };
 
@@ -297,7 +307,6 @@ impl IdentityHarness {
         attribute_2_name: &[u8],
         attribute_2: pallas::Base,
         attribute_blind: pallas::Base,
-        capability_secret: pallas::Base,
         issuer_public: PublicKey,
         holder_public: PublicKey,
         schema_hash: pallas::Base,
@@ -307,7 +316,7 @@ impl IdentityHarness {
     ) -> Result<VerifyCapabilityResult> {
         let plan = self.verify_capability_prepare(
             credential_secret, capability_id, threshold, attribute_1_name, attribute_1,
-            attribute_2_name, attribute_2, attribute_blind, capability_secret, issuer_public,
+            attribute_2_name, attribute_2, attribute_blind, issuer_public,
             holder_public, schema_hash, issued_at, expires_at, predicate_result,
         )?;
         let commitment = self.commitment_over(children, &plan.call_data);
@@ -360,11 +369,10 @@ impl IdentityHarness {
         &self,
         capability_id: CapabilityId,
         holder_pub: PublicKey,
-        capability_secret: CapabilitySecret,
         reason: Vec<u8>,
     ) -> Result<RevokeCapabilityHarnessResult> {
         let params = RevokeCapabilityParams {
-            capability_id, holder_pub, capability_secret,
+            capability_id, holder_pub,
             signature: vec![], reason, fee: 0,
         };
         let mut call_data = vec![0x07]; // RevokeCapabilityV1

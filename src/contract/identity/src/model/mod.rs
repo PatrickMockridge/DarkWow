@@ -532,14 +532,12 @@ pub struct CapabilityProof {
     pub threshold: u64,
     /// ZK proof of capability satisfaction
     pub proof: Vec<u8>,
-    /// Capability secret (proves holder owns this capability)
-    pub capability_secret: CapabilitySecret,
     /// Timestamp when proof was created
     pub created_at: u64,
 }
 
 #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
-impl CapabilityProof { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(174+self.proof.len()); b.extend_from_slice(&self.capability_id.encode()); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.predicate_result); b.extend_from_slice(&self.issuer_pub.to_bytes()); b.extend_from_slice(&self.schema_hash); b.extend_from_slice(&self.commitment.to_bytes()); b.extend_from_slice(&self.attribute_1_name.to_repr()); b.extend_from_slice(&self.threshold.to_le_bytes()); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.capability_secret.encode()); b.extend_from_slice(&self.created_at.to_le_bytes()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 174 { return Err(ContractError::IoError("CapabilityProof: too short".into())); } let capability_id = CapabilityId::decode(read_slice(data, 0, 32 - 0)?)?; let nullifier = IntentNullifier::from_bytes(read_field::<32>(data, 32)?).map_err(|_| ContractError::IoError("CapabilityProof: invalid nullifier".into()))?; let predicate_result = read_byte(data, 64)?; let issuer_pub = PublicKey::from_bytes(read_field::<32>(data, 65)?).map_err(|e| ContractError::IoError(format!("CapabilityProof: invalid issuer_pub: {}", e)))?; let schema_hash: [u8;32] = read_field::<32>(data, 97)?; let commitment = IntentCommitment::from_bytes(read_field::<32>(data, 129)?).map_err(|_| ContractError::IoError("CapabilityProof: invalid commitment".into()))?; let attribute_1_name = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 161)?)).ok_or_else(|| ContractError::IoError("CapabilityProof: invalid attribute_1_name".into()))?; let threshold = u64::from_le_bytes(read_field::<8>(data, 193)?); let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 201)?).to_usize(); let p = 205+proof_len; if data.len() < p+40 { return Err(ContractError::IoError("CapabilityProof: truncated".into())); } let proof = read_slice(data, 205, (p) - (205))?.to_vec(); let capability_secret = CapabilitySecret::decode(read_slice(data, p, 32)?)?; let created_at = u64::from_le_bytes(read_field::<8>(data, p+32)?); Ok(CapabilityProof { capability_id, nullifier, predicate_result, issuer_pub, schema_hash, commitment, attribute_1_name, threshold, proof, capability_secret, created_at }) } }
+impl CapabilityProof { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(174+self.proof.len()); b.extend_from_slice(&self.capability_id.encode()); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.predicate_result); b.extend_from_slice(&self.issuer_pub.to_bytes()); b.extend_from_slice(&self.schema_hash); b.extend_from_slice(&self.commitment.to_bytes()); b.extend_from_slice(&self.attribute_1_name.to_repr()); b.extend_from_slice(&self.threshold.to_le_bytes()); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.created_at.to_le_bytes()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 174 { return Err(ContractError::IoError("CapabilityProof: too short".into())); } let capability_id = CapabilityId::decode(read_slice(data, 0, 32 - 0)?)?; let nullifier = IntentNullifier::from_bytes(read_field::<32>(data, 32)?).map_err(|_| ContractError::IoError("CapabilityProof: invalid nullifier".into()))?; let predicate_result = read_byte(data, 64)?; let issuer_pub = PublicKey::from_bytes(read_field::<32>(data, 65)?).map_err(|e| ContractError::IoError(format!("CapabilityProof: invalid issuer_pub: {}", e)))?; let schema_hash: [u8;32] = read_field::<32>(data, 97)?; let commitment = IntentCommitment::from_bytes(read_field::<32>(data, 129)?).map_err(|_| ContractError::IoError("CapabilityProof: invalid commitment".into()))?; let attribute_1_name = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 161)?)).ok_or_else(|| ContractError::IoError("CapabilityProof: invalid attribute_1_name".into()))?; let threshold = u64::from_le_bytes(read_field::<8>(data, 193)?); let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 201)?).to_usize(); let p = 205+proof_len; if data.len() < p+8 { return Err(ContractError::IoError("CapabilityProof: truncated".into())); } let proof = read_slice(data, 205, (p) - (205))?.to_vec(); let created_at = u64::from_le_bytes(read_field::<8>(data, p)?); Ok(CapabilityProof { capability_id, nullifier, predicate_result, issuer_pub, schema_hash, commitment, attribute_1_name, threshold, proof, created_at }) } }
 
 /// Parameters for registering a new capability type
 #[derive(Debug, Clone)]
@@ -643,13 +641,81 @@ impl RegisterCapabilityParams {
 #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
 impl IssueCapabilityParams { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let sl = SerializedLen::try_from_len(self.issuer_sig.len())?; let mut b = Vec::with_capacity(104+self.proof.len()+self.issuer_sig.len()); b.extend_from_slice(&self.capability_id.encode()); b.extend_from_slice(&self.holder_pub.to_bytes()); b.extend_from_slice(&self.credential_nullifier.to_bytes()); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&sl.to_le_bytes()); b.extend_from_slice(&self.issuer_sig); b.extend_from_slice(&self.fee.to_le_bytes()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 112 { return Err(ContractError::IoError("IssueCapabilityParams: too short".into())); } let capability_id = CapabilityId::decode(read_slice(data, 0, 32 - 0)?)?; let holder_pub = PublicKey::from_bytes(read_field::<32>(data, 32)?).map_err(|e| ContractError::IoError(format!("IssueCapabilityParams: invalid holder_pub: {}", e)))?; let credential_nullifier = IntentNullifier::from_bytes(read_field::<32>(data, 64)?).map_err(|_| ContractError::IoError("IssueCapabilityParams: invalid credential_nullifier".into()))?; let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 96)?).to_usize(); let p = 100+proof_len; if data.len() < p+4+8 { return Err(ContractError::IoError("IssueCapabilityParams: truncated".into())); } let proof = read_slice(data, 100, (p) - (100))?.to_vec(); let sig_len = SerializedLen::from_le_bytes(read_field::<4>(data, p)?).to_usize(); let s = p+4+sig_len; if data.len() != s+8 { return Err(ContractError::IoError(format!("IssueCapabilityParams: expected {} bytes, got {}", s+8, data.len()))); } let issuer_sig = read_slice(data, p+4, (s) - (p+4))?.to_vec(); let fee = u64::from_le_bytes(read_field::<8>(data, s)?); Ok(IssueCapabilityParams { capability_id, holder_pub, credential_nullifier, proof, issuer_sig, fee }) } }
 
-#[derive(Debug, Clone,)] pub struct VerifyCapabilityParams { pub capability_proof: CapabilityProof, pub verifier_pub: PublicKey, pub fee: u64 }
-#[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
-impl VerifyCapabilityParams { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let proof_bytes = self.capability_proof.encode()?; let mut b = Vec::with_capacity(proof_bytes.len()+40); b.extend_from_slice(&proof_bytes); b.extend_from_slice(&self.verifier_pub.to_bytes()); b.extend_from_slice(&self.fee.to_le_bytes()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 40 { return Err(ContractError::IoError("VerifyCapabilityParams: too short".into())); } let capability_proof = CapabilityProof::decode(data)?; let proof_len = capability_proof.encode()?.len(); if data.len() != proof_len+40 { return Err(ContractError::IoError(format!("VerifyCapabilityParams: expected {} bytes, got {}", proof_len+40, data.len()))); } let verifier_pub = PublicKey::from_bytes(read_field::<32>(data, proof_len)?).map_err(|e| ContractError::IoError(format!("VerifyCapabilityParams: invalid verifier_pub: {}", e)))?; let fee = u64::from_le_bytes(read_field::<8>(data, proof_len+32)?); Ok(VerifyCapabilityParams { capability_proof, verifier_pub, fee }) } }
+#[derive(Debug, Clone,)]
+pub struct VerifyCapabilityParams {
+    pub capability_proof: CapabilityProof,
+    pub verifier_pub: PublicKey,
+    /// The call's nonce. The holder signature and the circuit's last instance both bind it.
+    pub tx_nonce: pallas::Base,
+    /// Schnorr signature by the credential's holder over [`capability_verify_message`].
+    pub holder_sig: Vec<u8>,
+    pub fee: u64,
+}
 
-#[derive(Debug, Clone,)] pub struct RevokeCapabilityParams { pub capability_id: CapabilityId, pub holder_pub: PublicKey, pub capability_secret: CapabilitySecret, pub signature: Vec<u8>, pub reason: Vec<u8>, pub fee: u64 }
+/// The holder's signature message: fixed-width fields, so it has no length ambiguity. The host
+/// verifies this signature against the `holder_pub` stored in the credential record, not against a
+/// caller-supplied key.
+pub fn capability_verify_message(
+    capability_id: &CapabilityId,
+    nullifier: &IntentNullifier,
+    verifier_pub: &PublicKey,
+    tx_nonce: pallas::Base,
+) -> Vec<u8> {
+    let mut m = Vec::with_capacity(128);
+    m.extend_from_slice(&capability_id.to_bytes());
+    m.extend_from_slice(&nullifier.to_bytes());
+    m.extend_from_slice(&verifier_pub.to_bytes());
+    m.extend_from_slice(&tx_nonce.to_repr());
+    m
+}
+
 #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
-impl RevokeCapabilityParams { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let sl = SerializedLen::try_from_len(self.signature.len())?; let rl = SerializedLen::try_from_len(self.reason.len())?; let mut b = Vec::with_capacity(104+self.signature.len()+self.reason.len()); b.extend_from_slice(&self.capability_id.encode()); b.extend_from_slice(&self.holder_pub.to_bytes()); b.extend_from_slice(&self.capability_secret.encode()); b.extend_from_slice(&sl.to_le_bytes()); b.extend_from_slice(&self.signature); b.extend_from_slice(&rl.to_le_bytes()); b.extend_from_slice(&self.reason); b.extend_from_slice(&self.fee.to_le_bytes()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 112 { return Err(ContractError::IoError("RevokeCapabilityParams: too short".into())); } let capability_id = CapabilityId::decode(read_slice(data, 0, 32 - 0)?)?; let holder_pub = PublicKey::from_bytes(read_field::<32>(data, 32)?).map_err(|e| ContractError::IoError(format!("RevokeCapabilityParams: invalid holder_pub: {}", e)))?; let capability_secret = CapabilitySecret::decode(read_slice(data, 64, 96 - 64)?)?; let sig_len = SerializedLen::from_le_bytes(read_field::<4>(data, 96)?).to_usize(); let p = 100+sig_len; if data.len() < p+4+8 { return Err(ContractError::IoError("RevokeCapabilityParams: truncated".into())); } let signature = read_slice(data, 100, (p) - (100))?.to_vec(); let reason_len = SerializedLen::from_le_bytes(read_field::<4>(data, p)?).to_usize(); let r = p+4+reason_len; if data.len() != r+8 { return Err(ContractError::IoError(format!("RevokeCapabilityParams: expected {} bytes, got {}", r+8, data.len()))); } let reason = read_slice(data, p+4, (r) - (p+4))?.to_vec(); let fee = u64::from_le_bytes(read_field::<8>(data, r)?); Ok(RevokeCapabilityParams { capability_id, holder_pub, capability_secret, signature, reason, fee }) } }
+impl VerifyCapabilityParams {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_bytes = self.capability_proof.encode()?;
+        let sl = SerializedLen::try_from_len(self.holder_sig.len())?;
+        let mut b = Vec::with_capacity(proof_bytes.len() + 32 + 32 + 4 + self.holder_sig.len() + 8);
+        b.extend_from_slice(&proof_bytes);
+        b.extend_from_slice(&self.verifier_pub.to_bytes());
+        b.extend_from_slice(&self.tx_nonce.to_repr());
+        b.extend_from_slice(&sl.to_le_bytes());
+        b.extend_from_slice(&self.holder_sig);
+        b.extend_from_slice(&self.fee.to_le_bytes());
+        Ok(b)
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        let capability_proof = CapabilityProof::decode(data)?;
+        let proof_len = capability_proof.encode()?.len();
+        if data.len() < proof_len + 32 + 32 + 4 + 8 {
+            return Err(ContractError::IoError("VerifyCapabilityParams: too short".into()));
+        }
+        let verifier_pub = PublicKey::from_bytes(read_field::<32>(data, proof_len)?)
+            .map_err(|e| ContractError::IoError(format!("VerifyCapabilityParams: invalid verifier_pub: {}", e)))?;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            read_field::<32>(data, proof_len + 32)?,
+        ))
+        .ok_or_else(|| ContractError::IoError("VerifyCapabilityParams: invalid tx_nonce".into()))?;
+        let sig_off = proof_len + 64;
+        let sig_len = SerializedLen::from_le_bytes(read_field::<4>(data, sig_off)?).to_usize();
+        let sig_off = sig_off.saturating_add(4);
+        let fee_off = sig_off.saturating_add(sig_len);
+        if data.len() != fee_off.saturating_add(8) {
+            return Err(ContractError::IoError(format!(
+                "VerifyCapabilityParams: expected {} bytes, got {}",
+                fee_off.saturating_add(8),
+                data.len()
+            )));
+        }
+        let holder_sig = read_slice(data, sig_off, sig_len)?.to_vec();
+        let fee = u64::from_le_bytes(read_field::<8>(data, fee_off)?);
+        Ok(VerifyCapabilityParams { capability_proof, verifier_pub, tx_nonce, holder_sig, fee })
+    }
+}
+
+#[derive(Debug, Clone,)] pub struct RevokeCapabilityParams { pub capability_id: CapabilityId, pub holder_pub: PublicKey, pub signature: Vec<u8>, pub reason: Vec<u8>, pub fee: u64 }
+#[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
+impl RevokeCapabilityParams { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let sl = SerializedLen::try_from_len(self.signature.len())?; let rl = SerializedLen::try_from_len(self.reason.len())?; let mut b = Vec::with_capacity(80+self.signature.len()+self.reason.len()); b.extend_from_slice(&self.capability_id.encode()); b.extend_from_slice(&self.holder_pub.to_bytes()); b.extend_from_slice(&sl.to_le_bytes()); b.extend_from_slice(&self.signature); b.extend_from_slice(&rl.to_le_bytes()); b.extend_from_slice(&self.reason); b.extend_from_slice(&self.fee.to_le_bytes()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 80 { return Err(ContractError::IoError("RevokeCapabilityParams: too short".into())); } let capability_id = CapabilityId::decode(read_slice(data, 0, 32 - 0)?)?; let holder_pub = PublicKey::from_bytes(read_field::<32>(data, 32)?).map_err(|e| ContractError::IoError(format!("RevokeCapabilityParams: invalid holder_pub: {}", e)))?; let sig_len = SerializedLen::from_le_bytes(read_field::<4>(data, 64)?).to_usize(); let p = 68+sig_len; if data.len() < p+4+8 { return Err(ContractError::IoError("RevokeCapabilityParams: truncated".into())); } let signature = read_slice(data, 68, (p) - (68))?.to_vec(); let reason_len = SerializedLen::from_le_bytes(read_field::<4>(data, p)?).to_usize(); let r = p+4+reason_len; if data.len() != r+8 { return Err(ContractError::IoError(format!("RevokeCapabilityParams: expected {} bytes, got {}", r+8, data.len()))); } let reason = read_slice(data, p+4, (r) - (p+4))?.to_vec(); let fee = u64::from_le_bytes(read_field::<8>(data, r)?); Ok(RevokeCapabilityParams { capability_id, holder_pub, signature, reason, fee }) } }
 
 // ============================================================================
 // MINIMAL VIABLE INFORMATION EXAMPLES

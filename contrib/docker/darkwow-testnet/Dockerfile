@@ -102,7 +102,7 @@ ENV RUSTFLAGS="--remap-path-prefix=/root/.cargo=/cargo --remap-path-prefix=/root
 # Build ALL WASM contracts from source (deterministic — git clone ensures clean state).
 # Each contract that compiles to WASM must be listed here so compilation failures
 # are caught at build time, not silently skipped.
-RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_contract && \
+RUN RUSTC_BOOTSTRAP=1 RUSTFLAGS="$RUSTFLAGS -C strip=symbols -Zlocation-detail=none" cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_native_token_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_promissory_note_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_purse_contract && \

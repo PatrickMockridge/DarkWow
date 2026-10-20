@@ -69,9 +69,9 @@ check-source-hash:
 		fi; \
 	fi
 
-all: check-source-hash proof
+all: check-source-hash proof ../../../script/contract_build_recipe.txt ../../../script/contract-build-recipe.mk Makefile
 	@echo "Building bridge contract WASM..."
-	@RUSTFLAGS="$(RUSTFLAGS)" cargo build --release --manifest-path Cargo.toml --target wasm32-unknown-unknown
+	@RUSTFLAGS="$(WASM_RUSTFLAGS)" RUSTC_BOOTSTRAP=$(CONTRACT_RUSTC_BOOTSTRAP) cargo build --release --manifest-path Cargo.toml --target wasm32-unknown-unknown
 	@mv ../../../target/wasm32-unknown-unknown/release/$(CONTRACT).wasm ./
 	@echo "$(COMPUTE_SOURCE_HASH)" > $(SOURCE_HASH_FILE)
 	@echo "Done: $(CONTRACT).wasm"
@@ -88,3 +88,4 @@ clean:
 	@rm -f proof/*.zk.bin
 	@rm -f $(SOURCE_HASH_FILE)
 	@echo "Cleaned build artifacts"
+include ../../../script/contract-build-recipe.mk
