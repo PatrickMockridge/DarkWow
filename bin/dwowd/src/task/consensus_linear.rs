@@ -513,7 +513,7 @@ pub async fn consensus_linear_init_task(
                             block.header.height);
                         break;
                     };
-                    let vm = Arc::new(vm);
+                    let vm = Arc::new(std::sync::Mutex::new(vm));
                     if block.header.height.pred().is_none() {
                         warn!(target: "dwowd::task::consensus_linear_init_task",
                             "Peer sent block at pre-genesis height 0 — skipping");
@@ -541,7 +541,11 @@ pub async fn consensus_linear_init_task(
                     // The decision itself is `admit_received_genesis` below, extracted so it can be
                     // driven with a genesis this build did not create; see that function.
                     if block.header.height == BlockHeight::GENESIS {
-                        match block.hash_with_vm(&vm) {
+                        let genesis_hash = {
+                            let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+                            block.hash_with_vm(&guard)
+                        };
+                        match genesis_hash {
                             Ok(hash) => {
                                 if let Err(e) = admit_received_genesis(block, &hash) {
                                     warn!(target: "dwowd::task::consensus_linear_init_task",

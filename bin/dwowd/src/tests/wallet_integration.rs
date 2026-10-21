@@ -202,10 +202,10 @@ fn test_wallet_integration() {
             &block_2.header.randomx_key,
         )
         .expect("RandomX cache");
-        let vm = Arc::new(
+        let vm = Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
                 .expect("RandomX VM"),
-        );
+        ));
 
         crate::block_acceptor::accept_block(
             &har.chain_state,
@@ -1386,10 +1386,10 @@ fn test_wallet_coinbase_scan_only() {
         let rx_cache = randomx::RandomXCache::new(
             rx_flags, &block_2.header.randomx_key,
         ).expect("RandomXCache height 2");
-        let vm = Arc::new(
+        let vm = Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
                 .expect("RandomXVM height 2"),
-        );
+        ));
 
         crate::block_acceptor::accept_block(
             &har.chain_state, &block_2, &[], &vm,
@@ -2190,10 +2190,10 @@ fn test_canonical_call_failure_rejects_block() {
         let rx_cache = randomx::RandomXCache::new(
             rx_flags, &block_2.header.randomx_key,
         ).expect("RandomXCache");
-        let vm = Arc::new(
+        let vm = Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
                 .expect("RandomXVM"),
-        );
+        ));
 
         let result = crate::block_acceptor::accept_block(
             &har.chain_state, &block_2, &[], &vm,

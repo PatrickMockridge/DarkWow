@@ -220,10 +220,10 @@ impl HeavyweightPipeline {
             & !randomx::RandomXFlags::JIT;
         let rx_cache = self.chain_state.get_cache([0u8; 32])
             .map_err(|e| dwow_core::Error::Custom(format!("RandomX cache: {}", e)))?;
-        let vm = Arc::new(
+        let vm = Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(flags, Some(rx_cache), None)
                 .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
-        );
+        ));
         let overlay_arc = Arc::new(std::sync::Mutex::new(overlay.clone()));
         let mut deploy_anchor = dwow_sdk::crypto::MerkleTree::new(1);
         deploy_anchor.append(dwow_sdk::crypto::MerkleNode::from_base(pallas::Base::from(2u64)));
@@ -285,10 +285,10 @@ impl HeavyweightPipeline {
             & !randomx::RandomXFlags::JIT;
         let rx_cache = self.chain_state.get_cache([0u8; 32])
             .map_err(|e| dwow_core::Error::Custom(format!("RandomX cache: {}", e)))?;
-        let vm = Arc::new(
+        let vm = Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(flags, Some(rx_cache), None)
                 .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
-        );
+        ));
         let overlay_arc = Arc::new(std::sync::Mutex::new(overlay.clone()));
         let mut deploy_anchor = dwow_sdk::crypto::MerkleTree::new(1);
         deploy_anchor.append(dwow_sdk::crypto::MerkleNode::from_base(pallas::Base::from(2u64)));
@@ -802,9 +802,12 @@ impl<'c> HeavyweightBlock<'c> {
             "accept_block at height {}: {}", self.height, e
         )))?;
 
-        let block_hash = block.hash_with_vm(&vm).map_err(|e| dwow_core::Error::Custom(format!(
-            "hashing block at height {}: {}", self.height, e
-        )))?;
+        let block_hash = {
+            let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+            block.hash_with_vm(&guard).map_err(|e| dwow_core::Error::Custom(format!(
+                "hashing block at height {}: {}", self.height, e
+            )))?
+        };
         match outcome {
             dwow_chain::BlockConnectOutcome::CanonicalExtension { new_height } => {
                 self.chain.log(&format!("[blockchain] block accepted at height {} ({:.1}s, {} txs)",

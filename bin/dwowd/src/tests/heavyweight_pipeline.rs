@@ -260,25 +260,26 @@ pub(crate) fn verify_witness_tree(witness: &[u8], label: &str) {
 /// Build a RandomX VM for `accept_block` — used by all `exec*` methods.
 pub(crate) fn build_accept_vm(
     block: &dwow_chain::Block,
-) -> dwow_core::Result<std::sync::Arc<randomx::RandomXVM>> {
+) -> dwow_core::Result<std::sync::Arc<std::sync::Mutex<randomx::RandomXVM>>> {
     let rx_flags = randomx::RandomXFlags::get_recommended_flags()
         & !randomx::RandomXFlags::JIT;
     let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
         .map_err(|e| dwow_core::Error::Custom(format!("RandomX cache: {}", e)))?;
-    Ok(std::sync::Arc::new(
+    Ok(std::sync::Arc::new(std::sync::Mutex::new(
         randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
             .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
-    ))
+    )))
 }
 
 /// Find a nonce that makes the block hash ≤ target. Used for test blocks
 /// at heights > 2 where the expected target is lower than u32::MAX.
 /// Returns the valid nonce.
-pub(crate) fn mine_test_nonce(block: &dwow_chain::Block, vm: &randomx::RandomXVM, target: BlockTarget) -> dwow_core::Result<u32> {
+pub(crate) fn mine_test_nonce(block: &dwow_chain::Block, vm: &std::sync::Arc<std::sync::Mutex<randomx::RandomXVM>>, target: BlockTarget) -> dwow_core::Result<u32> {
     for nonce in 0u32..1_000_000 {
         let mut b = block.clone();
         b.header.nonce = nonce;
-        let hash = b.hash_with_vm(vm).expect("hash failed");
+        let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+        let hash = b.hash_with_vm(&guard).expect("hash failed");
         let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());
         if hash_u32 <= target.get() {
             return Ok(nonce);

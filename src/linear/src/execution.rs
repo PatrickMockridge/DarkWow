@@ -93,7 +93,11 @@ pub struct TxBackend {
     pub overlay: Arc<Mutex<sled_overlay::SledTreeOverlay>>,
     pub store: std::sync::Arc<LinearStore>,
     pub height: BlockHeight,
-    pub vm: std::sync::Arc<randomx::RandomXVM>,
+    /// The block's RandomX VM. **Mutex, not a bare `Arc`**: the WASM runtime hands this backend
+    /// to arbitrary call code by `Arc`, and `get_block_hash_by_height` hashes through `&self`;
+    /// a shared, unlocked VM is two threads hashing one RandomX instance, which is undefined
+    /// behaviour in the FFI. Every hash takes the lock (`OBL-C240`).
+    pub vm: std::sync::Arc<std::sync::Mutex<randomx::RandomXVM>>,
     /// Shared block-level anchor tree for two-level Merkle anchoring (§C.3.7).
     /// Appended to during process_update via the merkle_anchor_add host function.
     pub block_anchor_tree: Arc<Mutex<MerkleTree>>,
@@ -225,7 +229,7 @@ pub fn execute_block(
     chain_state: &CChainState,
     block: &crate::Block,
     uncles: &[crate::UncleBlock],
-    vm: &Arc<RandomXVM>,
+    vm: &Arc<Mutex<RandomXVM>>,
     current_height: BlockHeight,
     difficulty: BlockTarget,
 ) -> dwow_core::Result<ExecutionOutcome> {
@@ -898,7 +902,7 @@ fn execute_spend_hook(
 fn deploy_contract_in_overlay(
     overlay: &mut SledTreeOverlay,
     store: crate::LinearStore,
-    vm: Arc<RandomXVM>,
+    vm: Arc<Mutex<RandomXVM>>,
     wasm: &[u8],
     contract_id: ContractId,
     ix: &[u8],
@@ -1001,7 +1005,7 @@ pub fn is_genesis_deployment_tx(tx: &crate::Transaction) -> bool {
 pub fn apply_genesis_deployments(
     overlay: &mut SledTreeOverlay,
     store: crate::LinearStore,
-    vm: Arc<RandomXVM>,
+    vm: Arc<Mutex<RandomXVM>>,
     block: &crate::Block,
     difficulty: BlockTarget,
 ) -> dwow_core::Result<()> {
@@ -1234,7 +1238,10 @@ impl RuntimeBackend for TxBackend {
 
     fn get_block_hash_by_height(&self, height: BlockHeight) -> dwow_core::Result<Option<Vec<u8>>> {
         match self.store.get_block(height) {
-            Ok(block) => Ok(Some(block.hash_with_vm(&self.vm).map_err(|e| dwow_core::Error::Custom(format!("hash: {e}")))?.as_bytes().to_vec())),
+            Ok(block) => {
+                let vm = self.vm.lock().unwrap_or_else(|e| e.into_inner());
+                Ok(Some(block.hash_with_vm(&vm).map_err(|e| dwow_core::Error::Custom(format!("hash: {e}")))?.as_bytes().to_vec()))
+            }
             // Same rule as `get_tx` above: the typed variant, not the message (OBL-C50).
             Err(crate::LinearError::BlockNotFound(_)) => Ok(None),
             Err(e) => Err(Error::Custom(e.to_string())),
@@ -1367,5 +1374,82 @@ mod tests {
         let after = state(&[], &["gone"]);
         assert!(write_set(&before, &after).is_empty());
         assert!(presence_delta(&before, &after).is_empty());
+    }
+
+    /// `OBL-C240` — the single-owner invariant is carried by the **type**, not by a convention in
+    /// a `drop`. These ascriptions stop compiling the moment `TxBackend.vm` loses its mutex or
+    /// `check_block_header`/`verify_proof`/`mine` go back to taking a shared `&RandomXVM`.
+    #[cfg(feature = "pow")]
+    #[test]
+    fn vm_single_owner_invariant_is_type_carried() {
+        let _: fn(&TxBackend) -> &std::sync::Arc<Mutex<randomx::RandomXVM>> = |b| &b.vm;
+        let _: fn(
+            &crate::Block,
+            &mut randomx::RandomXVM,
+            crate::BlockTarget,
+            BlockHeight,
+            Option<&blake3::Hash>,
+        ) -> crate::Result<()> = crate::validation::check_block_header;
+        let _: fn(&crate::PoWConsensus, &crate::Block, &mut randomx::RandomXVM)
+            -> crate::Result<bool> = crate::PoWConsensus::verify_proof;
+        let _: fn(
+            &crate::Miner,
+            &mut randomx::RandomXVM,
+            blake3::Hash,
+            BlockHeight,
+            Vec<crate::Transaction>,
+            crate::BlockTarget,
+            [u8; 32],
+            [u8; 32],
+            &[crate::UncleBlock],
+        ) -> crate::Result<crate::Block> = crate::Miner::mine;
+    }
+
+    /// The runtime half of the same invariant: two threads hashing through one mutex-wrapped VM
+    /// never overlap inside `hash_with_vm`. Without the lock this records a maximum overlap of 2,
+    /// which is the undefined FFI behaviour the model (`contrib/model/vm_state_model.py`, `same_key`)
+    /// replays.
+    #[cfg(feature = "pow")]
+    #[test]
+    fn per_vm_mutex_serializes_hash_calls() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let block = crate::create_block(
+            blake3::hash(b"previous"),
+            BlockHeight::new(2),
+            vec![],
+            crate::BlockTarget::MAX,
+        )
+        .expect("a fixture block");
+        let vm = std::sync::Arc::new(Mutex::new(
+            crate::Miner::create_vm(&block.header.randomx_key).expect("a fixture VM"),
+        ));
+        let active = std::sync::Arc::new(AtomicUsize::new(0));
+        let max_active = std::sync::Arc::new(AtomicUsize::new(0));
+
+        let mut handles = Vec::new();
+        for _ in 0..2 {
+            let vm = std::sync::Arc::clone(&vm);
+            let active = std::sync::Arc::clone(&active);
+            let max_active = std::sync::Arc::clone(&max_active);
+            let block = block.clone();
+            handles.push(std::thread::spawn(move || {
+                for _ in 0..50 {
+                    let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+                    let now = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    max_active.fetch_max(now, Ordering::SeqCst);
+                    block.hash_with_vm(&guard).expect("hash under the lock");
+                    active.fetch_sub(1, Ordering::SeqCst);
+                }
+            }));
+        }
+        for handle in handles {
+            handle.join().expect("hash thread");
+        }
+        assert_eq!(
+            max_active.load(Ordering::SeqCst),
+            1,
+            "two threads hashed the same VM at once — the mutex is not serializing them"
+        );
     }
 }

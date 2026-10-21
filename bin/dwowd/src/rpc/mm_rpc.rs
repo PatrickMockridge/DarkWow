@@ -751,10 +751,10 @@ impl DwowNode {
         let exec_rx_cache = chain_state.get_cache(randomx_key)
             .expect("Failed to get RandomX cache for mm execution");
         #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
-        let exec_vm = std::sync::Arc::new(
+        let exec_vm = std::sync::Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(flags, Some(exec_rx_cache), None)
                 .expect("Failed to create RandomX VM for mm execution"),
-        );
+        ));
 
         match crate::block_acceptor::accept_block_with_mempool(
             &chain_state, &block, &uncles, &exec_vm,

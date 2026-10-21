@@ -167,9 +167,9 @@ async fn build_authority_chain() -> (Arc<dwow_chain::CChainState>, std::path::Pa
     let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
     let rx_cache = randomx::RandomXCache::new(rx_flags, &block_2.header.randomx_key)
         .expect("RandomXCache height 2");
-    let vm = Arc::new(
+    let vm = Arc::new(std::sync::Mutex::new(
         randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM height 2"),
-    );
+    ));
     crate::block_acceptor::accept_block(
         &har.chain_state, &block_2, &[], &vm,
         dwow_sdk::blockchain::BlockTarget::MAX, None,
@@ -383,7 +383,9 @@ fn mine_block_in_place(block: &mut dwow_chain::Block) {
     let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
     let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
         .expect("RandomXCache");
-    let vm = randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM");
+    let vm = std::sync::Arc::new(std::sync::Mutex::new(
+        randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"),
+    ));
     let nonce = crate::tests::modules::uncle_helpers::mine_test_nonce(block, &vm, block.header.target)
         .expect("mine nonce");
     block.header.nonce = nonce;
@@ -401,9 +403,9 @@ async fn mine_coinbase_block(
     let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
     let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
         .expect("RandomXCache");
-    let vm = Arc::new(
+    let vm = Arc::new(std::sync::Mutex::new(
         randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"),
-    );
+    ));
     crate::block_acceptor::accept_block(
         chain_state, &block, &[], &vm,
         block.header.target, None,
@@ -431,7 +433,9 @@ async fn build_mined_coinbase(
 fn accept_mined_block(chain_state: &Arc<dwow_chain::CChainState>, block: &dwow_chain::Block) {
     let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
     let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key).expect("RandomXCache");
-    let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"));
+    let vm = Arc::new(std::sync::Mutex::new(
+        randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"),
+    ));
     crate::block_acceptor::accept_block(
         chain_state, block, &[], &vm,
         block.header.target, None,
@@ -710,7 +714,9 @@ fn test_activate_best_chain_adopts_competing_block() {
         let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block_3_a.header.randomx_key)
             .expect("RandomXCache");
-        let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"));
+        let vm = Arc::new(std::sync::Mutex::new(
+            randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"),
+        ));
         crate::block_acceptor::accept_block(
             &chain, &block_3_a, &[], &vm, block_3_a.header.target, None,
         ).expect("accept block 3a");
@@ -771,7 +777,9 @@ fn test_reorg_state_consistency() {
         // Accept 3a — canonical tip at 3 carrying 3a's coinbase state.
         let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block_3_a.header.randomx_key).expect("cache");
-        let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("vm"));
+        let vm = Arc::new(std::sync::Mutex::new(
+            randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("vm"),
+        ));
         crate::block_acceptor::accept_block(
             &chain, &block_3_a, &[], &vm, block_3_a.header.target, None,
         ).expect("accept 3a");

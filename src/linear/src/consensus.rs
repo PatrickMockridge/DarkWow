@@ -370,8 +370,8 @@ impl PoWConsensus {
 
     /// Verify a block's RandomX hash meets the target.
     #[cfg(feature = "pow")]
-    pub fn verify_proof(&self, block: &Block, vm: &randomx::RandomXVM) -> Result<bool> {
-        let hash = block.hash_with_vm(&vm)?;
+    pub fn verify_proof(&self, block: &Block, vm: &mut randomx::RandomXVM) -> Result<bool> {
+        let hash = block.hash_with_vm(vm)?;
         Ok(self.check_pow(&hash))
     }
 

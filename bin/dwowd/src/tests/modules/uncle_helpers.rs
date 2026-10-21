@@ -18,23 +18,24 @@ use crate::tests::modules::coinbase_coordination::PrefetchedCoinbase;
 /// Build a RandomX VM for accept_block — used by block-exec tests.
 pub fn build_accept_vm(
     block: &dwow_chain::Block,
-) -> Result<std::sync::Arc<randomx::RandomXVM>> {
+) -> Result<std::sync::Arc<std::sync::Mutex<randomx::RandomXVM>>> {
     let rx_flags = randomx::RandomXFlags::get_recommended_flags()
         & !randomx::RandomXFlags::JIT;
     let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
         .map_err(|e| dwow_core::Error::Custom(format!("RandomX cache: {}", e)))?;
-    Ok(std::sync::Arc::new(
+    Ok(std::sync::Arc::new(std::sync::Mutex::new(
         randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
             .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
-    ))
+    )))
 }
 
 /// Find a nonce that makes the block hash ≤ target.
-pub fn mine_test_nonce(block: &dwow_chain::Block, vm: &randomx::RandomXVM, target: BlockTarget) -> dwow_core::Result<u32> {
+pub fn mine_test_nonce(block: &dwow_chain::Block, vm: &std::sync::Arc<std::sync::Mutex<randomx::RandomXVM>>, target: BlockTarget) -> dwow_core::Result<u32> {
     for nonce in 0u32..1_000_000 {
         let mut b = block.clone();
         b.header.nonce = nonce;
-        let hash = b.hash_with_vm(vm).map_err(|e| {
+        let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+        let hash = b.hash_with_vm(&guard).map_err(|e| {
             dwow_core::Error::Custom(format!("hashing candidate nonce {nonce}: {e}"))
         })?;
         // `as_bytes()` is `&[u8; 32]`, so these indices are statically in bounds:

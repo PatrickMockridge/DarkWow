@@ -1080,9 +1080,9 @@ impl CChainState {
             .get_next_work_required(&self.store, block_height)?;
 
         // Lock the VM for validation hashing — prevents concurrent RandomX FFI
-        let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = vm.lock().unwrap_or_else(|e| e.into_inner());
         validation::check_block_header(
-            block, &*guard, expected_target, current_height, tip_hash.as_ref(),
+            block, &mut *guard, expected_target, current_height, tip_hash.as_ref(),
         )?;
         drop(guard);
 

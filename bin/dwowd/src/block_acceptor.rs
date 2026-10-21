@@ -104,7 +104,7 @@ pub fn accept_block(
     chain_state: &CChainState,
     block: &Block,
     uncles: &[UncleBlock],
-    vm: &Arc<randomx::RandomXVM>,
+    vm: &Arc<std::sync::Mutex<randomx::RandomXVM>>,
     target: BlockTarget,
     fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
 ) -> Result<BlockConnectOutcome> {
@@ -117,7 +117,7 @@ pub fn accept_block_with_mempool(
     chain_state: &CChainState,
     block: &Block,
     uncles: &[UncleBlock],
-    vm: &Arc<randomx::RandomXVM>,
+    vm: &Arc<std::sync::Mutex<randomx::RandomXVM>>,
     target: BlockTarget,
     fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
     mempool: Option<&dwow_mempool::MempoolPtr>,
@@ -300,8 +300,12 @@ pub fn accept_block_with_mempool(
             }
         }
         _ => {
-            let block_hash = block.hash_with_vm(vm.as_ref())
-                .map_err(|e| dwow_core::Error::Custom(format!("hash: {e}")))?;
+            let block_hash = {
+                let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+                block
+                    .hash_with_vm(&guard)
+                    .map_err(|e| dwow_core::Error::Custom(format!("hash: {e}")))?
+            };
             #[expect(clippy::unwrap_used, reason = "4-byte slice always converts to [u8; 4]")]
             let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
             if !target.hash_is_valid(hash_u32) {
@@ -899,7 +903,7 @@ pub fn activate_best_chain(
             }
         };
         let vm = match randomx::RandomXVM::new(flags, Some(rx_cache), None) {
-            Ok(v) => Arc::new(v),
+            Ok(v) => Arc::new(std::sync::Mutex::new(v)),
             Err(e) => {
                 log_reorg_failure(chain_state, fork_point, &disconnected, &format!("RandomX VM: {e}"));
                 return Err(dwow_core::Error::Custom(format!("Reorg: competing block RandomX VM: {}", e)));

@@ -162,7 +162,7 @@ impl DwowNode {
         // lock the per-VM Mutex. The mining loop holds the VM for sustained
         // hashing and must not share with any other task.
         let mining_vm = dwow_chain::Miner::create_vm(&randomx_key);
-        let mining_vm = match mining_vm {
+        let mut mining_vm = match mining_vm {
             Ok(vm) => vm,
             Err(e) => {
                 error!(target: "dwowd::rpc::miner", "Failed to create mining VM: {}", e);
@@ -219,7 +219,7 @@ impl DwowNode {
         // The per-block Caribina anchor keypair. Generated before mining because its public half goes
         // into the mined region, and kept because its secret signs the proof after the nonce is found.
         let anchor_wallet = dwow_chain::caribina::CaribinaWallet::generate();
-        let mined_block = match miner.mine(&mining_vm, previous, height, all_txs, target, miner_pk, anchor_wallet.public_key(), &prep.uncles) {
+        let mined_block = match miner.mine(&mut mining_vm, previous, height, all_txs, target, miner_pk, anchor_wallet.public_key(), &prep.uncles) {
             Ok(block) => block,
             Err(e) => {
                 error!(target: "dwowd::rpc::miner", "Mining failed: {}", e);
@@ -274,6 +274,9 @@ impl DwowNode {
         // Uses the mining_vm created above for PoW verification.
         info!(target: "dwowd::rpc::miner",
             "Block {} mined (nonce={}), applying to chain...", block_hash, mined_block.header.nonce);
+        // Mining held the VM by ownership; the accept path takes it under the same mutex the
+        // cached-VM callers use.
+        let mining_vm = std::sync::Arc::new(std::sync::Mutex::new(mining_vm));
         match crate::block_acceptor::accept_block_with_mempool(
             &chain_state, &mined_block, &prep.uncles, &mining_vm,
             latest_block.header.target, None,

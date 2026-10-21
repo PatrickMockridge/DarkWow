@@ -52,6 +52,9 @@ something a reader would go looking for:
   "exit[s] 0; no pass/fail runner". It is not: it has 15 tests and
   `raise SystemExit(0 if passed == len(tests) else 1)`. Only `vm_state_model.py` matched
   that description, and it is the one that was gated on an exit status it did not set.
+  **Corrected 2026-10-21 (`OBL-C240`):** it has set one since `15ee21b06d` (2026-09-25), and
+  since 2026-10-21 that exit reads the *correct* pair — each demonstration's expected polarity
+  plus the three mitigation assertions — rather than the pre-fix reproduction itself.
 
 The remaining rows were **not** re-measured in this pass. They are as-of 2026-08-16, and
 this note is the reason to re-measure before relying on any of them.
@@ -108,7 +111,10 @@ removed), `wallet_model.py` 95/95,
 `wallet_simulation.py` 12/12 (was 6/12 — fixed this pass by aligning its coinbase
 builder with the canonical `wallet_model._make_pow_tx` per-block key and updating the
 stale `mark_spent`/`is_spent` → `mark_revoked`/`is_revoked` vocabulary). `chain_model.py`
-and `vm_state_model.py` are diagnostic/definition models (exit 0; no pass/fail runner).
+is a diagnostic/definition model (exit 0; no pass/fail runner). `vm_state_model.py` is a **gate**
+as of 2026-10-21: its exit is 1 when a pre-fix demonstration drifts from its expected polarity or
+a mitigation assertion fails, and its `--self-test` flips both to prove the verdict can fail
+(`OBL-C240`).
 
 **G4 line-by-line audit (re-confirmed 2026-08-18):** the models carry `Matches Rust: …`
 annotations (85 across the nine model files) that are the 1:1 mapping. Spot-checked the
@@ -128,10 +134,13 @@ parameters, not a proof; the line-number suffixes in a few model comments have
 drifted with Rust refactoring (e.g. `blockchain.rs:75` → `:878`, `scan.rs:759` →
 `scan.rs:1022`) but the semantics are unchanged. No model↔Rust divergence found.
 
-`vm_state_model.py` reports 2/5 diagnostic crash paths (same-key VM-cache collision;
-`connect_lock` gap) — a pre-existing diagnostic observation about the miner's RandomX
-VM-cache concurrency, not a pass/fail test (exit 0). It does not block L3; recorded as
-a tracked diagnostic (out of the genesis-contract scope of §1.1).
+`vm_state_model.py` reports two expected pre-fix reproductions (same-key VM-cache collision;
+`connect_lock` gap) **and** asserts the mitigation the tree now carries — a per-VM
+`Arc<Mutex<RandomXVM>>` in `TxBackend`, `&mut RandomXVM` at the validation/consensus hash sites,
+and a two-thread Rust witness that the mutex serializes hashes. Since 2026-10-21 its exit is 1 if
+either half drifts; the demonstrations are expected output, not a gate failure (`OBL-C240`). It
+does not block L3; recorded as a tracked diagnostic that is also a gate (out of the
+genesis-contract scope of §1.1).
 
 ### 2.3 Level 1.5 — Pre-Production Bridge (MoC gate)
 

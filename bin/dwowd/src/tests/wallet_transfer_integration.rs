@@ -123,9 +123,9 @@ fn test_wallet_address_roundtrip_and_transfer() {
         let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block_2.header.randomx_key)
             .expect("RandomXCache");
-        let vm = Arc::new(
+        let vm = Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"),
-        );
+        ));
         crate::block_acceptor::accept_block(
             &har.chain_state, &block_2, &[], &vm,
             dwow_sdk::blockchain::BlockTarget::MAX, None,
@@ -285,9 +285,9 @@ fn test_transfer_receive_decrypt() {
         let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block_2.header.randomx_key)
             .expect("RandomXCache");
-        let vm = Arc::new(
+        let vm = Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"),
-        );
+        ));
         crate::block_acceptor::accept_block(
             &har.chain_state, &block_2, &[], &vm,
             dwow_sdk::blockchain::BlockTarget::MAX, None,
@@ -480,9 +480,9 @@ fn test_transfer_accepts_through_accept_block() -> TestResult<()> {
         let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block_2.header.randomx_key)
             .expect("RandomXCache");
-        let vm = Arc::new(
+        let vm = Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"),
-        );
+        ));
         crate::block_acceptor::accept_block(
             &har.chain_state, &block_2, &[], &vm,
             dwow_sdk::blockchain::BlockTarget::MAX, None,
@@ -862,9 +862,9 @@ async fn box_owner_scenario(tag: &str) -> TestResult<BoxOwnerScenario> {
     let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
     let rx_cache = randomx::RandomXCache::new(rx_flags, &block_2.header.randomx_key)
         .expect("RandomXCache");
-    let vm = Arc::new(
+    let vm = Arc::new(std::sync::Mutex::new(
         randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM"),
-    );
+    ));
     crate::block_acceptor::accept_block(
         &har.chain_state, &block_2, &[], &vm,
         dwow_sdk::blockchain::BlockTarget::MAX, None,

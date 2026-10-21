@@ -189,9 +189,9 @@ fn test_wallet_sync_pulls_blocks_to_balance() {
             & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block_2.header.randomx_key)
             .expect("RandomXCache height 2");
-        let vm = Arc::new(
+        let vm = Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomXVM height 2"),
-        );
+        ));
         crate::block_acceptor::accept_block(
             &har.chain_state, &block_2, &[], &vm,
             dwow_sdk::blockchain::BlockTarget::MAX, None,

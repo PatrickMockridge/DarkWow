@@ -30,7 +30,9 @@ with the same key K?
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Dict, List, Optional, Set, Tuple
+import os
 import random
+import re
 import sys
 
 
@@ -690,14 +692,91 @@ def simulate_all_tasks_with_per_vm_lock():
     return True
 
 
-def main():
-    results = {}
+# The three demonstrations replay the **pre-fix** design. Their expected outcome is that the
+# hazard reproduces: `same_key` and `connect_lock_gap` must be True, and `different_key` must be
+# False. A drift in either direction means the model has stopped demonstrating what it exists to
+# demonstrate, and that is a failure — not the reproduction itself (OBL-C123's owed decision).
+EXPECTED_DEMOS = {
+    "same_key": True,
+    "different_key": False,
+    "connect_lock_gap": True,
+}
 
-    results["same_key"] = simulate_same_key_collision()
-    results["different_key"] = simulate_different_key_no_collision()
-    results["connect_lock_gap"] = simulate_connect_lock_does_not_protect_mining()
-    results["per_vm_mutex"] = not simulate_defence_in_depth_per_vm_mutex()
-    results["all_paths_mutex"] = not simulate_all_tasks_with_per_vm_lock()
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def assert_rust_type_invariant():
+    """The single-owner invariant is carried by the Rust types, not by a convention.
+
+    `TxBackend.vm` must be `Arc<Mutex<RandomXVM>>` (the WASM runtime holds the backend by `Arc`
+    and hashes through `&self`), and `check_block_header`/`verify_proof` must take
+    `&mut RandomXVM`, which makes concurrent hashing a borrow-check error. This is the half of
+    `OBL-C240` a simulation cannot prove; the runtime half is the Rust test
+    `per_vm_mutex_serializes_hash_calls`.
+    """
+    checks = [
+        (
+            "src/linear/src/execution.rs",
+            r"pub\s+vm:\s*std::sync::Arc<std::sync::Mutex<randomx::RandomXVM>>",
+            "TxBackend.vm is not Arc<Mutex<RandomXVM>>",
+        ),
+        (
+            "src/linear/src/validation.rs",
+            r"pub\s+fn\s+check_block_header\(\s*block:\s*&Block,\s*vm:\s*&mut\s+RandomXVM,",
+            "check_block_header does not take &mut RandomXVM",
+        ),
+        (
+            "src/linear/src/consensus.rs",
+            r"pub\s+fn\s+verify_proof\(&self,\s*block:\s*&Block,\s*vm:\s*&mut\s+randomx::RandomXVM\)",
+            "verify_proof does not take &mut RandomXVM",
+        ),
+    ]
+    ok = True
+    for rel, pattern, message in checks:
+        path = os.path.join(REPO_ROOT, rel)
+        try:
+            text = open(path, encoding="utf-8").read()
+        except OSError as e:
+            print(f"  FAIL: cannot read {rel}: {e}")
+            ok = False
+            continue
+        if not re.search(pattern, text, re.S):
+            print(f"  FAIL: {message} ({rel})")
+            ok = False
+    if ok:
+        print("  PASS: the Rust types carry the single-owner invariant")
+    return ok
+
+
+def verdict(demos, mitigations):
+    """Return the list of reasons this model's gate must fail. Empty means PASS."""
+    problems = []
+    for key, expected in EXPECTED_DEMOS.items():
+        if demos.get(key) != expected:
+            problems.append(
+                f"demonstration '{key}' drifted: expected {expected}, got {demos.get(key)}"
+            )
+    for key, holds in mitigations.items():
+        if not holds:
+            problems.append(f"mitigation '{key}' does not hold")
+    return problems
+
+
+def main():
+    self_test = "--self-test" in sys.argv[1:]
+
+    demos = {
+        "same_key": simulate_same_key_collision(),
+        "different_key": simulate_different_key_no_collision(),
+        "connect_lock_gap": simulate_connect_lock_does_not_protect_mining(),
+    }
+    mitigations = {
+        # These return True when the defence holds; the asserts inside them are the falsifiable
+        # half the exit status now reads (OBL-C122/OBL-C123).
+        "per_vm_mutex": simulate_defence_in_depth_per_vm_mutex(),
+        "all_paths_mutex": simulate_all_tasks_with_per_vm_lock(),
+        "rust_type_invariant": assert_rust_type_invariant(),
+    }
     simulate_fix_separate_vms()
     simulate_fix_miner_owns_vm_exclusively()
     simulate_race_condition_connect_block()
@@ -705,56 +784,40 @@ def main():
     print("\n" + "=" * 70)
     print("SUMMARY")
     print("=" * 70)
-
-    print(f"\n  Same-key collision (H1+H2):     {'FAIL — CRASH PATH' if results['same_key'] else 'PASS'}")
-    print(f"  Different-key safe:             {'PASS' if not results['different_key'] else 'FAIL'}")
-    print(f"  connect_lock gap:               {'FAIL — lock insufficient' if results['connect_lock_gap'] else 'PASS'}")
-
-    print(f"\nRoot cause: get_vm() uses a shared cache. Multiple Arc<VM>")
-    print(f"references to the SAME VM are handed out. connect_lock only")
-    print(f"serializes connect_block — the miner holds its VM OUTSIDE the lock.")
-    print(f"\nAny task pair sharing a key will crash if both hash simultaneously.")
-
-    print(f"\nRecommended fix (simplest):")
-    print(f"  1. Miner creates its own VM (not from cache) — RandomXCache::new each cycle")
-    print(f"  2. OR: add a per-key Mutex<()> in vm_cache, miner holds it while hashing")
-    print(f"  3. Replace std::sync::Mutex → smol::lock::Mutex for vm_cache + connect_lock")
+    print(f"\n  Same-key collision (H1+H2):     "
+          f"{'pre-fix crash reproduced (expected)' if demos['same_key'] else 'NOT reproduced — drifted'}")
+    print(f"  Different-key safe:             "
+          f"{'no crash (expected)' if not demos['different_key'] else 'CRASH — drifted'}")
+    print(f"  connect_lock gap:               "
+          f"{'pre-fix gap reproduced (expected)' if demos['connect_lock_gap'] else 'NOT reproduced — drifted'}")
+    print(f"  Per-VM Mutex defence:           {'PASS' if mitigations['per_vm_mutex'] else 'FAIL'}")
+    print(f"  All-paths defence:              {'PASS' if mitigations['all_paths_mutex'] else 'FAIL'}")
+    print(f"  Rust type invariant:            {'PASS' if mitigations['rust_type_invariant'] else 'FAIL'}")
 
     # The verdict, and the exit status that carries it.
     #
-    # Until 2026-09-25 this function collected its results, printed them, and
-    # fell off the end, so the script always exited 0 — while its own output
-    # above read "FAIL — CRASH PATH". `scripts/run-all-tests.sh` gates on the
-    # exit status, so it counted a model that reports crash paths as a passing
-    # gate. A model whose findings do not reach its exit status is a report, not
-    # a gate.
-    #
-    # The line removed here was `sum(1 for v in results.values() if v)` printed
-    # as "N/M tests found crash paths". Two of the five values are stored
-    # NEGATED (`not simulate_defence_in_depth_per_vm_mutex()`), so that sum added
-    # "the defence works" to "found a crash path" and the number meant nothing.
-    #
-    # Only the three keys whose BAD direction this file states in print
-    # statements are part of the verdict:
-    #   same_key          truthy -> "FAIL — CRASH PATH"
-    #   different_key     truthy -> "FAIL"
-    #   connect_lock_gap  truthy -> "FAIL — lock insufficient"
-    #
-    # `per_vm_mutex` and `all_paths_mutex` are stored negated and printed
-    # nowhere, so which polarity means "the defence holds" is ambiguous from this
-    # file alone. They are deliberately left out rather than guessed at: a guess
-    # would make this gate's meaning an artefact of a reading, which is the
-    # defect class this pass exists to remove. Resolving their polarity belongs
-    # to whoever owns this model.
-    crash_paths = [
-        key
-        for key in ("same_key", "different_key", "connect_lock_gap")
-        if results[key]
-    ]
-    if crash_paths:
-        print(f"\nFAIL: {len(crash_paths)} simulated condition(s) found crash paths: {crash_paths}")
+    # The earlier revision failed when a pre-fix crash reproduced — so the gate was red exactly
+    # while the demonstrations worked, and green if they silently stopped reproducing. This
+    # revision separates the two halves: a demonstration must keep reproducing (its expected
+    # polarity), and the mitigation must hold (its assertions). Either drift fails the gate.
+    if self_test:
+        flipped_demos = dict(demos, same_key=not EXPECTED_DEMOS["same_key"])
+        flipped_mitigations = dict(mitigations, rust_type_invariant=False)
+        demo_control = verdict(flipped_demos, mitigations)
+        mitigation_control = verdict(demos, flipped_mitigations)
+        if not demo_control or not mitigation_control:
+            print("\nSELF-TEST FAILED: a flipped expectation was not reported")
+            sys.exit(1)
+        print("\nSELF-TEST OK: a drifted demonstration and a failed mitigation are both reported")
+        return
+
+    problems = verdict(demos, mitigations)
+    if problems:
+        print("\nFAIL:")
+        for problem in problems:
+            print(f"  - {problem}")
         sys.exit(1)
-    print("\nPASS: no crash path found in the simulated conditions")
+    print("\nPASS: the crash-path demonstrations are live and the mitigation assertions hold")
 
 
 if __name__ == "__main__":

@@ -487,10 +487,10 @@ async fn handle_receive_block(
                 "RandomX cache: {}", e
             )))?;
         #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
-        let vm = std::sync::Arc::new(
+        let vm = std::sync::Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(flags, Some(rx_cache), None)
                 .expect("Failed to create RandomX VM for P2P block execution"),
-        );
+        ));
 
         let target = msg.block.header.target;
 

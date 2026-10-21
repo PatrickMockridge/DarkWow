@@ -138,10 +138,10 @@ async fn build_chain() -> TestResult<(Arc<dwow_chain::CChainState>, crate::accou
     let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
     let rx_cache = randomx::RandomXCache::new(rx_flags, &block_2.header.randomx_key)
         .map_err(|e| TestError::infra(MODULE, "creating the height-2 RandomX cache", e))?;
-    let vm = Arc::new(
+    let vm = Arc::new(std::sync::Mutex::new(
         randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
             .map_err(|e| TestError::infra(MODULE, "creating the height-2 RandomX VM", e))?,
-    );
+    ));
     crate::block_acceptor::accept_block(
         &har.chain_state,
         &block_2,
@@ -241,10 +241,10 @@ fn test_uncle_note_persisted_and_reversed() -> TestResult<()> {
             randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block_3.header.randomx_key)
             .map_err(|e| TestError::infra(MODULE, "creating the height-3 RandomX cache", e))?;
-        let vm = Arc::new(
+        let vm = Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
                 .map_err(|e| TestError::infra(MODULE, "creating the height-3 RandomX VM", e))?,
-        );
+        ));
         crate::block_acceptor::accept_block(
             &chain_state,
             &block_3,

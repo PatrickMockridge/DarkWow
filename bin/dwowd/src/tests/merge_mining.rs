@@ -314,10 +314,10 @@ fn test_merge_mined_block_acceptance() -> TestResult<()> {
             randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(flags, &block.header.randomx_key)
             .map_err(|e| infra("creating the RandomX cache", format!("{e}")))?;
-        let vm = Arc::new(
+        let vm = Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(flags, Some(rx_cache), None)
                 .map_err(|e| infra("creating the RandomX VM", format!("{e}")))?,
-        );
+        ));
 
         crate::block_acceptor::accept_block(
             &har.chain_state,
@@ -475,10 +475,10 @@ fn test_merge_mined_block_rejected_when_monerod_cannot_confirm_it() -> TestResul
         let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(flags, &block.header.randomx_key)
             .map_err(|e| infra("creating the RandomX cache", format!("{e}")))?;
-        let vm = Arc::new(
+        let vm = Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(flags, Some(rx_cache), None)
                 .map_err(|e| infra("creating the RandomX VM", format!("{e}")))?,
-        );
+        ));
 
         let err = crate::block_acceptor::accept_block(
             &har.chain_state,

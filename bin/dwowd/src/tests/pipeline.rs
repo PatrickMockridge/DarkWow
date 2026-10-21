@@ -169,8 +169,10 @@ impl ContractTestingPipeline {
         let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
             .map_err(|e| dwow_core::Error::Custom(format!("RandomX cache: {}", e)))?;
-        let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
-            .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?);
+        let vm = Arc::new(std::sync::Mutex::new(
+            randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
+                .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
+        ));
 
         crate::block_acceptor::accept_block(
             &self.genesis.chain_state, &block, &[], &vm, BlockTarget::MAX, None,
@@ -221,8 +223,10 @@ impl ContractTestingPipeline {
         let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
             .map_err(|e| dwow_core::Error::Custom(format!("RandomX cache: {}", e)))?;
-        let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
-            .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?);
+        let vm = Arc::new(std::sync::Mutex::new(
+            randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
+                .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
+        ));
 
         crate::block_acceptor::accept_block(
             &self.genesis.chain_state, &block, &[], &vm, BlockTarget::MAX, None,

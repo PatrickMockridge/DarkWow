@@ -156,7 +156,7 @@ Rust. Python leads, Rust follows.
 | Model | File | Purpose |
 |-------|------|---------|
 | Chain Validation | `contrib/model/chain_validation_model.py` | Block production, PoW, difficulty, uncles, reorg, finality. All passing. |
-| VM State Machine | `contrib/model/vm_state_model.py` | RandomX concurrency — per-VM Mutex eliminates FFI races. All passing. |
+| VM State Machine | `contrib/model/vm_state_model.py` | RandomX concurrency — per-VM Mutex eliminates FFI races. Gate: the pre-fix crash demos must reproduce and the mitigation assertions must hold (`--self-test` proves it can fail). |
 | Wallet (production) | `contrib/model/wallet_model.py` | Full wallet: keys, AEAD, scan, capabilities, DB. 1:1 Rust mapping. |
 | Dockernet | `contrib/model/dockernet_model.py` | Multi-node mining + wallet pipeline. Key management failure modes. |
 | Key Management | `contrib/model/key_management.py` | AccountManager spec: import/export, roundtrip, AEAD. 20 tests. |

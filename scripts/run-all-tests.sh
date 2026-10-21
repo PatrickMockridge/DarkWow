@@ -822,19 +822,15 @@ run_gate "Python: supply chain model"      python3 contrib/model/supply_chain_mo
 # exits non-zero when its first `assert` sits outside the `try`. `test_oracle.py`, which could not be
 # run at all, was repaired the same way.
 #
-# **One of the models below is wired with a caveat rather than a clean contract, and an independent
-# reader is why this says so rather than asserting they were all falsified.** `vm_state_model.py`
-# *demonstrates* known crash paths, so its printed `FAIL — …` lines are its expected output — and
-# since 2026-09-25 its **exit status is tied to those same pre-fix simulations**, so this gate is red
-# by construction and no change can clear it. Corrected here 2026-10-12: the paragraph that stood in
-# this place said the model "has no exit call at all — measured 2026-09-24, exits 0 while printing
-# `2/5 tests found crash paths`". That was true when written and **stopped being true the next day**,
-# when `15ee21b06d` ("ci: make the gates able to fail") added the exit-1 block; the stale sentence
-# survived three weeks in the file that is supposed to be the honest account of what a gate means.
-# What the model should assert is a question about the model, not about the wiring — `OBL-C122` names
-# the defect class and `OBL-C240` records both this inversion and the three unlocked `hash_with_vm`
-# sites the model's verdict does not reach. The gate is left red deliberately rather than re-pointed:
-# changing which assertions an instrument's exit reads is a change to what it asserts.
+# `vm_state_model.py` **demonstrates** the pre-fix crash paths and **asserts** the mitigations, and
+# its exit status is now tied to both halves correctly (`OBL-C240`, 2026-10-21). A demonstration
+# must keep reproducing its expected polarity (`same_key` and `connect_lock_gap` True,
+# `different_key` False); a drift in either direction fails, because the model has stopped showing
+# what it exists to show. The three mitigation simulations (per-VM mutex, all-paths, and the Rust
+# type invariant `Arc<Mutex<RandomXVM>>` / `&mut RandomXVM`) must hold; any failure fails. The
+# `--self-test` control below flips one expected polarity and one mitigation in memory and requires
+# both to be reported. What this model still cannot prove is the runtime exclusivity of a real
+# RandomX FFI — that is the Rust test `per_vm_mutex_serializes_hash_calls`.
 #
 # `dockernet_model.py`'s caveat **used to be stated here as a fact and is not one**: it read "likewise
 # counts its own `SKIP`/`FAIL` lines as passes under its runner". Measured the same day by running it
@@ -865,6 +861,7 @@ run_gate "Python: test oracle"              python3 contrib/model/test_oracle.py
 run_gate "Python: transaction lifecycle"    python3 contrib/model/transaction_lifecycle.py
 run_gate "Python: uncle fork model"         python3 contrib/model/uncle_fork_model.py
 run_gate "Python: vm state model"           python3 contrib/model/vm_state_model.py
+run_gate "control: the vm state model can fail" python3 contrib/model/vm_state_model.py --self-test
 run_gate "Python: wallet model"             python3 contrib/model/wallet_model.py
 run_gate "Python: wallet simulation"        python3 contrib/model/wallet_simulation.py
 # The three-chain merge-mining model, whose "CARIBINA rejects the attacker fork" table

@@ -51,7 +51,7 @@ impl Miner {
     /// header (via create_block_with_uncles) before mining begins.
     pub fn mine(
         &self,
-        vm: &Arc<RandomXVM>,
+        vm: &mut RandomXVM,
         previous: Blake3Hash,
         height: BlockHeight,
         txs: Vec<Transaction>,
@@ -95,13 +95,16 @@ impl Miner {
         *blake3::hash(&height.to_le_bytes()).as_bytes()
     }
 
-    /// Create a RandomX VM for mining
-    pub fn create_vm(key: &[u8; 32]) -> super::Result<Arc<RandomXVM>> {
+    /// Create a RandomX VM for mining.
+    ///
+    /// Owned, not `Arc`: the mining loop holds the VM for sustained hashing, and the type is the
+    /// statement that exactly one owner hashes it (`OBL-C240`). A caller that needs to hand it to
+    /// `accept_block` wraps it in `Arc<Mutex<_>>` after mining.
+    pub fn create_vm(key: &[u8; 32]) -> super::Result<RandomXVM> {
         let flags = RandomXFlags::get_recommended_flags();
         let cache = randomx::RandomXCache::new(flags, key)
             .map_err(|e| super::LinearError::RandomXError(format!("Cache: {}", e)))?;
-        let vm = RandomXVM::new(flags, Some(cache), None)
-            .map_err(|e| super::LinearError::RandomXError(format!("VM: {}", e)))?;
-        Ok(Arc::new(vm))
+        RandomXVM::new(flags, Some(cache), None)
+            .map_err(|e| super::LinearError::RandomXError(format!("VM: {}", e)))
     }
 }

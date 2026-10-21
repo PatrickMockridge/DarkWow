@@ -195,7 +195,7 @@ that must produce identical outputs for identical inputs.
 | Model | File | Tests | Purpose |
 |-------|------|-------|---------|
 | Chain Validation | `contrib/model/chain_validation_model.py` | 41/41 | Block production, PoW target computation, difficulty adjustment, competing block storage, uncle-merkle consensus (proof construction + verification), chain reorganization (Bitcoin ActivateBestChain), finality anchoring, timestamp validation |
-| VM State Machine | `contrib/model/vm_state_model.py` | 4 pass / 2 reproduce the crash | RandomX FFI concurrency model — four scenarios show the per-VM Mutex wrapping eliminating every concurrent access path across miner task, broadcast handler, GetTip handler, RPC miner, stratum submit and block template generation; **two more report FAIL by design**, replaying `same_key` and `connect_lock_gap` to show the crash the wrapping removes |
+| VM State Machine | `contrib/model/vm_state_model.py` | 2 expected reproductions + 3 mitigation assertions | RandomX FFI concurrency model — the mitigation scenarios show the per-VM Mutex wrapping eliminating every concurrent access path across miner task, broadcast handler, GetTip handler, RPC miner, stratum submit and block template generation; `same_key` and `connect_lock_gap` must keep **re**producing the pre-fix crash, and the exit is 1 if either the demonstration or a mitigation drifts (`--self-test` flips both, `OBL-C240`) |
 | Merge Mining | `contrib/model/merge_mining_model.py` | 7/7 | Monerod → p2pool sidecar → xmrig sidecar → share → mm_rpc → dwowd → DarkWow block. 2 merge-mining + 1 native node, consensus verified |
 
 The three counts in this table were each wrong until 2026-10-12 (`F-628`): Chain Validation was

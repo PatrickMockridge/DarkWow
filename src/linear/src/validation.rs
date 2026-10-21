@@ -135,7 +135,7 @@ pub fn check_pow_stage(block: &Block, block_hash: &Blake3Hash) -> Result<()> {
 #[cfg(feature = "pow")]
 pub fn check_block_header(
     block: &Block,
-    vm: &RandomXVM,
+    vm: &mut RandomXVM,
     expected_target: BlockTarget,
     current_height: BlockHeight,
     previous_hash: Option<&Blake3Hash>,
@@ -151,7 +151,7 @@ pub fn check_block_header(
         )));
     }
 
-    let block_hash = block.hash_with_vm(&vm)?;
+    let block_hash = block.hash_with_vm(vm)?;
 
     // Stage 1: PoW — shared with the competing/uncle-extension path.
     check_pow_stage(block, &block_hash)?;
@@ -739,7 +739,7 @@ mod tests {
         block.header.height = BlockHeight::new(5); // claim 5 when chain is at 0 — expected 1
         let err = check_block_header(
             &block,
-            &test_vm(),
+            &mut test_vm(),
             BlockTarget::MAX, // expected_target (matches block.header.target = u32::MAX)
             BlockHeight::new(0), // current_height
             None,      // no previous (genesis-like)
@@ -758,7 +758,7 @@ mod tests {
         let block = dummy_block();
         let err = check_block_header(
             &block,
-            &test_vm(),
+            &mut test_vm(),
             BlockTarget::MAX, // expected_target (must match block.header.target = u32::MAX)
             BlockHeight::new(5), // current_height=5, so expected=6, but block says 1
             None,
@@ -782,7 +782,7 @@ mod tests {
         // continuity check (expected=1, got=1) and reaches Stage 2 target.
         let err = check_block_header(
             &block,
-            &test_vm(),
+            &mut test_vm(),
             BlockTarget::new(0x0FFF_FFFF), // expected_target (must differ from block.header.target)
             BlockHeight::new(0), // current_height=0 (pre-genesis)
             None,
@@ -809,7 +809,7 @@ mod tests {
         // merkle_root = blake3::hash(&[]) matches 0 transactions → passes
         let result = check_block_header(
             &block,
-            &test_vm(),
+            &mut test_vm(),
             BlockTarget::MAX,    // expected_target matches block.header.target
             BlockHeight::new(1), // current_height=1, expected height=2
             None,

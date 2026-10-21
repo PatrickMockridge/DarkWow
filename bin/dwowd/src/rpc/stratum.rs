@@ -552,8 +552,8 @@ impl DwowNode {
                 .expect("Failed to get RandomX VM for stratum");
             #[expect(clippy::unwrap_used, reason = "mutex is never poisoned")]
             let verify_result = {
-                let guard = vm.lock().unwrap();
-                chain_state.consensus.lock().unwrap().verify_proof(&block, &*guard)
+                let mut guard = vm.lock().unwrap();
+                chain_state.consensus.lock().unwrap().verify_proof(&block, &mut *guard)
             };
             match verify_result {
                 Ok(true) => {}
@@ -688,10 +688,10 @@ impl DwowNode {
         let exec_rx_cache = chain_state.get_cache(randomx_key)
             .expect("Failed to get RandomX cache for stratum execution");
         #[expect(clippy::expect_used, reason = "RandomX hash failure surfaces via panic (see safety.md C1)")]
-        let exec_vm = std::sync::Arc::new(
+        let exec_vm = std::sync::Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(flags, Some(exec_rx_cache), None)
                 .expect("Failed to create RandomX VM for stratum execution"),
-        );
+        ));
 
         match crate::block_acceptor::accept_block_with_mempool(
             &chain_state, &block, &uncles, &exec_vm, block.header.target, None,

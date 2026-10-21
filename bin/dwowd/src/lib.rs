@@ -654,10 +654,10 @@ async fn init_genesis(
         randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
     let rx_cache = randomx::RandomXCache::new(rx_flags, &genesis_block.header.randomx_key)
         .map_err(|e| Error::Custom(format!("Genesis RandomX cache: {}", e)))?;
-    let vm = Arc::new(
+    let vm = Arc::new(std::sync::Mutex::new(
         randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
             .map_err(|e| Error::Custom(format!("Genesis RandomX VM: {}", e)))?,
-    );
+    ));
 
     // Execute and commit genesis through the standard block acceptance path.
     // This runs WASM (pow_reward_v1), reads cumulative supply from overlay,
@@ -1662,8 +1662,8 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
                 continue;
             }
         };
-        let vm = match randomx::RandomXVM::new(flags, Some(rx_cache), None) {
-            Ok(vm) => Arc::new(vm),
+        let mut vm = match randomx::RandomXVM::new(flags, Some(rx_cache), None) {
+            Ok(vm) => vm,
             Err(e) => {
                 tracing::error!(target: "dwowd::miner",
                     "Failed to create RandomX VM: {} — retrying next cycle", e);
@@ -1762,7 +1762,7 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
         // Per-block Caribina anchor key: generated before mining because its public half is inside
         // the mined region, kept because its secret signs the proof after the nonce is found.
         let anchor_wallet = dwow_chain::caribina::CaribinaWallet::generate();
-        let mut mined_block = match miner.mine(&vm, previous, height, all_txs, target, miner_pk, anchor_wallet.public_key(), &uncles) {
+        let mut mined_block = match miner.mine(&mut vm, previous, height, all_txs, target, miner_pk, anchor_wallet.public_key(), &uncles) {
             Ok(b) => {
                 info!(target: "dwowd::miner_task",
                     "Block {} mined with nonce {}", height, b.header.nonce);
@@ -1858,6 +1858,9 @@ async fn miner_task(node: DwowNodePtr) -> Result<()> {
         // Accept block — single unified path (block_acceptor::accept_block).
         // Covers: proof-of-token-balance, WASM execution, overlay aggregation,
         // and atomic connect_block with contract state.
+        // The mining VM is owned through the mining phase (the type says so); hand it to the
+        // accept path under a mutex, which every cached-VM caller already takes.
+        let vm = std::sync::Arc::new(std::sync::Mutex::new(vm));
         let apply_result = accept_block_with_mempool(
             &chain_state,
             &mined_block,

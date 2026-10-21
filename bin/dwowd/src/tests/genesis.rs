@@ -891,10 +891,10 @@ mod tests {
                 &block.header.randomx_key,
             )
             .infra("creating the RandomX cache")?;
-            let vm = std::sync::Arc::new(
+            let vm = std::sync::Arc::new(std::sync::Mutex::new(
                 randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
                     .infra("creating the RandomX VM")?,
-            );
+            ));
 
             // Submit through accept_block — production path, WASM executes
             crate::block_acceptor::accept_block(
@@ -1087,10 +1087,10 @@ mod tests {
             let rx_cache = randomx::RandomXCache::new(
                 rx_flags, &block.header.randomx_key,
             ).infra("creating the RandomX cache")?;
-            let vm = std::sync::Arc::new(
+            let vm = std::sync::Arc::new(std::sync::Mutex::new(
                 randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
                     .infra("creating the RandomX VM")?,
-            );
+            ));
 
             // Submit through accept_block — must succeed (zero-fee path)
             crate::block_acceptor::accept_block(
@@ -1167,15 +1167,15 @@ mod tests {
 
     /// RandomX VM keyed for the genesis block — same construction as
     /// init_genesis and the sync path.
-    fn genesis_vm(block: &dwow_chain::Block) -> TestResult<std::sync::Arc<randomx::RandomXVM>> {
+    fn genesis_vm(block: &dwow_chain::Block) -> TestResult<std::sync::Arc<std::sync::Mutex<randomx::RandomXVM>>> {
         let rx_flags = randomx::RandomXFlags::get_recommended_flags()
             & !randomx::RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
             .infra("creating the genesis RandomX cache")?;
-        Ok(std::sync::Arc::new(
+        Ok(std::sync::Arc::new(std::sync::Mutex::new(
             randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
                 .infra("creating the genesis RandomX VM")?,
-        ))
+        )))
     }
 
     /// Witness (a): a syncing node with an EMPTY contracts tree accepts the
