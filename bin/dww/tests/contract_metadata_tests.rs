@@ -70,6 +70,7 @@ fn setup_wallet() -> Arc<WalletDb> {
             deployer_pubkey TEXT NOT NULL,
             deploy_height INTEGER NOT NULL,
             attestations_json TEXT DEFAULT '[]',
+            manifest_wasm_verdict TEXT DEFAULT '',
             lock_status TEXT DEFAULT 'unlocked'
         );
         CREATE INDEX IF NOT EXISTS idx_contract_metadata_category ON contract_metadata(category);
@@ -93,6 +94,7 @@ fn test_insert_and_get_metadata() {
         deployer_pubkey: "pubkey123".to_string(),
         deploy_height: BlockHeight::new(100),
         attestations_json: "[]".to_string(),
+        manifest_wasm_verdict: String::new(),
         lock_status: "unlocked".to_string(),
     };
 
@@ -128,6 +130,7 @@ fn test_public_only_filter() {
         deployer_pubkey: "pk1".to_string(),
         deploy_height: BlockHeight::new(10),
         attestations_json: "[]".to_string(),
+        manifest_wasm_verdict: String::new(),
         lock_status: "unlocked".to_string(),
     };
 
@@ -141,6 +144,7 @@ fn test_public_only_filter() {
         deployer_pubkey: "pk2".to_string(),
         deploy_height: BlockHeight::new(20),
         attestations_json: "[]".to_string(),
+        manifest_wasm_verdict: String::new(),
         lock_status: "unlocked".to_string(),
     };
 
@@ -154,6 +158,7 @@ fn test_public_only_filter() {
         deployer_pubkey: "pk3".to_string(),
         deploy_height: BlockHeight::new(30),
         attestations_json: "[]".to_string(),
+        manifest_wasm_verdict: String::new(),
         lock_status: "unlocked".to_string(),
     };
 
@@ -185,6 +190,7 @@ fn test_category_filter() {
         deployer_pubkey: "pk_a".to_string(),
         deploy_height: BlockHeight::new(5),
         attestations_json: "[]".to_string(),
+        manifest_wasm_verdict: String::new(),
         lock_status: "unlocked".to_string(),
     };
 
@@ -198,6 +204,7 @@ fn test_category_filter() {
         deployer_pubkey: "pk_b".to_string(),
         deploy_height: BlockHeight::new(15),
         attestations_json: "[]".to_string(),
+        manifest_wasm_verdict: String::new(),
         lock_status: "unlocked".to_string(),
     };
 
@@ -211,6 +218,7 @@ fn test_category_filter() {
         deployer_pubkey: "pk_t".to_string(),
         deploy_height: BlockHeight::new(25),
         attestations_json: "[]".to_string(),
+        manifest_wasm_verdict: String::new(),
         lock_status: "unlocked".to_string(),
     };
 
@@ -242,6 +250,7 @@ fn test_update_existing_metadata() {
         deployer_pubkey: "pk_upd".to_string(),
         deploy_height: BlockHeight::new(42),
         attestations_json: "[]".to_string(),
+        manifest_wasm_verdict: String::new(),
         lock_status: "unlocked".to_string(),
     };
 
@@ -258,6 +267,7 @@ fn test_update_existing_metadata() {
         deployer_pubkey: "pk_upd".to_string(),
         deploy_height: BlockHeight::new(42),
         attestations_json: "[]".to_string(),
+        manifest_wasm_verdict: String::new(),
         lock_status: "locked".to_string(),
     };
 

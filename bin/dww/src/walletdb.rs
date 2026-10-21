@@ -1330,6 +1330,9 @@ pub struct ContractMetadataRecord {
     pub deployer_pubkey: String,
     pub deploy_height: BlockHeight,
     pub attestations_json: String,
+    /// Layer-2 verdict (`OBL-C237`): `ok`, `ok (warnings: …)`, `mismatch: …`, or empty when
+    /// never checked.
+    pub manifest_wasm_verdict: String,
     pub lock_status: String,
 }
 
@@ -1342,8 +1345,9 @@ impl WalletDb {
         conn.execute(
             "INSERT OR REPLACE INTO contract_metadata
              (contract_id, name, symbol, category, description, public,
-              deployer_pubkey, deploy_height, attestations_json, lock_status)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+              deployer_pubkey, deploy_height, attestations_json, manifest_wasm_verdict,
+              lock_status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 record.contract_id,
                 record.name,
@@ -1354,6 +1358,7 @@ impl WalletDb {
                 record.deployer_pubkey,
                 record.deploy_height.to_sqlite_i64_saturating(),
                 record.attestations_json,
+                record.manifest_wasm_verdict,
                 record.lock_status,
             ],
         )
@@ -1373,13 +1378,14 @@ impl WalletDb {
         conn.execute(
             "INSERT OR REPLACE INTO contract_metadata (contract_id, name, symbol,
               category, description, public, deployer_pubkey, deploy_height,
-              attestations_json, manifest_json, lock_status)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+              attestations_json, manifest_json, manifest_wasm_verdict, lock_status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 record.contract_id, record.name, record.symbol, record.category,
                 record.description, record.public, record.deployer_pubkey,
                 record.deploy_height.to_sqlite_i64_saturating(), record.attestations_json,
                 manifest_json.unwrap_or(""),
+                record.manifest_wasm_verdict,
                 record.lock_status,
             ],
         )
@@ -1392,7 +1398,8 @@ impl WalletDb {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
             "SELECT contract_id, name, symbol, category, description, public,
-                    deployer_pubkey, deploy_height, attestations_json, lock_status
+                    deployer_pubkey, deploy_height, attestations_json,
+                    manifest_wasm_verdict, lock_status
              FROM contract_metadata WHERE contract_id = ?1",
         )?;
         let mut rows = stmt.query(params![contract_id])?;
@@ -1409,7 +1416,8 @@ impl WalletDb {
             deployer_pubkey: row.get(6)?,
             deploy_height: height_from_sqlite(row.get::<_, i64>(7)?)?,
             attestations_json: row.get(8)?,
-            lock_status: row.get(9)?,
+            manifest_wasm_verdict: row.get(9)?,
+            lock_status: row.get(10)?,
         })
     }
 
@@ -1418,11 +1426,13 @@ impl WalletDb {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let query = if public_only {
             "SELECT contract_id, name, symbol, category, description, public,
-                    deployer_pubkey, deploy_height, attestations_json, lock_status
+                    deployer_pubkey, deploy_height, attestations_json,
+                    manifest_wasm_verdict, lock_status
              FROM contract_metadata WHERE public = 1 ORDER BY deploy_height DESC"
         } else {
             "SELECT contract_id, name, symbol, category, description, public,
-                    deployer_pubkey, deploy_height, attestations_json, lock_status
+                    deployer_pubkey, deploy_height, attestations_json,
+                    manifest_wasm_verdict, lock_status
              FROM contract_metadata ORDER BY deploy_height DESC"
         };
         let mut stmt = conn.prepare(query)?;
@@ -1439,7 +1449,8 @@ impl WalletDb {
                 deployer_pubkey: row.get(6)?,
                 deploy_height: height_from_sqlite(row.get::<_, i64>(7)?)?,
                 attestations_json: row.get(8)?,
-                lock_status: row.get(9)?,
+                manifest_wasm_verdict: row.get(9)?,
+                lock_status: row.get(10)?,
             });
         }
         Ok(records)
@@ -1450,7 +1461,8 @@ impl WalletDb {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
             "SELECT contract_id, name, symbol, category, description, public,
-                    deployer_pubkey, deploy_height, attestations_json, lock_status
+                    deployer_pubkey, deploy_height, attestations_json,
+                    manifest_wasm_verdict, lock_status
              FROM contract_metadata WHERE category = ?1 AND public = 1 ORDER BY deploy_height DESC",
         )?;
         let mut rows = stmt.query(params![category])?;
@@ -1466,7 +1478,8 @@ impl WalletDb {
                 deployer_pubkey: row.get(6)?,
                 deploy_height: height_from_sqlite(row.get::<_, i64>(7)?)?,
                 attestations_json: row.get(8)?,
-                lock_status: row.get(9)?,
+                manifest_wasm_verdict: row.get(9)?,
+                lock_status: row.get(10)?,
             });
         }
         Ok(records)
@@ -2026,7 +2039,8 @@ mod tests {
             symbol: None, category: "Testing".into(),
             description: Some("atomic test".into()), public: true,
             deployer_pubkey: String::new(), deploy_height: BlockHeight::new(1),
-            attestations_json: "[]".into(), lock_status: "unlocked".into(),
+            attestations_json: "[]".into(), manifest_wasm_verdict: String::new(),
+            lock_status: "unlocked".into(),
         };
         wallet.insert_contract_metadata_with_manifest(&record, Some(manifest_json))
             .expect("P12: insert metadata+manifest must succeed");

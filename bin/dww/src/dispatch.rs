@@ -306,13 +306,30 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     let trust = resolve_show_trust(contract_id, dww);
                     let resolver = crate::manifest_resolver::ManifestResolver::new(&manifest);
                     println!("{}", resolver.describe_with_trust(trust.as_ref()));
-                    // Layer 2 of the trust model — verifying the manifest against
-                    // the deployed WASM — is NOT implemented. The WASM binary is
-                    // not stored locally during scan, and the module that would
-                    // have done the check was removed as unreachable code.
-                    // Implementing it means fetching the deploy transaction from
-                    // chain state and re-deriving the exports and circuit names.
-                    println!("  WASM verification: not implemented (WASM binary is not stored locally)");
+                    // Layer 2 of the trust model — verifying the manifest against the deployed
+                    // WASM — runs at scan time, when the `DeployV1` call itself carries the
+                    // binary (`OBL-C237`). The verdict is stored with the contract's metadata.
+                    match dww.wallet.get_contract_metadata(contract_id) {
+                        Ok(record) => match crate::manifest_verify::ManifestWasmVerdict::stored_is_ok(
+                            &record.manifest_wasm_verdict,
+                        ) {
+                            Some(true) => println!(
+                                "  WASM verification: PASS — {}",
+                                record.manifest_wasm_verdict
+                            ),
+                            Some(false) => println!(
+                                "  WASM verification: MISMATCH — {}",
+                                record.manifest_wasm_verdict
+                            ),
+                            None => println!(
+                                "  WASM verification: not checked (deployed before scan-time \
+                                 verification, or the deploy carried no manifest)"
+                            ),
+                        },
+                        Err(_) => println!(
+                            "  WASM verification: no stored verdict for {contract_id}"
+                        ),
+                    }
                     Ok(())
                 }
                 Ok(None) => {

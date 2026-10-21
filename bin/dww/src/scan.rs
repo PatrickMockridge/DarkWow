@@ -150,6 +150,10 @@ pub struct DeploymentDiscovery {
     pub(crate) deployer_pubkey: PublicKey,
     pub(crate) metadata: Option<ContractMetadata>,
     pub(crate) manifest_json: Option<String>,
+    /// Layer 2 (`OBL-C237`): whether the deployed WASM matches the manifest. `None` when the
+    /// deploy carried no parseable manifest — there is nothing to compare, and that is
+    /// distinct from a mismatch.
+    pub(crate) manifest_wasm: Option<crate::manifest_verify::ManifestWasmVerdict>,
     pub(crate) height: BlockHeight,
 }
 
@@ -842,6 +846,8 @@ fn scan_block(
                             deployer_pubkey: params.public_key,
                             metadata,
                             manifest_json,
+                            // Filled after the zkas extraction below, from this deploy's WASM.
+                            manifest_wasm: None,
                             height: height,
                         });
 
@@ -860,6 +866,11 @@ fn scan_block(
                         //  field bytes, namespace_len u32 LE, namespace bytes).
                         let mut seen: std::collections::HashSet<String> =
                             std::collections::HashSet::new();
+                        // Every embedded zkas binary, in WASM order, *before* the storage dedup:
+                        // the Layer-2 check compares circuits as a multiset, and several
+                        // manifests (native_token, promissory_note, identity) declare one
+                        // namespace for all of their circuits.
+                        let mut embedded: Vec<crate::manifest_verify::EmbeddedCircuit> = Vec::new();
                         for offset in 0..params.wasm_bincode.len().saturating_sub(20) {
                             let slice = &params.wasm_bincode[offset..];
                             if let Ok(zkbin) = dwow_core::zkas::ZkBinary::decode(slice, false) {
@@ -881,6 +892,13 @@ fn scan_block(
                                     slice.get(pos..pos+ns_len).unwrap_or(b"")
                                 ).to_string();
                                 let binary_end = pos + ns_len;
+                                if !ns.is_empty() {
+                                    embedded.push(crate::manifest_verify::EmbeddedCircuit {
+                                        namespace: ns.clone(),
+                                        witnesses: zkbin.witnesses.len(),
+                                        opcodes: zkbin.opcodes.len(),
+                                    });
+                                }
                                 if !ns.is_empty() && seen.insert(ns.clone()) {
                                     result.zkas_binaries.push(ZkasBinaryDiscovery {
                                         contract_id,
@@ -894,6 +912,39 @@ fn scan_block(
                                     ));
                                 }
                             }
+                        }
+
+                        // Layer 2 (`OBL-C237`): compare the manifest against this deploy's own
+                        // WASM. A mismatch is recorded, never silently believed.
+                        let verdict = match manifest_result {
+                            Some(Ok(ref m)) => {
+                                Some(crate::manifest_verify::verify(m, &params.wasm_bincode, &embedded))
+                            }
+                            _ => None,
+                        };
+                        if let Some(ref v) = verdict {
+                            for err in &v.errors {
+                                result.messages.push(format!(
+                                    "[scan_block] MANIFEST/WASM MISMATCH for {}: {}",
+                                    &contract_id_str[..8], err
+                                ));
+                                tracing::warn!(target: "dww::scan",
+                                    "manifest/WASM mismatch for {}: {}", contract_id_str, err);
+                            }
+                            for warning in &v.warnings {
+                                result.messages.push(format!(
+                                    "[scan_block] layer-2 warning for {}: {}",
+                                    &contract_id_str[..8], warning
+                                ));
+                            }
+                            result.messages.push(format!(
+                                "[scan_block] layer-2 for {}: {}",
+                                &contract_id_str[..8],
+                                if v.ok { "manifest matches the deployed WASM" } else { "MISMATCH" },
+                            ));
+                        }
+                        if let Some(dep) = result.deployments.last_mut() {
+                            dep.manifest_wasm = verdict;
                         }
                     }
                 }
@@ -1389,6 +1440,11 @@ impl Dww {
                 deployer_pubkey: deployer_pubkey_str,
                 deploy_height: dep.height,
                 attestations_json: "[]".to_string(),
+                manifest_wasm_verdict: dep
+                    .manifest_wasm
+                    .as_ref()
+                    .map(|v| v.to_stored())
+                    .unwrap_or_default(),
                 lock_status: "unlocked".to_string(),
             };
             if let Err(e) = self.wallet.insert_contract_metadata(&record) {
@@ -2209,6 +2265,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             description: Some("test".into()), public: true,
             deployer_pubkey: bs58::encode(deployer_kp.public.to_bytes()).into_string(),
             deploy_height: BlockHeight::new(height_deploy), attestations_json: "[]".into(),
+            manifest_wasm_verdict: String::new(),
             lock_status: "unlocked".into(),
         };
         wallet.insert_contract_metadata_with_manifest(&record, None).ok();
@@ -2993,6 +3050,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             deployer_pubkey: bs58::encode([0x11u8; 32]).into_string(),
             deploy_height: height,
             attestations_json: "[]".into(),
+            manifest_wasm_verdict: String::new(),
             lock_status: "unlocked".into(),
         };
         wallet.insert_contract_metadata_with_manifest(&record, None).ok();

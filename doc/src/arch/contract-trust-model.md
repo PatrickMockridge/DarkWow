@@ -37,39 +37,48 @@ See [Contract Manifest](manifest.md) for how manifests are discovered and stored
 
 ## Layer 2: WASM Verification
 
-> **Not implemented.** This layer is a *design*: nothing in the tree downloads a contract's WASM
-> from `dwowd`, extracts its export section, or cross-references it against the manifest. The module
-> that was supposed to (`bin/dww/src/manifest_verify.rs`, cited in `wallet.md` and
-> `wallet-vs-daemon.md`) does not exist — no file, no symbol, no mention (`F-326`, `F-623`), and
-> `bin/dww/src/scan.rs` never compares a manifest against the code the chain will run.
->
-> The check that *is* enforced is a **build-time** gate over this repository's own contracts
-> (`scripts/check-manifest-entrypoint-agreement.sh`), which is a different proposition: it says the
-> manifest here matches the entrypoint here, not that a deployed binary matches the manifest a
-> wallet read. `OBL-C237` carries the gap. What follows is what the layer would establish.
+**Implemented at scan time, 2026-10-21 (`OBL-C237`).** The `DeployV1` call carries the WASM
+binary, so the wallet does not need to download it: `bin/dww/src/scan.rs` extracts the embedded
+zkas binaries and `bin/dww/src/manifest_verify.rs` compares them with the manifest that same
+deploy carries. The verdict is stored in `contract_metadata.manifest_wasm_verdict` and shown by
+`dwow_wallet contract show <contract_id>`.
 
 This layer answers a mechanical question: does the manifest accurately describe
-the binary? It downloads the contract WASM from dwowd, extracts the export
-section and ZK circuit data, and cross-references against the manifest.
+the binary?
 
 **What it checks**:
-- Every function declared in the manifest exists as a WASM export
-- Every ZK circuit declared in the manifest exists in the WASM data sections
-- Circuit namespaces match between manifest and WASM
-- No circuit is declared without a function referencing it
-- No undeclared circuits exist in the WASM (possible backdoors)
 
-**What it does NOT check** (Layer 3 concern):
-- Whether the WASM logic is correct
-- Whether the ZK circuits are sound
-- Whether the capability model is properly implemented
+- The module parses and exports the four fixed SDK symbols — `__initialize`,
+  `__entrypoint`, `__update`, `__metadata` (and optionally `__spend_hook`).
+- Every ZK circuit declared in the manifest exists in the WASM's data sections, matched as a
+  multiset of `(namespace, witness count, opcode count)`. The zkas binary header carries no
+  circuit name, and a manifest may declare one namespace for several circuits, so position or
+  namespace alone cannot identify a circuit.
+- No embedded zkas binary belongs to a namespace the manifest does not declare (a possible
+  backdoor).
+- A function that names a `proof_circuit` names one the manifest declares.
+
+**What it does not check, and why the old wording was wrong**:
+
+- **"Every function exists as a WASM export" was never checkable.** The SDK exports four fixed
+  symbols; contract functions are selector arms inside `__entrypoint`, not exports. The deploy
+  entrypoint already requires those four symbols on chain (`deployooor`'s `deploy_v1`).
+- Whether the WASM logic is correct, whether the circuits are sound, whether the capability
+  model is implemented (Layer 3 concern).
+- Whether a manifest's `namespace` values agree with the compiled circuits is *checked against
+  the binary*, but the repository's own manifests are not all correct: `native_token`,
+  `promissory_note` and `identity` declare a contract-wide namespace while their zkas binaries
+  carry the circuit name (`Fee_V3`, `Transfer_V2`, `IssueCredentialV2`). The check reports them
+  as mismatches until those manifests are corrected with the genesis re-roll (`OBL-C249`).
 
 This is a script-kiddie filter. It catches the most basic deception — someone
 editing a manifest TOML to claim functions and circuits that don't exist in
 the deployed binary. It provides zero-trust mechanical verification before
-any social trust is extended.
+any social trust is extended. It does not make a mismatched contract unusable
+(the wallet warns; it never blocks), and it records the verdict rather than
+discarding the contract.
 
-CLI: `dwow_wallet contract verify <contract_id>`
+CLI: `dwow_wallet contract show <contract_id>`
 
 ## Layer 3: Attestation
 

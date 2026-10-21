@@ -118,6 +118,7 @@ pub mod wallet_rpc_client;
 
 /// Contract metadata registry for universal contract interaction
 pub mod contract_metadata;
+pub mod manifest_verify;
 
 /// P2P chain sync task — GetTip/GetBlocks, block sync, local scan
 pub mod sync_task;
@@ -571,6 +572,10 @@ impl Dww {
         let _ = self.wallet.exec_batch_sql(
             "ALTER TABLE contract_metadata ADD COLUMN manifest_json TEXT DEFAULT '';"
         );
+        // Migration: Layer-2 (manifest vs WASM) verdict (`OBL-C237`).
+        let _ = self.wallet.exec_batch_sql(
+            "ALTER TABLE contract_metadata ADD COLUMN manifest_wasm_verdict TEXT DEFAULT '';"
+        );
         // Migration: add capability_discriminant to existing held_capabilities tables.
         // Per wallet.md §2.2 — manifest-driven capability construction.
         let _ = self.wallet.exec_batch_sql(
@@ -630,6 +635,9 @@ impl Dww {
                     deployer_pubkey: String::new(),
                     deploy_height: BlockHeight::new(1),
                     attestations_json: String::new(),
+                    // Seeded before any deploy is scanned; the scan records the Layer-2 verdict
+                    // when it reads the genesis deployment.
+                    manifest_wasm_verdict: String::new(),
                     lock_status: "unlocked".into(),
                 };
                 // §4.2.1: Manifest seeding is NOT best-effort — a wallet

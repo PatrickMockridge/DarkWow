@@ -125,6 +125,9 @@ CREATE TABLE IF NOT EXISTS contract_metadata (
     deploy_height INTEGER NOT NULL,
     attestations_json TEXT DEFAULT '[]',
     manifest_json TEXT DEFAULT '',
+    -- OBL-C237 Layer 2: 'ok', 'ok (warnings: …)', 'mismatch: …', or '' when never checked
+    -- (a record written before the check existed, or a deploy that carried no manifest).
+    manifest_wasm_verdict TEXT DEFAULT '',
     lock_status TEXT DEFAULT 'unlocked'
 );
 
