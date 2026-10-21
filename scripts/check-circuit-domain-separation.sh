@@ -34,7 +34,75 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SELF="$SCRIPT_DIR/$(basename "$0")"
+REPO_ROOT="${DOMAIN_SEPARATION_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+# ── Negative control ───────────────────────────────────────────────────────────────────────────────
+# A gate that cannot fail is not a gate. Three halves, all on a temp tree so the real corpus is not
+# touched: (1) a circuit with a bare `poseidon_hash` must fail and name the file and the missing
+# domain; (2) a declared exception that matches no finding must fail and name the dead entry — the
+# same control `scripts/run-all-tests.sh` runs inline; (3) the clean twin must pass.
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    mkdir -p "$TMP/src/contract/demo/proof"
+    CLEAN="$TMP/src/contract/demo/proof/clean.zk"
+    BAD="$TMP/src/contract/demo/proof/bad.zk"
+    cat > "$CLEAN" <<'FIXTURE'
+DOMAIN_NULLIFIER = witness_base(1)
+
+circuit "clean" {
+    n = poseidon_hash(DOMAIN_NULLIFIER, secret);
+    constrain_instance(n);
+}
+FIXTURE
+
+    # Clean twin first: no findings and no exception list must be exit 0.
+    if ! OUT="$(DOMAIN_SEPARATION_ROOT="$TMP" DOMAIN_EXCEPTIONS="$TMP/no-exceptions" \
+               "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the clean fixture does not pass" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+
+    # Planted defect: a poseidon_hash call with no domain.
+    cat > "$BAD" <<'FIXTURE'
+circuit "bad" {
+    h = poseidon_hash(secret, nonce);
+}
+FIXTURE
+    if OUT="$(DOMAIN_SEPARATION_ROOT="$TMP" DOMAIN_EXCEPTIONS="$TMP/no-exceptions" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the planted bare poseidon_hash was not reported" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    ok=1
+    printf '%s' "$OUT" | grep -q "bad.zk" || {
+        echo "SELF-TEST FAIL: the offending file was not named" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "without DOMAIN_/witness_base" || {
+        echo "SELF-TEST FAIL: the missing domain was not named" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    # Stale-exception defect: the same check the umbrella runs inline. The planted path is assembled
+    # at run time in the umbrella's idiom.
+    rm -f "$BAD"
+    P="src/contract/""nowhere/proof/""absent.zk"
+    printf '%s :: collision :: 3 : planted stale entry\n' "$P" > "$TMP/exceptions"
+    if OUT="$(DOMAIN_SEPARATION_ROOT="$TMP" DOMAIN_EXCEPTIONS="$TMP/exceptions" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the planted stale exception was not reported" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    ok=1
+    printf '%s' "$OUT" | grep -q "$P" || {
+        echo "SELF-TEST FAIL: the stale exception's path was not named" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "match no finding" || {
+        echo "SELF-TEST FAIL: the stale exception was not classified as covering nothing" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    echo "SELF-TEST PASS: a bare poseidon_hash and a stale exception are each named; the clean fixture passes"
+    exit 0
+fi
 
 REPO_ROOT="$REPO_ROOT" python3 - <<'PYEOF'
 import glob, os, re, sys, collections

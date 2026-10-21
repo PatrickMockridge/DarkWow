@@ -31,8 +31,43 @@
 
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SELF="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+REPO_ROOT="${COINBASE_CLASSIFIER_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 cd "$REPO_ROOT"
+
+# ── Negative control ───────────────────────────────────────────────────────────────────────────────
+# A gate that cannot fail is not a gate. Plant one use of the selector-only probe with no position
+# gate and require a non-zero verdict that names the file and line. Then gate the same use on
+# position and require the fixture to pass.
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    mkdir -p "$TMP/src" "$TMP/bin"
+    printf 'let classified = Transaction::first_call_is_pow_reward(tx);\n' > "$TMP/src/planted.rs"
+    if OUT="$(COINBASE_CLASSIFIER_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the planted ungated probe use was not reported" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    ok=1
+    printf '%s' "$OUT" | grep -q "src/planted.rs:1" || {
+        echo "SELF-TEST FAIL: the offending file and line were not named" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "no position gate" || {
+        echo "SELF-TEST FAIL: the missing position gate was not named" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    # Clean twin: the same use, now gated on position by `.first()`.
+    printf 'let classified = txs.first().map(Transaction::first_call_is_pow_reward);\n' \
+        > "$TMP/src/planted.rs"
+    if ! OUT="$(COINBASE_CLASSIFIER_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the position-gated fixture does not pass" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    echo "SELF-TEST PASS: an ungated probe use is named with file and line; the gated twin passes"
+    exit 0
+fi
 
 PROBE='first_call_is_pow_reward'
 DEFINITION_SITE='src/linear/src/transaction.rs'

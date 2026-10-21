@@ -1,0 +1,45 @@
+# Adjudications for `scripts/check-doc-code-paths.sh` — the rule that a backticked path citation in
+# `doc/src` is a claim about the tree.
+#
+# Format, one entry per line:
+#
+#   <cited path> : <reason naming the OBL/F row or the mechanism that makes the absence the point>
+#
+# Keyed on the path, not the document or line, so a finding reported from several documents keeps one
+# adjudication. A declared path that now resolves, or that no document cites any more, is reported as
+# a **stale exception** (the gate's `stale` branch), so this list cannot outlive its sites.
+#
+# This list is for citations whose subject IS the absence — a dated audit, a row recording a
+# deliberately removed module, a corrected note saying "this path does not exist", or an explicitly
+# crate-relative shorthand. It is not for a stale claim: `doc/src/localnet-dev.md:50` was one and was
+# fixed to `bin/dwowd/dwowd_config.toml` on 2026-10-21; the same path is still cited at line 20 as a
+# negative note, which is why it appears below.
+#
+# Register row: OBL-C149 / OBL-T7.
+
+# --- dated audit and red-team records: the document's subject is that these paths no longer exist ---
+bin/dww/src/cache.rs : docs-review-2026-10-10/F-331 records that this module was proposed and never existed; the audit is the record of the absence
+bin/dww/src/rpc.rs : docs-review-2026-10-10/F-327 and contract-metadata.md both record that the RPC module was never split out — "rpc.rs does not exist, scan.rs is the file"; the absence is the sentence's point
+src/linear/src/block_acceptor.rs : docs-review-2026-10-10/F-616 and heavyweight-spec.md cite the path that does not exist; the acceptor lives at bin/dwowd/src/block_acceptor.rs
+src/linear/src/sync_handler.rs : sync-red-team-audit.md is a point-in-time red-team record; the handler moved during the remediation the document describes
+bin/xmr_relayer/src/withdrawal.rs : monero.md explicitly says there is no such component to name; the citation records the correction
+contrib/localnet/dwowd-single-node/dwowd.toml : localnet-dev.md:20 records that this path and contrib/localnet/ do not exist (F-601); the runnable config is bin/dwowd/dwowd_config.toml
+proofs/lean/src/DarkWow/Field.lean : opcodes.md records that the path does not exist — the project is proofs/lean/src/DarkFi/
+
+# --- rows that record a deliberate removal: the deleted path is the row's evidence ---
+proofs/core/lead.zk : OBL-Z12 — deleted 2026-09-24, cited as the record of a circuit removed because no repair existed
+proofs/core/set_v1.zk : OBL-Z16 — deleted 2026-09-24, same disposition as lead.zk
+proofs/lottery/proof/initialize.zk : the user chose deletion of the unprovable InitializeV2 circuit; the row cites it as the removed artefact
+src/contract/subscription/src/client/rate_limit.rs : OBL-C108 — the file and its `pub mod` declaration were removed, which is the closure
+src/sdk/src/crypto/sinsemilla.rs : OBL-Z6 — the row's finding is "that file does not exist"; the constants live under src/sdk/src/crypto/constants/
+bin/gen_init_params.rs : OBL-C83 — the binary did not compile and was removed; the generator now lives at src/contract/stablecoin/src/bin/gen_init_params.rs
+src/linear/src/shard.rs : scaling.md's "Scaffolding (corrected 2026-10-12, F-374)" note says no shard.rs exists; the document is a design vision with no code behind it
+src/runtime/import/shard.rs : the same F-374 design-vision note; no shard import exists
+src/sdk/src/crypto/shard.rs : the same F-374 design-vision note; no shard module exists
+
+# --- crate-relative shorthand: the row anchors the full path and then abbreviates within the crate ---
+src/entrypoint.rs : OBL-Z2 — written between backticks as the per-contract entrypoint after the full path is anchored in the same row; not a repo-root path
+src/entrypoint/mod.rs : OBL-Z2 — the same per-contract shorthand in the module-file spelling
+src/model/mod.rs : OBL-C159/OBL-C168 — per-contract model shorthand after the full path is anchored in the row
+src/main.rs : OBL-C125 — shorthand for bin/bridge_test_helper/src/main.rs, anchored in the same row
+src/relayer.rs : shorthand for src/contract/relayer_endowment/src/relayer.rs, anchored in the same row

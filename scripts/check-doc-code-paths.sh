@@ -51,7 +51,6 @@ import os, re, sys, pathlib
 
 ROOT = pathlib.Path(os.environ["DOC_CODE_PATHS_ROOT"])
 DOCS = ROOT / "doc" / "src"
-EXC = ROOT / "script" / "doc_path_exceptions.txt"
 
 ROOTS = ("src/", "bin/", "crates/", "proofs/", "contrib/", "script/", "scripts/")
 
@@ -69,11 +68,12 @@ def resolves(root, tok):
     return (root / tok).exists() or (root / "proofs" / "lean" / tok).exists()
 
 
-def load_exceptions():
-    """path -> set of finding-kind, from `path : reason` lines."""
+def load_exceptions(root):
+    """path -> reason, from `path : reason` lines under `root` (the temp root in --self-test)."""
     out = {}
-    if EXC.exists():
-        for line in EXC.read_text().splitlines():
+    exc = root / "script" / "doc_path_exceptions.txt"
+    if exc.exists():
+        for line in exc.read_text().splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
@@ -85,7 +85,7 @@ def load_exceptions():
 
 def scan(corpus, root):
     """Walk the document `corpus` (`doc/src`), resolving each cited token against repo root `root`."""
-    exceptions = load_exceptions()
+    exceptions = load_exceptions(root)
     findings, cited = [], set()
     for doc in sorted(corpus.rglob("*.md")):
         rel = os.path.relpath(doc, root)
@@ -127,18 +127,22 @@ def main():
                 print(f"FAIL: --self-test a resolving path was reported: {findings2}")
                 return 1
             print("OK: --self-test — a resolving path passes")
+            # A declared exception whose path now resolves is covering nothing: the list must expire.
+            (t / "script" / "doc_path_exceptions.txt").write_text(
+                "src/tx/mod.rs : planted stale exception — this path resolves\n")
+            _, _, stale = scan(t / "doc" / "src", t)
+            if not any("src/tx/mod.rs" in p for p in stale):
+                print(f"FAIL: --self-test a resolving declared exception was not reported stale: {stale}")
+                return 1
+            print("OK: --self-test — a declared exception that now resolves is reported stale")
         return 0
 
     root = pathlib.Path(os.environ["DOC_CODE_PATHS_ROOT"])
     findings, n_cited, stale = scan(DOCS, root)
-    # `--report-only` prints the same list and exits 0. WHY IT IS NOT FLIPPED BLOCKING (2026-10-12):
-    # this detector cannot yet tell a *stale* citation from a *negative* one. The campaign's own
-    # corrections are written as sentences saying a path does not exist ("None of it exists now … are
-    # all absent", and every `F-554`-style note), so roughly four fifths of what it reports is a
-    # document being right. Skipping those by string is the weakening this repository's rules forbid,
-    # and the exceptions mechanism this file's header names (`script/doc_path_exceptions.txt`) does not
-    # exist. Flipping it today would fail the tree on non-defects and the cheapest way to green it
-    # would be to blunt it — so it reports, and the split it prints is the thing to act on.
+    # **Blocking since 2026-10-21.** The negative-citation class is declared in
+    # `script/doc_path_exceptions.txt` (reason per entry, stale entries fail), so a negative citation
+    # is no longer indistinguishable from a stale one by string heuristics. `--report-only` remains
+    # for authoring: it prints the same list and exits 0.
     report_only = "--report-only" in sys.argv
     for rel, lineno, tok in findings:
         print(f"{'NOTE' if report_only else 'FAIL'}: {rel}:{lineno}: cites {tok}, which does not exist")

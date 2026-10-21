@@ -74,6 +74,24 @@ case "${1:-}" in
       echo "FAIL: --self-test planted a line past EOF and the gate passed"; rm -rf "$tmp"; exit 1
     fi
     echo "OK: --self-test — a citation past the file's end fails the gate"
+    # The symbol half (OBL-C148): a live row naming an identifier the cited file does not contain.
+    # `%s` for the id, and a symbol that exists nowhere, so the control cannot pass by finding it.
+    printf '| OBL-C%s | **OPEN** | planted | see `src/tx/mod.rs:10` (`no_such_symbol_xyz`) | planted | M | planted |\n' 997 \
+      > "$tmp/c_reg"
+    if OUT="$(REGISTER="$tmp/c_reg" bash "$0" 2>&1)"; then
+      echo "FAIL: --self-test planted a live row with a nonexistent symbol and the gate passed"; rm -rf "$tmp"; exit 1
+    fi
+    if ! printf '%s' "$OUT" | grep -q 'no_such_symbol_xyz'; then
+      echo "FAIL: --self-test — the gate failed, but did not name the planted symbol"; rm -rf "$tmp"; exit 1
+    fi
+    echo "OK: --self-test — a live row's stale symbol is reported by name"
+    # Negative half: the same shape in a CLOSED row is a historical record and must not fire.
+    printf '| OBL-C%s | **CLOSED** | planted | see `src/tx/mod.rs:1` (`no_such_symbol_xyz`) | planted | M | planted |\n' 996 \
+      > "$tmp/d_reg"
+    if ! REGISTER="$tmp/d_reg" EXCEPTIONS=/dev/null bash "$0" >/dev/null 2>&1; then
+      echo "FAIL: --self-test — a CLOSED row's historical symbol was adjudicated as live"; rm -rf "$tmp"; exit 1
+    fi
+    echo "OK: --self-test — closed rows are left as historical record"
     rm -rf "$tmp"; exit 0 ;;
   --working-tree) MODE="work" ;;
   "") ;;
@@ -212,6 +230,75 @@ def line_gone(token, suffix):
 
 findings, exempted, cited, seen = [], [], set(), set()
 line_findings, seen_line = [], set()
+
+# ── the symbol half (OBL-C148) ────────────────────────────────────────────────────────────────────
+#
+# The line check above is a coarse existence bound; it cannot see that a row cites `foo.rs:120` for
+# `some_function` and the line now holds something else. For **live** rows, take the identifier the
+# row writes immediately beside the citation (either `` `sym` (`path:line`) `` or
+# `` `path:line` (`sym`) ``) and require that word to appear somewhere in the cited file at HEAD.
+# It deliberately does not require a declaration: the register also cites fields, methods and
+# constants, and demanding one syntactic form would report correct rows. A word that appears nowhere
+# in the file is stale under every reading.
+LIVE_STATUSES = {"OPEN", "PARTLY", "FAILS"}
+row_starts = []
+for m in re.finditer(r'^\|\s*(OBL-[CZT]\d+)\s*\|\s*\*\*([A-Z][A-Z-]*)\*\*', text, re.M):
+    row_starts.append((m.start(), m.group(1), m.group(2)))
+
+
+def live_row_at(pos):
+    current = None
+    for start, row_id, status in row_starts:
+        if start <= pos:
+            current = (row_id, status)
+        else:
+            break
+    return current
+
+
+def adjacent_symbol(start, end):
+    """The snake_case identifier the row binds to this citation, if it binds one.
+
+    Only **function-shaped** identifiers (`lower_snake_case`) are considered. The register also
+    writes circuit names, types and field paths in backticks beside a path; those are values the
+    row talks about, not symbols it claims the file contains, and treating them as claims produced
+    five false positives on this gate's first run (`Transfer_V2` beside `parser.rs`,
+    `BurnStakeParamsV1` beside `bearer_bond_spec.rs`, …).
+
+    The right-hand parenthetical is preferred — the corpus convention is `` `path:line` (`fn`) `` —
+    and the left form is accepted only when the identifier is *immediately* beside the path with
+    nothing but spaces or one parenthesis between, so a symbol bound to a previous citation in the
+    same cell is not attributed to this one.
+    """
+    right = text[end:end + 90]
+    right = right[1:] if right.startswith("`") else right
+    # An opening parenthesis is required: `` `path` (`fn`) ``. Without it, `path`; `next_clause``
+    # would bind the next clause's identifier to this citation (one real false positive: OBL-C206's
+    # `test_heavyweight_stablecoin` was attributed to `uniform_runner.rs`, which cites
+    # `run_heavyweight_test` instead).
+    m = re.match(r'^\s*\(\s*`([a-z][a-z0-9_]*)`', right)
+    if m:
+        return m.group(1)
+    left = text[max(0, start - 90):start]
+    left = left[:-1] if left.endswith("`") else left
+    m = re.search(r'`([a-z][a-z0-9_]*)`[ (]{0,2}$', left)
+    if m:
+        return m.group(1)
+    return None
+
+
+_head_text = {}
+
+
+def head_text(path):
+    if path not in _head_text:
+        r = subprocess.run(["git", "-C", repo, "show", f"HEAD:{path}"],
+                           capture_output=True, text=True)
+        _head_text[path] = r.stdout if r.returncode == 0 else None
+    return _head_text[path]
+
+
+symbol_findings, seen_symbol = [], set()
 for m in TOKEN_RE.finditer(text):
     token = m.group(1)
     if not in_scope(token):
@@ -222,6 +309,15 @@ for m in TOKEN_RE.finditer(text):
         if line_gone(token, m.group(2)) and (token, m.group(2)) not in seen_line:
             seen_line.add((token, m.group(2)))
             line_findings.append((token, m.group(2), lineno))
+        row = live_row_at(m.start())
+        if row and row[1] in LIVE_STATUSES:
+            symbol = adjacent_symbol(m.start(), m.end())
+            body = head_text(token)
+            if symbol and body is not None and not re.search(rf'\b{re.escape(symbol)}\b', body):
+                key = (token, symbol, lineno)
+                if key not in seen_symbol:
+                    seen_symbol.add(key)
+                    symbol_findings.append((token, symbol, row[0], lineno))
         continue
     if token in exceptions:
         exempted.append((token, lineno, exceptions[token]))
@@ -251,7 +347,7 @@ stale = (
     else []
 )
 
-if findings or stale or line_findings:
+if findings or stale or line_findings or symbol_findings:
     # A REGISTER= override may point outside the repo (the controls do), where a relative path would
     # be a row of "../" that names nothing.
     rel = os.path.relpath(register, repo)
@@ -274,6 +370,9 @@ if findings or stale or line_findings:
     for token, suffix, lineno in line_findings:
         print(f"FAIL: {rel}:{lineno}: cites {token}{suffix}, but the file has "
               f"{head_line_count(token)} line(s) at HEAD — the cited line is gone")
+    for token, symbol, row_id, lineno in symbol_findings:
+        print(f"FAIL: {rel}:{lineno}: live row {row_id} cites `{symbol}` at {token}, but that "
+              f"identifier does not appear in the file at HEAD")
 
     print("")
     print("Fix: commit the artefact, correct the citation, or record it in")

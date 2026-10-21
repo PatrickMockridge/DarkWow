@@ -49,7 +49,42 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="${REGISTER_STATUS_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+# ── Negative control ───────────────────────────────────────────────────────────────────────────────
+# A gate that cannot fail is not a gate. Plant the row-integrity defect that `--check` exists to
+# catch — a row whose Discussion continues onto a second line, so everything after the break falls
+# out of the table — and require a non-zero verdict that names the row. Then join the row into one
+# line and require the fixture to pass. This is the control `scripts/run-all-tests.sh` runs inline;
+# the planted id is assembled at run time for the reason that control records.
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    PLANTED="OBL-C""999"
+    printf '| %s | **OPEN** | planted | a.rs | M | x\n  a continuation that fell out |\n' \
+        "$PLANTED" > "$TMP/register"
+    if OUT="$(REGISTER="$TMP/register" "$0" --check 2>&1)"; then
+        echo "SELF-TEST FAIL: the planted split row was not reported" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    ok=1
+    printf '%s' "$OUT" | grep -q "$PLANTED" || {
+        echo "SELF-TEST FAIL: the offending row was not named" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "split across" || {
+        echo "SELF-TEST FAIL: the row-integrity rule was not named" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    # Clean twin: the same row joined into one line must pass.
+    printf '| %s | **OPEN** | planted | a.rs | M | x |\n' "$PLANTED" > "$TMP/register"
+    if ! OUT="$(REGISTER="$TMP/register" "$0" --check 2>&1)"; then
+        echo "SELF-TEST FAIL: the one-line twin does not pass" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    echo "SELF-TEST PASS: a row split across lines is named; the one-line twin passes"
+    exit 0
+fi
 
 CHECK=0
 for a in "$@"; do [ "$a" = "--check" ] && CHECK=1; done

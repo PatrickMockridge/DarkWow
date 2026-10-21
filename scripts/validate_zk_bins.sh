@@ -8,9 +8,59 @@
 
 set -e
 
-ZKAS="${ZKAS:-$(cd "$(dirname "$0")/.." && pwd)/zkas}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SELF="$SCRIPT_DIR/$(basename "$0")"
+ROOT="${VALIDATE_ZK_BINS_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+ZKAS="${ZKAS:-$ROOT/zkas}"
 [ -x "$ZKAS" ] || ZKAS="target/release/zkas"  # fallback for CI where only target/ exists
 CONTRACT_DIR="src/contract"
+
+# ── Negative control ───────────────────────────────────────────────────────────────────────────────
+# A gate that cannot fail is not a gate. Plant a truncated `.zk.bin` beside a known-good one in a
+# temp contract directory and require the validator to reject the former and accept the latter. It
+# uses the built `zkas` compiler and a bin the tree already built; it never rebuilds anything.
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    GOOD_SRC="$ROOT/proofs/core/mint.zk.bin"
+    if [ ! -x "$ZKAS" ]; then
+        echo "SELF-TEST FAIL: no zkas compiler at $ZKAS — the validator cannot be shown to fail" >&2
+        exit 1
+    fi
+    if [ ! -f "$GOOD_SRC" ]; then
+        echo "SELF-TEST FAIL: no built .zk.bin to use as the clean twin ($GOOD_SRC)" >&2
+        echo "  This control never builds: run the circuit build first, then re-run the self-test." >&2
+        exit 1
+    fi
+    mkdir -p "$TMP/contract/proof"
+    cp "$GOOD_SRC" "$TMP/contract/proof/good.zk.bin"
+    head -c 8 "$GOOD_SRC" > "$TMP/contract/proof/bad.zk.bin"
+    if OUT="$("$SELF" "$TMP/contract/proof" 2>&1)"; then
+        echo "SELF-TEST FAIL: the truncated .zk.bin was not rejected" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    ok=1
+    printf '%s' "$OUT" | grep -q "CORRUPTED:.*bad.zk.bin" || {
+        echo "SELF-TEST FAIL: the truncated bin was not named CORRUPTED" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "OK:.*good.zk.bin" || {
+        echo "SELF-TEST FAIL: the clean bin was not accepted" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    # Clean twin: only the good bin remains, and the validator must exit zero.
+    rm -f "$TMP/contract/proof/bad.zk.bin"
+    OUT="$("$SELF" "$TMP/contract/proof" 2>&1)" || {
+        echo "SELF-TEST FAIL: the clean twin does not pass" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    }
+    printf '%s' "$OUT" | grep -q "OK:.*good.zk.bin" || {
+        echo "SELF-TEST FAIL: the clean bin was not accepted" >&2
+        exit 1
+    }
+    echo "SELF-TEST PASS: a truncated .zk.bin is rejected CORRUPTED; a clean bin is accepted"
+    exit 0
+fi
 
 # Which sources the binaries below are supposed to come from, so the summary can say how many it did
 # NOT check. This loop walks `.zk.bin` files, and `.zk.bin` is gitignored (`.gitignore:9`): on a tree

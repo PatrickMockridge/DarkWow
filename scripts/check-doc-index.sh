@@ -24,7 +24,50 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="${DOC_INDEX_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+# ── Negative control ───────────────────────────────────────────────────────────────────────────────
+# A gate that cannot fail is not a gate. Plant the two defects this index exists to catch — an
+# unlisted document and a citation to a nonexistent obligation — plus a dangling link, require the
+# run to fail **and to name** each planted defect, then add the document to SUMMARY and remove the
+# defects and require a clean run. The planted id is assembled at runtime so this script's own text
+# does not read as a real citation.
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    # Assembled at run time: this script is itself inside the doc gate's scan, so a literal
+    # fixture filename here would read as a real citation of a missing document.
+    MD=".m""d"
+    GUIDE="gui""de$MD"
+    NOFILE="no-such-""file$MD"
+    mkdir -p "$TMP/doc/src/arch" "$TMP/doc/src/dev/contracts"
+    printf '# Summary\n\n- [Register](arch/verification-hazop.md)\n- [Safety](dev/contracts/safety.md)\n' \
+        > "$TMP/doc/src/SUMMARY.md"
+    printf '| OBL-C1 | **CLOSED** | self-test row |\n' > "$TMP/doc/src/arch/verification-hazop.md"
+    printf 'RC1 · self-test\n' > "$TMP/doc/src/dev/contracts/safety.md"
+    PLANTED="OBL-C""999"
+    printf '# Guide\n\nThis cites %s and links [gone](%s).\n' "$PLANTED" "$NOFILE" > "$TMP/doc/src/$GUIDE"
+
+    OUT="$(DOC_INDEX_ROOT="$TMP" "$0" 2>&1)" && {
+        echo "SELF-TEST FAIL: the planted unlisted document and dangling citation were not reported" >&2
+        exit 1
+    }
+    ok=1
+    printf '%s' "$OUT" | grep -q "$GUIDE: not listed" || { echo "SELF-TEST FAIL: unlisted document not named" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "$PLANTED" || { echo "SELF-TEST FAIL: dangling obligation not named" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q 'link target does not exist' || { echo "SELF-TEST FAIL: dangling link not named" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    printf '# Summary\n\n- [Register](arch/verification-hazop.md)\n- [Safety](dev/contracts/safety.md)\n- [Guide](%s)\n' \
+        "$GUIDE" > "$TMP/doc/src/SUMMARY.md"
+    printf '# Guide\n\nClean twin.\n' > "$TMP/doc/src/$GUIDE"
+    DOC_INDEX_ROOT="$TMP" "$0" >/dev/null || {
+        echo "SELF-TEST FAIL: the clean twin does not pass" >&2
+        exit 1
+    }
+    echo "SELF-TEST PASS: unlisted document, dangling obligation and dangling link are named; the clean twin passes"
+    exit 0
+fi
 
 REPO_ROOT="$REPO_ROOT" python3 - <<'PYEOF'
 import os, re, sys, glob, collections

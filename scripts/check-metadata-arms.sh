@@ -26,7 +26,58 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SELF="$SCRIPT_DIR/$(basename "$0")"
+REPO_ROOT="${METADATA_ARMS_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+# ── Negative control ───────────────────────────────────────────────────────────────────────────────
+# A gate that cannot fail is not a gate. Plant one `get_metadata` arm whose success value is a bare
+# empty vector — the shape the host reads as a rejection — and require a non-zero verdict that names
+# the file and the arm. Then answer with an encoded value and require the fixture to pass.
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    mkdir -p "$TMP/src/contract/demo/src"
+    cat > "$TMP/src/contract/demo/src/entrypoint.rs" <<'FIXTURE'
+impl Demo {
+    fn get_metadata(&self) -> Vec<u8> {
+        match x {
+            Demo::Call => vec![],
+            _ => encoded,
+        }
+    }
+}
+FIXTURE
+    if OUT="$(METADATA_ARMS_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the planted empty metadata arm was not reported" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    ok=1
+    printf '%s' "$OUT" | grep -q "src/contract/demo/src/entrypoint.rs" || {
+        echo "SELF-TEST FAIL: the offending file was not named" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "Demo::Call" || {
+        echo "SELF-TEST FAIL: the offending arm was not named" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    # Clean twin: the same arm answering with an encoded value must pass.
+    cat > "$TMP/src/contract/demo/src/entrypoint.rs" <<'FIXTURE'
+impl Demo {
+    fn get_metadata(&self) -> Vec<u8> {
+        match x {
+            Demo::Call => encoded,
+            _ => encoded,
+        }
+    }
+}
+FIXTURE
+    if ! OUT="$(METADATA_ARMS_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the clean fixture does not pass" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    echo "SELF-TEST PASS: an empty get_metadata arm is named; the encoded twin passes"
+    exit 0
+fi
 
 REPO_ROOT="$REPO_ROOT" python3 - <<'PYEOF'
 import glob, os, re, sys

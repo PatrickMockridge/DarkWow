@@ -37,7 +37,59 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SELF="$SCRIPT_DIR/$(basename "$0")"
+REPO_ROOT="${PHASE_HOST_FUNCTIONS_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+# ── Negative control ───────────────────────────────────────────────────────────────────────────────
+# A gate that cannot fail is not a gate. Plant the apply-phase defect the gate exists to catch — an
+# apply function calling a host function whose ACL admits only Exec — and require a non-zero verdict
+# that names the function pair. Then call the Update-admitted host function and require the fixture
+# to pass. The fixture carries its own small ACL table because this gate parses the ACL from the
+# runtime rather than hardcoding it.
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    mkdir -p "$TMP/src/runtime/import" "$TMP/src/contract/demo/src"
+    cat > "$TMP/src/runtime/import/db.rs" <<'FIXTURE'
+pub fn db_get() {
+    acl_allow(vec![ContractSection::Exec]);
+}
+
+pub fn db_set() {
+    acl_allow(vec![ContractSection::Update]);
+}
+FIXTURE
+    cat > "$TMP/src/contract/demo/src/lib.rs" <<'FIXTURE'
+fn apply_thing() {
+    db_get();
+}
+FIXTURE
+    if OUT="$(PHASE_HOST_FUNCTIONS_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the planted apply-phase violation was not reported" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    ok=1
+    printf '%s' "$OUT" | grep -q "apply_thing() -> db_get()" || {
+        echo "SELF-TEST FAIL: the offending function pair was not named" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "apply-phase function calls" || {
+        echo "SELF-TEST FAIL: the phase rule was not named" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    # Clean twin: the Update-admitted host function is legal from apply.
+    cat > "$TMP/src/contract/demo/src/lib.rs" <<'FIXTURE'
+fn apply_thing() {
+    db_set();
+}
+FIXTURE
+    PHASE_HOST_FUNCTIONS_ROOT="$TMP" "$SELF" >/dev/null || {
+        echo "SELF-TEST FAIL: the clean fixture does not pass" >&2
+        PHASE_HOST_FUNCTIONS_ROOT="$TMP" "$SELF" 2>&1 | sed 's/^/  | /' >&2
+        exit 1
+    }
+    echo "SELF-TEST PASS: an apply-phase read is named; the Update-admitted twin passes"
+    exit 0
+fi
 
 REPO_ROOT="$REPO_ROOT" python3 - <<'PYEOF'
 import os, pathlib, re, sys, collections

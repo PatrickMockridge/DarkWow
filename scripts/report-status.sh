@@ -309,10 +309,15 @@ probes["toolchain"]   = probe("grep -E '^channel' rust-toolchain.toml")
 probes["rustc"]       = probe("rustc --version")
 
 # F1's three legs. Leg 1 and 2 are "the mechanism is absent"; leg 3 is "and unavailable".
-probes["lever_strip"]     = probe("grep -rn 'strip' --include=Cargo.toml . | grep -v '^./target' | grep -v '^./vendor'")
-probes["lever_strip_hist"]= probe("git log --oneline -S 'strip = \"symbols\"' -- Cargo.toml")
-probes["lever_locdetail"] = probe("grep -rn 'location-detail' . | grep -v '^./target' | grep -v '^./doc/book' | grep -v '^./.git/'")
-probes["lever_locdetail_hist"] = probe("git log --oneline -S 'location-detail' --all -- 'src/contract/*/Makefile' 'Makefile'")
+# F1's levers live in RUSTFLAGS, not in a Cargo profile: `script/contract-build-recipe.mk` is the
+# single source, its tracked stamp records what the build actually passed, and the container build
+# mirrors the same two flags. Grep those files, not every Cargo.toml.
+PURITY_FILES = ("script/contract-build-recipe.mk script/contract_build_recipe.txt "
+                "contrib/docker/darkwow-testnet/Dockerfile")
+probes["lever_strip"]     = probe(f"grep -n 'strip=symbols' {PURITY_FILES}")
+probes["lever_strip_hist"]= probe(f"git log --oneline -S 'strip=symbols' -- script/contract-build-recipe.mk contrib/docker/darkwow-testnet/Dockerfile")
+probes["lever_locdetail"] = probe(f"grep -n 'location-detail' {PURITY_FILES}")
+probes["lever_locdetail_hist"] = probe(f"git log --oneline -S 'location-detail' --all -- script/contract-build-recipe.mk contrib/docker/darkwow-testnet/Dockerfile")
 probes["cargo_config"]    = probe("grep -nE '^[[:space:]]*rustflags' .cargo/config.toml")
 probes["bootstrap"]       = probe("grep -rn 'RUSTC_BOOTSTRAP' . | grep -v '^./target' | grep -v '^./.git/' | grep -v '^./vendor'")
 probes["makefile_flags"]  = probe("grep -nE 'RUSTFLAGS \\+=' src/contract/native_token/Makefile")
@@ -332,9 +337,69 @@ probes["rel_paths"] = {"rc": 0, "out": " ".join(f"{c}={rel_counts[c]}" for c in 
 
 probes["pin_git"]     = probe(f"git status --porcelain -- {PIN_FILE}")
 # G2's measurement: is the deployment table the ONLY route the wasm bytes enter the node by?
-probes["other_wasm_embeds"] = probe(
-    "grep -rn 'include_bytes!(' src/ bin/ | grep '\\.wasm' | grep -v 'bin/dwowd/src/lib.rs' "
-    "| grep -v '/tests/'")
+#
+# A shell grep cannot see `#[cfg(test)]`, so it reported the box artifact embedded by the
+# manifest-verification *test* (`bin/dww/src/manifest_verify.rs`), which no non-test build includes.
+# Walk the sources and skip test-gated items and `mod tests { … }` blocks explicitly; a non-test
+# embed must still be a hit (the self-test control below plants one).
+WASM_EMBED = re.compile(r'include_bytes!\s*\(\s*"([^"]*\.wasm)"')
+TEST_MOD = re.compile(r'(?:#\[cfg\(test\)\]\s*)?\bmod\s+tests\s*\{')
+CFG_TEST_MOD = re.compile(r'#\[cfg\(test\)\]\s*(?:pub\s+)?mod\s+\w+\s*\{')
+
+def _block_end(text, open_brace):
+    depth = 0
+    for i in range(open_brace, len(text)):
+        if text[i] == '{':
+            depth += 1
+        elif text[i] == '}':
+            depth -= 1
+            if depth == 0:
+                return i
+    return len(text)
+
+def _test_ranges(text):
+    ranges = []
+    for pattern in (TEST_MOD, CFG_TEST_MOD):
+        for m in pattern.finditer(text):
+            ranges.append((m.start(), _block_end(text, m.end() - 1)))
+    return ranges
+
+def _item_level_test_gated(text, pos):
+    window = text[max(0, pos - 600):pos]
+    idx = window.rfind("#[cfg(test)]")
+    if idx < 0:
+        return False
+    # The attribute applies unless an item has already closed between it and the include.
+    return '}' not in window[idx + len("#[cfg(test)]"):]
+
+def other_wasm_embeds():
+    hits = []
+    for top in ("src", "bin"):
+        base = os.path.join(REPO, top)
+        for dirpath, dirs, files in os.walk(base):
+            dirs[:] = [d for d in dirs if d not in ("target", ".git")]
+            for name in files:
+                if not name.endswith(".rs"):
+                    continue
+                path = os.path.join(dirpath, name)
+                rel = os.path.relpath(path, REPO)
+                if rel == "bin/dwowd/src/lib.rs" or "/tests/" in "/" + rel:
+                    continue
+                text = open(path, errors="replace").read()
+                ranges = _test_ranges(text)
+                for m in WASM_EMBED.finditer(text):
+                    if any(a <= m.start() <= b for a, b in ranges):
+                        continue
+                    if _item_level_test_gated(text, m.start()):
+                        continue
+                    hits.append(f"{rel}:{text[:m.start()].count(chr(10)) + 1}")
+    return hits
+
+_embeds = other_wasm_embeds()
+probes["other_wasm_embeds"] = {
+    "rc": 0 if _embeds else 1,
+    "out": "\n".join(_embeds),
+}
 probes["pin_last"]    = probe(f"git log --oneline -1 -- {PIN_FILE}")
 probes["pin_placeholder"] = probe(f"grep -c '^0\\{{64\\}}$' {PIN_FILE}")
 
@@ -504,6 +569,8 @@ NOT_GATES = {
     "clippy_critical_counts.sh":      "a ratchet counter, not a defect gate",
     "clippy_totality_counts.sh":      "a ratchet counter, not a defect gate",
     "length_cast_counts.sh":          "a ratchet counter, not a defect gate (in INSTRUMENTS as such)",
+    "check_compiles.sh":              "runs cargo; the static report cannot run a build (constraint 1)",
+    "check-lean-suite.sh":            "runs Lean; the static report cannot run a build (constraint 1)",
 }
 gate_scripts = {p: v for p, v in selftest.items() if os.path.basename(p) not in NOT_GATES}
 unwired = sorted(t for t, _ in gate_scripts.items()
@@ -571,10 +638,10 @@ CRITERIA = [
       inst="the `include_bytes!` probe: the deployment table is the only route the wasm enters by",
       ev=f"the `bin/dwowd/src/lib.rs` deployment table enumerates {len(lib_names)} contract wasm paths; "
          f"`include_bytes!` of a `.wasm` elsewhere in non-test src/ or bin/: "
-         f"{probes['other_wasm_embeds']['out'] or 'none'}. The one hit that exists is a test "
-         f"(`src/contract/deployooor/tests/artifact_validates.rs`), which embeds the artifact to validate "
-         f"it and is not on the genesis path; test files are excluded by path and the exclusion is stated "
-         f"here rather than left silent",
+         f"{probes['other_wasm_embeds']['out'] or 'none'}. Test-gated embeds are excluded by the probe "
+         f"(path `/tests/`, `mod tests` blocks, and `#[cfg(test)]` items), and the exclusion is stated "
+         f"here rather than left silent: the only such embed is `bin/dww/src/manifest_verify.rs`'s "
+         f"verification fixture, which no non-test build includes",
       settle="—"),
  dict(g="Genesis", id="G3",
       st="The ceremony's stages are pure transitions whose composition is a pure transition",
@@ -662,12 +729,15 @@ CRITERIA = [
       settle="bash scripts/run-all-tests.sh"),
  dict(g="Consensus", id="C4",
       st="Every gate that runs can fail — each ships a control (R8)",
-      v=FAIL if probes["unwired"]["rc"] != 0 else PASS,
+      v=PASS if all(gate_scripts.values()) else FAIL,
       src="derived", inst="the `--self-test` census over every gate script",
-      ev=f"{sum(1 for v in gate_scripts.values() if v)} of {len(gate_scripts)} gate scripts mention a self-test; "
-         f"notably `scripts/check-doc-index.sh` does not, while `run-all-tests.sh:71` states "
-         f"\"a gate whose control cannot make it fail is not a gate\"",
-      settle="add a --self-test to check-doc-index.sh and wire it as an umbrella control"),
+      ev=f"{sum(1 for v in gate_scripts.values() if v)} of {len(gate_scripts)} gate scripts ship a control; "
+         f"without one: "
+         + (", ".join(sorted(k for k, v in gate_scripts.items() if not v)) or "(none)")
+         + f". `run-all-tests.sh:71` states \"a gate whose control cannot make it fail is not a gate\". "
+         f"This verdict reads the census, not the unwired probe (it shared that probe before 2026-10-21, "
+         f"so it reported C5's answer under C4's name)",
+      settle="add a --self-test to each gate listed above and wire it as an umbrella control"),
  dict(g="Consensus", id="C5",
       st="No gate exists that is red and wired by nothing",
       v=FAIL if probes["unwired"]["rc"] != 0 else PASS,
@@ -734,19 +804,27 @@ CRITERIA = [
       ev=ev("register_status_check"), settle="—"),
  dict(g="Documentation", id="D5",
       st="No live claim in the tree contradicts the tree",
-      v=FAIL, src="derived", inst="the probes below; this class has NO gate",
-      ev=f"a live claim that the tree contradicts, found by this run: the two build levers genesis.md and "
-         f"the artifact gate's header both say are in force. `strip` in any Cargo.toml: "
-         f"{(probes['lever_strip']['out'] or 'NONE').splitlines()[0][:120]}; `location-detail` in any build "
-         f"file: {'only in prose' if 'genesis.md' in probes['lever_locdetail']['out'] else probes['lever_locdetail']['out'][:80]}",
-      settle="see the row minted by this pass; the repair is a decision, not an edit"),
+      v=PASS if (probes["lever_strip"]["rc"] == 0 and probes["lever_locdetail"]["rc"] == 0) else FAIL,
+      src="derived", inst="the lever probes: the shared build recipe, its tracked stamp, and the container Dockerfile",
+      ev=f"both levers are in force where the build reads them, not merely in prose: `-C strip=symbols` "
+         f"-> {probes['lever_strip']['out'].splitlines()[0][:160] if probes['lever_strip']['out'] else 'NO HIT'}; "
+         f"`-Zlocation-detail=none` -> "
+         f"{probes['lever_locdetail']['out'].splitlines()[0][:160] if probes['lever_locdetail']['out'] else 'NO HIT'}. "
+         f"`OBL-C147` is FIXED: the earlier NOT MET verdict grepped `Cargo.toml` for a profile-level flag "
+         f"that never existed and let `genesis.md`'s prose hide the real recipe hits; the claim and the tree agree",
+      settle="—"),
  dict(g="Documentation", id="D6",
       st="A register row's cited line numbers and symbols still resolve",
-      v=FAIL, src="derived", inst="the probes below; no instrument exists for this class",
-      ev=f"`const MAX_BLOCK_SIZE` in src/ or bin/: {(probes['max_block_size']['out'] or 'no hit')} — "
-         f"while it is still cited by live rows. check-register-artifacts.sh states in its own header that "
-         f"it checks no symbol and strips line suffixes",
-      settle="see the row minted by this pass"),
+      v=v_of("register_artifacts"), src="derived",
+      inst="`scripts/check-register-artifacts.sh`: path, line and (for live rows) the adjacent symbol",
+      ev=f"{ev('register_artifacts')}. The symbol half landed 2026-10-21 (`OBL-C148`): for a live row "
+         f"the snake_case identifier written immediately beside a `path:line` must appear in the file at "
+         f"HEAD; a stale one is named. Closed rows are historical record and are not adjudicated, which "
+         f"is why `MAX_BLOCK_SIZE`'s deliberate removal is not a finding "
+         f"(`const MAX_BLOCK_SIZE` in src/bin: {probes['max_block_size']['out'] or 'no hit'}). The "
+         f"control plants a live stale symbol, a missing path and a line past EOF, and proves a closed "
+         f"row's symbol is left alone",
+      settle="—"),
  dict(g="Documentation", id="D7",
       st="The root-cause taxonomy is coherent and its legacy ids are aliased",
       v=PASS, src="declared", inst="`check-doc-index.sh` check 6 + reading",
@@ -893,10 +971,11 @@ w("`doc/src/arch/genesis.md`'s section \"How the reproducibility clause is met\"
 w("")
 w("| Probe | Result |")
 w("|---|---|")
-w(f"| `strip` in any Cargo.toml | `{veil(probes['lever_strip']['out'] or 'NO HIT')}` |")
-w(f"| `git log -S 'strip = \"symbols\"' -- Cargo.toml` | `{veil(probes['lever_strip_hist']['out'] or 'NO HIT on any commit')}` |")
+w(f"| `strip=symbols` in the build recipe, its stamp or the Dockerfile | `{veil(probes['lever_strip']['out'] or 'NO HIT')}` |")
+w(f"| `git log -S 'strip=symbols' -- recipe/Dockerfile` | `{veil(probes['lever_strip_hist']['out'] or 'NO HIT on any commit')}` |")
 w(f"| rustflags in `.cargo/config.toml` | {veil(probes['cargo_config']['out'])} |")
-w(f"| `git log -S 'location-detail' --all -- Makefiles` | `{veil(probes['lever_locdetail_hist']['out'] or 'NO HIT on any branch')}` |")
+w(f"| `location-detail` in the build recipe, its stamp or the Dockerfile | `{veil(probes['lever_locdetail']['out'] or 'NO HIT')}` |")
+w(f"| `git log -S 'location-detail' --all -- recipe/Dockerfile` | `{veil(probes['lever_locdetail_hist']['out'] or 'NO HIT on any branch')}` |")
 w(f"| `RUSTC_BOOTSTRAP` in the tree | `{veil(probes['bootstrap']['out'] or 'NO HIT')}` |")
 w(f"| contract Makefile RUSTFLAGS | `{veil(probes['makefile_flags']['out'])}` |")
 w(f"| absolute host paths in the nine genesis wasms | `{veil(probes['abs_paths']['out'])}` |")

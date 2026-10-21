@@ -8,20 +8,18 @@
 # push". No CI exists in this repository (`.github/workflows/` and `.gitlab-ci.yml` are
 # absent) and nothing invoked this script, so that claim was false.
 #
-# It is NOT yet wired into `scripts/run-all-tests.sh`. Its negative control (`--self-test`)
-# IS wired, because an instrument that cannot fail must be caught regardless of what it
-# says. The gate itself is held back on one open question, stated here rather than left
-# for a reader to rediscover:
+# Wired into `scripts/run-all-tests.sh` as a blocking gate on 2026-10-21 (`OBL-C215`). The
+# negative control (`--self-test`) was already wired; the gate's last red was a decision, now taken:
 #
-#   Its one remaining red is `[Check-12]`, which requires a nominal `ThresholdAmount`.
-#   That requirement is real — `doc/book/arch/type-system.html:539,542` specifies
-#   `ThresholdAmount(u64)` as the "mempool admission threshold" and requires
-#   `verify_threshold_proof(tx, ThresholdAmount)` not to accept a `FeeAmount` — but the
-#   SOURCE markdown (`doc/src/arch/type-system.md`) no longer contains any of that text,
-#   and no `ThresholdAmount` exists in Rust anywhere. So the check enforces a
-#   specification that survives only in a build artefact. Whether to restore the source
-#   text and implement the type, or to drop the requirement, is a decision rather than a
-#   repair, and this gate stays out of the umbrella until it is taken.
+#   `[Check-12]` required a nominal `ThresholdAmount`, a requirement that survived only in
+#   `doc/book/arch/type-system.html` (a stale build artefact). The SOURCE markdown
+#   (`doc/src/arch/type-system.md` §2.3.1/§2.3.3) no longer names the type: FeeV3 deleted the
+#   encrypted threshold proof, the mempool admission threshold is a `FeeAmount`
+#   (`crates/dwow-mempool/src/lib.rs`, `MempoolConfig.min_fee`), and `EstimatedFee` is the
+#   distinguished quantity the fee domain actually uses. Adding a `ThresholdAmount(u64)` would be a
+#   dead type with no producer and no consumer — the opposite of the "every nominal type has a
+#   domain" rule this check exists for. The requirement is therefore **dropped, not implemented**;
+#   the four remaining types are still enforced, and the control still plants a violation.
 #
 # Three checks were removed on 2026-09-25 because neither their authority nor their
 # subject exists (`FI-ENCRYPT-3`, `Check-9`'s `AccumulatorPoint`, `Check-13`'s
@@ -67,7 +65,7 @@ echo "=== Fee System Guardrails ==="
 
 # ── FI-GEN-2: No compile-time fee constants of consensus domain types ──
 echo -n "[FI-GEN-2] No const/static of consensus domain types... "
-CONSENSUS_TYPES="FeeAmount|CongestionFactor|RiskFactor|BlockCharge|SupplyAmount|ThresholdAmount|CfValue|WasmKb"
+CONSENSUS_TYPES="FeeAmount|CongestionFactor|RiskFactor|BlockCharge|SupplyAmount|CfValue|WasmKb"
 # `grep -E`, and the fix is load-bearing. The previous form was
 #   grep -rn "const.*\($CONSENSUS_TYPES\)\|static.*\($CONSENSUS_TYPES\)"
 # which mixes a BRE group `\(...\)` with a bare `|`. In a BRE, `|` is a LITERAL
@@ -249,12 +247,16 @@ else
     echo "PASS"
 fi
 
-# ── Check 12: RiskFactor, WasmKb, CfValue, ThresholdAmount, EstimatedFee exist ──
-echo -n "[Check-12] Nominal fee types exist (RiskFactor, WasmKb, ThresholdAmount, EstimatedFee, CfValue)... "
+# ── Check 12: RiskFactor, WasmKb, CfValue, EstimatedFee exist ──
+#
+# `ThresholdAmount` was removed from this list on 2026-10-21 (`OBL-C215`): FeeV3 deleted the
+# threshold proof, the admission threshold is a `FeeAmount`, and the only place the old type was
+# still specified was a stale build artefact. See the header. The four real domains stay enforced:
+# deleting any one of them still fails this check.
+echo -n "[Check-12] Nominal fee types exist (RiskFactor, WasmKb, EstimatedFee, CfValue)... "
 MISSING=""
 grep -q "pub struct RiskFactor" "$ROOT"/src/sdk/src/blockchain.rs 2>/dev/null || MISSING="$MISSING RiskFactor"
 grep -q "pub struct WasmKb" "$ROOT"/src/sdk/src/blockchain.rs 2>/dev/null || MISSING="$MISSING WasmKb"
-grep -q "pub struct ThresholdAmount" "$ROOT"/src/sdk/src/blockchain.rs 2>/dev/null || MISSING="$MISSING ThresholdAmount"
 grep -q "pub struct EstimatedFee" "$ROOT"/src/sdk/src/blockchain.rs 2>/dev/null || MISSING="$MISSING EstimatedFee"
 grep -q "pub struct CfValue" "$ROOT"/src/linear/src/fee_window.rs 2>/dev/null || MISSING="$MISSING CfValue"
 if [ -n "$MISSING" ]; then

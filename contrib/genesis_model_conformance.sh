@@ -25,7 +25,47 @@
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REAL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# ── Negative control ───────────────────────────────────────────────────────────────────────────────
+# A conformance checker that cannot report a mismatch is not a gate. Plant one: copy the three files
+# into a temp root, change the Rust's `INITIAL_REWARD` by one, and require the mismatch to be named.
+# Then run the real tree, which must agree. Checked by output, not just exit status, so a script that
+# dies for an unrelated reason cannot satisfy its own control.
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    mkdir -p "$TMP/proofs/lean/src/DarkFi/Genesis" "$TMP/src/sdk/src" "$TMP/bin/dwowd/src"
+    cp "$REAL_ROOT/proofs/lean/src/DarkFi/Genesis/Ceremony.lean" "$TMP/proofs/lean/src/DarkFi/Genesis/"
+    cp "$REAL_ROOT/src/sdk/src/blockchain.rs" "$TMP/src/sdk/src/"
+    cp "$REAL_ROOT/bin/dwowd/src/lib.rs" "$TMP/bin/dwowd/src/"
+    python3 - "$TMP/src/sdk/src/blockchain.rs" <<'PY'
+import sys
+p = sys.argv[1]
+t = open(p).read()
+t2 = t.replace("BlockReward(1_383_764_049)", "BlockReward(1_383_764_050)", 1)
+if t2 == t:
+    raise SystemExit("self-test: could not plant the reward mismatch")
+open(p, "w").write(t2)
+PY
+    OUT="$(GENESIS_MODEL_ROOT="$TMP" "$0" 2>&1)" && {
+        echo "SELF-TEST FAIL: the planted INITIAL_REWARD mismatch was not reported" >&2
+        exit 1
+    }
+    if ! printf '%s' "$OUT" | grep -q 'INITIAL_REWARD.*MISMATCH'; then
+        echo "SELF-TEST FAIL: the script failed, but not on the planted mismatch — its control proves nothing" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    GENESIS_MODEL_ROOT="$REAL_ROOT" "$0" >/dev/null || {
+        echo "SELF-TEST FAIL: the clean twin (the real tree) does not agree" >&2
+        exit 1
+    }
+    echo "SELF-TEST PASS: the planted mismatch is reported by name and the real tree agrees"
+    exit 0
+fi
+
+ROOT="${GENESIS_MODEL_ROOT:-$REAL_ROOT}"
 cd "$ROOT"
 
 MODEL=proofs/lean/src/DarkFi/Genesis/Ceremony.lean

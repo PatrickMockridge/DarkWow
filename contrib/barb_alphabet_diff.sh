@@ -23,8 +23,90 @@
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SELF="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+ROOT="${BARB_ALPHABET_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 cd "$ROOT"
+
+# ── Negative control ───────────────────────────────────────────────────────────────────────────────
+# A gate that cannot fail is not a gate. Plant the defect this diff exists to catch — one barb added
+# to the core alphabet and to nothing else — and require a non-zero verdict that *names* it. Then
+# remove the extra variant and require the same fixture to pass. The fixture is a minimal temp tree,
+# not the real one: the five extraction sources are exactly what this script reads, so they are what
+# the control writes. The planted name is assembled at run time only for symmetry with the sibling
+# controls; nothing here scans this file.
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    mkdir -p "$TMP/proofs/lean/src/DarkFi/Capability" "$TMP/doc/src/arch" \
+             "$TMP/src/sdk/src" "$TMP/contrib/model"
+
+    cat > "$TMP/proofs/lean/src/DarkFi/Capability/Types.lean" <<'FIXTURE'
+inductive Barb where
+  | send
+  | receive
+deriving Repr
+FIXTURE
+    cat > "$TMP/doc/src/arch/type-system.md" <<'FIXTURE'
+### 1.1 Barbs
+
+| Barb | Meaning |
+|------|---------|
+| ↓send | send |
+| ↓receive | receive |
+
+### 1.2 Other
+FIXTURE
+    cat > "$TMP/src/sdk/src/capability.rs" <<'FIXTURE'
+pub enum Barb {
+    Send,
+    Receive,
+}
+FIXTURE
+    cat > "$TMP/contrib/model/wallet_model.py" <<'FIXTURE'
+from enum import Enum
+
+class Barb(Enum):
+    Send = "Send"
+    Receive = "Receive"
+FIXTURE
+
+    # The defect: `extra` is in `BarbId` and in neither the doc nor Lean.
+    PLANTED="ex""tra"
+    cat > "$TMP/src/barb.rs" <<FIXTURE
+pub enum BarbId {
+    Send,
+    Receive,
+    ${PLANTED^},
+}
+FIXTURE
+    if OUT="$(BARB_ALPHABET_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the planted core-only barb was not reported" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    ok=1
+    printf '%s' "$OUT" | grep -q "↓$PLANTED" || {
+        echo "SELF-TEST FAIL: the planted barb was not named in the diff" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "core BarbId == §1.1.*VIOLATED" || {
+        echo "SELF-TEST FAIL: the core-alphabet relation was not reported broken" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    # Clean twin: the same fixture without the planted variant must pass.
+    cat > "$TMP/src/barb.rs" <<'FIXTURE'
+pub enum BarbId {
+    Send,
+    Receive,
+}
+FIXTURE
+    if ! OUT="$(BARB_ALPHABET_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the clean fixture does not pass" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    echo "SELF-TEST PASS: a core-only barb is named as a relation violation; the clean fixture passes"
+    exit 0
+fi
 
 OUT="/tmp/barb-alphabet-diff.txt"
 LEAN=proofs/lean/src/DarkFi/Capability/Types.lean

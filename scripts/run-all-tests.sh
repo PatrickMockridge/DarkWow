@@ -85,12 +85,18 @@ done
 # reason cannot satisfy its own control by accident.
 run_gate "control: fee guardrails can fail [FI-GEN-2]" \
     bash "$REPO_ROOT/contrib/ci/check_fee_guardrails.sh" --self-test
+run_gate "fee guardrails" \
+    bash "$REPO_ROOT/contrib/ci/check_fee_guardrails.sh"
 run_gate "control: verdict runner keeps cargo's exit status" \
     bash "$REPO_ROOT/contrib/test_verdicts.sh" --self-test
 run_gate "control: authority gate can report a dead citation" \
     bash "$SCRIPT_DIR/check-authority-resolves.sh" --self-test
 run_gate "control: sync conformance reports a missing header" \
     bash "$REPO_ROOT/contrib/ci/check_sync_conformance.sh" --self-test
+run_gate "sync conformance (spec header + dispatch)" \
+    bash "$REPO_ROOT/contrib/ci/check_sync_conformance.sh"
+run_gate "genesis model conformance" \
+    bash "$REPO_ROOT/contrib/genesis_model_conformance.sh"
 # The status report's verdict mapper. `scripts/report-status.sh` decides MET / NOT MET / NOT ESTABLISHED
 # from instrument exits, so a mapper that could only ever say "green" would make every later verdict in
 # that report worthless — this is the control for the instrument that judges the others. Its own reported
@@ -278,18 +284,14 @@ run_gate "a contract doc's circuit table ↔ proof/" \
     bash "$SCRIPT_DIR/check-contract-doc-circuits.sh"
 run_gate "control: the circuit-table gate can fail" \
     bash "$SCRIPT_DIR/check-contract-doc-circuits.sh" --self-test
-# A doc's `path/to/file.rs` citation must resolve in HEAD. **Wired report-only, and the reason is
-# specific rather than caution.** The detector cannot yet tell a *stale* citation from a *negative*
-# one: this campaign's own corrections are sentences saying a path does not exist ("None of it exists
-# now … are all absent"), and roughly four fifths of what it reports is a document being right about
-# that. Skipping those by string is the weakening the repository's rules forbid, and the exceptions
-# mechanism the detector's own header names (`script/doc_path_exceptions.txt`) does not exist. Its
-# **scope** was corrected at the same time and that part is real: it had been walking the entire repo
-# rather than `doc/src`, so it reported vendored build caches (`proofs/lean/.lake/packages/*/README.md`)
-# alongside the documents it was built for. Findings 89 → 61 on that change alone. Flip it once the
-# genuine citations are gone and the negative-citation class has a mechanism.
-run_gate "doc code-path citations resolve (report-only)" \
-    bash "$SCRIPT_DIR/check-doc-code-paths.sh" --report-only
+# A doc's `path/to/file.rs` citation must resolve in HEAD. **Blocking since 2026-10-21.** The
+# negative-citation class now has the mechanism its header names: `script/doc_path_exceptions.txt`
+# declares each absence with the row or fact that makes it the point, and a declared path that
+# starts resolving — or stops being cited — is a stale entry and fails. The one genuinely stale
+# citation (`localnet-dev.md:50`) was corrected. The gate's own `--self-test` proves a nonexistent
+# path is reported, a resolving one passes, and a resolving declared exception is stale.
+run_gate "doc code-path citations resolve" \
+    bash "$SCRIPT_DIR/check-doc-code-paths.sh"
 run_gate "control: the doc-code-path gate can fail" \
     bash "$SCRIPT_DIR/check-doc-code-paths.sh" --self-test
 # OBL-Z1: the Orchard-class rule. The other two circuit gates are structural (counts, prefix
@@ -493,6 +495,8 @@ run_gate "control: hidden tests can fail" bash "$SCRIPT_DIR/check-hidden-tests.s
 # clean-up removed 25 documents and repointed ~30 referrers by hand; this is what
 # keeps that from silently un-happening.
 run_gate "documentation index"            bash "$SCRIPT_DIR/check-doc-index.sh"
+run_gate "control: the documentation index can fail" \
+    bash "$SCRIPT_DIR/check-doc-index.sh" --self-test
 # A register row that cites a path is making a claim about the tree, and this is the gate that holds it
 # to one: every in-scope cited path must resolve against HEAD, with any deliberate exception declared in
 # `script/register_artifact_exceptions.txt` — and an exception whose path now resolves, or that its row
@@ -875,6 +879,26 @@ run_gate "Python: wallet simulation"        python3 contrib/model/wallet_simulat
 # attack (see OBL-C66 and the finality-widget campaign). It self-verifies: a failing assertion exits
 # 1, so it is a gate and not just a printout.
 run_gate "Python: merge mining model"      python3 contrib/docker/darkwow-testnet/merge_mining_model.py
+
+# One control per gate whose script carries its own `--self-test` and was not already wired beside
+# its gate above (`OBL-C215`'s sibling clean-up, report criterion C4). Each control plants one defect
+# the gate exists to catch and requires the gate to name it; each also runs a clean twin.
+for gate in \
+    contrib/barb_alphabet_diff.sh \
+    contrib/capability_type_diff.sh \
+    contrib/primitive_barbs_diff.sh \
+    scripts/check-circuit-domain-separation.sh \
+    scripts/check-circuit-instance-derivation.sh \
+    scripts/check-client-params-alignment.sh \
+    scripts/check-coinbase-classifier.sh \
+    scripts/check-metadata-arms.sh \
+    scripts/check-phase-host-functions.sh \
+    scripts/check-pubkey-binding.sh \
+    scripts/register-status.sh \
+    scripts/validate_zk_bins.sh
+do
+    run_gate "control: $(basename "$gate") can fail" bash "$REPO_ROOT/$gate" --self-test
+done
 
 if [ "$TIER" = "--tier 2" ]; then
     run_gate "Docker test pipeline (native, 2 wallets)" \

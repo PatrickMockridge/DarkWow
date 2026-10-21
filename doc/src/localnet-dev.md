@@ -47,7 +47,7 @@ A local development network (devnet) for DarkWow testing, funded via block minin
 ### dwowd (daemon)
 - Stratum server: `127.0.0.1:48347`
 - RPC endpoint: `127.0.0.1:48345`
-- Config: `contrib/localnet/dwowd-single-node/dwowd.toml`
+- Config: `bin/dwowd/dwowd_config.toml`
 - `pow_fixed_difficulty=1` makes mining fast for testing
 
 ### dwow_wallet (CLI wallet)

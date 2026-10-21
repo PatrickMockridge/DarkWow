@@ -39,7 +39,48 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SELF="$SCRIPT_DIR/$(basename "$0")"
+REPO_ROOT="${CLIENT_PARAMS_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+# ── Negative control ───────────────────────────────────────────────────────────────────────────────
+# A gate that cannot fail is not a gate. Plant the stronger of the two rules' defects — a client
+# struct carrying its own `encode`/`decode` pair, i.e. a second codec for call data — and require a
+# non-zero verdict that names the struct. Then remove the codec and require the same fixture to pass.
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    mkdir -p "$TMP/src/contract/demo/src/client" "$TMP/src/contract/demo/src/model"
+    printf 'pub struct RealParamsV1 {}\n' > "$TMP/src/contract/demo/src/model/mod.rs"
+    cat > "$TMP/src/contract/demo/src/client/lib.rs" <<'FIXTURE'
+pub struct PlantedParams {}
+
+impl PlantedParams {
+    pub fn encode(&self) {}
+    pub fn decode(&self) {}
+}
+FIXTURE
+    if OUT="$(CLIENT_PARAMS_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the planted client codec was not reported" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    ok=1
+    printf '%s' "$OUT" | grep -q "PlantedParams" || {
+        echo "SELF-TEST FAIL: the offending struct was not named" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "declares its own params codec" || {
+        echo "SELF-TEST FAIL: the second-codec rule was not named" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    # Clean twin: the same struct without a codec must pass.
+    printf 'pub struct PlantedParams {}\n' > "$TMP/src/contract/demo/src/client/lib.rs"
+    if ! OUT="$(CLIENT_PARAMS_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the clean fixture does not pass" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    echo "SELF-TEST PASS: a client-declared params codec is named; the clean fixture passes"
+    exit 0
+fi
 
 REPO_ROOT="$REPO_ROOT" python3 - <<'PYEOF'
 import os, pathlib, re, sys

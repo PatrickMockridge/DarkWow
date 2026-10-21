@@ -21,8 +21,62 @@
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SELF="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+ROOT="${PRIMITIVE_BARBS_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 cd "$ROOT"
+
+# ── Negative control ───────────────────────────────────────────────────────────────────────────────
+# A gate that cannot fail is not a gate. Plant the defect this diff exists to catch — a shared
+# primitive whose barb set differs between the two implementations — and require a non-zero verdict
+# that names the primitive. Then remove the extra barb and require the same fixture to pass.
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    mkdir -p "$TMP/proofs/lean/src/DarkFi/Capability" "$TMP/src/sdk/src"
+
+    cat > "$TMP/proofs/lean/src/DarkFi/Capability/Types.lean" <<'FIXTURE'
+def secretKey : PrimitiveType := {
+  name := "SecretKey"
+, barbs := {Barb.spend}
+}
+FIXTURE
+    # The defect: Rust gives the shared primitive a second barb the model does not state.
+    cat > "$TMP/src/sdk/src/capability.rs" <<'FIXTURE'
+    pub fn barbs(self) -> &'static [Barb] {
+        match self {
+            Primitive::SecretKey => &[Barb::Spend, Barb::Receive],
+        }
+    }
+FIXTURE
+    if OUT="$(PRIMITIVE_BARBS_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the planted barb-set mismatch was not reported" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    ok=1
+    printf '%s' "$OUT" | grep -q "SecretKey" || {
+        echo "SELF-TEST FAIL: the mismatching primitive was not named" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "DIFFER" || {
+        echo "SELF-TEST FAIL: the primitive was not classified DIFFER" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    # Clean twin: the same fixture with equal barb sets must pass.
+    cat > "$TMP/src/sdk/src/capability.rs" <<'FIXTURE'
+    pub fn barbs(self) -> &'static [Barb] {
+        match self {
+            Primitive::SecretKey => &[Barb::Spend],
+        }
+    }
+FIXTURE
+    if ! OUT="$(PRIMITIVE_BARBS_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the clean fixture does not pass" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    echo "SELF-TEST PASS: a shared primitive's barb-set mismatch is named DIFFER; the clean fixture passes"
+    exit 0
+fi
 
 OUT="/tmp/primitive-barbs-diff.txt"
 LEAN=proofs/lean/src/DarkFi/Capability/Types.lean

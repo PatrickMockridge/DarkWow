@@ -52,7 +52,68 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SELF="$SCRIPT_DIR/$(basename "$0")"
+REPO_ROOT="${PUBKEY_BINDING_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+# ── Negative control ───────────────────────────────────────────────────────────────────────────────
+# A gate that cannot fail is not a gate. Plant one vacuous binding — `constrain_equal_base(a, b)`
+# where both operands are prover-chosen — and require a non-zero verdict that names the file and the
+# equality. Then pin one side to a constant and require the fixture to pass. A third half reuses the
+# stale-exception control `scripts/run-all-tests.sh` runs inline: a declared entry matching no
+# finding must fail and name the dead entry. The planted path is assembled at run time in that
+# control's idiom.
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    mkdir -p "$TMP/src/contract/demo/proof"
+    BAD="$TMP/src/contract/demo/proof/bad.zk"
+    cat > "$BAD" <<'FIXTURE'
+a = witness();
+b = witness();
+constrain_equal_base(a, b);
+FIXTURE
+    if OUT="$(PUBKEY_BINDING_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the planted vacuous binding was not reported" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    ok=1
+    printf '%s' "$OUT" | grep -q "bad.zk" || {
+        echo "SELF-TEST FAIL: the offending file was not named" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "binds two prover-chosen" || {
+        echo "SELF-TEST FAIL: the vacuous equality was not named" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    # Clean twin: pin one side, so the equality means something.
+    cat > "$BAD" <<'FIXTURE'
+a = witness();
+constrain_equal_base(a, ONE);
+FIXTURE
+    if ! OUT="$(PUBKEY_BINDING_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the clean fixture does not pass" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+
+    # Stale-exception control, the same one the umbrella runs inline.
+    P="src/contract/""nowhere/proof/""absent.zk"
+    printf '%s:1 : planted stale entry\n' "$P" > "$TMP/exceptions"
+    if OUT="$(PUBKEY_BINDING_ROOT="$TMP" PUBKEY_BINDING_EXCEPTIONS="$TMP/exceptions" \
+              "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the planted stale exception was not reported" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    ok=1
+    printf '%s' "$OUT" | grep -q "$P" || {
+        echo "SELF-TEST FAIL: the stale exception's path was not named" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "match no finding" || {
+        echo "SELF-TEST FAIL: the stale exception was not classified as covering nothing" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    echo "SELF-TEST PASS: a vacuous binding and a stale exception are each named; the pinned twin passes"
+    exit 0
+fi
 
 # Staleness is decidable only over the whole corpus: a run given specific files walks a subset,
 # so every declaration whose site was not among them would look stale. `check-circuit-tx-pair-last.sh`

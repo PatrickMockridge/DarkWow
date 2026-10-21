@@ -50,8 +50,155 @@
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SELF="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+ROOT="${CAPABILITY_TYPE_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 cd "$ROOT"
+
+# ── Negative control ───────────────────────────────────────────────────────────────────────────────
+# A gate that cannot fail is not a gate. Plant the defect this join exists to catch — two
+# implementations constructing the same `(resource, action)` with different primitive sets — and
+# require a non-zero verdict that names the pair. The fixture also carries the five declared-absent
+# Lean types and the one declared barb divergence, because the gate's staleness checks read those
+# lists and a fixture missing them would fail for a reason other than the planted defect. Then
+# restore the Rust call and require zero.
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    mkdir -p "$TMP/proofs/lean/src/DarkFi/Capability" "$TMP/src/sdk/src" "$TMP/contrib/model"
+
+    cat > "$TMP/proofs/lean/src/DarkFi/Capability/Types.lean" <<'FIXTURE'
+def secretKey : PrimitiveType := {
+  name := "SecretKey"
+, barbs := {Barb.spend} }
+
+def signature : PrimitiveType := {
+  name := "Signature"
+, barbs := {Barb.spend} }
+
+def dleqProof : PrimitiveType := {
+  name := "DleqProof"
+, barbs := {Barb.prove} }
+
+def bridgeAddress : PrimitiveType := {
+  name := "BridgeAddress"
+, barbs := {Barb.commit} }
+
+def chainDepositProof : PrimitiveType := {
+  name := "ChainDepositProof"
+, barbs := {Barb.prove} }
+
+def bridgeCapNullifier : PrimitiveType := {
+  name := "BridgeCapNullifier"
+, barbs := {Barb.nullify} }
+FIXTURE
+
+    cat > "$TMP/proofs/lean/src/DarkFi/Capability/Composition.lean" <<'FIXTURE'
+def nativeToken : Resource := {
+  name := "native_token"
+, requiredBarbs := {Barb.spend} }
+
+def tenderBidResource : Resource := {
+  name := "tender_bid"
+, requiredBarbs := {Barb.spend} }
+
+def bridgeResource : Resource := {
+  name := "bridge"
+, requiredBarbs := {Barb.spend} }
+
+def oracleResource : Resource := {
+  name := "oracle"
+, requiredBarbs := {Barb.spend} }
+
+def purseResource : Resource := {
+  name := "purse"
+, requiredBarbs := {Barb.spend} }
+
+def transfer : Action := { name := "transfer" }
+def bid : Action := { name := "bid" }
+def deposit : Action := { name := "deposit" }
+def withdraw : Action := { name := "withdraw" }
+def operate : Action := { name := "operate" }
+
+def transferType : CapabilityType nativeToken transfer := {
+  primitives := [secretKey, signature] }
+
+def tenderBidType : CapabilityType tenderBidResource bid := {
+  primitives := [dleqProof] }
+
+def bridgeDepositType : CapabilityType bridgeResource deposit := {
+  primitives := [bridgeAddress, chainDepositProof] }
+
+def bridgeWithdrawType : CapabilityType bridgeResource withdraw := {
+  primitives := [bridgeAddress, bridgeCapNullifier, dleqProof] }
+
+def oracleOperatorType : CapabilityType oracleResource operate := {
+  primitives := [dleqProof] }
+
+def purseDepositType : CapabilityType purseResource deposit := {
+  primitives := [secretKey, signature] }
+FIXTURE
+
+    cat > "$TMP/contrib/model/wallet_model.py" <<'FIXTURE'
+NATIVE_TRANSFER_PRIMITIVES = [
+    Primitive.SecretKey,
+    Primitive.Signature,
+]
+
+NATIVE_TRANSFER_REQUIRED_BARBS = [
+    Barb.Spend,
+    Barb.ProveInclusion,
+]
+FIXTURE
+
+    # The defect: Rust constructs the pair without `Signature`, so its primitive set differs.
+    cat > "$TMP/src/sdk/src/capability.rs" <<'FIXTURE'
+    pub fn barbs(self) -> &'static [Barb] {
+        match self {
+            Primitive::SecretKey => &[Barb::Spend],
+            Primitive::Signature => &[Barb::Spend],
+        }
+    }
+
+    fn test() {
+        let ct = wallet_construct("native_token", "transfer", vec![Primitive::SecretKey], &[Barb::Spend]);
+        assert!(ct.is_some(), "native transfer constructs");
+    }
+FIXTURE
+    if OUT="$(CAPABILITY_TYPE_ROOT="$TMP" "$SELF" 2>&1)"; then
+        echo "SELF-TEST FAIL: the planted primitive-set difference was not reported" >&2
+        printf '%s\n' "$OUT" | sed 's/^/  | /' >&2
+        exit 1
+    fi
+    ok=1
+    printf '%s' "$OUT" | grep -q "native_token/transfer" || {
+        echo "SELF-TEST FAIL: the differing pair was not named" >&2; ok=0; }
+    printf '%s' "$OUT" | grep -q "DIFFER" || {
+        echo "SELF-TEST FAIL: the pair was not classified DIFFER" >&2; ok=0; }
+    [ "$ok" -eq 1 ] || { printf '%s\n' "$OUT" | sed 's/^/  | /' >&2; exit 1; }
+
+    # Clean twin: the same fixture with both primitives must pass.
+    cat > "$TMP/src/sdk/src/capability.rs" <<'FIXTURE'
+    pub fn barbs(self) -> &'static [Barb] {
+        match self {
+            Primitive::SecretKey => &[Barb::Spend],
+            Primitive::Signature => &[Barb::Spend],
+        }
+    }
+
+    fn test() {
+        let ct = wallet_construct("native_token", "transfer", vec![Primitive::SecretKey, Primitive::Signature], &[Barb::Spend]);
+        assert!(ct.is_some(), "native transfer constructs");
+    }
+FIXTURE
+    CAPABILITY_TYPE_ROOT="$TMP" "$SELF" >/dev/null 2>&1 || {
+        echo "SELF-TEST FAIL: the clean fixture does not pass" >&2
+        CAPABILITY_TYPE_ROOT="$TMP" "$SELF" 2>&1 | sed 's/^/  | /' >&2
+        exit 1
+    }
+    echo "SELF-TEST PASS: a primitive-set difference on a shared pair is named DIFFER; the clean fixture passes"
+    exit 0
+fi
 
 OUT="/tmp/capability-type-diff.txt"
 LEAN_COMP=proofs/lean/src/DarkFi/Capability/Composition.lean
