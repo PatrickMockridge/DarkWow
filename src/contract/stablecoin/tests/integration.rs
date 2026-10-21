@@ -24,13 +24,16 @@
 //! Stablecoin contract integration tests
 
 use dwow_serial::{deserialize, serialize};
-use dwow_sdk::crypto::{IntentCommitment, PublicKey, SecretKey};
+use dwow_sdk::crypto::{
+    pedersen_commitment_u64, util::fp_mod_fv, Blind, IntentCommitment, PublicKey, SecretKey,
+};
 use dwow_sdk::pasta::pallas;
 use dwow_stablecoin_contract::{
     model::{
         CollateralParams, CollateralPool, CollateralType, DeadManAction, DeadManSwitchConfig,
         DebtPool, DebtShare, LiquidateParams, MintStableParams, PiControllerState,
-        RepayStableParams, StablecoinModel, UpdateConfigParams, WithdrawCollateralParams,
+        RedeemStableParamsV1, RedeemStableUpdateV1, RepayStableParams, StablecoinModel,
+        UpdateConfigParams, WithdrawCollateralParams,
     },
     StablecoinFunction,
     // Constants
@@ -61,6 +64,59 @@ fn test_stablecoin_function_enum_invalid() {
     assert!(StablecoinFunction::try_from(0xFF).is_err());
     assert!(StablecoinFunction::try_from(0x0C).is_err());
     assert!(StablecoinFunction::try_from(0x10).is_err());
+}
+
+/// `OBL-C92`: the redeem parameters carry the blind that lets the parent open the burned
+/// note's value commitment, and it survives the wire.
+#[test]
+fn redeem_params_roundtrip_carries_the_value_blind() {
+    let zero = pallas::Base::from(0u64);
+    let blind = pallas::Base::from(0xB10Du64);
+    let params = RedeemStableParamsV1 {
+        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1u64))),
+        redeem_amount: 1_000,
+        asset_id: zero,
+        receipt_spend_hook: zero,
+        total_debt: 5_000,
+        total_collateral: 10_000,
+        redeem_value_blind: blind,
+        proof: vec![],
+        fee: 7,
+        zk_public_inputs: vec![zero],
+    };
+    let decoded = RedeemStableParamsV1::decode(&params.encode()).expect("params roundtrip");
+    assert_eq!(decoded.redeem_amount, 1_000);
+    assert_eq!(decoded.redeem_value_blind, blind, "the value blind must survive the wire");
+}
+
+/// `OBL-C92`: the redemption report carries the collateral return, so the payout is auditable.
+#[test]
+fn redeem_update_roundtrip_carries_the_collateral_return() {
+    let update = RedeemStableUpdateV1 {
+        redeem_nullifier: pallas::Base::from(42u64),
+        receipt_coin: [7u8; 32],
+        redeem_amount: 1_000,
+        new_total_debt: 4_000,
+        new_total_collateral: 8_000,
+        new_total_redeemed: 1_000,
+        collateral_return: 2_000,
+    };
+    let decoded = RedeemStableUpdateV1::decode(&update.encode()).expect("update roundtrip");
+    assert_eq!(decoded.collateral_return, 2_000);
+    assert_eq!(decoded.receipt_coin, [7u8; 32]);
+}
+
+/// The arithmetic the redeem arm now performs: a note committed to one amount cannot be
+/// opened as another. This is the control the old code lacked — `redeem_amount` was never
+/// compared to the burned note at all.
+#[test]
+fn the_redeem_value_binding_distinguishes_amounts() {
+    let blind = fp_mod_fv(pallas::Base::from(9u64)).expect("base -> scalar");
+    let committed_to_1000 = pedersen_commitment_u64(1_000, Blind(blind));
+    let same = pedersen_commitment_u64(1_000, Blind(fp_mod_fv(pallas::Base::from(9u64)).expect("base -> scalar")));
+    let different = pedersen_commitment_u64(999, Blind(fp_mod_fv(pallas::Base::from(9u64)).expect("base -> scalar")));
+    assert_eq!(committed_to_1000, same);
+    assert_ne!(committed_to_1000, different, "a different amount must not open the same commitment");
 }
 
 #[test]

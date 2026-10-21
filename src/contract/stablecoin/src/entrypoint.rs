@@ -40,7 +40,8 @@
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine, PrimeField},
-        ContractId, IntentCommitment, IntentNullifier, Nullifier, poseidon_hash, PublicKey, PURSE_CONTRACT_ID, SecretKey,
+        pedersen_commitment_u64, util::fp_mod_fv, Blind, ContractId, IntentCommitment,
+        IntentNullifier, Nullifier, poseidon_hash, PublicKey, PURSE_CONTRACT_ID, SecretKey,
     },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -48,7 +49,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize, Decodable, Encodable};
+use dwow_serial::{deserialize, Encodable};
 
 use dwow_promissory_note_contract::model::{RevokeSpendHookPayload, RedeemParamsV1, TransferParamsV1};
 use dwow_promissory_note_contract::validation::{
@@ -75,7 +76,7 @@ use crate::{
     STABLECOIN_CONTRACT_PURSE_CONTRACT_ID,
     STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE, STABLECOIN_CONTRACT_POSITIONS_TREE,
     STABLECOIN_CONTRACT_STABLECOIN_TREE, STABLECOIN_CONTRACT_TOTAL_REDEEMED,
-    STABLECOIN_CONTRACT_ZKAS_REDEEM_STABLE_NS_V1,
+    STABLECOIN_CONTRACT_REDEMPTIONS_TREE,
     STABLECOIN_CONTRACT_ZKAS_INIT_NS_V2, STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V2,
     STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V2, STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V2,
     STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V2, STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V2,
@@ -176,6 +177,8 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     // Initialize liquidations tree
     wasm::db::db_init(cid, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE)?;
+    // Initialize the redemption-report tree (`OBL-C92`): the report-return channel.
+    wasm::db::db_init(cid, STABLECOIN_CONTRACT_REDEMPTIONS_TREE)?;
     // Initialize config nullifiers tree
     wasm::db::db_init(cid, STABLECOIN_CONTRACT_NULLIFIERS_TREE)?;
 
@@ -533,27 +536,16 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::RedeemStableV1 => {
-            let params = match RedeemStableParamsV1::decode(&self_.data[1..]) {
-                Ok(p) => p,
-                Err(e) => {
-                    msg!("[stablecoin::get_metadata] Error: Failed to deserialize RedeemStableParamsV1: {:?}", e);
-                    let _ = wasm::util::set_return_data(&vec![]); return Ok(());
-                }
-            };
-
-            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            // `OBL-C198`: instances minus the pair on the wire; the arm appends the derived pair.
-            let mut instances = params.zk_public_inputs;
-            instances.push(stablecoin_tx_binding()?);
-            instances.push(pallas::Base::zero());
-            zk_public_inputs.push((
-                STABLECOIN_CONTRACT_ZKAS_REDEEM_STABLE_NS_V1.to_string(),
-                instances,
-            ));
-
-            let mut metadata = vec![];
-            zk_public_inputs.encode(&mut metadata)?;
-            wasm::util::set_return_data(&metadata)
+            // Proofless, and that is a correction rather than a preference (`OBL-C92`).
+            //
+            // This arm published a namespace for a `redeem_stable.zk` that has never existed and
+            // was never registered by `init_contract`, so the endpoint died at proof-metadata
+            // lookup before exec could run. The manifest stopped claiming a proof in `OBL-C91`;
+            // the metadata arm was the half that did not follow. Authority for a redemption is
+            // the child PN redeem proof plus this contract's host-side checks (value binding,
+            // burned-nullifier replay anchor), not a circuit over caller-chosen totals.
+            let _ = wasm::util::set_return_data(&vec![]);
+            Ok(())
         }
         StablecoinFunction::SpendHookCallback => {
             // Internal callback — no ZK proofs to verify
@@ -1973,11 +1965,9 @@ fn process_redeem_stable_instruction(
     let self_ = &calls[call_idx].data;
     let params = RedeemStableParamsV1::decode(&self_.data[1..])?;
 
-    msg!(
-        "[stablecoin::process_instruction] RedeemStable: amount={}, total_debt={}",
-        params.redeem_amount,
-        params.total_debt
-    );
+    // The caller's `total_debt`/`total_collateral` are not read; the stored totals are, below.
+    // This line used to print the caller's claim as though it were the pool's state.
+    msg!("[stablecoin::process_instruction] RedeemStable: amount={}", params.redeem_amount);
 
     // Validate child call is promissory_note::redeem_v1 (0x01)
     let this_call = &calls[call_idx];
@@ -2016,6 +2006,27 @@ fn process_redeem_stable_instruction(
     if redeem_params.output.spend_hook.inner() != expected_spend_hook {
         msg!("[RedeemStableV1] Error: Receipt coin spend_hook does not match stablecoin contract ID");
         return Err(StablecoinError::InvalidChildCall.into())
+    }
+
+    // `OBL-C92`: bind the public `redeem_amount` to the note the child actually burns.
+    //
+    // The child's `RedeemParamsV1.input.value_commit` is in its params and the child's own
+    // proof pins it, but a Pedersen commitment cannot be opened without its blind — and the
+    // amount here is public, so the redeemer supplies the blind and the parent recomputes the
+    // commitment. Before this check `redeem_amount` was a free caller choice: a note of any
+    // value could be burned while the parent paid the collateral return for a different figure.
+    // The burned note must be exactly the redeemed amount; over-paying is a burn of the excess,
+    // which is the redeemer's own loss, but it is refused rather than silently accepted.
+    #[expect(clippy::expect_used, reason = "type-system.md §2.3 — base field < scalar field, conversion guaranteed valid")]
+    let value_blind = Blind(fp_mod_fv(params.redeem_value_blind)
+        .expect("base field to scalar: mathematically guaranteed valid"));
+    let expected_value_commit = pedersen_commitment_u64(params.redeem_amount, value_blind);
+    if redeem_params.input.value_commit != expected_value_commit {
+        msg!(
+            "[RedeemStableV1] Error: burned note's value commitment does not match redeem_amount={}",
+            params.redeem_amount
+        );
+        return Err(StablecoinError::CommitmentMismatch.into())
     }
 
     // Get current total debt and collateral
@@ -2057,11 +2068,15 @@ fn process_redeem_stable_instruction(
     let new_total_collateral = total_collateral.saturating_sub(collateral_return);
     let new_total_redeemed = total_redeemed.saturating_add(params.redeem_amount);
 
-    // Derive a unique nullifier for the redeem operation
+    // The replay anchor is the child's burned note, not a tuple of caller-chosen figures.
+    //
+    // It used to be `poseidon(redeem_amount, asset_id, total_debt)`: two redemptions of the same
+    // size at the same pool totals shared a nullifier, and the same burned note could be
+    // redeemed under a different amount/size choice. The burned nullifier is unique per note and
+    // is itself checked by the PN tree; domain 12 namespaces this contract's tree.
     let redeem_nullifier = poseidon_hash([
-        pallas::Base::from(params.redeem_amount),
-        params.asset_id,
-        pallas::Base::from(total_debt),
+        pallas::Base::from(12u64),
+        redeem_params.input.nullifier.inner(),
     ]);
 
     // ↓nullify: reject a replay here, in exec. This check used to live in apply, where it both
@@ -2076,13 +2091,11 @@ fn process_redeem_stable_instruction(
         return Err(StablecoinError::DuplicateNullifier.into())
     }
 
-    let receipt_coin_bytes = serialize(child_call);
-
-    let receipt_coin: [u8; 32] = receipt_coin_bytes.as_slice().try_into().map_err(|_| {
-        msg!("[stablecoin::process_redeem_stable_instruction] Error: receipt_coin serialization produced {} bytes, expected 32",
-            receipt_coin_bytes.len());
-        ContractError::IoError("receipt_coin serialization size mismatch".to_string())
-    })?;
+    // The receipt coin is the child's output commitment. This used to serialize the whole
+    // `DarkLeaf` and require it to be 32 bytes — a value that is never 32 bytes, so the arm
+    // could not return an update even once it was reachable. The commitment is the value the
+    // child's redeem proof created, and it is exactly `CapCommitment::ENCODED_SIZE`.
+    let receipt_coin = redeem_params.output.commitment.to_bytes();
 
     let update = RedeemStableUpdateV1 {
         redeem_nullifier,
@@ -2091,6 +2104,7 @@ fn process_redeem_stable_instruction(
         new_total_debt,
         new_total_collateral,
         new_total_redeemed,
+        collateral_return,
     };
 
     Ok(update.encode())
@@ -2109,6 +2123,11 @@ fn apply_redeem_stable_update(cid: ContractId, update: RedeemStableUpdateV1) -> 
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &update.new_total_debt.to_le_bytes())?;
     wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &update.new_total_collateral.to_le_bytes())?;
     wasm::db::db_set(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED, &update.new_total_redeemed.to_le_bytes())?;
+
+    // The report-return channel (`OBL-C92`): a caller reads the redemption back by its replay
+    // anchor with a state query. `set_return_data` cannot carry it — `apply`'s return is dropped.
+    let redemptions_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_REDEMPTIONS_TREE)?;
+    wasm::db::db_set(redemptions_db, &update.redeem_nullifier.to_repr(), &update.encode())?;
 
     msg!(
         "[stablecoin::process_update] Stablecoin redeemed: amount={}, new_debt={}, new_collateral={}, total_redeemed={}",

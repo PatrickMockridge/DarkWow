@@ -1019,6 +1019,15 @@ pub struct RedeemStableParamsV1 {
     pub total_debt: u64,
     /// Current total collateral before redemption
     pub total_collateral: u64,
+    /// Blind of the burned PN note's value commitment (`OBL-C92`).
+    ///
+    /// The parent must bind `redeem_amount` to the note the child actually burns. It can see
+    /// `RedeemParamsV1.input.value_commit` but cannot open a Pedersen commitment without the
+    /// blind, and the amount is public in this call — so the redeemer supplies the blind and the
+    /// arm checks `value_commit == pedersen(redeem_amount, blind)`. Without it, `redeem_amount`
+    /// was a free caller choice that paid the proportional collateral return for burning notes
+    /// of any value.
+    pub redeem_value_blind: pallas::Base,
     /// ZK proof: redeem_stable.zk
     pub proof: Vec<u8>,
     /// Fee paid for this operation
@@ -1029,7 +1038,7 @@ pub struct RedeemStableParamsV1 {
 
 impl RedeemStableParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 130 + self.proof.len() + self.zk_public_inputs.len() * 32;
+        let cap = 162 + self.proof.len() + self.zk_public_inputs.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.recipient_pub.to_bytes());
         buf.extend_from_slice(&self.redeem_amount.to_le_bytes());
@@ -1037,6 +1046,7 @@ impl RedeemStableParamsV1 {
         buf.extend_from_slice(&self.receipt_spend_hook.to_repr());
         buf.extend_from_slice(&self.total_debt.to_le_bytes());
         buf.extend_from_slice(&self.total_collateral.to_le_bytes());
+        buf.extend_from_slice(&self.redeem_value_blind.to_repr());
         buf.push(self.proof.len() as u8);
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.fee.to_le_bytes());
@@ -1049,9 +1059,9 @@ impl RedeemStableParamsV1 {
 
     #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 131 {
+        if data.len() < 163 {
             return Err(ContractError::IoError(format!(
-                "RedeemStableParamsV1: expected at least 131 bytes, got {}", data.len()
+                "RedeemStableParamsV1: expected at least 163 bytes, got {}", data.len()
             )));
         }
         let recipient_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap())
@@ -1063,16 +1073,20 @@ impl RedeemStableParamsV1 {
             .ok_or_else(|| ContractError::IoError("RedeemStableParamsV1: invalid receipt_spend_hook".into()))?;
         let total_debt = u64::from_le_bytes(data[104..112].try_into().unwrap());
         let total_collateral = u64::from_le_bytes(data[112..120].try_into().unwrap());
-        let proof_len = data[120] as usize;
-        if data.len() < 121 + proof_len + 9 {
+        let redeem_value_blind = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[120..152].try_into().unwrap(),
+        ))
+        .ok_or_else(|| ContractError::IoError("RedeemStableParamsV1: invalid redeem_value_blind".into()))?;
+        let proof_len = data[152] as usize;
+        if data.len() < 153 + proof_len + 9 {
             return Err(ContractError::IoError(format!(
-                "RedeemStableParamsV1: proof truncated at offset {}", 121 + proof_len
+                "RedeemStableParamsV1: proof truncated at offset {}", 153 + proof_len
             )));
         }
-        let proof = data[121..121 + proof_len].to_vec();
-        let fee = u64::from_le_bytes(data[121 + proof_len..129 + proof_len].try_into().unwrap());
-        let pi_count = data[129 + proof_len] as usize;
-        let expected = 130 + proof_len + pi_count * 32;
+        let proof = data[153..153 + proof_len].to_vec();
+        let fee = u64::from_le_bytes(data[153 + proof_len..161 + proof_len].try_into().unwrap());
+        let pi_count = data[161 + proof_len] as usize;
+        let expected = 162 + proof_len + pi_count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "RedeemStableParamsV1: expected {} bytes, got {}", expected, data.len()
@@ -1080,13 +1094,13 @@ impl RedeemStableParamsV1 {
         }
         let mut zk_public_inputs = Vec::with_capacity(pi_count);
         for i in 0..pi_count {
-            let start = 130 + proof_len + i * 32;
+            let start = 162 + proof_len + i * 32;
             zk_public_inputs.push(
                 Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
                     .ok_or_else(|| ContractError::IoError(format!("RedeemStableParamsV1: invalid zk_public_inputs[{}]", i)))?,
             );
         }
-        Ok(RedeemStableParamsV1 { recipient_pub, redeem_amount, asset_id, receipt_spend_hook, total_debt, total_collateral, proof, fee, zk_public_inputs })
+        Ok(RedeemStableParamsV1 { recipient_pub, redeem_amount, asset_id, receipt_spend_hook, total_debt, total_collateral, redeem_value_blind, proof, fee, zk_public_inputs })
     }
 }
 
@@ -1105,6 +1119,9 @@ pub struct RedeemStableUpdateV1 {
     pub new_total_collateral: u64,
     /// New total redeemed (cumulative)
     pub new_total_redeemed: u64,
+    /// Collateral the redemption is entitled to (`OBL-C92`). Recorded in the redemption report
+    /// so the payout is auditable; the custody/payout path itself is still open (`OBL-C251`).
+    pub collateral_return: u64,
 }
 
 // ============================================================================
@@ -1920,12 +1937,12 @@ impl AccrueInterestUpdateV1 {
     }
 }
 
-// ---- RedeemStableUpdateV1 (96 bytes) ----
+// ---- RedeemStableUpdateV1 (104 bytes) ----
 // Layout: redeem_nullifier(32) + receipt_coin(32) + redeem_amount(8) + new_total_debt(8)
-//         + new_total_collateral(8) + new_total_redeemed(8)
+//         + new_total_collateral(8) + new_total_redeemed(8) + collateral_return(8)
 
 impl RedeemStableUpdateV1 {
-    pub const ENCODED_SIZE: usize = 96;
+    pub const ENCODED_SIZE: usize = 104;
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.redeem_nullifier.to_repr());
@@ -1934,6 +1951,7 @@ impl RedeemStableUpdateV1 {
         b.extend_from_slice(&self.new_total_debt.to_le_bytes());
         b.extend_from_slice(&self.new_total_collateral.to_le_bytes());
         b.extend_from_slice(&self.new_total_redeemed.to_le_bytes());
+        b.extend_from_slice(&self.collateral_return.to_le_bytes());
         b
     }
     #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
@@ -1948,6 +1966,7 @@ impl RedeemStableUpdateV1 {
             new_total_debt: u64::from_le_bytes(data[72..80].try_into().unwrap()),
             new_total_collateral: u64::from_le_bytes(data[80..88].try_into().unwrap()),
             new_total_redeemed: u64::from_le_bytes(data[88..96].try_into().unwrap()),
+            collateral_return: u64::from_le_bytes(data[96..104].try_into().unwrap()),
         })
     }
 }

@@ -148,6 +148,10 @@ pub const STABLECOIN_CONTRACT_STABLECOIN_TREE: &str = "stablecoin";
 pub const STABLECOIN_CONTRACT_COLLATERAL_TREE: &str = "collateral";
 pub const STABLECOIN_CONTRACT_LIQUIDATIONS_TREE: &str = "liquidations";
 pub const STABLECOIN_CONTRACT_GOVERNANCE_REPORTS_TREE: &str = "governance_reports";
+/// Redemption reports, keyed by the redemption's replay anchor (`OBL-C92`). This is the
+/// report-return channel: `apply` writes it, and a caller reads it back with a state query.
+/// `set_return_data` cannot serve this purpose — `apply`'s return value is discarded.
+pub const STABLECOIN_CONTRACT_REDEMPTIONS_TREE: &str = "redemptions";
 
 // Keys inside the info tree
 pub const STABLECOIN_CONTRACT_DB_VERSION: &[u8] = b"db_version";
