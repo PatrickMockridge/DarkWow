@@ -289,6 +289,74 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 
+    /// `OBL-C247` — the embedded public-testnet profile is a public profile.
+    ///
+    /// It used to be `localnet = true` with a loopback peer, and the guide told a native wallet to
+    /// use it: TLS SAN and TOFU pinning were skipped and the only sync target was the machine the
+    /// wallet ran on. This test reads the shipped TOML, not a copy, and fails on those values.
+    #[test]
+    fn embedded_profiles_do_not_put_a_public_network_in_localnet() {
+        let doc: toml::Value = toml::from_str(DEFAULT_CONFIG).expect("embedded config parses");
+        let networks = doc.get("network_config").and_then(|v| v.as_table())
+            .expect("embedded config has network_config");
+
+        // The upstream `testnet` profile (different magic, different seeds) is not a DarkWow
+        // network and must not ship as an option.
+        assert!(
+            !networks.contains_key("testnet"),
+            "the embedded config still carries the upstream `testnet` profile"
+        );
+
+        let net = networks.get("darkwow-testnet").and_then(|v| v.get("net"))
+            .expect("darkwow-testnet has a [net] section");
+        assert_eq!(
+            net.get("localnet").and_then(|v| v.as_bool()),
+            Some(false),
+            "a public-testnet profile must not run in localnet mode (TLS SAN and pinning are skipped)"
+        );
+        let magic: Vec<i64> = net.get("magic_bytes")
+            .and_then(|v| v.as_array())
+            .expect("magic_bytes is an array")
+            .iter()
+            .map(|v| v.as_integer().expect("magic byte is an integer"))
+            .collect();
+        assert_eq!(magic, vec![68, 82, 75, 87], "public testnet magic must be DRKW");
+
+        // A peer is a full node named by its P2P base port. No loopback/private peer may stand in
+        // for one on a public profile: that is how the local override leaked into the public file.
+        let peers = net.get("peers").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        for peer in peers {
+            let url = peer.get("url").and_then(|v| v.as_str()).expect("peer has a url");
+            let parsed = url::Url::parse(url).expect("peer url parses");
+            let host = parsed.host_str().expect("peer url has a host");
+            assert!(
+                !is_loopback_or_private(host),
+                "public-testnet peer {url} is loopback/private; name a public full node"
+            );
+        }
+
+        // The devnet profile is the local overlay and is expected to stay local.
+        let devnet = networks.get("darkwow-devnet").and_then(|v| v.get("net"))
+            .expect("darkwow-devnet has a [net] section");
+        assert_eq!(
+            devnet.get("localnet").and_then(|v| v.as_bool()),
+            Some(true),
+            "the devnet overlay is the one profile that may run localnet"
+        );
+    }
+
+    fn is_loopback_or_private(host: &str) -> bool {
+        let host = host.trim_matches(['[', ']']);
+        if host.eq_ignore_ascii_case("localhost") {
+            return true;
+        }
+        match host.parse::<std::net::IpAddr>() {
+            Ok(std::net::IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
+            Ok(std::net::IpAddr::V6(ip)) => ip.is_loopback() || ip.is_unique_local(),
+            Err(_) => false,
+        }
+    }
+
     #[test]
     fn test_load_config_missing_network() {
         let toml = r#"
@@ -347,6 +415,9 @@ pub fn build_p2p_settings(
         app_version,
         inbound_addrs,
         external_addrs: vec![],
+        // HAZOP H1: the datastore is where `known_hosts` (the TOFU certificate pins) lives.
+        // Without it the TLS verifier validates the shared self-signed SAN and pins nothing.
+        p2p_datastore: config.datastore.clone(),
         outbound_connections: 8,
         inbound_connections: 4,
         localnet: config.localnet,

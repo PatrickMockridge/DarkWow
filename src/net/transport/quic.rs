@@ -226,7 +226,7 @@ fn create_server_config(localnet: bool) -> io::Result<ServerConfig> {
     install_crypto_provider();
     let (certificate, secret_key) = generate_certificate()?;
 
-    let client_cert_verifier = Arc::new(ClientCertificateVerifier::new(localnet, None));
+    let client_cert_verifier = Arc::new(ClientCertificateVerifier::new(localnet));
 
     let tls_config = rustls::ServerConfig::builder_with_protocol_versions(&[&TLS13])
         .with_client_cert_verifier(client_cert_verifier)

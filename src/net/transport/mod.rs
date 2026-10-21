@@ -122,6 +122,13 @@ pub enum ListenerVariant {
 }
 
 /// A dialer that is able to transparently operate over arbitrary transports.
+/// The host an endpoint dials, for per-peer TLS server naming and certificate pinning.
+fn tls_peer_host(endpoint: &Url) -> io::Result<&str> {
+    endpoint.host_str().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "TLS endpoint has no host to name")
+    })
+}
+
 pub struct Dialer {
     /// The endpoint to connect to
     endpoint: Url,
@@ -289,6 +296,17 @@ impl Dialer {
         }
     }
 
+    /// Attach the per-peer TOFU trust store.
+    ///
+    /// `Dialer::new` builds the transport variant and does not read the filesystem; the
+    /// `Connector` owns the P2P datastore, so it loads `known_hosts` and attaches it here. A
+    /// dialer built without this store validates a certificate's SAN but pins nothing — which,
+    /// because the `dark.fi` SAN is self-signed and mintable by anyone, authenticates nobody.
+    pub fn with_trust_store(mut self, trust_store: Option<tls::TrustStore>) -> Self {
+        self.trust_store = trust_store;
+        self
+    }
+
     /// Dial an instantiated [`Dialer`]. This creates a connection and returns a stream.
     /// The Tor-based Dialer variants can panic: this is intended. There exists validation
     /// for hosts and ports in other parts of the codebase. A panic occurring here
@@ -307,7 +325,7 @@ impl Dialer {
                 let sockaddr = self.endpoint.socket_addrs(|| None)?;
                 let stream = dialer.do_dial(sockaddr[0], timeout).await?;
                 let tlsupgrade = tls::TlsUpgrade::new(self.localnet, self.trust_store.clone()).await?;
-                let stream = tlsupgrade.upgrade_dialer_tls(stream).await?;
+                let stream = tlsupgrade.upgrade_dialer_tls(stream, tls_peer_host(&self.endpoint)?).await?;
                 Ok(Box::new(stream))
             }
 
@@ -329,7 +347,7 @@ impl Dialer {
                 let port = self.endpoint.port().unwrap();
                 let stream = dialer.do_dial(host, port, timeout).await?;
                 let tlsupgrade = tls::TlsUpgrade::new(self.localnet, self.trust_store.clone()).await?;
-                let stream = tlsupgrade.upgrade_dialer_tls(stream).await?;
+                let stream = tlsupgrade.upgrade_dialer_tls(stream, tls_peer_host(&self.endpoint)?).await?;
                 Ok(Box::new(stream))
             }
 
@@ -363,7 +381,7 @@ impl Dialer {
             DialerVariant::Socks5Tls(dialer) => {
                 let stream = dialer.do_dial().await?;
                 let tlsupgrade = tls::TlsUpgrade::new(self.localnet, self.trust_store.clone()).await?;
-                let stream = tlsupgrade.upgrade_dialer_tls(stream).await?;
+                let stream = tlsupgrade.upgrade_dialer_tls(stream, tls_peer_host(&self.endpoint)?).await?;
                 Ok(Box::new(stream))
             }
 

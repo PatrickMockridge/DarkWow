@@ -140,10 +140,23 @@ docker run -d --name dwow-node --network=host \
 # Clean up the temp file
 rm -f /tmp/dwow_mining_secret
 
-# Wallet already has the key — just scan
+# Point the public-testnet profile at a FULL NODE before syncing. The wallet
+# dials peer+2 for GetTip/GetBlocks, so the URL names the node's P2P *base*
+# port (31342 in the reference deployment). A lilith seed (31340) is a
+# hostlist rendezvous and serves no blocks. The profile ships with `peers = []`
+# and `localnet = false`; it does not fall back to loopback or to the Docker
+# overlay's TLS mode.
+#   ~/.config/dwow/dww_config.toml:
+#     [network_config."darkwow-testnet".net]
+#     peers = [{ url = "tcp+tls://<full-node-host>:31342" }]
+#     localnet = false
 ./target/release/dwow_wallet -n darkwow-testnet scan
 ./target/release/dwow_wallet -n darkwow-testnet wallet balance
 ```
+
+If no public full node is known, use one of the testnet mining nodes from the
+LAN setup above as the peer. The seed only helps miners find each other; it is
+not a block source.
 
 **Alternative — Auto-generated keypair:**
 

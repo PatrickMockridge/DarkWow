@@ -468,8 +468,11 @@ services:
       - WALLET_MODE=${WALLET_MODE:-interactive}
       - NETWORK=darkwow-testnet
       - RPC_URL=tcp://node0:31345
-      # P2P network settings — wallet participates as a full node
-      - SEED_ADDR=${SEED_ADDR:-tcp+tls://observer:31340}
+      # P2P network settings — wallet participates as a full node.
+      # PEER_ADDR names FULL NODES by P2P base port (the wallet dials peer+2);
+      # LOCALNET=true is the Docker overlay's self-signed TLS mode only.
+      - PEER_ADDR=${PEER_ADDR:-tcp+tls://node0:31342}
+      - LOCALNET=${LOCALNET:-true}
       - P2P_PORT=${P2P_PORT:-31360}
       - MAGIC_BYTES=${MAGIC_BYTES:-68,82,75,87}
       - WALLET_PASS=${WALLET_PASS:-walletpass}

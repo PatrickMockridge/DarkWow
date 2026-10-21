@@ -42,7 +42,7 @@ rewards paid to an auto-generated mining address.
 | PoW algorithm | RandomX (rx/0) |
 | Consensus threshold | 3 |
 | Magic bytes | `[68, 82, 75, 87]` ("DRKW") |
-| `localnet` | `false` (full TLS cert validation) |
+| `localnet` | `true` for the Docker overlay (self-signed certificates); the embedded public-testnet wallet profile is `false` |
 | `skip_fees` | `false` |
 
 ## Quick Start
@@ -341,7 +341,7 @@ with relaxed parameters for rapid local iteration:
 
 | Feature | `darkwow-testnet` | `darkwow-devnet` |
 |---------|-------------------|---------------|
-| `localnet` | `false` | `false` |
+| `localnet` | `true` (Docker self-signed overlay; the embedded public profile is `false`) | `true` |
 | Magic bytes | `[68, 82, 75, 87]` | auto-derived |
 | Threshold | 3 | 1 |
 | `pow_target` | 120 | 120 |
@@ -417,18 +417,31 @@ and P2P protocol are identical across all environments — only the config chang
 
 ### Pattern A: `localnet = true`
 
-The embedded wallet config at `bin/dww/dww_config.toml` sets `localnet = true`
-for `darkwow-testnet` (line 125). This disables TLS certificate name verification
-and allows private IP addresses in the hostlist filter. It is REQUIRED for Docker
-because container hostnames (`lilith`, `node0`) don't match self-signed cert CNs.
+`localnet = true` disables TLS SAN verification and certificate pinning and
+allows private addresses. It is for the Docker overlay only, where container
+hostnames don't match the shared self-signed certificate's SAN.
 
-**For public testnet and mainnet, `localnet` MUST be `false`.** Running with
-`localnet = true` on a public network disables TLS certificate validation — a
-MITM vector. The wallet would accept any self-signed certificate from any peer.
+**The profiles are separate (`OBL-C247`, fixed 2026-10-21).** The embedded
+wallet config's `darkwow-testnet` profile is now `localnet = false`, carries the
+DRKW magic, and has **no loopback peer**: a public wallet must be pointed at a
+full node's P2P base port (the wallet dials peer+2 for the sync listener; a
+lilith seed has no sync listener). The Docker wallet container receives
+`LOCALNET=true` from `docker-compose.yml` explicitly, and
+`entrypoint-wallet.sh` writes exactly the value it is given — it no longer
+hardcodes `localnet = true` and no longer ignores `PEER_ADDR`.
 
-The wallet's `testnet` section (line 42) does NOT set `localnet = true` — it is
-safe for public use. The `mainnet` section (line 139) has `active_profiles = []`
-and must be explicitly configured before mainnet launch.
+The upstream `testnet` profile (different magic, `lilith*.dark.fi:18340` seeds)
+was removed from the embedded wallet config: it was not a DarkWow network and
+shipping it as an option invited a wallet onto the wrong chain. The `mainnet`
+section has `active_profiles = []` and must be explicitly configured before
+mainnet launch.
+
+Two controls keep this from drifting back: a unit test parses the embedded
+config and fails if `darkwow-testnet` is `localnet = true`, has a non-DRKW
+magic, has a loopback/private peer, or if the upstream profile reappears; and
+the TLS verifier's tests refuse a certificate outside the DarkWow domain and
+pin a certificate **per peer host** (the pin used to be keyed by the constant
+`dark.fi`, so one public peer's certificate pinned every other peer).
 
 ### Pattern B: Secret Sharing (Miner + Wallet)
 

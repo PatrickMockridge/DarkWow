@@ -21,12 +21,15 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::collections::HashMap;
-use std::{io, sync::{Arc, Mutex, OnceLock}};
+use std::{io, sync::{Arc, OnceLock}};
 
-/// HAZOP H1: in-memory trust store for TLS certificate pinning.
-/// Maps hostname → blake3(cert.der). Persisted to disk by KnownHosts.
-pub(crate) type TrustStore = Arc<Mutex<HashMap<String, [u8; 32]>>>;
+/// HAZOP H1: SSH-style known_hosts for TLS certificate pinning.
+///
+/// Maps hostname → blake3(cert.der) and persists it to the P2P datastore. This was an in-memory
+/// `HashMap` with no constructor anywhere in the P2P stack, so `localnet = false` validated a
+/// certificate's SAN and then accepted any certificate bearing the shared `dark.fi` SAN — which
+/// anyone can mint, because the nodes self-sign. The pin is what authenticates a peer.
+pub(crate) type TrustStore = Arc<crate::net::known_hosts::KnownHosts>;
 
 use futures_rustls::{
     rustls::{
@@ -132,7 +135,7 @@ impl ServerCertVerifier for ServerCertificateVerifier {
         &self,
         end_entity: &CertificateDer,
         _intermediates: &[CertificateDer],
-        _server_name: &ServerName,
+        server_name: &ServerName,
         _ocsp_response: &[u8],
         _now: UnixTime,
     ) -> std::result::Result<ServerCertVerified, rustls::Error> {
@@ -152,20 +155,38 @@ impl ServerCertVerifier for ServerCertificateVerifier {
             tracing::debug!(target: "net::tls", "Localnet mode: skipping DNS name validation");
         }
 
-        // HAZOP H1: TOFU certificate pinning
+        // HAZOP H1: TOFU certificate pinning, **per peer host**.
+        //
+        // This used to key the store by the constant `TLS_DNS_NAME`, so every peer shared one
+        // fingerprint: the first public peer to hand out a certificate pinned it for all of them,
+        // and the second peer — with its own self-signed certificate — was rejected as a changed
+        // host. The SAN stays a domain-wide tag (all nodes self-sign with the same SAN; see
+        // `generate_certificate`), and identity is the fingerprint, so the pin must be per host.
         if !self.localnet {
             if let Some(ref store) = self.trust_store {
                 let fp = *blake3::hash(end_entity.as_ref()).as_bytes();
-                let hostname = TLS_DNS_NAME;
-                let mut store = store.lock().unwrap_or_else(|e| e.into_inner());
-                if let Some(stored) = store.get(hostname) {
-                    if *stored != fp {
+                let hostname = match server_name {
+                    ServerName::DnsName(dns) => dns.as_ref().to_string(),
+                    // `rustls_pki_types::IpAddr` has no Display; its Debug form is stable and
+                    // unique per address, which is all a trust-store key needs.
+                    ServerName::IpAddress(ip) => format!("{ip:?}"),
+                    _ => return Err(rustls::CertificateError::BadEncoding.into()),
+                };
+                if let Some(stored) = store.lookup(&hostname) {
+                    if stored != fp {
                         error!(target: "net::tls::verify_server_cert",
                             "HOST IDENTIFICATION HAS CHANGED for {}: cert fingerprint mismatch", hostname);
                         return Err(rustls::CertificateError::UnknownIssuer.into())
                     }
                 } else {
-                    store.insert(hostname.to_string(), fp);
+                    store.store(&hostname, fp);
+                    if let Err(e) = store.save() {
+                        // A pin that is not persisted is re-pinned on the next process start,
+                        // which is exactly the window TOFU is meant to close. Keep the
+                        // connection (the pin is enforced for this process), but say so.
+                        warn!(target: "net::tls::verify_server_cert",
+                            "TOFU: pinned {} but could not persist known_hosts: {e}", hostname);
+                    }
                     tracing::info!(target: "net::tls::verify_server_cert",
                         "TOFU: stored initial cert fingerprint for {}", hostname);
                 }
@@ -201,12 +222,11 @@ impl ServerCertVerifier for ServerCertificateVerifier {
 #[derive(Debug)]
 pub(crate) struct ClientCertificateVerifier {
     localnet: bool,
-    trust_store: Option<TrustStore>,
 }
 
 impl ClientCertificateVerifier {
-    pub fn new(localnet: bool, trust_store: Option<TrustStore>) -> Self {
-        Self { localnet, trust_store }
+    pub fn new(localnet: bool) -> Self {
+        Self { localnet }
     }
 }
 
@@ -245,26 +265,14 @@ impl ClientCertVerifier for ClientCertificateVerifier {
             tracing::debug!(target: "net::tls", "Localnet mode: skipping DNS name validation");
         }
 
-        // HAZOP H1: TOFU for inbound client certificates
-        if !self.localnet {
-            if let Some(ref store) = self.trust_store {
-                let fp = *blake3::hash(end_entity.as_ref()).as_bytes();
-                let hostname = TLS_DNS_NAME;
-                let mut store = store.lock().unwrap_or_else(|e| e.into_inner());
-                if let Some(stored) = store.get(hostname) {
-                    if *stored != fp {
-                        error!(target: "net::tls::verify_client_cert",
-                            "HOST IDENTIFICATION HAS CHANGED for {}: client cert fingerprint mismatch", hostname);
-                        return Err(rustls::CertificateError::UnknownIssuer.into())
-                    }
-                } else {
-                    store.insert(hostname.to_string(), fp);
-                    tracing::info!(target: "net::tls::verify_client_cert",
-                        "TOFU: stored initial client cert fingerprint for {}", hostname);
-                }
-            }
-        }
-
+        // No pin here, deliberately. The store is keyed by the **server** host a client dials;
+        // an inbound client presents no name rustls hands this callback, so the only thing a
+        // "pin" could key on is the cert's own fingerprint — which can never mismatch. Pinning
+        // every client to the first one seen is worse than not pinning: the first peer to
+        // connect would lock every other peer out. Client certificates in this network are
+        // self-signed within the `dark.fi` SAN domain, so they are a membership tag, not an
+        // enrolled identity; the handshake signature still proves possession of the presented
+        // key. Server authentication is where the TOFU pin belongs, and that is where it is.
         Ok(ClientCertVerified::assertion())
     }
 
@@ -346,7 +354,7 @@ impl TlsUpgrade {
         let (certificate, secret_key_der) = generate_certificate()?;
 
         // Server-side config with localnet flag
-        let client_cert_verifier = Arc::new(ClientCertificateVerifier::new(localnet, trust_store.clone()));
+        let client_cert_verifier = Arc::new(ClientCertificateVerifier::new(localnet));
         #[expect(clippy::unwrap_used, reason = "self-signed cert/key are compatible")]
         let server_config = Arc::new(
             ServerConfig::builder_with_protocol_versions(&[&TLS13])
@@ -369,12 +377,18 @@ impl TlsUpgrade {
         Ok(Self { server_config, client_config })
     }
 
-    pub async fn upgrade_dialer_tls<IO>(self, stream: IO) -> io::Result<TlsStream<IO>>
+    /// Upgrade an outbound stream to TLS.
+    ///
+    /// `peer_host` is the host the caller is dialing. It becomes the TLS server name for SNI and
+    /// — the reason it is a parameter rather than the constant — the key under which the
+    /// certificate is TOFU-pinned. A caller that omits it would give every peer one shared pin,
+    /// which is the defect this signature exists to make impossible.
+    pub async fn upgrade_dialer_tls<IO>(self, stream: IO, peer_host: &str) -> io::Result<TlsStream<IO>>
     where
         IO: super::PtStream,
     {
-        #[expect(clippy::unwrap_used, reason = "TLS_DNS_NAME is a valid DNS name")]
-        let server_name = ServerName::try_from(TLS_DNS_NAME).unwrap();
+        let server_name = ServerName::try_from(peer_host.to_string())
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid TLS peer host"))?;
         let connector = TlsConnector::from(self.client_config);
         let stream = match connector.connect(server_name, stream).await {
             Ok(s) => s,
@@ -393,5 +407,97 @@ impl TlsUpgrade {
         listener: smol::net::TcpListener,
     ) -> io::Result<(TlsAcceptor, smol::net::TcpListener)> {
         Ok((TlsAcceptor::from(self.server_config), listener))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// A self-signed certificate for `san`, the shape every DarkWow node generates.
+    fn cert_with_san(san: &str) -> CertificateDer<'static> {
+        let keypair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)
+            .expect("generate a test keypair");
+        let mut params = rcgen::CertificateParams::new(Vec::<String>::new())
+            .expect("certificate params");
+        params.subject_alt_names = vec![rcgen::SanType::DnsName(
+            Ia5String::try_from(san).expect("test SAN is a valid IA5 string"),
+        )];
+        params.extended_key_usages = vec![
+            rcgen::ExtendedKeyUsagePurpose::ClientAuth,
+            rcgen::ExtendedKeyUsagePurpose::ServerAuth,
+        ];
+        params.self_signed(&keypair).expect("self-sign the test certificate").der().clone()
+    }
+
+    fn verify(
+        verifier: &ServerCertificateVerifier,
+        cert: &CertificateDer<'_>,
+        host: &str,
+    ) -> std::result::Result<ServerCertVerified, rustls::Error> {
+        let name = ServerName::try_from(host.to_string()).expect("valid test server name");
+        verifier.verify_server_cert(cert, &[], &name, &[], UnixTime::now())
+    }
+
+    fn verifier_at(path: std::path::PathBuf) -> ServerCertificateVerifier {
+        let store = crate::net::known_hosts::KnownHosts::load(path)
+            .expect("load an empty known_hosts store");
+        ServerCertificateVerifier::new(false, Some(Arc::new(store)))
+    }
+
+    fn verifier() -> (ServerCertificateVerifier, std::path::PathBuf) {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "dwow_known_hosts_test_{}_{}.tsv",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        let _ = std::fs::remove_file(&path);
+        (verifier_at(path.clone()), path)
+    }
+
+    /// `OBL-C247`: the SAN check refuses a certificate outside the DarkWow trust domain.
+    #[test]
+    fn a_certificate_for_another_domain_is_refused() {
+        let (v, _path) = verifier();
+        let cert = cert_with_san("attacker.example");
+        assert!(verify(&v, &cert, "peer.example").is_err(), "a wrong-SAN certificate must be refused");
+    }
+
+    /// A certificate in the trust domain is accepted once, then pinned **for that host**.
+    #[test]
+    fn a_certificate_is_accepted_then_pinned_for_its_peer() {
+        let (v, _path) = verifier();
+        let cert = cert_with_san(TLS_DNS_NAME);
+        verify(&v, &cert, "peer-a.example").expect("a DarkWow-domain certificate is admitted");
+
+        // A different certificate presented by the same host is a changed identity.
+        let replacement = cert_with_san(TLS_DNS_NAME);
+        assert!(
+            verify(&v, &replacement, "peer-a.example").is_err(),
+            "a pinned peer presenting a different certificate must be refused"
+        );
+
+        // A *different* peer with its own certificate is not affected by peer A's pin. This is
+        // the half that a trust store keyed by the constant got wrong: every peer shared one pin.
+        verify(&v, &replacement, "peer-b.example")
+            .expect("a second peer must be pinned independently");
+    }
+
+    /// TOFU means first use, not first use per process: the pin is persisted and a *new* verifier
+    /// loading the same datastore enforces it.
+    #[test]
+    fn a_pin_is_persisted_and_enforced_by_a_fresh_verifier() {
+        let (v, path) = verifier();
+        let cert = cert_with_san(TLS_DNS_NAME);
+        verify(&v, &cert, "peer-a.example").expect("first use pins the certificate");
+
+        let fresh = verifier_at(path);
+        let replacement = cert_with_san(TLS_DNS_NAME);
+        assert!(
+            verify(&fresh, &replacement, "peer-a.example").is_err(),
+            "a fresh verifier must load the pin and refuse a changed certificate"
+        );
     }
 }

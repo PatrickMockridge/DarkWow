@@ -38,6 +38,7 @@ use tracing::{debug, warn};
 pub type CertFingerprint = [u8; 32];
 
 /// SSH-style known_hosts trust store for TLS certificate pinning.
+#[derive(Debug)]
 pub struct KnownHosts {
     entries: Mutex<HashMap<String, CertFingerprint>>,
     path: PathBuf,

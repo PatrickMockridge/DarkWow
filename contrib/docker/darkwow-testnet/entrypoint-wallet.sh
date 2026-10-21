@@ -21,9 +21,32 @@ P2P_PORT="${P2P_PORT:-31360}"
 # ── Peer config ──────────────────────────────────────────────────────
 # The wallet connects DIRECTLY to its configured peers (ManualSession) and
 # pulls GetTip/GetBlocks. No seed/hostlist exchange — that is mining-node
-# machinery (net-node). PEER_ADDR lists the full nodes to pull from.
+# machinery (net-node). PEER_ADDR lists FULL NODES to pull from, by their P2P
+# base port: the wallet dials peer+2 for the sync listener. A lilith seed at
+# 31340 is a rendezvous with no sync listener and will never serve blocks.
+#
+# LOCALNET is explicit, not implied by the image. `true` skips the TLS SAN and
+# TOFU checks and is for the Docker self-signed overlay only; a public-testnet
+# or mainnet wallet MUST run with `false`.
 # ──────────────────────────────────────────────────────────────────────
-PEER_ADDR="${PEER_ADDR:-tcp+tls://observer:31340,tcp+tls://node0:31342}"
+LOCALNET="${LOCALNET:-false}"
+case "$LOCALNET" in
+  true|false) ;;
+  *)
+    echo "FATAL: LOCALNET must be 'true' or 'false' (got '$LOCALNET')"
+    exit 1
+    ;;
+esac
+if [ "$LOCALNET" = "true" ]; then
+    PEER_ADDR="${PEER_ADDR:-tcp+tls://node0:31342}"
+else
+    if [ -z "${PEER_ADDR:-}" ]; then
+        echo "FATAL: LOCALNET=false requires PEER_ADDR naming at least one full node"
+        echo "       (tcp+tls://host:<p2p-base-port>, e.g. tcp+tls://node.example:31342)."
+        echo "       Do not point it at a lilith seed: seeds do not serve GetTip/GetBlocks."
+        exit 1
+    fi
+fi
 MAGIC_BYTES="${MAGIC_BYTES:-68,82,75,87}"
 
 DWOW_RAYON_THREADS="${DWOW_RAYON_THREADS:-2}"
@@ -33,7 +56,7 @@ CONFIGDIR="${CONFIGDIR:-/root/.config/dwow}"
 DATADIR="${DATADIR:-/root/.local/share/dwow/dww/${NETWORK}}"
 CACHEDIR="${CACHEDIR:-/root/.local/share/dwow/dww/${NETWORK}/cache}"
 
-echo "  NETWORK=$NETWORK  INDEX=$WALLET_INDEX  P2P_PORT=$P2P_PORT"
+echo "  NETWORK=$NETWORK  INDEX=$WALLET_INDEX  P2P_PORT=$P2P_PORT  LOCALNET=$LOCALNET"
 
 mkdir -p "$CONFIGDIR" "$DATADIR" "$CACHEDIR"
 
@@ -73,9 +96,12 @@ history_path = "${DATADIR}/history.txt"
 
 [network_config."${NETWORK}".net]
 ${PEERS_LINE}
-localnet = true
+localnet = ${LOCALNET}
 inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
 magic_bytes = [${MAGIC_BYTES}]
+# TOFU certificate pins live here. Required for a non-localnet run: without it the
+# verifier checks the self-signed SAN and pins nothing.
+datastore = "${DATADIR}/p2p"
 DWWEOF
 
 # --- Wallet identity declaration (derive-on-boot) ---

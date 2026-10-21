@@ -92,13 +92,42 @@ impl Connector {
         let outbound_connect_timeout = settings.outbound_connect_timeout(endpoint.scheme());
         drop(settings);
 
-        let dialer = match Dialer::new(endpoint.clone(), datastore, Some(i2p_socks5_proxy), localnet).await {
+        let dialer = match Dialer::new(endpoint.clone(), datastore.clone(), Some(i2p_socks5_proxy), localnet).await {
             Ok(dialer) => dialer,
             Err(err) => {
                 warn!(target: "net::connector::connect", "Dialer::new failed for {endpoint}: {err}");
                 return Err(Error::ConnectFailed(format!("[{endpoint}]: {err}")))
             }
         };
+
+        // HAZOP H1: load the per-host certificate pins. `localnet` deliberately has none — it is
+        // the Docker self-signed overlay. Without a datastore there is nowhere to persist them,
+        // so the SAN check stands alone; that is a degraded mode, and it is said out loud.
+        let trust_store = if localnet {
+            None
+        } else {
+            match datastore {
+                Some(dir) => {
+                    let path = std::path::PathBuf::from(dir).join("known_hosts");
+                    match crate::net::known_hosts::KnownHosts::load(path) {
+                        Ok(store) => Some(Arc::new(store)),
+                        Err(err) => {
+                            warn!(target: "net::connector::connect",
+                                "cannot load known_hosts from the P2P datastore: {err} — \
+                                 certificate pinning is inactive for this connection");
+                            None
+                        }
+                    }
+                }
+                None => {
+                    warn!(target: "net::connector::connect",
+                        "no P2P datastore configured — certificate pinning is inactive; \
+                         set `datastore`/`p2p_datastore` to persist TOFU pins");
+                    None
+                }
+            }
+        };
+        let dialer = dialer.with_trust_store(trust_store);
         let timeout = Duration::from_secs(outbound_connect_timeout);
 
         let stop_fut = async {

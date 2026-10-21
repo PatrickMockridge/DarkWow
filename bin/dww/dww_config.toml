@@ -34,35 +34,7 @@ history_path = "~/.local/share/dwow/dww/localnet/history.txt"
 ## P2P network settings — wallet participates as a full node
 [network_config."localnet".net]
 localnet = true
-
-# Testnet blockchain network configuration
-[network_config."testnet"]
-# Path to primary blockchain sled database (CChainState — same as dwowd)
-chain_path = "~/.local/share/dwow/dww/testnet/database"
-
-# Path to wallet-specific cache sled database
-cache_path = "~/.local/share/dwow/dww/testnet/cache"
-
-# Path to wallet database
-wallet_path = "~/.local/share/dwow/dww/testnet/wallet.db"
-
-# Password for the wallet database
-# HAZOP H12: do not hardcode wallet passwords. The wallet will prompt on first use.
-# Set via environment: export DWOW_WALLET_PASS=your_password
-# wallet_pass = "set-via-env-or-prompt"
-
-# dwowd JSON-RPC endpoint
-endpoint = "tcp://127.0.0.1:18345"
-
-# Path to interactive shell history file
-history_path = "~/.local/share/dwow/dww/testnet/history.txt"
-
-## P2P network settings — wallet participates as a full node (pull-only).
-## The wallet connects DIRECTLY to these `peers` (ManualSession) and pulls
-## GetTip/GetBlocks. No seed/hostlist exchange.
-[network_config."testnet".net]
-peers = [{ url = "tcp+tls://lilith0.dark.fi:18340" }, { url = "tcp+tls://lilith1.dark.fi:18340" }]
-magic_bytes = [163, 139, 113, 101]
+datastore = "~/.local/share/dwow/dww/localnet/p2p"
 
 # Linear-testnet blockchain network configuration
 [network_config."darkwow-devnet"]
@@ -92,6 +64,7 @@ localnet = true
 # Matches the node's devnet magic (dwowd_config.toml line 646), so a wallet on
 # devnet does not silently fall back to the wrong DRKW default.
 magic_bytes = [241, 227, 197, 179]
+datastore = "~/.local/share/dwow/dww/darkwow-devnet/p2p"
 
 # DarkWow Testnet blockchain network configuration
 [network_config."darkwow-testnet"]
@@ -118,12 +91,18 @@ history_path = "~/.local/share/dwow/dww/darkwow-testnet/history.txt"
 
 ## P2P network settings — wallet participates as a full node (pull-only)
 [network_config."darkwow-testnet".net]
-# Dial the mining node's tcp+tls inbound (0.0.0.0:31342), NOT the seed port
-# (31340) — seeds are for hostlist discovery, not block sync. A wallet pointed
-# at the seed port never reaches the sync server and stays at peers=0.
-peers = [{ url = "tcp+tls://127.0.0.1:31342" }]
-localnet = true
+# The wallet dials peer+2 for GetTip/GetBlocks, so `peers` names a FULL NODE's
+# P2P base port (31342 on the reference deployment), never a lilith seed at
+# 31340: a seed is a hostlist rendezvous and has no sync listener. There is no
+# loopback default here: a public-testnet wallet must be told which public full
+# node to pull from, and this profile is not localnet.
+#   peers = [{ url = "tcp+tls://<full-node-host>:31342" }]
+peers = []
+localnet = false
 magic_bytes = [68, 82, 75, 87]
+# HAZOP H1: the TOFU certificate pins (`known_hosts`) live here. Without a datastore the
+# verifier checks the shared self-signed SAN and pins nothing, which authenticates nobody.
+datastore = "~/.local/share/dwow/dww/darkwow-testnet/p2p"
 
 # Mainnet blockchain network configuration
 [network_config."mainnet"]
