@@ -290,6 +290,24 @@ pub fn drain_protection_test_spec() -> ContractTestSpec<'static> {
                 let r = h.propose().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
             })),
+            // `OBL-C97`: a vote proved with a stranger's key is refused by the fund-authority
+            // comparison. The proof is genuine for the stranger's own key; only the host check
+            // makes it insufficient, which is the half the arm did not have.
+            EndpointSpec {
+                name: "vote_by_stranger", is_zk: true,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(9))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new(move || {
+                    let secret = pallas::Base::from(4321u64);
+                    let plan = h.vote_prepare_as(secret).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    let call_data = plan.call_data.clone();
+                    let commitment = dwow_sdk::crypto::util::tx_commitment([&mk_call(drain_cid, &call_data)]);
+                    let proof = plan.prove(commitment, pallas::Base::zero())
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { children: vec![], call_data, proofs: vec![proof] })
+                }),
+            },
             mk_ep("vote", true, Box::new(move || {
                 let r = h.vote().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })

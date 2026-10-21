@@ -381,7 +381,14 @@ impl DrainProtectionHarness {
 
     /// Assemble `vote`'s call data and stop, before the proof (`OBL-C198`).
     pub fn vote_prepare(&self) -> Result<AuthorityCallPlan> {
-        let authority = self.authority();
+        self.vote_prepare_as(Self::AUTHORITY_SECRET)
+    }
+
+    /// [`Self::vote_prepare`] proved with a chosen secret — the negative control for `OBL-C97`.
+    /// The proof is a real proof of the real circuit; only the secret behind the published point
+    /// differs, so a rejection can only come from the host comparing it to the fund's authority.
+    pub fn vote_prepare_as(&self, secret: pallas::Base) -> Result<AuthorityCallPlan> {
+        let authority = AuthorityCallData::new(secret, Self::FUND_ID);
         let pi = authority.compute_public_inputs().map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         let params = VoteParamsV1 {
             proposal_id: self.proposal_id(),

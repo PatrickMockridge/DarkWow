@@ -638,13 +638,22 @@ fn vote_process_instruction_v1(
     let votes_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_VOTES_TREE)?;
 
     // OBL-C98: the vote names the fund its proposal belongs to, so a vote is recorded only against
-    // a fund that exists. The arm does **not** compare the caller's `authority_pub` against the
-    // fund's registered authority, and that is deliberate rather than an omission: the authority is
-    // the fund's operator, while a vote is a *member's* act. Which members may vote, and against
-    // what threshold, is the governance model `OBL-C101` records as unimplemented.
+    // a fund that exists.
     let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::NotInitialized)?;
-    let _fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
+    let fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
+
+    // `OBL-C97`: a vote is the fund authority's act.
+    //
+    // This comment used to say the omission was deliberate — the authority is the operator while a
+    // vote is a *member's* act. That is true of the governance model this contract describes, and
+    // the model does not exist: `ProtectedFund.members` is a list of `MemberWeight`s with **no
+    // member identity**, so no host can check "is this caller a member" and `vote.zk` instances
+    // only the voter's own key. What was enforced was therefore "a caller who proved some key
+    // recorded a vote", against a fund anyone can name. Until the member model is real, the only
+    // authority this contract can verify is the registered one, and the vote is bound to it. The
+    // member half is `OBL-C253`, not a claim made here.
+    require_fund_authority(&fund, params.authority_pub_x, params.authority_pub_y)?;
 
     // MultiSig composition: voting is MultiSig::SignV1.
     // Each signer proves membership; the MultiSig group tracks partial signatures.
