@@ -162,14 +162,25 @@ fu:
 fmt:
 	$(CARGO) +nightly fmt --all
 
-# cargo install cargo-hack
+# The feature set is derived from `cargo metadata` minus the pairs in
+# `contrib/build_expected_failures.tsv` — a deliberate `compile_error!` (OBL-C21) is an intended
+# failure, not a tree defect. Never hand-type the list here.
 check: contracts $(PROOFS_BIN)
-	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) hack check --target=$(RUST_TARGET) \
-		--release --feature-powerset --workspace
+	@if command -v cargo-hack >/dev/null 2>&1; then \
+		RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) hack check --target=$(RUST_TARGET) \
+			--release --feature-powerset --workspace \
+			--exclude-features "$$(python3 scripts/check_build_expected_failures.py --feature-names)"; \
+	else \
+		echo "cargo-hack is not installed — checking the generated all-features set instead"; \
+		feats="$$(python3 scripts/check_build_expected_failures.py --cargo-features)" && \
+		RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) check --target=$(RUST_TARGET) \
+			--release --workspace --all-targets --features "$$feats"; \
+	fi
 
 clippy: contracts $(PROOFS_BIN)
-	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) clippy --target=$(RUST_TARGET) \
-		--release --all-features --workspace --tests
+	feats="$$(python3 scripts/check_build_expected_failures.py --cargo-features)" && \
+		RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) clippy --target=$(RUST_TARGET) \
+			--release --features "$$feats" --workspace --tests
 
 # Lint the genesis-critical crates (and their tests) per file, and fail on any hit.
 # `clippy` above is the eventual gate, but its --workspace form cannot be it yet:
@@ -185,12 +196,14 @@ test-inventory:
 	contrib/test_inventory.sh
 
 fix: contracts $(PROOFS_BIN)
-	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) clippy --target=$(RUST_TARGET) \
-		--release --all-features --workspace --tests --fix --allow-dirty
+	feats="$$(python3 scripts/check_build_expected_failures.py --cargo-features)" && \
+		RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) clippy --target=$(RUST_TARGET) \
+			--release --features "$$feats" --workspace --tests --fix --allow-dirty
 
 rustdoc: contracts $(PROOFS_BIN)
-	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) doc --target=$(RUST_TARGET) \
-		--release --all-features --workspace --document-private-items --no-deps
+	feats="$$(python3 scripts/check_build_expected_failures.py --cargo-features)" && \
+		RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) doc --target=$(RUST_TARGET) \
+			--release --features "$$feats" --workspace --document-private-items --no-deps
 
 # `--no-fail-fast` because without it a single failing test binary hides every one after it, and a
 # gate that reports one failure out of an unknown number is not evidence about the tree. Measured
@@ -199,20 +212,23 @@ rustdoc: contracts $(PROOFS_BIN)
 # suite run with the flag reports every binary's result. The exit status is unchanged: non-zero if
 # any binary fails.
 test: contracts $(PROOFS_BIN)
-	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) test --target=$(RUST_TARGET) \
-		--release --all-features --workspace --no-fail-fast
+	feats="$$(python3 scripts/check_build_expected_failures.py --cargo-features)" && \
+		RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) test --target=$(RUST_TARGET) \
+			--release --features "$$feats" --workspace --no-fail-fast
 
 bench-zk-from-json: contracts $(PROOFS_BIN)
 	rm -f src/contract/test-harness/*.bin
-	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) bench --target=$(RUST_TARGET) \
-		--bench zk_from_json --all-features --workspace \
-		-- --save-baseline master
+	feats="$$(python3 scripts/check_build_expected_failures.py --cargo-features)" && \
+		RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) bench --target=$(RUST_TARGET) \
+			--bench zk_from_json --features "$$feats" --workspace \
+			-- --save-baseline master
 
 bench: contracts $(PROOFS_BIN)
 	rm -f src/contract/test-harness/*.bin
-	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) bench --target=$(RUST_TARGET) \
-		--all-features --workspace \
-		-- --save-baseline master
+	feats="$$(python3 scripts/check_build_expected_failures.py --cargo-features)" && \
+		RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) bench --target=$(RUST_TARGET) \
+			--features "$$feats" --workspace \
+			-- --save-baseline master
 
 check-all:
 	./scripts/run-all-tests.sh --tier 1
@@ -221,8 +237,9 @@ check-all-full:
 	./scripts/run-all-tests.sh --tier 2
 
 coverage: contracts $(PROOFS_BIN)
-	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) llvm-cov --target=$(RUST_TARGET) \
-		--release --all-features --workspace --html
+	feats="$$(python3 scripts/check_build_expected_failures.py --cargo-features)" && \
+		RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) llvm-cov --target=$(RUST_TARGET) \
+			--release --features "$$feats" --workspace --html
 
 # NOTE on the two clean targets, because neither does what its name suggests:
 #

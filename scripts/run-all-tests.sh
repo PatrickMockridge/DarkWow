@@ -471,7 +471,8 @@ run_gate "circuit tx pair last" bash "$SCRIPT_DIR/check-circuit-tx-pair-last.sh"
 # client codec injected into an unrelated contract it exits 1 naming that struct.
 run_gate "client params alignment"        bash "$SCRIPT_DIR/check-client-params-alignment.sh"
 # OBL-C76: the tests that do not run in their crate's DEFAULT configuration are enumerated and
-# declared. `make test` runs `--release --all-features --workspace`, so this gate's subject is not
+# declared. `make test` runs `--release --features <generated> --workspace` (every feature minus
+# the declared expected failures, OBL-C21), so this gate's subject is not
 # the gate run — it is the ad-hoc `cargo test -p <crate>` one reaches for to check a single crate,
 # and the claim that follows it. Four mechanisms hide a test here — `#[ignore]`, a feature-gated
 # test fn, a feature-gated test module, and a module gated in its PARENT (the one walking files
@@ -657,6 +658,10 @@ run_gate "build contract ZK circuits"     "$SCRIPT_DIR/build-contract-zk.sh"
 # unseen. `contrib/clippy_unwrap_audit.sh` derives its 40-crate scope from `cargo metadata` (no
 # hand-typed list to go stale), lints each crate in every configuration it builds in, and reports a
 # GAP — unmeasured, never "clean" — for any that does not compile. **Heavy** (lints all 40 crates).
+run_gate "expected build failures are declared" \
+    python3 "$REPO_ROOT/scripts/check_build_expected_failures.py" --check --source-only
+run_gate "control: the expected-failure list can fail" \
+    python3 "$REPO_ROOT/scripts/check_build_expected_failures.py" --self-test
 run_gate "clippy unwrap/expect census (40 crates)" \
     bash "$REPO_ROOT/contrib/clippy_unwrap_audit.sh"
 # OBL-Z8: the compiled artefacts are structurally valid. This is the only check that looks at the

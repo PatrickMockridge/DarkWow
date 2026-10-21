@@ -1,0 +1,10 @@
+# Builds the tree INTENDS to fail. One row per (package, feature), tab-separated:
+#   package <TAB> feature <TAB> expires <TAB> obligation <TAB> guard file <TAB> guard literal
+#
+# The guard literal is a substring of the `compile_error!` message. `scripts/check_build_expected_failures.py`
+# validates each row against the tree: the package and feature exist, the literal is present and
+# under the feature's cfg, the entry has not expired, every cfg-gated compile_error! in the
+# workspace is listed, and (unless --source-only) the configuration still fails with that literal.
+# A configuration that starts compiling is STALE and fails the check. The instruments derive their
+# feature set from cargo metadata minus these pairs; they never hand-type a feature list.
+dwow_bridge_contract	bridge-verify	2027-06-30	OBL-C21	src/contract/bridge/src/lib.rs	OBL-C21: `bridge-verify` is not a working verifier

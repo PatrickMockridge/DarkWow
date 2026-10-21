@@ -59,6 +59,16 @@ JQ_HITS='select(.reason=="compiler-message") | .message
   | .code.code as $l
   | (.spans[] | select(.is_primary) | "\($l)\t\(.file_name):\(.line_start)")'
 
+# The all-features configuration is derived from `cargo metadata` minus the pairs in
+# `contrib/build_expected_failures.tsv`. A blanket `--all-features` enables `bridge-verify`, which
+# the tree deliberately turns into a `compile_error!` (OBL-C21) — so the census would report an
+# intended failure as an unmeasured configuration. The list is the only hand-typed fact; expired,
+# stale and unlisted entries fail the run (checked below).
+ALL_FEATURES_CSV="$(python3 "$REPO_ROOT/scripts/check_build_expected_failures.py" --cargo-features)"
+pkg_features() {  # $1 = package -> its features, comma-separated, minus intended failures
+  printf '%s' "$ALL_FEATURES_CSV" | tr ',' '\n' | sed -n "s|^$1/||p" | paste -sd, -
+}
+
 # ── derived scope ─────────────────────────────────────────────────────────────────────────────
 # package -> lib/bin target root file(s).  Prints "pkg<TAB>root1,root2".
 derive_scope() {
@@ -130,11 +140,19 @@ lint_config() {
 
 # configs_for <pkg> — prints the labels+arg-sets to run, one per line as "label|args"
 configs_for() {
-  local pkg="$1" src
+  local pkg="$1" src feats label
   src="$(cargo metadata --no-deps --format-version=1 --offline 2>/dev/null \
         | jq -r --arg p "$pkg" '.packages[] | select(.name==$p) | .manifest_path' | xargs dirname)"
   echo "host-default|--target=$HOST $PROFILE --lib --bins"
-  echo "host-allfeatures|--target=$HOST $PROFILE --all-features --lib --bins"
+  feats="$(pkg_features "$pkg")"
+  label="host-allfeatures"
+  grep -qE "^${pkg}[[:space:]]" "$REPO_ROOT/contrib/build_expected_failures.tsv" \
+    && label="host-allfeatures-minus-expected"
+  if [[ -n "$feats" ]]; then
+    echo "$label|--target=$HOST $PROFILE --features $feats --lib --bins"
+  else
+    echo "$label|--target=$HOST $PROFILE --lib --bins"
+  fi
   if grep -rqE 'cfg\(not\(feature' "$src/src" 2>/dev/null; then
     echo "host-nodefaults|--target=$HOST $PROFILE --no-default-features --lib --bins"
   fi
@@ -231,6 +249,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$mode" == "scope" ]]; then print_scope; exit 0; fi
+
+# The exclusion list itself is a gate: an entry whose guard was removed, a guarded feature that is
+# not listed, or a past expiry is an instrument failure, not a clean census.
+python3 "$REPO_ROOT/scripts/check_build_expected_failures.py" --check --source-only \
+  || { echo "clippy_unwrap_audit: the expected-failure list is invalid" >&2; exit 2; }
 
 rc=0; any_gap=0
 if [[ -n "$only_crate" ]]; then

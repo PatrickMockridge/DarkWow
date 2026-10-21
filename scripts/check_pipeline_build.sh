@@ -13,7 +13,9 @@
 #     contract entrypoint.
 #   - The entrypoint module is gated `#[cfg(not(feature = "no-entrypoint"))]`. dwowd's
 #     contract deps use features=["client","no-entrypoint"], contract integration tests run
-#     `--features no-entrypoint,client`, and `make test`/`clippy` use `--all-features` — all of
+#     `--features no-entrypoint,client`, and `make test`/`clippy` use the generated feature set
+#     (every feature minus the declared expected failures, `contrib/build_expected_failures.tsv`,
+#     OBL-C21) — all of
 #     which turn no-entrypoint ON and thereby REMOVE the entrypoint from the build.
 #   So the only place these compile to their real target is the Docker build — expensive and
 #   post-push. This guard compiles all three locally in seconds.

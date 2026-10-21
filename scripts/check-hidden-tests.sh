@@ -4,7 +4,8 @@
 #
 # The row's measurement is the reason this exists: `cargo test -p dwow_chain --lib` lists 172 tests
 # and the same command with `--all-features` lists 263. The 91 that differ are the consensus surface
-# the campaign works on. `make test` runs `--release --all-features --workspace`, so the *gates* always
+# the campaign works on. `make test` runs the generated feature set (all features minus the declared
+# expected failures, OBL-C21) over `--workspace`, so the *gates* always
 # exercised all 263 — the defect is in the ad-hoc command one reaches for to check a single crate, and
 # in the claim that follows it: an unqualified pass count is indistinguishable from a run that skipped
 # the test.
@@ -245,8 +246,8 @@ if hidden:
             print(f"      {declared[k]}")
     print("")
     print("Run the whole set — including the hidden ones — with the configuration the gates use:")
-    print("  make test                     (--release --all-features --workspace)")
-    print("  cargo test --all-features -p <crate>")
+    print("  make test                     (--release --features <generated> --workspace)")
+    print("  cargo test --features <generated> -p <crate>")
     print("  cargo test -- --ignored       (the #[ignore]d opt-in runs)")
 
 if undeclared:
