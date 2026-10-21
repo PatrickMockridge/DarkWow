@@ -105,6 +105,33 @@ pub(crate) fn build_test_monero_powdata() -> TestResult<MoneroPowData> {
         .map_err(|e| infra("constructing MoneroPowData", format!("{e}")))
 }
 
+/// Build a `MoneroPowData` bound to a given DarkWow aux job id: the real testnet Monero block's
+/// coinbase carries the job id as its merge-mining tag and the aux proof is the empty proof over
+/// it. This is the fixture the acceptor's OBL-C80 AuxPoW check requires; the unbound
+/// `build_test_monero_powdata` remains for the P2P codec test, which does not accept a block.
+pub(crate) fn build_test_monero_powdata_bound_to(
+    job_id: &dwow_chain::monero::JobId,
+) -> TestResult<MoneroPowData> {
+    let mut block = monero_block_deserialize(XMR_BLOCK)
+        .map_err(|e| infra("deserializing the Monero block", format!("{e}")))?;
+    let mut extra = vec![0x03, 0x01, 0x00];
+    extra.extend_from_slice(&job_id.to_bytes());
+    block.miner_tx.prefix.extra = monero::blockdata::transaction::RawExtraField(extra);
+
+    let seed = FixedByteArray::from_bytes(
+        &hex::decode(SEED_HASH)
+            .map_err(|e| infra("decoding the seed hash", format!("{e}")))?,
+    )
+    .map_err(|e| infra("building the seed hash array", format!("{e}")))?;
+
+    let job_hash = monero::Hash::from_slice(&job_id.to_bytes());
+    let aux_chain_merkle_proof = create_merkle_proof(&[job_hash], &job_hash)
+        .ok_or_else(|| infra("building the aux-chain Merkle proof", "create_merkle_proof returned None"))?;
+
+    MoneroPowData::new(block, seed, aux_chain_merkle_proof)
+        .map_err(|e| infra("constructing MoneroPowData", format!("{e}")))
+}
+
 /// Build a block header with `PowSource::Monero` for merge mining tests.
 ///
 /// `miner` must be the key the coinbase note is bound to: `accept_block` requires
@@ -119,7 +146,6 @@ fn build_merge_mined_header(
     height: BlockHeight,
     reward: BlockReward,
     merkle_root: blake3::Hash,
-    pow_data: MoneroPowData,
     miner: [u8; 32],
 ) -> TestResult<BlockHeader> {
     let seed_hash_bytes: [u8; 32] = hex::decode(SEED_HASH)
@@ -129,12 +155,24 @@ fn build_merge_mined_header(
             infra("sizing the seed hash array", format!("expected 32 bytes, got {}", v.len()))
         })?;
 
+    let timestamp = BlockTimestamp::new(120 * height.get());
+    // OBL-C80: the Monero proof must bind this header's aux job; the fixture is built from the
+    // header fields the acceptor will read, not from an unrelated synthetic proof.
+    let job_id = dwow_chain::monero::aux_job_id(
+        prev_hash.as_bytes(),
+        height.get(),
+        merkle_root.as_bytes(),
+        timestamp.get(),
+    )
+    .ok_or_else(|| infra("deriving the aux job id", "the job id is zero"))?;
+    let pow_data = build_test_monero_powdata_bound_to(&job_id)?;
+
     Ok(BlockHeader {
         fee_window_flags: FeeWindowFlags::default(),
         version: BlockVersion::CURRENT,
         previous: prev_hash,
         merkle_root,
-        timestamp: BlockTimestamp::new(120 * height.get()),
+        timestamp,
         target: BlockTarget::MAX,
         nonce: 0,
         height,
@@ -194,7 +232,14 @@ fn test_merge_mined_block_acceptance() -> TestResult<()> {
 
     smol::block_on(async {
         // ── Setup ────────────────────────────────────────────────
-        let har = GenesisHarness::new_without_contracts()
+        // The operator explicitly opts out of the default-deny: this harness has no `monerod_url`,
+        // so without `accept_unverified_merge_blocks` the acceptor would refuse a merge-mined block
+        // (the control below covers that default).
+        let finality = dwow_chain::FinalityConfig {
+            accept_unverified_merge_blocks: true,
+            ..dwow_chain::FinalityConfig::default()
+        };
+        let har = GenesisHarness::new_without_contracts_with_finality(finality)
             .map_err(|e| infra("creating the genesis harness", e))?;
 
         let keys_path = std::env::temp_dir()
@@ -244,7 +289,6 @@ fn test_merge_mined_block_acceptance() -> TestResult<()> {
         };
 
         // Build MoneroPowData from real testnet block
-        let pow_data = build_test_monero_powdata()?;
 
         let all_txs = vec![coinbase_tx];
         let merkle_root = compute_merkle_root(&all_txs);
@@ -259,7 +303,7 @@ fn test_merge_mined_block_acceptance() -> TestResult<()> {
         // `miner` must be the key the coinbase note is bound to, or `accept_block`'s C1
         // binding rule rejects the block — which is exactly what this test used to do.
         let miner = super::harness::miner_for(&all_txs);
-        let header = build_merge_mined_header(prev_hash, height, reward, merkle_root, pow_data, miner)?;
+        let header = build_merge_mined_header(prev_hash, height, reward, merkle_root, miner)?;
         let block = Block { header, transactions: all_txs };
 
         // ── Accept block ─────────────────────────────────────────
@@ -324,10 +368,11 @@ fn test_merge_mined_block_acceptance() -> TestResult<()> {
         // it is either absent, or the derived value. (The height is a different matter: it is not
         // derivable at all, since the Monero header carries no height. See the register row.)
         //
-        // The whole block is admitted here only because this harness runs the *default* finality
-        // policy — no `monerod_url` — so nothing consults the Monero chain and the residual gap is
-        // logged rather than closed. `test_merge_mined_block_rejected_when_monerod_cannot_confirm_it`
-        // is the same block with the policy switched on; the pair is the control.
+        // The block is admitted because this harness explicitly sets
+        // `accept_unverified_merge_blocks` — the operator opt-out — not because the default is
+        // permissive. `test_merge_mined_block_rejected_when_monerod_cannot_confirm_it` accepts the
+        // same block with the policy switched on and with the default config; the three cases are
+        // the control.
         ensure_eq!(block.header.anchor_monero_height, MoneroBlockHeight::new(0),
             "a merge-mined block carries no Monero anchor height — production writes zero, and the \
              Monero header carries no height to derive it from");
@@ -411,7 +456,6 @@ fn test_merge_mined_block_rejected_when_monerod_cannot_confirm_it() -> TestResul
             witness: vec![],
         };
 
-        let pow_data = build_test_monero_powdata()?;
         let all_txs = vec![coinbase_tx];
         let merkle_root = compute_merkle_root(&all_txs);
 
@@ -425,7 +469,7 @@ fn test_merge_mined_block_rejected_when_monerod_cannot_confirm_it() -> TestResul
             .map_err(|e| infra("hashing the previous block", e))?;
         let miner = super::harness::miner_for(&all_txs);
         let header =
-            build_merge_mined_header(prev_hash, height, reward, merkle_root, pow_data, miner)?;
+            build_merge_mined_header(prev_hash, height, reward, merkle_root, miner)?;
         let block = Block { header, transactions: all_txs };
 
         let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
@@ -452,6 +496,31 @@ fn test_merge_mined_block_rejected_when_monerod_cannot_confirm_it() -> TestResul
              consults it — but the error was: {text}");
         ensure_eq!(har.block_height(), BlockHeight::new(1),
             "the chain must not advance when the policy refuses the block");
+
+        // Default-deny control: the same block on a harness with the default finality config (no
+        // `monerod_url`, no opt-out) must be refused *without* consulting a Monero node.
+        let har_default = GenesisHarness::new_without_contracts()
+            .map_err(|e| infra("creating the default-policy harness", e))?;
+        let recipient_default =
+            crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(1))
+                .map_err(|e| infra("deriving the default harness recipient", e))?;
+        crate::init_genesis(&har_default.chain_state, recipient_default, magic_bytes)
+            .await
+            .map_err(|e| infra("initialising genesis on the default-policy harness", e))?;
+        let err_default = crate::block_acceptor::accept_block(
+            &har_default.chain_state,
+            &block,
+            &[],
+            &vm,
+            BlockTarget::MAX,
+            None,
+        )
+        .expect_err("the default policy must refuse a merge-mined block with no verifier");
+        let text_default = format!("{err_default:?}");
+        ensure!(text_default.contains("accept_unverified_merge_blocks"),
+            "the default refusal must name the opt-out, got: {text_default}");
+        ensure_eq!(har_default.block_height(), BlockHeight::new(1),
+            "the chain must not advance under the default-deny");
         Ok(())
     })
 }
@@ -494,7 +563,6 @@ fn test_merge_mined_block_deterministic() -> TestResult<()> {
             crate::accounts::MiningRecipient::from_account(&mgr1, BlockHeight::new(2))
                 .map_err(|e| infra("deriving the first height-2 recipient", e))?;
         let reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(2));
-        let pow_data = build_test_monero_powdata()?;
 
         // Production coinbase — same path as miner_task
         let (coinbase, pow_reward_call, _blind) =
@@ -522,7 +590,6 @@ fn test_merge_mined_block_deterministic() -> TestResult<()> {
             BlockHeight::new(2),
             reward,
             merkle,
-            pow_data,
             super::harness::miner_for(&txs),
         )?;
         let block1 = Block { header, transactions: txs };
@@ -544,7 +611,6 @@ fn test_merge_mined_block_deterministic() -> TestResult<()> {
             .map_err(|e| infra("initialising genesis on the second harness", e))?;
 
         // Must reconstruct pow_data — MoneroPowData is consumed by the block
-        let pow_data2 = build_test_monero_powdata()?;
         let recipient2 =
             crate::accounts::MiningRecipient::from_account(&mgr2, BlockHeight::new(2))
                 .map_err(|e| infra("deriving the second height-2 recipient", e))?;
@@ -575,7 +641,6 @@ fn test_merge_mined_block_deterministic() -> TestResult<()> {
             BlockHeight::new(2),
             reward,
             merkle2,
-            pow_data2,
             super::harness::miner_for(&txs2),
         )?;
         let block2 = Block { header: header2, transactions: txs2 };

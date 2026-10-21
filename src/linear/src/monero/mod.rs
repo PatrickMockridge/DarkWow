@@ -468,6 +468,62 @@ pub fn extract_aux_merkle_root_from_block(monero: &monero::Block) -> Result<Opti
 }
 
 /// Extract the Monero block hash from the coinbase transaction's extra field
+/// The AuxPoW job id the producer commits in the Monero coinbase:
+/// `blake3(previous || height_le || merkle_root || timestamp)` over the **DarkWow** block header.
+/// This is the producer's own derivation (`bin/dwowd/src/rpc/mm_rpc.rs`), moved here so the
+/// acceptor and the producer cannot drift apart.
+pub fn aux_job_id(
+    previous: &[u8; 32],
+    height: u64,
+    merkle_root: &[u8; 32],
+    timestamp: u64,
+) -> Option<JobId> {
+    let mut h = blake3::Hasher::new();
+    h.update(previous);
+    h.update(&height.to_le_bytes());
+    h.update(merkle_root);
+    h.update(&timestamp.to_le_bytes());
+    JobId::from_bytes(h.finalize().into())
+}
+
+/// Verify that a merge-mined `MoneroPowData` is bound to the DarkWow block it rides on.
+///
+/// This is the consensus half of `OBL-C80`: the three receipts prove only that an aux hash sits in
+/// a coinbase of *some* serialized Monero block. The producer commits the DarkWow job id into the
+/// Monero coinbase's merge-mining tag and proves it with `aux_chain_merkle_proof`; until this check,
+/// the acceptor never read that proof, so any real Monero block — including one that committed a
+/// different job, or no job — could be replayed as a claimed merge-mined block. The binding is a pure
+/// function of the DarkWow header and the Monero proof; whether the Monero block itself exists on
+/// the Monero chain is the node-local `monerod_url` policy, not this function.
+pub fn verify_aux_pow_binding(block: &crate::block::Block, monero_data: &MoneroPowData) -> Result<()> {
+    let job_id = aux_job_id(
+        block.header.previous.as_bytes(),
+        block.header.height.get(),
+        block.header.merkle_root.as_bytes(),
+        block.header.timestamp.get(),
+    )
+    .ok_or_else(|| LinearError::BlockIsInvalid("merge-mined block has a zero aux job id".into()))?;
+
+    if !monero_data.aux_chain_merkle_proof.check_coinbase_path() {
+        return Err(LinearError::BlockIsInvalid(
+            "Monero aux-chain Merkle proof is not the coinbase path".into(),
+        ))
+    }
+
+    let aux_root = extract_aux_merkle_root(&monero_data.coinbase_tx_extra)?
+        .ok_or_else(|| LinearError::BlockIsInvalid("Monero coinbase carries no merge-mining tag".into()))?;
+
+    let calculated = monero_data
+        .aux_chain_merkle_proof
+        .calculate_root(&monero::Hash::from_slice(&job_id.to_bytes()));
+    if calculated != aux_root {
+        return Err(LinearError::BlockIsInvalid(
+            "Monero aux-chain Merkle root does not bind this block's job".into(),
+        ))
+    }
+    Ok(())
+}
+
 pub fn extract_aux_merkle_root(extra_field: &RawExtraField) -> Result<Option<monero::Hash>> {
     let extra_field = parse_extra_field_truncate_on_error(extra_field);
     // Only one merge mining tag is allowed
@@ -622,6 +678,21 @@ pub(crate) mod tests {
         .collect::<Vec<_>>();
         let aux_proof = create_merkle_proof(&tx_hashes, &tx_hashes[0])
             .expect("the fixture proof must build");
+        MoneroPowData::new(block, seed, aux_proof).expect("the fixture must construct")
+    }
+
+    /// The same real Monero block, re-bound to a given DarkWow aux job id: the coinbase's
+    /// merge-mining tag carries the job id and the aux proof is the empty proof over it. This is a
+    /// synthetic AuxPoW fixture (the real aux proof is not recoverable offline), used to exercise
+    /// `verify_aux_pow_binding` in both directions.
+    pub(crate) fn real_block_powdata_bound_to(job_id: &JobId) -> MoneroPowData {
+        let mut block = monero_block_deserialize(XMR_BLOCK).expect("the testnet fixture must deserialize");
+        block.miner_tx.prefix.extra = RawExtraField(merge_mining_subfield(0, job_id.to_bytes()));
+        let seed = FixedByteArray::from_bytes(&hex::decode(XMR_SEED).expect("seed is hex"))
+            .expect("seed fits the fixed array");
+        let job_hash = monero::Hash::from_slice(&job_id.to_bytes());
+        let aux_proof = create_merkle_proof(&[job_hash], &job_hash)
+            .expect("the single-leaf aux proof must build");
         MoneroPowData::new(block, seed, aux_proof).expect("the fixture must construct")
     }
 

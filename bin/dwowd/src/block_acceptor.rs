@@ -240,6 +240,16 @@ pub fn accept_block_with_mempool(
                 )));
             }
 
+            // OBL-C80: the receipts alone are self-referential. The aux-chain proof must bind the
+            // Monero coinbase to *this* DarkWow block's job; this is the consensus half, and it is
+            // pure/local, so it runs on every entry point.
+            dwow_chain::monero::verify_aux_pow_binding(block, monero_data).map_err(|e| {
+                dwow_core::Error::Custom(format!(
+                    "Block {} AuxPoW binding invalid: {e}",
+                    block.header.height
+                ))
+            })?;
+
             // OBL-C67: the node-local admission policy. The receipts above prove only that our aux
             // hash sits in a coinbase of *some* serialized Monero block, so this asks a Monero node
             // whether the block the proof describes exists there, at the configured depth.
@@ -268,15 +278,22 @@ pub fn accept_block_with_mempool(
                     })?;
                 }
                 None => {
-                    // The default configuration. The block is admitted exactly as before the policy
-                    // existed, and the residual gap is stated in the log rather than implied away:
-                    // nothing here has checked the Monero chain.
+                    // The default. A node that cannot check the Monero chain refuses a merge-mined
+                    // block rather than admitting it on the self-referential receipts. An operator
+                    // who has independently verified the p2pool flow can opt out explicitly with
+                    // `accept_unverified_merge_blocks = true`; no shipped network config does.
+                    if !finality.accept_unverified_merge_blocks {
+                        return Err(dwow_core::Error::Custom(format!(
+                            "Block {} is merge-mined and no `monerod_url` is configured; refusing \
+                             unless `accept_unverified_merge_blocks` is set (OBL-C80)",
+                            block.header.height
+                        )))
+                    }
                     tracing::warn!(
                         target: "block_acceptor",
-                        "[ACCEPT] Block {} is merge-mined and no `monerod_url` is configured — the \
-                         Monero block it claims was NOT checked against the Monero chain (OBL-C67). \
-                         Its receipts prove coinbase inclusion in some serialized block, which a \
-                         fabricated block can also satisfy. Set `monerod_url` to close this.",
+                        "[ACCEPT] Block {} is merge-mined and no `monerod_url` is configured; \
+                         the node is accepting it because `accept_unverified_merge_blocks` is set. \
+                         The AuxPoW binding is checked, but the Monero chain is not.",
                         block.header.height
                     );
                 }

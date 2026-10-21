@@ -85,6 +85,11 @@ pub fn check_pow_stage(block: &Block, block_hash: &Blake3Hash) -> Result<()> {
             ));
         }
 
+        // OBL-C80: the receipts above prove coinbase inclusion in *some* serialized Monero block.
+        // The aux-chain proof is what binds that block to *this* DarkWow block's job; until this
+        // check, the acceptor never read it, so any real Monero block could be replayed as one.
+        crate::monero::verify_aux_pow_binding(block, monero_data)?;
+
         // The claimed Monero anchor hash must be the one **derived from this block's own proof**
         // (OBL-C67). Until 2026-09-22 the field was an independent, unauthenticated claim about the same
         // block the proof describes, and nothing compared the two — so a peer could assert any Monero
@@ -657,10 +662,16 @@ mod tests {
     /// meaningful against a proof that is genuine.
     #[test]
     fn claimed_monero_anchor_hash_must_equal_the_derived_one() {
-        let pow_data = crate::monero::tests::real_block_powdata();
-        let derived = pow_data.block_hash();
-
         let mut block = dummy_block();
+        let job_id = crate::monero::aux_job_id(
+            block.header.previous.as_bytes(),
+            block.header.height.get(),
+            block.header.merkle_root.as_bytes(),
+            block.header.timestamp.get(),
+        )
+        .expect("the dummy header has a non-zero job id");
+        let pow_data = crate::monero::tests::real_block_powdata_bound_to(&job_id);
+        let derived = pow_data.block_hash();
         block.header.pow_source = PowSource::Monero(pow_data);
 
         // Absent: the production case.
@@ -689,6 +700,37 @@ mod tests {
                 "a claimed Monero anchor hash that disagrees with the block's own proof must be rejected"
             );
         }
+    }
+
+    /// OBL-C80 control: a merge-mined block's aux proof must bind *this* header's job. The fixture
+    /// is bound to the original job; changing one header field changes the job, and the same proof
+    /// must be refused. Without this, any real Monero block could be replayed as a claimed
+    /// merge-mined block.
+    #[test]
+    fn aux_pow_binding_rejects_a_block_for_a_different_job() {
+        let mut block = dummy_block();
+        let job_id = crate::monero::aux_job_id(
+            block.header.previous.as_bytes(),
+            block.header.height.get(),
+            block.header.merkle_root.as_bytes(),
+            block.header.timestamp.get(),
+        )
+        .expect("the dummy header has a non-zero job id");
+        let pow_data = crate::monero::tests::real_block_powdata_bound_to(&job_id);
+        block.header.pow_source = PowSource::Monero(pow_data);
+        assert!(
+            check_pow_stage(&block, &Blake3Hash::from([0u8; 32])).is_ok(),
+            "the fixture is bound to this header's job and must pass"
+        );
+
+        // A different timestamp is a different job; the aux proof no longer binds the block.
+        block.header.timestamp = BlockTimestamp::new(1);
+        let err = check_pow_stage(&block, &Blake3Hash::from([0u8; 32])).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("aux") || msg.contains("AuxPoW"),
+            "the refusal must name the aux binding, got: {msg}"
+        );
     }
 
     #[test]

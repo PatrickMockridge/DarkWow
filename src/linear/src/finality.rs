@@ -76,6 +76,14 @@ pub struct FinalityConfig {
     /// monerod JSON-RPC URL for anchor verification (e.g. http://127.0.0.1:18081/json_rpc)
     #[serde(default)]
     pub monerod_url: Option<String>,
+    /// Accept `PowSource::Monero` blocks without a `monerod_url` (default: false).
+    ///
+    /// The consensus AuxPoW binding proves the Monero block committed *this* DarkWow block's job,
+    /// but without a Monero node the node cannot confirm the Monero block exists on the Monero chain.
+    /// The default is therefore to refuse a merge-mined block when no verifier is configured; this
+    /// flag is the explicit operator opt-out, and it is not set by any shipped network config.
+    #[serde(default)]
+    pub accept_unverified_merge_blocks: bool,
 }
 
 fn default_true() -> bool {
@@ -94,6 +102,7 @@ impl Default for FinalityConfig {
             monero_enabled: false,
             monero_min_confirmations: 3,
             monerod_url: None,
+            accept_unverified_merge_blocks: false,
         }
     }
 }
@@ -314,6 +323,7 @@ mod tests {
             monero_enabled: true,
             monero_min_confirmations: 7,
             monerod_url: Some("http://127.0.0.1:18081/json_rpc".to_string()),
+            accept_unverified_merge_blocks: false,
         };
         let json = serde_json::to_string(&cfg).unwrap();
         let parsed: FinalityConfig = serde_json::from_str(&json).unwrap();

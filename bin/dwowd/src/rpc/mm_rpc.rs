@@ -332,16 +332,16 @@ impl DwowNode {
             }
         };
 
-        // Generate job ID: blake3(template_hash || timestamp)
-        let mut job_hasher = blake3::Hasher::new();
-        job_hasher.update(&template.previous);
-        job_hasher.update(&template.height.to_le_bytes());
-        job_hasher.update(template.merkle_root.as_bytes());
-        job_hasher.update(&template.timestamp.to_le_bytes());
-        let job_hash = job_hasher.finalize();
+        // Generate job ID: blake3(previous || height_le || merkle_root || timestamp). One helper,
+        // shared with the acceptor's AuxPoW binding (`dwow_chain::monero::aux_job_id`).
         #[expect(clippy::expect_used, reason = "blake3 hash is never zero (probability 2^-256)")]
-        let job_id = JobId::from_bytes(job_hash.into())
-            .expect("blake3 hash is never zero (probability 2^-256)");
+        let job_id = dwow_chain::monero::aux_job_id(
+            &template.previous,
+            template.height.get(),
+            template.merkle_root.as_bytes(),
+            template.timestamp,
+        )
+        .expect("blake3 hash is never zero (probability 2^-256)");
         let job_id_hex = job_id.to_hex();
 
         // Derive difficulty
