@@ -1761,8 +1761,9 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
 // relayer lifecycle — cross-contract bridge + relayer_endowment
 // ============================================================================
 
-/// The bridge's **deposit**, refused as its policy requires, plus the relayer_endowment lifecycle:
-/// initialize → deploy_capital.
+/// The bridge's **deposit**, refused as its policy requires, plus relayer_endowment's
+/// **initialize** on the same chain. `deploy_capital` is covered by `relayer_endowment_spec.rs`:
+/// this fixture built it without the PN child and below the deploy floor (`OBL-C246`).
 ///
 /// Deploys both contracts into the same GenesisHarness and exercises them across blocks with ZK
 /// proofs. Routes through the pipeline's own `submit` (the production `accept_block` path).
@@ -1967,57 +1968,64 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         // contract and so cannot be satisfied by a child's refusal.
         println!("\n--- Bridge withdrawal: covered by bridge_spec.rs (OBL-C246) ---");
 
-        // --- Block 4: RelayerEndowment initialize + deploy_capital ---
-        println!("\n--- Block 4: RelayerEndowment initialize + deploy_capital ---");
+        // --- Block 4: RelayerEndowment initialize ---
+        //
+        // `deploy_capital` is **not** driven here (`OBL-C246`). Its endpoint requires one
+        // `promissory_note::transfer_v1` child, and this fixture built the parent with
+        // `deploy_capital_solo`, which attaches none — so the block could only be refused, and it
+        // also named an amount (10 000) below `RELAYER_ENDOWMENT_MIN_DEPLOY` (1 000 000). A funded
+        // backer note and a framed child are what that endpoint needs; `relayer_endowment_spec.rs`
+        // has both (`DeployCapitalV1`, `Success`), reached through the same `accept_block` path, so
+        // the coverage lives there rather than in a second, broken copy here. `initialize` has no
+        // child requirement and is still exercised on this cross-contract chain.
+        println!("\n--- Block 4: RelayerEndowment initialize ---");
         let relayer_secret = pallas::Base::from(10u64);
         let relayer_pub = PublicKey::from_secret(SecretKey::from_base(relayer_secret));
-        let backer_secret = pallas::Base::from(20u64);
-        let backer_pub = PublicKey::from_secret(SecretKey::from_base(backer_secret));
 
-        // Both calls ride in block `height4`, so both proofs must bind `height4` — the verifying
-        // block height, which the harness takes from this call rather than from an argument.
         let height4 = chain.height().succ();
         relayer_harness.set_next_block_height(height4);
         let init = relayer_harness.initialize(relayer_pub, 500)?;
         assert!(!init.call_data.is_empty(), "initialize call_data must not be empty");
         println!("  Initialize call_data={}B", init.call_data.len());
 
-        let deploy = relayer_harness.deploy_capital_solo(
-            backer_pub, 10000,
-            pallas::Base::from(2u64), pallas::Scalar::from(3u64),
-            relayer_pub, 500,
-        )?;
-        assert!(!deploy.call_data.is_empty(), "deploy_capital call_data must not be empty");
-        println!("  DeployCapital call_data={}B", deploy.call_data.len());
-
         {
             let cb = chain.build_coinbase_for_height(height4, dwow_sdk::blockchain::expected_reward(height4)).await?;
             let mut init_tx = build_contract_tx(relayer_id, init.call_data);
-            init_tx.witness = build_witness(relayer_id, &init_tx.contract_calls[0].data, vec![]);
-            let mut deploy_tx = build_contract_tx(relayer_id, deploy.call_data);
-            deploy_tx.witness = build_witness(relayer_id, &deploy_tx.contract_calls[0].data, vec![]);
-            let block4 = build_test_block(
+            // `initialize` is a ZK endpoint; the harness returns the proof and it must travel in
+            // the witness. The fixture used `vec![]` and the node refused the frame with
+            // "0 proofs but metadata declares 1 entries" — the proof was made and dropped.
+            init_tx.witness = build_witness(relayer_id, &init_tx.contract_calls[0].data, vec![init.proof]);
+            let mut block4 = build_test_block(
                 &chain.chain_state, height4,
-                vec![cb.tx,init_tx, deploy_tx],
+                vec![cb.tx, init_tx],
             )?;
+            // The chain's expected target moves with the registration block's timestamp; a
+            // fixture that declared `MAX` here was refused with "PoW target mismatch" once the
+            // earlier fixture defect stopped masking it.
+            let target = chain.expected_target(height4);
+            block4.header.target = target;
             let vm = build_accept_vm(&block4)?;
+            if target < BlockTarget::MAX {
+                block4.header.nonce = mine_test_nonce(&block4, &vm, target)?;
+            }
             crate::block_acceptor::accept_block(
                 &chain.chain_state, &block4, &[], &vm,
-                BlockTarget::MAX, None,
+                target, None,
             ).map_err(|e| dwow_core::Error::Custom(format!("accept_block relayer: {}", e)))?;
         }
         assert_eq!(chain.height(), height4,
-            "height must advance after relayer_endowment calls");
-        println!("  initialize + deploy_capital executed OK (height {} -> {})", height4.pred().unwrap_or(height4), height4);
+            "height must advance after relayer_endowment initialize");
+        println!("  initialize executed OK (height {} -> {})", height4.pred().unwrap_or(height4), height4);
 
         // --- Verify final state ---
         let final_height = chain.height();
         assert_eq!(
             final_height.get(),
             start_height.get() + 2,
-            "exactly two blocks commit: the wrapped-token registration and the relayer_endowment \
-             pair. The refused deposit commits nothing — that is what the height assertion above \
-             checks — and the withdrawal path is not driven here (`OBL-C246`)"
+            "exactly two blocks commit: the wrapped-token registration and relayer_endowment's \
+             initialize. The refused deposit commits nothing — that is what the height assertion \
+             above checks — and neither the withdrawal nor deploy_capital path is driven here \
+             (`OBL-C246`; both are covered by their own specs)"
         );
         println!(
             "\n=== Relayer Lifecycle Heavyweight: All assertions passed (final height: {}) ===",

@@ -245,16 +245,14 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 // value-bearing note against no external backing. The expectation is refusal, which
                 // is the deferral made explicit rather than a silent mint path. The refusal is the
                 // endpoint's own fail-closed `verify_chain_proof` arm (`InvalidDeposit` → `Custom(1)`).
-                // Provisional `RejectionNaming`: this row builds a child and its comment does not say
-                // whether the child commits, so the refuser is not settled by reading — the sweep's
-                // run (`OBL-C193`) promotes it.
-                expectation: EndpointExpectation::RejectionNaming(&["ContractError(Custom(1))"]),
+                //
+                // `RejectionByEndpoint`, not `RejectionNaming`: the child is a full PN issue and
+                // executes before the parent, so a refusal that named the child would satisfy a
+                // naming row while the deposit's own arm was never reached. `OBL-C246`.
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(1))"]),
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new(move |chain| {
-                    let r = chain.query_contract_state(cid, "deposits", &[])?;
-                    let _ = r;
-                    Ok(())
-                })),
+                // A rejected row commits nothing, so there is no state to verify.
+                verify_state: None,
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
@@ -285,9 +283,22 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                // The recorded state, not a query whose result is discarded (`OBL-C246`). The
+                // withdrawal's nullifier is `poseidon(1, secret, recipient_hash)` — the client's
+                // derivation and the circuit's — and `apply_withdraw_update` marks it spent in the
+                // `nullifiers` tree. A row that succeeded without that write did not do the thing
+                // this endpoint exists for.
                 verify_state: Some(Box::new(move |chain| {
-                    let r = chain.query_contract_state(cid, "nullifiers", &[])?;
-                    let _ = r;
+                    let nullifier = poseidon_hash([
+                        pallas::Base::from(1u64),
+                        secret,
+                        pallas::Base::from(400u64),
+                    ]);
+                    let stored = chain.query_contract_state(cid, "nullifiers", &nullifier.to_repr())?;
+                    assert!(
+                        stored.is_some(),
+                        "WithdrawV1 committed without recording its nullifier in the nullifiers tree"
+                    );
                     Ok(())
                 })),
                 generate: Box::new({
@@ -340,11 +351,8 @@ pub fn bridge_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(2))"]),
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new(move |chain| {
-                    let r = chain.query_contract_state(cid, "withdrawals", &[])?;
-                    let _ = r;
-                    Ok(())
-                })),
+                // A rejected row commits nothing, so there is no state to verify.
+                verify_state: None,
                 generate: Box::new({
                     let notes = notes.clone();
                     move || {
