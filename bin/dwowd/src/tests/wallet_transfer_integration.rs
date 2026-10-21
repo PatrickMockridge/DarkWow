@@ -918,7 +918,7 @@ async fn box_owner_scenario(tag: &str) -> TestResult<BoxOwnerScenario> {
             contract_id: box_cid_str.clone(), name: "box".into(), symbol: None,
             category: "Infrastructure".into(), description: Some("Box".into()),
             public: true, deployer_pubkey: "".into(), deploy_height: BlockHeight::new(1),
-            attestations_json: "[]".into(), lock_status: "unlocked".into(),
+            attestations_json: "[]".into(), manifest_wasm_verdict: String::new(), lock_status: "unlocked".into(),
         }, Some(manifest_toml),
     ).expect("store Box manifest");
     dww.wallet.store_zkas_binary(&box_cid_str, "Put", "Put",

@@ -105,6 +105,7 @@ fn test_promissory_note_capability_scan() {
                     deployer_pubkey: deployer_key.clone(),
                     deploy_height: BlockHeight::new(1),
                     attestations_json: "[]".into(),
+                    manifest_wasm_verdict: String::new(),
                     lock_status: "unlocked".into(),
                 },
                 Some(manifest_toml),
@@ -275,6 +276,7 @@ fn test_box_send_receive() {
                     deployer_pubkey: deployer_key.clone(),
                     deploy_height: BlockHeight::new(1),
                     attestations_json: "[]".into(),
+                    manifest_wasm_verdict: String::new(),
                     lock_status: "unlocked".into(),
                 },
                 Some(manifest_toml),
@@ -472,6 +474,7 @@ fn test_box_put_accepts_through_accept_block() {
                     deployer_pubkey: deployer_key.clone(),
                     deploy_height: BlockHeight::new(1),
                     attestations_json: "[]".into(),
+                    manifest_wasm_verdict: String::new(),
                     lock_status: "unlocked".into(),
                 },
                 Some(manifest_toml),
@@ -558,7 +561,7 @@ fn test_box_put_wallet_driven_generic_prover() {
                 contract_id: box_cid_str.clone(), name: "box".into(), symbol: None,
                 category: "Infrastructure".into(), description: Some("Box".into()),
                 public: true, deployer_pubkey: "".into(), deploy_height: BlockHeight::new(1),
-                attestations_json: "[]".into(), lock_status: "unlocked".into(),
+                attestations_json: "[]".into(), manifest_wasm_verdict: String::new(), lock_status: "unlocked".into(),
             }, Some(manifest_toml),
         ).expect("store Box manifest");
         dww.wallet.store_zkas_binary(&box_cid_str, "Put", "Put",
@@ -685,7 +688,7 @@ fn test_box_take_wallet_driven_generic_prover() {
                 contract_id: box_cid_str.clone(), name: "box".into(), symbol: None,
                 category: "Infrastructure".into(), description: Some("Box".into()),
                 public: true, deployer_pubkey: "".into(), deploy_height: BlockHeight::new(1),
-                attestations_json: "[]".into(), lock_status: "unlocked".into(),
+                attestations_json: "[]".into(), manifest_wasm_verdict: String::new(), lock_status: "unlocked".into(),
             }, Some(manifest_toml),
         ).expect("store Box manifest");
         dww.wallet.store_zkas_binary(&box_cid_str, "Take", "Take",
@@ -816,7 +819,7 @@ fn test_purse_deposit_withdraw_wallet_driven_generic_prover() {
                 contract_id: purse_cid_str.clone(), name: "purse".into(), symbol: None,
                 category: "Infrastructure".into(), description: Some("Purse".into()),
                 public: true, deployer_pubkey: "".into(), deploy_height: BlockHeight::new(1),
-                attestations_json: "[]".into(), lock_status: "unlocked".into(),
+                attestations_json: "[]".into(), manifest_wasm_verdict: String::new(), lock_status: "unlocked".into(),
             }, Some(manifest_toml),
         ).expect("store Purse manifest");
         dww.wallet.store_zkas_binary(&purse_cid_str, "Deposit", "Deposit",
@@ -1013,7 +1016,7 @@ fn test_box_transfer_to_new_owner_wallet_driven() {
                 contract_id: box_cid_str.clone(), name: "box".into(), symbol: None,
                 category: "Infrastructure".into(), description: Some("Box".into()),
                 public: true, deployer_pubkey: "".into(), deploy_height: BlockHeight::new(1),
-                attestations_json: "[]".into(), lock_status: "unlocked".into(),
+                attestations_json: "[]".into(), manifest_wasm_verdict: String::new(), lock_status: "unlocked".into(),
             }, Some(manifest_toml),
         ).expect("store Box manifest");
         dww_a.wallet.store_zkas_binary(&box_cid_str, "Put", "Put",
@@ -1136,7 +1139,7 @@ fn test_box_transfer_to_new_owner_wallet_driven() {
                 contract_id: box_cid_str.clone(), name: "box".into(), symbol: None,
                 category: "Infrastructure".into(), description: Some("Box".into()),
                 public: true, deployer_pubkey: "".into(), deploy_height: BlockHeight::new(1),
-                attestations_json: "[]".into(), lock_status: "unlocked".into(),
+                attestations_json: "[]".into(), manifest_wasm_verdict: String::new(), lock_status: "unlocked".into(),
             }, Some(include_str!("../../../../src/contract/box/manifest.toml")),
         ).expect("store Box manifest for B");
 
