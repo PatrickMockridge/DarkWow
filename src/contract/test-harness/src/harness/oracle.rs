@@ -263,7 +263,11 @@ impl OracleHarness {
         Ok(PushValueResult { call_data, proof, public_inputs, commitment })
     }
 
-    /// Attest to a value with a predicate (function code 0x02)
+    /// Attest to a value with a predicate (function code 0x02).
+    ///
+    /// The oracle circuit carries no value: it publishes the predicate and the threshold and
+    /// proves the operator's authorization (OBL-Z23). The value a predicate is evaluated
+    /// against lives in the attestation contract's claim.
     #[allow(clippy::too_many_arguments)]
     pub fn attest_value(
         &self,
@@ -273,10 +277,9 @@ impl OracleHarness {
         oracle_secret: pallas::Base,
         predicate: pallas::Base,
         threshold: pallas::Base,
-        value: pallas::Base,
     ) -> Result<AttestValueResult, Box<dyn std::error::Error>> {
         let mut input = AttestValueV1CallData::new(
-            oracle_id, attestation_id, oracle_secret, predicate, threshold, value,
+            oracle_id, attestation_id, oracle_secret, predicate, threshold,
         );
         // `OBL-C198`: public inputs first — see `register_oracle`.
         let public_inputs = input.compute_public_inputs();

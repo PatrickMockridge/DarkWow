@@ -1243,12 +1243,25 @@ impl CChainState {
             // the consensus `spent_nullifiers` set is the authoritative replay
             // gate. Reject the block if any spend nullifier is already spent, or
             // repeats within this block (double-spend).
-            let mut block_nfs = BTreeSet::new();
-            for tx in &block.transactions {
+            // The map keeps the first transaction that declared each nullifier, so a refusal
+            // names both sites. Without the indices the error says a nullifier is duplicated
+            // but not by whom, and the claim-versus-spend case (a coinbase transaction's
+            // creation marker against a spend of the same coin) is indistinguishable from two
+            // genuine spends.
+            let mut block_nfs: BTreeMap<Nullifier, usize> = BTreeMap::new();
+            for (tx_index, tx) in block.transactions.iter().enumerate() {
                 for nf in &tx.nullifiers {
-                    if self.has_nullifier(nf) || !block_nfs.insert(*nf) {
+                    if self.has_nullifier(nf) {
                         return Err(LinearError::BlockIsInvalid(format!(
-                            "duplicate spend nullifier (double-spend): {:?}",
+                            "duplicate spend nullifier (double-spend): {:?} in transaction \
+                             {tx_index} was already spent by an earlier block",
+                            nf
+                        )))
+                    }
+                    if let Some(first_tx) = block_nfs.insert(*nf, tx_index) {
+                        return Err(LinearError::BlockIsInvalid(format!(
+                            "duplicate spend nullifier (double-spend): {:?} declared by \
+                             transactions {first_tx} and {tx_index}",
                             nf
                         )))
                     }

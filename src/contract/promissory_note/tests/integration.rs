@@ -31,7 +31,7 @@ mod tests {
         model::{
             RevokeParamsV1, RevokeUpdateV1,
             CapAttrs, CapCommitment, Input, IssueParamsV1, IssueUpdateV1, Nullifier, Output,
-            OtcSwapUpdateV1, RegisterTypeParamsV1, RegisterTypeUpdateV1,
+            OtcSwapUpdateV1, RedeemParamsV1, RegisterTypeParamsV1, RegisterTypeUpdateV1,
             TransferParamsV1, TransferUpdateV1, MAX_VALUE,
         },
         PromissoryNoteFunction, PROMISSORY_NOTE_MAX_VALUE,
@@ -451,5 +451,50 @@ mod tests {
         let decoded: OtcSwapUpdateV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.nullifiers.len(), 1);
         assert_eq!(decoded.commitments.len(), 1);
+    }
+
+    /// `validate_child_redeem_v1` is a **generic RedeemV1 accessor**, not a stablecoin-shaped
+    /// helper: it decodes the child params and returns the receipt output's two commitments, and it
+    /// enforces no issuer policy. This is the neutral second caller the purity register asks for.
+    #[test]
+    fn validate_child_redeem_v1_is_a_generic_redeem_accessor() {
+        use dwow_promissory_note_contract::validation::validate_child_redeem_v1;
+        use dwow_sdk::crypto::note::AeadEncryptedNote;
+        use dwow_sdk::crypto::{BaseBlind, PublicKey};
+
+        let zero = pallas::Base::from(0u64);
+        let pk = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(7u64)));
+        let token_commit = pallas::Base::from(5u64);
+        let input = Input {
+            value_commit: pallas::Point::default(),
+            token_commit,
+            nullifier: Nullifier::from_bytes([9u8; 32]).expect("canonical non-zero"),
+            merkle_root: MerkleNode::new(zero),
+            user_data_enc: zero,
+            spend_hook: FuncId::none(),
+            signature_public: zero,
+        };
+        let output = Output {
+            value_commit: pallas::Point::default(),
+            token_commit,
+            commitment: CapCommitment::from_attributes(
+                zero,
+                0,
+                AssetId::DRKW,
+                FuncId::none(),
+                zero,
+                BaseBlind::ZERO,
+            ),
+            note: AeadEncryptedNote { ciphertext: vec![0u8; 32], ephem_public: pk },
+            spend_hook: FuncId::none(),
+        };
+        let params = RedeemParamsV1 { input, output, tx_nonce: zero };
+        let mut call_data = vec![0x01u8];
+        call_data.extend_from_slice(&params.encode().expect("redeem params encode"));
+
+        let (value_commit, returned_token_commit) =
+            validate_child_redeem_v1(&call_data).expect("the accessor decodes a RedeemV1 call");
+        assert_eq!(value_commit, pallas::Point::default());
+        assert_eq!(returned_token_commit, token_commit);
     }
 }

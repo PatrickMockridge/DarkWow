@@ -29,7 +29,7 @@
 //!   info tree | nullifiers tree | box Merkle tree | box roots tree
 
 use dwow_box_contract::model::{
-    BoxId, MerklePosition, PutParams, PutUpdate, StateNonce, TakeParams, TakeUpdate,
+    derive_box_tag, BoxId, MerklePosition, PutParams, PutUpdate, StateNonce, TakeParams, TakeUpdate,
 };
 use dwow_sdk::crypto::{pasta_prelude::PrimeField, MerkleNode, Nullifier};
 use dwow_sdk::pasta::pallas;
@@ -170,10 +170,10 @@ fn test_put_update_rejects_wrong_length() {
 
 #[test]
 fn test_take_params_encode_decode_roundtrip() {
-    // `contents_commit` is a field again — a parent contract reads it — while the two `Put` fields
-    // above remain off both this struct and the wire.
+    // `box_tag` is the one parent-facing term — a one-way function of the id and contents — while
+    // the two `Put` fields above remain off both this struct and the wire.
     let params = TakeParams {
-        contents_commit: pallas::Base::from(3u64),
+        box_tag: pallas::Base::from(3u64),
         nullifier: dummy_nullifier(),
         expected_root: dummy_merkle_node(),
         leaf_pos: MerklePosition::new(0),
@@ -187,7 +187,7 @@ fn test_take_params_encode_decode_roundtrip() {
     assert!(!encoded.is_empty());
 
     let decoded = TakeParams::decode(&encoded).expect("round-trip must succeed");
-    assert_eq!(decoded.contents_commit, params.contents_commit);
+    assert_eq!(decoded.box_tag, params.box_tag);
     assert_eq!(decoded.expected_root.to_bytes(), params.expected_root.to_bytes());
     assert_eq!(decoded.proof, params.proof);
 
@@ -237,4 +237,25 @@ fn test_decode_rejects_empty() {
     assert!(TakeParams::decode(&[]).is_err());
     assert!(PutUpdate::decode(&[]).is_err());
     assert!(TakeUpdate::decode(&[]).is_err());
+}
+
+// ── The generic object tag ──────────────────────────────────────────────────
+
+/// The tag is a function of the instance and the contents, and it distinguishes both. This is the
+/// second caller of `derive_box_tag` outside escrow: the helper is generic, and two boxes that
+/// differ in either operand do not collide. It does not prove the circuit constrains the tag — the
+/// box take fixture does that.
+#[test]
+fn box_tag_binds_the_id_and_the_contents() {
+    let id_a = pallas::Base::from(11u64);
+    let id_b = pallas::Base::from(12u64);
+    let contents_a = pallas::Base::from(21u64);
+    let contents_b = pallas::Base::from(22u64);
+
+    let base = derive_box_tag(id_a, contents_a);
+    assert_eq!(base, derive_box_tag(id_a, contents_a), "the tag is deterministic");
+    assert_ne!(base, derive_box_tag(id_b, contents_a), "a different id changes the tag");
+    assert_ne!(base, derive_box_tag(id_a, contents_b), "different contents change the tag");
+    assert_ne!(base, id_a, "the tag is not the id");
+    assert_ne!(base, contents_a, "the tag is not the contents commitment");
 }

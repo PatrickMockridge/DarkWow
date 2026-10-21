@@ -750,11 +750,6 @@ impl SerializedLen {
     /// identity. `usize: From<u32>` is not available to express it — that impl
     /// exists only for 16-bit targets — so the alternative would be an `as` at
     /// every call site, which is precisely what §A.4.5 and I12 exist to prevent.
-    #[expect(
-        clippy::cast_lossless,
-        reason = "u32 -> usize widens on 64-bit and is identity on wasm32; From<u32> for usize \
-                  exists only on 16-bit targets, so there is no lossless `From` to use"
-    )]
     pub const fn to_usize(self) -> usize {
         self.0 as usize
     }

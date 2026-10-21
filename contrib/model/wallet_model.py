@@ -8175,6 +8175,10 @@ _DERIVED_RULE_ARITY = {
     "owner_pub": 1,
     "token_commit": 2,
     "purse_id": 3,
+    # The generic one-way object tag: `poseidon(4, box_id, contents_commit)`. Two operands,
+    # both of which stay in the witness (`box::Take`), and the tag is published as an instance
+    # for a parent to compare. Mirrors `purse_id`'s role, one object narrower (`OBL-C184`).
+    "box_tag": 2,
     "coin": 6,
     "pedersen_x": 2,
     "pedersen_y": 2,
@@ -8666,10 +8670,11 @@ CONTRACT_STRUCTS = {
             ("tx_nonce", "pallas_base"),
         ],
         "take": [
-            # `contents_commit` is published, and read by a *parent* — `escrow::ClaimV1` decodes the
-            # child call to check the box taken is the one the escrow named. Box's own host reads
-            # none of the contents fields, which is why this one is back and `Put`'s are not.
-            ("contents_commit", "pallas_base"),
+            # `box_tag` is published, and read by a *parent* — `escrow::ClaimV1` compares it to the
+            # tag it derives from its own record. It is the one-way `poseidon(4, box_id,
+            # contents_commit)`: the parent checks *which box and what it holds*, while neither
+            # operand reaches the wire (`OBL-C184`). Box's own host reads neither.
+            ("box_tag", "pallas_base"),
             ("nullifier", "pallas_base"),
             ("expected_root", "pallas_base"), ("leaf_pos", "u32"),
             ("merkle_path", "merkle_path"), ("proof", "proof"),
@@ -9536,10 +9541,11 @@ def test_wire_layout_matches_contract_structs():
         + [F("new_contents_commit", "pallas_base")]
     ) == 1224, "the off_wire field must be the difference between 1192 and 1224"
 
-    # box take (TakeParams): 8 fields → 1192 bytes. `contents_commit` is published — a parent reads
-    # it through the child call to check the box taken is the one it named — so 1160 + 32.
+    # box take (TakeParams): 8 fields → 1192 bytes. `box_tag` is published — a parent reads it
+    # through the child call to check the box taken is the one it named — so 1160 + 32. It is the
+    # one-way tag `poseidon(4, box_id, contents_commit)`, not the contents preimage (`OBL-C184`).
     box_take = [
-        F("contents_commit", "pallas_base"),
+        F("box_tag", "pallas_base"),
         F("nullifier", "pallas_base", witness=3),
         F("expected_root", "pallas_base", witness=4), F("leaf_pos", "u32", witness=6),
         F("merkle_path", "merkle_path", witness=7), F("proof", "proof"),

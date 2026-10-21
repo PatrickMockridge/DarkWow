@@ -1,6 +1,13 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod capability;
+// The WASM exports are for the wasm target only. Host consumers (dwowd, dwow_chain,
+// the test harness) request the `no-entrypoint` feature; without this gate the
+// feature was declared but never consulted, so every host link of this crate also
+// exported `__entrypoint`/`__initialize`/`__metadata`/`__update`/`__dwow_alloc`/
+// `__dwow_dealloc` — and linking two such contract crates was a duplicate-symbol
+// failure (found building `dwowd` with `box` and `native_token`, 2026-10-21).
+#[cfg(not(feature = "no-entrypoint"))]
 pub mod entrypoint;
 pub mod error;
 pub mod model;

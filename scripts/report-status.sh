@@ -135,6 +135,7 @@ INSTRUMENTS = [
     ("manifest_entrypoint",        "bash scripts/check-manifest-entrypoint-agreement.sh"),
     ("schema_decoder",             "python3 scripts/check-schema-decoder-agreement.py"),
     ("genesis_purity",             "bash scripts/check-genesis-purity.sh"),
+    ("genesis_primitive_purity",   "bash scripts/check-genesis-primitive-purity.sh"),
     ("length_cast_counter",        "bash contrib/length_cast_counts.sh"),
 ]
 

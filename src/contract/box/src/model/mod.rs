@@ -1,6 +1,9 @@
 use crate::error::BoxError;
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, MerkleNode, Nullifier},
+    crypto::{
+        constants::DRK_POSEIDON_DOMAIN_COMMITMENT, pasta_prelude::PrimeField, poseidon_hash,
+        MerkleNode, Nullifier,
+    },
     error::ContractError,
     pasta::pallas,
 };
@@ -191,29 +194,26 @@ impl PutUpdate {
 // plaintext, committed to byte-for-byte by the transaction hash. Measured before
 // removal: no host read either, and the wallet's prover takes both from its own
 // record (`CapRecord.object_id`, `.state_nonce`) through `note:` witness sources.
-// **`contents_commit` is back, and the reason is a parent contract rather than a preference.**
-// It left this struct in the 2026-09-28 pass, on the correct reading that box's own host never reads
-// it and its witness slot could take `note:user_data` from the wallet's record. **That reading was
-// half the pair.** `escrow`'s `ClaimV1` decodes the child call —
-// `dwow_box_contract::model::TakeParams::decode(&box_call.data[1..])` — and compares this field
-// against the `claim_box_contents` on its own record, which is what makes the child call a claim of
-// *this* escrow's box rather than a box-shaped formality. With the field off the wire the parent had
-// no operand and `escrow` stopped compiling.
+// **The parent-facing term is `box_tag`, not `contents_commit`.** A parent that must bind to a
+// specific child object needs *something* public about that object, and an L1 object's purpose is to
+// publish nothing. `purse` answered its half with `derived_purse_id`, a one-way function of the id;
+// `box_tag = poseidon(4, box_id, contents_commit)` is the same shape. It binds the box instance and
+// its contents, publishes neither raw, and is constrained in `take.zk` against the same witnesses the
+// leaf folds in, so a prover cannot publish an arbitrary tag. `contents_commit` is back to a
+// `note:user_data` witness and is no longer on the wire.
 //
-// **So the wire question and the composability question are the same question, and this field is
-// where they meet**: a parent that must bind to a specific child object needs *something* public
-// about that object, and an L1 object's whole purpose is to publish nothing. `purse` resolved its
-// half of this with `derived_purse_id` — a one-way function of the id, which `privacy.md` §5.5
-// permits precisely because it is not the id. What box needs is the analogous thing for *contents*,
-// and this is not it: `contents_commit` is the app's preimage-commitment, and for a guessable
-// preimage it is the "which box" leak §2.4 forbids. That design step is recorded rather than taken.
+// **The privacy limit is real and stated:** the tag is a one-way pseudonym, not a secrecy proof. If
+// both preimages are derivable from public data (escrow's are), an observer can compute the tag and
+// link the claim to the escrow. What it removes is the literal contents commitment; it does not
+// create secrecy the consumer did not have.
 // ============================================================================
 
 #[derive(Debug, Clone)]
 pub struct TakeParams {
-    /// **Fold into the leaf, and read by a parent.** See the note above: `escrow::ClaimV1` compares
-    /// this against its own record, so it is the child's pointer back to the object its parent named.
-    pub contents_commit: pallas::Base,
+    /// **The one-way object tag, and read by a parent.** `escrow::ClaimV1` compares it against the
+    /// tag it derives from its own record, so it is the child's pointer back to the object its parent
+    /// named without publishing the id or the contents. See the note above.
+    pub box_tag: pallas::Base,
     pub nullifier: Nullifier, pub expected_root: MerkleNode,
     pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>,
     /// See `PutParams`'s note: `tx_binding` is **removed** (`OBL-C198`) — the commitment covers
@@ -222,16 +222,25 @@ pub struct TakeParams {
     pub tx_nonce: pallas::Base,
 }
 
+/// The generic box object tag: `poseidon(4, box_id, contents_commit)`.
+///
+/// One definition, shared by `take.zk`'s constraint and every consumer. It contains no consumer
+/// name and no policy: a parent that knows the two witnesses' values can name the box; one that does
+/// not cannot. The domain is the tree's existing commitment domain (`DRK_POSEIDON_DOMAIN_COMMITMENT`),
+/// the same one `purse`'s `derived_purse_id` uses, so no new SDK constant and no all-artifact stale.
+pub fn derive_box_tag(box_id: pallas::Base, contents_commit: pallas::Base) -> pallas::Base {
+    poseidon_hash([DRK_POSEIDON_DOMAIN_COMMITMENT, box_id, contents_commit])
+}
+
 impl dwow_serial::Encodable for TakeParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TakeParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl TakeParams {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let path_bytes: Vec<u8> = self.merkle_path.iter().flat_map(|n| n.to_bytes()).collect();
-        // hdr = 100 (was 68 for one commit, and 164 before that): `box_id` and `state_nonce` are off
-        // the wire; `contents_commit` is back on it because a parent reads it. The 32 bytes it costs
-        // are the price of `escrow::ClaimV1` being able to name the box it is claiming.
+        // hdr = 100: `box_id` and `state_nonce` are off the wire; `box_tag` is the one 32-byte
+        // parent-facing term, a one-way function of both plus the contents commitment.
         let hdr = 100usize; let mut b = Vec::with_capacity(hdr + path_bytes.len() + 1usize + self.proof.len() + 64usize);
-        b.extend_from_slice(&self.contents_commit.to_repr());
+        b.extend_from_slice(&self.box_tag.to_repr());
         b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.expected_root.to_bytes()); b.extend_from_slice(&self.leaf_pos.to_le_bytes());
         b.extend_from_slice(&path_bytes);
@@ -246,7 +255,7 @@ impl TakeParams {
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         let hdr = 100usize; if data.len() <= hdr + 1024usize { return Err(BoxError::DecodeFailure{field:"TakeParams".into()}.into()); }
-        let contents_commit = read_base(read_slice(data, 0, 32)?)?;
+        let box_tag = read_base(read_slice(data, 0, 32)?)?;
         let nullifier = read_nullifier(read_slice(data, 32, 32)?)?;
         let expected_root = read_merkle_node(read_slice(data, 64, 32)?)?;
         let leaf_pos = MerklePosition::from_le_bytes(read_field::<4>(data, 96)?);
@@ -263,7 +272,7 @@ impl TakeParams {
         // `tx_binding` is not read: it is derived by `get_metadata` (`OBL-C198`), so `tx_nonce`
         // now sits where the pair used to start.
         let tx_nonce = read_base(read_slice(data, pos2, 32)?)?;
-        Ok(TakeParams { contents_commit, nullifier, expected_root, leaf_pos, merkle_path, proof, tx_nonce })
+        Ok(TakeParams { box_tag, nullifier, expected_root, leaf_pos, merkle_path, proof, tx_nonce })
     }
 }
 

@@ -125,12 +125,12 @@ description = "Fee collection accumulator"
 
 [[circuits]]
 name = "Fee_V3"
-namespace = "native_token"
+namespace = "Fee_V3"
 
 [[circuits]]
 name = "Mint_V2"
-namespace = "native_token"
+namespace = "Mint_V2"
 
 [[circuits]]
 name = "Burn_V2"
-namespace = "native_token"
+namespace = "Burn_V2"

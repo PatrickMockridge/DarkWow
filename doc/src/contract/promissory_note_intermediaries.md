@@ -228,6 +228,15 @@ PN exports three validation helpers for parent contracts. They are always
 compiled (not behind `no-entrypoint`) so caller contracts can import them
 regardless of feature flags.
 
+**None of the three encodes a consumer's policy.** The first two compare a
+caller-supplied id and a caller-derived Pedersen amount; `validate_child_redeem_v1`
+decodes a `RedeemV1` child and returns the receipt output's `(value_commit,
+token_commit)` — it enforces nothing. The zero-value receipt is a `RedeemV1`
+circuit invariant, not an issuer policy: stablecoin happens to be its only
+caller today, but the helper is a generic accessor, and a neutral second caller
+in PN's integration tests pins that. They are class B in
+[Genesis Primitive Purity](../arch/genesis-purity.md).
+
 ### `validate_child_contract_id`
 
 ```rust

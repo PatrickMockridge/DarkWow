@@ -63,6 +63,7 @@ Every operation follows the same architectural pattern:
 box_leaf  = poseidon_hash(DOMAIN_MERKLE_LEAF, box_id, contents_commit, state_nonce, owner_pub)
 nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, state_nonce)
 owner_pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)
+box_tag   = poseidon_hash(DOMAIN_COMMITMENT, box_id, contents_commit)   # the parent-facing term
 ```
 
 ## The Wire — what a call publishes
@@ -76,18 +77,18 @@ params are the public inputs and nothing else, and this table is the contract of
 | Call | Carries | Does **not** carry | Header |
 |---|---|---|---|
 | `Put` | `nullifier`, `expected_root`, `new_leaf`, the four commitment coordinates, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `box_id`, `old_state_nonce`, `new_state_nonce`, `old_contents_commit`, **`new_contents_commit`** | 100 bytes |
-| `Take` | **`contents_commit`**, `nullifier`, `expected_root`, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `box_id`, `state_nonce` | 100 bytes |
+| `Take` | **`box_tag`**, `nullifier`, `expected_root`, `tx_binding`, `tx_nonce`, `leaf_pos`, `merkle_path`, `proof` | `box_id`, `state_nonce`, `contents_commit` | 100 bytes |
 
-**`Take`'s `contents_commit` is published, and it is the one entry this contract declares in
-`scripts/check-l1-wire-conformance.sh`.** The reason is not box's: `escrow::ClaimV1` decodes the box
-child's call and compares this field against `claim_box_contents` on its own record, which is what
-makes a claim a claim of *that* escrow's box. A parent has no key to the child's AEAD note, so the
-value has to be readable by the parent or the check cannot exist. The gate's rule (b) — "does this
-contract's entrypoint read it" — cannot see a reader one contract over, which is why the declaration
-carries the reason rather than the gate deriving it. **`OBL-C184` is the tension this exposes and does
-not resolve**: a parent binding to a specific object needs something public about it, and an L1 object
-exists to publish nothing. `purse`'s `derived_purse_id` is the shape of an answer for *identity*; box
-has no equivalent for *contents*.
+**`Take`'s `box_tag` is the one parent-facing term, and it is a one-way function of the object.**
+`box_tag = poseidon(4, box_id, contents_commit)` (`model::derive_box_tag`), constrained in
+`take.zk` against the same witnesses the leaf folds in. A parent that knows the box's id and
+contents commitment names it with the tag; neither value reaches the wire, and a proof carrying an
+arbitrary tag fails verification. `escrow::ClaimV1` compares it against the tag it derives from its
+own record, which is what makes a claim a claim of *that* escrow's box. This replaced the
+`contents_commit` field that was on the wire for escrow (`OBL-C184`): the tag is strictly less
+information and `scripts/check-l1-wire-conformance.sh` now declares **no** leak. The privacy limit
+is stated in `privacy.md`: for a consumer whose preimages are derivable from public data (escrow's
+are), the tag is computable too; it removes the literal commitment, not the link.
 
 **How the removed values reach the circuit.** Three routes:
 
@@ -112,9 +113,13 @@ unit 4, and were never *available* either — opaque to observers, which is righ
 which is not. The box layer never receives a preimage, so it cannot leak one; the preimage of an
 application's commitment belongs to that application.
 
-**And one gap this page cannot paper over**: §C.8.2 requires an L1 note to carry `nullifier`,
-`merkle_root` and `leaf_position` for trajectory identification, and Box's schema carries none of them.
-That is `OBL-C181`, it is a different gap from the one above, and closing one does not close the other.
+**The note also carries the trajectory** (§C.8.2, `OBL-C181`): `nullifier` and `merkle_root`, both
+circuit-constrained witnesses of the consumed box — its nullifier (slot 5) and the root that anchored it
+(slot 6). A holder, or a consumer holding only the note, can match the new box to the object that produced
+it and to the state it came from. The third field that section used to require, the new leaf's position,
+is **structural rather than a note field**: the tree assigns a position when the call is applied, after
+the note is built, and the scan recovers it by replaying the contract tree in call order. §C.8.2 was
+corrected in the same change rather than carrying a value the note cannot prove.
 
 ## Database Trees
 

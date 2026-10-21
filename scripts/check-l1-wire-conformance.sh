@@ -103,9 +103,12 @@ L1_CONTRACTS = ["promissory_note", "box", "purse"]
 # about that object, and an L1 object exists to publish nothing.** `purse` answered its half with
 # `derived_purse_id`, a one-way function of the id. Box's answer is not this field — for a guessable
 # preimage `contents_commit` *is* the "which box" leak §2.4 forbids — and it is not taken here.
-DECLARED = {
-    ("box", "Take", 1, "contents_commit"): "read by `escrow::ClaimV1` through the child call, not by box's own host — the gate's rule (b) only looks at the owning contract",
-}
+# **EMPTY, 2026-10-21 — the last declared leak retired.** `Take`'s `contents_commit` was on the wire
+# because `escrow::ClaimV1` read it. It is replaced by `box_tag = poseidon(4, box_id,
+# contents_commit)`, a one-way object tag constrained in `take.zk`; `contents_commit` is a
+# `note:user_data` witness again and the parent compares the tag. The declaration expires exactly as
+# this gate's header says it should: removing the field from the wire is what pays it.
+DECLARED = {}
 
 def circuit_body(text):
     """The `circuit "..." { ... }` block, with `#` comments stripped."""

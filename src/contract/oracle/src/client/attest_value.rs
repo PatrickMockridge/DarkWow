@@ -71,7 +71,6 @@ pub struct AttestValueV1CallData {
     pub oracle_secret: pallas::Base,
     pub predicate: pallas::Base,
     pub threshold: pallas::Base,
-    pub value: pallas::Base,
     // Public inputs
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -84,7 +83,6 @@ impl AttestValueV1CallData {
         oracle_secret: pallas::Base,
         predicate: pallas::Base,
         threshold: pallas::Base,
-        value: pallas::Base,
     ) -> Self {
         Self {
             oracle_id,
@@ -92,7 +90,6 @@ impl AttestValueV1CallData {
             oracle_secret,
             predicate,
             threshold,
-            value,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
@@ -128,13 +125,13 @@ impl AttestValueV1CallData {
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
             // Circuit order: oracle_id, attestation_id, oracle_secret, predicate, threshold,
-            //   value, tx_commitment, tx_nonce, tx_binding
+            //   tx_commitment, tx_nonce, tx_binding. There is no value witness: the circuit
+            //   publishes the predicate and the threshold and carries no value (OBL-Z23).
             Witness::Base(Value::known(self.oracle_id)),
             Witness::Base(Value::known(self.attestation_id)),
             Witness::Base(Value::known(self.oracle_secret)),
             Witness::Base(Value::known(self.predicate)),
             Witness::Base(Value::known(self.threshold)),
-            Witness::Base(Value::known(self.value)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(tx_binding)), // tx_binding (computed by circuit)

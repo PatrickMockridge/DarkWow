@@ -236,6 +236,13 @@ run_gate "genesis purity (syntactic)" \
     bash "$SCRIPT_DIR/check-genesis-purity.sh"
 run_gate "control: genesis purity can fail" \
     bash "$SCRIPT_DIR/check-genesis-purity.sh" --self-test
+# The nine o-cap primitives' surface: no foreign contract code/id/manifest dependency, no
+# cross-contract child call, every validation helper registered, L1 ledger = register. Its control
+# plants six defects (and its clean twin must pass).
+run_gate "genesis primitive purity" \
+    bash "$SCRIPT_DIR/check-genesis-primitive-purity.sh"
+run_gate "control: genesis primitive purity can fail" \
+    bash "$SCRIPT_DIR/check-genesis-primitive-purity.sh" --self-test
 run_gate "circuit domain separation"      bash "$SCRIPT_DIR/check-circuit-domain-separation.sh"
 # The docs-vs-code review's doc-fact gates (2026-10-10). Nothing read a doc's prose claim about a code
 # fact; `check-contract-doc-functions.sh` compares a contract doc's function/opcode table to its manifest
@@ -796,7 +803,7 @@ run_gate "capability kernel (bespoke paths, OBL-C130)" \
 # prose. Falsified before wiring: `--self-test` plants a `param:` on a witness-only slot in a copy of the
 # three manifests and requires the finding to be reported (it is), so the gate's own detector is checked
 # on every run rather than argued.
-run_gate "L1 wire conformance (22 declared leaks)" \
+run_gate "L1 wire conformance (declared-leak ledger)" \
                                           bash "$SCRIPT_DIR/check-l1-wire-conformance.sh"
 
 run_gate "L1 wire conformance — planted defect (negative control)" \

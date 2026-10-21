@@ -314,7 +314,6 @@ impl RegisterSeriesUpdateV1 {
         b
     }
 
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != BondSeriesInfo::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(

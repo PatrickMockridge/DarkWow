@@ -94,6 +94,12 @@ pub enum DerivedRule {
     TokenCommit { asset_id: usize, blind: usize },
     /// `poseidon(4, owner_pub, asset_id, purse_id)`
     PurseId { owner_pub: usize, asset_id: usize, purse_id: usize },
+    /// `poseidon(4, box_id, contents_commit)` — the box's one-way object tag.
+    ///
+    /// The generic counterpart of `PurseId`: a parent that knows a box's id and contents
+    /// commitment can name that box without either raw value reaching the wire. The tag is
+    /// constrained in `take.zk`, which is what stops a prover publishing an arbitrary one.
+    BoxTag { id: usize, contents: usize },
     /// `poseidon(4, coin_public, value, asset_id, spend_hook, user_data, blind)`
     Coin { coin_public: usize, value: usize, asset_id: usize, spend_hook: usize, user_data: usize, blind: usize },
     /// `ec_get_x(pedersen(value, blind))`
@@ -130,6 +136,7 @@ impl DerivedRule {
             DerivedRule::OwnerPub { secret } => vec![secret],
             DerivedRule::TokenCommit { asset_id, blind } => vec![asset_id, blind],
             DerivedRule::PurseId { owner_pub, asset_id, purse_id } => vec![owner_pub, asset_id, purse_id],
+            DerivedRule::BoxTag { id, contents } => vec![id, contents],
             DerivedRule::Coin { coin_public, value, asset_id, spend_hook, user_data, blind } =>
                 vec![coin_public, value, asset_id, spend_hook, user_data, blind],
             DerivedRule::PedersenX { value, blind } => vec![value, blind],
@@ -287,6 +294,7 @@ fn parse_derived_rule(s: &str) -> Result<DerivedRule, crate::error::ProverError>
         "owner_pub" => { let a = slots(1)?; DerivedRule::OwnerPub { secret: a[0] } }
         "token_commit" => { let a = slots(2)?; DerivedRule::TokenCommit { asset_id: a[0], blind: a[1] } }
         "purse_id" => { let a = slots(3)?; DerivedRule::PurseId { owner_pub: a[0], asset_id: a[1], purse_id: a[2] } }
+        "box_tag" => { let a = slots(2)?; DerivedRule::BoxTag { id: a[0], contents: a[1] } }
         "coin" => { let a = slots(6)?; DerivedRule::Coin { coin_public: a[0], value: a[1], asset_id: a[2], spend_hook: a[3], user_data: a[4], blind: a[5] } }
         "pedersen_x" => { let a = slots(2)?; DerivedRule::PedersenX { value: a[0], blind: a[1] } }
         "pedersen_y" => { let a = slots(2)?; DerivedRule::PedersenY { value: a[0], blind: a[1] } }

@@ -140,7 +140,7 @@ transfer to `ProposeClaimV1`, whose single child is a MultiSig approval.
 | Attestation | `VerifyClaimV1` | 0x04 |
 | promissory_note | `TransferV1` | 0x04 |
 
-Note: Attestation::VerifyClaimV1 and promissory_note::TransferV1 both use opcode 0x04. Contracts distinguish them by `contract_id` in the child call's `ContractCall` struct, not by opcode alone. The calling contract only validates the function code byte; the transaction builder sets the correct `contract_id` for each child.
+Note: Attestation::VerifyClaimV1 and promissory_note::TransferV1 both use opcode 0x04. Contracts distinguish them by `contract_id` in the child call's `ContractCall` struct, not by opcode alone. The calling contract validates **both** the function code byte and the child's contract id against the id it holds in its own info tree (`validate_child_contract_id`); the transaction builder sets the id, but the parent is what checks it. This line said the parent validates only the byte until 2026-10-21, contradicting §Child Call Validation above and every caller in the tree.
 
 ## Security Properties
 

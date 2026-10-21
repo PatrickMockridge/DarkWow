@@ -19,9 +19,9 @@ dwow_core = {path = "../../", features = ["async-daemonize", "blockchain", "bs58
 dwow_chain = {path = "../../src/linear", features = ["async", "sync-p2p", "fee-window", "pow"]}
 dwow_mempool = {path = "../../crates/dwow-mempool"}
 dwow_promissory_note_contract = {path = "../../src/contract/promissory_note", features = ["client", "no-entrypoint"]}
-dwow_native_token_contract = {path = "../../src/contract/native_token", features = ["client"]}
+dwow_native_token_contract = {path = "../../src/contract/native_token", features = ["client", "no-entrypoint"]}
 dwow_deployooor_contract = {path = "../../src/contract/deployooor", features = ["client"]}
-dwow_purse_contract = {path = "../../src/contract/purse", features = ["client"]}
+dwow_purse_contract = {path = "../../src/contract/purse", features = ["client", "no-entrypoint"]}
 dwow_baccarat_contract = {path = "../../src/contract/baccarat", features = ["client", "no-entrypoint"]}
 dwow_bearer_bond_contract = {path = "../../src/contract/bearer_bond", features = ["client", "no-entrypoint"]}
 dwow-sdk = {path = "../../src/sdk", features = ["json"]}

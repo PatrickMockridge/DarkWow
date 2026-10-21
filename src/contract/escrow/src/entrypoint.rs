@@ -584,10 +584,11 @@ fn escrow_claim_process_instruction_v1(
     // this endpoint with it, consuming a capability that had nothing to do with the escrow. That is
     // wrong-object substitution, and it is the reason a claim capability could not be said to exist.
     //
-    // `contents_commit` is the first field of `TakeParams` on the wire, and the escrow's own recorded
-    // `claim_box_contents` is `poseidon_hash(DOMAIN, id, value)` — a public derivation, so whoever
-    // creates the box off-chain computes the same value and `Box::PutV1` folds it into the leaf. The
-    // comparison is what makes the child call a *claim capability* rather than a box-shaped formality.
+    // `box_tag` is the first field of `TakeParams` on the wire, and it is a one-way function of the
+    // box's id and contents — both derived by this escrow from its own record. Whoever creates the
+    // box off-chain computes the same two values and `Box::PutV1` folds the contents into the leaf.
+    // The comparison is what makes the child call a *claim capability* rather than a box-shaped
+    // formality, and it publishes neither the id nor the contents.
     let box_params = dwow_box_contract::model::TakeParams::decode(&box_call.data[1..])
         .map_err(|_| EscrowError::InvalidChildCall)?;
 
@@ -614,13 +615,20 @@ fn escrow_claim_process_instruction_v1(
         return Err(EscrowError::OnlySellerCanClaim.into())
     }
 
-    // **The wrong-object check, and it runs before the state check deliberately.** The commitment it
-    // compares against lives on the record, and the record is loaded above. A take of somebody else's
-    // box is refused here whether or not the escrow is funded, which is the order the child checks
-    // follow everywhere else in this contract: is this call *about* the right objects, then is the
-    // object in the right state. It also means a caller learns "wrong capability" rather than "not
-    // funded" when both are true, which is the more specific and more actionable of the two.
-    if box_params.contents_commit != escrow.claim_box_contents {
+    // **The wrong-object check, and it runs before the state check deliberately.** The terms it
+    // compares live on the record, and the record is loaded above. A take of somebody else's box is
+    // refused here whether or not the escrow is funded, which is the order the child checks follow
+    // everywhere else in this contract: is this call *about* the right objects, then is the object
+    // in the right state. It also means a caller learns "wrong capability" rather than "not funded"
+    // when both are true, which is the more specific and more actionable of the two.
+    //
+    // The child publishes `box_tag = poseidon(4, box_id, contents_commit)`, a generic one-way term
+    // (`box::model::derive_box_tag`). The escrow derives the box id and the contents it created and
+    // the tag over them; neither value is on the wire, and a different box — different id or
+    // different contents — produces a different tag.
+    let expected_box_tag =
+        Escrow::claim_box_tag(escrow.id, escrow.value, escrow.claim_box_contents);
+    if box_params.box_tag != expected_box_tag {
         msg!("[ClaimV1] Error: the box taken is not this escrow's claim capability");
         return Err(EscrowError::InvalidChildCall.into())
     }

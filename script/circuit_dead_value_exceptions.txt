@@ -40,3 +40,31 @@
 #     corrected in the checker leaves this evidence behind.
 #
 # Register row: `OBL-Z23`.
+#
+# ---------------------------------------------------------------------------
+# Adjudicated entries
+# ---------------------------------------------------------------------------
+#
+# Four values in the oracle's `aggregate.zk` are live through constraint calls this checker
+# does not treat as seeds. Its `seeds` set is built from `constrain_instance` and
+# `constrain_equal_*` only (see the module docstring), while these reach `less_than_strict`
+# and `range_check` — constraints, by any reading, and the two that carry the file's integer
+# division and its HAZOP CRIT-4 bound. They are not removed: removing them would remove the
+# checks. The entry exists so the blind spot is recorded rather than the values deleted.
+
+src/contract/oracle/proof/aggregate.zk : res_plus_one : feeds `upper = base_mul(res_plus_one, sum_weights)`, which is a bound in `less_than_strict(weighted_sum, upper)` at aggregate.zk:152, a constraint the checker's seed set omits. OBL-Z23 checker blind spot; the value is a check, not a discard.
+
+src/contract/oracle/proof/aggregate.zk : upper : the upper bound of `less_than_strict(weighted_sum, upper)` at aggregate.zk:152, a constraint the checker's seed set omits. OBL-Z23 checker blind spot; the value is a check, not a discard.
+
+src/contract/oracle/proof/aggregate.zk : diff_max : passed to `range_check(64, diff_max)` at aggregate.zk:166, the HAZOP CRIT-4 bound on `result <= max_result`; a constraint the checker's seed set omits. OBL-Z23 checker blind spot.
+
+src/contract/oracle/proof/aggregate.zk : diff_min : passed to `range_check(64, diff_min)` at aggregate.zk:170, the HAZOP CRIT-4 bound on `result >= min_result`; a constraint the checker's seed set omits. OBL-Z23 checker blind spot.
+
+# Two constant aliases that the informational section would call "never referenced". They ARE
+# referenced — as the lower bound of a `less_than_strict` — which is not in the checker's seed
+# set. Deleting them because of that message would delete the check. Declared so the report
+# states the adjudication instead of inviting the deletion.
+
+src/contract/oracle/proof/aggregate.zk : ZERO : the strict lower bound in `less_than_strict(ZERO, sum_weights)` at aggregate.zk:145, a constraint the checker's seed set omits. A constant alias, not a value computed from a witness. OBL-Z23.
+
+src/contract/promissory_note/proof/revoke.zk : ZERO : the strict lower bound in `less_than_strict(ZERO, value)` at revoke.zk:69, a constraint the checker's seed set omits. A constant alias, not a value computed from a witness. OBL-Z23.

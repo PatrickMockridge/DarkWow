@@ -15,7 +15,6 @@ witness "RegisterType_V2" {
     Base token_blind,
     Base coin_public,
     Base value,
-    Base coin_asset_id,
     Base coin_spend_hook,
     Base user_data,
     Base commitment_blind,

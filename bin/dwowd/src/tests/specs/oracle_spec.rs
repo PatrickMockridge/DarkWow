@@ -67,8 +67,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("attestation must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.attest_value(&[], oracle_id, pallas::Base::from(100u64),
-                        oracle_secret, pallas::Base::from(0u64), pallas::Base::from(42u64),
-                        pallas::Base::from(42u64))
+                        oracle_secret, pallas::Base::from(0u64), pallas::Base::from(42u64))
                         .map_err(modules::error_bridge::bridge)?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),

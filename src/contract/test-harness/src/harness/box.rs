@@ -43,7 +43,8 @@ impl BoxHarness {
     /// The box id, the state nonces, the keys, the merkle path and the expected root are the fixture
     /// box's own spec exercises against a real store; only the contents vary. That is what lets
     /// another contract require a take of *its* box rather than of any box: the caller puts its
-    /// commitment and the verifier's host compares `TakeParams.contents_commit` against it.
+    /// contents and the parent compares `TakeParams.box_tag` against the tag it derives from its own
+    /// record.
     pub fn put_contents(&self, contents: pallas::Base) -> Result<BoxPutResult> {
         self.put_contents_with_successor(contents, pallas::Base::from(1u64))
     }
@@ -65,7 +66,7 @@ impl BoxHarness {
     }
 
     fn put_inner(&self, contents: pallas::Base, nsn: pallas::Base, zero_nullifier_witness: bool) -> Result<BoxPutResult> {
-        let plan = self.put_prepare_inner(contents, nsn, zero_nullifier_witness)?;
+        let plan = self.put_prepare_inner(contents, pallas::Base::from(1u64), nsn, zero_nullifier_witness)?;
         // Binding over this call **alone**, which is correct here and only here: box's own spec
         // makes the put the whole transaction. A put used as a child must not use this — see
         // [`Self::put_prepare`].
@@ -85,15 +86,24 @@ impl BoxHarness {
         self.put_prepare_with_successor(contents, pallas::Base::from(1u64))
     }
 
+    /// [`Self::put_prepare`] with the box id chosen by the caller.
+    ///
+    /// A parent that will later claim this box by its generic `box_tag` must create it with the id
+    /// it derives (escrow's `derive_claim_box_id`), because the tag is a function of both the id and
+    /// the contents. The default id is 1.
+    pub fn put_prepare_with_id(&self, contents: pallas::Base, box_id: pallas::Base) -> Result<BoxPutPlan> {
+        self.put_prepare_inner(contents, box_id, pallas::Base::from(1u64), false)
+    }
+
     /// [`Self::put_prepare`] with the successor nonce supplied by the caller — the child-side
     /// counterpart of [`Self::put_contents_with_successor`].
     pub fn put_prepare_with_successor(&self, contents: pallas::Base, nsn: pallas::Base) -> Result<BoxPutPlan> {
-        self.put_prepare_inner(contents, nsn, false)
+        self.put_prepare_inner(contents, pallas::Base::from(1u64), nsn, false)
     }
 
-    fn put_prepare_inner(&self, contents: pallas::Base, nsn: pallas::Base, zero_nullifier_witness: bool) -> Result<BoxPutPlan> {
+    fn put_prepare_inner(&self, contents: pallas::Base, bid: pallas::Base, nsn: pallas::Base, zero_nullifier_witness: bool) -> Result<BoxPutPlan> {
         let dnl=pallas::Base::from(1u64);let dml=pallas::Base::from(5u64);let dsig=pallas::Base::from(7u64);
-        let os=pallas::Base::from(42u64);let bid=pallas::Base::from(1u64);
+        let os=pallas::Base::from(42u64);
         let op=poseidon_hash([dsig,os]);
         let osn=pallas::Base::zero();let occ=pallas::Base::zero();
         let ncc=contents;let tn=pallas::Base::from(300u64);
@@ -119,11 +129,13 @@ impl BoxHarness {
         // new leaf by trial-decryption. Appended to the call data — the scan
         // byte-slides over call.data looking for AeadEncryptedNote structures.
         #[derive(dwow_serial::SerialEncodable)]
-        struct BoxNote { commitment: pallas::Base, state_nonce: pallas::Base, box_id: pallas::Base, user_data: pallas::Base }
+        struct BoxNote { commitment: pallas::Base, state_nonce: pallas::Base, box_id: pallas::Base, user_data: pallas::Base, nullifier: pallas::Base, merkle_root: pallas::Base }
         // `user_data` is the produced contents — the *commitment*, which is all the box layer ever
         // holds — and the field order matches the manifest's `note_schema`, which the scan decodes
         // against. Without it a wallet that put or received a box could not learn what it held.
-        let note = BoxNote { commitment: nl, state_nonce: nsn, box_id: bid, user_data: ncc };
+        // The last two are §C.8.2's trajectory fields (`OBL-C181`): the consumed box's nullifier
+        // and the root that anchored it, both of which the circuit constrains.
+        let note = BoxNote { commitment: nl, state_nonce: nsn, box_id: bid, user_data: ncc, nullifier: nf, merkle_root: er_base };
         let owner_pk = dwow_sdk::crypto::keypair::PublicKey::from_secret(dwow_sdk::crypto::keypair::SecretKey::from_base(os));
         let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
         let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;
@@ -169,8 +181,15 @@ impl BoxHarness {
     /// A `TakeV1` call built but not yet proven, for use as a **child** (`OBL-C198`) — the take
     /// escrow's `ClaimV1` needs. See `PurseHarness::deposit_prepare` for the argument.
     pub fn take_prepare(&self, contents: pallas::Base) -> Result<BoxTakePlan> {
+        self.take_prepare_with_id(contents, pallas::Base::from(1u64))
+    }
+
+    /// [`Self::take_prepare`] for a box created with a chosen id (see
+    /// [`Self::put_prepare_with_id`]). The published `box_tag` is
+    /// `poseidon(4, id, contents)`, the same derivation the parent computes.
+    pub fn take_prepare_with_id(&self, contents: pallas::Base, bid: pallas::Base) -> Result<BoxTakePlan> {
         let dnl=pallas::Base::from(1u64);let dml=pallas::Base::from(5u64);let dsig=pallas::Base::from(7u64);
-        let os=pallas::Base::from(42u64);let bid=pallas::Base::from(1u64);let sn=pallas::Base::from(1u64);
+        let os=pallas::Base::from(42u64);let sn=pallas::Base::from(1u64);
         let op=poseidon_hash([dsig,os]);
         let cc=contents;let tn=pallas::Base::from(300u64);
         let nf=poseidon_hash([dnl,os,bid,sn]);let ol=poseidon_hash([dml,bid,cc,sn,op]);
@@ -179,17 +198,19 @@ impl BoxHarness {
         // Cloned as in `put_inner`: the reorder put this before the witness vector.
         let mpa:[MerkleNode;32]=p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=dwow_sdk::crypto::Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
-        // `contents_commit` is a field again, and on the wire: a parent contract reads it through the
-        // child call to check the box taken is the one it named. See the note in box's model.
-        let params=dwow_box_contract::model::TakeParams{contents_commit:cc,nullifier:nf_val,expected_root:root,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_nonce:tn};
+        // The generic one-way object tag. A parent reads it through the child call to check the box
+        // taken is the one it named; neither the id nor the contents is published.
+        let tag = dwow_box_contract::model::derive_box_tag(bid, cc);
+        let params=dwow_box_contract::model::TakeParams{box_tag:tag,nullifier:nf_val,expected_root:root,leaf_pos:dwow_box_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_nonce:tn};
         let mut cd=vec![0x02u8];cd.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
 
         // Reordered as `put_prepare_inner` — see the note there. The call data is finished here;
-        // the proof comes later, over the caller's commitment (`OBL-C198`).
+        // the proof comes later, over the caller's commitment (`OBL-C198`). The tag is the last
+        // witness (slot 12), after `owner_pub`; the instance order is nf, er, tag, pair.
         Ok(BoxTakePlan{
             witnesses_head: vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(cc)),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(os)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?))],
-            witnesses_tail: vec![Witness::Base(Value::known(op))],
-            public_head: vec![nf,er_base],
+            witnesses_tail: vec![Witness::Base(Value::known(op)),Witness::Base(Value::known(tag))],
+            public_head: vec![nf,er_base,tag],
             tx_nonce: tn,
             call_data: cd,
             take_zkbin: self.take_zkbin.clone(),
@@ -261,7 +282,7 @@ impl BoxTakePlan {
         w.push(Witness::Base(Value::known(self.tx_nonce)));
         w.push(Witness::Base(Value::known(tx_binding)));
         w.extend(self.witnesses_tail);
-        // constrain_instance order: nf, er_base, tx_binding, tx_nonce — the pair is last.
+        // constrain_instance order: nf, er_base, box_tag, tx_binding, tx_nonce — the pair is last.
         let mut pi=self.public_head;
         pi.push(tx_binding);
         pi.push(self.tx_nonce);

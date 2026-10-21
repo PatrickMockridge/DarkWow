@@ -92,6 +92,9 @@ fn take_metadata(p: TakeParams) -> Result<Vec<u8>, ContractError> {
     // L1 metadata boundary (Boundary 4): type-annotated extraction.
     let zk_nullifier: pallas::Base = p.nullifier.inner();
     let zk_expected_root: pallas::Base = p.expected_root.inner();
+    // The parent-facing object tag. The host cannot recompute it (its operands are witnesses), so it
+    // publishes the value the proof instances; a proof carrying a different tag fails verification.
+    let zk_box_tag: pallas::Base = p.box_tag;
     // As `put_metadata`: the binding is derived from the host-exposed commitment, not echoed
     // from the call (`OBL-C198`).
     let zk_tx_binding: pallas::Base = poseidon_hash([
@@ -101,7 +104,7 @@ fn take_metadata(p: TakeParams) -> Result<Vec<u8>, ContractError> {
     ]);
     let zk_tx_nonce: pallas::Base = p.tx_nonce;
 
-    let mut z = vec![]; z.push((BOX_CONTRACT_ZKAS_TAKE_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_tx_binding, zk_tx_nonce]));
+    let mut z = vec![]; z.push((BOX_CONTRACT_ZKAS_TAKE_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_box_tag, zk_tx_binding, zk_tx_nonce]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 

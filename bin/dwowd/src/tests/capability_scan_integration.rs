@@ -306,8 +306,16 @@ fn test_box_send_receive() {
 
         #[derive(dwow_serial::SerialEncodable)]
         struct BoxNote { commitment: pallas::Base, state_nonce: pallas::Base,
-                         box_id: pallas::Base, user_data: pallas::Base }
-        let note = BoxNote { commitment: nl, state_nonce: nsn, box_id: bid, user_data: ncc };
+                         box_id: pallas::Base, user_data: pallas::Base,
+                         nullifier: pallas::Base, merkle_root: pallas::Base }
+        // §C.8.2 trajectory fields (`OBL-C181`). The nullifier is the consumed box's, derived as
+        // the circuit derives it (domain 1, owner secret 42, box id, consumed nonce 0). This
+        // fixture does not model a Merkle tree, so the root is a canonical placeholder — the scan
+        // does not read either field; what this test asserts is schema/plaintext agreement.
+        let nf_note = poseidon_hash([pallas::Base::from(1u64), pallas::Base::from(42u64), bid,
+                                     pallas::Base::zero()]);
+        let note = BoxNote { commitment: nl, state_nonce: nsn, box_id: bid, user_data: ncc,
+                             nullifier: nf_note, merkle_root: pallas::Base::from(0u64) };
         let encrypted = AeadEncryptedNote::encrypt(&note, &recipient_pk, &mut rand::rngs::OsRng)
             .expect("encrypt Box note to recipient");
 
@@ -710,16 +718,15 @@ fn test_box_take_wallet_driven_generic_prover() {
         assert_eq!(total_caps, 1, "discover exactly 1 box capability (Path 2)");
 
         // Build the take via the manifest client directly (the generic prover).
-        // The take consumes the seeded state: box_id=1, contents_commit=poseidon([100]),
-        // state_nonce=1. The nullifier/expected_root/leaf_pos/merkle_path/tx_binding
-        // are derived by the prover and injected into the wire params.
+        // The take consumes the seeded state: box_id=1, contents=poseidon([100]),
+        // state_nonce=1. The nullifier/expected_root/box_tag/leaf_pos/merkle_path/tx_binding
+        // are derived by the prover — `box_tag` from `derived:box_tag:0,1` — and injected into
+        // the wire params. The contents witness is the note's `user_data`, not a wire field.
         use dwow_sdk::contract_client::{ManifestContractClient, ContractClient};
-        let cc = poseidon_hash([pallas::Base::from(100u64)]);
         let base_hex = |b: &pallas::Base| format!("0x{}", hex::encode(b.to_repr()));
         let params_json = format!(
-            r#"{{"box_id":"{}","contents_commit":"{}","state_nonce":"{}","tx_nonce":"{}"}}"#,
+            r#"{{"box_id":"{}","state_nonce":"{}","tx_nonce":"{}"}}"#,
             base_hex(&pallas::Base::from(1u64)),
-            base_hex(&cc),
             base_hex(&pallas::Base::from(1u64)),
             base_hex(&pallas::Base::zero()),
         );

@@ -208,7 +208,6 @@ impl RegisterTypeCallBuilder {
             Witness::Base(Value::known(self.input.token_blind)),
             Witness::Base(Value::known(self.input.recipient)),
             Witness::Base(Value::known(pallas::Base::from(self.input.value))),
-            Witness::Base(Value::known(asset_id)),
             Witness::Base(Value::known(self.input.spend_hook)),
             Witness::Base(Value::known(self.input.user_data)),
             Witness::Base(Value::known(self.input.commitment_blind)),

@@ -19,4 +19,4 @@ tracing = "0.1"
 # Test fixtures must encode a genuine FeeV3 call: since `OBL-C146` the mempool derives the
 # spent nullifier set from the L1 call params, so a hand-assembled `[0x08] ++ fee ++ zeros`
 # fixture is refused at admission.
-dwow_native_token_contract = {path = "../../src/contract/native_token"}
+dwow_native_token_contract = {path = "../../src/contract/native_token", features = ["no-entrypoint"]}

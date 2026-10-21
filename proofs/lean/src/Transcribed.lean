@@ -100,7 +100,7 @@ open Circuits.InstanceDerivation
 
 /-! ===== The circuits, in source order =====
 
-179 circuits, 2745 statements transcribed; **11** satisfy the model's property and **168** do not, the latter named by the
+179 circuits, 2747 statements transcribed; **11** satisfy the model's property and **168** do not, the latter named by the
 first undetermined exposure in each, with the checker's class for that exposure named beneath it.
 -/
 
@@ -1558,15 +1558,16 @@ theorem box_put_has_a_free_instance :
   decide
 
 
-/-- `src/contract/box/proof/take.zk` — 4 exposure(s). -/
+/-- `src/contract/box/proof/take.zk` — 5 exposure(s). -/
 
-def box_take_held : List Name := ["box_id", "contents_commit", "expected_root", "leaf_pos", "nullifier", "owner_pub", "owner_secret", "path", "state_nonce", "tx_binding", "tx_commitment", "tx_nonce"]
+def box_take_held : List Name := ["box_id", "box_tag", "contents_commit", "expected_root", "leaf_pos", "nullifier", "owner_pub", "owner_secret", "path", "state_nonce", "tx_binding", "tx_commitment", "tx_nonce"]
 
 
 def box_take_stmts : List Stmt :=
 [
   .assign "DOMAIN_NULLIFIER" (.op "witness_base" [.lit 1]),
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
+  .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
   .assign "DOMAIN_MERKLE_LEAF" (.op "witness_base" [.lit 5]),
   .assign "DOMAIN_SIGNATURE_SECRET" (.op "witness_base" [.lit 7]),
   .assign "derived_owner" (.op "poseidon_hash" [.var "DOMAIN_SIGNATURE_SECRET", .var "owner_secret"]),
@@ -1578,6 +1579,9 @@ def box_take_stmts : List Stmt :=
   .assign "root" (.op "merkle_root" [.var "leaf_pos", .var "path", .var "box_leaf"]),
   .constrainEq (.var "root") (.var "expected_root"),
   .constrainInstance (.var "expected_root"),
+  .assign "box_tag_circuit" (.op "poseidon_hash" [.var "DOMAIN_COMMITMENT", .var "box_id", .var "contents_commit"]),
+  .constrainEq (.var "box_tag_circuit") (.var "box_tag"),
+  .constrainInstance (.var "box_tag"),
   .assign "tx_binding_circuit" (.op "poseidon_hash" [.var "DOMAIN_TX_BINDING", .var "tx_commitment", .var "tx_nonce"]),
   .constrainEq (.var "tx_binding_circuit") (.var "tx_binding"),
   .constrainInstance (.var "tx_binding"),
@@ -4520,7 +4524,7 @@ theorem oracle_aggregate_has_a_free_instance :
 
 /-- `src/contract/oracle/proof/attest_value.zk` — 8 exposure(s). -/
 
-def oracle_attest_value_held : List Name := ["attestation_id", "oracle_id", "oracle_secret", "predicate", "threshold", "tx_binding", "tx_commitment", "tx_nonce", "value"]
+def oracle_attest_value_held : List Name := ["attestation_id", "oracle_id", "oracle_secret", "predicate", "threshold", "tx_binding", "tx_commitment", "tx_nonce"]
 
 
 def oracle_attest_value_stmts : List Stmt :=
@@ -4934,8 +4938,6 @@ def promissory_note_issue_held : List Name := ["VALUE_COMMIT_RANDOM", "VALUE_COM
 
 def promissory_note_issue_stmts : List Stmt :=
 [
-  .assign "DOMAIN_NULLIFIER" (.op "witness_base" [.lit 1]),
-  .assign "DOMAIN_TOK_COMMIT" (.op "witness_base" [.lit 2]),
   .assign "DOMAIN_TX_BINDING" (.op "witness_base" [.lit 3]),
   .assign "DOMAIN_COMMITMENT" (.op "witness_base" [.lit 4]),
   .assign "DOMAIN_SIGNATURE_SECRET" (.op "witness_base" [.lit 7]),
@@ -5012,7 +5014,7 @@ theorem promissory_note_redeem_has_a_free_instance :
 
 /-- `src/contract/promissory_note/proof/register_type.zk` — 8 exposure(s). -/
 
-def promissory_note_register_type_held : List Name := ["VALUE_COMMIT_RANDOM", "VALUE_COMMIT_VALUE", "coin_asset_id", "coin_public", "coin_spend_hook", "commitment_blind", "token_auth_parent", "token_blind", "token_user_data", "tx_binding", "tx_commitment", "tx_nonce", "user_data", "value", "value_blind"]
+def promissory_note_register_type_held : List Name := ["VALUE_COMMIT_RANDOM", "VALUE_COMMIT_VALUE", "coin_public", "coin_spend_hook", "commitment_blind", "token_auth_parent", "token_blind", "token_user_data", "tx_binding", "tx_commitment", "tx_nonce", "user_data", "value", "value_blind"]
 
 
 def promissory_note_register_type_stmts : List Stmt :=

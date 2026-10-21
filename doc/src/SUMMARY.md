@@ -31,6 +31,7 @@
   - [Identity Contract (O-Cap)](arch/identity.md)
   - [Observer (Relay Node)](arch/observer.md)
   - [O-Cap & Composable Privacy](arch/ocap.md)
+  - [Genesis Primitive Purity](arch/genesis-purity.md) ← parent-facing surface register + structural gate
   - [Risk & Governance Specification](arch/risk-and-governance.md)
   - [Privacy Model](arch/privacy.md) ← L1/L2, architectural principles, encode/decode boundaries
   - [Privacy Model — the public amounts, and why](arch/privacy-model.md) ← normative on the plaintext emission/fee caveat

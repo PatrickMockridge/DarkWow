@@ -409,3 +409,22 @@ fn test_escrow_compute_nullifier() {
     // Nullifier should be non-zero
     assert!(nullifier != pallas::Base::zero());
 }
+
+/// `claim_box_tag` binds both derivations: a box with a different id or different contents does not
+/// satisfy the claim. This is the arithmetic `ClaimV1` compares; the endpoint control (a wrong box
+/// taken) is owed with the fixture, because the box tree's root for a second box is not built here.
+#[test]
+fn claim_box_tag_binds_the_escrow_and_the_contents() {
+    let id = EscrowId(pallas::Base::from(7u64));
+    let contents = pallas::Base::from(11u64);
+    let tag = Escrow::claim_box_tag(id, 1_000, contents);
+
+    assert_eq!(tag, Escrow::claim_box_tag(id, 1_000, contents), "deterministic");
+    assert_ne!(tag, Escrow::claim_box_tag(EscrowId(pallas::Base::from(8u64)), 1_000, contents),
+        "a different escrow id must not satisfy the claim");
+    assert_ne!(tag, Escrow::claim_box_tag(id, 1_001, contents),
+        "a different value must not satisfy the claim");
+    assert_ne!(tag, Escrow::claim_box_tag(id, 1_000, pallas::Base::from(12u64)),
+        "different contents must not satisfy the claim");
+    assert_ne!(tag, contents, "the tag is not the contents commitment");
+}

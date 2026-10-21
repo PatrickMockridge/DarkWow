@@ -37,7 +37,12 @@ use pasta_curves::{
 };
 use rand_core::{CryptoRng, RngCore};
 
-use super::{constants, constants::NullifierK, util::fp_mod_fv, poseidon_hash, ContractId};
+use super::{
+    constants,
+    constants::NullifierK,
+    util::{fp_mod_fv, zeroize_base, zeroize_scalar},
+    poseidon_hash, ContractId,
+};
 use crate::error::ContractError;
 
 /// Keypair structure holding a `SecretKey` and its respective `PublicKey`.
@@ -142,6 +147,7 @@ impl AsyncDecodable for Keypair {
 // This breaks the auto-derive chain: any struct containing SecretKey can no
 // longer silently derive Encodable — it must opt in explicitly.
 #[derive(Clone, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct SecretKey(pallas::Base);
 
 impl core::fmt::Debug for SecretKey {
@@ -152,17 +158,15 @@ impl core::fmt::Debug for SecretKey {
 
 impl Drop for SecretKey {
     fn drop(&mut self) {
-        // Zeroize the raw limb representation of the pallas::Base field
-        // element, not just its byte repr (which would zeroize a copy).
-        // write_bytes sets each byte to 0x00 — the compiler cannot
-        // optimize this away because it goes through a raw pointer.
-        unsafe {
-            core::ptr::write_bytes(
-                &mut self.0 as *mut pallas::Base as *mut u8,
-                0,
-                core::mem::size_of::<pallas::Base>(),
-            );
-        }
+        // Zeroize the raw limb representation of the `pallas::Base` field element, not its
+        // byte repr (which would zeroize a copy).
+        //
+        // **Volatile stores, not `write_bytes`** (`OBL-C12`). The previous version used
+        // `core::ptr::write_bytes`, which is a plain `memset`; on a value that is dead after
+        // this call LLVM may delete it, so the claim that "the compiler cannot optimize this
+        // away because it goes through a raw pointer" was false. `zeroize_base` writes each
+        // byte with `write_volatile` and fences afterwards.
+        zeroize_base(&mut self.0);
     }
 }
 
@@ -217,7 +221,19 @@ impl SecretKey {
             }
         };
 
-        let hash = poseidon_hash([constants::DRK_POSEIDON_DOMAIN_KEY_DERIVE, self.0, contract_id.inner(), instance_elem]);
+        // The preimage is built in a named local rather than as a temporary argument so it can
+        // be cleared after the hash: it contains `self.0`, the wallet's master secret
+        // (`OBL-C12`). `poseidon_hash` also clears its own copy of the array.
+        let mut preimage = [
+            constants::DRK_POSEIDON_DOMAIN_KEY_DERIVE,
+            self.0,
+            contract_id.inner(),
+            instance_elem,
+        ];
+        let hash = poseidon_hash(preimage);
+        for element in preimage.iter_mut() {
+            zeroize_base(element);
+        }
         Ok(Self(hash))
     }
 }
@@ -350,9 +366,12 @@ impl PublicKey {
     pub fn from_secret(s: SecretKey) -> Self {
         // spec dispensation: type-system.md §2.3 — base field < scalar field, conversion guaranteed valid.
         #[expect(clippy::expect_used, reason = "base field < scalar field — conversion guaranteed valid")]
-        let scalar = fp_mod_fv(*s.inner())
+        let mut scalar = fp_mod_fv(*s.inner())
             .expect("SecretKey to Scalar: mathematically guaranteed valid");
         let p = NullifierK.generator() * scalar;
+        // `scalar` is secret-equivalent (the key reduced mod the scalar field). `s` is zeroized
+        // by `SecretKey::drop`; this temporary is ours to clear (`OBL-C12`).
+        zeroize_scalar(&mut scalar);
         Self(p)
     }
 
@@ -609,6 +628,95 @@ mod tests {
     use super::*;
 
     use rand::rngs::OsRng;
+    use static_assertions::assert_not_impl_any;
+
+    // ---- `OBL-C12` controls -------------------------------------------------
+
+    // **(a) Not `Copy`.** The row's first clause rests on a derive line; this turns it into a
+    // build failure if `Copy` is ever added back, which is the shape that enables ambient
+    // duplication of authority (type-system.md §5). `Keypair` is asserted too: it owns a
+    // `SecretKey`.
+    assert_not_impl_any!(SecretKey: Copy);
+    assert_not_impl_any!(Keypair: Copy);
+
+    /// **(b) Redaction.** `Debug` exists — it cannot be removed without breaking every
+    /// `#[derive(Debug)]` container — so what must hold is that it does not print the key. The
+    /// control is the byte-level one: the printed form must not contain the secret's canonical
+    /// hex.
+    #[test]
+    fn secret_key_debug_is_redacted() {
+        let sk = SecretKey::from_base(pallas::Base::from(0x1234_5678u64));
+        assert_eq!(format!("{sk:?}"), "<redacted>");
+
+        let kp = Keypair::new(sk.clone());
+        let printed = format!("{kp:?}");
+        assert!(
+            printed.contains("<redacted>"),
+            "Keypair Debug must redact its secret field: {printed}"
+        );
+        let secret_hex = hex::encode(sk.inner().to_repr());
+        assert!(!printed.contains(&secret_hex), "Keypair Debug printed the secret bytes: {printed}");
+    }
+
+    /// **(c) `derive_instance` is deterministic and scoped** by `(contract_id, instance_id)`.
+    /// Three arms: the same triple repeats, a different contract differs, a different instance
+    /// differs. A fourth asserts the non-canonical instance id is refused rather than truncated:
+    /// a silent truncation would make two different instances derive one key.
+    #[test]
+    fn derive_instance_is_deterministic_and_scoped() {
+        let master = SecretKey::from_base(pallas::Base::from(42u64));
+        let contract_a = ContractId::from_base(pallas::Base::from(1u64));
+        let contract_b = ContractId::from_base(pallas::Base::from(2u64));
+
+        let a = master.derive_instance(&contract_a, b"instance-a").expect("derive");
+        let again = master.derive_instance(&contract_a, b"instance-a").expect("derive");
+        assert_eq!(a, again, "the same (master, contract, instance) must derive the same key");
+
+        let other_contract = master.derive_instance(&contract_b, b"instance-a").expect("derive");
+        assert_ne!(a, other_contract, "the contract id must scope the derivation");
+
+        let other_instance = master.derive_instance(&contract_a, b"instance-b").expect("derive");
+        assert_ne!(a, other_instance, "the instance id must scope the derivation");
+
+        assert!(
+            master.derive_instance(&contract_a, &[0xffu8; 32]).is_err(),
+            "a non-canonical instance id must be refused, not truncated"
+        );
+    }
+
+    /// **(d) Zeroization on drop.** Read the bytes through `MaybeUninit` before and after an
+    /// explicit `drop_in_place`; the control is that they are non-zero before, so an all-zero
+    /// buffer that was never written cannot pass this test vacuously.
+    ///
+    /// The Drop's stores are volatile precisely because the object is dead after the call — a
+    /// plain `memset` is legally removable, which is the defect `OBL-C12` records. This test can
+    /// only observe the result; the volatile store is what makes the result reliable.
+    #[test]
+    fn drop_zeroizes_the_field_element() {
+        let size = core::mem::size_of::<SecretKey>();
+        assert_eq!(
+            size,
+            core::mem::size_of::<pallas::Base>(),
+            "SecretKey is `repr(transparent)`; a layout change must be caught here"
+        );
+
+        let mut slot = core::mem::MaybeUninit::<SecretKey>::uninit();
+        slot.write(SecretKey::from_base(pallas::Base::from(0xdead_beefu64)));
+        let ptr = slot.as_ptr() as *const u8;
+
+        // Control: the key's bytes are present before the drop.
+        let before = unsafe { core::slice::from_raw_parts(ptr, size) }.to_vec();
+        assert!(before.iter().any(|b| *b != 0), "control failed: the key was never written");
+
+        // SAFETY: `slot` is initialized exactly once and dropped exactly once here; the storage
+        // stays allocated, and the bytes are read only as `u8`.
+        unsafe { core::ptr::drop_in_place(slot.as_mut_ptr()) };
+        let after = unsafe { core::slice::from_raw_parts(ptr, size) };
+        assert!(
+            after.iter().all(|b| *b == 0),
+            "Drop must zeroize the field element, got {after:?}"
+        );
+    }
 
     #[test]
     fn test_standard_address_encoding() {

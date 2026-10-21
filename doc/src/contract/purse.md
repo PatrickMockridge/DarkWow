@@ -90,6 +90,14 @@ params are the public inputs and the values a *note* is built from — and nothi
 `scripts/check-l1-wire-conformance.sh` are gone, and that gate fails if a declaration goes stale, so the
 count is the measure rather than the claim.
 
+**`derived_purse_id` is the generic object tag, and it has one definition**:
+`model::derive_purse_id(owner_pub, asset_id, purse_id) = poseidon(4, owner_pub, asset_id, purse_id)`,
+the same derivation `deposit.zk`, `withdraw.zk` and `balance.zk` constrain. A parent that knows the
+three values can require a deposit into *that* purse; none of the three reaches the wire. No live
+consumer decodes purse params today, so the field is dormant API; the tag consistency test pins the
+derivation, and a consumer that lands compares the tag, not the id. It is the precedent `box`'s
+`box_tag` follows; see [Genesis Primitive Purity](../arch/genesis-purity.md).
+
 **How each value reaches the circuit.** Three routes, and the difference between them is the point:
 
 * `purse_id`, `state_nonce`, `asset_id`, `old_balance` are `note:` witness sources served from the
@@ -106,9 +114,13 @@ count is the measure rather than the claim.
   had to leave the wire was the one the *caller* chooses, and `witness = N` means "the caller need not
   supply it", not "do not publish it" (`OBL-C179`).
 
-**And the §C.8.2 gap is open here too**: an L1 note SHALL carry `nullifier`, `merkle_root` and
-`leaf_position`, and this schema carries none of them. That is `OBL-C181`, it is a *different* gap from
-the one this section closes, and closing one does not close the other.
+**The note carries the trajectory too** (§C.8.2, `OBL-C181`): `nullifier` and `merkle_root`, both
+circuit-constrained witnesses of the consumed purse — its nullifier (slot 8) and the root that anchored
+it (slot 9), at the same slots on Deposit and Withdraw. They let a holder, or a consumer holding only the
+note, match the new purse state to the object that produced it. The third field that section used to
+require, the new leaf's position, is **structural rather than a note field**: the tree assigns a position
+when the call is applied, after the note is built, and the scan recovers it by replaying the contract
+tree in call order. §C.8.2 was corrected in the same change.
 
 ## Database Trees
 

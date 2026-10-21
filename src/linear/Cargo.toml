@@ -72,10 +72,10 @@ tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 primitive-types = { version = "0.14.0" }
 dwow-sdk = { path = "../sdk", features = ["async", "json"] }
 dwow_core = { path = "../..", features = ["wasm-runtime", "tx"] }
-dwow_native_token_contract = { path = "../../src/contract/native_token", features = ["client"] }
+dwow_native_token_contract = { path = "../../src/contract/native_token", features = ["client", "no-entrypoint"] }
 dwow_promissory_note_contract = { path = "../../src/contract/promissory_note" }
-dwow_purse_contract = { path = "../../src/contract/purse" }
-dwow_box_contract = { path = "../../src/contract/box" }
+dwow_purse_contract = { path = "../../src/contract/purse", features = ["no-entrypoint"] }
+dwow_box_contract = { path = "../../src/contract/box", features = ["no-entrypoint"] }
 smol = "2"
 dwow-serial = { path = "../serial", features = ["derive", "async", "hash"] }
 async-trait = "0.1"

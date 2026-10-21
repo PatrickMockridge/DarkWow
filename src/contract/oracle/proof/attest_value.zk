@@ -41,8 +41,6 @@ witness "AttestValueV2" {
     # Threshold for comparison
     Base threshold,
 
-    # Current value being attested
-    Base value,
     Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
@@ -82,11 +80,13 @@ circuit "AttestValueV2" {
     # PHASE 3: Predicate logic
     # ==========================================================================
     #
-    # predicate = 0: value == threshold (Matches)
-    # predicate = 1: value >= threshold (GreaterOrEqual)
-    # predicate = 2: value <= threshold (LessOrEqual)
+    # predicate = 0: Matches, 1: GreaterOrEqual, 2: LessOrEqual.
     #
-    # Note: Actual predicate verification is done by the attestation contract.
+    # This circuit publishes the predicate type and the threshold; it carries no value and
+    # performs no comparison. The value a predicate is evaluated against belongs to the
+    # attestation contract's claim, and that contract is where `predicate_holds` runs. The
+    # former `value` witness was never read by the circuit or the host (OBL-Z23).
+    #
     # This circuit only proves the oracle operator is creating the attestation.
 
     # ==========================================================================

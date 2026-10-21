@@ -1,5 +1,10 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
+// The WASM exports are for the wasm target only; host consumers request `no-entrypoint`.
+// Without this gate the feature is dead and a host link of this crate exports the
+// contract entrypoints, which collides with any other contract crate in the same link
+// (see `box/src/lib.rs`, 2026-10-21).
+#[cfg(not(feature = "no-entrypoint"))]
 pub mod entrypoint;
 pub mod error;
 pub mod model;

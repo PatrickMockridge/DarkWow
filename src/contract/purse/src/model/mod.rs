@@ -1,5 +1,14 @@
 use crate::error::PurseError;
-use dwow_sdk::{blockchain::SerializedLen, crypto::{pasta_prelude::PrimeField, MerkleNode, Nullifier}, error::ContractError, pasta::pallas};
+use dwow_sdk::{blockchain::SerializedLen, crypto::{constants::DRK_POSEIDON_DOMAIN_COMMITMENT, pasta_prelude::PrimeField, poseidon_hash, MerkleNode, Nullifier}, error::ContractError, pasta::pallas};
+
+/// The generic purse object tag: `poseidon(4, owner_pub, asset_id, purse_id)`.
+///
+/// One definition for the value `deposit.zk`/`withdraw.zk`/`balance.zk` constrain, so a parent that
+/// knows the three witnesses' values can name a purse without any of them reaching the wire. The
+/// domain is the tree's existing commitment domain, the same one box's `derive_box_tag` uses.
+pub fn derive_purse_id(owner_pub: pallas::Base, asset_id: pallas::Base, purse_id: pallas::Base) -> pallas::Base {
+    poseidon_hash([DRK_POSEIDON_DOMAIN_COMMITMENT, owner_pub, asset_id, purse_id])
+}
 
 // ============================================================================
 // TOTAL BYTE READS

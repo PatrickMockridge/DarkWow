@@ -339,7 +339,8 @@ fn process_issue_credential_instruction(
 
     msg!("[identity::issue_credential] Issuing credential to holder");
 
-    // Credential data stored locally for DAG; possession tracked via Box::Put.
+    // Credential data stored for DAG operations; possession is proven at verification by the
+    // holder's signature (`OBL-C171`), not by this write.
     let nullifier_bytes = params.nullifier.to_bytes();
     // Check nullifier hasn't been used
     let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
@@ -377,8 +378,8 @@ fn apply_issue_credential_update(cid: ContractId, update: IssueCredentialUpdateV
     let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
     let nullifier_bytes = update.nullifier.to_bytes();
 
-    // Store credential data for DAG operations.
-    // Possession tracking delegated to Box::Put child call.
+    // Store credential data for DAG operations. Possession is proven at verification by the
+    // holder's signature (`OBL-C171`), not by a Box child.
     let credential = Credential {
         nullifier: update.nullifier,
         issuer_pub: update.issuer_pub,
@@ -558,7 +559,8 @@ fn process_issue_capability_instruction(
     let _cred_data = wasm::db::db_get(credentials_db, &cred_nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
-    // Possession tracked via Box::Put child call; issuance key not needed.
+    // Possession is proven at verification by the holder's signature (`OBL-C171`); issuance
+    // records no possession key.
 
     capability.issued_count += 1;
     let update = IssueCapabilityUpdateV1 { capability };
@@ -709,30 +711,24 @@ fn process_verify_capability_instruction(
     // nullifier is already spent at issuance, so the write was a no-op and the check it was meant to
     // support was backwards.
     //
-    // **Possession is not checked, and it cannot be checked through the box child as specified.** This
-    // is the last open piece of `OBL-Z17`, and the earlier note here said the credential "is a box" whose
-    // `Box::Take` child would prove holding it. Two things stop that:
+    // **Possession is checked by the holder's signature, and an earlier note here said the opposite.**
+    // Step 1b verifies `holder_sig` over `(capability_id, nullifier, verifier_pub, tx_nonce)` against
+    // the `holder_pub` stored in the credential record (`OBL-C171`, `LR-08`). The note that stood here
+    // claimed possession was unchecked and proposed a `Box::Take` child; that route cannot work
+    // against the box wire as it stands, and the reason is worth keeping:
     //
-    //   * **Nothing requires the child.** No handler in this contract reads `children_indexes` at all,
-    //     so a caller who can produce a valid credential's preimage — the issuer's and holder's keys, the
-    //     schema, both attributes and the blind — passes without holding anything. That part is a missing
-    //     check rather than a missing mechanism.
-    //   * **The box wire cannot express it.** Even requiring the child would not deliver possession:
-    //     `TakeParams` exposes `contents_commit`, `nullifier`, `expected_root`, `leaf_pos`,
-    //     `merkle_path`, `tx_binding` and `tx_nonce` — and **no owner public key**. The box's proof
-    //     constrains `owner_pub == ec_mul_base(owner_secret, NULLIFIER_K)` and folds it into the leaf,
-    //     but the leaf is a commitment, so the parent sees only that *someone* who knew some secret put
-    //     and took a box. Comparing `contents_commit` against the credential's commitment would compare
-    //     a value the caller chose — anyone may put a box carrying any commitment — which is the
-    //     `OBL-C152` shape arriving through a child call instead of a params field.
+    //   * `TakeParams` exposes no owner public key. Its proof constrains
+    //     `owner_pub == ec_mul_base(owner_secret, NULLIFIER_K)` and folds it into the leaf, but the leaf
+    //     is a commitment, so a parent sees only that *someone* who knew some secret put and took a box.
+    //   * Comparing a box's contents commitment against the credential's commitment would compare a
+    //     value the caller chose — anyone may put a box carrying any commitment — the `OBL-C152` shape
+    //     arriving through a child call instead of a params field.
     //
-    // So the claim is **dropped rather than left standing**, and the `box_cid` key that was written "for
-    // cross-contract child call validation" is removed with it: it had one `db_set` and no reader, and
-    // what it named is what this note explains. What *is* checked is everything above — the credential
-    // exists, is live, is for this capability's schema and issuer, that the proof is about the stored
-    // credential, that the predicate held, over the capability's own attribute, at or above its floor.
-    // Closing possession needs either an owner key on the box wire or a credential-carried secret the
-    // proof can bind — both are changes to genesis contracts, and neither is this unit's.
+    // So possession is the signature, not a box delegation, and the `box_cid` key that named the
+    // alternative is removed: it had one `db_set` and no reader. The rest of the checks above remain
+    // two-sided: the credential exists, is live, is for this capability's schema and issuer, the proof
+    // is about the stored credential, and the predicate held over the capability's own attribute at or
+    // above its floor.
 
     let update = VerifyCapabilityUpdateV1 {
         capability_id: params.capability_proof.capability_id,
@@ -771,8 +767,8 @@ fn process_revoke_capability_instruction(
 
     msg!("[identity::revoke_capability] Revoking capability");
 
-    // Capability possession tracked via Box.
-    // Revocation via Box::Take nullifier consumption.
+    // Revocation records a marker for the caller-supplied `holder_pub`. It does **not** verify
+    // `params.signature` — the signature field is unread (`OBL-C255`).
 
     let update = RevokeCapabilityUpdateV1 {
         capability_id: params.capability_id,

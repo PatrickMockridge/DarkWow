@@ -108,9 +108,61 @@ pub fn tx_commitment<'a>(
 ///
 /// Returns `Err` rather than panicking per type-system.md §2.3.2 (no `unwrap()` on
 /// consensus-critical paths).
-pub fn fp_mod_fv(val: pallas::Base) -> GenericResult<pallas::Scalar> {
-    Ok(Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(val.to_repr()))
-        .ok_or_else(|| ContractError::IoError("Base field element out of scalar range".into()))?)
+pub fn fp_mod_fv(mut val: pallas::Base) -> GenericResult<pallas::Scalar> {
+    let mut repr = val.to_repr();
+    let out = Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(repr))
+        .ok_or_else(|| ContractError::IoError("Base field element out of scalar range".into()));
+    // `val` is a by-value copy of the caller's element and `repr` is a second copy of its
+    // canonical bytes. For `PublicKey::from_secret` and every other key path the element **is**
+    // secret key material, so both copies are cleared at this one conversion boundary
+    // (`OBL-C12`). The returned scalar is the caller's to clear.
+    zeroize_base(&mut val);
+    zeroize_bytes(&mut repr);
+    out
+}
+
+/// Overwrite `bytes` with zeroes in a way the optimizer may not remove.
+///
+/// A plain `core::ptr::write_bytes` is a `memset`; on a value that is dead afterwards LLVM is
+/// free to delete it, which is the defect `OBL-C12` records for the previous `SecretKey::drop`.
+/// Each store below is volatile, and the fence stops the clears from being reordered past the
+/// point the caller considers them done. This is the hand-rolled equivalent of the `zeroize`
+/// crate, kept here to avoid adding a dependency to the SDK's contract surface.
+pub(crate) fn zeroize_bytes(bytes: &mut [u8]) {
+    for byte in bytes.iter_mut() {
+        // SAFETY: `byte` is a valid, uniquely borrowed `u8`; a volatile zero store is always
+        // valid for it, and volatile stores cannot be elided as dead.
+        unsafe { core::ptr::write_volatile(byte, 0u8) };
+    }
+    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+}
+
+/// Zeroize a field element's raw representation (volatile stores; see [`zeroize_bytes`]).
+///
+/// Zeroing every byte yields the canonical encoding of the zero element, so the memory is left
+/// in a valid `pallas::Base` state even though it is not read again.
+pub(crate) fn zeroize_base(value: &mut pallas::Base) {
+    // SAFETY: `value` is a valid, uniquely borrowed field element. Reinterpreting it as its
+    // `size_of` bytes is the representation `zeroize` itself uses; the write sequence ends on
+    // the all-zero (valid) element.
+    unsafe {
+        let p = value as *mut pallas::Base as *mut u8;
+        let bytes = core::slice::from_raw_parts_mut(p, core::mem::size_of::<pallas::Base>());
+        zeroize_bytes(bytes);
+    }
+}
+
+/// Zeroize a scalar's raw representation. A secret key converted to the scalar field is
+/// secret-equivalent, so the conversion's temporaries are cleared the same way as the key
+/// itself (`OBL-C12`).
+pub(crate) fn zeroize_scalar(value: &mut pallas::Scalar) {
+    // SAFETY: as `zeroize_base` — a uniquely borrowed scalar reinterpreted as its own bytes,
+    // ending on the all-zero (valid) element.
+    unsafe {
+        let p = value as *mut pallas::Scalar as *mut u8;
+        let bytes = core::slice::from_raw_parts_mut(p, core::mem::size_of::<pallas::Scalar>());
+        zeroize_bytes(bytes);
+    }
 }
 
 /// Converts from pallas::Scalar to pallas::Base (aka $x \pmod{r_\mathbb{P}}$).
@@ -122,14 +174,23 @@ pub fn fv_mod_fp_unsafe(val: pallas::Scalar) -> CtOption<pallas::Base> {
 }
 
 /// Wrapper around poseidon in `halo2_gadgets`
-pub fn poseidon_hash<const N: usize>(messages: [pallas::Base; N]) -> pallas::Base {
+pub fn poseidon_hash<const N: usize>(mut messages: [pallas::Base; N]) -> pallas::Base {
     // TODO: it's possible to make this function simply take a slice, by using the lower level
     // sponge defined in halo2 lib. Simply look how the function hash() is defined.
     // Why is this needed? Simply put we are often working with dynamic data such as Python
     // or with other interpreted environments. We don't always know the length of input data
     // at compile time.
-    poseidon::Hash::<_, poseidon::P128Pow5T3, poseidon::ConstantLength<N>, 3, 2>::init()
-        .hash(messages)
+    //
+    // The preimage is cleared after the sponge consumes it. For a handful of callers — key
+    // derivation (`SecretKey::derive_instance`), note encryption — the preimage contains key
+    // material, and the array was otherwise left on the stack (`OBL-C12`). `hash` takes the
+    // array by value (`Base` is `Copy`), so clearing our copy is the only one we own here.
+    let out = poseidon::Hash::<_, poseidon::P128Pow5T3, poseidon::ConstantLength<N>, 3, 2>::init()
+        .hash(messages);
+    for message in messages.iter_mut() {
+        zeroize_base(message);
+    }
+    out
 }
 
 pub fn fp_to_u64(value: pallas::Base) -> Option<u64> {

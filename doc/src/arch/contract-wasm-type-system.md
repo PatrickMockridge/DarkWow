@@ -2707,11 +2707,22 @@ trajectory a note belongs to. An L1 note SHALL include:
   to match the note to a specific object in its possession.
 - **`merkle_root`** — the Merkle root that anchored the consumed object.
   Allows the wallet to verify the object existed at block time.
-- **`leaf_position`** — the position of the new leaf in the Merkle tree.
-  Allows the wallet to locate the new object in subsequent blocks.
 
 Without these fields, a note is trajectory-ambiguous — the wallet knows an
 operation happened but cannot determine which of its objects was involved.
+
+**The new leaf's position is structural, not a note field — corrected 2026-10-21 (`OBL-C181`).**
+This section previously listed a third required field, `leaf_position`, described as the position
+of the new leaf. It cannot be carried honestly. A leaf's position is assigned when the contract
+tree applies the call, which is after the note is encrypted and attached to the call, so no
+circuit witness holds it; a note field would be a prover-chosen value that nothing verifies —
+exactly the class §C.8.2's other two fields avoid by reading circuit-constrained witnesses. The
+wallet already recovers the position without the note: it recovers each operation's leaves in
+call order and replays the contract's Merkle tree (wallet.md §6.4.0; the scan's
+`append_leaf_and_prove`), so the position of the new leaf is the position it appends, and the
+consumed object's position is in the holder's own record. The two fields above are what the note
+adds: the identity of the consumed object and the root that anchored it. `box` and `purse` carry
+both on every producing action (`put`, `deposit`, `withdraw`).
 
 ### C.8.3 Scan Bound
 

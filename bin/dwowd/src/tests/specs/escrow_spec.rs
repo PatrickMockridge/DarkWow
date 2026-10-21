@@ -64,23 +64,25 @@ fn purse_deposit_plan(amount: u64) -> dwow_core::Result<PurseDepositPlan> {
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))
 }
 
-/// A `Box::PutV1` child's call data, **unproven** — a box whose `contents_commit` is `contents`.
+/// A `Box::PutV1` child's call data, **unproven** — a box with id `bid` whose contents commitment is
+/// `contents`.
 ///
-/// Putting the claim box rides in the **create** row rather than in `setup`, because the commitment
-/// `ClaimV1` requires is derived from the escrow's own id and `setup` runs before the id exists. It needs
-/// no purse deposit, so the one-deposit constraint above does not touch it.
-fn box_put_plan(contents: pallas::Base) -> dwow_core::Result<BoxPutPlan> {
-    BoxHarness::spawn().put_prepare(contents).map_err(|e| dwow_core::Error::Custom(format!("{e}")))
+/// Putting the claim box rides in the **create** row rather than in `setup`, because both the id and
+/// the contents `ClaimV1` requires are derived from the escrow's own record, and `setup` runs before
+/// the id exists. It needs no purse deposit, so the one-deposit constraint above does not touch it.
+fn box_put_plan(contents: pallas::Base, bid: pallas::Base) -> dwow_core::Result<BoxPutPlan> {
+    BoxHarness::spawn().put_prepare_with_id(contents, bid).map_err(|e| dwow_core::Error::Custom(format!("{e}")))
 }
 
-/// A `Box::TakeV1` child's call data, **unproven** — the box whose `contents_commit` is `contents`.
+/// A `Box::TakeV1` child's call data, **unproven** — the box with id `bid` whose contents commitment
+/// is `contents`.
 ///
-/// It takes the contents as an argument rather than defaulting, because **the escrow now requires a
-/// specific one**: `ClaimV1` compares the child's `contents_commit` against the commitment the escrow
-/// derived for itself, so a take of the fixture's default box would be refused — and that refusal is
-/// one of the rows below.
-fn box_take_plan(contents: pallas::Base) -> dwow_core::Result<BoxTakePlan> {
-    BoxHarness::spawn().take_prepare(contents).map_err(|e| dwow_core::Error::Custom(format!("{e}")))
+/// It takes both as arguments rather than defaulting, because **the escrow requires the pair**:
+/// `ClaimV1` compares the child's `box_tag` against `poseidon(4, id, contents)` for the record's own
+/// derivations, so a take of the fixture's default box would be refused — and that refusal is one of
+/// the rows below.
+fn box_take_plan(contents: pallas::Base, bid: pallas::Base) -> dwow_core::Result<BoxTakePlan> {
+    BoxHarness::spawn().take_prepare_with_id(contents, bid).map_err(|e| dwow_core::Error::Custom(format!("{e}")))
 }
 
 pub fn escrow_test_spec() -> ContractTestSpec<'static> {
@@ -177,11 +179,16 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                         // because its contents are a function of the id this call produces. The box the
                         // `ClaimV1` row then takes is this one, and the commitment it must carry is the
                         // one the escrow derived for itself — a take of any other box is refused.
+                        let escrow_id = dwow_escrow_contract::model::EscrowId(plan.public_inputs.commitment);
                         let contents = dwow_escrow_contract::model::Escrow::derive_claim_box_contents(
-                            dwow_escrow_contract::model::EscrowId(plan.public_inputs.commitment),
+                            escrow_id,
                             value,
                         );
-                        let box_plan = box_put_plan(contents)?;
+                        let box_id = dwow_escrow_contract::model::Escrow::derive_claim_box_id(
+                            escrow_id,
+                            value,
+                        );
+                        let box_plan = box_put_plan(contents, box_id)?;
                         let box_call = dwow_sdk::tx::ContractCall { contract_id: *BOX_CONTRACT_ID, data: box_plan.call_data.clone() };
                         let r = h.create_escrow_prove(plan, &[box_call.clone()])
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -264,7 +271,11 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                             dwow_escrow_contract::model::EscrowId(ea),
                             value,
                         );
-                        let box_plan = box_take_plan(contents)?;
+                        let box_id = dwow_escrow_contract::model::Escrow::derive_claim_box_id(
+                            dwow_escrow_contract::model::EscrowId(ea),
+                            value,
+                        );
+                        let box_plan = box_take_plan(contents, box_id)?;
                         let box_call = dwow_sdk::tx::ContractCall { contract_id: *BOX_CONTRACT_ID, data: box_plan.call_data.clone() };
                         let r = h.claim_escrow_prove(plan, &[child_call.clone(), box_call.clone()])
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -309,7 +320,11 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                             dwow_escrow_contract::model::EscrowId(ea),
                             value,
                         );
-                        let box_plan = box_take_plan(contents)?;
+                        let box_id = dwow_escrow_contract::model::Escrow::derive_claim_box_id(
+                            dwow_escrow_contract::model::EscrowId(ea),
+                            value,
+                        );
+                        let box_plan = box_take_plan(contents, box_id)?;
                         let box_call = dwow_sdk::tx::ContractCall { contract_id: *BOX_CONTRACT_ID, data: box_plan.call_data.clone() };
                         let r = h.claim_escrow_prove(plan, &[child_call.clone(), box_call.clone()])
                             .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

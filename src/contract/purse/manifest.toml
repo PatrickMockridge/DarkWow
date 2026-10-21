@@ -318,6 +318,21 @@ note_schema = [
     { name = "commitment", type = "pallas_base", witness = 10 },
     { name = "purse_id", type = "pallas_base", witness = 0 },
     { name = "state_nonce", type = "pallas_base", derived = "increment:7" },
+    # **§C.8.2 trajectory fields (`OBL-C181`).** `nullifier` (slot 8) is the consumed purse's
+    # nullifier and `merkle_root` (slot 9, the circuit's `expected_root`) is the root that
+    # anchored it. Deposit and Withdraw declare both at the same slots, and both are
+    # circuit-constrained witnesses, so the note cannot carry a value the operation did not use.
+    # They let a holder — or a consumer holding only the note — match this new purse state to the
+    # object that produced it and verify the state it came from.
+    #
+    # §C.8.2's third field, the *new* leaf's position, is deliberately absent: no witness carries
+    # it (the tree assigns it when the call is applied, after the note is built), and the scan
+    # recovers it structurally by replaying the contract tree in call order
+    # (`bin/dww/src/scan.rs`, `append_leaf_and_prove`). The requirement is corrected in
+    # `doc/src/arch/contract-wasm-type-system.md` §C.8.2 rather than satisfied by a value the
+    # note cannot prove.
+    { name = "nullifier", type = "pallas_base", witness = 8 },
+    { name = "merkle_root", type = "pallas_base", witness = 9 },
 ]
 
 [[actions]]

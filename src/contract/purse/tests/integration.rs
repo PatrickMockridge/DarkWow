@@ -1,6 +1,8 @@
 //! Integration tests for the Purse contract — data model encode/decode round-trips.
 
-use dwow_purse_contract::model::{BalanceParams, DepositParams, MerklePosition, WithdrawParams};
+use dwow_purse_contract::model::{
+    derive_purse_id, BalanceParams, DepositParams, MerklePosition, WithdrawParams,
+};
 use dwow_sdk::crypto::{pasta_prelude::PrimeField, MerkleNode, Nullifier};
 use dwow_sdk::pasta::pallas;
 
@@ -133,4 +135,21 @@ fn test_decode_rejects_empty() {
     assert!(DepositParams::decode(&[]).is_err());
     assert!(WithdrawParams::decode(&[]).is_err());
     assert!(BalanceParams::decode(&[]).is_err());
+}
+
+/// The generic purse tag binds all three witnesses: the owner, the asset and the purse id. One
+/// definition, the same derivation the three circuits constrain; a parent that knows the values can
+/// name a purse without any of them reaching the wire.
+#[test]
+fn purse_tag_binds_the_owner_asset_and_id() {
+    let owner = pallas::Base::from(7u64);
+    let asset = pallas::Base::from(8u64);
+    let id = pallas::Base::from(9u64);
+    let tag = derive_purse_id(owner, asset, id);
+
+    assert_eq!(tag, derive_purse_id(owner, asset, id), "deterministic");
+    assert_ne!(tag, derive_purse_id(pallas::Base::from(17u64), asset, id), "owner");
+    assert_ne!(tag, derive_purse_id(owner, pallas::Base::from(18u64), id), "asset");
+    assert_ne!(tag, derive_purse_id(owner, asset, pallas::Base::from(19u64)), "id");
+    assert_ne!(tag, id, "the tag is not the id");
 }

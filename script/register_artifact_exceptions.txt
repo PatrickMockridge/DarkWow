@@ -47,4 +47,3 @@ src/contract/subscription/src/client/rate_limit.rs : OBL-C108 : cited as the sta
 # implement for `.wasm`; noted rather than fixed here, because 7 `.wasm` ARE tracked (baccarat and the
 # other rebuilds) and narrowing the regex would drop their coverage.
 src/contract/box/dwow_box_contract.wasm : OBL-C142 : cited as the artefact a timestamp-based staleness verdict names; `.wasm` is gitignored, so its absence from HEAD is the row's subject
-bin/dww/src/manifest_verify.rs : OBL-C237 : cited as the module two documents listed and the tree does not have; here the absence *is* the row's subject rather than an omission in it

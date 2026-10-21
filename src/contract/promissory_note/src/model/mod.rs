@@ -104,7 +104,6 @@ pub use dwow_sdk::crypto::Nullifier;
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct CapCommitment(pallas::Base);
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CapCommitment {
     pub const ENCODED_SIZE: usize = 32;
 
@@ -152,7 +151,6 @@ pub struct CapAttrs {
     pub blind: BaseBlind,
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl CapAttrs {
     pub const ENCODED_SIZE: usize = 168;
 
@@ -227,7 +225,6 @@ pub struct Input {
     pub signature_public: pallas::Base,
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Input {
     pub const ENCODED_SIZE: usize = 224;
 
@@ -304,7 +301,6 @@ pub struct Output {
     pub spend_hook: FuncId,
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl Output {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let note_bytes = dwow_serial::serialize(&self.note);
@@ -380,7 +376,6 @@ pub struct RegisterTypeParamsV1 {
 impl dwow_serial::Encodable for RegisterTypeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RegisterTypeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RegisterTypeParamsV1 {
     pub const ENCODED_SIZE: usize = 224;
 
@@ -431,7 +426,6 @@ pub struct RegisterTypeUpdateV1 {
 impl dwow_serial::Encodable for RegisterTypeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RegisterTypeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RegisterTypeUpdateV1 {
     pub const ENCODED_SIZE: usize = 96; // 32 + 32 + 32
     pub fn encode(&self) -> Vec<u8> {
@@ -490,7 +484,6 @@ pub struct IssueParamsV1 {
 impl dwow_serial::Encodable for IssueParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for IssueParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl IssueParamsV1 {
     pub const ENCODED_SIZE: usize = 224;
 
@@ -540,7 +533,6 @@ pub struct IssueUpdateV1 {
 impl dwow_serial::Encodable for IssueUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for IssueUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl IssueUpdateV1 {
     pub const ENCODED_SIZE: usize = 72; // 32 + 32 + 8
     pub fn encode(&self) -> Vec<u8> {
@@ -582,7 +574,6 @@ pub struct RevokeParamsV1 {
 impl dwow_serial::Encodable for RevokeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RevokeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RevokeParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let n = SerializedLen::try_from_len(self.inputs.len())?;
@@ -625,7 +616,6 @@ pub struct RevokeUpdateV1 {
 impl dwow_serial::Encodable for RevokeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RevokeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RevokeUpdateV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let n = SerializedLen::try_from_len(self.nullifiers.len())?;
@@ -676,7 +666,6 @@ pub struct TransferParamsV1 {
 impl dwow_serial::Encodable for TransferParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TransferParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TransferParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let ic = SerializedLen::try_from_len(self.inputs.len())?;
@@ -742,7 +731,6 @@ pub struct TransferUpdateV1 {
 impl dwow_serial::Encodable for TransferUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for TransferUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl TransferUpdateV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let nf = SerializedLen::try_from_len(self.nullifiers.len())?;
@@ -821,7 +809,6 @@ pub struct RedeemParamsV1 {
 impl dwow_serial::Encodable for RedeemParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RedeemParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RedeemParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let input_bytes = self.input.encode();
@@ -858,7 +845,6 @@ pub struct RedeemUpdateV1 {
 impl dwow_serial::Encodable for RedeemUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RedeemUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RedeemUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
     pub fn encode(&self) -> Vec<u8> {
@@ -900,7 +886,6 @@ pub struct OtcSwapParamsV1 {
 impl dwow_serial::Encodable for OtcSwapParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for OtcSwapParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl OtcSwapParamsV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let ic = SerializedLen::try_from_len(self.inputs.len())?;
@@ -965,7 +950,6 @@ pub struct OtcSwapUpdateV1 {
 impl dwow_serial::Encodable for OtcSwapUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for OtcSwapUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl OtcSwapUpdateV1 {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let nf = SerializedLen::try_from_len(self.nullifiers.len())?;
@@ -1028,7 +1012,6 @@ pub struct RevokeSpendHookPayload {
     pub user_data_encs: Vec<pallas::Base>,
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
 impl RevokeSpendHookPayload {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         // Each vector carries its OWN count. The encoder used a single `n` for

@@ -3,7 +3,9 @@ name = "promissory_note"
 category = "Token"
 description = "Universal DeFi primitive — ERC-20 style token creation, private transfers, OTC swaps, and redemption. Genesis-deployed as ecosystem infrastructure."
 version = "1.0.0"
-dependencies = ["native_token_v1"]
+# `dependencies = ["native_token_v1"]` stood here and was read by nothing. A genesis primitive
+# does not depend on another genesis primitive: PN composes with native_token through the
+# transaction frame, not through this metadata field (`OBL-C254`).
 genesis_inclusion_reason = "Universal DeFi dependency — not consensus-critical"
 
 # ============================================================================
@@ -183,26 +185,25 @@ description = "Historical token registry tree roots indexed by block height"
 # public key (param:recipient for transfer/redeem); tx_binding is derived.
 [[circuits]]
 name = "RegisterType_V2"
-namespace = "promissory_note"
+namespace = "RegisterType_V2"
 witness_map = [
     "param:mint_public",
     "param:user_data",
     "param:token_blind",
     "note:coin_public",
     "note:value",
-    "note:asset_id",
     "note:spend_hook",
     "note:user_data",
     "note:commitment_blind",
     "note:value_blind",
     "tx_commitment",
     "tx_nonce",
-    "derived:tx_binding:10,11",
+    "derived:tx_binding:9,10",
 ]
 
 [[circuits]]
 name = "Redeem_V2"
-namespace = "promissory_note"
+namespace = "Redeem_V2"
 witness_map = [
     "param:recipient",
     "note:value",
@@ -234,7 +235,7 @@ public_inputs = [
 
 [[circuits]]
 name = "Issue_V2"
-namespace = "promissory_note"
+namespace = "Issue_V2"
 witness_map = [
     "secret",
     "derived:owner_pub:0",
@@ -254,7 +255,7 @@ witness_map = [
 
 [[circuits]]
 name = "Revoke_V2"
-namespace = "promissory_note"
+namespace = "Revoke_V2"
 witness_map = [
     "secret",
     "note:value",
@@ -275,7 +276,7 @@ witness_map = [
 
 [[circuits]]
 name = "Transfer_V2"
-namespace = "promissory_note"
+namespace = "Transfer_V2"
 witness_map = [
     "param:recipient",
     "note:value",

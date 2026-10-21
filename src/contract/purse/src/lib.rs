@@ -1,6 +1,10 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod capability;
+// Host consumers request `no-entrypoint`; the feature must actually be consulted. See
+// the same gate in `box/src/lib.rs` for the duplicate-symbol failure it prevents
+// (2026-10-21).
+#[cfg(not(feature = "no-entrypoint"))]
 pub mod entrypoint;
 pub mod error;
 pub mod model;

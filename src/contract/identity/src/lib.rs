@@ -193,7 +193,8 @@ pub const IDENTITY_CONTRACT_ISSUERS_TREE: &str = "issuers";
 pub const IDENTITY_CONTRACT_CONFIG_TREE: &str = "config";
 /// Tree for registered capabilities
 pub const IDENTITY_CONTRACT_CAPABILITIES_TREE: &str = "capabilities";
-// IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE removed — possession tracking delegated to Box
+// IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE removed — possession is proven by the holder's
+// signature in `verify_capability` (`OBL-C171`), not by a Box delegation
 
 // ============================================================================
 // KEYS

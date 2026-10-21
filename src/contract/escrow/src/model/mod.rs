@@ -202,6 +202,35 @@ impl Escrow {
     /// over disjoint inputs in disjoint contracts, and neither value is ever compared to the other.
     pub const CLAIM_BOX_CONTENTS_DOMAIN: pallas::Base = pallas::Base::from_raw([11, 0, 0, 0]);
 
+    /// Domain for [`Escrow::derive_claim_box_id`].
+    ///
+    /// A second, independent value from the contents derivation, so the box tag binds both the
+    /// instance id and the contents. Consumer-local: it is escrow's naming convention for the box
+    /// it creates, not a primitive constant.
+    pub const CLAIM_BOX_ID_DOMAIN: pallas::Base = pallas::Base::from_raw([14, 0, 0, 0]);
+
+    /// The `box_id` this escrow's claim capability box must carry.
+    ///
+    /// `poseidon_hash(DOMAIN, id, value)` — derived from the record, so the client creating the
+    /// claim box and the contract claiming it compute the same value. The box's generic
+    /// `derive_box_tag(box_id, contents)` then binds the instance and the contents together.
+    pub fn derive_claim_box_id(id: EscrowId, value: u64) -> pallas::Base {
+        dwow_sdk::crypto::poseidon_hash([
+            Self::CLAIM_BOX_ID_DOMAIN,
+            id.inner(),
+            pallas::Base::from(value),
+        ])
+    }
+
+    /// The `box_tag` this escrow's claim capability must publish:
+    /// `derive_box_tag(derive_claim_box_id(id, value), claim_box_contents)`.
+    ///
+    /// One definition, called by `ClaimV1` and tested directly: a box that differs in id or in
+    /// contents produces a different tag.
+    pub fn claim_box_tag(id: EscrowId, value: u64, contents: pallas::Base) -> pallas::Base {
+        dwow_box_contract::model::derive_box_tag(Self::derive_claim_box_id(id, value), contents)
+    }
+
     /// The `contents_commit` this escrow's claim capability box must carry.
     ///
     /// `poseidon_hash(DOMAIN, id, value)` — the escrow's own identifier and amount, so the commitment

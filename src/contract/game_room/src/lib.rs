@@ -154,6 +154,10 @@ impl TryFrom<u8> for GameRoomFunction {
 // ENTRYPOINT SUBMODULES
 // ============================================================================
 
+// **Not gated by `no-entrypoint`, deliberately.** Unlike `box`/`purse`, this crate's
+// `process_instruction`/`process_update` live in `lib.rs` and dispatch into this module, so
+// the module must stay compiled for the host build. The WASM exports — and only they — are
+// gated at the `define_contract!` invocation below.
 pub mod entrypoint;
 
 #[cfg(feature = "client")]

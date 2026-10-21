@@ -506,6 +506,11 @@ fn compute_derived(
             base(*asset_id)?,
             base(*purse_id)?,
         ])),
+        DerivedRule::BoxTag { id, contents } => SlotValue::Base(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_COMMITMENT,
+            base(*id)?,
+            base(*contents)?,
+        ])),
         DerivedRule::Coin { coin_public, value, asset_id, spend_hook, user_data, blind } => {
             SlotValue::Base(poseidon_hash([
                 DRK_POSEIDON_DOMAIN_COMMITMENT,

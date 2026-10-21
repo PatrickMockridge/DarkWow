@@ -63,6 +63,7 @@ hashbrown = "0.16.1"
 sled-overlay = "0.1.20"
 
 [dev-dependencies]
+static_assertions = "1.1.0"
 halo2_proofs = {version = "0.3.2", features = ["circuit-params", "dev-graph", "sanity-checks"]}
 halo2_gadgets = {path = "../../vendor/halo2/halo2_gadgets", features = ["test-dependencies"]}
 

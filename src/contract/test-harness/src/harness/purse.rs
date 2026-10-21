@@ -115,14 +115,17 @@ impl PurseHarness {
         let pr=dwow_purse_contract::model::DepositParams{nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_nonce:tn,derived_purse_id:dpi};
         let mut cd=vec![0x01u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         // Self-addressed AEAD note (wallet.md §2.3, §A.8.2): purse_capability note
-        // carries {asset_id, value, balance_blind, commitment, purse_id, state_nonce}
+        // carries {asset_id, value, balance_blind, commitment, purse_id, state_nonce,
+        // nullifier, merkle_root}
         // encrypted to the holder's key — matches the manifest note_schema order.
         // `value` is a `pallas::Base` now, matching the manifest's note_schema — the note carries the
         // balance the circuit computed (`witness = 5`), not a `u64` copied from a wire param. The
         // field order still matches the schema's order, which is what the scan decodes against.
         #[derive(dwow_serial::SerialEncodable)]
-        struct PurseNote { asset_id: pallas::Base, value: pallas::Base, balance_blind: pallas::Scalar, commitment: pallas::Base, purse_id: pallas::Base, state_nonce: pallas::Base }
-        let note = PurseNote { asset_id: tid, value: pallas::Base::from(nb), balance_blind: nbl.inner(), commitment: nl, purse_id: pid, state_nonce: sn + pallas::Base::from(1u64) };
+        struct PurseNote { asset_id: pallas::Base, value: pallas::Base, balance_blind: pallas::Scalar, commitment: pallas::Base, purse_id: pallas::Base, state_nonce: pallas::Base, nullifier: pallas::Base, merkle_root: pallas::Base }
+        // The last two are §C.8.2's trajectory fields (`OBL-C181`): the consumed purse's nullifier
+        // and the root that anchored it, both circuit-constrained witnesses.
+        let note = PurseNote { asset_id: tid, value: pallas::Base::from(nb), balance_blind: nbl.inner(), commitment: nl, purse_id: pid, state_nonce: sn + pallas::Base::from(1u64), nullifier: nf, merkle_root: er_base };
         let owner_pk = dwow_sdk::crypto::keypair::PublicKey::from_secret(dwow_sdk::crypto::keypair::SecretKey::from_base(os));
         let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
         let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;
@@ -180,13 +183,16 @@ impl PurseHarness {
         let pr=dwow_purse_contract::model::WithdrawParams{nullifier:nf_val,expected_root:root,new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:dwow_purse_contract::model::MerklePosition::new(lp),merkle_path:mpa,proof:vec![],tx_nonce:tn,derived_purse_id:dpi};
         let mut cd=vec![0x02u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);
         // Self-addressed AEAD note — same {asset_id, value, balance_blind, commitment,
-        // purse_id, state_nonce} schema (matches the manifest note_schema order).
+        // purse_id, state_nonce, nullifier, merkle_root} schema (matches the manifest
+        // note_schema order).
         // `value` is a `pallas::Base` now, matching the manifest's note_schema — the note carries the
         // balance the circuit computed (`witness = 5`), not a `u64` copied from a wire param. The
         // field order still matches the schema's order, which is what the scan decodes against.
         #[derive(dwow_serial::SerialEncodable)]
-        struct PurseNote { asset_id: pallas::Base, value: pallas::Base, balance_blind: pallas::Scalar, commitment: pallas::Base, purse_id: pallas::Base, state_nonce: pallas::Base }
-        let note = PurseNote { asset_id: tid, value: pallas::Base::from(nb), balance_blind: nbl.inner(), commitment: nl, purse_id: pid, state_nonce: sn + pallas::Base::from(1u64) };
+        struct PurseNote { asset_id: pallas::Base, value: pallas::Base, balance_blind: pallas::Scalar, commitment: pallas::Base, purse_id: pallas::Base, state_nonce: pallas::Base, nullifier: pallas::Base, merkle_root: pallas::Base }
+        // The last two are §C.8.2's trajectory fields (`OBL-C181`): the consumed purse's nullifier
+        // and the root that anchored it, both circuit-constrained witnesses.
+        let note = PurseNote { asset_id: tid, value: pallas::Base::from(nb), balance_blind: nbl.inner(), commitment: nl, purse_id: pid, state_nonce: sn + pallas::Base::from(1u64), nullifier: nf, merkle_root: er_base };
         let owner_pk = dwow_sdk::crypto::keypair::PublicKey::from_secret(dwow_sdk::crypto::keypair::SecretKey::from_base(os));
         let encrypted = dwow_sdk::crypto::note::AeadEncryptedNote::encrypt(&note, &owner_pk, &mut rand::rngs::StdRng::seed_from_u64(0)).map_err(|e| dwow_core::Error::Custom(format!("note encrypt: {e:?}")))?;
         let mut note_bytes=vec![];dwow_serial::Encodable::encode(&encrypted,&mut note_bytes).map_err(|e| dwow_core::Error::Custom(format!("note encode: {e:?}")))?;

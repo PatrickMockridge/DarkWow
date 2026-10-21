@@ -156,6 +156,9 @@ The theoretical basis. Read in this order.
 
 - **[Genesis Contracts](genesis.md)** — canonical list with ContractId
   derivation and bootstrap sequence.
+- **[Genesis Primitive Purity](genesis-purity.md)** — every parent-facing
+  surface of the nine classified, the box object tag, and the structural gate
+  (`scripts/check-genesis-primitive-purity.sh`).
 - **[Promissory Note](../contract/promissory_note.md)** — fully fungible
   private commitments. *The reference L1 contract.*
 - **[Box](../contract/box.md)** — ZK-native o-cap delegation primitive.
