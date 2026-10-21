@@ -1577,6 +1577,17 @@ fn vote_claim_v1(
         .ok_or_else(|| DaoEscrowError::ClaimNotFound("Claim not found".to_string()))?;
     let mut proposal = model::Proposal::decode(&proposal_data)?;
 
+    // `OBL-C160`: the proposal must belong to the endowment whose group is voting.
+    //
+    // The endowment was loaded by `params.dao_escrow_bulla` and the proposal by `params.claim_id`,
+    // and the two were never compared — so a group could vote on another endowment's pending claim
+    // (the governance child is *this* endowment's group, but the proposal state written is the
+    // other endowment's). The record carries the bulla it was created under; this is the reader.
+    if proposal.dao_escrow_bulla.inner() != params.dao_escrow_bulla.inner() {
+        msg!("[dao_escrow::vote_claim_v1] ERROR: claim belongs to a different endowment");
+        return Err(DaoEscrowError::ClaimNotFound("Claim belongs to a different endowment".to_string()).into())
+    }
+
     match proposal.state {
         model::ProposalState::Pending => {}
         model::ProposalState::Approved => return Err(DaoEscrowError::ClaimAlreadyApproved.into()),
@@ -1856,6 +1867,13 @@ fn cancel_claim_v1(
     let proposal_data = wasm::db::db_get(proposals_db, &params.claim_id.to_bytes())?
         .ok_or_else(|| DaoEscrowError::ClaimNotFound("Claim not found".to_string()))?;
     let proposal = model::Proposal::decode(&proposal_data)?;
+
+    // `OBL-C160`: as in `vote_claim_v1`, the claim must belong to the endowment whose group is
+    // cancelling it. Without this a group could cancel another endowment's pending claim.
+    if proposal.dao_escrow_bulla.inner() != params.dao_escrow_bulla.inner() {
+        msg!("[dao_escrow::cancel_claim_v1] ERROR: claim belongs to a different endowment");
+        return Err(DaoEscrowError::ClaimNotFound("Claim belongs to a different endowment".to_string()).into())
+    }
 
     // Verify proposal is still pending
     if proposal.state != model::ProposalState::Pending {
