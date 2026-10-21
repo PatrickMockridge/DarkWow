@@ -23,7 +23,6 @@
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
-
 //! DarkWow Bridge Contract (bridge-core)
 //!
 //! Smart contract implementing anonymous bridging between DarkWow and external
@@ -46,6 +45,18 @@
 //! - No VSS / threshold signing required
 //! - User alone authorizes via secret knowledge
 //! - Light client verification (no oracles)
+
+// `OBL-C21`: `bridge-verify` does not compile a working verifier. Ethereum's arm decodes RLP and
+// returns `Ok` without a trie traversal; Zcash and Aztec return `Err`; Litecoin and Monero do not
+// bind a real header. Enabling the feature therefore turns the bridge's deposit policy from
+// fail-closed into "accept a decodable Ethereum RLP blob". The feature is off in every build, and
+// this guard makes an accidental enablement a compile error rather than a silent policy change.
+// Remove it in the same commit that lands real verifiers and their negative controls.
+#[cfg(feature = "bridge-verify")]
+compile_error!(
+    "OBL-C21: `bridge-verify` is not a working verifier — enable it only together with the \
+     Ethereum MPT traversal, receipt binding and the per-chain controls it is missing"
+);
 
 /// Chain handler module - plugin architecture for external chains
 pub mod chain_handler;

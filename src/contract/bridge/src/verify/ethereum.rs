@@ -179,8 +179,14 @@ pub fn verify_mpt_proof(proof_bytes: &[u8]) -> ContractResult {
     // 5. Verify computed root == block_header.receipts_root
     // 6. Verify receipt log matches bridge ETH address + Transfer event
     //
-    // Blocked on: receiving block header from relayer (trust model design).
-    // The RLP decoder and MPT traversal infrastructure is in place.
-
-    Ok(())
+    // `OBL-C21`: this returned `Ok(())` after step 2, so under `bridge-verify` **any** decodable
+    // RLP blob was an accepted Ethereum deposit — the feature's only chain arm, and the reason the
+    // feature is compile-error-guarded. Fail closed explicitly: no traversal, no receipt, no root,
+    // no deposit. Remove this return with the steps above, not before them.
+    Err(BridgeError::InvalidDeposit(
+        "Ethereum MPT verification is not implemented (OBL-C21): no trie traversal, receipt \
+         binding or receipts-root check; the deposit is refused"
+            .into(),
+    )
+    .into())
 }
