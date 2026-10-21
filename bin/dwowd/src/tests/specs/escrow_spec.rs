@@ -57,7 +57,10 @@ use crate::tests::uniform_runner::{
 /// deposits — a unit of its own, recorded in `OBL-C170`.
 fn purse_deposit_plan(amount: u64) -> dwow_core::Result<PurseDepositPlan> {
     PurseHarness::spawn(*PURSE_CONTRACT_ID)
-        .deposit_prepare(amount)
+        // 43, not the harness default 42: this frame also carries a box put, whose fixture derives
+        // its nullifier from `(1, 42, box_id=1, state_nonce=0)`. The chain-level spent set is
+        // global (`OBL-C146`), so sharing 42 would make the purse deposit collide with the box put.
+        .deposit_prepare_with_secret(amount, pallas::Base::from(43u64))
         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))
 }
 
@@ -225,6 +228,53 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
                         let child_pn = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: pn_debris.proofs, children: vec![] };
                         let child_purse = ChildCall { contract_id: *PURSE_CONTRACT_ID, call_data: purse_call.data, proofs: vec![purse_proof.proof], children: vec![] };
                         Ok(EndpointResult { children: vec![child_pn, child_purse], call_data: r.call_data, proofs: vec![r.proof] })
+                    }
+                }),
+            },
+            // `OBL-C184`: a claim by anyone other than the recorded seller is refused.
+            //
+            // The parent proof is valid for the attacker's own key — `claim.zk` proves knowledge of
+            // `seller_secret` and instances the commitment derived from the *recipient* key — so
+            // before the seller comparison this frame succeeded for any caller. The row is placed
+            // first: it is an expected rejection, so its children do not commit and the success row
+            // below still has the funded escrow and its box to take.
+            EndpointSpec {
+                name: "ClaimV1_NonSeller",
+                is_zk: true,
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(21))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new({
+                    let notes = notes.clone();
+                    let escrow_a = escrow_a.clone();
+                    move || {
+                        let ea = escrow_a.lock().unwrap().ok_or_else(|| dwow_core::Error::Custom("escrow A not created".into()))?;
+                        let attacker_sk = pallas::Base::from(99u64);
+                        let attacker_pk = PublicKey::from_secret(SecretKey::from_base(attacker_sk));
+                        let (ax, ay) = attacker_pk.xy().expect("pk");
+                        let attacker_commitment = poseidon_hash([pallas::Base::from(4u64), ax, ay]);
+                        let plan = h.claim_escrow_prepare(ea, attacker_sk, attacker_pk, attacker_commitment, attacker_pk)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let n = notes.lock().unwrap();
+                        let n = n.as_ref().ok_or_else(|| dwow_core::Error::Custom("notes not issued".into()))?;
+                        let (child_call, child_plan, child_nonce) = pn_transfer_prepare(
+                            &n[1], value, poseidon_hash([pallas::Base::from(value), ea]), pallas::Base::zero(),
+                        )?;
+                        let contents = dwow_escrow_contract::model::Escrow::derive_claim_box_contents(
+                            dwow_escrow_contract::model::EscrowId(ea),
+                            value,
+                        );
+                        let box_plan = box_take_plan(contents)?;
+                        let box_call = dwow_sdk::tx::ContractCall { contract_id: *BOX_CONTRACT_ID, data: box_plan.call_data.clone() };
+                        let r = h.claim_escrow_prove(plan, &[child_call.clone(), box_call.clone()])
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let pn_debris = child_plan.prove(r.commitment, child_nonce)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let box_proof = box_plan.prove(r.commitment)
+                            .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                        let child_pn = ChildCall { contract_id: *PROMISSORY_NOTE_CONTRACT_ID, call_data: child_call.data, proofs: pn_debris.proofs, children: vec![] };
+                        let child_box = ChildCall { contract_id: *BOX_CONTRACT_ID, call_data: box_call.data, proofs: vec![box_proof.proof], children: vec![] };
+                        Ok(EndpointResult { children: vec![child_pn, child_box], call_data: r.call_data, proofs: vec![r.proof] })
                     }
                 }),
             },

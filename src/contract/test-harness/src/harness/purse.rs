@@ -75,8 +75,20 @@ impl PurseHarness {
     /// `deposit` to take a child set would change every caller in purse's own spec, where binding
     /// over the call alone is already right.
     pub fn deposit_prepare(&self, amount: u64) -> Result<PurseDepositPlan> {
+        self.deposit_prepare_with_secret(amount, pallas::Base::from(42u64))
+    }
+
+    /// [`Self::deposit_prepare`] with the fixture's owner secret chosen by the caller.
+    ///
+    /// `box`'s fixture uses 42 with box_id 1 and state nonce 0, and both contracts derive their
+    /// nullifier as `poseidon(1, secret, object_id, nonce)`. The chain-level spent set
+    /// (`OBL-C146`) is global, so a frame carrying both fixtures would make the purse deposit
+    /// collide with the box put. Production nullifiers are per-note and a collision is
+    /// self-inflicted, but a fixture must not manufacture one; the escrow frame passes a
+    /// different secret here rather than changing the secret this harness's own spec relies on.
+    pub fn deposit_prepare_with_secret(&self, amount: u64, os: pallas::Base) -> Result<PurseDepositPlan> {
         let dnl=pallas::Base::from(1u64);let dml=pallas::Base::from(5u64);let dss=pallas::Base::from(7u64);
-        let os=pallas::Base::from(42u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
+        let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
         // The purse identity the circuit publishes: `poseidon(4, owner_pub, asset_id, purse_id)` — the
         // derivation `balance.zk` constrains and `balance()` below computes, so a parent that knows
         // these three can require this operation to be *this* purse's.
@@ -139,6 +151,11 @@ impl PurseHarness {
         let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);let dss=pallas::Base::from(7u64);
         // Single owner (os=42). state_nonce=1 is the consumed (deposit's output)
         // nonce; the produced nonce is state_nonce+1, computed in-circuit.
+        // Owner secret 43, not 42: `box`'s fixture uses 42 with box_id 1 and state nonce 0, and
+        // both contracts derive their nullifier as `poseidon(1, secret, object_id, nonce)`. The
+        // chain-level spent set (`OBL-C146`) is global, so the two fixtures sharing 42 made a
+        // purse deposit collide with a box put in the same escrow frame. Production nullifiers
+        // are per-note and a collision is self-inflicted, but a fixture must not manufacture one.
         let os=pallas::Base::from(42u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
         // The purse identity the circuit publishes: `poseidon(4, owner_pub, asset_id, purse_id)` — the
         // derivation `balance.zk` constrains and `balance()` below computes, so a parent that knows
@@ -189,6 +206,11 @@ impl PurseHarness {
 
     pub fn balance(&self) -> Result<PurseBalanceResult> {
         let dtc=pallas::Base::from(2u64);let dtb=pallas::Base::from(3u64);let dcc=pallas::Base::from(4u64);let dml=pallas::Base::from(5u64);let dss=pallas::Base::from(7u64);
+        // Owner secret 43, not 42: `box`'s fixture uses 42 with box_id 1 and state nonce 0, and
+        // both contracts derive their nullifier as `poseidon(1, secret, object_id, nonce)`. The
+        // chain-level spent set (`OBL-C146`) is global, so the two fixtures sharing 42 made a
+        // purse deposit collide with a box put in the same escrow frame. Production nullifiers
+        // are per-note and a collision is self-inflicted, but a fixture must not manufacture one.
         let os=pallas::Base::from(42u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
         // The purse identity, with the **commitment** domain (`dcc` = 4) — the derivation
         // `balance.zk` and the two other circuits publish. A copy of this line using `dml` (5) sat

@@ -600,6 +600,20 @@ fn escrow_claim_process_instruction_v1(
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
     let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
 
+    // `OBL-C184`: the caller must be the escrow's seller.
+    //
+    // `ClaimV1` never compared its `recipient_pubkey` to the record, while `CancelV1` already did
+    // exactly this check against `buyer_pubkey`. The circuit binds the caller to the
+    // `recipient_pubkey` it instances (`claim.zk` derives the seller commitment from it), so
+    // without this comparison **anyone** could claim any Funded escrow as themselves: the proof
+    // proved their own key, and the record was never consulted. The check runs before the state
+    // check for the same reason the box check below does — "is this call about the right party"
+    // precedes "is the object in the right state".
+    if params.recipient_pubkey != escrow.seller_pubkey {
+        msg!("[ClaimV1] Error: recipient is not the escrow seller");
+        return Err(EscrowError::OnlySellerCanClaim.into())
+    }
+
     // **The wrong-object check, and it runs before the state check deliberately.** The commitment it
     // compares against lives on the record, and the record is loaded above. A take of somebody else's
     // box is refused here whether or not the escrow is funded, which is the order the child checks
@@ -693,6 +707,14 @@ fn escrow_refund_process_instruction_v1(
     let escrow_data = wasm::db::db_get(escrows_db, &params.escrow_id.to_bytes())?
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
     let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
+
+    // `OBL-C184`: the caller must be the escrow's buyer (the refund's `recipient_pubkey` is the
+    // buyer, and `refund.zk` instances the buyer's key from the caller's secret). Same missing
+    // comparison as `ClaimV1`; `CancelV1` was the one arm that had it.
+    if params.recipient_pubkey != escrow.buyer_pubkey {
+        msg!("[RefundV1] Error: recipient is not the escrow buyer");
+        return Err(EscrowError::OnlyBuyerCanRefund.into())
+    }
 
     // CRITICAL: Verify the escrow is in Funded state
     if escrow.state != EscrowState::Funded {
