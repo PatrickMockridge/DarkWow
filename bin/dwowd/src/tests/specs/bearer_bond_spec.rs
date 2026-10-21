@@ -11,6 +11,7 @@
 //! the proof must be *satisfiable*, not *anchored*. If a root comparison is added, this fixture
 //! becomes wrong and must build a real tree in the same change.
 use dwow_contract_test_harness::harness::{BearerBondHarness, ContractHarness};
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::crypto::{ContractId, MerkleNode};
 use dwow_sdk::pasta::pallas;
 use crate::tests::uniform_runner::*;
@@ -182,7 +183,9 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let report = CoverageReport {
                     series_asset_id: pallas::Base::from(1u64),
                     total_outstanding: 500, total_interest_obligation: 50,
-                    reserve_amount: 100, coverage_ratio_bps: 1818, report_block: 500,
+                    // A report block at or below the verifying height: `prove_coverage_v1` refuses
+                    // a future-dated report (`OBL-C248`). This fixture's chain is at height ~12.
+                    reserve_amount: 100, coverage_ratio_bps: 1818, report_block: 10,
                 };
                 let input = EmergencyUnstakeCallInput {
                     principal: 10000, asset_id: pallas::Base::from(1u64),
@@ -218,11 +221,21 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
                 let input = ProveCoverageCallInput {
                     series_asset_id: pallas::Base::from(1u64),
                     total_outstanding: 500, total_interest_obligation: 50,
-                    reserve_amount: 1000, report_block: 500,
+                    reserve_amount: 1000, report_block: 10,
                     tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
                 };
                 let r = h.prove_coverage_solo(input).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: r.proofs })
+            })),
+            // `OBL-C248`: the read-only endpoint is reachable now. It is proofless (`0x07` is
+            // `VerifyCoverageV1`), returns the stored report for the series, and refuses when none
+            // exists — so it must run *after* `ProveCoverageV1` and before any caller that needs
+            // the report. The runner accepts the call and advances a block; the returned bytes are
+            // the report, which the host treats as the update and `process_update` ignores.
+            mk_ep("VerifyCoverageV1", false, Box::new(move || {
+                let mut call_data = vec![0x07u8];
+                call_data.extend_from_slice(&pallas::Base::from(1u64).to_repr());
+                Ok(EndpointResult { children: vec![], call_data, proofs: vec![] })
             })),
             mk_ep("PayInterestV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::pay_interest::PayInterestCallInput;

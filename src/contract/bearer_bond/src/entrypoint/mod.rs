@@ -170,7 +170,9 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     // a closure that borrowed `self_` to name the selector would keep `calls` borrowed and the move
     // would not compile. One `u8` copy is cheaper than threading the byte through every arm.
     let func_byte = self_.data.first().copied().unwrap_or(0xff);
-    let func = BearerBondFunction::try_from(self_.data[0])?;
+    // use the byte already read: `self_.data[0]` panics on an empty call, and an empty call is
+    // exactly what a malformed transaction can carry.
+    let func = BearerBondFunction::try_from(func_byte)?;
 
     let metadata = match func {
         BearerBondFunction::IssueStakeV1 => issue_stake_metadata(cid, call_idx, calls),
@@ -180,14 +182,17 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         BearerBondFunction::UnstakeV1 => unstake_metadata(cid, call_idx, calls),
         BearerBondFunction::BurnStakeV1 => burn_stake_metadata(cid, call_idx, calls),
         BearerBondFunction::ProveCoverageV1 => prove_coverage_metadata(cid, call_idx, calls),
-        BearerBondFunction::VerifyCoverageV1 => Ok(vec![]),
+        // `OBL-C248`: an empty buffer is the host's rejection signal, so `Ok(vec![])` here made the
+        // read-only endpoint die at metadata decode before exec. It is proofless like
+        // `RegisterSeriesV1`, and an encoded *empty* metadata is what "no proof" looks like.
+        BearerBondFunction::VerifyCoverageV1 => empty_metadata(),
         BearerBondFunction::PayInterestV1 => pay_interest_metadata(cid, call_idx, calls),
         // `RegisterSeriesV1` is a plaintext registry write: no proof, no instances. It still has to
         // return an **encoded empty** metadata, not a bare `vec![]` — an empty buffer is the
         // documented rejection signal, and the host refuses the call on it (`linear/execution.rs`
         // reports it as `EMPTY metadata`). That is `OBL-C77`'s shape exactly, and returning
         // `Ok(vec![])` here reproduced it on the first run.
-        BearerBondFunction::RegisterSeriesV1 => register_series_metadata(),
+        BearerBondFunction::RegisterSeriesV1 => empty_metadata(),
     }
     .map_err(|e| {
         // The host reports a rejection as "EMPTY metadata … the reason is in the contract's own
@@ -487,7 +492,12 @@ fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 /// metadata … rejected by design`). So `Ok(vec![])` here would make a perfectly callable endpoint
 /// uncallable — which is `OBL-C77`'s class verbatim, and this arm did exactly that on its first
 /// run before the host refused block 2.
-fn register_series_metadata() -> Result<Vec<u8>, ContractError> {
+/// The metadata of a proofless call: an **encoded** empty instance list and signature list.
+///
+/// Not a bare `vec![]` — an empty buffer is the host's rejection signal (`contract-standards.md`
+/// §3), and a call that returns it is refused at metadata decode. Both proofless endpoints here
+/// (`RegisterSeriesV1`, `VerifyCoverageV1`) use this one definition.
+fn empty_metadata() -> Result<Vec<u8>, ContractError> {
     let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
     let mut metadata = vec![];
@@ -1141,6 +1151,30 @@ fn prove_coverage_v1(
         return Err(BearerBondError::CoverageReportExists.into());
     }
 
+    // Freshness and monotonicity (`OBL-C248`). There was neither: a caller could post a report
+    // dated in the future, or an older report that overwrote the latest slot, and the endpoint's
+    // void decision would then act on a stale figure. A report may not be dated after the block
+    // being verified, and it must be newer than the series' current latest report.
+    let current_block = wasm::util::get_verifying_block_height()?.get();
+    if params.report_block > current_block {
+        msg!(
+            "[prove_coverage_v1] Error: report block {} is after the verifying height {}",
+            params.report_block, current_block
+        );
+        return Err(BearerBondError::InvalidBlockHeight.into())
+    }
+    let latest_key = [&params.series_asset_id.to_repr()[..], &0u64.to_le_bytes()[..]].concat();
+    if let Some(latest_bytes) = wasm::db::db_get(bonds_info_db, &latest_key)? {
+        let latest = CoverageReport::decode(&latest_bytes)?;
+        if params.report_block <= latest.report_block {
+            msg!(
+                "[prove_coverage_v1] Error: report block {} is not newer than the latest report {}",
+                params.report_block, latest.report_block
+            );
+            return Err(BearerBondError::InvalidBlockHeight.into())
+        }
+    }
+
     let report = CoverageReport {
         series_asset_id: params.series_asset_id,
         total_outstanding: params.total_outstanding,
@@ -1193,20 +1227,34 @@ fn verify_coverage_v1(
     cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    if self_.data.len() < 2 {
-        msg!("[bearer_bond::verify_coverage_v1] Error: Empty call data");
-        return Err(BearerBondError::StakeNotFound.into());
-    }
-    let _series_asset_id = pallas::Base::from_repr(self_.data[1..33].try_into().map_err(|_| BearerBondError::StakeNotFound)?)
+    // The selector plus a 32-byte series id; a short call is refused, never indexed past its end.
+    let series_bytes = self_.data.get(1..33).ok_or_else(|| {
+        msg!("[bearer_bond::verify_coverage_v1] Error: call data is shorter than one series id");
+        BearerBondError::StakeNotFound
+    })?;
+    let series_asset_id = pallas::Base::from_repr(series_bytes.try_into().map_err(|_| BearerBondError::StakeNotFound)?)
         .into_option()
         .ok_or(BearerBondError::StakeNotFound)?;
-    let _bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
-    // FIXME: implement coverage lookup using a sentinel key pattern:
-    // On ProveCoverageV1, store the latest report under key (series_asset_id, u64::MAX)
-    // in addition to the normal (series_asset_id, report_block) key.
-    // Then this function can look up the latest report directly without iteration.
-    msg!("[bearer_bond::verify_coverage_v1] Coverage lookup not yet implemented — returning empty");
-    wasm::util::set_return_data(&vec![])
+
+    // The latest-report slot is `series ‖ 0`, written by `apply_prove_coverage`. This endpoint used
+    // to return a bare empty buffer with a FIXME; the sentinel already existed, so the reader had
+    // only to use it. No report is a hard error, not an empty success: a caller must be able to
+    // tell "no verified coverage" from "the lookup was not implemented".
+    let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
+    let latest_key = [&series_asset_id.to_repr()[..], &0u64.to_le_bytes()[..]].concat();
+    let Some(report_bytes) = wasm::db::db_get(bonds_info_db, &latest_key)? else {
+        msg!("[bearer_bond::verify_coverage_v1] No coverage report for series {:?}", series_asset_id);
+        return Err(BearerBondError::CoverageNotVerified.into())
+    };
+    let report = CoverageReport::decode(&report_bytes)?;
+    if report.series_asset_id != series_asset_id {
+        msg!("[bearer_bond::verify_coverage_v1] Error: stored report names a different series");
+        return Err(BearerBondError::StakeNotFound.into())
+    }
+
+    let mut out = vec![BearerBondFunction::VerifyCoverageV1 as u8];
+    out.extend_from_slice(&report.encode());
+    wasm::util::set_return_data(&out)
 }
 
 // ============================================================================
