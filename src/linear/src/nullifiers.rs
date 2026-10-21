@@ -211,12 +211,14 @@ pub(crate) mod tests {
     use super::*;
 
     use dwow_native_token_contract::model::{
-        fee::FeeParamsV3, Commitment, Input as NtInput, Output as NtOutput, DRKW_ASSET_ID,
+        fee::FeeParamsV3, ClearInput, Commitment, CommitmentAttributes, Input as NtInput,
+        Output as NtOutput, PoWRewardParamsV1, DRKW_ASSET_ID,
     };
     use dwow_sdk::blockchain::{FeeAmount, FeeTier};
     use dwow_sdk::crypto::keypair::SecretKey;
     use dwow_sdk::crypto::note::AeadEncryptedNote;
-    use dwow_sdk::crypto::{BaseBlind, ContractId, FuncId, MerkleNode, PublicKey};
+    use dwow_sdk::crypto::pasta_prelude::Group;
+    use dwow_sdk::crypto::{BaseBlind, Blind, ContractId, FuncId, MerkleNode, PublicKey};
     use dwow_sdk::pasta::pallas;
 
     pub(crate) fn nullifier(byte: u8) -> Nullifier {
@@ -259,6 +261,59 @@ pub(crate) mod tests {
         };
         let mut data = vec![dwow_native_token_contract::NativeTokenFunction::FeeV3 as u8];
         data.extend_from_slice(&params.encode().expect("fee params encode"));
+        ContractCall { contract_id: *NATIVE_TOKEN_CONTRACT_ID, data }
+    }
+
+    /// A genuine PoWRewardV1 call whose params decode and carry `nf` as both the coin's claim
+    /// nullifier and the output nullifier. Consensus does not verify the reward arithmetic in
+    /// `connect_block` (that is `block_acceptor`'s job), so this fixture only has to be
+    /// structurally decodable — which is what makes the claim record in `chain_state` land.
+    pub(crate) fn pow_reward(nf: Nullifier) -> ContractCall {
+        let pk = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2u64)));
+        let zero = pallas::Base::from(0u64);
+        let commitment = Commitment::from_attributes(
+            &pk,
+            1000,
+            DRKW_ASSET_ID,
+            FuncId::none(),
+            zero,
+            Blind(pallas::Base::zero()),
+        );
+        let params = PoWRewardParamsV1 {
+            input: ClearInput {
+                value: 1000,
+                asset_id: DRKW_ASSET_ID.inner(),
+                value_blind: Blind(pallas::Scalar::zero()),
+                token_blind: BaseBlind::ZERO,
+                signature_public: pk,
+            },
+            total_pin: 0,
+            effective_value: 1000,
+            commitment_attrs: CommitmentAttributes {
+                version: 0,
+                public_key: pk,
+                value: 1000,
+                asset_id: DRKW_ASSET_ID,
+                spend_hook: FuncId::none(),
+                user_data: zero,
+                blind: Blind(pallas::Base::zero()),
+            },
+            output: NtOutput {
+                value_commit: pallas::Point::identity(),
+                token_commit: zero,
+                commitment,
+                nullifier: Some(nf),
+                note: AeadEncryptedNote { ciphertext: vec![0u8; 32], ephem_public: pk },
+            },
+            nullifier: nf,
+            expected_cumulative_supply: 0,
+            old_cumulative_commit: pallas::Point::identity(),
+            old_cumulative_blind: pallas::Scalar::zero(),
+            new_cumulative_commit: pallas::Point::identity(),
+            tx_nonce: zero,
+        };
+        let mut data = vec![dwow_native_token_contract::NativeTokenFunction::PoWRewardV1 as u8];
+        data.extend_from_slice(&params.encode().expect("pow reward params encode"));
         ContractCall { contract_id: *NATIVE_TOKEN_CONTRACT_ID, data }
     }
 

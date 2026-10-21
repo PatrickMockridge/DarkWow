@@ -10,6 +10,7 @@ use dwow_sdk::crypto::{ContractId, MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT
 use dwow_contract_test_harness::harness::ContractHarness;
 use dwow_native_token_contract::{
     NATIVE_TOKEN_CONTRACT_COMMITMENT_MERKLE_TREE, NATIVE_TOKEN_CONTRACT_INFO_TREE,
+    NATIVE_TOKEN_CONTRACT_LATEST_COMMITMENT_ROOT,
 };
 use dwow_serial::Decodable;
 use std::io::Cursor;
@@ -111,7 +112,45 @@ pub async fn prefetch_coinbase_params(
     Ok(pf)
 }
 
-/// Submit a block with a pre-built coinbase (for FeeV3/BurnV1 after coordination).
+/// Read the latest commitment (coin) root from the native token's `info` tree.
+fn query_latest_coin_root(chain: &HeavyweightPipeline) -> Result<MerkleNode> {
+    let bytes = chain
+        .query_contract_state(
+            *NATIVE_TOKEN_CONTRACT_ID,
+            NATIVE_TOKEN_CONTRACT_INFO_TREE,
+            NATIVE_TOKEN_CONTRACT_LATEST_COMMITMENT_ROOT,
+        )?
+        .ok_or_else(|| dwow_core::Error::Custom(
+            "TEST-FAIL [coinbase_coordination]: latest coin root not found on-chain".into(),
+        ))?;
+    let arr: [u8; 32] = bytes.as_slice().try_into().map_err(|_| {
+        dwow_core::Error::Custom(format!(
+            "TEST-FAIL [coinbase_coordination]: latest coin root is {} bytes, not 32",
+            bytes.len()
+        ))
+    })?;
+    MerkleNode::from_bytes(arr).ok_or_else(|| dwow_core::Error::Custom(
+        "TEST-FAIL [coinbase_coordination]: latest coin root is not a canonical field element".into(),
+    ))
+}
+
+/// Spend a prefetched coinbase **one block after it is minted**.
+///
+/// The previous shape minted the prefetched coinbase and spent it in the same block. That is
+/// not a valid trajectory: the coinbase transaction declares the coin's claim nullifier, the
+/// claim nullifier *is* the coin's future spend nullifier, and OBL-C146 made the spending call
+/// declare that same value — so the within-block replay gate refused the block as a duplicate
+/// spend against the claim that created it. Relaxing that gate would let a miner spend a
+/// coinbase in the block that created it, bypassing coinbase maturity
+/// (`check_coinbase_maturity` cannot see an in-block claim). The fixture was wrong, not the
+/// rule.
+///
+/// So this submits two blocks:
+///   1. H+1: the prefetched coinbase and nothing else. Its apply appends the coin and stores
+///      `pf.merkle_root`, which is the state the prefetched path/position were computed against.
+///   2. H+2: the endpoint call (FeeV3/BurnV1) spending that coin, plus a fee collect and the
+///      block's own fresh coinbase. At H+2 the coin is mature: `COINBASE_MATURITY` is 1 in test
+///      builds and `H+2 - (H+1) = 1`.
 pub async fn submit_with_coinbase(
     chain: &HeavyweightPipeline,
     cid: ContractId,
@@ -119,7 +158,7 @@ pub async fn submit_with_coinbase(
     call_data: &[u8],
     proofs: Vec<dwow_core::zk::Proof>,
     is_zk: bool,
-    coinbase_tx: dwow_chain::Transaction,
+    pf: &PrefetchedCoinbase,
 ) -> Result<BlockHeight> {
     if is_zk && proofs.is_empty() {
         return Err(dwow_core::Error::Custom(format!(
@@ -127,9 +166,27 @@ pub async fn submit_with_coinbase(
         )));
     }
 
-    chain.block()?
+    // Block H+1: mint the coin. No contract calls, so the only leaf this block adds to the
+    // coin tree is `pf.commitment` — which is what makes the prefetched root/path valid for
+    // the spend at H+2, and what this assertion pins.
+    chain.block()?.submit_with_coinbase(pf.coinbase_tx.clone()).await?;
+
+    let latest = query_latest_coin_root(chain)?;
+    if latest.to_bytes() != pf.merkle_root.to_bytes() {
+        return Err(dwow_core::Error::Custom(format!(
+            "TEST-FAIL [coinbase_coordination]: the coinbase-only block did not produce the \
+             prefetched coin root (expected {}, got {})",
+            hex::encode(pf.merkle_root.to_bytes()),
+            hex::encode(latest.to_bytes()),
+        )));
+    }
+
+    // Block H+2: spend the mature coin. `submit()` builds this block's own fresh coinbase.
+    chain
+        .block()?
         .with_call(cid, harness, call_data, proofs)?
         .add_fee(FeeAmount::new(1)) // FeeV3 fee_amount=1 (native_token_spec.rs); FeeCollectV1 C1 rejects zero-claim otherwise
         .with_fee_collect()?
-        .submit_with_coinbase(coinbase_tx).await
+        .submit()
+        .await
 }

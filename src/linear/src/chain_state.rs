@@ -2635,6 +2635,153 @@ mod tests {
         assert_eq!(cs.get_height(), h2, "and the chain must still not have advanced");
     }
 
+    /// `OBL-C257` — a coinbase transaction's **claim** nullifier and a spend of the same coin in
+    /// the same block are a claim/spend pair, not two spends, and the within-block replay gate
+    /// refuses the pair. That refusal is what stops a coinbase being spent in the block that
+    /// created it, because `check_coinbase_maturity` cannot see an in-block claim (its own doc
+    /// says an unknown nullifier is "either a plain spend … or a claim this chain has not seen").
+    ///
+    /// The old native-token heavyweight fixture had exactly this shape: tx0 `PoWRewardV1`
+    /// declaring the coin's claim nullifier, tx1 `FeeV3` spending the same value. The evidence
+    /// made the fix a fixture repair, not a rule relaxation. Three arms pin it:
+    ///   1. same-block claim + spend is refused, naming transactions 0 and 1;
+    ///   2. a claim-only block records the creation height and **not** a spend;
+    ///   3. spending one block later connects and records the spend — the fixture's intended
+    ///      sequence (test builds use `COINBASE_MATURITY = 1`).
+    #[test]
+    fn test_connect_block_refuses_same_block_coinbase_claim_and_spend() {
+        use crate::nullifiers::tests::{fee_v3, nullifier, pow_reward};
+        use crate::{compute_merkle_root, Miner};
+
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        let nf = nullifier(0x2E);
+
+        let tx_of = |call: crate::ContractCall, declared: Nullifier| crate::Transaction {
+            version: BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![call],
+            lock_time: 0,
+            nullifiers: vec![declared],
+            witness: vec![],
+        };
+
+        // A block at `height` extending `previous`, carrying `transactions`, mined to `target`.
+        let block_of = |height: BlockHeight, previous: blake3::Hash, target: BlockTarget,
+                        transactions: Vec<crate::Transaction>| {
+            let merkle_root = compute_merkle_root(&transactions);
+            let mut block = Block {
+                header: BlockHeader {
+                    version: BlockVersion::CURRENT,
+                    previous,
+                    merkle_root,
+                    timestamp: BlockTimestamp::new(height.get()),
+                    target,
+                    nonce: 0,
+                    height,
+                    uncle_merkle_root: [0u8; 32],
+                    total_reward: dwow_sdk::blockchain::expected_reward(height),
+                    randomx_key: Miner::derive_key_from_height(height),
+                    miner: [0u8; 32],
+                    commitment_merkle_root: [0u8; 32],
+                    nullifier_root: [0u8; 32],
+                    anchor_tx_id: [0u8; 32],
+                    anchor_monero_height: MoneroBlockHeight::new(0),
+                    anchor_monero_hash: [0u8; 32],
+                    finality_flags: 0,
+                    pow_source: PowSource::Native,
+                    anchor_owner: [0u8; 32],
+                    caribina_anchor: None,
+                    fee_window_flags: FeeWindowFlags::default(),
+                },
+                transactions,
+            };
+            {
+                let vm = cs.get_vm(block.header.randomx_key).expect("the fixture's RandomX VM");
+                let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
+                let mut nonce = 0u32;
+                loop {
+                    block.header.nonce = nonce;
+                    let hash = block.hash_with_vm(&*guard).expect("hash the fixture block");
+                    let b = hash.as_bytes();
+                    let hash_u32 = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+                    if target.hash_is_valid(hash_u32) {
+                        break;
+                    }
+                    nonce = nonce.wrapping_add(1);
+                }
+            }
+            block
+        };
+
+        let expected_target = |height: BlockHeight| {
+            cs.consensus
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get_next_work_required(&cs.store, height)
+                .expect("the chain can state the target it requires")
+        };
+
+        let h1 = BlockHeight::new(1);
+        let block1 = block_of(h1, blake3::hash(b"genesis"), BlockTarget::MAX, vec![]);
+        cs.connect_block(&block1, &[], None, None, None).expect("height 1 connects");
+        let tip = cs.hash_block_with_cached_vm(&block1).expect("tip hash");
+
+        // Arm 1: claim and spend in one block. This is the shape the native-token fixture used
+        // to build, and the gate must refuse it.
+        let h2 = BlockHeight::new(2);
+        let same_block = block_of(
+            h2,
+            tip,
+            expected_target(h2),
+            vec![tx_of(pow_reward(nf), nf), tx_of(fee_v3(nf), nf)],
+        );
+        let err = cs
+            .connect_block(&same_block, &[], Some(sled::Batch::default()), Some(sled::Batch::default()), None)
+            .expect_err("a coinbase claim and a spend of the same coin in one block must be refused");
+        assert!(
+            format!("{err:?}").contains("declared by transactions 0 and 1"),
+            "the refusal must name the claim and the spend, got {err:?}"
+        );
+        assert_eq!(cs.get_height(), h1, "a refused block must not advance the chain");
+
+        // Arm 2: the claim alone. It records a creation height (kind 0) and is not a spend.
+        let claim_block = block_of(h2, tip, expected_target(h2), vec![tx_of(pow_reward(nf), nf)]);
+        cs.connect_block(&claim_block, &[], Some(sled::Batch::default()), Some(sled::Batch::default()), None)
+            .expect("a coinbase claim block connects");
+        assert_eq!(cs.nullifier_height(&nf), Some(h2), "the claim records its creation height");
+        assert!(!cs.has_nullifier(&nf), "a claim is not a spend");
+        let tip2 = cs.hash_block_with_cached_vm(&claim_block).expect("tip hash");
+
+        // Arm 3: spend one block later. The assertion depends on the build's maturity, so the
+        // control is meaningful in both configurations:
+        //   * test/devnet builds (`COINBASE_MATURITY == 1`): the spend is mature, connects, and
+        //     the spend — not the claim — is what the replay set records. This is the fixture's
+        //     intended sequence.
+        //   * a release-maturity 100 build: the same spend is refused for **maturity**, which is
+        //     the other rule the old same-block fixture was bypassing.
+        let h3 = BlockHeight::new(3);
+        let spend_block = block_of(h3, tip2, expected_target(h3), vec![tx_of(fee_v3(nf), nf)]);
+        if crate::COINBASE_MATURITY == 1 {
+            cs.connect_block(&spend_block, &[], Some(sled::Batch::default()), Some(sled::Batch::default()), None)
+                .expect("a spend one block after the claim connects");
+            assert!(cs.has_nullifier(&nf), "the spend is now recorded by the replay set");
+        } else {
+            let err = cs
+                .connect_block(&spend_block, &[], Some(sled::Batch::default()), Some(sled::Batch::default()), None)
+                .expect_err("at release maturity a one-block-later spend is immature");
+            assert!(
+                format!("{err:?}").contains("Immature coinbase spend"),
+                "the refusal must be the maturity rule, got {err:?}"
+            );
+            assert!(!cs.has_nullifier(&nf), "a refused spend must not enter the replay set");
+        }
+    }
+
     /// `OBL-C146` — `connect_block` derives the nullifier set the L1 calls spend and reconciles
     /// the caller-supplied declaration against it.
     ///

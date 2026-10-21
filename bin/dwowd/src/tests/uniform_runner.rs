@@ -448,8 +448,17 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             None
         };
 
-        // Use generate_with_coinbase if this endpoint needs coinbase params (FeeV3/BurnV1)
-        spec.harness.set_next_block_height(height_before.succ());
+        // Use generate_with_coinbase if this endpoint needs coinbase params (FeeV3/BurnV1).
+        // Such an endpoint lands **two** blocks ahead: the coinbase is minted in H+1 and spent
+        // in H+2 (see `coinbase_coordination::submit_with_coinbase`). Publish the height the
+        // call will actually land in; for native_token this is a no-op, but the contract the
+        // hook states stays true.
+        let next_height = if endpoint.generate_with_coinbase.is_some() {
+            height_before.succ().succ()
+        } else {
+            height_before.succ()
+        };
+        spec.harness.set_next_block_height(next_height);
         let result = if let Some(ref gen) = endpoint.generate_with_coinbase {
             gen(coinbase.as_ref().expect("needs_coinbase_coordination must be true when generate_with_coinbase is set"))?
         } else {
@@ -522,7 +531,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             let new_height = modules::coinbase_coordination::submit_with_coinbase(
                 &chain_a, cid, spec.harness,
                 &result.call_data, result.proofs, endpoint.is_zk,
-                cb.coinbase_tx.clone(),
+                cb,
             ).await?;
             assert!(new_height > height_before,
                 "TEST-FAIL [{}::{}]: height must advance after accept_block", spec.name, endpoint.name);
@@ -626,6 +635,9 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             // replay would skip FeeV3/BurnV1/TransferV1/SpendV1 and PI-7 would
             // compare hashes of blocks with different transaction sets.
             let cb = modules::coinbase_coordination::prefetch_coinbase_params(&chain_b).await?;
+            // The endpoint lands two blocks ahead (mint at H+1, spend at H+2); see the chain-A
+            // publisher above.
+            spec.harness.set_next_block_height(chain_b.height().succ().succ());
             let result = endpoint.generate_with_coinbase.as_ref()
                 .expect("generate_with_coinbase must be Some")
                 (&cb)?;
@@ -635,7 +647,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             let new_h = modules::coinbase_coordination::submit_with_coinbase(
                 &chain_b, cid_b, spec.harness,
                 &result.call_data, result.proofs, endpoint.is_zk,
-                cb.coinbase_tx.clone(),
+                &cb,
             ).await?;
             assert!(new_h > h_b,
                 "TEST-FAIL [{}::{}]: height must advance after accept_block (chain B)",
