@@ -9,7 +9,7 @@ family whose composition is implemented — `drain_protection`, `betting_stake`,
 `labor_market` and `relayer_endowment` declare Purse and call it nowhere):
 
 - **Purse**: Fund requires two children — `promissory_note::transfer_v1 (0x04)` and `Purse::DepositV1 (0x01)` — to lock the escrowed amount. The Purse contract tracks the balance via Pedersen commitment, so the escrow needs no value arithmetic of its own.
-- **Box** (×1): the seller holds a claim Box and Claim calls `Box::TakeV1` to consume it. The Box contract handles nullifier replay internally. There is no refund Box: `RefundV1` requires exactly **one** child, `promissory_note::transfer_v1 (0x04)`, and takes no Box.
+- **Box** (×1): the seller holds a claim Box and Claim calls `Box::TakeV1` to consume it. The Box contract handles nullifier replay internally. There is no refund Box: `RefundV1` requires exactly **one** child, `promissory_note::transfer_v1 (0x04)`, and takes no Box. **The claim Box is named by a one-way tag, not by its contents preimage**: `TakeV1` publishes `box_tag = poseidon(4, box_id, contents_commit)`, and `ClaimV1` derives the claim Box's id from the escrow's own `id`/`value` (`CLAIM_BOX_ID_DOMAIN`) and its tag from that id and the escrow's `claim_box_contents`, then compares. A different box carrying a chosen contents commitment is refused; neither the id nor the contents is published, though a party that can derive the escrow's public create params can compute the link, so this is a pseudonym and not secrecy.
 
 See [Purse](purse.md) and [Box](box.md) for the genesis primitives.
 
