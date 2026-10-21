@@ -22,7 +22,7 @@ sync-p2p = ["dwow_core/net-wallet", "futures-rustls"]
 # trusts the synced block hash, never re-hashes PoW, and never executes WASM, so
 # it must not compile the RandomX or wasmer stacks.
 pow = ["dep:randomx"]
-# Lowers `COINBASE_MATURITY` (src/linear/src/lib.rs) from 100 to 5 for devnet and test
+# Lowers `COINBASE_MATURITY` (src/linear/src/lib.rs) from 100 to 1 for devnet and test
 # builds.
 #
 # The maturity *rule* is untouched: `check_coinbase_maturity` still runs on every
@@ -36,7 +36,10 @@ pow = ["dep:randomx"]
 # premine. So funding a wallet at all costs `COINBASE_MATURITY + 2` mined blocks —
 # and this scaffold's per-block cost is ~256 MiB (a fresh RandomX cache), measured at
 # 28-32 GB for the 101-block window. Lowering it makes wallet tests that need mature
-# DRKW cost ~7 blocks instead of 101.
+# DRKW cost two blocks instead of 101. The value was five until `OBL-C146`; every fee
+# fixture had been spending a height-2 coinbase at height 3 with an empty declaration,
+# so the maturity rule never saw those spends. With a correct declaration the window had
+# to fit the fixtures rather than the fixtures bypassing the rule.
 #
 # **This is consensus-visible.** A build with it enabled disagrees with a production
 # node about when a coinbase spend is legal, *while sharing the same genesis pin* —
@@ -70,6 +73,9 @@ primitive-types = { version = "0.14.0" }
 dwow-sdk = { path = "../sdk", features = ["async", "json"] }
 dwow_core = { path = "../..", features = ["wasm-runtime", "tx"] }
 dwow_native_token_contract = { path = "../../src/contract/native_token", features = ["client"] }
+dwow_promissory_note_contract = { path = "../../src/contract/promissory_note" }
+dwow_purse_contract = { path = "../../src/contract/purse" }
+dwow_box_contract = { path = "../../src/contract/box" }
 smol = "2"
 dwow-serial = { path = "../serial", features = ["derive", "async", "hash"] }
 async-trait = "0.1"

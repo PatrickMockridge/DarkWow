@@ -1186,6 +1186,33 @@ fn note_schema_for_circuit<'a>(
         .map(|c| c.note_schema.as_slice())
 }
 
+/// `OBL-C146`: declare every L1 nullifier the built transaction's calls spend.
+///
+/// `FeeHandoff::finish` declares the fee call's nullifier because it derived it to build the
+/// call. It cannot declare a non-fee L1 call's nullifiers: that grammar lives in the contract's
+/// own model. This crate already links `dwow_chain`, whose derivation is the one `connect_block`
+/// and the mempool enforce, so the wallet's declaration is computed by the same function that
+/// checks it. A transaction the wallet builds therefore names every L1 spend it makes — which is
+/// also what makes the coinbase-maturity rule and the mempool double-spend filter see it.
+fn declare_l1_nullifiers(tx: &mut Transaction) -> Result<()> {
+    let chain_calls: Vec<dwow_chain::ContractCall> = tx
+        .calls
+        .iter()
+        .map(|leaf| dwow_chain::ContractCall {
+            contract_id: leaf.data.contract_id,
+            data: leaf.data.data.clone(),
+        })
+        .collect();
+    let (derived, _) = dwow_chain::nullifiers::derive_l1_nullifiers(&chain_calls)
+        .map_err(|e| Error::Custom(format!("derive transaction nullifiers: {e}")))?;
+    for nf in derived {
+        if !tx.nullifiers.contains(&nf) {
+            tx.nullifiers.push(nf);
+        }
+    }
+    Ok(())
+}
+
 impl Dww {
     /// Resolve a held capability to its contract's manifest and find the
     /// function for a named action (e.g. "transfer"). This is the missing
@@ -1841,7 +1868,8 @@ impl Dww {
                 let fee_call = fee.contract_call();
                 let tx_commitment =
                     dwow_sdk::crypto::util::tx_commitment([&leaf.call, &fee_call]);
-                let tx = fee.finish(leaf, tx_commitment)?;
+                let mut tx = fee.finish(leaf, tx_commitment)?;
+                declare_l1_nullifiers(&mut tx)?;
                 // §6.3 step 7 / mempool admission: ONE signature row per call,
                 // in call order — calls[0] = main (signed by the caller-supplied
                 // secrets matching the call's metadata pubkeys, empty row when
@@ -1913,7 +1941,8 @@ impl Dww {
                     call: contract_call,
                     proofs: builder_proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
-                let tx = fee.finish(leaf, tx_commitment)?;
+                let mut tx = fee.finish(leaf, tx_commitment)?;
+                declare_l1_nullifiers(&mut tx)?;
                 // Per-call signature rows (see the Path A exit above).
                 // Schnorr signatures removed per contract-standards.md §3.
                 return Ok(tx);
@@ -2004,7 +2033,8 @@ impl Dww {
         )?;
         let fee_call = fee.contract_call();
         let tx_commitment = dwow_sdk::crypto::util::tx_commitment([&leaf.call, &fee_call]);
-        let tx = fee.finish(leaf, tx_commitment)?;
+        let mut tx = fee.finish(leaf, tx_commitment)?;
+        declare_l1_nullifiers(&mut tx)?;
         // Per-call signature rows (see the Path A exit above).
 
         Ok(tx)

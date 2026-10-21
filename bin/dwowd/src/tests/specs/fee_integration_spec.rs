@@ -298,7 +298,8 @@ pub async fn run_fee_integration_mempool_lifecycle() -> Result<()> {
             data: fee_result.call_data.clone(),
         }],
         lock_time: 0,
-        nullifiers: vec![],
+        // `OBL-C146`: declare the nullifier the FeeV3 input spends.
+        nullifiers: vec![fee_result.params.input.nullifier],
         witness: vec![],
     };
 

@@ -478,10 +478,11 @@ calls `0..i-1` within the same block. Specifically, FeeV3's `exec()` (call
 i) sees the coinbase's `apply_pow_reward()` writes (call 0), including the
 merkle root inserted into `commitment_roots_db`.
 
-This is the mechanism that enables same-block fee payment: the coinbase
-commitment's merkle root IS visible to FeeV3 in the same block. This is NOT the
-production path (where FeeV3 spends commitments from prior blocks), but is a
-valid test path when `tx.nullifiers` is empty (bypassing COINBASE_MATURITY).
+The coinbase commitment's merkle root IS visible to FeeV3 in the same block.
+That visibility is a mechanism, not a licence: a transaction that spends the
+just-created coinbase must declare the nullifier (`OBL-C146`), and the
+maturity rule then refuses it in the block that created it. Production and
+tests both fund FeeV3 from a coinbase of a prior block.
 
 ### 2.3 Commitment Tree Growth Per Block
 
@@ -510,21 +511,27 @@ Starting tree: N leaves (from blocks 1..H-1)
 
 After the block, the tree has N + coins_created_this_block leaves.
 
-### 2.4 COINBASE_MATURITY and Test Bypass
+### 2.4 COINBASE_MATURITY
 
 ```
-COINBASE_MATURITY = 100 blocks
+COINBASE_MATURITY = 100 blocks   (production)
+                  = 1 block      (feature `short-coinbase-maturity`, dev/test only)
 ```
 
-**Production path**: A nullifier created at height H_c cannot be spent
-until height ≥ H_c + 100. Enforced at `connect_block` by checking
+A nullifier created at height H_c cannot be spent until height ≥
+H_c + COINBASE_MATURITY. Enforced at `connect_block` by checking
 `nullifier_set` (in-memory `BTreeMap<Nullifier, BlockHeight>`) populated
 from `tx.nullifiers` of prior blocks.
 
-**Test bypass**: Test transactions built via `build_contract_tx()` have
-`nullifiers: vec![]`. The maturity check iterates `tx.nullifiers` and
-skips when the vector is empty. Therefore tests can spend commitments at any
-height without triggering COINBASE_MATURITY.
+**The empty-declaration bypass is closed (`OBL-C146`).** Until 2026-10-20 the
+maturity check iterated `tx.nullifiers` and a transaction that declared
+nothing was invisible to it; test fixtures built with
+`nullifiers: vec![]` routinely spent a height-2 coinbase at height 3. A
+transaction's declaration must now equal the set its L1 calls spend
+(consensus.md §Declared Nullifier Set Reconciliation), so the maturity rule
+sees every L1 spend. The dev-only window was lowered from 5 to 1 when the
+fixtures stopped bypassing the rule; a coinbase is still unspendable in its
+own block.
 
 The contract-level nullifier check (FeeV3 check #7) still applies: the
 nullifier must not exist in the contract's `nullifiers_db` sled tree, checked

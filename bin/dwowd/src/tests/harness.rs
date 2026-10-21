@@ -178,6 +178,13 @@ pub fn build_contract_tx_tree(calls: Vec<(dwow_sdk::crypto::ContractId, Vec<u8>)
 /// so a wire-format move breaks one place instead of being absorbed by three byte
 /// strings, one of which will rot silently.
 pub fn build_fee_v3_tx(fee: u64) -> TestResult<Transaction> {
+    build_fee_v3_tx_with_nullifier(fee, [1u8; 32])
+}
+
+/// The same fixture, with the caller choosing the input nullifier. A test that admits several
+/// FeeV3 transactions to one mempool needs distinct spent notes — and since `OBL-C146` the
+/// declaration must name the nullifier the input carries, so the two cannot disagree.
+pub fn build_fee_v3_tx_with_nullifier(fee: u64, nf_bytes: [u8; 32]) -> TestResult<Transaction> {
     use dwow_native_token_contract::model::{
         fee::FeeParamsV3,
         Commitment, Input, Nullifier, Output, DRKW_ASSET_ID,
@@ -189,7 +196,7 @@ pub fn build_fee_v3_tx(fee: u64) -> TestResult<Transaction> {
     use dwow_sdk::pasta::pallas;
 
     let pk = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1u64)));
-    let nf = Nullifier::from_bytes([1u8; 32])
+    let nf = Nullifier::from_bytes(nf_bytes)
         .map_err(|e| infra("deriving the fee fixture's nullifier", e))?;
 
     let params = FeeParamsV3 {
@@ -241,7 +248,9 @@ pub fn build_fee_v3_tx(fee: u64) -> TestResult<Transaction> {
             data,
         }],
         lock_time: 0,
-        nullifiers: vec![],
+        // `OBL-C146`: the declaration must equal the set the L1 calls spend. This FeeV3's input
+        // carries `nf`, so a fixture that declared nothing is a transaction the chain now refuses.
+        nullifiers: vec![nf],
         witness: vec![],
     })
 }
@@ -277,13 +286,41 @@ pub fn compute_merkle_root(txs: &[Transaction]) -> blake3::Hash {
 pub fn build_test_block(
     chain_state: &CChainState,
     height: BlockHeight,
-    txs: Vec<Transaction>,
+    mut txs: Vec<Transaction>,
 ) -> TestResult<Block> {
+    declare_l1_nullifiers(&mut txs);
     let timestamp = test_block_timestamp(height);
     let merkle_root = compute_merkle_root(&txs);
     let miner = miner_for(&txs);
     let header = build_test_header(chain_state, height, merkle_root, timestamp, miner)?;
     Ok(Block { header, transactions: txs })
+}
+
+/// Fill each transaction's declared nullifier set from the L1 calls it spends (`OBL-C146`).
+///
+/// A production builder knows the nullifiers its calls spend; fixtures that assemble calls by
+/// hand do not, and a fixture that declares nothing is a transaction the chain now refuses. The
+/// declaration is derived by the same function the chain and the mempool enforce, so a block
+/// this harness builds is a block the chain will actually consider.
+///
+/// Claim transactions — the coinbase and the FeeCollectV1 plate — are left alone: their declared
+/// nullifier is a creation marker, not a spend, and the chain excludes them from reconciliation
+/// precisely because their calls derive no spend.
+fn declare_l1_nullifiers(txs: &mut [Transaction]) {
+    for tx in txs.iter_mut() {
+        if tx.is_pow_reward_coinbase_tx() || tx.is_fee_collect_tx() {
+            continue;
+        }
+        match dwow_chain::nullifiers::derive_l1_nullifiers(&tx.contract_calls) {
+            Ok((derived, _)) => tx.nullifiers = derived.into_iter().collect(),
+            // A fixture that carries a deliberately malformed L1 call is testing the chain's
+            // rejection of it. Leave the declaration alone: `connect_block`'s reconciliation
+            // derives the same call and refuses the block, naming the decode failure. Failing
+            // here instead would move the rejection out of `accept_block`, which is the path
+            // those controls exercise.
+            Err(_) => {}
+        }
+    }
 }
 
 /// Build an uncle block from a non-canonical block.
@@ -295,9 +332,10 @@ pub fn build_test_uncle(block: Block, depth: u8, base_reward: BlockReward) -> Un
 pub fn build_test_block_with_uncles(
     chain_state: &CChainState,
     height: BlockHeight,
-    txs: Vec<Transaction>,
+    mut txs: Vec<Transaction>,
     uncles: &[UncleBlock],
 ) -> TestResult<Block> {
+    declare_l1_nullifiers(&mut txs);
     let timestamp = test_block_timestamp(height);
     let merkle_root = compute_merkle_root(&txs);
     let randomx_key = Miner::derive_key_from_height(height);

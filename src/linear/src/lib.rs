@@ -48,6 +48,7 @@ pub mod proof_of_token_balance;
 #[cfg(feature = "pow")]
 mod miner;
 pub mod monero;
+pub mod nullifiers;
 mod store;
 pub mod supply_chain;
 pub mod sync_types;
@@ -86,9 +87,17 @@ pub const COINBASE_MATURITY: u64 = 100;
 ///
 /// Deliberately small: a wallet test needs two mature coinbases (one to spend, one
 /// for the fee), and the only origin of DRKW is a coinbase, so the production value
-/// forces `100 + 2` mined blocks per test at ~256 MiB each.
+/// forces `100 + 2` mined blocks per test at ~256 MiB each. One block of maturity
+/// keeps the rule exercised (a coinbase is still unspendable in its own block) while
+/// costing a fixture two mined blocks rather than six.
+///
+/// It was five until `OBL-C146`. Every FeeV3 fixture spent the height-2 coinbase at
+/// height 3 with an **empty** declared nullifier set, so the maturity rule never saw
+/// the spend — the bypass the rule change closes. A correct declaration made those
+/// fixtures immature; rather than mine four extra blocks in every fee test, the
+/// dev-only window is one block.
 #[cfg(feature = "short-coinbase-maturity")]
-pub const COINBASE_MATURITY: u64 = 5;
+pub const COINBASE_MATURITY: u64 = 1;
 
 /// Consensus chain identifier — scopes transactions to this network.
 /// Prepended to every transaction hash to prevent cross-network replay.

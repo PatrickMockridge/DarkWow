@@ -94,13 +94,38 @@ pub(crate) fn build_witness(
     // re-deriving it, so nothing read it; now the arm of every contract derives its `tx_binding`
     // from it, and a proof whose client bound the real value is refused if this disagrees.
     let tx_commitment = dwow_core::tx::commitment_of_calls(&calls);
+    // `OBL-C146`: the witness's core transaction carries the same declared nullifier set as the
+    // chain transaction, and `zk_verifier::decode_and_reconcile` compares the two. The set is
+    // derived from the calls the witness itself carries, through the chain's own derivation, so
+    // the fixture cannot declare one thing and prove another.
+    let nullifiers = derive_witness_nullifiers(&calls);
     let core_tx = dwow_core::tx::Transaction {
         calls,
         proofs: vec![proofs],
         tx_commitment,
-        nullifiers: vec![],
+        nullifiers,
     };
     dwow_serial::serialize(&core_tx)
+}
+
+/// The L1 nullifiers the witness's calls spend, in the chain's derivation.
+///
+/// A malformed L1 call yields the empty set here; `build_test_block` derives the chain
+/// transaction's declaration separately and refuses a block it cannot reconcile, which is where
+/// such a fixture fails loudly rather than being silently rounded down to "spends nothing".
+fn derive_witness_nullifiers(
+    calls: &[dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::tx::ContractCall>],
+) -> Vec<dwow_sdk::crypto::Nullifier> {
+    let chain_calls: Vec<dwow_chain::ContractCall> = calls
+        .iter()
+        .map(|l| dwow_chain::ContractCall {
+            contract_id: l.data.contract_id,
+            data: l.data.data.clone(),
+        })
+        .collect();
+    dwow_chain::nullifiers::derive_l1_nullifiers(&chain_calls)
+        .map(|(set, _)| set.into_iter().collect())
+        .unwrap_or_default()
 }
 
 /// Build an L1 witness for a multi-call test transaction.
@@ -178,11 +203,14 @@ pub(crate) fn build_witness_tree(
     // derive the same value over the same order, which is why `emit` above is the one walk that
     // decides it.
     let tx_commitment = dwow_core::tx::commitment_of_calls(&calls);
+    // `OBL-C146`: same derivation as `build_witness` — the witness and the chain transaction
+    // must declare the same set, because `decode_and_reconcile` compares them.
+    let nullifiers = derive_witness_nullifiers(&calls);
     let core_tx = dwow_core::tx::Transaction {
         calls,
         proofs,
         tx_commitment,
-        nullifiers: vec![],
+        nullifiers,
     };
     (dwow_serial::serialize(&core_tx), flat_calls)
 }

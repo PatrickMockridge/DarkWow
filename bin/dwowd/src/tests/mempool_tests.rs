@@ -15,11 +15,14 @@ struct TestFeeSignallingExtractor;
 impl FeeSignallingExtractor for TestFeeSignallingExtractor {
     fn extract_fee(&self, tx: &dwow_chain::Transaction) -> FeeAmount {
         if let Some(call) = tx.contract_calls.first() {
-            if call.data.len() >= 9 {
-                if call.data[0] == 0x08 {
-                    return FeeAmount::new(
-                        u64::from_le_bytes(call.data[1..9].try_into().unwrap_or([0; 8]))
-                    );
+            if call.data.first() == Some(&0x08) {
+                // The contract's own decoder, not a byte offset: `OBL-C146` had to decode these
+                // params too, and a hand-assembled `[0x08] ++ fee ++ zeros` fixture does not
+                // decode — the shape the harness's `build_fee_v3_tx` note records.
+                if let Ok(params) =
+                    dwow_native_token_contract::model::fee::FeeParamsV3::decode(&call.data[1..])
+                {
+                    return params.fee;
                 }
             }
         }
@@ -33,28 +36,25 @@ impl FeeSignallingExtractor for TestFeeSignallingExtractor {
     }
 }
 
-/// Make a FeeV3 test transaction (selector 0x08) with a given fee amount.
-/// The test extractor compares the plaintext fee against the tier prices
-/// directly (no threshold proofs since FeeV3).
+/// Make a genuine FeeV3 test transaction whose plaintext fee is `fee`.
+///
+/// A real `FeeParamsV3` through the contract's encoder, with a declared nullifier matching the
+/// input it spends (`OBL-C146`). The nullifier is a hash of the fee: the queue tests admit two
+/// transactions with different fees to one mempool, and two spends of the same note would be a
+/// double-spend the mempool now rejects.
 fn make_fee_v3_tx(fee: u64) -> dwow_chain::Transaction {
-    let mut data = vec![0x08u8];
-    // FeeParamsV3 encoded — pad to >= 444 bytes so as_mass_balance_fee_v3()
-    // detects it as FeeV3 (MassBalanceFeeV3CallData::from_bytes requires
-    // >= 444 bytes). Without this, the two-tier admission gate is bypassed.
-    data.extend_from_slice(&fee.to_le_bytes());
-    data.resize(444, 0u8);
-    dwow_chain::Transaction {
-        version: dwow_sdk::blockchain::BlockVersion::CURRENT,
-        inputs: vec![],
-        outputs: vec![],
-        contract_calls: vec![dwow_chain::ContractCall {
-            contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
-            data,
-        }],
-        lock_time: 0,
-        nullifiers: vec![],
-        witness: vec![],
-    }
+    // `pallas::Base::from_repr` reads little-endian, so the *last* 16 bytes are the high
+    // half and must stay zero for a canonical field element. The payload goes in the low half:
+    // the fee and a hash of it, so distinct fees spend distinct nullifiers.
+    let h = blake3::hash(&fee.to_le_bytes());
+    let mut nf = [0u8; 32];
+    nf[0..8].copy_from_slice(&fee.to_le_bytes());
+    // The hash half is shifted by one and left otherwise unmodified: an OR can merge two seeds
+    // that differ by exactly one, which would make distinct fixtures the same transaction.
+    let seed = u64::from_le_bytes(h.as_bytes()[..8].try_into().expect("8 bytes"));
+    nf[8..16].copy_from_slice(&seed.wrapping_add(1).to_le_bytes());
+    crate::tests::harness::build_fee_v3_tx_with_nullifier(fee, nf)
+        .expect("build the FeeV3 fixture")
 }
 
 #[test]
@@ -177,9 +177,13 @@ fn test_feev2_premium_before_general() {
             max_charge: u64::MAX, max_txs: 100, ..Default::default()
         }).await;
         assert_eq!(selected.len(), 2, "both txs must be selected");
-        // Premium tx must be first regardless of insertion order
+        // Premium tx must be first regardless of insertion order. The fixture is a genuine
+        // `FeeParamsV3`, so the fee is read through the contract's decoder, not a byte offset.
         let first_data = &selected[0].contract_calls[0].data;
-        let first_fee = u64::from_le_bytes(first_data[1..9].try_into().unwrap());
+        let first_fee = dwow_native_token_contract::model::fee::FeeParamsV3::decode(&first_data[1..])
+            .expect("a genuine FeeV3 call")
+            .fee
+            .get();
         assert_eq!(first_fee, 200_000_000, "premium tx must be first (got fee={})", first_fee);
     })
 }
@@ -251,7 +255,8 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
                 data: fee_result.call_data.clone(),
             }],
             lock_time: 0,
-            nullifiers: vec![],
+            // `OBL-C146`: declare the nullifier the FeeV3 input spends.
+            nullifiers: vec![fee_result.params.input.nullifier],
             witness: vec![],
         };
 
@@ -397,7 +402,8 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
                 data: fee_result.call_data.clone(),
             }],
             lock_time: 0,
-            nullifiers: vec![],
+            // `OBL-C146`: declare the nullifier the FeeV3 input spends.
+            nullifiers: vec![fee_result.params.input.nullifier],
             witness: vec![],
         };
 

@@ -369,6 +369,27 @@ impl Mempool {
             )));
         }
 
+        // OBL-C146: reconcile the caller-declared set with the L1 calls before using it for the
+        // in-pool/on-chain double-spend filter. A transaction that omits an L1 spend is refused
+        // here, not only at block acceptance.
+        //
+        // Claim transactions (coinbase, FeeCollectV1) are excluded from the comparison exactly as
+        // `connect_block` excludes them — their declared nullifier is a creation marker — but
+        // they are not exempt from derivation: a claim transaction that spends is refused.
+        let (derived, all_l1) = dwow_chain::nullifiers::derive_l1_nullifiers(&tx.contract_calls)
+            .map_err(|e| dwow_core::Error::Custom(format!("nullifier declaration: {e}")))?;
+        if is_coinbase || tx.is_fee_collect_tx() {
+            if !derived.is_empty() {
+                return Err(dwow_core::Error::Custom(format!(
+                    "invalid nullifier declaration: a claim transaction spends {} nullifier(s)",
+                    derived.len()
+                )));
+            }
+        } else {
+            dwow_chain::nullifiers::reconcile_declared(&derived, &tx.nullifiers, all_l1)
+                .map_err(|e| dwow_core::Error::Custom(format!("invalid nullifier declaration: {e}")))?;
+        }
+
         // Extract nullifiers for dedup
         let tx_nullifiers = extract_nullifiers(&tx);
 
@@ -895,23 +916,24 @@ mod tests {
     use dwow_sdk::blockchain::{BlockVersion, WasmKb};
     use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
 
-    /// Test fee extractor: extracts the plaintext fee from FeeV3 (0x08) call
-    /// data: [0x08][fee: u64 LE][...test payload...]. FeeV1 (0x00) is REMOVED
-    /// on-chain (InvalidFunction) — the fixture no longer synthesizes it.
+    /// Test fee extractor: decodes the plaintext fee from a genuine FeeV3 (0x08) call.
+    ///
+    /// It used to read `data[1..9]` from a hand-assembled fixture. `OBL-C146` made the mempool
+    /// derive the spent nullifier set from the same params, which requires the contract's own
+    /// decoder — so the fixture is now a real `FeeParamsV3` and this extractor reads it the same
+    /// way (`db_set`-style byte offsets against a struct that can move are the fixture scar the
+    /// daemon harness already records).
     struct TestFeeSignallingExtractor;
     impl FeeSignallingExtractor for TestFeeSignallingExtractor {
         fn extract_fee(&self, tx: &Transaction) -> FeeAmount {
             let mut total: u64 = 0;
             for call in &tx.contract_calls {
-                if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID {
-                    match call.data.first() {
-                        Some(&0x08u8) => {
-                            if call.data.len() >= 9 {
-                                let fee_bytes: [u8; 8] = call.data[1..9].try_into().unwrap_or([0u8; 8]);
-                                total += u64::from_le_bytes(fee_bytes);
-                            }
-                        }
-                        _ => {}
+                if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID && call.data.first() == Some(&0x08)
+                {
+                    if let Ok(params) =
+                        dwow_native_token_contract::model::fee::FeeParamsV3::decode(&call.data[1..])
+                    {
+                        total += params.fee.get();
                     }
                 }
             }
@@ -925,6 +947,74 @@ mod tests {
         }
     }
 
+    /// A genuine FeeV3 call carrying `fee`, through the contract's own encoder.
+    ///
+    /// The input nullifier is derived from `(fee, seed)` so distinct fixtures spend distinct
+    /// notes — two transactions that spend the same note are a double-spend the mempool refuses,
+    /// and several tests here admit more than one FeeV3 transaction. The bytes are canonical
+    /// (the high 24 bytes are zero) and never the zero sentinel.
+    fn fee_v3_call(fee: u64, seed: u64) -> ContractCall {
+        use dwow_native_token_contract::model::{
+            fee::FeeParamsV3, Commitment, Input, Nullifier, Output, DRKW_ASSET_ID,
+        };
+        use dwow_sdk::crypto::keypair::SecretKey;
+        use dwow_sdk::crypto::note::AeadEncryptedNote;
+        use dwow_sdk::crypto::{BaseBlind, FuncId, MerkleNode, PublicKey};
+        use dwow_sdk::pasta::pallas;
+
+        // `pallas::Base::from_repr` reads little-endian: the high half (`[16..32]`) stays zero
+        // so the encoding is canonical, and the payload lives in the low half.
+        let mut nf_bytes = [0u8; 32];
+        nf_bytes[0..8].copy_from_slice(&fee.to_le_bytes());
+        // `+1`, not `| 1`: the seed is a base-257 fold, so two seeds can differ by exactly one
+        // and an OR would merge them (`2C 00` → `2C 01`), making distinct fixtures the same
+        // transaction. An additive shift is injective and still avoids the zero sentinel.
+        nf_bytes[8..16].copy_from_slice(&seed.wrapping_add(1).to_le_bytes());
+        let nf = Nullifier::from_bytes(nf_bytes).expect("canonical, non-zero");
+
+        let pk = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1u64)));
+        let zero = pallas::Base::from(0u64);
+        let params = FeeParamsV3 {
+            input: Input {
+                value_commit: pallas::Point::default(),
+                token_commit: zero,
+                nullifier: nf,
+                merkle_root: MerkleNode::new(zero),
+                user_data_enc: zero,
+                spend_hook: FuncId::none(),
+                signature_public: pk,
+            },
+            output: Output {
+                value_commit: pallas::Point::default(),
+                token_commit: zero,
+                commitment: Commitment::from_attributes(
+                    &pk,
+                    1000,
+                    DRKW_ASSET_ID,
+                    FuncId::none(),
+                    zero,
+                    BaseBlind::ZERO,
+                ),
+                nullifier: Some(nf),
+                note: AeadEncryptedNote { ciphertext: vec![0u8; 32], ephem_public: pk },
+            },
+            fee: FeeAmount::new(fee),
+            tier: FeeTier::LOW,
+            fee_value_commit: pallas::Point::default(),
+            tx_nonce: zero,
+        };
+        let mut data = vec![0x08u8];
+        data.extend_from_slice(&params.encode().expect("fee params encode"));
+        ContractCall { contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID, data }
+    }
+
+    /// The nullifier a `fee_v3_call(fee, seed)` spends, so fixtures can declare it (`OBL-C146`).
+    fn fee_v3_nullifier(bytes: &[u8]) -> Vec<Nullifier> {
+        let params = dwow_native_token_contract::model::fee::FeeParamsV3::decode(bytes)
+            .expect("the fixture is a real FeeParamsV3 encoding");
+        vec![params.input.nullifier]
+    }
+
     fn make_tx(calls: Vec<ContractCall>, fee: Option<u64>) -> Transaction {
         let mut tx = Transaction {
             version: BlockVersion::CURRENT,
@@ -936,13 +1026,9 @@ mod tests {
             witness: vec![],
         };
         if let Some(f) = fee {
-            // Add a mock FeeV3 call to set the fee
-            let mut fee_data = vec![0x08u8]; // FeeV3 function code
-            fee_data.extend_from_slice(&f.to_le_bytes());
-            tx.contract_calls.push(ContractCall {
-                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
-                data: fee_data,
-            });
+            let fee_call = fee_v3_call(f, 0);
+            tx.nullifiers = fee_v3_nullifier(&fee_call.data[1..]);
+            tx.contract_calls.push(fee_call);
         }
         tx
     }
@@ -954,29 +1040,21 @@ mod tests {
         }
     }
 
-    /// Build a FeeV3 test transaction with the fee embedded after the selector.
-    /// data = [0x08][fee: u64 LE][rest][zero-pad to 444 bytes]
+    /// Build a FeeV3 test transaction with a genuine encoded call.
     ///
-    /// `as_mass_balance_fee_v3()` re-lifts via `from_bytes`, which enforces a
-    /// minimum length (444 bytes) before the selector check. The pad makes the
-    /// synthetic call data pass that gate; `extract_fee` still reads `data[1..9]`.
+    /// `rest` is only a seed: distinct calls in one test must spend distinct nullifiers, and
+    /// since `OBL-C146` the declaration must name the one the input carries.
     fn make_fee_v3_tx(fee: u64, rest: &[u8]) -> Transaction {
-        let mut data = vec![0x08u8];
-        data.extend_from_slice(&fee.to_le_bytes());
-        data.extend_from_slice(rest);
-        while data.len() < 444 {
-            data.push(0u8);
-        }
+        let seed = rest.iter().fold(0u64, |acc, b| acc.wrapping_mul(257).wrapping_add(*b as u64));
+        let fee_call = fee_v3_call(fee, seed);
+        let nullifiers = fee_v3_nullifier(&fee_call.data[1..]);
         Transaction {
             version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
-            contract_calls: vec![ContractCall {
-                contract_id: *NATIVE_TOKEN_CONTRACT_ID,
-                data,
-            }],
+            contract_calls: vec![fee_call],
             lock_time: 0,
-            nullifiers: vec![],
+            nullifiers,
             witness: vec![],
         }
     }
@@ -990,7 +1068,16 @@ mod tests {
     #[test]
     fn test_add_and_select() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeSignallingExtractor), None);
+            // The fixtures are genuine FeeV3 transactions, so ordering is by tier queue rather
+            // than the legacy fee index. Set the tier boundary between the two fees so the test
+            // still asserts what it says: the higher fee is selected first.
+            let config = MempoolConfig {
+                price_high: FeeAmount::new(75_000_000),
+                price_medium: FeeAmount::new(50_000_000),
+                price_low: FeeAmount::new(10_000_000),
+                ..Default::default()
+            };
+            let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
             let tx1 = make_tx(vec![make_call(vec![0x01])], Some(50_000_000));
             let tx2 = make_tx(vec![make_call(vec![0x02])], Some(100_000_000));
 
@@ -1050,14 +1137,10 @@ mod tests {
 
             // A decodable FeeV3 call, placed **second**, which is the wallet's order
             // (`TransactionBuilder::new(main)` then `.append(fee)`).
-            let mut fee_data = vec![0x08u8];
-            fee_data.extend_from_slice(&100_000_000u64.to_le_bytes());
-            fee_data.resize(444, 0u8);
-            let fee_call = ContractCall {
-                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
-                data: fee_data,
-            };
-            let tx = make_tx(vec![make_call(vec![0x01]), fee_call], None);
+            let fee_call = fee_v3_call(100_000_000, 1);
+            let mut tx = make_tx(vec![make_call(vec![0x01]), fee_call], None);
+            // `OBL-C146`: the call spends this nullifier, so the transaction declares it.
+            tx.nullifiers = fee_v3_nullifier(&tx.contract_calls[1].data[1..]);
 
             // The fixture's own preconditions. Without these the test would assert
             // nothing about the predicate: a fee call that is first, or undecodable,
@@ -1183,6 +1266,10 @@ mod tests {
             let tx1 = make_fee_v3_tx(50_000_000, &[0x01]);   // medium
             let tx2 = make_fee_v3_tx(60_000_000, &[0x02]);   // medium
             let tx3 = make_fee_v3_tx(300_000_000, &[0x03]);  // high
+            // Each fixture's declared nullifier identifies it; the call bytes no longer carry a
+            // test tag (`OBL-C146` requires a genuine `FeeParamsV3`, whose layout is the
+            // contract's, not the test's).
+            let (nf1, nf2, nf3) = (tx1.nullifiers[0], tx2.nullifiers[0], tx3.nullifiers[0]);
             let _h1 = mempool.add(tx1).await.expect("tx1");
             let _h2 = mempool.add(tx2).await.expect("tx2");
             let _h3 = mempool.add(tx3).await.expect("tx3");
@@ -1195,9 +1282,9 @@ mod tests {
                 max_charge: u64::MAX, max_txs: 100, ..Default::default()
             }).await;
             assert_eq!(selected.len(), 3, "all 3 existing txs must survive price change");
-            assert_eq!(selected[0].contract_calls[0].data[9], 0x03, "high tx must be first");
-            assert_eq!(selected[1].contract_calls[0].data[9], 0x01, "medium FCFS: tx1 before tx2");
-            assert_eq!(selected[2].contract_calls[0].data[9], 0x02, "medium FCFS: tx2 after tx1");
+            assert_eq!(selected[0].nullifiers[0], nf3, "high tx must be first");
+            assert_eq!(selected[1].nullifiers[0], nf1, "medium FCFS: tx1 before tx2");
+            assert_eq!(selected[2].nullifiers[0], nf2, "medium FCFS: tx2 after tx1");
         });
     }
 
