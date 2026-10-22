@@ -47,6 +47,10 @@ name = "spend"
 code = 4
 description = "Spend native token value via SpendV1. Burn + blind output with value conservation."
 requires_proof = true
+# One burn proof per input, one mint proof per output; the arm publishes them in that order.
+# `transfer` above has the same two-proof shape and declares it; `spend` did not until 2026-10-22,
+# so the manifest's declaration disagreed with the arm it describes.
+proof_circuits = ["Burn_V2", "Mint_V2"]
 # Uses Burn_V2 + Mint_V2 circuits (no dedicated Spend circuit)
 
 [[functions]]

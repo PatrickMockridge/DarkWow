@@ -293,6 +293,31 @@ pub struct ManifestContractClient {
     recipient: crate::crypto::PublicKey,
 }
 
+/// The one circuit a manifest-driven call can prove.
+///
+/// `ManifestCallPlan` carries one witness map and returns one proof. A function whose arm
+/// publishes more than one proof (`proof_circuits`) cannot be built correctly here: returning the
+/// first would silently produce a call the node rejects. Refuse it by name instead; the
+/// multi-proof engine is tracked as `OBL-C260`. An empty set is also refused — a proof-bearing
+/// function that names no circuit is the `OBL-C91` defect.
+fn single_proof_circuit<'a>(
+    contract: &str,
+    function: &str,
+    circuits: &[&'a str],
+) -> Result<&'a str, String> {
+    match circuits {
+        [] => Err(format!(
+            "{contract}: '{function}' requires a proof but declares no proof circuit"
+        )),
+        [one] => Ok(*one),
+        many => Err(format!(
+            "{contract}: '{function}' declares {} proof circuits ({many:?}); the manifest client \
+             constructs one proof per call and cannot assemble a multi-proof arm (OBL-C260)",
+            many.len()
+        )),
+    }
+}
+
 impl ManifestContractClient {
     pub fn new(
         name: &'static str,
@@ -409,11 +434,12 @@ impl ManifestContractClient {
             let mut witness_map = None;
             let mut zkas_bytes = None;
             if func.requires_proof {
-                let circuit_name = func.proof_circuit.as_deref().unwrap_or("none");
+                let circuits = func.circuits();
+                let circuit_name = single_proof_circuit(self.name, function, &circuits)?;
                 let circuit = self.manifest.circuits.iter()
                     .find(|c| c.name == circuit_name)
                     .ok_or_else(|| format!(
-                        "{}: '{}' requires proof circuit '{}' but manifest has no [[circuits]] entry for it",
+                        "{}: '{}' names proof circuit '{}', which its manifest does not declare",
                         self.name, function, circuit_name,
                     ))?;
 
@@ -674,5 +700,43 @@ impl ContractClient for ManifestContractClient {
             let _ = (function, params, wallet_state);
             Err("JSON parameter encoding not available (enable 'json' feature)".into())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::single_proof_circuit;
+
+    /// A two-proof arm must be refused by name, before any witness is bound. Emitting the first
+    /// proof would be a silent wrong construction; the old code did exactly that.
+    #[test]
+    fn a_multi_proof_function_is_refused_by_name() {
+        let err = single_proof_circuit(
+            "promissory_note",
+            "transfer",
+            &["Revoke_V2", "Transfer_V2"],
+        )
+        .expect_err("a multi-proof arm cannot be built by the one-proof client");
+        assert!(err.contains("2 proof circuits"), "{err}");
+        assert!(err.contains("Revoke_V2"), "{err}");
+        assert!(err.contains("Transfer_V2"), "{err}");
+        assert!(err.contains("OBL-C260"), "{err}");
+    }
+
+    /// The historical single-proof shape still resolves.
+    #[test]
+    fn a_single_proof_function_resolves() {
+        assert_eq!(
+            single_proof_circuit("purse", "deposit", &["Deposit"]),
+            Ok("Deposit")
+        );
+    }
+
+    /// A proof-bearing function with no declared circuit is refused, not defaulted to "none".
+    #[test]
+    fn an_empty_circuit_set_is_refused() {
+        let err = single_proof_circuit("purse", "deposit", &[])
+            .expect_err("a proof without a circuit name cannot be built");
+        assert!(err.contains("declares no proof circuit"), "{err}");
     }
 }

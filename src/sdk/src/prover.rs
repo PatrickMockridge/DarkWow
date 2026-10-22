@@ -31,8 +31,10 @@
 //! # Construction (wallet.md §6.4.1 steps 1-6)
 //!
 //! 1. Resolve the stored manifest by `ContractId`
-//! 2. Find the action + its function; the function's `proof_circuit` names
-//!    a `[[circuits]]` entry `(name, namespace)`
+//! 2. Find the action + its function; the function's `proof_circuits` (or its
+//!    single `proof_circuit`) names `[[circuits]]` entries `(name, namespace)`.
+//!    The one-proof client accepts exactly one entry; a multi-proof arm is
+//!    refused by name (`OBL-C260`).
 //! 3. Load the zkas binary for `(ContractId, namespace, name)` from the
 //!    `zkas_binaries` store (embedded for genesis, DeployV1-extracted for
 //!    user-deployed)

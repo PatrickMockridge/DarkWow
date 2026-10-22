@@ -60,6 +60,36 @@ fn declared_proof_circuit<'a>(manifest: &'a str, function: &str) -> Option<&'a s
     None
 }
 
+/// Every circuit a manifest declares for `function`: the `proof_circuits` list when present,
+/// else the singular `proof_circuit`. Same deliberate narrowness as the single-field reader.
+fn declared_proof_circuits<'a>(manifest: &'a str, function: &str) -> Vec<&'a str> {
+    let needle = format!("name = \"{function}\"");
+    for block in manifest.split("[[functions]]").skip(1) {
+        let block = block.split("[[").next().unwrap_or(block);
+        if !block.contains(&needle) {
+            continue;
+        }
+        let mut listed: Option<Vec<&'a str>> = None;
+        let mut single: Option<&'a str> = None;
+        for line in block.lines() {
+            let s = line.trim();
+            if let Some(rest) = s.strip_prefix("proof_circuits = [") {
+                let body = rest.strip_suffix(']').unwrap_or(rest);
+                listed = Some(
+                    body.split(',')
+                        .map(|part| part.trim().trim_matches('"'))
+                        .filter(|name| !name.is_empty())
+                        .collect(),
+                );
+            } else if let Some(rest) = s.strip_prefix("proof_circuit = \"") {
+                single = rest.strip_suffix('"');
+            }
+        }
+        return listed.unwrap_or_else(|| single.into_iter().collect());
+    }
+    Vec::new()
+}
+
 /// The names of the circuits a manifest declares in its `[[circuits]]` section.
 ///
 /// Same narrowness as `declared_proof_circuit`: one field, one block kind.
@@ -99,15 +129,13 @@ const MULTISIG_MANIFEST: &str = include_str!("../../multisig/manifest.toml");
 /// The genesis contracts whose manifests are **deployed**, i.e. the ones whose bytes ride in the
 /// genesis transaction and are read back by a wallet through `contract_client.rs`.
 ///
-/// `deployooor` and `native_token` are absent deliberately, and for the reason
-/// `bin/dwowd/src/lib.rs`'s genesis table states: both deploy `&[]` — no manifest bytes — so
-/// neither has a declaration a wallet can act on. `native_token`'s on-disk manifest is the FYI
-/// document its own header says it is, and its `transfer` and `spend` name no circuit for a
-/// reason this schema cannot express: they spend a `Burn_V2` and a `Mint_V2` in one instruction,
-/// and `ManifestFunction` carries a single `proof_circuit`. Gating it here would demand a shape
-/// the type does not have; the multi-proof schema that would is its own work, recorded in the
-/// register rather than smuggled into this test.
+/// All nine. Until G1 (2026-10-22) the genesis table passed `&[]` for `deployooor` and
+/// `native_token`; this list excluded them for that reason, and the exclusion then hid
+/// `native_token::spend` declaring no circuit while its arm published two. The list must match
+/// `bin/dwowd/src/lib.rs`'s table.
 const DEPLOYED_GENESIS_MANIFESTS: &[(&str, &str)] = &[
+    ("deployooor", include_str!("../../deployooor/manifest.toml")),
+    ("native_token", include_str!("../../native_token/manifest.toml")),
     ("promissory_note", include_str!("../../promissory_note/manifest.toml")),
     ("identity", include_str!("../../identity/manifest.toml")),
     ("oracle", ORACLE_MANIFEST),
@@ -201,41 +229,41 @@ fn every_deployed_genesis_manifest_resolves_its_own_proof_circuits() {
         );
 
         for function in functions_requiring_proof(manifest) {
-            let named = declared_proof_circuit(manifest, function).unwrap_or_else(|| {
-                panic!(
-                    "{contract}: '{function}' declares `requires_proof = true` and names no \
-                     circuit. The generic client resolves the name to the literal \"none\", finds \
-                     no [[circuits]] entry for it, and the call cannot be built (OBL-C90)"
-                )
-            });
+            let named = declared_proof_circuits(manifest, function);
             assert!(
-                declared.contains(&named),
-                "{contract}: '{function}' names proof circuit '{named}', but this manifest's \
-                 [[circuits]] section declares {declared:?} — the lookup finds no entry and the \
-                 call cannot be built (OBL-C90)"
+                !named.is_empty(),
+                "{contract}: '{function}' declares `requires_proof = true` and names no \
+                 circuit. The generic client resolves the name to the literal \"none\", finds \
+                 no [[circuits]] entry for it, and the call cannot be built (OBL-C90)"
             );
+            for circuit in &named {
+                assert!(
+                    declared.contains(circuit),
+                    "{contract}: '{function}' names proof circuit '{circuit}', but this manifest's \
+                     [[circuits]] section declares {declared:?} — the lookup finds no entry and the \
+                     call cannot be built (OBL-C90)"
+                );
+            }
             checked += 1;
         }
     }
 
-    // The control: the count is the number of ZK functions in the seven deployed manifests, so a
+    // The control: the count is the number of ZK functions in the nine deployed manifests, so a
     // parser that silently stopped finding functions would be caught rather than pass vacuously.
     //
-    // **Re-measured 2026-10-05: 32 → 34, and the drift predates this unit.** The count is a
-    // measurement of the tree, and the tree moved: `attestation`'s `OBL-C196` repair made
-    // `expire_attestation` and its sibling proof-bearing, and the seven genesis manifests have
-    // gained proof-bearing functions since the 32 was recorded. This unit is `bearer_bond`, which
-    // is **not** genesis (`is_genesis: false`), so it contributes **zero** here — the drift is
-    // recorded, not attributed to the change that happened to notice it. The old message said "a
-    // different count means the parser stopped seeing them, not that the contracts changed", which
-    // is the wrong way round: the contracts *do* change, and that is why the number must be
-    // re-measured rather than trusted.
+    // **Re-measured 2026-10-22: 34 → 38, and the movement has two causes.** G1 deployed the two
+    // previously excluded manifests: `deployooor` contributes `LockV1`, `native_token` contributes
+    // `fee`, `burn`, `transfer` and `spend` (+5). G8 removed attestation's `check_not_revoked`
+    // endpoint and circuit (−1). 34 − 1 + 5 = 38. The earlier seven-manifest count was 34
+    // (2026-10-05), 32 before that. A different count means either the parser stopped finding
+    // functions or a genesis manifest's declarations moved — both are reasons to read, not to
+    // adjust the number.
     assert_eq!(
-        checked, 34,
-        "the seven deployed genesis manifests declare 34 proof-bearing functions (re-measured \
-         2026-10-05; 32 when this control was written). A different count means either the parser \
-         stopped finding functions or a genesis manifest's declarations moved — the latter is \
-         legitimate, so re-measure before assuming the former"
+        checked, 38,
+        "the nine deployed genesis manifests declare 38 proof-bearing functions (re-measured \
+         2026-10-22; 34 over seven manifests on 2026-10-05). A different count means either the \
+         parser stopped finding functions or a genesis manifest's declarations moved — the latter \
+         is legitimate, so re-measure before assuming the former"
     );
 }
 
@@ -255,25 +283,20 @@ fn every_deployed_genesis_manifest_resolves_its_own_proof_circuits() {
 // contracts the checks do not apply to are named with their reason.
 //
 // What each check is worth, and what it is not: (A) and (B) are the generic client's own lookup —
-// a function whose `proof_circuit` resolves to nothing, and a `[[circuits]]` entry that names a
+// a function whose proof circuits resolve to nothing, and a `[[circuits]]` entry that names a
 // circuit no `.zk` builds, each make the instruction unbuildable through `contract_client.rs`.
 // (D) is weaker and is checked as a named list rather than a rule: a declared circuit no function
-// names is *sometimes* correct — `native_token`'s `transfer` and `spend` spend a `Burn_V2` and a
-// `Mint_V2` in one instruction and the schema carries one `proof_circuit` — so the sites are
-// declared with their measurements instead of being asserted away. The exception tables below are
-// a ratchet: a *new* site fails, and every entry names the row that owns it.
+// names is *sometimes* correct, so the sites are declared with their measurements instead of being
+// asserted away. The exception tables below are a ratchet: a *new* site fails, and every entry
+// names the row that owns it.
 // ============================================================================
 
-/// Contracts whose `manifest.toml` is **not deployed**, so no wallet reads it: the genesis table in
-/// `bin/dwowd/src/lib.rs` deploys `&[]` for these. The checks still run over them — this list is
-/// what they are excepted *by*, so the omission is stated rather than achieved by leaving them off.
-const MANIFESTS_NOT_DEPLOYED: &[&str] = &["deployooor", "native_token"];
-
-/// `OBL-C91` (A): a function declaring `requires_proof = true` whose `proof_circuit` names nothing
-/// in its own `[[circuits]]`. `(contract, function, why)`.
+/// `OBL-C91` (A): a function declaring `requires_proof = true` whose circuit set names nothing in
+/// its own `[[circuits]]`. `(contract, function, why)`.
 const UNDECLARED_PROOF_CIRCUIT: &[(&str, &str, &str)] = &[
-    ("native_token", "transfer", "not deployed (manifest is an FYI document) and spends a Burn_V2 + a Mint_V2 in one instruction; `ManifestFunction` carries a single `proof_circuit`, so no value would resolve — OBL-C91's multi-proof clause"),
-    ("native_token", "spend", "as `transfer` above — the same instruction shape named twice"),
+    // Empty since 2026-10-22: `native_token`'s `transfer` and `spend` are deployed and both
+    // declare their Burn_V2 + Mint_V2 pair in `proof_circuits`. A new entry here must name the
+    // defect it is excusing.
 ];
 
 /// `OBL-C91` (B): a `[[circuits]]` name no `proof/*.zk` declares — the instruction cannot be built
@@ -286,7 +309,6 @@ const DECLARED_WITHOUT_CIRCUIT: &[(&str, &str, &str)] = &[
 
 /// `OBL-C91` (D): a declared circuit that no function names. `(contract, circuit, why)`.
 const DECLARED_WITHOUT_FUNCTION: &[(&str, &str, &str)] = &[
-    ("native_token", "Mint_V2", "the second circuit of the transfer/spend pair — legitimate, and the schema cannot express it"),
     ("lottery", "InitializeV2", "the initialize arm publishes an empty instance vector by design and no client proves it; adjudicated in OBL-C78 rather than here"),
     ("lottery", "DrawWinnersV2", "measured: the manifest's `draw_winners` function declares no `proof_circuit` while the arm pushes this namespace — a missing declaration, not a stray circuit"),
     ("lottery", "ClaimPrizeV2", "as `DrawWinnersV2`: `claim_prize` declares none, the arm pushes this"),
@@ -324,27 +346,41 @@ fn zk_circuit_names(crate_dir: &std::path::Path) -> Vec<String> {
     names
 }
 
-/// The `(name, proof_circuit, requires_proof)` of every function a manifest declares.
-fn manifest_functions(manifest: &str) -> Vec<(String, Option<String>, bool)> {
+/// The `(name, proof_circuits, requires_proof)` of every function a manifest declares.
+///
+/// The set is `proof_circuits` when present, else the singular `proof_circuit` — the same
+/// precedence `ManifestFunction::circuits()` uses.
+fn manifest_functions(manifest: &str) -> Vec<(String, Vec<String>, bool)> {
     manifest
         .split("[[functions]]")
         .skip(1)
         .filter_map(|block| {
             let block = block.split("[[").next().unwrap_or(block);
             let mut name = None;
-            let mut circuit = None;
+            let mut circuits: Vec<String> = Vec::new();
             let mut requires = false;
             for line in block.lines() {
                 let s = line.trim();
                 if let Some(rest) = s.strip_prefix("name = \"") {
                     name = rest.strip_suffix('"').map(str::to_string);
+                } else if let Some(rest) = s.strip_prefix("proof_circuits = [") {
+                    let body = rest.strip_suffix(']').unwrap_or(rest);
+                    circuits = body
+                        .split(',')
+                        .map(|part| part.trim().trim_matches('"').to_string())
+                        .filter(|circuit| !circuit.is_empty())
+                        .collect();
                 } else if let Some(rest) = s.strip_prefix("proof_circuit = \"") {
-                    circuit = rest.strip_suffix('"').map(str::to_string);
+                    if circuits.is_empty() {
+                        if let Some(single) = rest.strip_suffix('"') {
+                            circuits.push(single.to_string());
+                        }
+                    }
                 } else if s == "requires_proof = true" {
                     requires = true;
                 }
             }
-            name.map(|n| (n, circuit, requires))
+            name.map(|n| (n, circuits, requires))
         })
         .collect()
 }
@@ -386,17 +422,18 @@ fn every_contract_manifest_agrees_with_its_own_circuits() {
         let functions = manifest_functions(&manifest);
         let zk = zk_circuit_names(&root.join(contract));
 
-        // (A) a function that requires a proof must name a circuit its own manifest declares.
-        for (name, circuit, requires) in &functions {
+        // (A) a function that requires a proof must name at least one circuit, and every
+        // circuit it names must be declared by its own manifest.
+        for (name, circuits, requires) in &functions {
             if !requires {
                 continue;
             }
             sites += 1;
-            let ok = circuit.as_ref().is_some_and(|c| declared.contains(c));
+            let ok = !circuits.is_empty() && circuits.iter().all(|c| declared.contains(c));
             assert!(
                 ok || excepted(UNDECLARED_PROOF_CIRCUIT, contract, name),
                 "{contract}: function '{name}' declares `requires_proof = true` and names \
-                 {circuit:?}, which its own [[circuits]] section ({declared:?}) does not declare — \
+                 {circuits:?}, which its own [[circuits]] section ({declared:?}) does not declare — \
                  the generic client resolves the name, finds no entry and cannot build the call \
                  (OBL-C91)"
             );
@@ -427,25 +464,21 @@ fn every_contract_manifest_agrees_with_its_own_circuits() {
         // (D) and every declared circuit should be named by some function.
         for name in &declared {
             sites += 1;
-            let named = functions.iter().any(|(_, c, _)| c.as_deref() == Some(name.as_str()));
+            let named = functions
+                .iter()
+                .any(|(_, circuits, _)| circuits.iter().any(|c| c == name));
             assert!(
                 named || excepted(DECLARED_WITHOUT_FUNCTION, contract, name),
                 "{contract}: [[circuits]] declares '{name}' and no function names it — either a \
-                 function's `proof_circuit` is missing, or the entry is stray (OBL-C91)"
+                 function's proof circuits are missing, or the entry is stray (OBL-C91)"
             );
         }
     }
 
     println!(
-        "OBL-C91: {} manifest(s) with a proof directory checked ({contracts:?}); \
-         {} site(s); {} not deployed and excepted by name ({MANIFESTS_NOT_DEPLOYED:?})",
+        "OBL-C91: {} manifest(s) with a proof directory checked ({contracts:?}); {} site(s)",
         contracts.len(),
         sites,
-        // The third placeholder is the *count* of the list the fourth names; it was missing, so this
-        // `println!` did not compile and took `make test` with it (`3 positional arguments in format
-        // string, but there are 2 arguments`). Found behind the E0061 in the sibling file, which is
-        // why the run's log showed only one of the two.
-        MANIFESTS_NOT_DEPLOYED.len(),
     );
 
     // The control: a parser that quietly stopped finding functions or circuits would otherwise
@@ -505,11 +538,18 @@ fn every_contract_manifest_agrees_with_its_own_circuits() {
     // declarations in the same window (each a manifest that stopped making a claim, or changed one's
     // value — the legitimate direction this comment names). So this is a re-measurement of drift,
     // not evidence that a parser stopped seeing sites.
+    //
+    // **Re-measured 2026-10-22: 671 → 667, and the movement is G8's removal.** Attestation's
+    // `check_not_revoked` endpoint and circuit left one (A) function, one (B) declared circuit,
+    // one (C) built circuit and one (D) entry: −4. The nine-manifest deployed list and the
+    // `proof_circuits` parsing do not move the walk (one site per proof-bearing function, one per
+    // declared or built circuit).
     assert_eq!(
-        sites, 671,
-        "the four checks walk 671 sites over those manifests (re-measured 2026-10-13; 676 on \
-         2026-10-05, 666 on 2026-09-28 after the dao_escrow re-wire, 673 on 2026-09-24 before it). A \
-         different count means a parser stopped seeing sites, or a manifest's declarations moved — \
-         the latter is legitimate for the OBL-C198 pass, so re-measure before assuming the former"
+        sites, 667,
+        "the four checks walk 667 sites over those manifests (re-measured 2026-10-22 after G8 \
+         removed attestation's check_not_revoked; 671 on 2026-10-13, 676 on 2026-10-05, 666 on \
+         2026-09-28 after the dao_escrow re-wire, 673 on 2026-09-24 before it). A different count \
+         means a parser stopped seeing sites, or a manifest's declarations moved — the latter is \
+         legitimate, so re-measure before assuming the former"
     );
 }

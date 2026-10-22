@@ -481,7 +481,10 @@ impl CredentialRequirement {
                 "CredentialRequirement: expected {} bytes, got {}", 76 + attr_len, data.len()
             )));
         }
-        let attribute_name = read_slice(data, 73, attr_len)?.to_vec();
+        // The attribute follows the 4-byte length at offset 72, so it starts at 76. This read
+        // was at 73 — three bytes into the length field — which decoded every non-empty name
+        // shifted and was invisible while the function had no caller.
+        let attribute_name = read_slice(data, 76, attr_len)?.to_vec();
         Ok(CredentialRequirement { schema_hash, issuer_pub, min_threshold, attribute_name })
     }
 }

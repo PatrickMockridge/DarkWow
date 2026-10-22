@@ -34,7 +34,7 @@
 use dwow_identity_contract::{
     model::{
         capability_revoke_message, Attribute, AttributeType, CapabilityId, Credential,
-        CredentialSchema, InitializeParams, IssueCredentialParams, Issuer,
+        CredentialRequirement, CredentialSchema, InitializeParams, IssueCredentialParams, Issuer,
         RevokeCapabilityParams,
     },
     IdentityFunction,
@@ -305,4 +305,23 @@ fn revoke_capability_params_roundtrip_with_nonce() {
     assert_eq!(decoded.signature, params.signature);
     assert_eq!(decoded.reason, params.reason);
     assert_eq!(decoded.fee, params.fee);
+}
+
+/// `CredentialRequirement`'s codec is symmetric: the attribute follows the 4-byte length at
+/// offset 72, so it starts at 76. The decoder read at 73 until 2026-10-22, which shifted every
+/// non-empty name by three bytes — invisible while the function had no caller.
+#[test]
+fn credential_requirement_roundtrip_preserves_attribute_name() {
+    let requirement = CredentialRequirement {
+        schema_hash: [7u8; 32],
+        issuer_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(5u64))),
+        min_threshold: 3,
+        attribute_name: b"senior_engineer".to_vec(),
+    };
+    let decoded = CredentialRequirement::decode(&requirement.encode().expect("encode"))
+        .expect("decode");
+    assert_eq!(decoded.schema_hash, requirement.schema_hash);
+    assert_eq!(decoded.issuer_pub, requirement.issuer_pub);
+    assert_eq!(decoded.min_threshold, requirement.min_threshold);
+    assert_eq!(decoded.attribute_name, requirement.attribute_name);
 }

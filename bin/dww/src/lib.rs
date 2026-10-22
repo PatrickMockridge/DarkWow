@@ -1184,7 +1184,7 @@ fn note_schema_for_circuit<'a>(
     circuit_name: &str,
 ) -> Option<&'a [dwow_sdk::manifest::ParameterField]> {
     let func = manifest.functions.iter()
-        .find(|f| f.proof_circuit.as_deref() == Some(circuit_name))?;
+        .find(|f| f.circuits().contains(&circuit_name))?;
     let action = manifest.actions.iter().find(|a| a.function == func.name)?;
     let cap_name = action.consumes.first()
         .or_else(|| action.produces.first().map(|c| &c.name))

@@ -246,7 +246,7 @@ Measured 2026-10-04 against `linear-master @ d775e37c6d` (github issue #3,
 register `OBL-C198`). Where a line below describes something that does not
 exist, it says so rather than describing the intent.
 
-- **167 ZK circuits** — the corpus `scripts/check-circuit-tx-pair-last.sh`
+- **166 ZK circuits** — the corpus `scripts/check-circuit-tx-pair-last.sh`
   walks (`src/contract/*/proof/*.zk`; twelve more live under `proofs/core` and
   `bin/darkirc/proof/`) — each derives and instances its `tx_binding`, and the
   node compares it against the enclosing transaction's reconciled commitment

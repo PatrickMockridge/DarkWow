@@ -172,11 +172,13 @@ impl<'a> ManifestResolver<'a> {
         if !self.manifest.functions.is_empty() {
             lines.push(format!("Functions ({}):", self.manifest.functions.len()));
             for f in &self.manifest.functions {
+                let circuits = f.circuits();
                 let proof = if f.requires_proof {
-                    format!(
-                        " [proof: {}]",
-                        f.proof_circuit.as_deref().unwrap_or("unknown")
-                    )
+                    if circuits.is_empty() {
+                        " [proof: unknown]".to_string()
+                    } else {
+                        format!(" [proof: {}]", circuits.join(", "))
+                    }
                 } else {
                     String::new()
                 };

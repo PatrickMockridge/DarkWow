@@ -35,6 +35,7 @@ register-only commit is minting a new `OPEN` row.
 | OBL-C251 | OPEN | A redemption pays no collateral to the redeemer and the spend hook counts burned nullifiers as redeemed value; the asset is not bound. | `src/contract/stablecoin/src/entrypoint.rs:process_redeem_stable_instruction` | `test_heavyweight_stablecoin` |
 | OBL-C253 | OPEN | An exit trusts the caller for member identity and weight, and the payout is not checked against the fund's purse. | `src/contract/drain_protection/src/entrypoint.rs:exit_process_instruction_v1` | `test_heavyweight_drain_protection` |
 | OBL-C259 | OPEN | A thread waiting on the RandomX VM lock blocks a smol executor thread. | `src/linear/src/chain_state.rs:CChainState::vm_cache` | `—` |
+| OBL-C260 | OPEN | The generic manifest client constructs one proof per call, so a multi-proof arm (PN redeem/transfer/otc_swap) cannot be built; it now fails closed. | `src/sdk/src/contract_client.rs:ManifestCallPlan::prove` | `—` |
 | OBL-C45 | OPEN | The contracts tree and the supply-chain tree are not reconciled against each other; the RPC returns stored state. | `bin/dwowd/src/rpc/blockchain.rs:blockchain_get_cumulative_supply` | `test_supply_chain_audit` |
 | OBL-C54 | OPEN | A stratum submit can be judged against a template a concurrent login has already replaced; writes are serialised but unversioned. | `bin/dwowd/src/rpc/stratum.rs:stratum_submit` | `—` |
 | OBL-C56 | OPEN | The sync-state check and the mining act are not atomic; a transition can land in the window before accept. | `bin/dwowd/src/lib.rs:miner_task` | `—` |

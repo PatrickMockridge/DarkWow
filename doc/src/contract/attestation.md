@@ -268,7 +268,7 @@ Attestor (oracle) attests to external data (push model):
 
 ## ZK Circuits
 
-All 12 circuits compiled to `.zk.bin`:
+All 11 circuits compiled to `.zk.bin`:
 
 | Circuit | Purpose |
 |---------|---------|
@@ -276,7 +276,6 @@ All 12 circuits compiled to `.zk.bin`:
 | `create_claim.zk` | Prove claimant knows secret, attestation exists |
 | `verify_claim.zk` | Prove predicate satisfied against attestation data |
 | `consume_claim.zk` | Prove claim consumed with nullifier (prevents replay) |
-| — | `check_not_revoked.zk` was removed 2026-10-22 with its endpoint: it bound only the tx pair, so it proved nothing about revocation. |
 | `delegate_attestation.zk` | Prove valid delegation of attestation authority |
 | `verify_chain.zk` | Prove multi-step attestation chain valid |
 | `update_delegation.zk` | Prove the delegator can open the key the update names (derive-and-expose; OBL-C196) |
@@ -284,6 +283,10 @@ All 12 circuits compiled to `.zk.bin`:
 | `revoke_attestation.zk` | Prove the attestor can open the key the revocation names (derive-and-expose; OBL-C195) |
 | `attest_slash.zk` | Prove attestor submitted false attestation |
 | `commit_fee_schedule.zk` | Prove fee schedule commitment correctly formed |
+
+`check_not_revoked.zk` was removed on 2026-10-22 with its endpoint: it bound only the transaction
+pair, so it proved nothing about revocation. Identity's `verify_capability` reads the revocation
+marker and is the real check.
 
 ## Database Trees
 

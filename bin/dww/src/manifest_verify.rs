@@ -275,7 +275,7 @@ fn verify_function_references(manifest: &ContractManifest, verdict: &mut Manifes
     for circuit in &manifest.circuits {
         if !manifest.functions.iter().any(|f| f.circuits().contains(&circuit.name.as_str())) {
             verdict.warnings.push(format!(
-                "circuit '{}' is not named by any function's proof_circuit",
+                "circuit '{}' is not named by any function's proof circuits",
                 circuit.name
             ));
         }

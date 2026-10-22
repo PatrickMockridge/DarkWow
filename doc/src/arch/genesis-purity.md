@@ -43,7 +43,7 @@ decision row rather than an addition.
 | 2 | Deployooor | `dwow_deployooor_contract` | consensus | functions, capabilities, actions, trees, circuits |
 | 3 | Promissory Note | `dwow_promissory_note_contract` | ecosystem | functions, capabilities, actions, trees, circuits, parameters |
 | 4 | NativeToken | `dwow_native_token_contract` | consensus | functions, capabilities, actions, trees, circuits |
-| 5 | Identity | `dwow_identity_contract` | ecosystem | functions, circuits, trees |
+| 5 | Identity | `dwow_identity_contract` | ecosystem | functions, capabilities, actions, circuits, trees |
 | 6 | Oracle | `dwow_oracle_contract` | ecosystem | functions, capabilities, actions, trees, circuits |
 | 7 | Attestation | `dwow_attestation_contract` | ecosystem | functions, capabilities, actions, trees, circuits |
 | 8 | Purse | `dwow_purse_contract` | ecosystem | functions, circuits, parameters, trees, capabilities, actions |
@@ -103,7 +103,7 @@ name = "identity"
 crate = "dwow_identity_contract"
 counter = 5
 tier = "ecosystem"
-class_a = ["functions", "circuits", "trees"]
+class_a = ["functions", "capabilities", "actions", "circuits", "trees"]
 
 [[contract]]
 name = "oracle"

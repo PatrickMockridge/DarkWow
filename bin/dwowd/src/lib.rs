@@ -442,14 +442,10 @@ pub struct Dwowd {
 /// one `ContractCall` to Deployooor with the DeployV1 selector (`0x00`)
 /// followed by `DeployParamsV1`:
 /// - `wasm_bincode`: the contract WASM
-/// - `ix`: the manifest.toml bytes (wallet-facing metadata). DELIBERATELY EMPTY
-///   for Deployooor and NativeToken, both of which DO have a `manifest.toml` on
-///   disk: the wallet handles those two natively (Path 1 — see wallet.md §6.4)
-///   rather than through manifest-declared capability discovery, so deploying
-///   their manifests would make the wallet scan them twice. The on-disk manifests
-///   are maintained as documentation of the interface and are not consensus
-///   artefacts. (The comment here previously claimed those contracts "have no
-///   manifests", which was false.)
+/// - `ix`: the manifest.toml bytes (wallet-facing metadata). All nine genesis
+///   contracts deploy their manifest here; `apply_genesis_deployments` writes it
+///   to `contract_id || b"_manifest"`. The bytes are part of the genesis
+///   transaction preimage, so changing a manifest moves the genesis hash.
 /// - `public_key`: a fixed deterministic key — the consensus rule binds
 ///   deployments to the well-known ContractIds by table position, NOT by
 ///   `derive_public`; the key only needs to be deterministic because it is
