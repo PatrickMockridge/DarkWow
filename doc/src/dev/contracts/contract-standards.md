@@ -81,7 +81,9 @@ Err(_) => return Ok(()),  // Stale buffer, host sees garbage or empty data
 ### Encode ZK Inputs Only — No Schnorr Signatures for ZK Contracts
 
 The metadata wire format is: `Encoded(Vec<(String, Vec<Base>)>) ++ Encoded(Vec<PublicKey>)`.
-Both components MUST be encoded. The ZK public inputs component MUST be populated.
+The ZK public inputs component MUST be encoded. The trailing signature-pubkeys component is
+optional: a metadata buffer that ends exactly after the ZK component declares no signers, which
+is byte-equivalent to encoding an empty vector. Most ZK contracts emit the ZK component alone.
 For a ZK capability contract, the signature pubkeys component SHALL be empty `vec![]`.
 
 - **ZK public inputs**: circuit namespace → instance values. Must match `constrain_instance` order in the `.zk` circuit.

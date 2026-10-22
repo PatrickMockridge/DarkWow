@@ -354,6 +354,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
         } => {
             // `ix` is the new contract's `__initialize` payload, verbatim.
             let ix_bytes = deploy_ix
+                .as_ref()
                 .map(|s| s.as_bytes().to_vec())
                 .unwrap_or_default();
             // Deploy via existing async deploy path

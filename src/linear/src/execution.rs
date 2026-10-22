@@ -524,21 +524,28 @@ pub fn execute_block(
                 // Only read past the ZK component when it decoded: an empty
                 // metadata buffer is the documented rejection signal and must
                 // keep `metadata-decode-zkp` as the reported reason.
-                let sigs: Vec<dwow_sdk::crypto::PublicKey> = if zkp_ok {
-                    match dwow_serial::Decodable::decode(&mut c) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            tracing::error!(target: "dwow_chain::execution",
-                                "metadata signature decode failed for contract {} (tx {}): {:?}",
-                                job.contract_id, job.tx_hash, e);
-                            fail_reason = format!("metadata signature decode: {e:?}");
-                            success = false; fail_stage = "metadata-decode-signatures";
-                            Vec::new()
+                //
+                // The trailing signature component is optional. Most contracts
+                // emit the ZK component alone; an exactly-ended buffer means "no
+                // signers", which is byte-equivalent to the empty vector a
+                // signer-less contract would encode. A *partial* trailing vector
+                // is still a decode error.
+                let sigs: Vec<dwow_sdk::crypto::PublicKey> =
+                    if zkp_ok && c.position() < m.len() as u64 {
+                        match dwow_serial::Decodable::decode(&mut c) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                tracing::error!(target: "dwow_chain::execution",
+                                    "metadata signature decode failed for contract {} (tx {}): {:?}",
+                                    job.contract_id, job.tx_hash, e);
+                                fail_reason = format!("metadata signature decode: {e:?}");
+                                success = false; fail_stage = "metadata-decode-signatures";
+                                Vec::new()
+                            }
                         }
-                    }
-                } else {
-                    Vec::new()
-                };
+                    } else {
+                        Vec::new()
+                    };
                 //
                 // Canonical jobs only. Uncle calls execute on isolated overlays and
                 // their txs are not in `block.transactions`, so they are never

@@ -87,7 +87,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
             calls.len()
         ))
     })?;
-    let func = DeployFunction::try_from(*self_.data.first().ok_or_else(|| {
+    let func = DeployFunction::try_from(*self_.data.data.first().ok_or_else(|| {
         dwow_sdk::error::ContractError::IoError("empty call data: no selector byte".to_string())
     })?)?;
 
@@ -110,7 +110,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             calls.len()
         ))
     })?;
-    let func_byte = *self_.data.first().ok_or_else(|| {
+    let func_byte = *self_.data.data.first().ok_or_else(|| {
         dwow_sdk::error::ContractError::IoError("empty call data: no selector byte".to_string())
     })?;
     let func = DeployFunction::try_from(func_byte)?;
