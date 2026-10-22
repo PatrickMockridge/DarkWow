@@ -269,7 +269,7 @@ fi
 
 # ── [Check-13] — REMOVED 2026-09-25, its authority and its subject do not exist ──
 #
-# The check was named for `decrypt_fee_for_miner` and cited `fee-spec.md H-3`. `H-3` is
+# The check was named for `decrypt_fee_for_miner` and cited a fee-spec clause that is
 # defined in no document under doc/, and the function exists **nowhere in the
 # repository** — while the check's actual test was `grep -q "Result<FeeAmount"` against
 # `bin/dwowd/src/lib.rs`, a string with no reference to the function it named. So it was

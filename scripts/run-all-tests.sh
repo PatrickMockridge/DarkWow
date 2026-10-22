@@ -119,29 +119,11 @@ run_gate "control: heavyweight coverage can fail" \
 # historical defect — the table called `drain_protection` STUB at 0/9 while its spec covered 4.
 run_gate "control: coverage table can contradict the tree" \
     bash "$REPO_ROOT/contrib/ci/check-coverage-table.sh" --self-test
-# The register worklist's control: a planted open row naming no root cause must fail, and the four other
-# failure modes with it (a group naming a non-row, a row named in two groups, a settled row listed as a
-# member, and the unassigned row above); a complete assignment passes; and a row whose Status cell opens
-# with a coined word is not counted at all — that last one is the defect the checker's first draft had.
-run_gate "control: an unassigned register row fails" \
-    bash "$SCRIPT_DIR/check-register-worklist.sh" --self-test
-# The register citation gate's line half (OBL-C148): a citation whose *path* resolves and whose *line*
-# no longer exists must be reported. The control plants exactly that in a temp register and requires a
-# non-zero exit — the check found one real instance when it was added (OBL-C103's citation, whose
-# builder library had been retired), so it is not a check that has never fired.
-# The planted id and the planted filename are assembled at run time rather than written literally,
-# because `check-doc-index.sh` scans this file for citations and a literal planted id reads as a real
-# one — it found this comment's first draft.
-run_gate "control: a stale line citation is reported" \
-    bash -c 'd=$(mktemp -d); o="OBL-C""999"; printf "%s\n" "| $o | **OPEN** | planted | src/sdk/src/manifest.rs:99999 | M | x |" > "$d/x"; REGISTER="$d/x" "$1" >/dev/null 2>&1 && { rm -rf "$d"; exit 1; }; rm -rf "$d"; exit 0' _ "$SCRIPT_DIR/check-register-artifacts.sh"
-# The register row-integrity check's control (`OBL-C96`, 2026-10-08): a row whose Discussion is written
-# across two lines — so everything after the break falls out of the table — must be reported by
-# `register-status.sh --check` rather than passing every gate while its cells are gone. The real
-# instance was this unit's own edit, which the status check, the worklist census and the doc index all
-# passed before the tail-pipe invariant was added. Assemble the planted id at run time for the reason
-# the control above does.
-run_gate "control: a row split across lines is reported" \
-    bash -c 'd=$(mktemp -d); o="OBL-C""999"; printf "| %s | **OPEN** | planted | a.rs | M | x\n  a continuation that fell out |\n" "$o" > "$d/x"; REGISTER="$d/x" "$1" --check >/dev/null 2>&1 && { rm -rf "$d"; exit 1; }; rm -rf "$d"; exit 0' _ "$SCRIPT_DIR/register-status.sh"
+# The tracker's only control, and the reason this file no longer wires three register gates: a
+# status-only closure must be refused, a closure with no resolving control must be refused, and a
+# code+control twin must pass. The register is a tracker, not a task.
+run_gate "control: a status-only closure is refused" \
+    bash "$SCRIPT_DIR/check-defect-register.sh" --self-test
 # The manifest <-> entrypoint gate's control: a manifest code the enum does not assign, and a
 # proof-bearing function with no dispatch arm, must each be caught.
 run_gate "control: manifest↔entrypoint agreement can fail" \
@@ -505,7 +487,8 @@ run_gate "control: the documentation index can fail" \
 # they were untracked, which went stale the moment those artefacts landed here on 2026-09-24
 # (`3e5dc703ed`, `e5ef7c1c96`). It ran nowhere, so the signal was never delivered — the tree's own
 # "gate that cannot fail" class, in the shape of a gate that cannot *report*. Wired now; 0.23 s.
-run_gate "register artifacts resolve (OBL-T7)" bash "$SCRIPT_DIR/check-register-artifacts.sh"
+run_gate "defect tracker (green is code + control)" \
+    bash "$SCRIPT_DIR/check-defect-register.sh"
 # A gate's AUTHORITY, resolved — the class that let an invented constant stand.
 # `MAX_BLOCK_SIZE`'s doc comment cited "L1 barrier #7", and "L1 barrier" appears in no
 # document in this repository (the barrier list was deleted 2026-09-22). This resolves the
@@ -605,25 +588,9 @@ run_gate "coinbase classifier (shared, not selector-only)" bash "$SCRIPT_DIR/che
 # reported. Negative-controlled both ways: dropping one entry fails naming exactly that site, and a
 # fake entry is reported stale while the run still passes.
 run_gate "empty metadata arms declared"   bash "$SCRIPT_DIR/check-metadata-arms.sh"
-# The register's own convention, guarded. Four times the register has been wrong about its own
-# bookkeeping and only a human reading a diff noticed — including three markers written on 2026-09-22
-# with words the register does not use ("STALE", "CONFIRMED") or with no status word at all. This is
-# the mechanical check for that class: a row whose last cell opens with an ALL-CAPS word must open it
-# with a status from the register's stated vocabulary. Narrow by construction (last cell only, bold
-# span only, ALL-CAPS only) so it cannot cry wolf, which is why it is green today while ten rows still
-# carry no marker at all — it guards the form of a marker, not the existence of one.
-# Negative-controlled before wiring, per the OBL-Z18 lesson: a copy of the register with a coined
-# marker appended as OBL-C23's last cell fails the check; the register itself passes.
-run_gate "register status markers"        bash "$SCRIPT_DIR/register-status.sh" --check
-# The register's worklist, counted — and assigned to its root causes. The gate above guards the *form*
-# of each marker; this one requires every open row to name the cause that produces it, in the register's
-# `<!-- root-cause-groups -->` block. It **replaced a budget ratchet on 2026-10-08**: a budget failed on
-# any net-new finding, which forced closing a row for every finding, and the cheapest row to close is
-# always a record or tooling row — measured over sixty commits, 36 touched the register and only ~12 were
-# product-source edits. An assignment fails on an un-understood finding instead, which is the property
-# that matters. **It is green.**
-run_gate "register worklist (root-cause assignment)" \
-    bash "$SCRIPT_DIR/check-register-worklist.sh" --strict
+# The register no longer has a vocabulary gate or a root-cause worklist: both measured the register's
+# own prose. The tracker gate (above, with its self-test) is the replacement: five columns, two
+# statuses, and closure refused unless code and a resolving, wired control landed in the same change.
 # **The gate that proves the docs-vs-code campaign done.** The ledger at
 # `doc/src/arch/audit/docs-review-2026-10-10.md` carries a `<!-- promotion-log -->` block in which every
 # confirmed row is stamped with where its correction landed (`doc:<path>#<anchor>@<commit>`, `row:OBL-…`,
@@ -637,16 +604,8 @@ run_gate "ledger promotion (every row reaches a home)" \
     bash "$SCRIPT_DIR/check-ledger-promotion.sh" --check
 run_gate "control: the promotion gate can fail" \
     bash "$SCRIPT_DIR/check-ledger-promotion.sh" --self-test
-# The launch disposition view over the obligation register. It stores no obligation status; the gate
-# reads the cited status cells live and rejects a restatement. It fails when a new unsettled
-# severity-C/H obligation is neither ranked nor excluded, so the launch view cannot silently stop
-# covering the register. **Green means the view is honest, not that the launch is clear**:
-# `--require-clear TESTNET|MAINNET` is the release checklist's mode and is deliberately not wired
-# here, because a register that records a blocker must not make the ordinary test run permanently red.
-run_gate "launch risk register (dispositions cite live obligations)" \
-    bash "$SCRIPT_DIR/check-launch-register.sh"
-run_gate "control: the launch register gate can fail" \
-    bash "$SCRIPT_DIR/check-launch-register.sh" --self-test
+# The launch register was a second ledger over the first; it is retired. Its four decision entries
+# moved to `doc/src/arch/decisions.md`, its live defects are tracker rows, and its gate is deleted.
 # RG-9, wired 2026-10-08 (`OBL-C142`): every contract's WASM embeds the current bytes of every circuit
 # in its `proof/` directory. Decided by content — the wasm either contains the `.zk.bin` bytes or it
 # does not — so a byte-identical regeneration of a circuit cannot make this fire, which is what its
@@ -895,7 +854,6 @@ for gate in \
     scripts/check-metadata-arms.sh \
     scripts/check-phase-host-functions.sh \
     scripts/check-pubkey-binding.sh \
-    scripts/register-status.sh \
     scripts/validate_zk_bins.sh
 do
     run_gate "control: $(basename "$gate") can fail" bash "$REPO_ROOT/$gate" --self-test

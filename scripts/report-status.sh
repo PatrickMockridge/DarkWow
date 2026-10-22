@@ -29,11 +29,9 @@
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 # TWO THINGS THAT WILL BITE YOU, both measured rather than guessed.
 #
-# * `scripts/register-status.sh` prints TWO numbers for the same question and they disagree. Its token
-#   histogram is documented by the script itself as "UNRELIABLE, read the caveat below before quoting any
-#   number" (prose in the register contains every status word in a non-status sense), and it currently
-#   reads 55 OPEN against a Status-column census of 30. **Every count here comes from the Status column**,
-#   which is the fixed cell `register-status.sh --check` reads.
+# * The register is a tracker with two statuses. There is no status vocabulary, no root-cause worklist
+#   and no second launch ledger; `scripts/check-defect-register.sh` is its only gate, and this report
+#   counts `open=N closed=N` from the Status column rather than ranking prose.
 # * `scripts/check-doc-index.sh` globs the WORKING TREE, not `git ls-files` (`:121-126`), so a gitignored
 #   `.md` under `reports/` is still inside the doc gate's scope. The raw capture therefore writes
 #   `.out`/`.err`/`.exit` and never a `.md`. Do not "tidy" those extensions.
@@ -95,14 +93,10 @@ NOTEST = "NOT ESTABLISHED"
 # runs the gates the umbrella forgets, which is the only way their verdicts enter the record at all.
 INSTRUMENTS = [
     ("doc_index",                  "bash scripts/check-doc-index.sh"),
-    ("register_artifacts",         "bash scripts/check-register-artifacts.sh"),
+    # The tracker's only gate: schema, locus/control resolution, and closure-is-code. Static; no build.
+    ("defect_tracker",             "bash scripts/check-defect-register.sh --working-tree"),
     ("authority_resolves",         "bash scripts/check-authority-resolves.sh"),
     ("artifact_freshness",         "bash scripts/check-artifact-freshness.sh"),
-    ("register_status_check",      "bash scripts/register-status.sh --check"),
-    # The launch disposition view's integrity. Green means the view is honest, not that the launch is
-    # clear: `--require-clear` is the release checklist's mode and is not run here, for the same reason
-    # it is not wired into the umbrella — a red blocker is the register's content, not a gate defect.
-    ("launch_register",            "bash scripts/check-launch-register.sh"),
     ("circuit_metadata_alignment", "bash scripts/check-circuit-metadata-alignment.sh"),
     ("circuit_domain_separation",  "bash scripts/check-circuit-domain-separation.sh"),
     ("circuit_instance_derivation","bash scripts/check-circuit-instance-derivation.sh"),
@@ -435,89 +429,25 @@ probes["genesis_ids"] = {"rc": 0 if agree else 1, "out":
     f"  display labels in execution.rs (compared as labels, not ids): {exec_label}\n"
     f"  agree={agree}"}
 
-# The register census — Status column ONLY. See the header note about the histogram.
+# The defect tracker's census — two statuses, no severity column. The register is a tracker, not a
+# ranked document; `open=N closed=N` is the honest report, and a row turns green only through the
+# gate's code+control rule.
 def register_rows():
-    """(id, status-token, severity, proposition), with the severity found by COLUMN NAME per table.
-
-    Measured, and it cost two wrong attempts: the register holds SEVEN tables in FOUR header shapes —
-    `| ID | Status | Proposition | Enforced at | Checked today by | Sev |` (x3), `… | Carried from | Sev |`,
-    `… | HAZID | Sev |` and `… | Source | Sev |`. So there is no single column index for the severity: a
-    fixed index read 120 of 194 rows as unparsed, and an earlier `cells[-2]` — assuming a trailing notes
-    cell exists — landed inside notes prose and read the open-HIGH set as 1 row instead of 6. `Sev` is the
-    LAST NAMED column in all four shapes, so it is located by name against the table's own header, and a
-    row whose arity or severity does not fit its header is reported unparsed rather than guessed."""
-    text = open(REGISTER, errors="replace").read()
-    rows, recovered, shapes = [], [], {}
-    arity_mismatch = 0
-    sev_idx = arity = None
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        # A HEADER is identified STRUCTURALLY: its first cell is exactly `ID` and the next line is the
-        # markdown separator. Matching on the words "Status"/"Sev" anywhere in the line instead accepted
-        # row lines whose PROSE mentions them — measured: two OBL rows were registered as "header shapes",
-        # the shape census grew garbage entries, and every row after them was misparsed.
-        nxt = lines[i + 1] if i + 1 < len(lines) else ""
-        if re.match(r'^\|\s*ID\s*\|', line) and re.match(r'^\|[\s:|-]+\|$', nxt):
-            cols = [c.strip() for c in line.split("|")[1:-1]]
-            shapes[tuple(cols)] = shapes.get(tuple(cols), 0) + 1
-            # group-2 cells are the header's columns from `Status` onward, so `Sev`'s index within them
-            # is its index in the header minus one (the `ID` column is consumed by the row regex).
-            sev_idx = cols.index("Sev") - 1 if "Sev" in cols else None
-            arity = len(cols) - 1        # named cells after ID; a row may add one notes cell + a trailing ''
-            continue
-        m = re.match(r'^\|\s*(OBL-[CZT]\d+)\s*\|(.*)$', line)
-        if not m or sev_idx is None:
-            continue
-        # Split on UNESCAPED pipes only. A bare `|` inside a code span splits a GFM cell — the register's
-        # own guard documents that class and names six rows it repaired, and it is still present: measured,
-        # 30 of 194 rows carry a cell arity their own table header does not explain, which is exactly the
-        # population whose columns after the offending pipe are shifted.
-        cells = re.split(r'(?<!\\)\|', m.group(2))
-        cells = [c.strip() for c in cells]
-        if len(cells) not in (arity + 1, arity + 2):
-            arity_mismatch += 1
-        status = cells[0]
-        sev = cells[sev_idx] if len(cells) > sev_idx else ""
-        if not re.fullmatch(r'[CHML]', sev):
-            # Recovery, and it is LABELLED rather than silent: take the LAST bare severity letter in the
-            # row's named-cell region. Validated against an independent count — it reproduces the six open
-            # HIGH rows exactly — but a recovered value is marked, because a relation that had to be
-            # recovered is weaker evidence than one read from its own column.
-            cand = [c for c in cells[2:8] if re.fullmatch(r'[CHML]', c)]
-            if cand:
-                sev = cand[-1] + "*"
-                recovered.append(m.group(1))
-            else:
-                sev = "?"
-        tok = re.match(r'\*\*([A-Z][A-Z-]*)\*\*', status)
-        rows.append((m.group(1), tok.group(1) if tok else "?", sev,
-                     cells[1] if len(cells) > 1 else ""))
-    return rows, recovered, shapes, arity_mismatch
+    """(id, status) for every tracker row."""
+    out = []
+    with open(REGISTER, errors="replace") as f:
+        for line in f:
+            m = re.match(r'^\|\s*(OBL-[CZT]\d+)\s*\|\s*(OPEN|CLOSED)\s*\|', line)
+            if m:
+                out.append((m.group(1), m.group(2), "-", ""))
+    return out, [], {}, 0
 rows, sev_recovered, table_shapes, arity_mismatch = register_rows()
-OPEN_TOKENS = {"OPEN", "PARTLY", "FAILS"}
-census = {}
-for _, tok, _, _ in rows:
-    census[tok] = census.get(tok, 0) + 1
+OPEN_TOKENS = {"OPEN"}
 open_rows = [(rid, tok, prop) for rid, tok, _sev, prop in rows if tok in OPEN_TOKENS]
-# A recovered severity (`H*`) groups with its letter; the marker is carried so a reader can tell which
-# rows' severities were read from their own column and which had to be recovered.
-sev_of = {r[0]: r[2].rstrip("*") for r in rows}
 open_by_sev = {}
-for rid, s, p in open_rows:
-    open_by_sev.setdefault(sev_of.get(rid, "?"), []).append(
-        (rid + ("*" if rid in sev_recovered else ""), s, p))
 _census_lines = [
     f"rows={len(rows)} unique={len(set(r[0] for r in rows))} "
-    f"open={len(open_rows)} not_open={len(rows)-len(open_rows)}",
-    "  by Status: " + "  ".join(f"{k}={v}" for k, v in sorted(census.items())),
-    f"  row tables: {len(table_shapes)} distinct header shape(s) — " +
-        " · ".join(f"{v}x [{' | '.join(k)}]"
-                   for k, v in sorted(table_shapes.items(), key=lambda kv: -kv[1])),
-    f"  cells: {arity_mismatch} of {len(rows)} rows carry a cell arity their own table header does not "
-    f"explain (a bare `|` inside a code span splits a GFM cell — the class "
-    f"`scripts/register-status.sh` documents and names six repaired rows of; it is not repaired)",
-    f"  severity: read from its own column in {len(rows)-len(sev_recovered)} rows, recovered and marked "
-    f"in {len(sev_recovered)}, unlocatable in {sum(1 for r in rows if r[2]=='?')}",
+    f"open={len(open_rows)} closed={len(rows)-len(open_rows)}",
 ]
 probes["register_census"] = {"rc": 0, "out": "\n".join(_census_lines)}
 
@@ -528,8 +458,7 @@ selftest = {}
 for f in sorted(glob.glob(os.path.join(REPO, "scripts/check-*.sh")) +
                 glob.glob(os.path.join(REPO, "contrib/ci/*.sh")) +
                 glob.glob(os.path.join(REPO, "contrib/*.sh")) +
-                [os.path.join(REPO, n) for n in ("scripts/register-status.sh",
-                                                 "scripts/validate_zk_bins.sh")]):
+                [os.path.join(REPO, n) for n in ("scripts/validate_zk_bins.sh",)]):
     try:
         body = open(f, errors="replace").read()
     except OSError:
@@ -712,19 +641,17 @@ CRITERIA = [
       settle="cargo test --release -p dwowd -- test_heavyweight_deployooor … (x9)"),
  # ── Consensus ────────────────────────────────────────────────────────────────────────────────────
  dict(g="Consensus", id="C1",
-      st="Zero OPEN CRITICAL register rows, under the declared counting",
-      v=PASS if len(open_by_sev.get("C", [])) == 0 else FAIL,
-      src="derived", inst="Status-column census of the register",
-      ev=f"open C-severity rows: {len(open_by_sev.get('C', []))}. "
-         f"CAVEAT, in the same cell on purpose: one C-severity row is dispositioned ACCEPTED-WITH-REASON "
-         f"rather than closed and the register's prose still calls it open — OBL-C80 — so '0 open critical' "
-         f"is true of the row statuses and misleading without that sentence",
+      st="The defect tracker's schema holds and no row is green without code and a control",
+      v=v_of("defect_tracker"), src="derived",
+      inst="`scripts/check-defect-register.sh --working-tree`",
+      ev=f"{ev('defect_tracker')}. Five columns, OPEN/CLOSED only, every locus resolves; a CLOSED "
+         f"row needs a resolving, wired control and a code change in the same commit.",
       settle="—"),
  dict(g="Consensus", id="C2",
-      st="The open HIGH rows are enumerated, each with its subject",
-      v="%d rows" % len(open_by_sev.get("H", [])), src="derived",
-      inst="Status-column census of the register",
-      ev="; ".join(f"{r} ({s})" for r, s, _ in open_by_sev.get("H", [])),
+      st="Open defects are counted, not ranked by a register severity",
+      v="%d open" % len(open_rows), src="derived",
+      inst="Status column of the tracker",
+      ev="; ".join(r for r, _, _ in open_rows) or "(none)",
       settle="—"),
  dict(g="Consensus", id="C3",
       st="The umbrella's Tier-1 gates are all green",
@@ -775,11 +702,10 @@ CRITERIA = [
       ev=ev("phase_host_functions"), settle="—"),
  dict(g="Consensus", id="C10",
       st="Consensus value cannot be minted through a contract",
-      v=PASS if len(open_by_sev.get("C", [])) == 0 else FAIL, src="derived",
-      inst="the register's C-severity rows",
-      ev=f"{census.get('CLOSED',0)+census.get('SATISFIED',0)+census.get('FIXED',0)+census.get('MECHANIZED',0)} "
-         f"of 194 rows closed/satisfied/fixed/mechanized; the C-severity open set is empty (C1's caveat applies)",
-      settle="—"),
+      v=NOTEST, src="declared", inst="—",
+      ev="The tracker carries no severity, so this is not derivable from it. The old answer rested on "
+         "counting the register's C-severity rows — the ranking the tracker now refuses to invent.",
+      settle="a dedicated consensus-mintability review"),
  dict(g="Consensus", id="C11",
       st="The heavyweight contract suite is green",
       v=NOTEST, src="declared", inst="—",
@@ -800,13 +726,6 @@ CRITERIA = [
  dict(g="Documentation", id="D2",
       st="Every cited authority resolves", v=v_of("authority_resolves"), src="derived",
       inst="`scripts/check-authority-resolves.sh`", ev=ev("authority_resolves"), settle="—"),
- dict(g="Documentation", id="D3",
-      st="Every file the register cites exists at HEAD", v=v_of("register_artifacts"), src="derived",
-      inst="`scripts/check-register-artifacts.sh`", ev=ev("register_artifacts"), settle="—"),
- dict(g="Documentation", id="D4",
-      st="Every register row carries a status from the vocabulary",
-      v=v_of("register_status_check"), src="derived", inst="`scripts/register-status.sh --check`",
-      ev=ev("register_status_check"), settle="—"),
  dict(g="Documentation", id="D5",
       st="No live claim in the tree contradicts the tree",
       v=PASS if (probes["lever_strip"]["rc"] == 0 and probes["lever_locdetail"]["rc"] == 0) else FAIL,
@@ -819,31 +738,17 @@ CRITERIA = [
          f"that never existed and let `genesis.md`'s prose hide the real recipe hits; the claim and the tree agree",
       settle="—"),
  dict(g="Documentation", id="D6",
-      st="A register row's cited line numbers and symbols still resolve",
-      v=v_of("register_artifacts"), src="derived",
-      inst="`scripts/check-register-artifacts.sh`: path, line and the adjacent symbol, for every row",
-      ev=f"{ev('register_artifacts')}. The symbol half (`OBL-C148`) checks **every** row: the "
-         f"snake_case identifier written immediately beside a `path:line` must appear in the file at "
-         f"HEAD; a stale one is named. All-rows checking caught a real stale citation in a closed row "
-         f"on its first run (OBL-C69 cited the pre-rename `block_broadcast_wire_drops_pow_source`; the "
-         f"test is `…_carries_pow_source`), which the live-row version would have hidden. Historical "
-         f"citations that deliberately name removed symbols are declared in "
-         f"`script/register_symbol_exceptions.txt` (none are needed today) and a stale exception fails. "
-         f"The control plants a live stale symbol, a CLOSED-row stale symbol, a declared historical "
-         f"citation and a stale exception, plus a missing path and a line past EOF.",
-      settle="—"),
- dict(g="Documentation", id="D7",
-      st="The root-cause taxonomy is coherent and its legacy ids are aliased",
-      v=PASS, src="declared", inst="`check-doc-index.sh` check 6 + reading",
-      ev="RC1–RC12 canonical at safety.md:111-129; every legacy scheme aliased at :1056-1101; check 6 "
-         "resolves every `safety.md RC<n>` citation (it passes)",
+      st="A tracker row's locus and control resolve, and a closure is a code change",
+      v=v_of("defect_tracker"), src="derived",
+      inst="`scripts/check-defect-register.sh --working-tree`",
+      ev=ev("defect_tracker"),
       settle="—"),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 # FINDINGS, rendered FROM THE REGISTER. Each id must exist as a row in the register or the section says
 # so — so a finding cannot appear here without existing as an obligation (constraint 4).
-MINTED_IDS = ["OBL-C147", "OBL-C148", "OBL-C149", "OBL-C150"]
+MINTED_IDS = ["OBL-C147", "OBL-C148", "OBL-C150"]
 
 def render_findings():
     rowmap = {r[0]: r for r in rows}
@@ -998,22 +903,13 @@ w("**Read the last two rows together, because they say different things and only
   "reads that split correctly. What no row records is that the mechanism the clause relies on is absent "
   "from the tree — and one of its two levers is unavailable on the pinned stable toolchain.")
 w("")
-w("### The register census")
+w("### The defect tracker census")
 w("")
 w(f"`{probes['register_census']['out']}`")
 w("")
-w("Counts are from the **Status column**, never from `register-status.sh`'s token histogram, which the "
-  "script itself documents as unreliable — the two currently disagree (histogram 55 OPEN against a "
-  "census of 30) because the register's prose contains every status word in a non-status sense.")
-w("")
-w("Open rows by severity:")
-w("")
-for sev in ("C", "H", "M", "L"):
-    rs = open_by_sev.get(sev, [])
-    if rs:
-        w(f"- **{sev}** ({len(rs)}): " + ", ".join(f"`{r}` {s}" for r, s, _ in rs))
-    else:
-        w(f"- **{sev}** (0)")
+w("Counts are from the tracker's **Status column**: `OPEN` or `CLOSED`, nothing else. The tracker's")
+w("gate (`scripts/check-defect-register.sh`) is its only verdict, and it refuses a closure that does not")
+w("change code and carry a resolving, wired control.")
 w("")
 w("This report renders **no verdict on any open row's proposition** — it reports them as the register "
   "states them, with the instrument that read them. It also does not fix anything: a finding is recorded "

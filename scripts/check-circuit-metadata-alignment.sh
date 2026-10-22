@@ -1,5 +1,5 @@
 #!/bin/bash
-# M-5 fix: Verify ZK circuit constrain_instance count <= metadata push count
+# Verify ZK circuit constrain_instance count <= metadata push count
 # for genesis contracts.
 #
 # This CI gate catches mismatches where a circuit's public input count changes
