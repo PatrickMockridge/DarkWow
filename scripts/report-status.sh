@@ -508,8 +508,8 @@ unwired = sorted(t for t, _ in gate_scripts.items()
 probes["unwired"] = {"rc": 0 if not unwired else 1, "out": "\n".join(unwired) or "(none)"}
 probes["not_gates"] = {"rc": 0, "out": "\n".join(f"{k} — {v}" for k, v in sorted(NOT_GATES.items()))}
 
-# The citation probe — a live row citing a symbol that no longer exists. No instrument sees this class:
-# check-register-artifacts.sh strips line suffixes and checks no symbol, and says so in its own header.
+# The citation probe — a live row citing a symbol that no longer exists. The tracker gate resolves each
+# row's locus and control; this probe is the older, narrower form kept for the report's own history.
 probes["max_block_size"] = probe("grep -rn 'const MAX_BLOCK_SIZE' src/ bin/")
 probes["max_block_size_refs"] = probe("grep -rln 'MAX_BLOCK_SIZE' src/ bin/")
 probes["l1_barrier"] = probe("grep -rn 'L1 barrier' src/ bin/ --include=*.rs | head -8")

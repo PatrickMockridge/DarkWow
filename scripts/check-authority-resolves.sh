@@ -29,7 +29,7 @@
 #
 # WHAT A PASS DOES NOT MEAN. It does not mean the cited clause SAYS what the gate
 # claims it says. It means the clause exists. Reading the clause is a reviewer's
-# job and is not mechanisable — scripts/check-register-artifacts.sh states the
+# job and is not mechanisable — the defect tracker's locus resolution states the
 # same limit for file citations.
 #
 # EXEMPTIONS. A citation that is deliberately about something that does not exist

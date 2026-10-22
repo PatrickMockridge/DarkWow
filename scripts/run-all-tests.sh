@@ -479,14 +479,10 @@ run_gate "control: hidden tests can fail" bash "$SCRIPT_DIR/check-hidden-tests.s
 run_gate "documentation index"            bash "$SCRIPT_DIR/check-doc-index.sh"
 run_gate "control: the documentation index can fail" \
     bash "$SCRIPT_DIR/check-doc-index.sh" --self-test
-# A register row that cites a path is making a claim about the tree, and this is the gate that holds it
-# to one: every in-scope cited path must resolve against HEAD, with any deliberate exception declared in
-# `script/register_artifact_exceptions.txt` — and an exception whose path now resolves, or that its row
-# no longer cites, is reported **stale** rather than kept quietly. It was written for exactly the failure
-# it then caught and nobody saw: three OBL-T7 exemptions covering the transcription's artefacts while
-# they were untracked, which went stale the moment those artefacts landed here on 2026-09-24
-# (`3e5dc703ed`, `e5ef7c1c96`). It ran nowhere, so the signal was never delivered — the tree's own
-# "gate that cannot fail" class, in the shape of a gate that cannot *report*. Wired now; 0.23 s.
+# The defect tracker. One row per defect, OPEN/CLOSED only, a code locus and a control; a closure
+# is refused unless code changed and the control resolves and is wired. The old citation-resolving
+# gate and its exception files are retired with the register machinery — the tracker's locus column
+# is the citation, and this gate resolves it.
 run_gate "defect tracker (green is code + control)" \
     bash "$SCRIPT_DIR/check-defect-register.sh"
 # A gate's AUTHORITY, resolved — the class that let an invented constant stand.
@@ -499,9 +495,8 @@ run_gate "defect tracker (green is code + control)" \
 # exist (nothing to cite, nothing to find) were removed rather than repaired.
 #
 # It checks EXISTENCE, never agreement: a pass does not mean the cited clause says what
-# the gate claims. Its header states that limit, the same limit check-register-artifacts.sh
-# states for file citations. `OBL-*` ids are deliberately not re-checked here —
-# check-doc-index.sh resolves those, and a second, weaker copy of a check is how this
+# the gate claims; its header states that limit. `OBL-*` ids are deliberately not re-checked
+# here — check-doc-index.sh resolves those, and a second, weaker copy of a check is how this
 # tree's last duplicate propagated.
 run_gate "authority resolves (cited clause exists)" bash "$SCRIPT_DIR/check-authority-resolves.sh"
 # The heavyweight anti-pattern scanner: the ONE red `contrib/ci/*` gate whose authority is

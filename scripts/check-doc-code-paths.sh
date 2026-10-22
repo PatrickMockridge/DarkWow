@@ -7,17 +7,17 @@
 # identity.md), `bin/dww/src/rpc.rs` (manifest.md ×3), `bin/dww/src/cache.rs` (wallet_model.py),
 # `bin/universal_relayer` (relayer.md, bridge-node.md), the `dwow_mm_*` FFI (merge-mining-ffi.md),
 # `script/research/x3dh` (research.md) — docs-review F-324/327/328/331/616/617/619/620/621.
-# `check-register-artifacts.sh` reads the *register's* path citations against HEAD; nothing read a
-# doc's. This is that reader for `doc/src`.
+# The tracker gate resolves each row's locus; nothing read a *document's* path citations. This is
+# that reader for `doc/src`.
 #
 # WHAT IT CHECKS. Every backticked path token in `doc/src/**/*.md` of the form
 # `(src|bin|crates|proofs|contrib|script|scripts)/…` ending in a source extension must resolve to a
 # file, from the repo root (the docs' convention). A token whose first path segment is not one of
 # those repo roots is left alone — a doc may legitimately cite a path *inside* another repo, or a
 # illustrative layout. A path that is deliberately aspirational or an example is declared, with a
-# reason, in `script/doc_path_exceptions.txt` (the reason-per-entry idiom of
-# `script/register_artifact_exceptions.txt`); a declared path that *does* resolve, or that the corpus
-# no longer cites, is reported as a stale entry.
+# reason, in `script/doc_path_exceptions.txt` (the reason-per-entry idiom used throughout
+# `script/*_exceptions.txt`); a declared path that *does* resolve, or that the corpus no longer
+# cites, is reported as a stale entry.
 #
 # SCOPE. The corpus is `doc/src` — the published book, and exactly the documents the docs-vs-code
 # review (2026-10-10) read and remediated. That is all of what this gate was built for: every
