@@ -1,0 +1,2 @@
+# Symbol exceptions for check-register-artifacts.sh (OBL-C148).
+# Format: <path> : <symbol> : <reason naming the row/closure>

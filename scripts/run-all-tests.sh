@@ -784,6 +784,7 @@ run_gate "Axiom gate's record channel (negative control)" \
 # the tree under `/tmp`: a scan's expected count off by one, the O-cap bound inverted, and a closing
 # marker renamed — each exits 1, the first two printing the suite's own assertion.
 run_gate "Lean IO simulation suite"        bash "$SCRIPT_DIR/check-lean-suite.sh"
+run_gate "control: the Lean suite gate can fail" bash "$SCRIPT_DIR/check-lean-suite.sh" --self-test
 
 # The capability kernel's two rules, over `bin/dww/src/**`. §6.4 ("the write path SHALL have exactly one
 # bespoke citizen: **NativeToken**") and §9 ("a second bespoke path SHALL be rejected") were prose with no

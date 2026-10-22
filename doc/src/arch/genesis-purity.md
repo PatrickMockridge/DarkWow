@@ -298,10 +298,17 @@ contents preimage is secret. This is a one-way pseudonym, not a proof of hiding.
 
 ## 6. Findings outside purity (recorded, not fixed here)
 
-- **`identity::revoke_capability` does not verify `params.signature`.** Anyone can write a
-  revocation marker for any `(capability_id, holder_pub)`. This is an authorization hole in a
-  genesis primitive, not consumer-specific logic; it is `OBL-C255` / LR-22, with its own design
-  needed (what the signature signs, and whether the holder or the issuer is the authority).
+- **`identity::revoke_capability` did not verify `params.signature`** — anyone could write a
+  revocation marker for any `(capability_id, holder_pub)`. This was an authorization hole in a
+  genesis primitive, not consumer-specific logic (`OBL-C255` / LR-22). **Fixed 2026-10-21:** the
+  call carries the credential it revokes; the host loads the capability and the credential, requires
+  the credential's stored holder key to equal the named `holder_pub`, and accepts the Schnorr
+  signature over `CAPABILITY_REVOKE_DOMAIN ‖ capability_id ‖ holder_pub ‖ credential_nullifier ‖
+  tx_nonce ‖ reason` from the **holder** or the capability's **issuer**. The marker is
+  `poseidon(CAPABILITY_REVOKE_KEY_DOMAIN, capability_id, holder_x, holder_y)` and
+  `VerifyCapabilityV1` reads it (after the holder signature) and refuses with `CapabilityRevoked`
+  (`Custom(22)`), so revocation denies use, not just writes. The first repair was issuer-only and
+  left the marker unread; the red-team audit reopened it, and this is the corrected state.
 - **`dao_escrow` carries a frozen local copy of identity's old `CapabilityProof`** while identity's
   model has diverged. That is consumer-side drift, not a leak into a primitive; recorded for a
   follow-up.
@@ -318,16 +325,21 @@ consistency. It is wired into `run-all-tests.sh` and `report-status.sh`.
 cross-contract child call, every validation helper registered, L1 ledger and register agree`;
 its six-defect `--self-test` reports every planted defect and the clean twin passes.
 `check-l1-wire-conformance.sh` prints `PASS: 0 declared wire leak(s) … none new, none stale`.
-All 32 artifacts were rebuilt from clean and are fresh; the nine genesis wasms are 9/9 CLEAN
-and byte-identical across two clean builds; `bin/dwowd/genesis_hash.txt` was re-recorded once
-from the genesis path's own computed hash and the pin and wrong-hash control both pass. The
-nine genesis heavyweights: **eight green** — promissory_note 175.04 s, purse 126.00 s, box
-96.75 s, identity 151.59 s, attestation 283.09 s, multisig 134.59 s, oracle 314.02 s,
-deployooor 103.67 s. `native_token` is red for a **pre-existing fixture regression from
-OBL-C146**, not a purity finding: it spends a coinbase in the block that minted it, and the
-replay gate now correctly refuses the claim/spend collision; `OBL-C257` owns the fixture
-repair. The batch also found and fixed `OBL-C256` (the `no-entrypoint` feature was dead in
-four contract crates, so host links exported duplicate WASM symbols).
+All 32 artifacts are fresh. The five genesis inputs this change moves — `identity` and the four
+manifest-repaired contracts (`deployooor`, `oracle`, `attestation`, `multisig`) — were rebuilt from
+clean twice and are byte-identical; the nine genesis wasms are 9/9 CLEAN.
+`bin/dwowd/genesis_hash.txt` was observed stale against the new identity WASM, re-recorded **once**
+from the genesis path's own computed hash, and the currency test plus wrong-hash control then report
+**2 passed, 0 failed**. The batch measured **six** of the nine genesis heavyweights green after the
+identity change — native_token (911.98 s; the `OBL-C257` fixture repair landed, so the row is no
+longer red), promissory_note (1167.60 s), purse (834.65 s), box (739.25 s), identity (847.15 s),
+attestation (1489.12 s). `multisig`, `oracle` and `deployooor` were **not re-run in this batch**: it
+was stopped at the user's direction to finish the register work, so their last recorded measured
+runs remain the previous batch's (134.59 s, 314.02 s and 103.67 s, all green) and their artifacts
+are fresh and pure. These timings are longer than the previous batch's because this one ran the
+debug test binary rather than `make test`'s release profile. The earlier batch also found and fixed
+`OBL-C256` (the `no-entrypoint` feature was dead in four contract crates, so host links exported
+duplicate WASM symbols).
 
 **What it cannot establish.**
 

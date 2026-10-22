@@ -34,10 +34,13 @@
 # taken, this list is the mechanism: the hidden set is enumerated on every run of the gate, and a
 # new hidden test fails rather than quietly reducing what a pass count means.
 #
-# `make test` is unaffected by all of this — it runs `--release --all-features --workspace`, so the
-# gates always exercised the full 263. The risk these entries exist for is the ad-hoc command.
+# `make test` is unaffected by all of this — it runs the generated feature set (every feature minus
+# the declared expected failures, OBL-C21) over `--workspace`, so the gates always exercised the
+# full set. The risk these entries exist for is the ad-hoc command.
 
 src/linear/src/caribina/integration_tests.rs :: test_anchor_with_unfunded_wallet : OBL-C76 — #[ignore]: an opt-in conformance run against the real Arweave/ArDrive stack over the public internet, never a gate (the file's own header says so). Run with `cargo test --all-features -p dwow_chain -- --ignored`
+src/linear/src/execution.rs :: vm_single_owner_invariant_is_type_carried : OBL-C240 — requires the `pow` feature for the RandomX types in its signature ascriptions; it is a compile-time control, so it is part of the consensus surface. Run with `cargo test -p dwow_chain --features pow vm_single_owner` (or `make test`, whose generated feature set enables `pow`)
+src/linear/src/execution.rs :: per_vm_mutex_serializes_hash_calls : OBL-C240 — requires the `pow` feature because it constructs a real RandomX VM and hashes through the mutex. Run with `cargo test -p dwow_chain --features pow per_vm_mutex`
 src/linear/src/caribina/integration_tests.rs :: test_wallet_cycling_yields_distinct_tx_ids_for_one_payload : OBL-C76 — #[ignore]: same opt-in conformance run, public internet required. Run with `cargo test --all-features -p dwow_chain -- --ignored`
 src/linear/src/caribina/integration_tests.rs :: test_verify_not_found : OBL-C76 — #[ignore]: same opt-in conformance run, public internet required. Run with `cargo test --all-features -p dwow_chain -- --ignored`
 src/linear/src/caribina/integration_tests.rs :: test_anchor_block_does_not_panic : OBL-C76 — #[ignore]: same opt-in conformance run, public internet required. Run with `cargo test --all-features -p dwow_chain -- --ignored`

@@ -126,6 +126,44 @@ after being deleted from the code comment; `Blocks=16MiB` survived in a module d
 
 ---
 
+## Definition of closed out
+
+A register row may be marked **CLOSED** only when **all** of the following hold, and the row names
+the evidence for each. A status, label, exception, counter wording, `DECISION`,
+`ACCEPTED-WITH-REASON` or documentation change satisfies **none** of them by itself.
+
+1. **The defect is impossible in current code.** The path that produced the behavior is gone, or it
+   is guarded on the real path; the root cause was removed rather than compensated for (R2). A guard
+   beside the defect does not close it.
+2. **A failing-before control exists.** A control was observed **failing with the defect present**
+   (a pre-fix run, a mutation, or a planted-defect self-test) and passes after the fix (R5, R8). "It
+   compiles" and "the gate is green" are not evidence.
+3. **The control measures the real tree.** No narrowed corpus, skipped configuration, allowlist,
+   status exemption or renamed verdict that could contain the defect. Exceptions may declare
+   **non-defects only**, each with evidence; a stale exception fails.
+4. **The run is quoted.** The row quotes the control's own output line (test name and pass count,
+   refusal text, log line), plus a negative twin showing the opposite (R5).
+5. **No trade.** The fix does not introduce or defer another defect. A residual is named as its own
+   open obligation with its own id (R7); it is not folded into the closure.
+6. **Wired.** The control is invoked by `scripts/run-all-tests.sh` (or a gate the umbrella runs), and
+   its own negative control is wired beside it.
+7. **Records describe the code.** Every load-bearing statement about the defect is corrected to the
+   new mechanism (R11), and the row's proposition matches what was implemented — not the reverse.
+8. **Artifacts and pins.** A contract change is rebuilt clean; artifact freshness and purity pass;
+   the genesis pin is re-recorded once and its positive and negative controls run. "Rides the pin
+   batch" is not closure until the batch has landed.
+
+A requirement may be reclassified as a **non-defect** only against the authoritative specification
+(text and the commit that removed it), recorded separately from any fix; it is never used to green a
+failing check. Defective is defective: the row is red until the defect is gone and the evidence
+above exists.
+
+*Earned by:* a 2026-10-21 pass that renamed a counter measuring 34 live length-truncation defects to
+"COUNTER — not a defect", closed a holder-authorisation row on an issuer-only implementation, and
+closed a lock-exclusivity row while introducing a blocking-executor defect.
+
+---
+
 ## Applying these to a HAZOP
 
 A HAZOP is analysis: root causes only, structure before patches, and **no implementation** until the findings are

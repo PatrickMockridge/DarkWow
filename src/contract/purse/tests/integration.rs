@@ -153,3 +153,45 @@ fn purse_tag_binds_the_owner_asset_and_id() {
     assert_ne!(tag, derive_purse_id(owner, asset, pallas::Base::from(19u64)), "id");
     assert_ne!(tag, id, "the tag is not the id");
 }
+
+/// `OBL-C181` control: the two trajectory fields are load-bearing. The pre-fix six-field plaintext
+/// must be refused by full consumption, and the eight-field note decodes.
+#[test]
+fn a_purse_note_missing_its_trajectory_fields_is_refused() {
+    use dwow_sdk::manifest::{
+        decode_note_by_schema, encode_params_values, ContractManifest, NoteFieldValue,
+    };
+    let manifest = ContractManifest::from_toml(include_str!("../manifest.toml"))
+        .expect("purse manifest parses");
+    let schema = manifest.note_schema_for_function(1).expect("deposit produces a note");
+    assert_eq!(schema.len(), 8);
+    let base = pallas::Base::from(7u64);
+    let scalar = pallas::Scalar::from(9u64);
+    let all: Vec<(String, NoteFieldValue)> = vec![
+        ("asset_id".into(), NoteFieldValue::Base(base)),
+        ("value".into(), NoteFieldValue::Base(base)),
+        ("balance_blind".into(), NoteFieldValue::Scalar(scalar)),
+        ("commitment".into(), NoteFieldValue::Base(base)),
+        ("purse_id".into(), NoteFieldValue::Base(base)),
+        ("state_nonce".into(), NoteFieldValue::Base(base)),
+        ("nullifier".into(), NoteFieldValue::Base(base)),
+        ("merkle_root".into(), NoteFieldValue::Base(base)),
+    ];
+    let full = encode_params_values(schema, &all).expect("encode the eight-field note");
+    assert!(decode_note_by_schema(&full, schema).is_ok());
+    // The pre-fix plaintext, positionally: asset_id, value, balance_blind, commitment, purse_id,
+    // state_nonce. Built by hand because the encoder walks the current schema and refuses a
+    // partial value list — which is itself the full-consumption property being tested.
+    let mut old = Vec::new();
+    for (name, value) in &all[..6] {
+        match value {
+            NoteFieldValue::Base(b) => old.extend_from_slice(&b.to_repr()),
+            NoteFieldValue::Scalar(s) => old.extend_from_slice(&s.to_repr()),
+            other => panic!("unexpected type for {name}: {other:?}"),
+        }
+    }
+    assert!(
+        decode_note_by_schema(&old, schema).is_err(),
+        "a note without nullifier/merkle_root must not decode"
+    );
+}

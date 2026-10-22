@@ -85,13 +85,27 @@ case "${1:-}" in
       echo "FAIL: --self-test — the gate failed, but did not name the planted symbol"; rm -rf "$tmp"; exit 1
     fi
     echo "OK: --self-test — a live row's stale symbol is reported by name"
-    # Negative half: the same shape in a CLOSED row is a historical record and must not fire.
+    # All rows are checked, including CLOSED ones: a closed row's stale symbol is the
+    # `MAX_BLOCK_SIZE` shape and must fire (the red-team audit reopened the live-row narrowing).
     printf '| OBL-C%s | **CLOSED** | planted | see `src/tx/mod.rs:1` (`no_such_symbol_xyz`) | planted | M | planted |\n' 996 \
       > "$tmp/d_reg"
-    if ! REGISTER="$tmp/d_reg" EXCEPTIONS=/dev/null bash "$0" >/dev/null 2>&1; then
-      echo "FAIL: --self-test — a CLOSED row's historical symbol was adjudicated as live"; rm -rf "$tmp"; exit 1
+    if REGISTER="$tmp/d_reg" EXCEPTIONS=/dev/null bash "$0" >/dev/null 2>&1; then
+      echo "FAIL: --self-test — a CLOSED row's stale symbol was not checked"; rm -rf "$tmp"; exit 1
     fi
-    echo "OK: --self-test — closed rows are left as historical record"
+    echo "OK: --self-test — closed rows are checked too"
+    # A declared historical citation passes …
+    printf 'src/tx/mod.rs : no_such_symbol_xyz : planted historical citation; the row records the removal\n' \
+      > "$tmp/sym_exc"
+    if ! REGISTER="$tmp/d_reg" EXCEPTIONS=/dev/null SYMBOL_EXCEPTIONS="$tmp/sym_exc" bash "$0" >/dev/null 2>&1; then
+      echo "FAIL: --self-test — a declared historical symbol exception did not pass"; rm -rf "$tmp"; exit 1
+    fi
+    echo "OK: --self-test — a declared historical citation passes"
+    # … and an exception that matches no citation is stale.
+    printf 'src/tx/mod.rs : another_missing_symbol : planted stale exception\n' > "$tmp/sym_exc2"
+    if REGISTER="$tmp/d_reg" EXCEPTIONS=/dev/null SYMBOL_EXCEPTIONS="$tmp/sym_exc2" bash "$0" >/dev/null 2>&1; then
+      echo "FAIL: --self-test — a stale symbol exception was not reported"; rm -rf "$tmp"; exit 1
+    fi
+    echo "OK: --self-test — a stale symbol exception is reported"
     rm -rf "$tmp"; exit 0 ;;
   --working-tree) MODE="work" ;;
   "") ;;
@@ -108,6 +122,9 @@ register = os.environ.get(
 )
 exceptions_path = os.environ.get(
     "EXCEPTIONS", os.path.join(repo, "script", "register_artifact_exceptions.txt")
+)
+symbol_exceptions_path = os.environ.get(
+    "SYMBOL_EXCEPTIONS", os.path.join(repo, "script", "register_symbol_exceptions.txt")
 )
 
 SEG = r"[A-Za-z0-9_-]+"
@@ -234,19 +251,26 @@ line_findings, seen_line = [], set()
 # ── the symbol half (OBL-C148) ────────────────────────────────────────────────────────────────────
 #
 # The line check above is a coarse existence bound; it cannot see that a row cites `foo.rs:120` for
-# `some_function` and the line now holds something else. For **live** rows, take the identifier the
-# row writes immediately beside the citation (either `` `sym` (`path:line`) `` or
-# `` `path:line` (`sym`) ``) and require that word to appear somewhere in the cited file at HEAD.
+# `some_function` and the line now holds something else. Take the identifier the row writes
+# immediately beside the citation (either `` `sym` (`path:line`) `` or `` `path:line` (`sym`) ``)
+# and require that word to appear somewhere in the cited file at HEAD. **All rows are checked**,
+# not only live ones: a closed row's stale symbol is exactly the `MAX_BLOCK_SIZE` shape, and a
+# status exemption would make it invisible (the red-team audit's finding, 2026-10-21).
+#
+# Historical citations that deliberately name a removed symbol are declared, with the row's own
+# closure text as the reason, in `script/register_symbol_exceptions.txt`:
+#     <path> : <symbol> : <reason, naming the row/closure>
+# A declared pair that now resolves, or that the register no longer cites, is stale and fails.
+#
 # It deliberately does not require a declaration: the register also cites fields, methods and
 # constants, and demanding one syntactic form would report correct rows. A word that appears nowhere
 # in the file is stale under every reading.
-LIVE_STATUSES = {"OPEN", "PARTLY", "FAILS"}
 row_starts = []
 for m in re.finditer(r'^\|\s*(OBL-[CZT]\d+)\s*\|\s*\*\*([A-Z][A-Z-]*)\*\*', text, re.M):
     row_starts.append((m.start(), m.group(1), m.group(2)))
 
 
-def live_row_at(pos):
+def row_at(pos):
     current = None
     for start, row_id, status in row_starts:
         if start <= pos:
@@ -298,7 +322,20 @@ def head_text(path):
     return _head_text[path]
 
 
-symbol_findings, seen_symbol = [], set()
+# Symbol exceptions: `<path> : <symbol> : <reason naming the row/closure>`.
+symbol_exceptions = {}
+if os.path.exists(symbol_exceptions_path):
+    for line in open(symbol_exceptions_path, encoding="utf-8"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p.strip() for p in line.split(" : ", 2)]
+        if len(parts) != 3:
+            print(f"FAIL: malformed symbol exception (want `path : symbol : reason`): {line}")
+            sys.exit(1)
+        symbol_exceptions[(parts[0], parts[1])] = parts[2]
+
+symbol_findings, seen_symbol, seen_symbol_pairs = [], set(), set()
 for m in TOKEN_RE.finditer(text):
     token = m.group(1)
     if not in_scope(token):
@@ -309,15 +346,19 @@ for m in TOKEN_RE.finditer(text):
         if line_gone(token, m.group(2)) and (token, m.group(2)) not in seen_line:
             seen_line.add((token, m.group(2)))
             line_findings.append((token, m.group(2), lineno))
-        row = live_row_at(m.start())
-        if row and row[1] in LIVE_STATUSES:
-            symbol = adjacent_symbol(m.start(), m.end())
-            body = head_text(token)
-            if symbol and body is not None and not re.search(rf'\b{re.escape(symbol)}\b', body):
-                key = (token, symbol, lineno)
-                if key not in seen_symbol:
-                    seen_symbol.add(key)
-                    symbol_findings.append((token, symbol, row[0], lineno))
+        row = row_at(m.start())
+        symbol = adjacent_symbol(m.start(), m.end())
+        body = head_text(token)
+        if symbol and body is not None:
+            seen_symbol_pairs.add((token, symbol))
+            if not re.search(rf'\b{re.escape(symbol)}\b', body):
+                if (token, symbol) in symbol_exceptions:
+                    exempted.append((f"{token} ({symbol})", lineno, symbol_exceptions[(token, symbol)]))
+                else:
+                    key = (token, symbol, lineno)
+                    if key not in seen_symbol:
+                        seen_symbol.add(key)
+                        symbol_findings.append((token, symbol, row[0] if row else "outside a row", lineno))
         continue
     if token in exceptions:
         exempted.append((token, lineno, exceptions[token]))
@@ -347,7 +388,13 @@ stale = (
     else []
 )
 
-if findings or stale or line_findings or symbol_findings:
+stale_symbols = [
+    (path, symbol, reason)
+    for (path, symbol), reason in symbol_exceptions.items()
+    if (path, symbol) not in seen_symbol_pairs
+]
+
+if findings or stale or line_findings or symbol_findings or stale_symbols:
     # A REGISTER= override may point outside the repo (the controls do), where a relative path would
     # be a row of "../" that names nothing.
     rel = os.path.relpath(register, repo)
@@ -371,8 +418,11 @@ if findings or stale or line_findings or symbol_findings:
         print(f"FAIL: {rel}:{lineno}: cites {token}{suffix}, but the file has "
               f"{head_line_count(token)} line(s) at HEAD — the cited line is gone")
     for token, symbol, row_id, lineno in symbol_findings:
-        print(f"FAIL: {rel}:{lineno}: live row {row_id} cites `{symbol}` at {token}, but that "
+        print(f"FAIL: {rel}:{lineno}: row {row_id} cites `{symbol}` at {token}, but that "
               f"identifier does not appear in the file at HEAD")
+    for path, symbol, reason in stale_symbols:
+        print(f"FAIL: stale symbol exception for {path} (`{symbol}`) — it now resolves, or the")
+        print(f"      register no longer cites it, so the entry is covering nothing: {reason}")
 
     print("")
     print("Fix: commit the artefact, correct the citation, or record it in")

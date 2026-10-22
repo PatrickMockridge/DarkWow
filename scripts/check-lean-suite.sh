@@ -37,6 +37,38 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG="/tmp/lean-suite-$(date +%Y%m%d-%H%M%S)-$$.log"
 
+# The gate's own completeness arm, extracted so the negative control can exercise it without a
+# Lean build: a suite that exits 0 without reaching both closing markers has not run.
+markers_ok() {
+    local log="$1" missing=0 marker
+    for marker in "Combinatorial State Space Validation Complete" "General Theorem Validation Complete"; do
+        if ! grep -qF "$marker" "$log"; then
+            echo "check-lean-suite: the suite exited 0 without reaching \"$marker\" — it did not run." >&2
+            missing=1
+        fi
+    done
+    return "$missing"
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+    TMP="$(mktemp)"
+    trap 'rm -f "$TMP"' EXIT
+    printf 'Combinatorial State Space Validation Complete\n' > "$TMP"
+    if markers_ok "$TMP" >/dev/null 2>&1; then
+        echo "SELF-TEST FAIL: a log missing the closing marker was accepted" >&2
+        exit 1
+    fi
+    printf 'Combinatorial State Space Validation Complete\nGeneral Theorem Validation Complete\n' > "$TMP"
+    if ! markers_ok "$TMP" >/dev/null 2>&1; then
+        echo "SELF-TEST FAIL: a complete log was refused" >&2
+        exit 1
+    fi
+    echo "SELF-TEST PASS: a run missing its closing marker is refused; a complete log passes"
+    echo "  limit: this controls the gate's exit-0-without-reaching-the-end arm; the Lean"
+    echo "  assertions themselves are the suite's, with the mutation controls recorded in the header"
+    exit 0
+fi
+
 LEAN_BUILD_LOG="$LOG" "$ROOT/scripts/lean-build.sh" exe Main >/dev/null 2>&1
 status=$?
 
@@ -51,14 +83,7 @@ if [ "$status" -ne 0 ]; then
     exit 1
 fi
 
-missing=0
-for marker in "Combinatorial State Space Validation Complete" "General Theorem Validation Complete"; do
-    if ! grep -qF "$marker" "$LOG"; then
-        echo "check-lean-suite: the suite exited 0 without reaching \"$marker\" — it did not run." >&2
-        missing=1
-    fi
-done
-[ "$missing" -eq 0 ] || { echo "  full output: $LOG" >&2; exit 1; }
+markers_ok "$LOG" || { echo "  full output: $LOG" >&2; exit 1; }
 
 echo "OK: the IO simulation suite ran to its end, every check in it passed."
 echo "    $(grep -c '✓' "$LOG") marker(s) printed clear, 0 failures. Full output: $LOG"

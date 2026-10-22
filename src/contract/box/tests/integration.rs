@@ -259,3 +259,32 @@ fn box_tag_binds_the_id_and_the_contents() {
     assert_ne!(base, id_a, "the tag is not the id");
     assert_ne!(base, contents_a, "the tag is not the contents commitment");
 }
+
+/// `OBL-C181` control: the note schema's two trajectory fields are load-bearing, not just present.
+/// The pre-fix four-field plaintext must be refused (full consumption), and the six-field note
+/// decodes. Without this, deleting a field from the schema while leaving the docs claiming it would
+/// pass every other test.
+#[test]
+fn a_box_note_missing_its_trajectory_fields_is_refused() {
+    use dwow_sdk::manifest::{decode_note_by_schema, ContractManifest};
+    let manifest = ContractManifest::from_toml(include_str!("../manifest.toml"))
+        .expect("box manifest parses");
+    let schema = manifest.note_schema_for_function(1).expect("put produces a note");
+    assert_eq!(schema.len(), 6, "commitment, state_nonce, box_id, user_data, nullifier, merkle_root");
+    let bytes = |values: &[u64]| -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|v| pallas::Base::from(*v).to_repr())
+            .collect()
+    };
+    let old = bytes(&[1, 2, 3, 4]);
+    assert!(
+        decode_note_by_schema(&old, schema).is_err(),
+        "a note without nullifier/merkle_root must not decode"
+    );
+    let new = bytes(&[1, 2, 3, 4, 5, 6]);
+    assert!(
+        decode_note_by_schema(&new, schema).is_ok(),
+        "the six-field note decodes"
+    );
+}

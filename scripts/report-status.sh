@@ -569,8 +569,9 @@ NOT_GATES = {
     "clippy_critical_counts.sh":      "a ratchet counter, not a defect gate",
     "clippy_totality_counts.sh":      "a ratchet counter, not a defect gate",
     "length_cast_counts.sh":          "a ratchet counter, not a defect gate (in INSTRUMENTS as such)",
-    "check_compiles.sh":              "runs cargo; the static report cannot run a build (constraint 1)",
-    "check-lean-suite.sh":            "runs Lean; the static report cannot run a build (constraint 1)",
+    # Its own header says it is not a test: "the compiler IS the test" and the umbrella's
+    # pre-build guard covers the same condition. A manual helper, not a gate.
+    "check_compiles.sh":              "a manual compilation checkpoint; its header records that it is not a test and the umbrella already builds every target",
 }
 gate_scripts = {p: v for p, v in selftest.items() if os.path.basename(p) not in NOT_GATES}
 unwired = sorted(t for t, _ in gate_scripts.items()
@@ -671,8 +672,10 @@ CRITERIA = [
       v=FAIL if v_of("wasm_artifact_genesis") == FAIL else (PASS if v_of("wasm_artifact_genesis") == PASS else MISSING),
       src="derived", inst="`wasm_artifact_check.sh --genesis` + the absolute-path probe",
       ev=f"gate: {ev('wasm_artifact_genesis',1)}  ·  purity probe (absolute host paths): {probes['abs_paths']['out']}. "
-         f"2026-10-20: two clean rebuilds of all 32 contracts were byte-identical (sha256), and the "
-         f"nine genesis artifacts are CLEAN. The two-build equality is a run, not a static probe.",
+         f"2026-10-22: the five genesis inputs this change moves (identity + the four manifest-repaired "
+         f"contracts) were rebuilt from clean twice and are byte-identical (sha256); all 32 artifacts "
+         f"are fresh and the nine genesis artifacts are CLEAN. The two-build equality is a run, not a "
+         f"static probe.",
       settle="the purity gate + the two-pass rebuild; see OBL-C140/C210/T26"),
  dict(g="Genesis", id="G7",
       st="The pin is populated, committed, and clean against HEAD",
@@ -684,8 +687,10 @@ CRITERIA = [
  dict(g="Genesis", id="G8",
       st="The pin is CURRENT — this build computes the hash the pin records",
       v=NOTEST, src="declared", inst="`cargo test -p dwowd --all-features genesis`",
-      ev="run 2026-10-20 outside this static budget: the pin test and its wrong-hash control passed "
-         "after the single re-record. The static report does not re-run it.",
+      ev="run 2026-10-22 outside this static budget: the pin was observed STALE against the new identity "
+         "WASM (recorded value vs the computed value named in the test's own failure line), re-recorded "
+         "once from that line, and the currency test plus its wrong-hash control then reported 2 passed, "
+         "0 failed. The static report does not re-run it.",
       settle="cargo test -p dwowd --all-features genesis_pin_is_current"),
  dict(g="Genesis", id="G9",
       st="The nine genesis ids agree across their three enumerations, in consensus order",
@@ -816,14 +821,16 @@ CRITERIA = [
  dict(g="Documentation", id="D6",
       st="A register row's cited line numbers and symbols still resolve",
       v=v_of("register_artifacts"), src="derived",
-      inst="`scripts/check-register-artifacts.sh`: path, line and (for live rows) the adjacent symbol",
-      ev=f"{ev('register_artifacts')}. The symbol half landed 2026-10-21 (`OBL-C148`): for a live row "
-         f"the snake_case identifier written immediately beside a `path:line` must appear in the file at "
-         f"HEAD; a stale one is named. Closed rows are historical record and are not adjudicated, which "
-         f"is why `MAX_BLOCK_SIZE`'s deliberate removal is not a finding "
-         f"(`const MAX_BLOCK_SIZE` in src/bin: {probes['max_block_size']['out'] or 'no hit'}). The "
-         f"control plants a live stale symbol, a missing path and a line past EOF, and proves a closed "
-         f"row's symbol is left alone",
+      inst="`scripts/check-register-artifacts.sh`: path, line and the adjacent symbol, for every row",
+      ev=f"{ev('register_artifacts')}. The symbol half (`OBL-C148`) checks **every** row: the "
+         f"snake_case identifier written immediately beside a `path:line` must appear in the file at "
+         f"HEAD; a stale one is named. All-rows checking caught a real stale citation in a closed row "
+         f"on its first run (OBL-C69 cited the pre-rename `block_broadcast_wire_drops_pow_source`; the "
+         f"test is `…_carries_pow_source`), which the live-row version would have hidden. Historical "
+         f"citations that deliberately name removed symbols are declared in "
+         f"`script/register_symbol_exceptions.txt` (none are needed today) and a stale exception fails. "
+         f"The control plants a live stale symbol, a CLOSED-row stale symbol, a declared historical "
+         f"citation and a stale exception, plus a missing path and a line past EOF.",
       settle="—"),
  dict(g="Documentation", id="D7",
       st="The root-cause taxonomy is coherent and its legacy ids are aliased",
@@ -925,7 +932,11 @@ w("| Instrument | Verdict | Its own last line, quoted |")
 w("|---|---|---|")
 for name, _ in INSTRUMENTS:
     v = results.get(name, (MISSING, None, "", ""))[0]
-    label = v + (" *(counter — exit 1 means sites remain, not a defect)*" if name in COUNTERS else "")
+    # A counter's exit 1 means "sites remain". Those sites are defects (a truncated length is a
+    # defective contract), so the verdict stays NOT MET until the count is 0. An earlier edit
+    # renamed this to "COUNTER — not a defect" while 34 sites remained; that was a relabel, not a
+    # measurement, and it was reverted.
+    label = v + (" *(counter — exit 1 means sites remain)*" if name in COUNTERS else "")
     w(f"| `{name}` | **{label}** | {veil(ev(name))} |")
 w("")
 w("### Which gates can fail")
