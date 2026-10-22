@@ -27,19 +27,13 @@ contrib/localnet/dwowd-single-node/dwowd.toml : localnet-dev.md:20 records that 
 proofs/lean/src/DarkWow/Field.lean : opcodes.md records that the path does not exist — the project is proofs/lean/src/DarkFi/
 
 # --- rows that record a deliberate removal: the deleted path is the row's evidence ---
-proofs/core/lead.zk : OBL-Z12 — deleted 2026-09-24, cited as the record of a circuit removed because no repair existed
-proofs/core/set_v1.zk : OBL-Z16 — deleted 2026-09-24, same disposition as lead.zk
-proofs/lottery/proof/initialize.zk : the user chose deletion of the unprovable InitializeV2 circuit; the row cites it as the removed artefact
-src/contract/subscription/src/client/rate_limit.rs : OBL-C108 — the file and its `pub mod` declaration were removed, which is the closure
-src/sdk/src/crypto/sinsemilla.rs : OBL-Z6 — the row's finding is "that file does not exist"; the constants live under src/sdk/src/crypto/constants/
-bin/gen_init_params.rs : OBL-C83 — the binary did not compile and was removed; the generator now lives at src/contract/stablecoin/src/bin/gen_init_params.rs
 src/linear/src/shard.rs : scaling.md's "Scaffolding (corrected 2026-10-12, F-374)" note says no shard.rs exists; the document is a design vision with no code behind it
 src/runtime/import/shard.rs : the same F-374 design-vision note; no shard import exists
 src/sdk/src/crypto/shard.rs : the same F-374 design-vision note; no shard module exists
 
 # --- crate-relative shorthand: the row anchors the full path and then abbreviates within the crate ---
-src/entrypoint.rs : OBL-Z2 — written between backticks as the per-contract entrypoint after the full path is anchored in the same row; not a repo-root path
-src/entrypoint/mod.rs : OBL-Z2 — the same per-contract shorthand in the module-file spelling
-src/model/mod.rs : OBL-C159/OBL-C168 — per-contract model shorthand after the full path is anchored in the row
-src/main.rs : OBL-C125 — shorthand for bin/bridge_test_helper/src/main.rs, anchored in the same row
-src/relayer.rs : shorthand for src/contract/relayer_endowment/src/relayer.rs, anchored in the same row
+
+# --- gates retired by the 2026-10-22 tracker migration: the citations record the retirement ---
+scripts/register-status.sh : docs-review-2026-10-10.md is a point-in-time audit; the status-vocabulary gate was retired with the register machinery, and the audit is the record of its defects
+scripts/check-register-worklist.sh : the same audit records the root-cause worklist gate; it was retired with the register machinery
+scripts/check-launch-register.sh : launch-risk-register.md records that this gate was deleted with the second ledger; the absence is the sentence's point

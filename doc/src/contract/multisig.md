@@ -180,7 +180,10 @@ groups should use a distinct secret per group.
 
 ```
 MultiSigGroup = {
-    group_id:            H(first_commitment, threshold, total_keys),
+    group_id:            H(DOMAIN_GROUP_ID=14, first_commitment, threshold, total_keys),
+                         // create_group.zk derives the same value and constrains it equal to
+                         // the exposed group_id (2026-10-22); before, the id was related to
+                         // nothing in the circuit.
     member_commitments:  [C_1, C_2, ..., C_N],  // H(4, secret_i), field elements
     threshold:           M,                      // required signatures
     total_keys:          N,                      // total members

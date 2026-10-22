@@ -294,9 +294,12 @@ were removed, not patched:
 - `VerifyChainParamsV1` `chain_root`/`current_depth`/`max_depth`
 - `UpdateDelegationParamsV1` `current_depth`/`max_depth`/`delegator_stake`/`delegatee_stake`
 
-**Correction:** `CheckNotRevokedParamsV1.revocation_root` is NOT dead — the exec uses it
-for replay protection (`proof_hash = poseidon_hash([nonce, revocation_root])`). A removal
-list that does not audit each field's exec usage is unsafe; verify per-field before deleting.
+**Correction (2026-10-22):** the endpoint this note defended was itself removed. Its replay use
+(`proof_hash = poseidon_hash([nonce, revocation_root])`) was real, but the call returned
+`is_not_revoked: true` unconditionally and its circuit bound only the tx pair; `revocation_root` was
+never checked against any state. The lesson stands and is sharper: auditing per-field exec usage is
+necessary but not sufficient — a field can be read and still be part of a verdict the contract does
+not compute. Identity's `VerifyCapabilityV1` reads the revocation marker and replaces the claim.
 
 ## 10. Multisig H-5 — deletion is a tombstone, and the test reader must match (2026-08)
 

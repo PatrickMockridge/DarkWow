@@ -128,9 +128,11 @@ after being deleted from the code comment; `Blocks=16MiB` survived in a module d
 
 ## Definition of closed out
 
-A register row may be marked **CLOSED** only when **all** of the following hold, and the row names
-the evidence for each. A status, label, exception, counter wording, `DECISION`,
-`ACCEPTED-WITH-REASON` or documentation change satisfies **none** of them by itself.
+A tracker row may be marked **CLOSED** only when **all** of the following hold. The tracker is
+`doc/src/arch/verification-hazop.md`; it has two statuses, `OPEN` and `CLOSED`, and a row carries a
+code locus and a control. A status edit, label, exception, counter wording or documentation change
+satisfies **none** of these by itself. A non-defect is deleted or moved to
+`doc/src/arch/decisions.md`; it is never relabelled green.
 
 1. **The defect is impossible in current code.** The path that produced the behavior is gone, or it
    is guarded on the real path; the root cause was removed rather than compensated for (R2). A guard
@@ -152,6 +154,10 @@ the evidence for each. A status, label, exception, counter wording, `DECISION`,
 8. **Artifacts and pins.** A contract change is rebuilt clean; artifact freshness and purity pass;
    the genesis pin is re-recorded once and its positive and negative controls run. "Rides the pin
    batch" is not closure until the batch has landed.
+9. **The tracker enforces it.** `scripts/check-defect-register.sh` refuses a row that moves to
+   `CLOSED` in a change set touching only docs, reports or exceptions, and refuses a `CLOSED` row
+   whose control does not resolve or is not wired; `hooks/pre-commit` blocks the same two cases. A
+   closure the gate refuses is not a closure.
 
 A requirement may be reclassified as a **non-defect** only against the authoritative specification
 (text and the commit that removed it), recorded separately from any fix; it is never used to green a

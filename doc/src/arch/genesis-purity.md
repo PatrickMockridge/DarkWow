@@ -320,6 +320,7 @@ defect `--self-test`). It checks set closure, foreign code/manifest dependencies
 child-call tokens, registered validation helpers, the L1 wire ledger, and register/source
 consistency. It is wired into `run-all-tests.sh` and `report-status.sh`.
 
+**This is the record of the 2026-10-21 batch; the tree has moved since (see the next paragraph).**
 **Measured 2026-10-21, after the implementation and the single re-roll.** The gate prints
 `PASS: nine genesis primitives — no foreign code/manifest dependency, no foreign id, no
 cross-contract child call, every validation helper registered, L1 ledger and register agree`;
@@ -340,6 +341,19 @@ are fresh and pure. These timings are longer than the previous batch's because t
 debug test binary rather than `make test`'s release profile. The earlier batch also found and fixed
 `OBL-C256` (the `no-entrypoint` feature was dead in four contract crates, so host links exported
 duplicate WASM symbols).
+
+**2026-10-22: code-complete, not yet built or pinned.** An adversarial review of the nine primitives
+then landed code changes in `deployooor` (WASM content commitment and the two missing genesis
+manifests), `identity` (capability-id derivation, issuer schema authorization, issuance validation,
+manifest declarations), `attestation` (the vacuous `check_not_revoked` endpoint, circuit, client and
+manifest entry removed), `multisig` (`create_group.zk` binds the group id to the first member and
+counts), `purse` (the leaf commits to `asset_id`), `promissory_note` and `native_token` manifests
+(`proof_circuits` lists), plus `src/sdk` (`ManifestFunction::proof_circuits`, the optional asset
+operand in the wallet's leaf rule). **None of it has been built by the agent, and the pin has not
+moved.** `src/sdk` is in all 32 contracts' `SOURCE_MANIFEST`, so **all 32 artifacts are stale** and
+`bin/dwowd/genesis_hash.txt` is stale by construction. The build, the byte-identical rebuild, the
+pin re-record and the nine heavyweight specs are the pipeline's steps; this document must not be
+read as claiming them for this tree.
 
 **What it cannot establish.**
 

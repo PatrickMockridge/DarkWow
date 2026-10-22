@@ -22,7 +22,7 @@ predicate evaluation is enforced in exec.
 | `0x04` | `verify_claim` | `VerifyClaimV2` | Verify a claim (→ Verified/Rejected) |
 | `0x05` | `consume_claim` | `ConsumeClaimV2` | Consume a verified claim (→ Consumed, nullifier) |
 | `0x06` | `validate_claim` | — (non-ZK) | On-chain predicate compare |
-| `0x07` | `check_not_revoked` | `CheckNotRevokedV2` | Non-revocation proof |
+| `0x07` | — (unassigned) | — | `check_not_revoked` was removed 2026-10-22; identity's `verify_capability` reads the marker |
 | `0x08` | `delegate_attestation` | `DelegateAttestationV2` | Delegate attestation authority |
 | `0x09` | `verify_chain` | `VerifyChainV2` | Verify a delegation chain |
 | `0x0a` | `update_delegation` | `UpdateDelegationV2` | Update a delegation record |

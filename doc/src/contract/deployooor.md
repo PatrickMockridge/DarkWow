@@ -93,6 +93,19 @@ Deployooor contract, attaches a Native Token fee, and broadcasts via P2P.
 Circuits are registered by the contract's `init_contract` into the `_zkas` tree, which is
 where the host reads them back from by namespace.
 
+## The WASM content commitment
+
+`DeployV1` stores `wasm_content_commitment(wasm)` under `info ‖ b"wasm_hash" ‖ contract_id`. The
+commitment folds 64-byte chunks of the module with `poseidon`, each with its length, and folds the
+module's total length last; before 2026-10-22 it was `poseidon([0, len])` — a commitment to the
+module's **size**, so two equal-length modules stored the same value. The deployooor spec now reads
+the stored value back and compares it with the module it deployed: that read is what makes the field
+an integrity check rather than a number nothing consumed (`OBL-C250`).
+
+The genesis deployment table carries a manifest in `ix` for each of the nine contracts and the host
+writes it under `contract_id ‖ b"_manifest"` (`apply_genesis_deployments`). `native_token` and
+`deployooor` were the two empty entries until their manifests existed; they now carry theirs.
+
 ## Database Trees
 
 | Tree | Purpose |

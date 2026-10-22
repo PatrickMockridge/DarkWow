@@ -296,6 +296,29 @@ separates this key from the credential nullifiers stored in the same tree.
 `OBL-C255` / LR-22 recorded the unauthenticated arm this replaces; `OBL-Z17` recorded the unread
 marker this closes.
 
+### Capability ids, issuer schemas and issuance validation (2026-10-22)
+
+Three defects in the issuance path were found by an adversarial audit and fixed together:
+
+- **The capability id now commits to the whole requirement.** `derive_capability_id(name,
+  requirement)` folds `requirement.encode() ‖ name` chunk-wise with `CAPABILITY_ID_DOMAIN = 13` and
+  the total length. It used to hash only the first eight bytes of the requirement — `schema_hash[0..8]`
+  — so the name, issuer, threshold and attribute were ignored and two capabilities over one schema
+  collided (`CapabilityAlreadyExists` on the second). The harness calls the same function instead of
+  re-implementing it.
+- **`authorized_schemas` is a predicate.** `issue_credential` loads the stored `Issuer` record and
+  refuses a `schema_hash` it does not list (`SchemaNotRecognized`, `Custom(8)`). The list (and a
+  hardcoded `trusted: true`) was previously written and read by nothing; `trusted` was removed
+  rather than left as dead state.
+- **`issue_capability` validates the credential it names.** It decodes the stored credential and
+  requires it to match the capability's `CredentialRequirement` schema and issuer, and to be
+  unrevoked and unexpired, before incrementing `issued_count`. The fetch used to be discarded, so any
+  credential could burn the `max_holders` budget.
+
+The manifest now declares the `credential` and `capability` types (`[[capabilities]]`), their
+`[[actions]]` with `required_barbs`, and empty `note_schema` lists — these are ZK badges, not AEAD
+notes, matching multisig's non-note capability shape.
+
 ## ZK Circuits
 
 | Circuit | Namespace | Purpose |

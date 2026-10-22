@@ -475,16 +475,18 @@ not to reintroduce it. Only `IssueCredential_V2` and `VerifyCapability_V2` are r
 
 ### 5.5 O-Cap Authorization — attestation
 
-**Role:** Attestation framework. 13 functions, 10 ZK circuits. Entrypoint shows zero
+**Role:** Attestation framework. 12 live functions (0x07 removed 2026-10-22), 9 ZK circuits. Entrypoint shows zero
 cross-contract child calls. Manifest dependencies unsubstantiated by code.
 
 **Test SHALL:**
 - Use `ATTESTATION_CONTRACT_ID`
-- All 13 functions exercised through accept_block:
+- All 12 live functions exercised through accept_block:
   0x00 CreateAttestationV1, 0x01 RevokeAttestationV1, 0x02 ExpireAttestationV1,
   0x03 CreateClaimV1, 0x04 VerifyClaimV1, 0x05 ConsumeClaimV1, 0x06 ValidateClaimV1,
-  0x07 CheckNotRevokedV1, 0x08 DelegateAttestationV1, 0x09 VerifyChainV1,
+  0x08 DelegateAttestationV1, 0x09 VerifyChainV1,
   0x0a UpdateDelegationV1, 0x0b AttestSlashV1, 0x0c CommitFeeScheduleV1
+  (0x07 was CheckNotRevokedV1, removed 2026-10-22; its controller is identity's
+  verify_capability, not this contract)
 - Delegation chain: CreateAttestation → DelegateAttestation → VerifyChain
 - Claim lifecycle: CreateClaim → VerifyClaim → ConsumeClaim
 - Non-ZK functions (0x01, 0x02, 0x06): submit with empty proofs

@@ -145,7 +145,7 @@ failed verification leaves the claim `Pending` (and re-verifiable) rather than t
 | `VerifyClaimV1` | 0x04 | Verify claim (ZK + on-chain) |
 | `ConsumeClaimV1` | 0x05 | Mark claim as consumed (prevents replay) |
 | `ValidateClaimV1` | 0x06 | Fast path: does the claim currently hold — predicate holds **and** the claim is `Verified` (OBL-C196) |
-| `CheckNotRevokedV1` | 0x07 | Verify credential not revoked (Identity contract integration) |
+| — | 0x07 | **Unassigned** — `CheckNotRevokedV1` was removed 2026-10-22: it returned `is_not_revoked: true` unconditionally and its circuit bound only the tx pair. Identity's `VerifyCapabilityV1` reads the revocation marker and is the real check. |
 | `DelegateAttestationV1` | 0x08 | Delegate attestation authority |
 | `VerifyChainV1` | 0x09 | Multi-step attestation chain verification |
 | `UpdateDelegationV1` | 0x0a | Update delegation parameters, by the **delegator** — the original attestation's attestor (ZK, OBL-C196) |
@@ -276,7 +276,7 @@ All 12 circuits compiled to `.zk.bin`:
 | `create_claim.zk` | Prove claimant knows secret, attestation exists |
 | `verify_claim.zk` | Prove predicate satisfied against attestation data |
 | `consume_claim.zk` | Prove claim consumed with nullifier (prevents replay) |
-| `check_not_revoked.zk` | Prove credential not revoked (Identity contract integration) |
+| — | `check_not_revoked.zk` was removed 2026-10-22 with its endpoint: it bound only the tx pair, so it proved nothing about revocation. |
 | `delegate_attestation.zk` | Prove valid delegation of attestation authority |
 | `verify_chain.zk` | Prove multi-step attestation chain valid |
 | `update_delegation.zk` | Prove the delegator can open the key the update names (derive-and-expose; OBL-C196) |

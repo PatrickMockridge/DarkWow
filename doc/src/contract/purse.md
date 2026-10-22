@@ -66,11 +66,18 @@ Identical structure to Box (see box.md for full description):
 ## Data Model
 
 ```
-purse_leaf  = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, balance, state_nonce, owner_pub)
+purse_leaf  = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, balance, state_nonce, owner_pub, asset_id)
 nullifier   = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, purse_id, state_nonce)
 owner_pub    = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)
 balance_commit = pedersen_commit(balance, balance_blind)
 ```
+
+**The leaf commits to the asset (2026-10-22).** `asset_id` was a witness bound only through the
+exposed `derived_purse_id`, which the host never read; two operations on one `purse_id` with
+different assets produced indistinguishable leaves. It is now part of the leaf preimage, and the
+wallet's `leaf_increment` derived rule carries it as a fifth operand (an input slot, so the DAG rule
+allows it at any position). A withdrawal naming a different asset cannot prove membership of the
+old leaf.
 
 ## The Wire — what a call publishes
 

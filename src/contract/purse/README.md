@@ -30,9 +30,9 @@ consensus-critical.
 |------|-----------|
 | `↓spend` | `owner_pub == poseidon_hash(7, owner_secret)` (`DOMAIN_SIGNATURE_SECRET = witness_base(7)`) |
 | `↓nullify` | `nullifier == poseidon_hash(1, owner_secret, purse_id, state_nonce)` (`DOMAIN_NULLIFIER = witness_base(1)`) |
-| `↓prove-inclusion` | `merkle_root(leaf_pos, path, old_leaf) == expected_root` where `old_leaf = poseidon_hash(5, purse_id, old_balance, state_nonce)` (`DOMAIN_MERKLE_LEAF = witness_base(5)`) |
+| `↓prove-inclusion` | `merkle_root(leaf_pos, path, old_leaf) == expected_root` where `old_leaf = poseidon_hash(5, purse_id, old_balance, state_nonce, owner_pub, asset_id)` (`DOMAIN_MERKLE_LEAF = witness_base(5)`) |
 | `↓conserve` | Pedersen homomorphism: `old_commit + deposit_commit == new_commit` (point equality) |
-| `↓commit` | `new_leaf == poseidon_hash(5, purse_id, new_balance, state_nonce)`; `new_balance == old_balance + deposit_amount`; Apply appends via `merkle_add` + marks nullifier |
+| `↓commit` | `new_leaf == poseidon_hash(5, purse_id, new_balance, state_nonce, owner_pub, asset_id)`; `new_balance == old_balance + deposit_amount`; Apply appends via `merkle_add` + marks nullifier |
 
 ### `withdraw`
 
@@ -46,7 +46,7 @@ Same as `deposit`, with the conservation direction reversed, plus:
 | Barb | Mechanism |
 |------|-----------|
 | `↓spend` | `owner_pub == poseidon_hash(7, owner_secret)` |
-| `↓prove-inclusion` | `purse_leaf = poseidon_hash(5, purse_id, balance, state_nonce)`; merkle root == `expected_root` |
+| `↓prove-inclusion` | `purse_leaf = poseidon_hash(5, purse_id, balance, state_nonce, owner_pub, asset_id)`; merkle root == `expected_root` |
 | `↓denominate` | `derived_purse_id == poseidon_hash(4, owner_pub, asset_id, purse_id)` (`DOMAIN_COIN_COMMIT = witness_base(4)`); `token_commit == poseidon_hash(2, asset_id, token_blind)` (`DOMAIN_TOK_COMMIT = witness_base(2)`) |
 
 `balance` is read-only — no nullifier, no consumption.
@@ -73,7 +73,7 @@ Every circuit binds the transaction: `tx_binding == poseidon_hash(3, tx_commitme
 ```
 owner_pub       = poseidon_hash(7, owner_secret)                         # DOMAIN_SIGNATURE_SECRET
 nullifier       = poseidon_hash(1, owner_secret, purse_id, state_nonce)  # DOMAIN_NULLIFIER
-purse_leaf      = poseidon_hash(5, purse_id, balance, state_nonce)       # DOMAIN_MERKLE_LEAF
+purse_leaf      = poseidon_hash(5, purse_id, balance, state_nonce, owner_pub, asset_id)  # DOMAIN_MERKLE_LEAF
 token_commit    = poseidon_hash(2, asset_id, token_blind)                # DOMAIN_TOK_COMMIT
 derived_purse_id = poseidon_hash(4, owner_pub, asset_id, purse_id)       # DOMAIN_COIN_COMMIT (Balance)
 balance_commit  = pedersen_commit(balance, balance_blind)                # Pedersen (V, R)

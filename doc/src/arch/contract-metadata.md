@@ -169,7 +169,7 @@ that the wallet can check before removing the `[UNVERIFIED]` marker.
 
 **Location:** `src/contract/attestation/`
 **Functions:** CreateAttestationV1, RevokeAttestationV1, ExpireAttestationV1, CreateClaimV1,
-VerifyClaimV1, ConsumeClaimV1, ValidateClaimV1, CheckNotRevokedV1, DelegateAttestationV1,
+VerifyClaimV1, ConsumeClaimV1, ValidateClaimV1, DelegateAttestationV1,
 VerifyChainV1, UpdateDelegationV1, AttestSlashV1, CommitFeeScheduleV1
 
 ### Identity Contract

@@ -370,8 +370,9 @@ after `genesis.md` and read the corresponding source in `src/contract/<name>/`.
 | Find a contract spec | [Contract Catalog](../contracts.md) |
 | Find a formal proof | [GeneralTheorem.lean](../../../proofs/lean/src/DarkFi/Combinatorial/GeneralTheorem.lean) |
 | Review security audit findings | [Contract Safety](../dev/contracts/safety.md) |
-| Check what is still open | [Verification Obligation Register](verification-hazop.md) |
-| Assess public-testnet/mainnet launch risk | [Launch Risk Register](launch-risk-register.md) |
+| Check what is still open | [Defect Tracker](verification-hazop.md) |
+| Read a decision or accepted risk | [Decisions and Accepted Risks](decisions.md) |
+| Release checklist | [Launch Risk Register](launch-risk-register.md) (retired as a ledger; the checklist remains) |
 
 ---
 
@@ -381,12 +382,13 @@ after `genesis.md` and read the corresponding source in `src/contract/<name>/`.
   contract vulnerabilities fall into, each with the rule it yields and the findings that taught
   it. Every legacy finding-ID scheme maps into these through the alias table at its foot.
   *Start here for security posture.*
-- **[Verification Obligation Register](verification-hazop.md)** — every property the system
-  must hold, what checks it, and **every open obligation**, including the residue promoted from
-  the HAZOP corpus's remediated documents.
-- **[Launch Risk Register](launch-risk-register.md)** — the ranked, stage-partitioned disposition
-  view over the obligation register: what blocks public testnet, what blocks mainnet, and what a
-  recorded decision accepts. It cites `OBL-*` rows; it never restates their status.
+- **[Defect Tracker](verification-hazop.md)** — one row per defect: status `OPEN`/`CLOSED`, the
+  code locus, and the control. A row turns green only in a commit that changes code and carries a
+  resolving, wired control; status-only edits are refused by `scripts/check-defect-register.sh`.
+- **[Decisions and Accepted Risks](decisions.md)** — interpretations and accepted risks, kept out
+  of the tracker so none of them can green a defect.
+- **[Launch Risk Register](launch-risk-register.md)** — retired as a second ledger; it now holds
+  only the release checklist, which reads the tracker.
 - **[Contract Safety Checklist](../dev/contracts/checklist.md)** — the operative pre-commit
   gates, one or more per root cause.
 

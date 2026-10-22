@@ -64,7 +64,7 @@ merge mining (p2pool, ~6min settlement, protects merge miners). **Both are
 currently partial**: Caribina publishes anchors but its verifier is not wired
 into the node, and the Monero anchoring gadget has never been switched on —
 merge mining itself is live. See `OBL-C63`–`OBL-C69` in the
-[verification obligation register](doc/src/arch/verification-hazop.md).
+[defect tracker](doc/src/arch/verification-hazop.md).
 [Caribina →](doc/src/arch/caribina.md)
 [Monero →](doc/src/arch/monero-merge-mining.md)
 
