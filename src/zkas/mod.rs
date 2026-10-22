@@ -56,7 +56,7 @@ pub use analyzer::Analyzer;
 
 /// Compiler module
 pub mod compiler;
-pub use compiler::Compiler;
+pub use compiler::{Compiler, MAGIC_BYTES};
 
 /// Decoder module
 pub mod decoder;

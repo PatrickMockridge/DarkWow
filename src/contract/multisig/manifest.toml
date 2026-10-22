@@ -78,15 +78,15 @@ required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate"]
 
 [[circuits]]
 name = "CreateGroupV2"
-namespace = "multisig"
+namespace = "CreateGroupV2"
 
 [[circuits]]
 name = "SignV2"
-namespace = "multisig"
+namespace = "SignV2"
 
 [[circuits]]
 name = "FinalizeV2"
-namespace = "multisig"
+namespace = "FinalizeV2"
 
 [[trees]]
 name = "groups"

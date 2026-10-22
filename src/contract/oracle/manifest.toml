@@ -127,24 +127,24 @@ description = "Contract metadata and state"
 
 [[circuits]]
 name = "RegisterOracleV2"
-namespace = "oracle"
+namespace = "RegisterOracleV2"
 
 [[circuits]]
 name = "PushValueV2"
-namespace = "oracle"
+namespace = "PushValueV2"
 
 [[circuits]]
 name = "AttestValueV2"
-namespace = "oracle"
+namespace = "AttestValueV2"
 
 [[circuits]]
 name = "PushValueCommitmentV2"
-namespace = "oracle"
+namespace = "PushValueCommitmentV2"
 
 [[circuits]]
 name = "AggregateV2"
-namespace = "oracle"
+namespace = "AggregateV2"
 
 [[circuits]]
 name = "SetOracleActiveV2"
-namespace = "oracle"
+namespace = "SetOracleActiveV2"

@@ -154,8 +154,32 @@ impl<'a> SectionReader<'a> {
 }
 
 impl ZkBinary {
-    /// Decode a ZkBinary from compiled bytes
+    /// Decode a `ZkBinary` from compiled bytes.
+    ///
+    /// Strict: the slice must contain exactly one binary. See [`Self::decode_len`] for the
+    /// length-aware form used when scanning a WASM blob that embeds several.
     pub fn decode(bytes: &[u8], decode_debug_symbols: bool) -> Result<Self> {
+        Ok(Self::parse(bytes, decode_debug_symbols, false)?.0)
+    }
+
+    /// Decode one `ZkBinary` from the start of `bytes`, returning it and the number of bytes it
+    /// consumed.
+    ///
+    /// The section walk stops at the first byte that is not a recognised section type (or when
+    /// fewer than five bytes remain) instead of erroring as the strict decoder does. That is what
+    /// makes it usable on a WASM data segment where a zkas binary is followed by unrelated bytes:
+    /// the caller advances by the returned length rather than byte-sliding one byte at a time and
+    /// handing the decoder an open-ended slice (which fails on the trailing bytes — the defect
+    /// that left every `zkas_binaries` list empty, `OBL-C249`).
+    pub fn decode_len(bytes: &[u8], decode_debug_symbols: bool) -> Result<(Self, usize)> {
+        Self::parse(bytes, decode_debug_symbols, true)
+    }
+
+    fn parse(
+        bytes: &[u8],
+        decode_debug_symbols: bool,
+        allow_trailing: bool,
+    ) -> Result<(Self, usize)> {
         // Ensure that bytes is a certain minimum length. Otherwise the code
         // below will panic due to an index out of bounds error.
         if bytes.len() < MIN_BIN_SIZE {
@@ -207,6 +231,13 @@ impl ZkBinary {
         let mut source_hash = None;
 
         loop {
+            if allow_trailing {
+                // A section header is type(1) + length(4). Anything shorter, or a byte that is
+                // not a section type, is the enclosing container's data, not this binary.
+                if reader.pos + 5 > bytes.len() || !(1..=6).contains(&bytes[reader.pos]) {
+                    break;
+                }
+            }
             match reader.next_section()? {
                 None => break,
                 Some((section_type, section_data)) => {
@@ -254,7 +285,7 @@ impl ZkBinary {
         // Validate cross-references between sections
         binary.validate()?;
 
-        Ok(binary)
+        Ok((binary, reader.pos))
     }
 
     /// Validate cross-references and consistency between sections.

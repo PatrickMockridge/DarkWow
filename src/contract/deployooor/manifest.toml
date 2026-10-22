@@ -48,7 +48,7 @@ required_barbs = ["Commit", "Dispatch", "Gate"]
 # F-511: the doc promised a deployer-only lock and the code enforced nothing).
 [[circuits]]
 name = "LockV2"
-namespace = "deployooor"
+namespace = "LockV2"
 
 [[trees]]
 name = "info"

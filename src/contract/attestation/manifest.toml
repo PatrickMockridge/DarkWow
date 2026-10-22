@@ -175,48 +175,48 @@ description = "Delegation records"
 
 [[circuits]]
 name = "CreateAttestationV2"
-namespace = "attestation"
+namespace = "CreateAttestationV2"
 
 [[circuits]]
 name = "CreateClaimV2"
-namespace = "attestation"
+namespace = "CreateClaimV2"
 
 [[circuits]]
 name = "VerifyClaimV2"
-namespace = "attestation"
+namespace = "VerifyClaimV2"
 
 [[circuits]]
 name = "ConsumeClaimV2"
-namespace = "attestation"
+namespace = "ConsumeClaimV2"
 
 [[circuits]]
 name = "CheckNotRevokedV2"
-namespace = "attestation"
+namespace = "CheckNotRevokedV2"
 
 [[circuits]]
 name = "DelegateAttestationV2"
-namespace = "attestation"
+namespace = "DelegateAttestationV2"
 
 [[circuits]]
 name = "VerifyChainV2"
-namespace = "attestation"
+namespace = "VerifyChainV2"
 
 [[circuits]]
 name = "UpdateDelegationV2"
-namespace = "attestation"
+namespace = "UpdateDelegationV2"
 
 [[circuits]]
 name = "AttestSlashV2"
-namespace = "attestation"
+namespace = "AttestSlashV2"
 
 [[circuits]]
 name = "CommitFeeScheduleV2"
-namespace = "attestation"
+namespace = "CommitFeeScheduleV2"
 
 [[circuits]]
 name = "RevokeAttestationV2"
-namespace = "attestation"
+namespace = "RevokeAttestationV2"
 
 [[circuits]]
 name = "ExpireAttestationV2"
-namespace = "attestation"
+namespace = "ExpireAttestationV2"

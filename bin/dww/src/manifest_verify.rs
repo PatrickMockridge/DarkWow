@@ -156,6 +156,42 @@ fn verify_exports(wasm: &[u8], verdict: &mut ManifestWasmVerdict) {
     }
 }
 
+/// Find every zkas binary embedded in a contract WASM, in byte order.
+///
+/// This is a magic-byte search plus a **length-aware** decode (`ZkBinary::decode_len`), not a
+/// byte-slide that hands the decoder an open-ended slice: the latter fails on the bytes after the
+/// first binary, so the scan's `embedded` list and `zkas_binaries` store were empty for every
+/// deployed contract and the Layer-2 verdict never measured anything (`OBL-C249`). The returned
+/// bytes are the exact binary, so the caller can store what the generic prover will load.
+pub fn extract_embedded_circuits(wasm: &[u8]) -> Vec<(EmbeddedCircuit, Vec<u8>)> {
+    let magic = dwow_core::zkas::MAGIC_BYTES;
+    let mut out = Vec::new();
+    let mut offset = 0usize;
+    while offset + magic.len() <= wasm.len() {
+        let Some(rel) = wasm[offset..].windows(magic.len()).position(|w| w == magic) else {
+            break;
+        };
+        let start = offset + rel;
+        match dwow_core::zkas::ZkBinary::decode_len(&wasm[start..], false) {
+            Ok((zkbin, consumed)) if consumed > magic.len() => {
+                let bytes = wasm[start..start + consumed].to_vec();
+                out.push((
+                    EmbeddedCircuit {
+                        namespace: zkbin.namespace,
+                        witnesses: zkbin.witnesses.len(),
+                        opcodes: zkbin.opcodes.len(),
+                    },
+                    bytes,
+                ));
+                offset = start + consumed;
+            }
+            // A magic-byte lookalike: advance past it and keep searching.
+            _ => offset = start + magic.len(),
+        }
+    }
+    out
+}
+
 /// Every declared circuit is embedded; no undeclared circuit is embedded.
 ///
 /// Circuits are compared as a multiset of `(namespace, witnesses, opcodes)` because the zkas
@@ -343,5 +379,158 @@ mod tests {
         let m = manifest(vec![]);
         let v = verify(&m, &[0x00, 0x61, 0x73, 0x6d], &[]);
         assert!(!v.ok, "a module with no exports must not pass");
+    }
+
+    /// The nine genesis `(name, wasm, manifest)` pairs, embedded at compile time.
+    const GENESIS: &[(&str, &[u8], &str)] = &[
+        ("native_token", include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"),
+         include_str!("../../../src/contract/native_token/manifest.toml")),
+        ("promissory_note", include_bytes!("../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm"),
+         include_str!("../../../src/contract/promissory_note/manifest.toml")),
+        ("purse", include_bytes!("../../../src/contract/purse/dwow_purse_contract.wasm"),
+         include_str!("../../../src/contract/purse/manifest.toml")),
+        ("box", include_bytes!("../../../src/contract/box/dwow_box_contract.wasm"),
+         include_str!("../../../src/contract/box/manifest.toml")),
+        ("identity", include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"),
+         include_str!("../../../src/contract/identity/manifest.toml")),
+        ("attestation", include_bytes!("../../../src/contract/attestation/dwow_attestation_contract.wasm"),
+         include_str!("../../../src/contract/attestation/manifest.toml")),
+        ("multisig", include_bytes!("../../../src/contract/multisig/dwow_multisig_contract.wasm"),
+         include_str!("../../../src/contract/multisig/manifest.toml")),
+        ("oracle", include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm"),
+         include_str!("../../../src/contract/oracle/manifest.toml")),
+        ("deployooor", include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"),
+         include_str!("../../../src/contract/deployooor/manifest.toml")),
+    ];
+
+    /// `OBL-C249` exit (a): all nine genesis manifests pass Layer 2 against their own WASM, and
+    /// each manifest's namespace equals its circuit name — the property the wallet's
+    /// `(namespace, circuit)` lookup depends on.
+    #[test]
+    fn every_genesis_manifest_names_its_embedded_circuits() {
+        for (name, wasm, manifest_toml) in GENESIS {
+            let m = ContractManifest::from_toml(manifest_toml)
+                .unwrap_or_else(|e| panic!("{name}: manifest parse: {e}"));
+            let extracted = extract_embedded_circuits(wasm);
+            assert!(!extracted.is_empty(), "{name}: no embedded zkas binary found in the WASM");
+            let embedded: Vec<EmbeddedCircuit> =
+                extracted.iter().map(|(c, _)| c.clone()).collect();
+            let v = verify(&m, wasm, &embedded);
+            assert!(v.ok, "{name}: Layer-2 verdict failed: {:?}", v.errors);
+            for circuit in &m.circuits {
+                assert_eq!(
+                    circuit.namespace, circuit.name,
+                    "{name}: manifest namespace '{}' is not the circuit name '{}'",
+                    circuit.namespace, circuit.name
+                );
+                assert!(
+                    embedded.iter().any(|e| e.namespace == circuit.namespace),
+                    "{name}: declared circuit '{}' is not embedded",
+                    circuit.name
+                );
+            }
+        }
+    }
+
+    /// `OBL-C249` exit (b): each manifest circuit's own `proof/*.zk.bin` decodes, and its
+    /// namespace is the manifest's. This reads the source binaries, not the WASM copy.
+    #[test]
+    fn every_genesis_circuit_binary_carries_its_manifest_namespace() {
+        for (name, _wasm, manifest_toml) in GENESIS {
+            let m = ContractManifest::from_toml(manifest_toml)
+                .unwrap_or_else(|e| panic!("{name}: manifest parse: {e}"));
+            let proof_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../src/contract")
+                .join(name)
+                .join("proof");
+            let mut found = std::collections::BTreeSet::new();
+            for entry in std::fs::read_dir(&proof_dir)
+                .unwrap_or_else(|e| panic!("{name}: reading {}: {e}", proof_dir.display()))
+            {
+                let path = entry.expect("dir entry").path();
+                if path.extension().and_then(|e| e.to_str()) != Some("bin") {
+                    continue;
+                }
+                let bytes = std::fs::read(&path).expect("read zk.bin");
+                let zk = dwow_core::zkas::ZkBinary::decode(&bytes, false)
+                    .unwrap_or_else(|e| panic!("{name}: decoding {}: {e}", path.display()));
+                found.insert(zk.namespace);
+            }
+            assert!(!found.is_empty(), "{name}: no .zk.bin in {}", proof_dir.display());
+            for circuit in &m.circuits {
+                assert!(
+                    found.contains(&circuit.namespace),
+                    "{name}: {} carries no .zk.bin with namespace '{}'",
+                    circuit.name, circuit.namespace
+                );
+            }
+        }
+    }
+
+    /// `OBL-C249` exit (c): the generic prover's load path — the key is
+    /// `(contract, manifest namespace, circuit name)`. Storing the embedded binaries under the
+    /// namespace they carry and looking them up by the manifest must succeed for all nine.
+    #[test]
+    fn every_genesis_circuit_loads_by_its_manifest_namespace() {
+        let db = std::env::temp_dir().join(format!("dwow-c249-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&db);
+        let wallet = crate::walletdb::WalletDb::new(Some(db.clone()), None, false)
+            .expect("open a wallet db");
+        // `WalletDb::new` opens the connection; the schema is applied by the caller (as `Dww::init`
+        // does). Without it the `zkas_binaries` table does not exist and the store fails.
+        wallet
+            .exec_batch_sql(include_str!("../wallet.sql"))
+            .expect("apply the wallet schema");
+        for (name, wasm, manifest_toml) in GENESIS {
+            let cid = crate::contract_imports::get_contract_id(name)
+                .unwrap_or_else(|| panic!("{name}: no well-known contract id"));
+            let cid_str = bs58::encode(cid.to_bytes()).into_string();
+            let m = ContractManifest::from_toml(manifest_toml)
+                .unwrap_or_else(|e| panic!("{name}: manifest parse: {e}"));
+            for (circuit, bytes) in extract_embedded_circuits(wasm) {
+                wallet
+                    .store_zkas_binary(&cid_str, &circuit.namespace, &circuit.namespace, &bytes)
+                    .unwrap_or_else(|e| panic!("{name}: storing '{}': {e}", circuit.namespace));
+            }
+            for circuit in &m.circuits {
+                assert!(
+                    wallet
+                        .load_zkas_binary(&cid_str, &circuit.namespace, &circuit.name)
+                        .unwrap_or_else(|e| panic!("{name}: loading '{}': {e}", circuit.name))
+                        .is_some(),
+                    "{name}: prover lookup ({}, {}) misses",
+                    circuit.namespace, circuit.name
+                );
+            }
+        }
+        drop(wallet);
+        let _ = std::fs::remove_file(&db);
+    }
+
+    /// `OBL-C249` control: flipping one namespace makes the verdict fail and names both sides.
+    #[test]
+    fn a_flipped_namespace_is_refused_and_named() {
+        let mut m = ContractManifest::from_toml(include_str!(
+            "../../../src/contract/box/manifest.toml"
+        ))
+        .expect("box manifest");
+        let wasm = include_bytes!("../../../src/contract/box/dwow_box_contract.wasm");
+        let embedded: Vec<EmbeddedCircuit> = extract_embedded_circuits(wasm)
+            .into_iter()
+            .map(|(c, _)| c)
+            .collect();
+        m.circuits[0].namespace = "WrongNamespace".into();
+        let v = verify(&m, wasm, &embedded);
+        assert!(!v.ok, "a flipped namespace must not pass");
+        assert!(
+            v.errors.iter().any(|e| e.contains("WrongNamespace")),
+            "the verdict must name the claimed namespace: {:?}",
+            v.errors
+        );
+        assert!(
+            v.errors.iter().any(|e| e.contains("undeclared namespace") && e.contains("Put")),
+            "the verdict must name the binary's real namespace: {:?}",
+            v.errors
+        );
     }
 }

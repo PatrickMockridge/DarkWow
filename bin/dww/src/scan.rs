@@ -857,60 +857,36 @@ fn scan_block(
                         ));
 
                         // Extract zkas circuit binaries from the deployed WASM
-                        // (wallet.md §3, §6.4.1 step 3). include_bytes! embeds
-                        // .zk.bin files in the WASM data segment at build time.
-                        // We scan the raw WASM blob for byte sequences that
-                        // successfully decode as ZkBinary — one per circuit.
-                        // The namespace is extracted from the binary header
-                        // (zkas wire format: k u32 LE, field_len u32 LE,
-                        //  field bytes, namespace_len u32 LE, namespace bytes).
+                        // (wallet.md §3, §6.4.1 step 3). `include_bytes!` embeds the `.zk.bin`
+                        // files in the WASM data segment. One helper does the magic-byte search
+                        // and the **length-aware** decode; the previous local loop decoded an
+                        // open-ended slice and failed on the bytes after the first binary, so
+                        // both lists were empty and the Layer-2 verdict measured nothing
+                        // (`OBL-C249`).
+                        //
+                        // `embedded` is kept in WASM order, *before* the storage dedup: the
+                        // Layer-2 check compares circuits as a multiset, because a manifest may
+                        // declare one namespace across several circuits.
+                        let extracted =
+                            crate::manifest_verify::extract_embedded_circuits(&params.wasm_bincode);
                         let mut seen: std::collections::HashSet<String> =
                             std::collections::HashSet::new();
-                        // Every embedded zkas binary, in WASM order, *before* the storage dedup:
-                        // the Layer-2 check compares circuits as a multiset, and several
-                        // manifests (native_token, promissory_note, identity) declare one
-                        // namespace for all of their circuits.
-                        let mut embedded: Vec<crate::manifest_verify::EmbeddedCircuit> = Vec::new();
-                        for offset in 0..params.wasm_bincode.len().saturating_sub(20) {
-                            let slice = &params.wasm_bincode[offset..];
-                            if let Ok(zkbin) = dwow_core::zkas::ZkBinary::decode(slice, false) {
-                                // Extract namespace from the binary header.
-                                // Header: k(u32) + field_len(u32) + field(str) +
-                                //         namespace_len(u32) + namespace(str)
-                                let mut pos = 4; // skip k
-                                #[expect(clippy::unwrap_used, reason = "4-byte slice (or [0;4] fallback) is always 4 bytes")]
-                                let field_len = u32::from_le_bytes(
-                                    slice.get(pos..pos+4).unwrap_or(&[0;4]).try_into().unwrap()
-                                ) as usize;
-                                pos += 4 + field_len;
-                                #[expect(clippy::unwrap_used, reason = "4-byte slice (or [0;4] fallback) is always 4 bytes")]
-                                let ns_len = u32::from_le_bytes(
-                                    slice.get(pos..pos+4).unwrap_or(&[0;4]).try_into().unwrap()
-                                ) as usize;
-                                pos += 4;
-                                let ns = String::from_utf8_lossy(
-                                    slice.get(pos..pos+ns_len).unwrap_or(b"")
-                                ).to_string();
-                                let binary_end = pos + ns_len;
-                                if !ns.is_empty() {
-                                    embedded.push(crate::manifest_verify::EmbeddedCircuit {
-                                        namespace: ns.clone(),
-                                        witnesses: zkbin.witnesses.len(),
-                                        opcodes: zkbin.opcodes.len(),
-                                    });
-                                }
-                                if !ns.is_empty() && seen.insert(ns.clone()) {
-                                    result.zkas_binaries.push(ZkasBinaryDiscovery {
-                                        contract_id,
-                                        namespace: ns.clone(),
-                                        circuit_name: ns.clone(),
-                                        zkas_bytes: slice[..binary_end].to_vec(),
-                                    });
-                                    result.messages.push(format!(
-                                        "[scan_block] zkas '{}' extracted for {} (k={})",
-                                        ns, &contract_id_str[..8], zkbin.k,
-                                    ));
-                                }
+                        let mut embedded: Vec<crate::manifest_verify::EmbeddedCircuit> =
+                            Vec::with_capacity(extracted.len());
+                        for (circuit, bytes) in extracted {
+                            let ns = circuit.namespace.clone();
+                            embedded.push(circuit);
+                            if seen.insert(ns.clone()) {
+                                result.messages.push(format!(
+                                    "[scan_block] zkas '{}' extracted for {}",
+                                    ns, &contract_id_str[..8],
+                                ));
+                                result.zkas_binaries.push(ZkasBinaryDiscovery {
+                                    contract_id,
+                                    namespace: ns.clone(),
+                                    circuit_name: ns,
+                                    zkas_bytes: bytes,
+                                });
                             }
                         }
 
