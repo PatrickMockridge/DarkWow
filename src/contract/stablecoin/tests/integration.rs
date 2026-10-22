@@ -84,7 +84,8 @@ fn redeem_params_roundtrip_carries_the_value_blind() {
         fee: 7,
         zk_public_inputs: vec![zero],
     };
-    let decoded = RedeemStableParamsV1::decode(&params.encode()).expect("params roundtrip");
+    let decoded = RedeemStableParamsV1::decode(&params.encode().expect("params encode"))
+        .expect("params roundtrip");
     assert_eq!(decoded.redeem_amount, 1_000);
     assert_eq!(decoded.redeem_value_blind, blind, "the value blind must survive the wire");
 }

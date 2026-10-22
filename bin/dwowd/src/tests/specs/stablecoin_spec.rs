@@ -86,7 +86,8 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
         // zero and the arm derives.
         tx_nonce: pallas::Base::zero(),
     }
-    .encode();
+    .encode()
+    .expect("encode stablecoin InitializeParams");
 
     ContractTestSpec {
         name: "stablecoin",
@@ -265,7 +266,9 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                                 zk_public_inputs: wire_instances(&plan.public_inputs.to_vec()),
                             };
                             let mut cd = vec![0x04];
-                            cd.extend_from_slice(&params.encode());
+                            cd.extend_from_slice(
+                                &params.encode().expect("encode MintStableParams"),
+                            );
                             cd
                         };
 

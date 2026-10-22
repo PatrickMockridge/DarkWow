@@ -1108,7 +1108,8 @@ fn process_rebalance_pool_shares_instruction(
 
 	        // Reputation-adjusted share: good relayers (low slash) gain weight
 	        // new_weight = base_share * (1 / (1 + slash_count))
-	        let slash_penalty = 1u32.saturating_add(stake.slash_count as u32);
+	        let slash_penalty = 1u32
+	            .saturating_add(u32::try_from(stake.slash_count).unwrap_or(u32::MAX));
 	        let adjusted_bp = (stake.pool_share_bp as u64)
 	            .saturating_div(slash_penalty as u64)
 	            .min(u32::MAX as u64) as u32;

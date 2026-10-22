@@ -926,7 +926,10 @@ fn bearer_bond_burn_vector_matches_its_own_proof() {
         .prepare()
         .expect("prepare must succeed");
     // Through the codec, because the arm's vector is built from the **decoded** params.
-    let p = BurnStakeParamsV1::decode(&plan.params().encode()).expect("params must round-trip");
+    let p = BurnStakeParamsV1::decode(
+        &plan.params().encode().expect("params must encode"),
+    )
+    .expect("params must round-trip");
     let debris = plan.prove(tx_commitment, tx_nonce).expect("prove must succeed");
 
     let tx_binding =

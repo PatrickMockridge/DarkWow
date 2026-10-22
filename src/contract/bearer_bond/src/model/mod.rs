@@ -50,10 +50,33 @@
 //! - BurnStakeV1 (0x05): Issuer retires staking pool.
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{pasta_prelude::{CurveAffine, Group, PrimeField}, ContractId, MerkleNode},
     error::ContractError,
     pasta::{group::{Curve, GroupEncoding}, pallas},
 };
+
+/// Read exactly `N` bytes at `offset` — total: `get` + `try_into`, no index and no unwrap.
+fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], ContractError> {
+    data.get(offset..offset.saturating_add(N))
+        .and_then(|s| s.try_into().ok())
+        .ok_or_else(|| {
+            ContractError::IoError(format!(
+                "truncated field: need {N} bytes at offset {offset}, buffer has {}",
+                data.len()
+            ))
+        })
+}
+
+/// Borrow exactly `len` bytes at `offset` — total, for the same reason as [`read_field`].
+fn read_slice(data: &[u8], offset: usize, len: usize) -> Result<&[u8], ContractError> {
+    data.get(offset..offset.saturating_add(len)).ok_or_else(|| {
+        ContractError::IoError(format!(
+            "truncated field: need {len} bytes at offset {offset}, buffer has {}",
+            data.len()
+        ))
+    })
+}
 
 // ============================================================================
 // CONSTANTS
@@ -638,22 +661,25 @@ pub struct IssueStakeUpdateV1 {
 }
 
 impl IssueStakeUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 1 + self.commitments.len() * BondCommitment::ENCODED_SIZE;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.commitments.len())?;
+        let cap = SerializedLen::ENCODED_SIZE
+            + self.commitments.len() * BondCommitment::ENCODED_SIZE;
         let mut b = Vec::with_capacity(cap);
-        b.push(self.commitments.len() as u8);
+        b.extend_from_slice(&n.to_le_bytes());
         for commitment in &self.commitments {
             b.extend_from_slice(&commitment.encode());
         }
-        b
+        Ok(b)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.is_empty() {
-            return Err(ContractError::IoError("IssueStakeUpdateV1: empty data".into()));
-        }
-        let count = data[0] as usize;
-        let expected = 1 + count * BondCommitment::ENCODED_SIZE;
+        let count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let expected = count
+            .checked_mul(BondCommitment::ENCODED_SIZE)
+            .and_then(|n| n.checked_add(SerializedLen::ENCODED_SIZE))
+            .ok_or_else(|| ContractError::IoError(
+                "IssueStakeUpdateV1: length prefix overflows".into()))?;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "IssueStakeUpdateV1: expected {} bytes, got {}",
@@ -663,8 +689,10 @@ impl IssueStakeUpdateV1 {
         }
         let mut commitments = Vec::with_capacity(count);
         for i in 0..count {
-            let start = 1 + i * BondCommitment::ENCODED_SIZE;
-            commitments.push(BondCommitment::decode(&data[start..start + BondCommitment::ENCODED_SIZE])?);
+            let start = SerializedLen::ENCODED_SIZE + i * BondCommitment::ENCODED_SIZE;
+            commitments.push(BondCommitment::decode(
+                read_slice(data, start, BondCommitment::ENCODED_SIZE)?,
+            )?);
         }
         Ok(IssueStakeUpdateV1 { commitments })
     }
@@ -785,35 +813,43 @@ pub struct TransferStakeParamsV1 {
 }
 
 impl TransferStakeParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(2 + self.inputs.len() * BondInput::ENCODED_SIZE + self.outputs.len() * BondCommitment::ENCODED_SIZE);
-        b.push(self.inputs.len() as u8);
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let input_len = SerializedLen::try_from_len(self.inputs.len())?;
+        let output_len = SerializedLen::try_from_len(self.outputs.len())?;
+        let cap = 2 * SerializedLen::ENCODED_SIZE
+            + self.inputs.len() * BondInput::ENCODED_SIZE
+            + self.outputs.len() * BondCommitment::ENCODED_SIZE;
+        let mut b = Vec::with_capacity(cap);
+        b.extend_from_slice(&input_len.to_le_bytes());
         for input in &self.inputs { b.extend_from_slice(&input.encode()); }
-        b.push(self.outputs.len() as u8);
+        b.extend_from_slice(&output_len.to_le_bytes());
         for output in &self.outputs { b.extend_from_slice(&output.encode()); }
-        b
+        Ok(b)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 2 {
-            return Err(ContractError::IoError("TransferStakeParamsV1: data too short".into()));
-        }
-        let input_count = data[0] as usize;
-        let mut pos = 1usize;
+        let input_count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let mut pos = SerializedLen::ENCODED_SIZE;
         let mut inputs = Vec::with_capacity(input_count);
         for _ in 0..input_count {
-            inputs.push(BondInput::decode(&data[pos..pos + BondInput::ENCODED_SIZE])?);
-            pos += BondInput::ENCODED_SIZE;
+            inputs.push(BondInput::decode(read_slice(data, pos, BondInput::ENCODED_SIZE)?)?);
+            pos = pos.checked_add(BondInput::ENCODED_SIZE).ok_or_else(|| {
+                ContractError::IoError("TransferStakeParamsV1: offset overflow".into())
+            })?;
         }
-        if pos >= data.len() {
-            return Err(ContractError::IoError("TransferStakeParamsV1: missing output count".into()));
-        }
-        let output_count = data[pos] as usize;
-        pos += 1;
+        let output_count =
+            SerializedLen::from_le_bytes(read_field::<4>(data, pos)?).to_usize();
+        pos = pos.checked_add(SerializedLen::ENCODED_SIZE).ok_or_else(|| {
+            ContractError::IoError("TransferStakeParamsV1: offset overflow".into())
+        })?;
         let mut outputs = Vec::with_capacity(output_count);
         for _ in 0..output_count {
-            outputs.push(BondCommitment::decode(&data[pos..pos + BondCommitment::ENCODED_SIZE])?);
-            pos += BondCommitment::ENCODED_SIZE;
+            outputs.push(BondCommitment::decode(
+                read_slice(data, pos, BondCommitment::ENCODED_SIZE)?,
+            )?);
+            pos = pos.checked_add(BondCommitment::ENCODED_SIZE).ok_or_else(|| {
+                ContractError::IoError("TransferStakeParamsV1: offset overflow".into())
+            })?;
         }
         Ok(TransferStakeParamsV1 { inputs, outputs })
     }
@@ -827,42 +863,48 @@ pub struct TransferStakeUpdateV1 {
 }
 
 impl TransferStakeUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.nullifiers.len() * 32 + self.commitments.len() * BondCommitment::ENCODED_SIZE;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let null_len = SerializedLen::try_from_len(self.nullifiers.len())?;
+        let commitment_len = SerializedLen::try_from_len(self.commitments.len())?;
+        let cap = 2 * SerializedLen::ENCODED_SIZE
+            + self.nullifiers.len() * 32
+            + self.commitments.len() * BondCommitment::ENCODED_SIZE;
         let mut b = Vec::with_capacity(cap);
-        b.push(self.nullifiers.len() as u8);
+        b.extend_from_slice(&null_len.to_le_bytes());
         for n in &self.nullifiers {
             b.extend_from_slice(&n.to_bytes());
         }
-        b.push(self.commitments.len() as u8);
+        b.extend_from_slice(&commitment_len.to_le_bytes());
         for commitment in &self.commitments {
             b.extend_from_slice(&commitment.encode());
         }
-        b
+        Ok(b)
     }
 
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 2 {
-            return Err(ContractError::IoError("TransferStakeUpdateV1: data too short".into()));
-        }
-        let null_count = data[0] as usize;
-        let mut pos = 1usize;
+        let null_count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let mut pos = SerializedLen::ENCODED_SIZE;
         let mut nullifiers = Vec::with_capacity(null_count);
         for _ in 0..null_count {
-            nullifiers.push(Nullifier::from_bytes(data[pos..pos + 32].try_into().unwrap())
+            nullifiers.push(Nullifier::from_bytes(read_field::<32>(data, pos)?)
                 .map_err(|e| ContractError::IoError(format!("TransferStakeUpdateV1: invalid nullifier: {}", e)))?);
-            pos += 32;
+            pos = pos.checked_add(32).ok_or_else(|| {
+                ContractError::IoError("TransferStakeUpdateV1: offset overflow".into())
+            })?;
         }
-        if pos >= data.len() {
-            return Err(ContractError::IoError("TransferStakeUpdateV1: missing commitment count".into()));
-        }
-        let commitment_count = data[pos] as usize;
-        pos += 1;
+        let commitment_count =
+            SerializedLen::from_le_bytes(read_field::<4>(data, pos)?).to_usize();
+        pos = pos.checked_add(SerializedLen::ENCODED_SIZE).ok_or_else(|| {
+            ContractError::IoError("TransferStakeUpdateV1: offset overflow".into())
+        })?;
         let mut commitments = Vec::with_capacity(commitment_count);
         for _ in 0..commitment_count {
-            commitments.push(BondCommitment::decode(&data[pos..pos + BondCommitment::ENCODED_SIZE])?);
-            pos += BondCommitment::ENCODED_SIZE;
+            commitments.push(BondCommitment::decode(
+                read_slice(data, pos, BondCommitment::ENCODED_SIZE)?,
+            )?);
+            pos = pos.checked_add(BondCommitment::ENCODED_SIZE).ok_or_else(|| {
+                ContractError::IoError("TransferStakeUpdateV1: offset overflow".into())
+            })?;
         }
         Ok(TransferStakeUpdateV1 { nullifiers, commitments })
     }
@@ -1244,35 +1286,38 @@ pub struct EmergencyUnstakeUpdateV1 {
 }
 
 impl EmergencyUnstakeUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 1 + self.nullifiers.len() * 32 + 1 + BondCommitment::ENCODED_SIZE;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let null_len = SerializedLen::try_from_len(self.nullifiers.len())?;
+        let cap = SerializedLen::ENCODED_SIZE
+            + self.nullifiers.len() * 32
+            + 1
+            + BondCommitment::ENCODED_SIZE;
         let mut b = Vec::with_capacity(cap);
-        b.push(self.nullifiers.len() as u8);
+        b.extend_from_slice(&null_len.to_le_bytes());
         for n in &self.nullifiers {
             b.extend_from_slice(&n.to_bytes());
         }
         b.push(1u8);
         b.extend_from_slice(&self.receipt_commitment.encode());
-        b
+        Ok(b)
     }
 
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 2 + 32 + BondCommitment::ENCODED_SIZE {
-            return Err(ContractError::IoError("EmergencyUnstakeUpdateV1: data too short".into()));
-        }
-        let null_count = data[0] as usize;
-        if data.len() < 1 + null_count * 32 + 1 + BondCommitment::ENCODED_SIZE {
-            return Err(ContractError::IoError("EmergencyUnstakeUpdateV1: data too short for nullifiers".into()));
-        }
+        let null_count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let commitment_pos = null_count
+            .checked_mul(32)
+            .and_then(|n| n.checked_add(SerializedLen::ENCODED_SIZE + 1))
+            .ok_or_else(|| ContractError::IoError(
+                "EmergencyUnstakeUpdateV1: length prefix overflows".into()))?;
         let mut nullifiers = Vec::with_capacity(null_count);
         for i in 0..null_count {
-            let start = 1 + i * 32;
-            nullifiers.push(Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
+            let start = SerializedLen::ENCODED_SIZE + i * 32;
+            nullifiers.push(Nullifier::from_bytes(read_field::<32>(data, start)?)
                 .map_err(|e| ContractError::IoError(format!("EmergencyUnstakeUpdateV1: invalid nullifier: {}", e)))?);
         }
-        let commitment_pos = 1 + null_count * 32 + 1;
-        let receipt_commitment = BondCommitment::decode(&data[commitment_pos..commitment_pos + BondCommitment::ENCODED_SIZE])?;
+        let receipt_commitment = BondCommitment::decode(
+            read_slice(data, commitment_pos, BondCommitment::ENCODED_SIZE)?,
+        )?;
         Ok(EmergencyUnstakeUpdateV1 { nullifiers, receipt_commitment })
     }
 }
@@ -1375,35 +1420,38 @@ pub struct UnstakeUpdateV1 {
 }
 
 impl UnstakeUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 1 + self.nullifiers.len() * 32 + 1 + BondCommitment::ENCODED_SIZE;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let null_len = SerializedLen::try_from_len(self.nullifiers.len())?;
+        let cap = SerializedLen::ENCODED_SIZE
+            + self.nullifiers.len() * 32
+            + 1
+            + BondCommitment::ENCODED_SIZE;
         let mut b = Vec::with_capacity(cap);
-        b.push(self.nullifiers.len() as u8);
+        b.extend_from_slice(&null_len.to_le_bytes());
         for n in &self.nullifiers {
             b.extend_from_slice(&n.to_bytes());
         }
         b.push(1u8);
         b.extend_from_slice(&self.receipt_commitment.encode());
-        b
+        Ok(b)
     }
 
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 2 + 32 + BondCommitment::ENCODED_SIZE {
-            return Err(ContractError::IoError("UnstakeUpdateV1: data too short".into()));
-        }
-        let null_count = data[0] as usize;
-        if data.len() < 1 + null_count * 32 + 1 + BondCommitment::ENCODED_SIZE {
-            return Err(ContractError::IoError("UnstakeUpdateV1: data too short for nullifiers".into()));
-        }
+        let null_count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let commitment_pos = null_count
+            .checked_mul(32)
+            .and_then(|n| n.checked_add(SerializedLen::ENCODED_SIZE + 1))
+            .ok_or_else(|| ContractError::IoError(
+                "UnstakeUpdateV1: length prefix overflows".into()))?;
         let mut nullifiers = Vec::with_capacity(null_count);
         for i in 0..null_count {
-            let start = 1 + i * 32;
-            nullifiers.push(Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
+            let start = SerializedLen::ENCODED_SIZE + i * 32;
+            nullifiers.push(Nullifier::from_bytes(read_field::<32>(data, start)?)
                 .map_err(|e| ContractError::IoError(format!("UnstakeUpdateV1: invalid nullifier: {}", e)))?);
         }
-        let commitment_pos = 1 + null_count * 32 + 1;
-        let receipt_commitment = BondCommitment::decode(&data[commitment_pos..commitment_pos + BondCommitment::ENCODED_SIZE])?;
+        let receipt_commitment = BondCommitment::decode(
+            read_slice(data, commitment_pos, BondCommitment::ENCODED_SIZE)?,
+        )?;
         Ok(UnstakeUpdateV1 { nullifiers, receipt_commitment })
     }
 }
@@ -1419,13 +1467,21 @@ pub struct BurnStakeParamsV1 {
 }
 
 impl BurnStakeParamsV1 {
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.inputs.len()*BondInput::ENCODED_SIZE); b.push(self.inputs.len() as u8); for input in &self.inputs { b.extend_from_slice(&input.encode()); } b }
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.inputs.len())?;
+        let cap = SerializedLen::ENCODED_SIZE + self.inputs.len() * BondInput::ENCODED_SIZE;
+        let mut b = Vec::with_capacity(cap);
+        b.extend_from_slice(&n.to_le_bytes());
+        for input in &self.inputs { b.extend_from_slice(&input.encode()); }
+        Ok(b)
+    }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.is_empty() {
-            return Err(ContractError::IoError("BurnStakeParamsV1: empty data".into()));
-        }
-        let count = data[0] as usize;
-        let expected = 1 + count * BondInput::ENCODED_SIZE;
+        let count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let expected = count
+            .checked_mul(BondInput::ENCODED_SIZE)
+            .and_then(|n| n.checked_add(SerializedLen::ENCODED_SIZE))
+            .ok_or_else(|| ContractError::IoError(
+                "BurnStakeParamsV1: length prefix overflows".into()))?;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "BurnStakeParamsV1: expected {} bytes, got {}",
@@ -1435,8 +1491,10 @@ impl BurnStakeParamsV1 {
         }
         let mut inputs = Vec::with_capacity(count);
         for i in 0..count {
-            let start = 1 + i * BondInput::ENCODED_SIZE;
-            inputs.push(BondInput::decode(&data[start..start + BondInput::ENCODED_SIZE])?);
+            let start = SerializedLen::ENCODED_SIZE + i * BondInput::ENCODED_SIZE;
+            inputs.push(BondInput::decode(
+                read_slice(data, start, BondInput::ENCODED_SIZE)?,
+            )?);
         }
         Ok(BurnStakeParamsV1 { inputs })
     }
@@ -1449,23 +1507,24 @@ pub struct BurnStakeUpdateV1 {
 }
 
 impl BurnStakeUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 1 + self.nullifiers.len() * 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let n = SerializedLen::try_from_len(self.nullifiers.len())?;
+        let cap = SerializedLen::ENCODED_SIZE + self.nullifiers.len() * 32;
         let mut b = Vec::with_capacity(cap);
-        b.push(self.nullifiers.len() as u8);
+        b.extend_from_slice(&n.to_le_bytes());
         for n in &self.nullifiers {
             b.extend_from_slice(&n.to_bytes());
         }
-        b
+        Ok(b)
     }
 
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.is_empty() {
-            return Err(ContractError::IoError("BurnStakeUpdateV1: empty data".into()));
-        }
-        let count = data[0] as usize;
-        let expected = 1 + count * 32;
+        let count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let expected = count
+            .checked_mul(32)
+            .and_then(|n| n.checked_add(SerializedLen::ENCODED_SIZE))
+            .ok_or_else(|| ContractError::IoError(
+                "BurnStakeUpdateV1: length prefix overflows".into()))?;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "BurnStakeUpdateV1: expected {} bytes, got {}",
@@ -1475,8 +1534,8 @@ impl BurnStakeUpdateV1 {
         }
         let mut nullifiers = Vec::with_capacity(count);
         for i in 0..count {
-            let start = 1 + i * 32;
-            nullifiers.push(Nullifier::from_bytes(data[start..start + 32].try_into().unwrap())
+            let start = SerializedLen::ENCODED_SIZE + i * 32;
+            nullifiers.push(Nullifier::from_bytes(read_field::<32>(data, start)?)
                 .map_err(|e| ContractError::IoError(format!("BurnStakeUpdateV1: invalid nullifier: {}", e)))?);
         }
         Ok(BurnStakeUpdateV1 { nullifiers })
@@ -1551,36 +1610,44 @@ pub struct ProveCoverageParamsV1 {
 }
 
 impl ProveCoverageParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(72 + self.proof.len());
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_len = SerializedLen::try_from_len(self.proof.len())?;
+        let mut b = Vec::with_capacity(72 + SerializedLen::ENCODED_SIZE + self.proof.len());
         b.extend_from_slice(&self.series_asset_id.to_repr());
         b.extend_from_slice(&self.total_outstanding.to_le_bytes());
         b.extend_from_slice(&self.total_interest_obligation.to_le_bytes());
         b.extend_from_slice(&self.reserve_amount.to_le_bytes());
         b.extend_from_slice(&self.coverage_ratio_bps.to_le_bytes());
         b.extend_from_slice(&self.report_block.to_le_bytes());
-        b.push(self.proof.len() as u8);
+        b.extend_from_slice(&proof_len.to_le_bytes());
         b.extend_from_slice(&self.proof);
-        b
+        Ok(b)
     }
 
-    #[expect(clippy::unwrap_used, reason = "slice length checked above")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 72 {
+        let series_asset_id = pallas::Base::from_repr(read_field::<32>(data, 0)?)
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("ProveCoverageParamsV1: invalid series_asset_id".into()))?;
+        let total_outstanding = u64::from_le_bytes(read_field::<8>(data, 32)?);
+        let total_interest_obligation = u64::from_le_bytes(read_field::<8>(data, 40)?);
+        let reserve_amount = u64::from_le_bytes(read_field::<8>(data, 48)?);
+        let coverage_ratio_bps = u64::from_le_bytes(read_field::<8>(data, 56)?);
+        let report_block = u64::from_le_bytes(read_field::<8>(data, 64)?);
+        let proof_len =
+            SerializedLen::from_le_bytes(read_field::<4>(data, 72)?).to_usize();
+        let proof_start = 72 + SerializedLen::ENCODED_SIZE;
+        let expected = proof_len
+            .checked_add(proof_start)
+            .ok_or_else(|| ContractError::IoError(
+                "ProveCoverageParamsV1: length prefix overflows".into()))?;
+        if data.len() != expected {
             return Err(ContractError::IoError(format!(
-                "ProveCoverageParamsV1: expected at least 72 bytes, got {}",
+                "ProveCoverageParamsV1: expected {} bytes, got {}",
+                expected,
                 data.len()
             )));
         }
-        let series_asset_id = pallas::Base::from_repr(data[0..32].try_into().unwrap())
-            .into_option()
-            .ok_or_else(|| ContractError::IoError("ProveCoverageParamsV1: invalid series_asset_id".into()))?;
-        let total_outstanding = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let total_interest_obligation = u64::from_le_bytes(data[40..48].try_into().unwrap());
-        let reserve_amount = u64::from_le_bytes(data[48..56].try_into().unwrap());
-        let coverage_ratio_bps = u64::from_le_bytes(data[56..64].try_into().unwrap());
-        let report_block = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        let proof = data[72..].to_vec();
+        let proof = read_slice(data, proof_start, proof_len)?.to_vec();
         Ok(ProveCoverageParamsV1 {
             series_asset_id,
             total_outstanding,

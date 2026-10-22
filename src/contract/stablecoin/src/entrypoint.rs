@@ -792,7 +792,7 @@ fn process_spend_hook(cid: ContractId, payload: &[u8]) -> ContractResult {
         cb.nullifiers.len());
 
     let func_byte = StablecoinFunction::SpendHookCallback as u8;
-    wasm::util::set_return_data(&[&[func_byte], &update.encode()[..]].concat())
+    wasm::util::set_return_data(&[&[func_byte], &update.encode()?[..]].concat())
 }
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {

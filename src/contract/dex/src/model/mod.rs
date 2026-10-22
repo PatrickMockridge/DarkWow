@@ -43,10 +43,33 @@
 //! execute). The lock is a Promissory Note redemption capability (CapCommitment +
 //! Nullifier), never a coin or a commitment-tree membership.
 
+use dwow_sdk::blockchain::SerializedLen;
 use dwow_sdk::crypto::{pasta_prelude::PrimeField, Nullifier, PublicKey};
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::pallas;
 use dwow_promissory_note_contract::model::CapCommitment;
+
+/// Read exactly `N` bytes at `offset` — total: `get` + `try_into`, no index and no unwrap.
+fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], ContractError> {
+    data.get(offset..offset.saturating_add(N))
+        .and_then(|s| s.try_into().ok())
+        .ok_or_else(|| {
+            ContractError::IoError(format!(
+                "truncated field: need {N} bytes at offset {offset}, buffer has {}",
+                data.len()
+            ))
+        })
+}
+
+/// Borrow exactly `len` bytes at `offset` — total, for the same reason as [`read_field`].
+fn read_slice(data: &[u8], offset: usize, len: usize) -> Result<&[u8], ContractError> {
+    data.get(offset..offset.saturating_add(len)).ok_or_else(|| {
+        ContractError::IoError(format!(
+            "truncated field: need {len} bytes at offset {offset}, buffer has {}",
+            data.len()
+        ))
+    })
+}
 
 /// Namespace for DEX intents (used with generic intent primitives)
 pub const DEX_NAMESPACE: u64 = 0x0003;
@@ -259,11 +282,61 @@ pub struct ExecuteSwapParams {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for ExecuteSwapParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for ExecuteSwapParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for ExecuteSwapParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl ExecuteSwapParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(193+self.proof.len()+64); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.alice_secret); b.extend_from_slice(&self.bob_secret); b.extend_from_slice(&self.alice_lock.to_bytes()); b.extend_from_slice(&self.bob_lock.to_bytes()); b.extend_from_slice(&self.alice_nullifier.to_bytes()); b.extend_from_slice(&self.bob_nullifier.to_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.fee.to_le_bytes()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 225 { return Err(ContractError::IoError("ExecuteSwapParams: too short".into())); } let swap_id: [u8;32] = data[0..32].try_into().unwrap(); let alice_secret: [u8;32] = data[32..64].try_into().unwrap(); let bob_secret: [u8;32] = data[64..96].try_into().unwrap(); let alice_lock = CapCommitment::decode(&data[96..128]).map_err(|_| ContractError::IoError("ExecuteSwapParams: invalid alice_lock".into()))?; let bob_lock = CapCommitment::decode(&data[128..160]).map_err(|_| ContractError::IoError("ExecuteSwapParams: invalid bob_lock".into()))?; let alice_nullifier = Nullifier::from_bytes(data[160..192].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapParams: invalid alice_nullifier".into()))?; let bob_nullifier = Nullifier::from_bytes(data[192..224].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapParams: invalid bob_nullifier".into()))?; let proof_len = data[224] as usize; if data.len() != 225+proof_len+8+32 { return Err(ContractError::IoError(format!("ExecuteSwapParams: expected {} bytes, got {}", 225+proof_len+8+32, data.len()))); } let proof = data[225..225+proof_len].to_vec(); let fee = u64::from_le_bytes(data[225+proof_len..225+proof_len+8].try_into().unwrap()); let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[225+proof_len+8..225+proof_len+40].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ExecuteSwapParams: invalid tx_nonce".into()))?; Ok(ExecuteSwapParams { swap_id, alice_secret, bob_secret, alice_lock, bob_lock, alice_nullifier, bob_nullifier, proof, fee, tx_nonce }) } }
+impl ExecuteSwapParams {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_len = SerializedLen::try_from_len(self.proof.len())?;
+        let mut b = Vec::with_capacity(
+            224 + SerializedLen::ENCODED_SIZE + self.proof.len() + 8 + 32,
+        );
+        b.extend_from_slice(&self.swap_id);
+        b.extend_from_slice(&self.alice_secret);
+        b.extend_from_slice(&self.bob_secret);
+        b.extend_from_slice(&self.alice_lock.to_bytes());
+        b.extend_from_slice(&self.bob_lock.to_bytes());
+        b.extend_from_slice(&self.alice_nullifier.to_bytes());
+        b.extend_from_slice(&self.bob_nullifier.to_bytes());
+        b.extend_from_slice(&proof_len.to_le_bytes());
+        b.extend_from_slice(&self.proof);
+        b.extend_from_slice(&self.fee.to_le_bytes());
+        b.extend_from_slice(&self.tx_nonce.to_repr());
+        Ok(b)
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        let swap_id: [u8; 32] = read_field::<32>(data, 0)?;
+        let alice_secret: [u8; 32] = read_field::<32>(data, 32)?;
+        let bob_secret: [u8; 32] = read_field::<32>(data, 64)?;
+        let alice_lock = CapCommitment::decode(read_slice(data, 96, 32)?)
+            .map_err(|_| ContractError::IoError("ExecuteSwapParams: invalid alice_lock".into()))?;
+        let bob_lock = CapCommitment::decode(read_slice(data, 128, 32)?)
+            .map_err(|_| ContractError::IoError("ExecuteSwapParams: invalid bob_lock".into()))?;
+        let alice_nullifier = Nullifier::from_bytes(read_field::<32>(data, 160)?)
+            .map_err(|_| ContractError::IoError("ExecuteSwapParams: invalid alice_nullifier".into()))?;
+        let bob_nullifier = Nullifier::from_bytes(read_field::<32>(data, 192)?)
+            .map_err(|_| ContractError::IoError("ExecuteSwapParams: invalid bob_nullifier".into()))?;
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 224)?).to_usize();
+        let proof_start = 224 + SerializedLen::ENCODED_SIZE;
+        let proof = read_slice(data, proof_start, proof_len)?.to_vec();
+        let expected = proof_start
+            .checked_add(proof_len)
+            .and_then(|n| n.checked_add(8 + 32))
+            .ok_or_else(|| ContractError::IoError(
+                "ExecuteSwapParams: length prefix overflows".into()))?;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "ExecuteSwapParams: expected {} bytes, got {}", expected, data.len()
+            )));
+        }
+        let fee = u64::from_le_bytes(read_field::<8>(data, proof_start + proof_len)?);
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            read_field::<32>(data, proof_start + proof_len + 8)?,
+        ))
+        .ok_or_else(|| ContractError::IoError("ExecuteSwapParams: invalid tx_nonce".into()))?;
+        Ok(ExecuteSwapParams { swap_id, alice_secret, bob_secret, alice_lock, bob_lock, alice_nullifier, bob_nullifier, proof, fee, tx_nonce })
+    }
+}
 
 /// Cancel swap parameters
 ///
@@ -301,11 +374,50 @@ pub struct CancelSwapParams {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for CancelSwapParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for CancelSwapParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CancelSwapParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl CancelSwapParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(65+self.proof.len()+64); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.secret); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.fee.to_le_bytes()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 97 { return Err(ContractError::IoError("CancelSwapParams: too short".into())); } let swap_id: [u8;32] = data[0..32].try_into().unwrap(); let secret: [u8;32] = data[32..64].try_into().unwrap(); let nullifier = Nullifier::from_bytes(data[64..96].try_into().unwrap()).map_err(|_| ContractError::IoError("CancelSwapParams: invalid nullifier".into()))?; let proof_len = data[96] as usize; if data.len() != 97+proof_len+8+32 { return Err(ContractError::IoError(format!("CancelSwapParams: expected {} bytes, got {}", 97+proof_len+8+32, data.len()))); } let proof = data[97..97+proof_len].to_vec(); let fee = u64::from_le_bytes(data[97+proof_len..97+proof_len+8].try_into().unwrap()); let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[97+proof_len+8..97+proof_len+40].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CancelSwapParams: invalid tx_nonce".into()))?; Ok(CancelSwapParams { swap_id, secret, nullifier, proof, fee, tx_nonce }) } }
+impl CancelSwapParams {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_len = SerializedLen::try_from_len(self.proof.len())?;
+        let mut b = Vec::with_capacity(
+            96 + SerializedLen::ENCODED_SIZE + self.proof.len() + 8 + 32,
+        );
+        b.extend_from_slice(&self.swap_id);
+        b.extend_from_slice(&self.secret);
+        b.extend_from_slice(&self.nullifier.to_bytes());
+        b.extend_from_slice(&proof_len.to_le_bytes());
+        b.extend_from_slice(&self.proof);
+        b.extend_from_slice(&self.fee.to_le_bytes());
+        b.extend_from_slice(&self.tx_nonce.to_repr());
+        Ok(b)
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        let swap_id: [u8; 32] = read_field::<32>(data, 0)?;
+        let secret: [u8; 32] = read_field::<32>(data, 32)?;
+        let nullifier = Nullifier::from_bytes(read_field::<32>(data, 64)?)
+            .map_err(|_| ContractError::IoError("CancelSwapParams: invalid nullifier".into()))?;
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 96)?).to_usize();
+        let proof_start = 96 + SerializedLen::ENCODED_SIZE;
+        let proof = read_slice(data, proof_start, proof_len)?.to_vec();
+        let expected = proof_start
+            .checked_add(proof_len)
+            .and_then(|n| n.checked_add(8 + 32))
+            .ok_or_else(|| ContractError::IoError(
+                "CancelSwapParams: length prefix overflows".into()))?;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "CancelSwapParams: expected {} bytes, got {}", expected, data.len()
+            )));
+        }
+        let fee = u64::from_le_bytes(read_field::<8>(data, proof_start + proof_len)?);
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            read_field::<32>(data, proof_start + proof_len + 8)?,
+        ))
+        .ok_or_else(|| ContractError::IoError("CancelSwapParams: invalid tx_nonce".into()))?;
+        Ok(CancelSwapParams { swap_id, secret, nullifier, proof, fee, tx_nonce })
+    }
+}
 
 /// Execute swap with fee parameters
 #[derive(Debug, Clone,)]
@@ -326,8 +438,60 @@ pub struct ExecuteSwapFeeParams {
     pub tx_nonce: pallas::Base,
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl ExecuteSwapFeeParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(241+self.proof.len()+32); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.alice_secret); b.extend_from_slice(&self.bob_secret); b.extend_from_slice(&self.alice_lock.to_bytes()); b.extend_from_slice(&self.bob_lock.to_bytes()); b.extend_from_slice(&self.alice_nullifier.to_bytes()); b.extend_from_slice(&self.bob_nullifier.to_bytes()); b.extend_from_slice(&self.fee_bps.to_le_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.fee.to_le_bytes()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 241 { return Err(ContractError::IoError("ExecuteSwapFeeParams: too short".into())); } let swap_id: [u8;32] = data[0..32].try_into().unwrap(); let alice_secret: [u8;32] = data[32..64].try_into().unwrap(); let bob_secret: [u8;32] = data[64..96].try_into().unwrap(); let alice_lock = CapCommitment::decode(&data[96..128]).map_err(|_| ContractError::IoError("ExecuteSwapFeeParams: invalid alice_lock".into()))?; let bob_lock = CapCommitment::decode(&data[128..160]).map_err(|_| ContractError::IoError("ExecuteSwapFeeParams: invalid bob_lock".into()))?; let alice_nullifier = Nullifier::from_bytes(data[160..192].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapFeeParams: invalid alice_nullifier".into()))?; let bob_nullifier = Nullifier::from_bytes(data[192..224].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapFeeParams: invalid bob_nullifier".into()))?; let fee_bps = u64::from_le_bytes(data[224..232].try_into().unwrap()); let proof_len = data[232] as usize; if data.len() != 233+proof_len+8+32 { return Err(ContractError::IoError(format!("ExecuteSwapFeeParams: expected {} bytes, got {}", 233+proof_len+8+32, data.len()))); } let proof = data[233..233+proof_len].to_vec(); let fee = u64::from_le_bytes(data[233+proof_len..233+proof_len+8].try_into().unwrap()); let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[233+proof_len+8..233+proof_len+40].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ExecuteSwapFeeParams: invalid tx_nonce".into()))?; Ok(ExecuteSwapFeeParams { swap_id, alice_secret, bob_secret, alice_lock, bob_lock, alice_nullifier, bob_nullifier, fee_bps, proof, fee, tx_nonce }) } }
+impl ExecuteSwapFeeParams {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_len = SerializedLen::try_from_len(self.proof.len())?;
+        let mut b = Vec::with_capacity(
+            232 + SerializedLen::ENCODED_SIZE + self.proof.len() + 8 + 32,
+        );
+        b.extend_from_slice(&self.swap_id);
+        b.extend_from_slice(&self.alice_secret);
+        b.extend_from_slice(&self.bob_secret);
+        b.extend_from_slice(&self.alice_lock.to_bytes());
+        b.extend_from_slice(&self.bob_lock.to_bytes());
+        b.extend_from_slice(&self.alice_nullifier.to_bytes());
+        b.extend_from_slice(&self.bob_nullifier.to_bytes());
+        b.extend_from_slice(&self.fee_bps.to_le_bytes());
+        b.extend_from_slice(&proof_len.to_le_bytes());
+        b.extend_from_slice(&self.proof);
+        b.extend_from_slice(&self.fee.to_le_bytes());
+        b.extend_from_slice(&self.tx_nonce.to_repr());
+        Ok(b)
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        let swap_id: [u8; 32] = read_field::<32>(data, 0)?;
+        let alice_secret: [u8; 32] = read_field::<32>(data, 32)?;
+        let bob_secret: [u8; 32] = read_field::<32>(data, 64)?;
+        let alice_lock = CapCommitment::decode(read_slice(data, 96, 32)?)
+            .map_err(|_| ContractError::IoError("ExecuteSwapFeeParams: invalid alice_lock".into()))?;
+        let bob_lock = CapCommitment::decode(read_slice(data, 128, 32)?)
+            .map_err(|_| ContractError::IoError("ExecuteSwapFeeParams: invalid bob_lock".into()))?;
+        let alice_nullifier = Nullifier::from_bytes(read_field::<32>(data, 160)?)
+            .map_err(|_| ContractError::IoError("ExecuteSwapFeeParams: invalid alice_nullifier".into()))?;
+        let bob_nullifier = Nullifier::from_bytes(read_field::<32>(data, 192)?)
+            .map_err(|_| ContractError::IoError("ExecuteSwapFeeParams: invalid bob_nullifier".into()))?;
+        let fee_bps = u64::from_le_bytes(read_field::<8>(data, 224)?);
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 232)?).to_usize();
+        let proof_start = 232 + SerializedLen::ENCODED_SIZE;
+        let proof = read_slice(data, proof_start, proof_len)?.to_vec();
+        let expected = proof_start
+            .checked_add(proof_len)
+            .and_then(|n| n.checked_add(8 + 32))
+            .ok_or_else(|| ContractError::IoError(
+                "ExecuteSwapFeeParams: length prefix overflows".into()))?;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "ExecuteSwapFeeParams: expected {} bytes, got {}", expected, data.len()
+            )));
+        }
+        let fee = u64::from_le_bytes(read_field::<8>(data, proof_start + proof_len)?);
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            read_field::<32>(data, proof_start + proof_len + 8)?,
+        ))
+        .ok_or_else(|| ContractError::IoError("ExecuteSwapFeeParams: invalid tx_nonce".into()))?;
+        Ok(ExecuteSwapFeeParams { swap_id, alice_secret, bob_secret, alice_lock, bob_lock, alice_nullifier, bob_nullifier, fee_bps, proof, fee, tx_nonce })
+    }
+}
 
 /// Execute swap with slippage tolerance parameters
 #[derive(Debug, Clone,)]
@@ -348,8 +512,60 @@ pub struct ExecuteSwapSlippageParams {
     pub tx_nonce: pallas::Base,
 }
 
-#[expect(clippy::unwrap_used, reason = "slice length checked above")]
-impl ExecuteSwapSlippageParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(241+self.proof.len()+32); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.alice_secret); b.extend_from_slice(&self.bob_secret); b.extend_from_slice(&self.alice_lock.to_bytes()); b.extend_from_slice(&self.bob_lock.to_bytes()); b.extend_from_slice(&self.alice_nullifier.to_bytes()); b.extend_from_slice(&self.bob_nullifier.to_bytes()); b.extend_from_slice(&self.slippage_bps.to_le_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.fee.to_le_bytes()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 241 { return Err(ContractError::IoError("ExecuteSwapSlippageParams: too short".into())); } let swap_id: [u8;32] = data[0..32].try_into().unwrap(); let alice_secret: [u8;32] = data[32..64].try_into().unwrap(); let bob_secret: [u8;32] = data[64..96].try_into().unwrap(); let alice_lock = CapCommitment::decode(&data[96..128]).map_err(|_| ContractError::IoError("ExecuteSwapSlippageParams: invalid alice_lock".into()))?; let bob_lock = CapCommitment::decode(&data[128..160]).map_err(|_| ContractError::IoError("ExecuteSwapSlippageParams: invalid bob_lock".into()))?; let alice_nullifier = Nullifier::from_bytes(data[160..192].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapSlippageParams: invalid alice_nullifier".into()))?; let bob_nullifier = Nullifier::from_bytes(data[192..224].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapSlippageParams: invalid bob_nullifier".into()))?; let slippage_bps = u64::from_le_bytes(data[224..232].try_into().unwrap()); let proof_len = data[232] as usize; if data.len() != 233+proof_len+8+32 { return Err(ContractError::IoError(format!("ExecuteSwapSlippageParams: expected {} bytes, got {}", 233+proof_len+8+32, data.len()))); } let proof = data[233..233+proof_len].to_vec(); let fee = u64::from_le_bytes(data[233+proof_len..233+proof_len+8].try_into().unwrap()); let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[233+proof_len+8..233+proof_len+40].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ExecuteSwapSlippageParams: invalid tx_nonce".into()))?; Ok(ExecuteSwapSlippageParams { swap_id, alice_secret, bob_secret, alice_lock, bob_lock, alice_nullifier, bob_nullifier, slippage_bps, proof, fee, tx_nonce }) } }
+impl ExecuteSwapSlippageParams {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_len = SerializedLen::try_from_len(self.proof.len())?;
+        let mut b = Vec::with_capacity(
+            232 + SerializedLen::ENCODED_SIZE + self.proof.len() + 8 + 32,
+        );
+        b.extend_from_slice(&self.swap_id);
+        b.extend_from_slice(&self.alice_secret);
+        b.extend_from_slice(&self.bob_secret);
+        b.extend_from_slice(&self.alice_lock.to_bytes());
+        b.extend_from_slice(&self.bob_lock.to_bytes());
+        b.extend_from_slice(&self.alice_nullifier.to_bytes());
+        b.extend_from_slice(&self.bob_nullifier.to_bytes());
+        b.extend_from_slice(&self.slippage_bps.to_le_bytes());
+        b.extend_from_slice(&proof_len.to_le_bytes());
+        b.extend_from_slice(&self.proof);
+        b.extend_from_slice(&self.fee.to_le_bytes());
+        b.extend_from_slice(&self.tx_nonce.to_repr());
+        Ok(b)
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        let swap_id: [u8; 32] = read_field::<32>(data, 0)?;
+        let alice_secret: [u8; 32] = read_field::<32>(data, 32)?;
+        let bob_secret: [u8; 32] = read_field::<32>(data, 64)?;
+        let alice_lock = CapCommitment::decode(read_slice(data, 96, 32)?)
+            .map_err(|_| ContractError::IoError("ExecuteSwapSlippageParams: invalid alice_lock".into()))?;
+        let bob_lock = CapCommitment::decode(read_slice(data, 128, 32)?)
+            .map_err(|_| ContractError::IoError("ExecuteSwapSlippageParams: invalid bob_lock".into()))?;
+        let alice_nullifier = Nullifier::from_bytes(read_field::<32>(data, 160)?)
+            .map_err(|_| ContractError::IoError("ExecuteSwapSlippageParams: invalid alice_nullifier".into()))?;
+        let bob_nullifier = Nullifier::from_bytes(read_field::<32>(data, 192)?)
+            .map_err(|_| ContractError::IoError("ExecuteSwapSlippageParams: invalid bob_nullifier".into()))?;
+        let slippage_bps = u64::from_le_bytes(read_field::<8>(data, 224)?);
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 232)?).to_usize();
+        let proof_start = 232 + SerializedLen::ENCODED_SIZE;
+        let proof = read_slice(data, proof_start, proof_len)?.to_vec();
+        let expected = proof_start
+            .checked_add(proof_len)
+            .and_then(|n| n.checked_add(8 + 32))
+            .ok_or_else(|| ContractError::IoError(
+                "ExecuteSwapSlippageParams: length prefix overflows".into()))?;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "ExecuteSwapSlippageParams: expected {} bytes, got {}", expected, data.len()
+            )));
+        }
+        let fee = u64::from_le_bytes(read_field::<8>(data, proof_start + proof_len)?);
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            read_field::<32>(data, proof_start + proof_len + 8)?,
+        ))
+        .ok_or_else(|| ContractError::IoError("ExecuteSwapSlippageParams: invalid tx_nonce".into()))?;
+        Ok(ExecuteSwapSlippageParams { swap_id, alice_secret, bob_secret, alice_lock, bob_lock, alice_nullifier, bob_nullifier, slippage_bps, proof, fee, tx_nonce })
+    }
+}
 
 /// Update configuration parameters
 #[derive(Debug, Clone,)]

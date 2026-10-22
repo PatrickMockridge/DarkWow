@@ -330,7 +330,7 @@ impl StablecoinHarness {
         };
 
         let mut call_data = vec![0x01]; // OpenPositionV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(OpenPositionPlan { input, call_data, public_inputs })
     }
@@ -429,7 +429,7 @@ impl StablecoinHarness {
         };
 
         let mut call_data = vec![0x04]; // MintStableV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         Ok(MintStablePlan { input, call_data, public_inputs })
     }
@@ -527,7 +527,7 @@ impl StablecoinHarness {
         };
 
         let mut call_data = vec![0x06]; // LiquidateV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         let mut calls = children.to_vec();
         calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
@@ -587,7 +587,7 @@ impl StablecoinHarness {
         };
 
         let mut call_data = vec![0x08]; // GovernanceReportV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         // `OBL-C198`: the call data first, then the commitment over the whole ordered set, then the
         // proof. This endpoint's params carry named fields rather than a vector, so there is no pair
@@ -644,7 +644,7 @@ impl StablecoinHarness {
         };
 
         let mut call_data = vec![0x09]; // AccrueInterestV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         // `OBL-C198`: the call data first, then the commitment over the whole ordered set, then the
         // proof. This endpoint's params carry named fields rather than a vector, so there is no pair
@@ -684,7 +684,7 @@ impl StablecoinHarness {
         params.deployer_auth = input.compute_public_inputs().deployer_auth;
 
         let mut call_data = vec![0x00];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         // `OBL-C198`: call data, then the commitment over the whole ordered set, then the proof.
         let mut calls = children.to_vec();
@@ -714,7 +714,7 @@ impl StablecoinHarness {
         let mut p = params.clone();
         p.zk_public_inputs = wire.clone();
         let mut call_data = vec![0x02];
-        call_data.extend_from_slice(&p.encode());
+        call_data.extend_from_slice(&p.encode()?);
 
         let mut calls = children.to_vec();
         calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
@@ -756,7 +756,7 @@ impl StablecoinHarness {
         let mut p = params.clone();
         p.zk_public_inputs = wire.clone();
         let mut call_data = vec![0x03];
-        call_data.extend_from_slice(&p.encode());
+        call_data.extend_from_slice(&p.encode()?);
 
         let mut calls = children.to_vec();
         calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
@@ -790,7 +790,7 @@ impl StablecoinHarness {
         let mut p = params.clone();
         p.zk_public_inputs = wire.clone();
         let mut call_data = vec![0x05];
-        call_data.extend_from_slice(&p.encode());
+        call_data.extend_from_slice(&p.encode()?);
 
         let mut calls = children.to_vec();
         calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });

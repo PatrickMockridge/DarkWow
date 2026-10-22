@@ -131,7 +131,12 @@ fn main() {
         tx_nonce: dwow_sdk::pasta::pallas::Base::zero(),
     };
 
-    let buf = params.encode();
+    let buf = params
+        .encode()
+        .unwrap_or_else(|e| {
+            eprintln!("Error encoding InitializeParams: {e}");
+            process::exit(1);
+        });
 
     let output = &args.get(3).cloned();
     match output {

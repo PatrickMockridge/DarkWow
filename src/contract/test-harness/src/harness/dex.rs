@@ -396,7 +396,7 @@ impl DexHarness {
         };
 
         let mut call_data = vec![0x03]; // ExecuteSwapV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         let mut calls = children.to_vec();
         calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
@@ -454,7 +454,7 @@ impl DexHarness {
         };
 
         let mut call_data = vec![0x04]; // CancelSwapV1
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         let mut calls = children.to_vec();
         calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
@@ -536,7 +536,7 @@ impl DexHarness {
         };
 
         let mut call_data = vec![0x07];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         let mut calls = children.to_vec();
         calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });
@@ -595,7 +595,7 @@ impl DexHarness {
         };
 
         let mut call_data = vec![0x08];
-        call_data.extend_from_slice(&params.encode());
+        call_data.extend_from_slice(&params.encode()?);
 
         let mut calls = children.to_vec();
         calls.push(dwow_sdk::tx::ContractCall { contract_id: self.contract_id, data: call_data.clone() });

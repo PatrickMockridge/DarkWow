@@ -66,8 +66,10 @@ impl MultiSigHarness {
     /// The group id a set of member commitments derives, so a caller can address the group before
     /// creating it. Delegates to the contract's own derivation.
     pub fn group_id(threshold: u8, member_commitments: &[pallas::Base]) -> pallas::Base {
+        let total_keys = u8::try_from(member_commitments.len())
+            .expect("multisig: member count exceeds 255");
         dwow_multisig_contract::model::MultiSigGroup::derive_group_id(
-            member_commitments[0], threshold, member_commitments.len() as u8,
+            member_commitments[0], threshold, total_keys,
         ).inner()
     }
 
@@ -87,12 +89,16 @@ impl MultiSigHarness {
         threshold: u8,
         member_commitments: Vec<pallas::Base>,
     ) -> Result<CreateGroupResult> {
+        let total_keys = u8::try_from(member_commitments.len())
+            .map_err(|_| dwow_core::Error::Custom(
+                "multisig: member count exceeds 255".into(),
+            ))?;
         let t = pallas::Base::from(threshold as u64);
-        let n = pallas::Base::from(member_commitments.len() as u64);
+        let n = pallas::Base::from(u64::from(total_keys));
         // The same derivation the contract stores, called rather than re-implemented so the two
         // cannot drift.
         let group_id = dwow_multisig_contract::model::MultiSigGroup::derive_group_id(
-            member_commitments[0], threshold, member_commitments.len() as u8,
+            member_commitments[0], threshold, total_keys,
         ).inner();
         let tx_nonce = pallas::Base::from(300u64);
 

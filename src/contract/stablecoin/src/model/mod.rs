@@ -47,10 +47,34 @@
 //! - No position IDs that could leak information
 
 use dwow_sdk::{
+    blockchain::SerializedLen,
     crypto::{pasta_prelude::PrimeField, ContractId, IntentCommitment, IntentNullifier, Nullifier, PublicKey},
     error::ContractError,
     pasta::pallas,
 };
+
+/// Read exactly `N` bytes at `offset` — total: `get` + `try_into`, no index and no unwrap.
+fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], ContractError> {
+    data.get(offset..offset.saturating_add(N))
+        .and_then(|s| s.try_into().ok())
+        .ok_or_else(|| {
+            ContractError::IoError(format!(
+                "truncated field: need {N} bytes at offset {offset}, buffer has {}",
+                data.len()
+            ))
+        })
+}
+
+/// Borrow exactly `len` bytes at `offset` — total, for the same reason as [`read_field`].
+fn read_slice(data: &[u8], offset: usize, len: usize) -> Result<&[u8], ContractError> {
+    data.get(offset..offset.saturating_add(len)).ok_or_else(|| {
+        ContractError::IoError(format!(
+            "truncated field: need {len} bytes at offset {offset}, buffer has {}",
+            data.len()
+        ))
+    })
+}
+
 /// Namespace for stablecoin intents
 pub const STABLECOIN_NAMESPACE: u64 = 0x0005;
 
@@ -239,14 +263,14 @@ pub struct InitializeParams {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for InitializeParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for InitializeParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for InitializeParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl InitializeParams {
     /// Encode to canonical bytes (ρ-calculus: quote).
-    pub fn encode(&self) -> Vec<u8> {
-        let cp_count = self.collateral_params.len();
-        let cap = 213 + cp_count * 25;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let cp_count = SerializedLen::try_from_len(self.collateral_params.len())?;
+        let cap = 312 + self.collateral_params.len() * 25;
         let mut buf = Vec::with_capacity(cap);
         buf.push(self.model.clone() as u8);
         buf.extend_from_slice(&self.min_collateralization_ratio.to_le_bytes());
@@ -257,7 +281,7 @@ impl InitializeParams {
         buf.extend_from_slice(&self.pi_ki.to_le_bytes());
         buf.extend_from_slice(&self.twap_window.to_le_bytes());
         buf.extend_from_slice(&self.price_deviation_threshold.to_le_bytes());
-        buf.push(cp_count as u8);
+        buf.extend_from_slice(&cp_count.to_le_bytes());
         for cp in &self.collateral_params {
             buf.push(cp.collateral_type.clone() as u8);
             buf.extend_from_slice(&cp.haircut.to_le_bytes());
@@ -276,37 +300,40 @@ impl InitializeParams {
         buf.extend_from_slice(&self.governance_pub_x.to_repr());
         buf.extend_from_slice(&self.governance_pub_y.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf
+        Ok(buf)
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
     #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 277 {
-            return Err(ContractError::IoError(format!(
-                "InitializeParams: expected at least 277 bytes, got {}", data.len()
-            )));
-        }
-        let model = StablecoinModel::decode(&data[0..1])?;
-        let min_collateralization_ratio = u64::from_le_bytes(data[1..9].try_into().unwrap());
-        let liquidation_threshold = u64::from_le_bytes(data[9..17].try_into().unwrap());
-        let liquidation_penalty = u64::from_le_bytes(data[17..25].try_into().unwrap());
-        let base_rate = u64::from_le_bytes(data[25..33].try_into().unwrap());
-        let pi_kp = i64::from_le_bytes(data[33..41].try_into().unwrap());
-        let pi_ki = i64::from_le_bytes(data[41..49].try_into().unwrap());
-        let twap_window = u64::from_le_bytes(data[49..57].try_into().unwrap());
-        let price_deviation_threshold = u64::from_le_bytes(data[57..65].try_into().unwrap());
-        let cp_count = data[65] as usize;
-        let dm_start = 66 + cp_count * 25;
-        if data.len() < dm_start + 243 {
+        let model = StablecoinModel::decode(read_slice(data, 0, 1)?)?;
+        let min_collateralization_ratio = u64::from_le_bytes(read_field::<8>(data, 1)?);
+        let liquidation_threshold = u64::from_le_bytes(read_field::<8>(data, 9)?);
+        let liquidation_penalty = u64::from_le_bytes(read_field::<8>(data, 17)?);
+        let base_rate = u64::from_le_bytes(read_field::<8>(data, 25)?);
+        let pi_kp = i64::from_le_bytes(read_field::<8>(data, 33)?);
+        let pi_ki = i64::from_le_bytes(read_field::<8>(data, 41)?);
+        let twap_window = u64::from_le_bytes(read_field::<8>(data, 49)?);
+        let price_deviation_threshold = u64::from_le_bytes(read_field::<8>(data, 57)?);
+        let cp_count = SerializedLen::from_le_bytes(read_field::<4>(data, 65)?).to_usize();
+        let dm_start = cp_count
+            .checked_mul(25)
+            .and_then(|n| n.checked_add(65 + SerializedLen::ENCODED_SIZE))
+            .ok_or_else(|| ContractError::IoError(
+                "InitializeParams: length prefix overflows".into()))?;
+        let expected = dm_start
+            .checked_add(243)
+            .ok_or_else(|| ContractError::IoError(
+                "InitializeParams: length prefix overflows".into()))?;
+        if data.len() < expected {
             return Err(ContractError::IoError(format!(
                 "InitializeParams: expected at least {} bytes for {} collateral_params, got {}",
-                dm_start + 18 + 97 + 32, cp_count, data.len()
+                expected, cp_count, data.len()
             )));
         }
         let mut collateral_params = Vec::with_capacity(cp_count);
         for i in 0..cp_count {
-            let off = 66 + i * 25;
+            let off = 65 + SerializedLen::ENCODED_SIZE + i * 25;
             let collateral_type = CollateralType::decode(&data[off..off + 1])?;
             let haircut = u64::from_le_bytes(data[off + 1..off + 9].try_into().unwrap());
             let lt = u64::from_le_bytes(data[off + 9..off + 17].try_into().unwrap());
@@ -366,43 +393,45 @@ pub struct DepositCollateralParams {
 }
 
 impl DepositCollateralParams {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 51 + self.proof.len() + self.zk_public_inputs.len() * 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_len = SerializedLen::try_from_len(self.proof.len())?;
+        let pi_len = SerializedLen::try_from_len(self.zk_public_inputs.len())?;
+        let cap = 57 + self.proof.len() + self.zk_public_inputs.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.deposit_commitment.to_bytes());
         buf.extend_from_slice(&self.collateral_amount.to_le_bytes());
         buf.extend_from_slice(&self.collateral_type.encode());
-        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&proof_len.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.fee.to_le_bytes());
-        buf.push(self.zk_public_inputs.len() as u8);
+        buf.extend_from_slice(&pi_len.to_le_bytes());
         for pi in &self.zk_public_inputs {
             buf.extend_from_slice(&pi.to_repr());
         }
-        buf
+        Ok(buf)
     }
 
-    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 52 {
-            return Err(ContractError::IoError(format!(
-                "DepositCollateralParams: expected at least 52 bytes, got {}", data.len()
-            )));
-        }
-        let deposit_commitment = IntentCommitment::from_bytes(data[0..32].try_into().unwrap())
+        let deposit_commitment = IntentCommitment::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|_| ContractError::IoError("DepositCollateralParams: invalid deposit_commitment".into()))?;
-        let collateral_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let collateral_type = CollateralType::decode(&data[40..41])?;
-        let proof_len = data[41] as usize;
-        if data.len() < 42 + proof_len + 9 {
-            return Err(ContractError::IoError(format!(
-                "DepositCollateralParams: proof truncated at offset {}", 42 + proof_len
-            )));
-        }
-        let proof = data[42..42 + proof_len].to_vec();
-        let fee = u64::from_le_bytes(data[42 + proof_len..50 + proof_len].try_into().unwrap());
-        let pi_count = data[50 + proof_len] as usize;
-        let expected = 51 + proof_len + pi_count * 32;
+        let collateral_amount = u64::from_le_bytes(read_field::<8>(data, 32)?);
+        let collateral_type = CollateralType::decode(read_slice(data, 40, 1)?)?;
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 41)?).to_usize();
+        let proof_start = 41 + SerializedLen::ENCODED_SIZE;
+        let proof = read_slice(data, proof_start, proof_len)?.to_vec();
+        let fee_start = proof_start
+            .checked_add(proof_len)
+            .ok_or_else(|| ContractError::IoError(
+                "DepositCollateralParams: proof length overflows".into()))?;
+        let fee = u64::from_le_bytes(read_field::<8>(data, fee_start)?);
+        let pi_count =
+            SerializedLen::from_le_bytes(read_field::<4>(data, fee_start + 8)?).to_usize();
+        let pi_start = fee_start + 8 + SerializedLen::ENCODED_SIZE;
+        let expected = pi_count
+            .checked_mul(32)
+            .and_then(|n| n.checked_add(pi_start))
+            .ok_or_else(|| ContractError::IoError(
+                "DepositCollateralParams: length prefix overflows".into()))?;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "DepositCollateralParams: expected {} bytes, got {}", expected, data.len()
@@ -410,9 +439,9 @@ impl DepositCollateralParams {
         }
         let mut zk_public_inputs = Vec::with_capacity(pi_count);
         for i in 0..pi_count {
-            let start = 51 + proof_len + i * 32;
+            let start = pi_start + i * 32;
             zk_public_inputs.push(
-                Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
+                Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, start)?))
                     .ok_or_else(|| ContractError::IoError(format!("DepositCollateralParams: invalid zk_public_inputs[{}]", i)))?,
             );
         }
@@ -444,44 +473,46 @@ pub struct WithdrawCollateralParams {
 }
 
 impl WithdrawCollateralParams {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 83 + self.proof.len() + self.zk_public_inputs.len() * 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_len = SerializedLen::try_from_len(self.proof.len())?;
+        let pi_len = SerializedLen::try_from_len(self.zk_public_inputs.len())?;
+        let cap = 88 + self.proof.len() + self.zk_public_inputs.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.withdrawal_nullifier.to_bytes());
         buf.extend_from_slice(&self.new_commitment.to_bytes());
         buf.extend_from_slice(&self.withdraw_amount.to_le_bytes());
-        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&proof_len.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.fee.to_le_bytes());
-        buf.push(self.zk_public_inputs.len() as u8);
+        buf.extend_from_slice(&pi_len.to_le_bytes());
         for pi in &self.zk_public_inputs {
             buf.extend_from_slice(&pi.to_repr());
         }
-        buf
+        Ok(buf)
     }
 
-    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 84 {
-            return Err(ContractError::IoError(format!(
-                "WithdrawCollateralParams: expected at least 84 bytes, got {}", data.len()
-            )));
-        }
-        let withdrawal_nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap())
+        let withdrawal_nullifier = IntentNullifier::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|_| ContractError::IoError("WithdrawCollateralParams: invalid withdrawal_nullifier".into()))?;
-        let new_commitment = IntentCommitment::from_bytes(data[32..64].try_into().unwrap())
+        let new_commitment = IntentCommitment::from_bytes(read_field::<32>(data, 32)?)
             .map_err(|_| ContractError::IoError("WithdrawCollateralParams: invalid new_commitment".into()))?;
-        let withdraw_amount = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        let proof_len = data[72] as usize;
-        if data.len() < 73 + proof_len + 9 {
-            return Err(ContractError::IoError(format!(
-                "WithdrawCollateralParams: proof truncated at offset {}", 73 + proof_len
-            )));
-        }
-        let proof = data[73..73 + proof_len].to_vec();
-        let fee = u64::from_le_bytes(data[73 + proof_len..81 + proof_len].try_into().unwrap());
-        let pi_count = data[81 + proof_len] as usize;
-        let expected = 82 + proof_len + pi_count * 32;
+        let withdraw_amount = u64::from_le_bytes(read_field::<8>(data, 64)?);
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 72)?).to_usize();
+        let proof_start = 72 + SerializedLen::ENCODED_SIZE;
+        let proof = read_slice(data, proof_start, proof_len)?.to_vec();
+        let fee_start = proof_start
+            .checked_add(proof_len)
+            .ok_or_else(|| ContractError::IoError(
+                "WithdrawCollateralParams: proof length overflows".into()))?;
+        let fee = u64::from_le_bytes(read_field::<8>(data, fee_start)?);
+        let pi_count =
+            SerializedLen::from_le_bytes(read_field::<4>(data, fee_start + 8)?).to_usize();
+        let pi_start = fee_start + 8 + SerializedLen::ENCODED_SIZE;
+        let expected = pi_count
+            .checked_mul(32)
+            .and_then(|n| n.checked_add(pi_start))
+            .ok_or_else(|| ContractError::IoError(
+                "WithdrawCollateralParams: length prefix overflows".into()))?;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "WithdrawCollateralParams: expected {} bytes, got {}", expected, data.len()
@@ -489,9 +520,9 @@ impl WithdrawCollateralParams {
         }
         let mut zk_public_inputs = Vec::with_capacity(pi_count);
         for i in 0..pi_count {
-            let start = 82 + proof_len + i * 32;
+            let start = pi_start + i * 32;
             zk_public_inputs.push(
-                Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
+                Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, start)?))
                     .ok_or_else(|| ContractError::IoError(format!("WithdrawCollateralParams: invalid zk_public_inputs[{}]", i)))?,
             );
         }
@@ -534,41 +565,43 @@ pub struct MintStableParams {
 }
 
 impl MintStableParams {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 50 + self.proof.len() + self.zk_public_inputs.len() * 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_len = SerializedLen::try_from_len(self.proof.len())?;
+        let pi_len = SerializedLen::try_from_len(self.zk_public_inputs.len())?;
+        let cap = 56 + self.proof.len() + self.zk_public_inputs.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.mint_commitment.to_bytes());
         buf.extend_from_slice(&self.mint_amount.to_le_bytes());
-        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&proof_len.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.fee.to_le_bytes());
-        buf.push(self.zk_public_inputs.len() as u8);
+        buf.extend_from_slice(&pi_len.to_le_bytes());
         for pi in &self.zk_public_inputs {
             buf.extend_from_slice(&pi.to_repr());
         }
-        buf
+        Ok(buf)
     }
 
-    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 50 {
-            return Err(ContractError::IoError(format!(
-                "MintStableParams: expected at least 50 bytes, got {}", data.len()
-            )));
-        }
-        let mint_commitment = IntentCommitment::from_bytes(data[0..32].try_into().unwrap())
+        let mint_commitment = IntentCommitment::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|_| ContractError::IoError("MintStableParams: invalid mint_commitment".into()))?;
-        let mint_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let proof_len = data[40] as usize;
-        if data.len() < 41 + proof_len + 9 {
-            return Err(ContractError::IoError(format!(
-                "MintStableParams: proof truncated at offset {}", 41 + proof_len
-            )));
-        }
-        let proof = data[41..41 + proof_len].to_vec();
-        let fee = u64::from_le_bytes(data[41 + proof_len..49 + proof_len].try_into().unwrap());
-        let pi_count = data[49 + proof_len] as usize;
-        let expected = 50 + proof_len + pi_count * 32;
+        let mint_amount = u64::from_le_bytes(read_field::<8>(data, 32)?);
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 40)?).to_usize();
+        let proof_start = 40 + SerializedLen::ENCODED_SIZE;
+        let proof = read_slice(data, proof_start, proof_len)?.to_vec();
+        let fee_start = proof_start
+            .checked_add(proof_len)
+            .ok_or_else(|| ContractError::IoError(
+                "MintStableParams: proof length overflows".into()))?;
+        let fee = u64::from_le_bytes(read_field::<8>(data, fee_start)?);
+        let pi_count =
+            SerializedLen::from_le_bytes(read_field::<4>(data, fee_start + 8)?).to_usize();
+        let pi_start = fee_start + 8 + SerializedLen::ENCODED_SIZE;
+        let expected = pi_count
+            .checked_mul(32)
+            .and_then(|n| n.checked_add(pi_start))
+            .ok_or_else(|| ContractError::IoError(
+                "MintStableParams: length prefix overflows".into()))?;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "MintStableParams: expected {} bytes, got {}", expected, data.len()
@@ -576,9 +609,9 @@ impl MintStableParams {
         }
         let mut zk_public_inputs = Vec::with_capacity(pi_count);
         for i in 0..pi_count {
-            let start = 50 + proof_len + i * 32;
+            let start = pi_start + i * 32;
             zk_public_inputs.push(
-                Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
+                Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, start)?))
                     .ok_or_else(|| ContractError::IoError(format!("MintStableParams: invalid zk_public_inputs[{}]", i)))?,
             );
         }
@@ -607,41 +640,43 @@ pub struct RepayStableParams {
 }
 
 impl RepayStableParams {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 50 + self.proof.len() + self.zk_public_inputs.len() * 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_len = SerializedLen::try_from_len(self.proof.len())?;
+        let pi_len = SerializedLen::try_from_len(self.zk_public_inputs.len())?;
+        let cap = 56 + self.proof.len() + self.zk_public_inputs.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.repay_commitment.to_bytes());
         buf.extend_from_slice(&self.repay_amount.to_le_bytes());
-        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&proof_len.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.fee.to_le_bytes());
-        buf.push(self.zk_public_inputs.len() as u8);
+        buf.extend_from_slice(&pi_len.to_le_bytes());
         for pi in &self.zk_public_inputs {
             buf.extend_from_slice(&pi.to_repr());
         }
-        buf
+        Ok(buf)
     }
 
-    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 51 {
-            return Err(ContractError::IoError(format!(
-                "RepayStableParams: expected at least 51 bytes, got {}", data.len()
-            )));
-        }
-        let repay_commitment = IntentCommitment::from_bytes(data[0..32].try_into().unwrap())
+        let repay_commitment = IntentCommitment::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|_| ContractError::IoError("RepayStableParams: invalid repay_commitment".into()))?;
-        let repay_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let proof_len = data[40] as usize;
-        if data.len() < 41 + proof_len + 9 {
-            return Err(ContractError::IoError(format!(
-                "RepayStableParams: proof truncated at offset {}", 41 + proof_len
-            )));
-        }
-        let proof = data[41..41 + proof_len].to_vec();
-        let fee = u64::from_le_bytes(data[41 + proof_len..49 + proof_len].try_into().unwrap());
-        let pi_count = data[49 + proof_len] as usize;
-        let expected = 50 + proof_len + pi_count * 32;
+        let repay_amount = u64::from_le_bytes(read_field::<8>(data, 32)?);
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 40)?).to_usize();
+        let proof_start = 40 + SerializedLen::ENCODED_SIZE;
+        let proof = read_slice(data, proof_start, proof_len)?.to_vec();
+        let fee_start = proof_start
+            .checked_add(proof_len)
+            .ok_or_else(|| ContractError::IoError(
+                "RepayStableParams: proof length overflows".into()))?;
+        let fee = u64::from_le_bytes(read_field::<8>(data, fee_start)?);
+        let pi_count =
+            SerializedLen::from_le_bytes(read_field::<4>(data, fee_start + 8)?).to_usize();
+        let pi_start = fee_start + 8 + SerializedLen::ENCODED_SIZE;
+        let expected = pi_count
+            .checked_mul(32)
+            .and_then(|n| n.checked_add(pi_start))
+            .ok_or_else(|| ContractError::IoError(
+                "RepayStableParams: length prefix overflows".into()))?;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "RepayStableParams: expected {} bytes, got {}", expected, data.len()
@@ -649,9 +684,9 @@ impl RepayStableParams {
         }
         let mut zk_public_inputs = Vec::with_capacity(pi_count);
         for i in 0..pi_count {
-            let start = 50 + proof_len + i * 32;
+            let start = pi_start + i * 32;
             zk_public_inputs.push(
-                Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
+                Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, start)?))
                     .ok_or_else(|| ContractError::IoError(format!("RepayStableParams: invalid zk_public_inputs[{}]", i)))?,
             );
         }
@@ -698,49 +733,51 @@ pub struct LiquidateParams {
 }
 
 impl LiquidateParams {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 82 + self.proof.len() + self.zk_public_inputs.len() * 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_len = SerializedLen::try_from_len(self.proof.len())?;
+        let pi_len = SerializedLen::try_from_len(self.zk_public_inputs.len())?;
+        let cap = 88 + self.proof.len() + self.zk_public_inputs.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.liquidation_commitment.to_bytes());
         buf.extend_from_slice(&self.total_debt.to_le_bytes());
         buf.extend_from_slice(&self.total_collateral.to_le_bytes());
         buf.extend_from_slice(&self.current_price.to_le_bytes());
         buf.extend_from_slice(&self.debt_to_cover.to_le_bytes());
-        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&proof_len.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.liquidation_reward.to_le_bytes());
         buf.extend_from_slice(&self.fee.to_le_bytes());
-        buf.push(self.zk_public_inputs.len() as u8);
+        buf.extend_from_slice(&pi_len.to_le_bytes());
         for pi in &self.zk_public_inputs {
             buf.extend_from_slice(&pi.to_repr());
         }
-        buf
+        Ok(buf)
     }
 
-    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 83 {
-            return Err(ContractError::IoError(format!(
-                "LiquidateParams: expected at least 83 bytes, got {}", data.len()
-            )));
-        }
-        let liquidation_commitment = IntentCommitment::from_bytes(data[0..32].try_into().unwrap())
+        let liquidation_commitment = IntentCommitment::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|_| ContractError::IoError("LiquidateParams: invalid liquidation_commitment".into()))?;
-        let total_debt = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let total_collateral = u64::from_le_bytes(data[40..48].try_into().unwrap());
-        let current_price = u64::from_le_bytes(data[48..56].try_into().unwrap());
-        let debt_to_cover = u64::from_le_bytes(data[56..64].try_into().unwrap());
-        let proof_len = data[64] as usize;
-        if data.len() < 65 + proof_len + 17 {
-            return Err(ContractError::IoError(format!(
-                "LiquidateParams: proof truncated at offset {}", 65 + proof_len
-            )));
-        }
-        let proof = data[65..65 + proof_len].to_vec();
-        let liquidation_reward = u64::from_le_bytes(data[65 + proof_len..73 + proof_len].try_into().unwrap());
-        let fee = u64::from_le_bytes(data[73 + proof_len..81 + proof_len].try_into().unwrap());
-        let pi_count = data[81 + proof_len] as usize;
-        let expected = 82 + proof_len + pi_count * 32;
+        let total_debt = u64::from_le_bytes(read_field::<8>(data, 32)?);
+        let total_collateral = u64::from_le_bytes(read_field::<8>(data, 40)?);
+        let current_price = u64::from_le_bytes(read_field::<8>(data, 48)?);
+        let debt_to_cover = u64::from_le_bytes(read_field::<8>(data, 56)?);
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 64)?).to_usize();
+        let proof_start = 64 + SerializedLen::ENCODED_SIZE;
+        let proof = read_slice(data, proof_start, proof_len)?.to_vec();
+        let fee_start = proof_start
+            .checked_add(proof_len)
+            .ok_or_else(|| ContractError::IoError(
+                "LiquidateParams: proof length overflows".into()))?;
+        let liquidation_reward = u64::from_le_bytes(read_field::<8>(data, fee_start)?);
+        let fee = u64::from_le_bytes(read_field::<8>(data, fee_start + 8)?);
+        let pi_count =
+            SerializedLen::from_le_bytes(read_field::<4>(data, fee_start + 16)?).to_usize();
+        let pi_start = fee_start + 16 + SerializedLen::ENCODED_SIZE;
+        let expected = pi_count
+            .checked_mul(32)
+            .and_then(|n| n.checked_add(pi_start))
+            .ok_or_else(|| ContractError::IoError(
+                "LiquidateParams: length prefix overflows".into()))?;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "LiquidateParams: expected {} bytes, got {}", expected, data.len()
@@ -748,9 +785,9 @@ impl LiquidateParams {
         }
         let mut zk_public_inputs = Vec::with_capacity(pi_count);
         for i in 0..pi_count {
-            let start = 82 + proof_len + i * 32;
+            let start = pi_start + i * 32;
             zk_public_inputs.push(
-                Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
+                Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, start)?))
                     .ok_or_else(|| ContractError::IoError(format!("LiquidateParams: invalid zk_public_inputs[{}]", i)))?,
             );
         }
@@ -1037,8 +1074,10 @@ pub struct RedeemStableParamsV1 {
 }
 
 impl RedeemStableParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 162 + self.proof.len() + self.zk_public_inputs.len() * 32;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_len = SerializedLen::try_from_len(self.proof.len())?;
+        let pi_len = SerializedLen::try_from_len(self.zk_public_inputs.len())?;
+        let cap = 168 + self.proof.len() + self.zk_public_inputs.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.recipient_pub.to_bytes());
         buf.extend_from_slice(&self.redeem_amount.to_le_bytes());
@@ -1047,46 +1086,46 @@ impl RedeemStableParamsV1 {
         buf.extend_from_slice(&self.total_debt.to_le_bytes());
         buf.extend_from_slice(&self.total_collateral.to_le_bytes());
         buf.extend_from_slice(&self.redeem_value_blind.to_repr());
-        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&proof_len.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.fee.to_le_bytes());
-        buf.push(self.zk_public_inputs.len() as u8);
+        buf.extend_from_slice(&pi_len.to_le_bytes());
         for pi in &self.zk_public_inputs {
             buf.extend_from_slice(&pi.to_repr());
         }
-        buf
+        Ok(buf)
     }
 
-    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 163 {
-            return Err(ContractError::IoError(format!(
-                "RedeemStableParamsV1: expected at least 163 bytes, got {}", data.len()
-            )));
-        }
-        let recipient_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap())
+        let recipient_pub = PublicKey::from_bytes(read_field::<32>(data, 0)?)
             .map_err(|e| ContractError::IoError(format!("RedeemStableParamsV1: invalid recipient_pub: {}", e)))?;
-        let redeem_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[40..72].try_into().unwrap()))
+        let redeem_amount = u64::from_le_bytes(read_field::<8>(data, 32)?);
+        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 40)?))
             .ok_or_else(|| ContractError::IoError("RedeemStableParamsV1: invalid asset_id".into()))?;
-        let receipt_spend_hook = Option::<pallas::Base>::from(pallas::Base::from_repr(data[72..104].try_into().unwrap()))
+        let receipt_spend_hook = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 72)?))
             .ok_or_else(|| ContractError::IoError("RedeemStableParamsV1: invalid receipt_spend_hook".into()))?;
-        let total_debt = u64::from_le_bytes(data[104..112].try_into().unwrap());
-        let total_collateral = u64::from_le_bytes(data[112..120].try_into().unwrap());
+        let total_debt = u64::from_le_bytes(read_field::<8>(data, 104)?);
+        let total_collateral = u64::from_le_bytes(read_field::<8>(data, 112)?);
         let redeem_value_blind = Option::<pallas::Base>::from(pallas::Base::from_repr(
-            data[120..152].try_into().unwrap(),
+            read_field::<32>(data, 120)?,
         ))
         .ok_or_else(|| ContractError::IoError("RedeemStableParamsV1: invalid redeem_value_blind".into()))?;
-        let proof_len = data[152] as usize;
-        if data.len() < 153 + proof_len + 9 {
-            return Err(ContractError::IoError(format!(
-                "RedeemStableParamsV1: proof truncated at offset {}", 153 + proof_len
-            )));
-        }
-        let proof = data[153..153 + proof_len].to_vec();
-        let fee = u64::from_le_bytes(data[153 + proof_len..161 + proof_len].try_into().unwrap());
-        let pi_count = data[161 + proof_len] as usize;
-        let expected = 162 + proof_len + pi_count * 32;
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 152)?).to_usize();
+        let proof_start = 152 + SerializedLen::ENCODED_SIZE;
+        let proof = read_slice(data, proof_start, proof_len)?.to_vec();
+        let fee_start = proof_start
+            .checked_add(proof_len)
+            .ok_or_else(|| ContractError::IoError(
+                "RedeemStableParamsV1: proof length overflows".into()))?;
+        let fee = u64::from_le_bytes(read_field::<8>(data, fee_start)?);
+        let pi_count =
+            SerializedLen::from_le_bytes(read_field::<4>(data, fee_start + 8)?).to_usize();
+        let pi_start = fee_start + 8 + SerializedLen::ENCODED_SIZE;
+        let expected = pi_count
+            .checked_mul(32)
+            .and_then(|n| n.checked_add(pi_start))
+            .ok_or_else(|| ContractError::IoError(
+                "RedeemStableParamsV1: length prefix overflows".into()))?;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "RedeemStableParamsV1: expected {} bytes, got {}", expected, data.len()
@@ -1094,9 +1133,9 @@ impl RedeemStableParamsV1 {
         }
         let mut zk_public_inputs = Vec::with_capacity(pi_count);
         for i in 0..pi_count {
-            let start = 162 + proof_len + i * 32;
+            let start = pi_start + i * 32;
             zk_public_inputs.push(
-                Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
+                Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, start)?))
                     .ok_or_else(|| ContractError::IoError(format!("RedeemStableParamsV1: invalid zk_public_inputs[{}]", i)))?,
             );
         }
@@ -1278,8 +1317,9 @@ pub struct GovernanceReportParams {
 }
 
 impl GovernanceReportParams {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 121 + self.proof.len();
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_len = SerializedLen::try_from_len(self.proof.len())?;
+        let cap = 124 + self.proof.len();
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.asset_id.to_repr());
         buf.extend_from_slice(&self.total_collateral.to_le_bytes());
@@ -1289,38 +1329,37 @@ impl GovernanceReportParams {
         buf.extend_from_slice(&self.collateral_ratio_bps.to_le_bytes());
         buf.extend_from_slice(&self.interest_accrued.to_le_bytes());
         buf.extend_from_slice(&self.reporter_pub.to_bytes());
-        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&proof_len.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.fee.to_le_bytes());
-        buf
+        Ok(buf)
     }
 
-    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 121 {
-            return Err(ContractError::IoError(format!(
-                "GovernanceReportParams: expected at least 121 bytes, got {}", data.len()
-            )));
-        }
-        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+        let asset_id = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 0)?))
             .ok_or_else(|| ContractError::IoError("GovernanceReportParams: invalid asset_id".into()))?;
-        let total_collateral = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let total_debt = u64::from_le_bytes(data[40..48].try_into().unwrap());
-        let total_redeemed = u64::from_le_bytes(data[48..56].try_into().unwrap());
-        let outstanding = u64::from_le_bytes(data[56..64].try_into().unwrap());
-        let collateral_ratio_bps = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        let interest_accrued = u64::from_le_bytes(data[72..80].try_into().unwrap());
-        let reporter_pub = PublicKey::from_bytes(data[80..112].try_into().unwrap())
+        let total_collateral = u64::from_le_bytes(read_field::<8>(data, 32)?);
+        let total_debt = u64::from_le_bytes(read_field::<8>(data, 40)?);
+        let total_redeemed = u64::from_le_bytes(read_field::<8>(data, 48)?);
+        let outstanding = u64::from_le_bytes(read_field::<8>(data, 56)?);
+        let collateral_ratio_bps = u64::from_le_bytes(read_field::<8>(data, 64)?);
+        let interest_accrued = u64::from_le_bytes(read_field::<8>(data, 72)?);
+        let reporter_pub = PublicKey::from_bytes(read_field::<32>(data, 80)?)
             .map_err(|e| ContractError::IoError(format!("GovernanceReportParams: invalid reporter_pub: {}", e)))?;
-        let proof_len = data[112] as usize;
-        let expected = 113 + proof_len + 8;
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 112)?).to_usize();
+        let proof_start = 112 + SerializedLen::ENCODED_SIZE;
+        let proof = read_slice(data, proof_start, proof_len)?.to_vec();
+        let expected = proof_start
+            .checked_add(proof_len)
+            .and_then(|n| n.checked_add(8))
+            .ok_or_else(|| ContractError::IoError(
+                "GovernanceReportParams: length prefix overflows".into()))?;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "GovernanceReportParams: expected {} bytes, got {}", expected, data.len()
             )));
         }
-        let proof = data[113..113 + proof_len].to_vec();
-        let fee = u64::from_le_bytes(data[113 + proof_len..113 + proof_len + 8].try_into().unwrap());
+        let fee = u64::from_le_bytes(read_field::<8>(data, proof_start + proof_len)?);
         Ok(GovernanceReportParams {
             asset_id, total_collateral, total_debt, total_redeemed, outstanding,
             collateral_ratio_bps, interest_accrued, reporter_pub, proof, fee,
@@ -1358,8 +1397,9 @@ pub struct AccrueInterestParams {
 }
 
 impl AccrueInterestParams {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 81 + self.proof.len();
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let proof_len = SerializedLen::try_from_len(self.proof.len())?;
+        let cap = 84 + self.proof.len();
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.old_total_debt.to_le_bytes());
         buf.extend_from_slice(&self.new_total_debt.to_le_bytes());
@@ -1367,35 +1407,34 @@ impl AccrueInterestParams {
         buf.extend_from_slice(&self.rate_per_second.to_le_bytes());
         buf.extend_from_slice(&self.time_elapsed.to_le_bytes());
         buf.extend_from_slice(&self.accumulator_pub.to_bytes());
-        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&proof_len.to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.fee.to_le_bytes());
-        buf
+        Ok(buf)
     }
 
-    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 81 {
-            return Err(ContractError::IoError(format!(
-                "AccrueInterestParams: expected at least 81 bytes, got {}", data.len()
-            )));
-        }
-        let old_total_debt = u64::from_le_bytes(data[0..8].try_into().unwrap());
-        let new_total_debt = u64::from_le_bytes(data[8..16].try_into().unwrap());
-        let interest_amount = u64::from_le_bytes(data[16..24].try_into().unwrap());
-        let rate_per_second = u64::from_le_bytes(data[24..32].try_into().unwrap());
-        let time_elapsed = u64::from_le_bytes(data[32..40].try_into().unwrap());
-        let accumulator_pub = PublicKey::from_bytes(data[40..72].try_into().unwrap())
+        let old_total_debt = u64::from_le_bytes(read_field::<8>(data, 0)?);
+        let new_total_debt = u64::from_le_bytes(read_field::<8>(data, 8)?);
+        let interest_amount = u64::from_le_bytes(read_field::<8>(data, 16)?);
+        let rate_per_second = u64::from_le_bytes(read_field::<8>(data, 24)?);
+        let time_elapsed = u64::from_le_bytes(read_field::<8>(data, 32)?);
+        let accumulator_pub = PublicKey::from_bytes(read_field::<32>(data, 40)?)
             .map_err(|e| ContractError::IoError(format!("AccrueInterestParams: invalid accumulator_pub: {}", e)))?;
-        let proof_len = data[72] as usize;
-        let expected = 73 + proof_len + 8;
+        let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 72)?).to_usize();
+        let proof_start = 72 + SerializedLen::ENCODED_SIZE;
+        let proof = read_slice(data, proof_start, proof_len)?.to_vec();
+        let expected = proof_start
+            .checked_add(proof_len)
+            .and_then(|n| n.checked_add(8))
+            .ok_or_else(|| ContractError::IoError(
+                "AccrueInterestParams: length prefix overflows".into()))?;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "AccrueInterestParams: expected {} bytes, got {}", expected, data.len()
             )));
         }
-        let proof = data[73..73 + proof_len].to_vec();
-        let fee = u64::from_le_bytes(data[73 + proof_len..73 + proof_len + 8].try_into().unwrap());
+        let fee = u64::from_le_bytes(read_field::<8>(data, proof_start + proof_len)?);
         Ok(AccrueInterestParams { old_total_debt, new_total_debt, interest_amount, rate_per_second, time_elapsed, accumulator_pub, proof, fee })
     }
 }
@@ -1972,43 +2011,65 @@ impl RedeemStableUpdateV1 {
 }
 
 // ---- SpendHookCallbackUpdateV1 (variable: Vec<Nullifier> + Vec<[u8;64]> + u64) ----
-// Layout: nullifier_count(u8) + nullifiers(count*32) + value_commit_count(u8) + value_commits(count*64) + new_total_redeemed(8)
+// Layout: nullifier_count(SerializedLen, 4) + nullifiers(count*32) + value_commit_count(SerializedLen, 4) + value_commits(count*64) + new_total_redeemed(8)
 
 impl SpendHookCallbackUpdateV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + 8 + self.nullifiers.len() * 32 + self.value_commits.len() * 64;
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let nf_len = SerializedLen::try_from_len(self.nullifiers.len())?;
+        let vc_len = SerializedLen::try_from_len(self.value_commits.len())?;
+        let cap = 2 * SerializedLen::ENCODED_SIZE
+            + 8
+            + self.nullifiers.len() * 32
+            + self.value_commits.len() * 64;
         let mut b = Vec::with_capacity(cap);
-        b.push(self.nullifiers.len() as u8);
+        b.extend_from_slice(&nf_len.to_le_bytes());
         for n in &self.nullifiers { b.extend_from_slice(&n.to_bytes()); }
-        b.push(self.value_commits.len() as u8);
+        b.extend_from_slice(&vc_len.to_le_bytes());
         for vc in &self.value_commits { b.extend_from_slice(vc); }
         b.extend_from_slice(&self.new_total_redeemed.to_le_bytes());
-        b
+        Ok(b)
     }
-    #[expect(clippy::unwrap_used, reason = "internally-consistent serialized data")]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 2 { return Err(ContractError::IoError("SpendHookCallbackUpdateV1: data too short".into())); }
-        let nf_count = data[0] as usize;
-        let nf_end = 1 + nf_count * 32;
-        if data.len() < nf_end + 1 { return Err(ContractError::IoError(format!("SpendHookCallbackUpdateV1: expected {} bytes for nullifiers, got {}", nf_end + 1, data.len()))); }
+        let nf_count = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize();
+        let nf_end = nf_count
+            .checked_mul(32)
+            .and_then(|n| n.checked_add(SerializedLen::ENCODED_SIZE))
+            .ok_or_else(|| ContractError::IoError(
+                "SpendHookCallbackUpdateV1: nullifier length overflows".into()))?;
         let mut nullifiers = Vec::with_capacity(nf_count);
         for i in 0..nf_count {
-            nullifiers.push(Nullifier::from_bytes(data[1 + i*32..1 + (i+1)*32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SpendHookCallbackUpdateV1: invalid nullifier[{}]: {}", i, e)))?);
+            let start = SerializedLen::ENCODED_SIZE + i * 32;
+            nullifiers.push(Nullifier::from_bytes(read_field::<32>(data, start)?)
+                .map_err(|e| ContractError::IoError(format!("SpendHookCallbackUpdateV1: invalid nullifier[{}]: {}", i, e)))?);
         }
-        let vc_count = data[nf_end] as usize;
-        let vc_end = nf_end + 1 + vc_count * 64;
-        if data.len() != vc_end + 8 { return Err(ContractError::IoError(format!("SpendHookCallbackUpdateV1: expected {} bytes total, got {}", vc_end + 8, data.len()))); }
+        let vc_count =
+            SerializedLen::from_le_bytes(read_field::<4>(data, nf_end)?).to_usize();
+        let vc_start = nf_end + SerializedLen::ENCODED_SIZE;
+        let vc_end = vc_count
+            .checked_mul(64)
+            .and_then(|n| n.checked_add(vc_start))
+            .ok_or_else(|| ContractError::IoError(
+                "SpendHookCallbackUpdateV1: value-commit length overflows".into()))?;
+        let expected = vc_end
+            .checked_add(8)
+            .ok_or_else(|| ContractError::IoError(
+                "SpendHookCallbackUpdateV1: length prefix overflows".into()))?;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "SpendHookCallbackUpdateV1: expected {} bytes total, got {}", expected, data.len()
+            )));
+        }
         let mut value_commits = Vec::with_capacity(vc_count);
         for i in 0..vc_count {
-            let start = nf_end + 1 + i * 64;
+            let start = vc_start + i * 64;
             let mut vc = [0u8; 64];
-            vc.copy_from_slice(&data[start..start + 64]);
+            vc.copy_from_slice(read_slice(data, start, 64)?);
             value_commits.push(vc);
         }
         Ok(SpendHookCallbackUpdateV1 {
             nullifiers,
             value_commits,
-            new_total_redeemed: u64::from_le_bytes(data[vc_end..vc_end + 8].try_into().unwrap()),
+            new_total_redeemed: u64::from_le_bytes(read_field::<8>(data, vc_end)?),
         })
     }
 }

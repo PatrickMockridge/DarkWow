@@ -294,3 +294,316 @@ fn test_bearer_bond_encode_roundtrip() {
     };
     assert_roundtrip!(BurnStakeParamsV1, burn);
 }
+
+/// `SerializedLen` controls for bearer_bond: every length prefix is a 4-byte `u32`, so a
+/// 256-element vector round-trips instead of truncating to `0` through an `as u8`.
+#[test]
+fn test_bearer_bond_serialized_len_prefixes() {
+    use dwow_bearer_bond_contract::model::{
+        BondInput, BurnStakeParamsV1, Nullifier as BbNullifier, ProveCoverageParamsV1,
+    };
+    use dwow_sdk::crypto::SecretKey;
+
+    let bb_nf = BbNullifier::new(
+        SecretKey::from_base(pallas::Base::from(99u64)),
+        pallas::Base::from(42u64),
+    );
+    let point = dummy_point();
+
+    // ProveCoverageParamsV1's decoder took the whole tail as the proof and never consumed
+    // the length prefix, so this round-trip failed at **any** size before the migration.
+    let coverage = ProveCoverageParamsV1 {
+        series_asset_id: pallas::Base::from(1u64),
+        total_outstanding: 10,
+        total_interest_obligation: 1,
+        reserve_amount: 20,
+        coverage_ratio_bps: 18_181,
+        report_block: 7,
+        proof: vec![0u8; 256],
+    };
+    assert_roundtrip!(ProveCoverageParamsV1, coverage);
+
+    // 256 inputs: with a `u8` prefix this wrote `0`, so decode expected only the prefix and
+    // the remaining 65_536 bytes were unread.
+    let burn = BurnStakeParamsV1 {
+        inputs: (0u64..256)
+            .map(|i| BondInput {
+                value_commit: point,
+                token_commit: pallas::Base::from(i + 1),
+                nullifier: bb_nf,
+                merkle_root: dummy_merkle_node(),
+                user_data_enc: pallas::Base::zero(),
+                spend_hook: pallas::Base::zero(),
+                signature_public: pallas::Base::from(42u64),
+                commitment: pallas::Base::from(i + 2),
+            })
+            .collect(),
+    };
+    assert_roundtrip!(BurnStakeParamsV1, burn.clone());
+
+    // Negative control: claim one more element than the buffer carries. The old decoder
+    // sliced past the end and panicked; the migrated one returns `Err`.
+    let mut overlong = burn.encode().expect("encode must succeed");
+    let count = u32::from_le_bytes(overlong[0..4].try_into().unwrap());
+    overlong[0..4].copy_from_slice(&(count + 1).to_le_bytes());
+    assert!(
+        BurnStakeParamsV1::decode(&overlong).is_err(),
+        "a 4-byte prefix claiming {} elements in a {}-byte buffer must be refused",
+        count + 1,
+        overlong.len(),
+    );
+    assert!(
+        BurnStakeParamsV1::decode(&overlong[..2]).is_err(),
+        "a buffer too short to hold the 4-byte prefix must be refused, not panic",
+    );
+}
+
+/// `SerializedLen` controls for stablecoin: >255-length fields round-trip, and an overlong
+/// prefix is a `ContractError` rather than a panic.
+#[test]
+fn test_stablecoin_serialized_len_prefixes() {
+    use dwow_sdk::crypto::{ContractId, IntentCommitment, IntentNullifier};
+    use dwow_stablecoin_contract::model::{
+        AccrueInterestParams, CollateralParams, CollateralType, DeadManAction,
+        DeadManSwitchConfig, DepositCollateralParams, GovernanceReportParams, InitializeParams,
+        LiquidateParams, MintStableParams, RedeemStableParamsV1, RepayStableParams,
+        SpendHookCallbackUpdateV1, StablecoinModel, WithdrawCollateralParams,
+    };
+
+    let zero = pallas::Base::zero();
+    let commitment = IntentCommitment::from_base(pallas::Base::from(1u64));
+    let intent_nf = IntentNullifier::from_base(pallas::Base::from(2u64));
+    let proof = || vec![0u8; 256];
+    let inputs = || vec![zero; 256];
+
+    let deposit = DepositCollateralParams {
+        deposit_commitment: commitment,
+        collateral_amount: 10,
+        collateral_type: CollateralType::Xmr,
+        proof: proof(),
+        fee: 1,
+        zk_public_inputs: inputs(),
+    };
+    assert_roundtrip!(DepositCollateralParams, deposit);
+
+    let withdraw = WithdrawCollateralParams {
+        withdrawal_nullifier: intent_nf,
+        new_commitment: commitment,
+        withdraw_amount: 3,
+        proof: proof(),
+        fee: 0,
+        zk_public_inputs: inputs(),
+    };
+    assert_roundtrip!(WithdrawCollateralParams, withdraw);
+
+    let mint = MintStableParams {
+        mint_commitment: commitment,
+        mint_amount: 5,
+        proof: proof(),
+        fee: 0,
+        zk_public_inputs: inputs(),
+    };
+    assert_roundtrip!(MintStableParams, mint.clone());
+
+    // Negative control at the proof prefix (offset 40): one more byte than present.
+    let mut overlong = mint.encode().expect("encode must succeed");
+    let proof_len = u32::from_le_bytes(overlong[40..44].try_into().unwrap());
+    overlong[40..44].copy_from_slice(&(proof_len + 1).to_le_bytes());
+    assert!(
+        MintStableParams::decode(&overlong).is_err(),
+        "a proof prefix claiming {} bytes in a {}-byte buffer must be refused",
+        proof_len + 1,
+        overlong.len(),
+    );
+    assert!(
+        MintStableParams::decode(&[0u8; 2]).is_err(),
+        "a buffer too short to hold the fixed prefix fields must be refused, not panic",
+    );
+
+    let repay = RepayStableParams {
+        repay_commitment: commitment,
+        repay_amount: 4,
+        proof: proof(),
+        fee: 0,
+        zk_public_inputs: inputs(),
+    };
+    assert_roundtrip!(RepayStableParams, repay);
+
+    let liquidate = LiquidateParams {
+        liquidation_commitment: commitment,
+        total_debt: 10,
+        total_collateral: 20,
+        current_price: 2,
+        debt_to_cover: 5,
+        proof: proof(),
+        liquidation_reward: 1,
+        fee: 0,
+        zk_public_inputs: inputs(),
+    };
+    assert_roundtrip!(LiquidateParams, liquidate);
+
+    let redeem = RedeemStableParamsV1 {
+        recipient_pub: dummy_pubkey(),
+        redeem_amount: 1_000,
+        asset_id: zero,
+        receipt_spend_hook: zero,
+        total_debt: 5_000,
+        total_collateral: 10_000,
+        redeem_value_blind: pallas::Base::from(7u64),
+        proof: proof(),
+        fee: 7,
+        zk_public_inputs: inputs(),
+    };
+    assert_roundtrip!(RedeemStableParamsV1, redeem);
+
+    let governance = GovernanceReportParams {
+        asset_id: zero,
+        total_collateral: 10,
+        total_debt: 10,
+        total_redeemed: 0,
+        outstanding: 10,
+        collateral_ratio_bps: 10_000,
+        interest_accrued: 0,
+        reporter_pub: dummy_pubkey(),
+        proof: proof(),
+        fee: 0,
+    };
+    assert_roundtrip!(GovernanceReportParams, governance);
+
+    let accrue = AccrueInterestParams {
+        old_total_debt: 1,
+        new_total_debt: 2,
+        interest_amount: 1,
+        rate_per_second: 1,
+        time_elapsed: 1,
+        accumulator_pub: dummy_pubkey(),
+        proof: proof(),
+        fee: 0,
+    };
+    assert_roundtrip!(AccrueInterestParams, accrue);
+
+    let spend_hook = SpendHookCallbackUpdateV1 {
+        nullifiers: vec![dummy_nullifier(); 256],
+        value_commits: vec![[0u8; 64]; 256],
+        new_total_redeemed: 5,
+    };
+    assert_roundtrip!(SpendHookCallbackUpdateV1, spend_hook);
+
+    let init = InitializeParams {
+        model: StablecoinModel::PooledDebt,
+        min_collateralization_ratio: 15_000,
+        liquidation_threshold: 11_000,
+        liquidation_penalty: 500,
+        base_rate: 0,
+        pi_kp: 0,
+        pi_ki: 0,
+        twap_window: 0,
+        price_deviation_threshold: 0,
+        collateral_params: (0..256)
+            .map(|_| CollateralParams {
+                collateral_type: CollateralType::Drk,
+                haircut: 9_850,
+                liquidation_threshold: 11_000,
+                max_debt_share: 30_000,
+            })
+            .collect(),
+        dead_man_switch: DeadManSwitchConfig {
+            enabled: false,
+            timeout_blocks: 0,
+            action: DeadManAction::DisableMinting,
+            last_action_block: 0,
+        },
+        token_authority_pub: dummy_pubkey(),
+        create_token: false,
+        token_symbol: [0u8; 32],
+        deployer_auth: zero,
+        promissory_note_contract_id: ContractId::from_bytes([1u8; 32]).unwrap(),
+        governance_pub_x: zero,
+        governance_pub_y: zero,
+        tx_nonce: zero,
+    };
+    assert_roundtrip!(InitializeParams, init);
+}
+
+/// `SerializedLen` controls for dex: a 256-byte proof round-trips through every params codec,
+/// and an overlong proof prefix is refused.
+#[test]
+fn test_dex_serialized_len_prefixes() {
+    use dwow_dex_contract::model::{
+        CancelSwapParams, ExecuteSwapFeeParams, ExecuteSwapParams, ExecuteSwapSlippageParams,
+    };
+    use dwow_promissory_note_contract::model::CapCommitment;
+
+    let lock = CapCommitment::decode(&pallas::Base::from(1u64).to_repr()).expect("valid cap");
+    let nf = dummy_nullifier();
+    let nonce = pallas::Base::from(4u64);
+
+    let execute = ExecuteSwapParams {
+        swap_id: [1u8; 32],
+        alice_secret: [2u8; 32],
+        bob_secret: [3u8; 32],
+        alice_lock: lock,
+        bob_lock: lock,
+        alice_nullifier: nf,
+        bob_nullifier: nf,
+        proof: vec![0u8; 256],
+        fee: 0,
+        tx_nonce: nonce,
+    };
+    assert_roundtrip!(ExecuteSwapParams, execute.clone());
+
+    // Negative control at the proof prefix (offset 224).
+    let mut overlong = execute.encode().expect("encode must succeed");
+    let proof_len = u32::from_le_bytes(overlong[224..228].try_into().unwrap());
+    overlong[224..228].copy_from_slice(&(proof_len + 1).to_le_bytes());
+    assert!(
+        ExecuteSwapParams::decode(&overlong).is_err(),
+        "a proof prefix claiming {} bytes in a {}-byte buffer must be refused",
+        proof_len + 1,
+        overlong.len(),
+    );
+    assert!(
+        ExecuteSwapParams::decode(&overlong[..2]).is_err(),
+        "a buffer too short to hold the fixed prefix fields must be refused, not panic",
+    );
+
+    let cancel = CancelSwapParams {
+        swap_id: [1u8; 32],
+        secret: [2u8; 32],
+        nullifier: nf,
+        proof: vec![0u8; 256],
+        fee: 0,
+        tx_nonce: nonce,
+    };
+    assert_roundtrip!(CancelSwapParams, cancel);
+
+    let fee_params = ExecuteSwapFeeParams {
+        swap_id: [1u8; 32],
+        alice_secret: [2u8; 32],
+        bob_secret: [3u8; 32],
+        alice_lock: lock,
+        bob_lock: lock,
+        alice_nullifier: nf,
+        bob_nullifier: nf,
+        fee_bps: 30,
+        proof: vec![0u8; 256],
+        fee: 1,
+        tx_nonce: nonce,
+    };
+    assert_roundtrip!(ExecuteSwapFeeParams, fee_params);
+
+    let slippage = ExecuteSwapSlippageParams {
+        swap_id: [1u8; 32],
+        alice_secret: [2u8; 32],
+        bob_secret: [3u8; 32],
+        alice_lock: lock,
+        bob_lock: lock,
+        alice_nullifier: nf,
+        bob_nullifier: nf,
+        slippage_bps: 30,
+        proof: vec![0u8; 256],
+        fee: 0,
+        tx_nonce: nonce,
+    };
+    assert_roundtrip!(ExecuteSwapSlippageParams, slippage);
+}

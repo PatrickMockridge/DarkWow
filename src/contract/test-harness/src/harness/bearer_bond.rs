@@ -242,7 +242,7 @@ impl BearerBondHarness {
         nonce: pallas::Base,
     ) -> Result<BurnStakeResult, Box<dyn std::error::Error>> {
         let mut call_data = vec![0x05]; // BurnStakeV1
-        call_data.extend_from_slice(&plan.params().encode());
+        call_data.extend_from_slice(&plan.params().encode()?);
         let debris = plan.prove(commitment, nonce)?;
         Ok(BurnStakeResult { call_data, proofs: debris.proofs })
     }
@@ -254,7 +254,7 @@ impl BearerBondHarness {
     ) -> Result<BurnStakeResult, Box<dyn std::error::Error>> {
         let plan = self.burn_stake_prepare(inputs)?;
         let mut call_data = vec![0x05];
-        call_data.extend_from_slice(&plan.params().encode());
+        call_data.extend_from_slice(&plan.params().encode()?);
         let commitment = self.commitment(&call_data);
         self.burn_stake_prove(plan, commitment, pallas::Base::zero())
     }
@@ -289,7 +289,7 @@ impl BearerBondHarness {
         nonce: pallas::Base,
     ) -> Result<TransferStakeResult, Box<dyn std::error::Error>> {
         let mut call_data = vec![0x01]; // TransferStakeV1
-        call_data.extend_from_slice(&plan.params().encode());
+        call_data.extend_from_slice(&plan.params().encode()?);
         let debris = plan.prove(commitment, nonce)?;
         Ok(TransferStakeResult { call_data, proofs: debris.proofs })
     }
@@ -302,7 +302,7 @@ impl BearerBondHarness {
     ) -> Result<TransferStakeResult, Box<dyn std::error::Error>> {
         let plan = self.transfer_stake_prepare(inputs, outputs)?;
         let mut call_data = vec![0x01];
-        call_data.extend_from_slice(&plan.params().encode());
+        call_data.extend_from_slice(&plan.params().encode()?);
         let commitment = self.commitment(&call_data);
         self.transfer_stake_prove(plan, commitment, pallas::Base::zero())
     }
@@ -515,7 +515,7 @@ impl BearerBondHarness {
         nonce: pallas::Base,
     ) -> Result<ProveCoverageResult, Box<dyn std::error::Error>> {
         let mut call_data = vec![0x06]; // ProveCoverageV1
-        call_data.extend_from_slice(&plan.params().encode());
+        call_data.extend_from_slice(&plan.params().encode()?);
         let debris = plan.prove(commitment, nonce)?;
         Ok(ProveCoverageResult { call_data, proofs: debris.proofs })
     }
@@ -527,7 +527,7 @@ impl BearerBondHarness {
     ) -> Result<ProveCoverageResult, Box<dyn std::error::Error>> {
         let plan = self.prove_coverage_prepare(input)?;
         let mut call_data = vec![0x06];
-        call_data.extend_from_slice(&plan.params().encode());
+        call_data.extend_from_slice(&plan.params().encode()?);
         let commitment = self.commitment(&call_data);
         self.prove_coverage_prove(plan, commitment, pallas::Base::zero())
     }

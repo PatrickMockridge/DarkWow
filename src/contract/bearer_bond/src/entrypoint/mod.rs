@@ -746,7 +746,7 @@ fn issue_stake_v1(
 
     let update = IssueStakeUpdateV1 { commitments: vec![params.commitment] };
     let mut return_data = vec![BearerBondFunction::IssueStakeV1 as u8];
-    return_data.extend_from_slice(&update.encode());
+    return_data.extend_from_slice(&update.encode()?);
     wasm::util::set_return_data(&return_data)
 }
 
@@ -807,7 +807,7 @@ fn transfer_stake_v1(
     let nullifiers: Vec<_> = params.inputs.iter().map(|i| i.nullifier).collect();
     let update = TransferStakeUpdateV1 { nullifiers, commitments: params.outputs };
     let mut return_data = vec![BearerBondFunction::TransferStakeV1 as u8];
-    return_data.extend_from_slice(&update.encode());
+    return_data.extend_from_slice(&update.encode()?);
     wasm::util::set_return_data(&return_data)
 }
 
@@ -1027,7 +1027,7 @@ fn emergency_unstake_v1(
         receipt_commitment,
     };
     let mut return_data = vec![BearerBondFunction::EmergencyUnstakeV1 as u8];
-    return_data.extend_from_slice(&update.encode());
+    return_data.extend_from_slice(&update.encode()?);
     wasm::util::set_return_data(&return_data)
 }
 
@@ -1080,7 +1080,7 @@ fn unstake_v1(
         receipt_commitment,
     };
     let mut return_data = vec![BearerBondFunction::UnstakeV1 as u8];
-    return_data.extend_from_slice(&update.encode());
+    return_data.extend_from_slice(&update.encode()?);
     wasm::util::set_return_data(&return_data)
 }
 
@@ -1116,7 +1116,7 @@ fn burn_stake_v1(
     let nullifiers: Vec<_> = params.inputs.iter().map(|i| i.nullifier).collect();
     let update = BurnStakeUpdateV1 { nullifiers };
     let mut return_data = vec![BearerBondFunction::BurnStakeV1 as u8];
-    return_data.extend_from_slice(&update.encode());
+    return_data.extend_from_slice(&update.encode()?);
     wasm::util::set_return_data(&return_data)
 }
 
