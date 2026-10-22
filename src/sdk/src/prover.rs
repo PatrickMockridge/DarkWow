@@ -321,7 +321,8 @@ fn parse_derived_rule(s: &str) -> Result<DerivedRule, crate::error::ProverError>
     })
 }
 
-/// Parse a comma-separated list of exactly `expected` 0-based slot indices.
+/// Parse a comma-separated list of `min..=max` 0-based slot indices. Used by the leaf rules, whose
+/// asset operand is optional so that box's four-operand `leaf` rule keeps its historical shape.
 fn slots_range(s: &str, min: usize, max: usize) -> Result<Vec<usize>, crate::error::ProverError> {
     use crate::error::ProverError;
     let slots: Result<Vec<usize>, _> =
