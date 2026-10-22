@@ -43,7 +43,7 @@
 // ============================================================================
 
 use dwow_sdk::blockchain::SerializedLen;
-use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
+use dwow_sdk::crypto::{poseidon_hash, IntentCommitment, IntentNullifier, PublicKey};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::pallas;
@@ -699,8 +699,138 @@ impl VerifyCapabilityParams {
     }
 }
 
-#[derive(Debug, Clone,)] pub struct RevokeCapabilityParams { pub capability_id: CapabilityId, pub holder_pub: PublicKey, pub signature: Vec<u8>, pub reason: Vec<u8>, pub fee: u64 }
-impl RevokeCapabilityParams { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let sl = SerializedLen::try_from_len(self.signature.len())?; let rl = SerializedLen::try_from_len(self.reason.len())?; let mut b = Vec::with_capacity(80+self.signature.len()+self.reason.len()); b.extend_from_slice(&self.capability_id.encode()); b.extend_from_slice(&self.holder_pub.to_bytes()); b.extend_from_slice(&sl.to_le_bytes()); b.extend_from_slice(&self.signature); b.extend_from_slice(&rl.to_le_bytes()); b.extend_from_slice(&self.reason); b.extend_from_slice(&self.fee.to_le_bytes()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 80 { return Err(ContractError::IoError("RevokeCapabilityParams: too short".into())); } let capability_id = CapabilityId::decode(read_slice(data, 0, 32 - 0)?)?; let holder_pub = PublicKey::from_bytes(read_field::<32>(data, 32)?).map_err(|e| ContractError::IoError(format!("RevokeCapabilityParams: invalid holder_pub: {}", e)))?; let sig_len = SerializedLen::from_le_bytes(read_field::<4>(data, 64)?).to_usize(); let p = 68+sig_len; if data.len() < p+4+8 { return Err(ContractError::IoError("RevokeCapabilityParams: truncated".into())); } let signature = read_slice(data, 68, (p) - (68))?.to_vec(); let reason_len = SerializedLen::from_le_bytes(read_field::<4>(data, p)?).to_usize(); let r = p+4+reason_len; if data.len() != r+8 { return Err(ContractError::IoError(format!("RevokeCapabilityParams: expected {} bytes, got {}", r+8, data.len()))); } let reason = read_slice(data, p+4, (r) - (p+4))?.to_vec(); let fee = u64::from_le_bytes(read_field::<8>(data, r)?); Ok(RevokeCapabilityParams { capability_id, holder_pub, signature, reason, fee }) } }
+#[derive(Debug, Clone)]
+pub struct RevokeCapabilityParams {
+    pub capability_id: CapabilityId,
+    pub holder_pub: PublicKey,
+    /// The credential the revoking party presents. The contract loads it and requires its stored
+    /// `holder_pub` to equal `holder_pub` above, so a caller cannot name a key it does not hold and
+    /// a `holder_pub` that is not a holder of the capability is refused. This is what makes the
+    /// **holder's** revocation path authenticated (`OBL-C255`); the issuer may also revoke.
+    pub credential_nullifier: IntentNullifier,
+    /// The call's nonce. The signature binds it; it is caller-supplied because the signature
+    /// cannot cover the host transaction commitment (the commitment covers the call data, which
+    /// contains the signature — the `OBL-C198` fixed point). Same binding level
+    /// `VerifyCapabilityParams` accepts for the holder signature.
+    pub tx_nonce: pallas::Base,
+    pub signature: Vec<u8>,
+    pub reason: Vec<u8>,
+    pub fee: u64,
+}
+
+/// Domain separator for the revocation signature message. 11 is the next free
+/// `DRK_POSEIDON_DOMAIN_*` slot; the message is signed by Schnorr rather than hashed by Poseidon, so
+/// this is a fixed 32-byte prefix, not a Poseidon domain input.
+pub const CAPABILITY_REVOKE_DOMAIN: pallas::Base = pallas::Base::from_raw([11, 0, 0, 0]);
+
+/// Domain separator for the revocation **marker key** in the nullifiers tree. The marker must not
+/// share a construction namespace with credential nullifiers (which are 3-argument Poseidon); the
+/// fourth argument separates them. 12 is the next free domain slot.
+pub const CAPABILITY_REVOKE_KEY_DOMAIN: pallas::Base = pallas::Base::from_raw([12, 0, 0, 0]);
+
+/// The revocation marker key, `poseidon(domain, capability_id, holder_x, holder_y)`.
+///
+/// One function for the writer (`apply_revoke_capability_update`) and the reader
+/// (`verify_capability`), so the two cannot drift apart. Returns `None` only for a holder key with
+/// no affine coordinates, which `PublicKey` construction already rejects.
+pub fn capability_revoke_key(
+    capability_id: &CapabilityId,
+    holder_pub: &PublicKey,
+) -> Option<pallas::Base> {
+    let (hx, hy) = holder_pub.xy()?;
+    Some(poseidon_hash([
+        CAPABILITY_REVOKE_KEY_DOMAIN,
+        capability_id.inner(),
+        hx,
+        hy,
+    ]))
+}
+
+/// The signature message, `domain ‖ capability_id ‖ holder_pub ‖ credential_nullifier ‖
+/// tx_nonce ‖ reason`.
+///
+/// The first five fields are fixed-width, so the variable-length `reason` is unambiguous as the
+/// tail. The domain prevents a revocation signature from being replayed as any other identity
+/// signature. The contract accepts this signature from the **holder** named by `holder_pub` or from
+/// the capability's **issuer** — the two authorities the row and LR-22 name — and from no one else.
+pub fn capability_revoke_message(
+    capability_id: &CapabilityId,
+    holder_pub: &PublicKey,
+    credential_nullifier: &IntentNullifier,
+    tx_nonce: pallas::Base,
+    reason: &[u8],
+) -> Vec<u8> {
+    let mut m = Vec::with_capacity(160 + reason.len());
+    m.extend_from_slice(&CAPABILITY_REVOKE_DOMAIN.to_repr());
+    m.extend_from_slice(&capability_id.to_bytes());
+    m.extend_from_slice(&holder_pub.to_bytes());
+    m.extend_from_slice(&credential_nullifier.to_bytes());
+    m.extend_from_slice(&tx_nonce.to_repr());
+    m.extend_from_slice(reason);
+    m
+}
+
+impl RevokeCapabilityParams {
+    pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
+        let sl = SerializedLen::try_from_len(self.signature.len())?;
+        let rl = SerializedLen::try_from_len(self.reason.len())?;
+        let mut b = Vec::with_capacity(144 + self.signature.len() + self.reason.len());
+        b.extend_from_slice(&self.capability_id.to_bytes());
+        b.extend_from_slice(&self.holder_pub.to_bytes());
+        b.extend_from_slice(&self.credential_nullifier.to_bytes());
+        b.extend_from_slice(&self.tx_nonce.to_repr());
+        b.extend_from_slice(&sl.to_le_bytes());
+        b.extend_from_slice(&self.signature);
+        b.extend_from_slice(&rl.to_le_bytes());
+        b.extend_from_slice(&self.reason);
+        b.extend_from_slice(&self.fee.to_le_bytes());
+        Ok(b)
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 144 {
+            return Err(ContractError::IoError("RevokeCapabilityParams: too short".into()));
+        }
+        let capability_id = CapabilityId::from_bytes(read_field::<32>(data, 0)?).ok_or_else(|| {
+            ContractError::IoError("RevokeCapabilityParams: invalid capability_id".into())
+        })?;
+        let holder_pub = PublicKey::from_bytes(read_field::<32>(data, 32)?)
+            .map_err(|e| ContractError::IoError(format!("RevokeCapabilityParams: invalid holder_pub: {}", e)))?;
+        let credential_nullifier = IntentNullifier::from_bytes(read_field::<32>(data, 64)?)
+            .map_err(|_| ContractError::IoError(
+                "RevokeCapabilityParams: invalid credential_nullifier".into()
+            ))?;
+        let tx_nonce = pallas::Base::from_repr(read_field::<32>(data, 96)?)
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("RevokeCapabilityParams: invalid tx_nonce".into()))?;
+        let sig_len = SerializedLen::from_le_bytes(read_field::<4>(data, 128)?).to_usize();
+        let p = 132 + sig_len;
+        if data.len() < p + 4 + 8 {
+            return Err(ContractError::IoError("RevokeCapabilityParams: truncated".into()));
+        }
+        let signature = read_slice(data, 132, p - 132)?.to_vec();
+        let reason_len = SerializedLen::from_le_bytes(read_field::<4>(data, p)?).to_usize();
+        let r = p + 4 + reason_len;
+        if data.len() != r + 8 {
+            return Err(ContractError::IoError(format!(
+                "RevokeCapabilityParams: expected {} bytes, got {}",
+                r + 8,
+                data.len()
+            )));
+        }
+        let reason = read_slice(data, p + 4, r - (p + 4))?.to_vec();
+        let fee = u64::from_le_bytes(read_field::<8>(data, r)?);
+        Ok(RevokeCapabilityParams {
+            capability_id,
+            holder_pub,
+            credential_nullifier,
+            tx_nonce,
+            signature,
+            reason,
+            fee,
+        })
+    }
+}
 
 // ============================================================================
 // MINIMAL VIABLE INFORMATION EXAMPLES

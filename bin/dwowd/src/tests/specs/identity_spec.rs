@@ -3,7 +3,9 @@
 use dwow_contract_test_harness::harness::{ContractHarness, IdentityHarness};
 use dwow_sdk::crypto::{IDENTITY_CONTRACT_ID, IntentNullifier, PublicKey, SecretKey, pasta_prelude::PrimeField, poseidon_hash};
 use dwow_sdk::pasta::pallas;
-use dwow_identity_contract::model::{CapabilityId, CredentialRequirement};
+use dwow_identity_contract::model::{
+    capability_revoke_key, CapabilityId, CredentialRequirement,
+};
 
 use crate::tests::blockchain::HeavyweightPipeline;
 use crate::tests::uniform_runner::{
@@ -52,10 +54,17 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
         pallas::Base::zero(), pallas::Base::zero(),
     ]).to_repr().to_vec();
     // Credential nullifier = poseidon_hash([1, credential_secret, commitment]).
-    let credential_nullifier = poseidon_hash([
+    let credential_nf = IntentNullifier::from_base(poseidon_hash([
         pallas::Base::from(1u64), credential_secret, commitment,
-    ]).to_repr().to_vec();
+    ]));
+    let credential_nullifier = credential_nf.to_bytes().to_vec();
     let cap_key = cap_id.to_repr().to_vec();
+    // The revocation marker the holder path writes, and verify must read.
+    let holder_pub = PublicKey::from_secret(SecretKey::from_base(credential_secret));
+    let revoke_key = capability_revoke_key(&CapabilityId(cap_id), &holder_pub)
+        .expect("the holder key has coordinates")
+        .to_repr()
+        .to_vec();
 
     ContractTestSpec {
         name: "identity",
@@ -143,22 +152,6 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                     }
                 }),
             },
-            // After `VerifyCapabilityV1`, not before it. The order used to be the reverse, and the
-            // verification endpoint therefore ran against a credential this one had just revoked —
-            // which passed only because revocation was checked nowhere. It is checked now.
-            EndpointSpec {
-                name: "RevokeCredentialV1", is_zk: false,
-                expectation: EndpointExpectation::Success,
-                generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = credential_nullifier.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("credential must be updated".into())); } Ok(()) } })),
-                generate: Box::new(move || {
-                    let nf = IntentNullifier::from_base(poseidon_hash([
-                        pallas::Base::from(1u64), credential_secret, commitment,
-                    ]));
-                    let r = h.revoke_credential(issuer_secret, nf, b"test".to_vec())?;
-                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
-                }),
-            },
             EndpointSpec {
                 name: "IssueCapabilityV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
@@ -175,18 +168,102 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                     }
                 }),
             },
+            // The capability cycle runs before `RevokeCredentialV1` (last): revoking the credential
+            // first would make every later verify refuse with `CredentialRevoked` (Custom(4)) and
+            // mask the capability-revocation refusal these rows exist to exercise.
             EndpointSpec {
-                name: "RevokeCapabilityV1", is_zk: false,
+                name: "RevokeCapabilityV1_Holder", is_zk: false,
+                // C255's proposition: the **holder** may revoke. The holder signs the revocation
+                // message; the contract loads the capability and the credential it presents,
+                // requires the stored holder key to equal the named one, and accepts the holder's
+                // signature.
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
+                verify_state: Some(Box::new({ let k = revoke_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("revocation marker must be written".into())); } Ok(()) } })),
+                generate: Box::new(move || {
+                    let r = h.revoke_capability(
+                        SecretKey::from_base(credential_secret),
+                        CapabilityId(cap_id),
+                        holder_pub,
+                        credential_nf,
+                        pallas::Base::from(0u64),
+                        b"holder-revoke".to_vec(),
+                    )?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+                }),
+            },
+            EndpointSpec {
+                name: "VerifyCapabilityV1_AfterRevoke", is_zk: true,
+                // The effect of revocation: the same valid credential + holder signature that
+                // passed above must now be refused because the marker is read. Before the read
+                // was added this verify succeeded, so this row was red; the refusal must be the
+                // contract's own `CapabilityRevoked` = Custom(22), not a later check.
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(22))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
-                        let r = h.revoke_capability(CapabilityId(cap_id), pk,
-                            b"test".to_vec())?;
-                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+                        let holder = PublicKey::from_secret(SecretKey::from_base(credential_secret));
+                        let r = h.verify_capability(&[], credential_secret, cap_id,
+                            pallas::Base::from(50u64),
+                            b"role", pallas::Base::from(100u64),
+                            b"tenure", pallas::Base::from(200u64),
+                            pallas::Base::from(300u64),
+                            pk, holder, schema_hash, 0, 100000, true)?;
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
+                }),
+            },
+            EndpointSpec {
+                name: "RevokeCapabilityV1_Issuer", is_zk: false,
+                // The issuer is the other authority the row and LR-22 name. The same records and
+                // message are used; the issuer's key signs. (The marker is already set, so this
+                // re-writes it idempotently — the point is that the authority is accepted.)
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new(move || {
+                    let r = h.revoke_capability(
+                        SecretKey::from_base(issuer_secret),
+                        CapabilityId(cap_id),
+                        holder_pub,
+                        credential_nf,
+                        pallas::Base::from(0u64),
+                        b"issuer-revoke".to_vec(),
+                    )?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+                }),
+            },
+            EndpointSpec {
+                name: "RevokeCapabilityV1_NonIssuer", is_zk: false,
+                // Neither the holder nor the issuer signs. The contract must refuse, and the
+                // refusal must be its signature check (`InvalidSignature` = Custom(13)), not a
+                // later state error.
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(13))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new(move || {
+                    let attacker = SecretKey::from_base(pallas::Base::from(777u64));
+                    let r = h.revoke_capability(
+                        attacker,
+                        CapabilityId(cap_id),
+                        holder_pub,
+                        credential_nf,
+                        pallas::Base::from(0u64),
+                        b"attacker".to_vec(),
+                    )?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+                }),
+            },
+            EndpointSpec {
+                name: "RevokeCredentialV1", is_zk: false,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: Some(Box::new({ let k = credential_nullifier.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("credential must be updated".into())); } Ok(()) } })),
+                generate: Box::new(move || {
+                    let r = h.revoke_credential(issuer_secret, credential_nf, b"test".to_vec())?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                 }),
             },
         ],

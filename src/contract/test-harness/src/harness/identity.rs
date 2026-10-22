@@ -31,7 +31,10 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, poseidon_hash, PublicKey, SecretKey, schnorr::SchnorrSecret},
+    crypto::{
+        pasta_prelude::*, poseidon_hash, IntentNullifier, PublicKey, SecretKey,
+        schnorr::SchnorrSecret,
+    },
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -41,7 +44,7 @@ use dwow_identity_contract::client::{
     verify_capability::{VerifyCapabilityCallData, create_verify_capability_proof, VerifyCapabilityPublicInputs},
 };
 use dwow_identity_contract::model::{
-    CapabilityId, InitializeParams, IssueCredentialParams,
+    capability_revoke_message, CapabilityId, InitializeParams, IssueCredentialParams,
     RegisterCapabilityParams, IssueCapabilityParams, VerifyCapabilityParams,
     RevokeCapabilityParams, RevokeCredentialParams,
 };
@@ -364,16 +367,38 @@ impl IdentityHarness {
         Ok(IssueCapabilityHarnessResult { call_data })
     }
 
-    /// Revoke a capability (0x07)
+    /// Revoke a capability (0x07).
+    ///
+    /// `signer` may be the **holder** (whose key must equal the credential's stored `holder_pub`)
+    /// or the capability's **issuer**; the contract loads both records and verifies the signature
+    /// over `capability_revoke_message(capability_id, holder_pub, credential_nullifier, tx_nonce,
+    /// reason)` (`OBL-C255`). Any other key produces a call the contract refuses with
+    /// `InvalidSignature`.
     pub fn revoke_capability(
         &self,
+        signer: SecretKey,
         capability_id: CapabilityId,
         holder_pub: PublicKey,
+        credential_nullifier: IntentNullifier,
+        tx_nonce: pallas::Base,
         reason: Vec<u8>,
     ) -> Result<RevokeCapabilityHarnessResult> {
+        let message = capability_revoke_message(
+            &capability_id,
+            &holder_pub,
+            &credential_nullifier,
+            tx_nonce,
+            &reason,
+        );
+        let signature = signer.sign(&message).encode();
         let params = RevokeCapabilityParams {
-            capability_id, holder_pub,
-            signature: vec![], reason, fee: 0,
+            capability_id,
+            holder_pub,
+            credential_nullifier,
+            tx_nonce,
+            signature,
+            reason,
+            fee: 0,
         };
         let mut call_data = vec![0x07]; // RevokeCapabilityV1
         call_data.extend_from_slice(&params.encode()?);

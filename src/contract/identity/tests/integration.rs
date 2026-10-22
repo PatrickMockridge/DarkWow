@@ -32,7 +32,11 @@
 //! the test harness infrastructure (see test-harness/src/vks.rs).
 
 use dwow_identity_contract::{
-    model::{Attribute, AttributeType, Credential, CredentialSchema, InitializeParams, IssueCredentialParams, Issuer},
+    model::{
+        capability_revoke_message, Attribute, AttributeType, CapabilityId, Credential,
+        CredentialSchema, InitializeParams, IssueCredentialParams, Issuer,
+        RevokeCapabilityParams,
+    },
     IdentityFunction,
 };
 use dwow_serial::{deserialize, serialize};
@@ -244,4 +248,63 @@ fn test_credential_revoked() {
     };
 
     assert!(credential.revoked);
+}
+
+/// `OBL-C255` — the revocation signature message binds every field the contract checks, and the
+/// same inputs produce the same message (the signature is deterministic over it).
+#[test]
+fn capability_revoke_message_binds_every_field() {
+    let id = CapabilityId(pallas::Base::from(1u64));
+    let holder = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2u64)));
+    let cred = dwow_sdk::crypto::IntentNullifier::from_base(pallas::Base::from(7u64));
+    let nonce = pallas::Base::from(3u64);
+    let message = capability_revoke_message(&id, &holder, &cred, nonce, b"reason");
+    assert_eq!(message, capability_revoke_message(&id, &holder, &cred, nonce, b"reason"));
+
+    let other_id = CapabilityId(pallas::Base::from(9u64));
+    let other_holder = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(4u64)));
+    let other_cred = dwow_sdk::crypto::IntentNullifier::from_base(pallas::Base::from(8u64));
+    assert_ne!(message, capability_revoke_message(&other_id, &holder, &cred, nonce, b"reason"));
+    assert_ne!(message, capability_revoke_message(&id, &other_holder, &cred, nonce, b"reason"));
+    assert_ne!(message, capability_revoke_message(&id, &holder, &other_cred, nonce, b"reason"));
+    assert_ne!(message, capability_revoke_message(&id, &holder, &cred, pallas::Base::from(5u64), b"reason"));
+    assert_ne!(message, capability_revoke_message(&id, &holder, &cred, nonce, b"other"));
+}
+
+/// `OBL-C255` — the marker key is domain-separated from credential nullifiers and binds the
+/// capability and the holder. Two capabilities or two holders cannot share one marker.
+#[test]
+fn capability_revoke_key_binds_capability_and_holder() {
+    use dwow_identity_contract::model::capability_revoke_key;
+    let id = CapabilityId(pallas::Base::from(1u64));
+    let holder = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2u64)));
+    let other_id = CapabilityId(pallas::Base::from(9u64));
+    let other_holder = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(4u64)));
+    let key = capability_revoke_key(&id, &holder).expect("coordinates");
+    assert_eq!(Some(key), capability_revoke_key(&id, &holder));
+    assert_ne!(Some(key), capability_revoke_key(&other_id, &holder));
+    assert_ne!(Some(key), capability_revoke_key(&id, &other_holder));
+}
+
+/// The params wire format carries the nonce the signature binds, and round-trips.
+#[test]
+fn revoke_capability_params_roundtrip_with_nonce() {
+    let params = RevokeCapabilityParams {
+        capability_id: CapabilityId(pallas::Base::from(11u64)),
+        holder_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(12u64))),
+        credential_nullifier: dwow_sdk::crypto::IntentNullifier::from_base(pallas::Base::from(14u64)),
+        tx_nonce: pallas::Base::from(13u64),
+        signature: vec![1, 2, 3, 4],
+        reason: b"why".to_vec(),
+        fee: 7,
+    };
+    let decoded = RevokeCapabilityParams::decode(&params.encode().expect("encode"))
+        .expect("decode");
+    assert_eq!(decoded.capability_id, params.capability_id);
+    assert_eq!(decoded.holder_pub, params.holder_pub);
+    assert_eq!(decoded.credential_nullifier, params.credential_nullifier);
+    assert_eq!(decoded.tx_nonce, params.tx_nonce);
+    assert_eq!(decoded.signature, params.signature);
+    assert_eq!(decoded.reason, params.reason);
+    assert_eq!(decoded.fee, params.fee);
 }

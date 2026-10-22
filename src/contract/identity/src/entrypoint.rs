@@ -651,6 +651,23 @@ fn process_verify_capability_instruction(
         return Err(IdentityError::InvalidSignature.into())
     }
 
+    // 1c. Revocation. The authenticated revocation marker (`capability_revoke_key`, written by
+    //     `apply_revoke_capability_update`) must deny use. It is read from the **stored** holder key
+    //     and the capability id, after possession was proven above, so a caller cannot probe another
+    //     holder's revocation status and cannot present a key that does not hold the credential.
+    //     Until 2026-10-21 the marker was written and read by nothing, so a revoked capability
+    //     verified exactly like a live one (`OBL-C255` / `OBL-Z17`).
+    let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
+    let revoke_key = capability_revoke_key(
+        &params.capability_proof.capability_id,
+        &credential.holder_pub,
+    )
+    .ok_or(IdentityError::InvalidSignature)?;
+    if wasm::db::db_contains_key(nullifiers_db, &revoke_key.to_repr())? {
+        msg!("[identity::verify_capability] Error: capability revoked for this holder");
+        return Err(IdentityError::CapabilityRevoked.into())
+    }
+
     // 2. The credential's own record must satisfy the capability — the *stored* schema and issuer,
     //    not the caller's copies of them. Both claims are public inputs of the proof as well, so the
     //    comparison is two-sided: the record against the requirement, and the proof against the
@@ -753,7 +770,7 @@ fn apply_verify_capability_update(_cid: ContractId, _update: VerifyCapabilityUpd
 // ============================================================================
 
 fn process_revoke_capability_instruction(
-    _cid: ContractId,
+    cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -767,8 +784,49 @@ fn process_revoke_capability_instruction(
 
     msg!("[identity::revoke_capability] Revoking capability");
 
-    // Revocation records a marker for the caller-supplied `holder_pub`. It does **not** verify
-    // `params.signature` — the signature field is unread (`OBL-C255`).
+    // Authorization. The **holder** whose capability is being revoked may revoke it, and the
+    // capability's **issuer** may too; no one else may. That is the row's proposition and LR-22's
+    // exit ("a non-holder/non-issuer is refused"), without rewording either.
+    //
+    // The caller presents the credential the holder key belongs to. Loading it and requiring its
+    // stored `holder_pub` to equal the named key is what makes the holder path authenticated: a
+    // signature over a caller-chosen key alone would prove key control, not that the key holds this
+    // capability. The signature covers the capability, the holder, the credential, the call's nonce
+    // and the reason.
+    //
+    // Until 2026-10-21 this arm read neither the signature nor any record, so anyone could write a
+    // revocation marker for any `(capability_id, holder_pub)` (`OBL-C255` / LR-22). The first
+    // repair authenticated only the issuer; the red-team audit reopened it because the row says the
+    // holder.
+    let capabilities_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
+    let cap_data = wasm::db::db_get(capabilities_db, &params.capability_id.to_bytes())?
+        .ok_or(IdentityError::CapabilityNotFound)?;
+    let capability = Capability::decode(&cap_data)?;
+
+    let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
+    let cred_data = wasm::db::db_get(credentials_db, &params.credential_nullifier.to_bytes())?
+        .ok_or(IdentityError::CredentialNotFound)?;
+    let credential = Credential::decode(&cred_data)?;
+    if credential.holder_pub != params.holder_pub {
+        msg!("[identity::revoke_capability] Error: the named holder does not hold the presented credential");
+        return Err(IdentityError::InvalidSignature.into())
+    }
+
+    let signature = dwow_sdk::crypto::schnorr::Signature::decode(&params.signature)
+        .ok_or(IdentityError::InvalidSignature)?;
+    let message = capability_revoke_message(
+        &params.capability_id,
+        &params.holder_pub,
+        &params.credential_nullifier,
+        params.tx_nonce,
+        &params.reason,
+    );
+    let by_holder = params.holder_pub.verify(&message, &signature);
+    let by_issuer = capability.issuer_pub.verify(&message, &signature);
+    if !by_holder && !by_issuer {
+        msg!("[identity::revoke_capability] Error: neither the holder nor the issuer signed this revocation");
+        return Err(IdentityError::InvalidSignature.into())
+    }
 
     let update = RevokeCapabilityUpdateV1 {
         capability_id: params.capability_id,
@@ -780,12 +838,12 @@ fn process_revoke_capability_instruction(
 }
 
 fn apply_revoke_capability_update(cid: ContractId, update: RevokeCapabilityUpdateV1) -> ContractResult {
-    // Write revocation marker to the nullifiers tree.
-    // Keyed by poseidon_hash(capability_id, holder_pub_x, holder_pub_y)
-    // so that capability-gated entrypoints can check for revocation.
+    // Write the revocation marker to the nullifiers tree. The key is one shared derivation
+    // (`capability_revoke_key`: domain-separated, so it cannot share a namespace with the 3-argument
+    // credential nullifier) used by both this writer and `verify_capability`'s reader.
     let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
-    let (hx, hy) = update.holder_pub.xy().ok_or(IdentityError::InvalidSignature)?;
-    let revoke_key = poseidon_hash([update.capability_id.inner(), hx, hy]);
+    let revoke_key = capability_revoke_key(&update.capability_id, &update.holder_pub)
+        .ok_or(IdentityError::InvalidSignature)?;
     wasm::db::db_mark_spent(nullifiers_db, &revoke_key.to_repr())?;
     msg!("[identity::revoke_capability::update] Capability revoked");
     Ok(())

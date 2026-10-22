@@ -263,6 +263,39 @@ src/contract/identity/
 | 0x07 | `RevokeCapabilityV1` | Revoke a capability |
 | 0x08 | `RegisterIssuerV1` | Register a trusted credential issuer |
 
+### Capability revocation is the holder's or the issuer's act
+
+`RevokeCapabilityV1` (0x07) is authorized by the **holder** whose capability is being revoked, or by
+the capability's **issuer** — no one else. The call carries `capability_id`, `holder_pub`,
+`credential_nullifier`, `tx_nonce`, `signature` and `reason`. The contract loads:
+
+* the capability record (for the stored `issuer_pub`), and
+* the credential record named by `credential_nullifier`, and requires its stored `holder_pub` to
+  equal `holder_pub` — this is what makes the holder path possession, not merely key control, since
+  the holder record itself was removed in `OBL-C171`;
+
+then verifies the signature over
+
+```
+CAPABILITY_REVOKE_DOMAIN ‖ capability_id ‖ holder_pub ‖ credential_nullifier ‖ tx_nonce ‖ reason
+```
+
+against the holder key or the stored issuer key. An absent capability is `CapabilityNotFound`
+(`Custom(20)`); an absent credential is `CredentialNotFound`; a missing, holder-mismatched or
+non-authority signature is `InvalidSignature` (`Custom(13)`), before any state is prepared. The nonce
+is caller-supplied because the signature cannot cover the host transaction commitment (the
+commitment covers the call data, which includes the signature — `OBL-C198`); it is the same binding
+level `VerifyCapabilityV1` accepts for the holder signature.
+
+The revocation marker is `poseidon(CAPABILITY_REVOKE_KEY_DOMAIN, capability_id, holder_x,
+holder_y)` in the `nullifiers` tree; `VerifyCapabilityV1` reads it with the **stored** holder key
+after the holder signature is verified and refuses with `CapabilityRevoked` (`Custom(22)`). One
+derivation, `capability_revoke_key`, is shared by the writer and the reader. The domain argument
+separates this key from the credential nullifiers stored in the same tree.
+
+`OBL-C255` / LR-22 recorded the unauthenticated arm this replaces; `OBL-Z17` recorded the unread
+marker this closes.
+
 ## ZK Circuits
 
 | Circuit | Namespace | Purpose |
