@@ -337,14 +337,11 @@ impl IdentityHarness {
         credential_requirement: dwow_identity_contract::model::CredentialRequirement,
         max_holders: Option<u64>,
     ) -> Result<RegisterCapabilityHarnessResult> {
-        // Compute capability_id matching contract's compute_capability_id
-        let mut data = credential_requirement.encode()?;
-        data.extend_from_slice(&name);
-        let mut b = [0u8; 8];
-        let len = data.len().min(8);
-        b[..len].copy_from_slice(&data[..len]);
-        let value = u64::from_le_bytes(b);
-        let capability_id = CapabilityId(poseidon_hash([pallas::Base::from(value)]));
+        // The contract's own derivation, called rather than re-implemented so the two cannot drift.
+        let capability_id = dwow_identity_contract::model::derive_capability_id(
+            &name,
+            &credential_requirement,
+        )?;
         let params = RegisterCapabilityParams { name, credential_requirement, max_holders, fee: 0 };
         let mut call_data = vec![0x04]; // RegisterCapabilityV1
         call_data.extend_from_slice(&params.encode()?);

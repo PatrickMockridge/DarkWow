@@ -50,11 +50,9 @@ proof_circuit = "ConsumeClaimV2"
 name = "validate_claim"
 code = 6
 
-[[functions]]
-name = "check_not_revoked"
-code = 7
-requires_proof = true
-proof_circuit = "CheckNotRevokedV2"
+# Code 7 was `check_not_revoked`. It returned `is_not_revoked: true` unconditionally and its
+# circuit bound only the tx pair; removed 2026-10-22. Identity's `verify_capability` reads the
+# revocation marker and is the real non-revocation check. 7 is unassigned.
 
 # No `requires_proof`: this is a host lookup, and its job is to *fail* the call when the id names
 # nothing or names an inert attestation — which is what lets `labor_market`'s `create_job_v1` require
@@ -188,10 +186,6 @@ namespace = "VerifyClaimV2"
 [[circuits]]
 name = "ConsumeClaimV2"
 namespace = "ConsumeClaimV2"
-
-[[circuits]]
-name = "CheckNotRevokedV2"
-namespace = "CheckNotRevokedV2"
 
 [[circuits]]
 name = "DelegateAttestationV2"

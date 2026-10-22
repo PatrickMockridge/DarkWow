@@ -79,11 +79,11 @@ pub enum DerivedRule {
     /// leaf in the witness map, because the circuit declares it where the ownership constraint
     /// needs it). Passing the secret keeps the leaf's owner-binding without a forward
     /// reference, and the derivation happens inside this rule.
-    Leaf { id: usize, contents: usize, nonce: usize, secret: usize },
+    Leaf { id: usize, contents: usize, nonce: usize, secret: usize, asset: Option<usize> },
     /// `poseidon(5, id, contents, nonce + 1, poseidon(7, secret))` — purse in-circuit nonce
     /// increment (HAZOP V1/V2: express the produced-nonce as a derived value, not
-    /// a witness).
-    LeafIncrement { id: usize, contents: usize, nonce: usize, secret: usize },
+    /// a witness). The optional fifth operand is the asset (purse, 2026-10-22).
+    LeafIncrement { id: usize, contents: usize, nonce: usize, secret: usize, asset: Option<usize> },
     /// `w[a] + 1` (base field) — expose the incremented nonce for the produce note.
     Increment { a: usize },
     /// `merkle_root(pos, path, poseidon(5, id, contents, nonce))`
@@ -126,10 +126,16 @@ impl DerivedRule {
         match *self {
             DerivedRule::Nullifier { secret, id, nonce } => vec![secret, id, nonce],
             DerivedRule::TxBinding { txc, txn } => vec![txc, txn],
-            DerivedRule::Leaf { id, contents, nonce, secret } =>
-                vec![id, contents, nonce, secret],
-            DerivedRule::LeafIncrement { id, contents, nonce, secret } =>
-                vec![id, contents, nonce, secret],
+            DerivedRule::Leaf { id, contents, nonce, secret, asset } => {
+                let mut v = vec![id, contents, nonce, secret];
+                v.extend(asset);
+                v
+            }
+            DerivedRule::LeafIncrement { id, contents, nonce, secret, asset } => {
+                let mut v = vec![id, contents, nonce, secret];
+                v.extend(asset);
+                v
+            }
             DerivedRule::Increment { a } => vec![a],
             DerivedRule::MerkleRoot { pos, path, id, contents, nonce } =>
                 vec![pos, path, id, contents, nonce],
@@ -287,8 +293,16 @@ fn parse_derived_rule(s: &str) -> Result<DerivedRule, crate::error::ProverError>
     Ok(match name {
         "nullifier" => { let a = slots(3)?; DerivedRule::Nullifier { secret: a[0], id: a[1], nonce: a[2] } }
         "tx_binding" => { let a = slots(2)?; DerivedRule::TxBinding { txc: a[0], txn: a[1] } }
-        "leaf" => { let a = slots(4)?; DerivedRule::Leaf { id: a[0], contents: a[1], nonce: a[2], secret: a[3] } }
-        "leaf_increment" => { let a = slots(4)?; DerivedRule::LeafIncrement { id: a[0], contents: a[1], nonce: a[2], secret: a[3] } }
+        // Four operands is the historical leaf; the optional fifth binds the asset (purse's
+        // 2026-10-22 fix — the leaf must commit to the token type, not just id/balance/nonce/owner).
+        "leaf" => {
+            let a = slots_range(ops, 4, 5)?;
+            DerivedRule::Leaf { id: a[0], contents: a[1], nonce: a[2], secret: a[3], asset: a.get(4).copied() }
+        }
+        "leaf_increment" => {
+            let a = slots_range(ops, 4, 5)?;
+            DerivedRule::LeafIncrement { id: a[0], contents: a[1], nonce: a[2], secret: a[3], asset: a.get(4).copied() }
+        }
         "increment" => { let a = slots(1)?; DerivedRule::Increment { a: a[0] } }
         "merkle_root" => { let a = slots(5)?; DerivedRule::MerkleRoot { pos: a[0], path: a[1], id: a[2], contents: a[3], nonce: a[4] } }
         "owner_pub" => { let a = slots(1)?; DerivedRule::OwnerPub { secret: a[0] } }
@@ -308,6 +322,22 @@ fn parse_derived_rule(s: &str) -> Result<DerivedRule, crate::error::ProverError>
 }
 
 /// Parse a comma-separated list of exactly `expected` 0-based slot indices.
+fn slots_range(s: &str, min: usize, max: usize) -> Result<Vec<usize>, crate::error::ProverError> {
+    use crate::error::ProverError;
+    let slots: Result<Vec<usize>, _> =
+        s.split(',').map(|t| t.trim().parse::<usize>()).collect();
+    let slots = slots.map_err(|_| {
+        ProverError::InvalidDerivedRule(format!("derived operand '{s}' has a non-integer slot index"))
+    })?;
+    if slots.len() < min || slots.len() > max {
+        return Err(ProverError::InvalidDerivedRule(format!(
+            "derived rule expects {min}..={max} operands, got {}",
+            slots.len()
+        )))
+    }
+    Ok(slots)
+}
+
 fn parse_slots(s: &str, expected: usize) -> Result<Vec<usize>, crate::error::ProverError> {
     use crate::error::ProverError;
     let slots: Result<Vec<usize>, _> =

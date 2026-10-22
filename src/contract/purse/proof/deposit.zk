@@ -40,7 +40,8 @@ witness "Deposit" {
     Base tx_binding,
     # Appended, not inserted: the twenty-two above are slot indices the manifest's `witness_map`,
     # `public_inputs` and `note_schema` all name, so a new witness goes at the end where it moves none
-    # of them.
+    # of them. The leaf now commits to it (2026-10-22); the wallet's derived rule may read an input
+    # slot from any position, so no renumbering is needed.
     Base asset_id,
     Base derived_purse_id,
 }
@@ -62,8 +63,10 @@ circuit "Deposit" {
     constrain_equal_base(nf_circuit, nullifier);
     constrain_instance(nullifier);
 
-    # Merkle inclusion of OLD state
-    old_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, old_balance, state_nonce, owner_pub);
+    # Merkle inclusion of OLD state. **The asset is part of the leaf** (2026-10-22): without it, two
+    # operations on one `purse_id` with different `asset_id`s produced leaves the same tree could
+    # not distinguish, and `derived_purse_id` was published to a host that read it nowhere.
+    old_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, old_balance, state_nonce, owner_pub, asset_id);
     root = merkle_root(leaf_pos, path, old_leaf);
     constrain_equal_base(root, expected_root);
     constrain_instance(expected_root);
@@ -107,7 +110,7 @@ circuit "Deposit" {
     # produced leaf's nonce differs from the consumed nonce. No extra witness: the
     # increment is a derived value, matching the generic prover's `leaf_increment` rule.
     new_nonce = base_add(state_nonce, ONE);
-    new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, new_balance, new_nonce, owner_pub);
+    new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, new_balance, new_nonce, owner_pub, asset_id);
     constrain_equal_base(new_leaf_circuit, new_leaf);
     constrain_instance(new_leaf);
 

@@ -1055,7 +1055,9 @@ pub fn apply_genesis_deployments(
 
         // Manifest bytes ride in params.ix (host-side metadata write, keyed
         // contract_id || b"_manifest" — same key as store.set_contract_data
-        // used before). Empty for Deployooor and NativeToken.
+        // used before). All nine genesis contracts carry one; NativeToken's was
+        // empty until its manifest landed, and Deployooor's was empty by an
+        // oversight (`OBL-C250`'s batch).
         if !params.ix.is_empty() {
             let mut manifest_key = Vec::from(contract_id.to_bytes().as_slice());
             manifest_key.extend_from_slice(b"_manifest");

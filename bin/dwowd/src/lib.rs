@@ -460,8 +460,8 @@ fn build_genesis_deployment_txs() -> Vec<dwow_chain::Transaction> {
 
     // WASM + manifest table, in genesis_contracts() order.
     let contracts: Vec<(&[u8], &[u8], &str)> = vec![
-        (include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"), &[], "Deployooor"),
-        (include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"), &[], "NativeToken"),
+        (include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"), include_bytes!("../../../src/contract/deployooor/manifest.toml"), "Deployooor"),
+        (include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"), include_bytes!("../../../src/contract/native_token/manifest.toml"), "NativeToken"),
         (include_bytes!("../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm"), include_bytes!("../../../src/contract/promissory_note/manifest.toml"), "PromissoryNote"),
         (include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"), include_bytes!("../../../src/contract/identity/manifest.toml"), "Identity"),
         (include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm"), include_bytes!("../../../src/contract/oracle/manifest.toml"), "Oracle"),

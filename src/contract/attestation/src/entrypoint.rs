@@ -56,8 +56,7 @@ use crate::{
         CreateAttestationUpdateV1, CreateClaimParamsV1, CreateClaimUpdateV1,
         ExpireAttestationParamsV1, ExpireAttestationUpdateV1, RevokeAttestationParamsV1,
         RevokeAttestationUpdateV1, ValidateClaimParamsV1, ValidateClaimUpdateV1,
-        VerifyClaimParamsV1, VerifyClaimUpdateV1, CheckNotRevokedParamsV1,
-        CheckNotRevokedUpdateV1, CheckAttestationParamsV1, CheckAttestationUpdateV1,
+        VerifyClaimParamsV1, VerifyClaimUpdateV1, CheckAttestationParamsV1, CheckAttestationUpdateV1,
         DelegateAttestationParamsV1, DelegateAttestationUpdateV1,
         VerifyChainParamsV1, VerifyChainUpdateV1, UpdateDelegationParamsV1,
         UpdateDelegationUpdateV1,
@@ -70,7 +69,6 @@ use crate::{
     ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V2,
-    ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V2,
@@ -102,8 +100,6 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // V2 circuits (V1 loads removed — rc3 migration) (HAZOP RC3: domain separation)
     let attest_slash_v2_bincode = include_bytes!("../proof/attest_slash.zk.bin");
     wasm::db::zkas_db_set(&attest_slash_v2_bincode[..])?;
-    let check_not_revoked_v2_bincode = include_bytes!("../proof/check_not_revoked.zk.bin");
-    wasm::db::zkas_db_set(&check_not_revoked_v2_bincode[..])?;
     let commit_fee_schedule_v2_bincode = include_bytes!("../proof/commit_fee_schedule.zk.bin");
     wasm::db::zkas_db_set(&commit_fee_schedule_v2_bincode[..])?;
     let consume_claim_v2_bincode = include_bytes!("../proof/consume_claim.zk.bin");
@@ -278,20 +274,6 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     txb,
                     Base::zero(),
                 ]}
-            ));
-        }
-        AttestationFunction::CheckNotRevokedV1 => {
-            let _params = match CheckNotRevokedParamsV1::decode(payload) {
-                Ok(p) => p,
-                Err(e) => {
-                    msg!("[attestation::get_metadata] Error: Failed to deserialize CheckNotRevokedParamsV1: {:?}", e);
-                    let _ = wasm::util::set_return_data(&vec![]); return Ok(());
-                }
-            };
-            zk_public_inputs.push((
-                ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V2.to_string(),
-                // Circuit constrain_instance order: tx_binding, tx_nonce
-                vec![txb, Base::zero()],
             ));
         }
         AttestationFunction::CheckAttestationV1 => {
@@ -522,10 +504,6 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         AttestationFunction::ValidateClaimV1 => {
             let params= ValidateClaimParamsV1::decode(payload)?;
             validate_claim_v1(cid, params)?
-        }
-        AttestationFunction::CheckNotRevokedV1 => {
-            let params= CheckNotRevokedParamsV1::decode(payload)?;
-            check_not_revoked_v1(cid, params)?
         }
         AttestationFunction::CheckAttestationV1 => {
             let params = CheckAttestationParamsV1::decode(payload)?;
@@ -1041,25 +1019,6 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Result<V
     Ok(ValidateClaimUpdateV1 { claim_id: params.claim_id, valid }.encode())
 }
 
-fn check_not_revoked_v1(cid: ContractId, params: CheckNotRevokedParamsV1) -> Result<Vec<u8>, ContractError> {
-    msg!("[attestation::check_not_revoked_v1] Checking nonce not revoked");
-
-    // `OBL-C198`: the params' `proof` is always empty now — the real proof rides the transaction's
-    // proof vector, which the commitment excludes — so the presence guard that stood here would
-    // reject every call. Its job moved to the node (`zk_verifier.rs`'s per-call count check).
-
-    // Check if proof already used (replay protection)
-    let nullifiers_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_NULLIFIERS_TREE)?;
-    let proof_hash = poseidon_hash([params.nonce, params.revocation_root]);
-    if wasm::db::db_contains_key(nullifiers_db, &proof_hash.to_repr())? {
-        msg!("[attestation::check_not_revoked_v1] Error: Proof already used");
-        return Err(ContractError::InvalidFunction.into())
-    }
-
-    msg!("[attestation::check_not_revoked_v1] Nonce {:?} is not revoked", params.nonce);
-    Ok(CheckNotRevokedUpdateV1 { is_not_revoked: true, proof_hash }.encode())
-}
-
 /// Resolve a **bare** `attestation_id` and refuse if it names nothing, or names an attestation that is
 /// not active. This is the callee `labor_market`'s `create_job_v1` requires as a child call, and the
 /// mechanism is worth stating: the check *reverts*, so a parent's requirement is enforced by the
@@ -1089,8 +1048,8 @@ fn check_attestation_v1(cid: ContractId, params: CheckAttestationParamsV1) -> Re
 fn delegate_attestation_v1(cid: ContractId, params: DelegateAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::delegate_attestation_v1] Delegating attestation: {:?}", params.delegation_id);
 
-    // `OBL-C198`: as `check_not_revoked_v1` — the params' `proof` is always empty and the presence
-    // check lives in the node (`zk_verifier.rs`'s per-call count check).
+    // `OBL-C198`: the params' `proof` is always empty and the presence check lives in the node
+    // (`zk_verifier.rs`'s per-call count check).
 
     // Check that delegator and delegatee are different
     if params.delegator_pub == params.delegatee_pub {
@@ -1116,8 +1075,8 @@ fn delegate_attestation_v1(cid: ContractId, params: DelegateAttestationParamsV1)
 fn verify_chain_v1(cid: ContractId, params: VerifyChainParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::verify_chain_v1] Verifying delegation chain: {:?}", params.delegation_id);
 
-    // `OBL-C198`: as `check_not_revoked_v1` — the params' `proof` is always empty and the presence
-    // check lives in the node (`zk_verifier.rs`'s per-call count check).
+    // `OBL-C198`: the params' `proof` is always empty and the presence check lives in the node
+    // (`zk_verifier.rs`'s per-call count check).
 
     // Look up the delegation in the chain
     let delegations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_DELEGATIONS_TREE)?;
@@ -1141,8 +1100,8 @@ fn verify_chain_v1(cid: ContractId, params: VerifyChainParamsV1) -> Result<Vec<u
 fn update_delegation_v1(cid: ContractId, params: UpdateDelegationParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::update_delegation_v1] Updating delegation: {:?}", params.original_attestation_id);
 
-    // `OBL-C198`: as `check_not_revoked_v1` — the params' `proof` is always empty and the presence
-    // check lives in the node (`zk_verifier.rs`'s per-call count check).
+    // `OBL-C198`: the params' `proof` is always empty and the presence check lives in the node
+    // (`zk_verifier.rs`'s per-call count check).
 
     // Load the original attestation. OBL-C196(ii): the arm used to check only that it *exists*,
     // and wrote the delegation under its id with no caller check. The delegator is the attestor
@@ -1398,16 +1357,6 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
                 "[attestation::process_update] ValidateClaim: {:?} valid={:?}",
                 update.claim_id,
                 update.valid
-            );
-            Ok(())
-        }
-        AttestationFunction::CheckNotRevokedV1 => {
-            let update = CheckNotRevokedUpdateV1::decode(update_payload)?;
-            let nullifiers_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_NULLIFIERS_TREE)?;
-            wasm::db::db_mark_spent(nullifiers_db, &update.proof_hash.to_repr())?;
-            msg!(
-                "[attestation::process_update] CheckNotRevoked: is_not_revoked={:?}",
-                update.is_not_revoked
             );
             Ok(())
         }

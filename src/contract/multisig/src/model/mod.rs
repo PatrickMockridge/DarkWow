@@ -1,3 +1,8 @@
+/// Domain separator for the group id, mirrored by `create_group.zk` (`DOMAIN_GROUP_ID =
+/// witness_base(14)`). Before 2026-10-22 the id was an undomained hash of `(first_commitment,
+/// threshold, total_keys)` and the circuit did not relate the exposed `group_id` to anything.
+pub const MULTISIG_GROUP_ID_DOMAIN: pallas::Base = pallas::Base::from_raw([14, 0, 0, 0]);
+
 use dwow_sdk::{
     blockchain::SerializedLen,
     crypto::{pasta_prelude::PrimeField, poseidon_hash, Nullifier},
@@ -146,6 +151,7 @@ impl MultiSigGroup {
         total_keys: u8,
     ) -> GroupId {
         GroupId(poseidon_hash([
+            MULTISIG_GROUP_ID_DOMAIN,
             first_commitment,
             pallas::Base::from(threshold as u64),
             pallas::Base::from(total_keys as u64),

@@ -51,6 +51,51 @@ code = 7
 name = "register_issuer"
 code = 8
 
+# Capability declarations (OBL-C74). Identity's capability types are ZK badges, not AEAD notes, so
+# their note schemas are empty — the same shape multisig uses for its non-note capabilities. Without
+# these entries the wallet could not discover the credential/capability types the contract defines.
+[[capabilities]]
+discriminant = 0
+name = "credential"
+description = "An issued credential record: schema, issuer and holder, proved without disclosure."
+primitives = ["SecretKey", "Commitment", "ContractId", "FuncId"]
+note_schema = []
+
+[[capabilities]]
+discriminant = 1
+name = "capability"
+description = "A registered capability type a holder can prove a credential against."
+primitives = ["SecretKey", "Commitment", "ContractId", "FuncId"]
+note_schema = []
+
+[[actions]]
+function = "issue_credential"
+requires = { type = "none" }
+produces = [{ name = "credential" }]
+consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
+
+[[actions]]
+function = "issue_capability"
+requires = { type = "all", capabilities = ["credential"] }
+produces = [{ name = "capability" }]
+consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
+
+[[actions]]
+function = "verify_capability"
+requires = { type = "all", capabilities = ["capability"] }
+produces = []
+consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
+
+[[actions]]
+function = "revoke_capability"
+requires = { type = "none" }
+produces = []
+consumes = ["capability"]
+required_barbs = ["Commit", "Dispatch", "Gate"]
+
 [[circuits]]
 name = "IssueCredentialV2"
 namespace = "IssueCredentialV2"

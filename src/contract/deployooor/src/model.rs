@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_sdk::crypto::{pasta_prelude::PrimeField, ContractId, PublicKey};
+use dwow_sdk::crypto::{pasta_prelude::{FromUniformBytes, PrimeField}, poseidon_hash, ContractId, PublicKey};
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::pallas;
 
@@ -46,12 +46,35 @@ fn read_field<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], Con
 #[allow(dead_code)]
 fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 0)?)).ok_or_else(|| ContractError::IoError("invalid base".into())) }
 
+/// Content commitment over a WASM module, used by `DeployV1` and by any reader that compares a
+/// fetched module to the stored value.
+///
+/// `poseidon([0, len])` stood here and committed to the module's **length**: two modules of the
+/// same size produced the same stored value and nothing noticed (`OBL-C250`). This commits to the
+/// bytes: each 64-byte chunk is widened to a field element and folded with the chunk's length,
+/// and the module's total length is folded last so trailing zero bytes are not free.
+pub fn wasm_content_commitment(wasm: &[u8]) -> pallas::Base {
+    let mut acc = pallas::Base::zero();
+    for chunk in wasm.chunks(64) {
+        let mut wide = [0u8; 64];
+        for (slot, b) in wide.iter_mut().zip(chunk.iter()) {
+            *slot = *b;
+        }
+        acc = poseidon_hash([
+            acc,
+            pallas::Base::from_uniform_bytes(&wide),
+            pallas::Base::from(chunk.len() as u64),
+        ]);
+    }
+    poseidon_hash([acc, pallas::Base::from(wasm.len() as u64)])
+}
+
 /// State update for `Deploy::Deploy`
 #[derive(Clone, Debug)]
 pub struct DeployUpdateV1 {
     /// The `ContractId` to deploy
     pub contract_id: ContractId,
-    /// Poseidon hash of the WASM bincode for integrity verification
+    /// Content commitment of the WASM bincode (`wasm_content_commitment`)
     pub wasm_hash: pallas::Base,
 }
 

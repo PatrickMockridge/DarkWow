@@ -38,9 +38,7 @@ witness "Withdraw" {
     Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
-    # Appended, not inserted: the twenty-two above are slot indices the manifest's `witness_map`,
-    # `public_inputs` and `note_schema` all name, so a new witness goes at the end where it moves none
-    # of them.
+    # Appended, not inserted, as in `deposit.zk` — the leaf now commits to it (2026-10-22).
     Base asset_id,
     Base derived_purse_id,
 }
@@ -68,7 +66,8 @@ circuit "Withdraw" {
     constrain_instance(nullifier);
 
     # Merkle inclusion of OLD state
-    old_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, old_balance, state_nonce, owner_pub);
+    # The asset is part of the leaf (2026-10-22), as in `deposit.zk`.
+    old_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, old_balance, state_nonce, owner_pub, asset_id);
     root = merkle_root(leaf_pos, path, old_leaf);
     constrain_equal_base(root, expected_root);
     constrain_instance(expected_root);
@@ -102,7 +101,7 @@ circuit "Withdraw" {
 
     # NEW state — nonce increments in-circuit (new_nonce = state_nonce + 1).
     new_nonce = base_add(state_nonce, ONE);
-    new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, new_balance, new_nonce, owner_pub);
+    new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, new_balance, new_nonce, owner_pub, asset_id);
     constrain_equal_base(new_leaf_circuit, new_leaf);
     constrain_instance(new_leaf);
 

@@ -22,7 +22,7 @@
  */
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, PublicKey},
+    crypto::{pasta_prelude::PrimeField, ContractId, PublicKey},
     dark_tree::DarkLeaf,
     deploy::DeployParamsV1,
     error::{ContractError, ContractResult},
@@ -38,7 +38,7 @@ use wasmparser::{
 
 use crate::{
     error::DeployError,
-    model::DeployUpdateV1,
+    model::{wasm_content_commitment, DeployUpdateV1},
     DEPLOY_CONTRACT_INFO_TREE, DEPLOY_CONTRACT_LOCK_TREE,
     DEPLOY_CONTRACT_SINGLETON_TREE, DEPLOY_CONTRACT_WASM_HASH_KEY,
     DISALLOWED_WASM_IMPORTS,
@@ -208,11 +208,9 @@ pub(crate) fn deploy_process_instruction_v1(
         }
     }
 
-    // Compute WASM content hash for integrity verification
-    let wasm_hash = poseidon_hash([
-        pallas::Base::from(0), // domain separator
-        pallas::Base::from(params.wasm_bincode.len() as u64),
-    ]);
+    // Commit to the WASM bytes, not its length (`OBL-C250`). A reader recomputes this from the
+    // module it fetched and compares it to the stored value; the deployooor spec does exactly that.
+    let wasm_hash = wasm_content_commitment(&params.wasm_bincode);
 
     let update = DeployUpdateV1 { contract_id, wasm_hash };
     Ok(update.encode())

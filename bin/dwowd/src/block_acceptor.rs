@@ -467,7 +467,7 @@ pub fn accept_block_with_mempool(
                 // Matching the byte alone decodes an unrelated call as
                 // uncle-mint params and rejects the block — which is what
                 // happened to every contract with a 0x07 function: attestation
-                // (CheckNotRevokedV1), identity (RevokeCapabilityV1),
+                // (its former CheckNotRevokedV1 arm, removed 2026-10-22), identity (RevokeCapabilityV1),
                 // darkbet_exchange (BuyPositionV1), game_room (ClosePotV1),
                 // stablecoin (UpdateConfigV1).
                 if call.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {

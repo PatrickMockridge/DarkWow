@@ -83,7 +83,9 @@ define_contract_function!(AttestationFunction {
     VerifyClaimV1 = 0x04,
     ConsumeClaimV1 = 0x05,
     ValidateClaimV1 = 0x06,
-    CheckNotRevokedV1 = 0x07,
+    // 0x07 was `CheckNotRevokedV1`: it returned `is_not_revoked: true` unconditionally and its
+    // circuit bound only the tx pair. It was removed 2026-10-22; `VerifyCapabilityV1` in Identity is
+    // the real non-revocation check. 0x07 is unassigned.
     DelegateAttestationV1 = 0x08,
     VerifyChainV1 = 0x09,
     UpdateDelegationV1 = 0x0a,
@@ -127,7 +129,6 @@ pub const ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateAttestation";
 pub const ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1: &str = "CreateClaim";
 pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V1: &str = "VerifyClaim";
 pub const ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V1: &str = "ConsumeClaim";
-pub const ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V1: &str = "CheckNotRevoked";
 pub const ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V1: &str = "DelegateAttestation";
 pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V1: &str = "VerifyChain";
 pub const ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V1: &str = "UpdateDelegation";
@@ -139,7 +140,6 @@ pub const ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V2: &str = "CreateAttestationV2";
 pub const ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V2: &str = "CreateClaimV2";
 pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V2: &str = "VerifyClaimV2";
 pub const ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V2: &str = "ConsumeClaimV2";
-pub const ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V2: &str = "CheckNotRevokedV2";
 pub const ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V2: &str = "DelegateAttestationV2";
 pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V2: &str = "VerifyChainV2";
 pub const ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V2: &str = "UpdateDelegationV2";

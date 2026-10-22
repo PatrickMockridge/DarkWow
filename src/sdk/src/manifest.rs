@@ -59,7 +59,26 @@ pub struct ManifestFunction {
     pub description: String,
     #[serde(default)]
     pub requires_proof: bool,
+    /// The single output proof a function names, for the arm that emits one. Kept for every
+    /// existing manifest; an arm that emits more than one proof declares the complete ordered set
+    /// in `proof_circuits`, which supersedes this field when non-empty (2026-10-22).
     pub proof_circuit: Option<String>,
+    /// Every circuit an arm proves, in the order its metadata publishes them. Empty for the
+    /// historical single-proof case; `native_token::transfer`, `promissory_note::redeem` and
+    /// `promissory_note::otc_swap` are multi-proof arms and declare it.
+    #[serde(default)]
+    pub proof_circuits: Vec<String>,
+}
+
+impl ManifestFunction {
+    /// The circuits this function proves: the declared list when present, else the single field.
+    pub fn circuits(&self) -> Vec<&str> {
+        if self.proof_circuits.is_empty() {
+            self.proof_circuit.as_deref().into_iter().collect()
+        } else {
+            self.proof_circuits.iter().map(String::as_str).collect()
+        }
+    }
 }
 
 /// A capability type this contract defines.

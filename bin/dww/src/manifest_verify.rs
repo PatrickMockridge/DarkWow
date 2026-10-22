@@ -259,20 +259,21 @@ fn verify_circuits(
 /// A function that names a proof circuit must name a declared one.
 fn verify_function_references(manifest: &ContractManifest, verdict: &mut ManifestWasmVerdict) {
     for function in &manifest.functions {
-        let Some(circuit) = function.proof_circuit.as_deref() else { continue };
-        if !manifest.circuits.iter().any(|c| c.name == circuit) {
-            verdict.error(format!(
-                "function '{}' names proof circuit '{circuit}', which the manifest does not declare",
-                function.name
-            ));
+        for circuit in function.circuits() {
+            if !manifest.circuits.iter().any(|c| c.name == circuit) {
+                verdict.error(format!(
+                    "function '{}' names proof circuit '{circuit}', which the manifest does not declare",
+                    function.name
+                ));
+            }
         }
     }
 
     // The reverse is a warning, not an error: a manifest may declare a circuit used by a
-    // function that composes it without naming it (native_token's `transfer` uses Burn_V2 and
-    // Mint_V2 and names neither), and a circuit may be embedded for a client-side helper.
+    // function that composes it without naming it, and a circuit may be embedded for a
+    // client-side helper.
     for circuit in &manifest.circuits {
-        if !manifest.functions.iter().any(|f| f.proof_circuit.as_deref() == Some(&circuit.name)) {
+        if !manifest.functions.iter().any(|f| f.circuits().contains(&circuit.name.as_str())) {
             verdict.warnings.push(format!(
                 "circuit '{}' is not named by any function's proof_circuit",
                 circuit.name

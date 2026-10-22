@@ -44,9 +44,6 @@ fn commitment_of(calls: &[dwow_sdk::tx::ContractCall]) -> pallas::Base {
 }
 
 use dwow_attestation_contract::client::{
-    check_not_revoked::{
-        CheckNotRevokedV1CallData, check_not_revoked_v1_proof, CheckNotRevokedV1PublicInputs,
-    },
     consume_claim::{
         ConsumeClaimV1CallData, consume_claim_v1_proof, ConsumeClaimV1PublicInputs,
     },
@@ -74,7 +71,7 @@ use dwow_attestation_contract::client::{
     },
 };
 use dwow_attestation_contract::model::{
-    AttestSlashParamsV1, AttestationId, CheckNotRevokedParamsV1, ClaimId,
+    AttestSlashParamsV1, AttestationId, ClaimId,
     CommitFeeScheduleParamsV1, ConsumeClaimParamsV1, CreateAttestationParamsV1,
     CreateClaimParamsV1, DelegateAttestationParamsV1, Predicate,
     UpdateDelegationParamsV1, VerifyClaimParamsV1,
@@ -94,8 +91,6 @@ pub struct AttestationHarness {
     delegate_attestation_pk: ProvingKey,
     attest_slash_zkbin: ZkBinary,
     attest_slash_pk: ProvingKey,
-    check_not_revoked_zkbin: ZkBinary,
-    check_not_revoked_pk: ProvingKey,
     commit_fee_schedule_zkbin: ZkBinary,
     commit_fee_schedule_pk: ProvingKey,
     verify_chain_zkbin: ZkBinary,
@@ -133,8 +128,6 @@ impl AttestationHarness {
             include_bytes!("../../../attestation/proof/delegate_attestation.zk.bin");
         let attest_slash_bin =
             include_bytes!("../../../attestation/proof/attest_slash.zk.bin");
-        let check_not_revoked_bin =
-            include_bytes!("../../../attestation/proof/check_not_revoked.zk.bin");
         let commit_fee_schedule_bin =
             include_bytes!("../../../attestation/proof/commit_fee_schedule.zk.bin");
         let update_delegation_bin =
@@ -155,7 +148,6 @@ impl AttestationHarness {
         let consume_claim_zkbin = ZkBinary::decode(consume_claim_bin, false).unwrap();
         let delegate_attestation_zkbin = ZkBinary::decode(delegate_bin, false).unwrap();
         let attest_slash_zkbin = ZkBinary::decode(attest_slash_bin, false).unwrap();
-        let check_not_revoked_zkbin = ZkBinary::decode(check_not_revoked_bin, false).unwrap();
         let commit_fee_schedule_zkbin = ZkBinary::decode(commit_fee_schedule_bin, false).unwrap();
         let update_delegation_zkbin = ZkBinary::decode(update_delegation_bin, false).unwrap();
         let verify_chain_zkbin = ZkBinary::decode(verify_chain_bin, false).unwrap();
@@ -185,10 +177,6 @@ impl AttestationHarness {
         let attest_slash_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&attest_slash_zkbin).unwrap(),
             &attest_slash_zkbin,
-        );
-        let check_not_revoked_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&check_not_revoked_zkbin).unwrap(),
-            &check_not_revoked_zkbin,
         );
         let commit_fee_schedule_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&commit_fee_schedule_zkbin).unwrap(),
@@ -241,10 +229,6 @@ impl AttestationHarness {
         let attest_slash_pk =
             ProvingKey::build(attest_slash_zkbin.k, &attest_slash_circuit).expect("ProvingKey::build failed");
         eprintln!("DEBUG: attest_slash PK built successfully!");
-        eprintln!("DEBUG: Building check_not_revoked PK with k={}", check_not_revoked_zkbin.k);
-        let check_not_revoked_pk =
-            ProvingKey::build(check_not_revoked_zkbin.k, &check_not_revoked_circuit).expect("ProvingKey::build failed");
-        eprintln!("DEBUG: check_not_revoked PK built successfully!");
         eprintln!("DEBUG: Building commit_fee_schedule PK with k={}", commit_fee_schedule_zkbin.k);
         let commit_fee_schedule_pk =
             ProvingKey::build(commit_fee_schedule_zkbin.k, &commit_fee_schedule_circuit).expect("ProvingKey::build failed");
@@ -276,8 +260,6 @@ impl AttestationHarness {
             delegate_attestation_pk,
             attest_slash_zkbin,
             attest_slash_pk,
-            check_not_revoked_zkbin,
-            check_not_revoked_pk,
             commit_fee_schedule_zkbin,
             commit_fee_schedule_pk,
             update_delegation_zkbin,
@@ -570,36 +552,6 @@ impl AttestationHarness {
         Ok(DelegateAttestationResult { call_data, proof, public_inputs })
     }
 
-    /// Check non-revocation status (function code 0x07)
-    pub fn check_not_revoked(
-        &self,
-        revocation_root: pallas::Base,
-        nonce: pallas::Base,
-        pos: u64,
-        path: Vec<dwow_sdk::crypto::MerkleNode>,
-    ) -> Result<CheckNotRevokedResult, Box<dyn std::error::Error>> {
-        let mut input = CheckNotRevokedV1CallData::new(revocation_root, nonce, pos, path);
-
-        let params = CheckNotRevokedParamsV1 {
-            // `OBL-C198`: the params carry an **empty** proof — the real proof rides the tx proof
-            // vector, which the commitment excludes, else the commitment would cover the proof.
-            proof: vec![],
-            revocation_root,
-            nonce,
-        };
-
-        let mut call_data = vec![0x07];
-        call_data.extend_from_slice(&params.encode()?);
-
-        // `OBL-C198`: prove LAST, over the finished call data.
-        input.tx_commitment = self.commitment(&call_data);
-        let (proof, public_inputs) = check_not_revoked_v1_proof(
-            &self.check_not_revoked_zkbin, &self.check_not_revoked_pk, &input,
-        )?;
-
-        Ok(CheckNotRevokedResult { call_data, proof, public_inputs })
-    }
-
     /// Update delegation parameters (function code 0x0a)
     ///
     /// OBL-C196(ii): `delegator_secret`/`delegator_pub` are new. The arm authorized no one, and
@@ -872,7 +824,6 @@ impl super::ContractHarness for AttestationHarness {
             "ConsumeClaimV2",
             "DelegateAttestationV2",
             "AttestSlashV2",
-            "CheckNotRevokedV2",
             "CommitFeeScheduleV2",
             "UpdateDelegationV2",
             "VerifyChainV2",
@@ -887,7 +838,6 @@ impl super::ContractHarness for AttestationHarness {
             "ConsumeClaimV2" => Some(&self.consume_claim_zkbin),
             "DelegateAttestationV2" => Some(&self.delegate_attestation_zkbin),
             "AttestSlashV2" => Some(&self.attest_slash_zkbin),
-            "CheckNotRevokedV2" => Some(&self.check_not_revoked_zkbin),
             "CommitFeeScheduleV2" => Some(&self.commit_fee_schedule_zkbin),
             "UpdateDelegationV2" => Some(&self.update_delegation_zkbin),
             "VerifyChainV2" => Some(&self.verify_chain_zkbin),
@@ -903,7 +853,6 @@ impl super::ContractHarness for AttestationHarness {
             "ConsumeClaimV2" => Some(&self.consume_claim_pk),
             "DelegateAttestationV2" => Some(&self.delegate_attestation_pk),
             "AttestSlashV2" => Some(&self.attest_slash_pk),
-            "CheckNotRevokedV2" => Some(&self.check_not_revoked_pk),
             "CommitFeeScheduleV2" => Some(&self.commit_fee_schedule_pk),
             "UpdateDelegationV2" => Some(&self.update_delegation_pk),
             "VerifyChainV2" => Some(&self.verify_chain_pk),
@@ -965,13 +914,6 @@ pub struct DelegateAttestationResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: DelegateAttestationV1PublicInputs,
-}
-
-/// Result of check_not_revoked
-pub struct CheckNotRevokedResult {
-    pub call_data: Vec<u8>,
-    pub proof: dwow_core::zk::Proof,
-    pub public_inputs: CheckNotRevokedV1PublicInputs,
 }
 
 /// Result of update_delegation

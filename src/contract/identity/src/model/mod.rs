@@ -44,7 +44,7 @@
 
 use dwow_sdk::blockchain::SerializedLen;
 use dwow_sdk::crypto::{poseidon_hash, IntentCommitment, IntentNullifier, PublicKey};
-use dwow_sdk::crypto::pasta_prelude::PrimeField;
+use dwow_sdk::crypto::pasta_prelude::{FromUniformBytes, PrimeField};
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::pallas;
 
@@ -288,15 +288,16 @@ impl Credential {
 pub struct Issuer {
     pub pub_key: PublicKey,
     pub name: Vec<u8>,
+    /// The schemas this issuer declared at registration. `issue_credential` refuses a schema not
+    /// in this list; before 2026-10-22 the list was written and read by nothing.
     pub authorized_schemas: Vec<[u8; 32]>,
-    pub trusted: bool,
 }
 
 impl Issuer {
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> {
         let nl = SerializedLen::try_from_len(self.name.len())?;
         let sl = SerializedLen::try_from_len(self.authorized_schemas.len())?;
-        let cap = 41 + self.name.len() + self.authorized_schemas.len() * 32;
+        let cap = 40 + self.name.len() + self.authorized_schemas.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.pub_key.to_bytes());
         buf.extend_from_slice(&nl.to_le_bytes());
@@ -305,13 +306,12 @@ impl Issuer {
         for schema in &self.authorized_schemas {
             buf.extend_from_slice(schema);
         }
-        buf.push(self.trusted as u8);
         Ok(buf)
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 41 {
+        if data.len() < 40 {
             return Err(ContractError::IoError(format!(
-                "Issuer: expected at least 41 bytes, got {}", data.len()
+                "Issuer: expected at least 40 bytes, got {}", data.len()
             )));
         }
         let pub_key = PublicKey::from_bytes(read_field::<32>(data, 0)?)
@@ -326,7 +326,7 @@ impl Issuer {
         let name = read_slice(data, 36, name_len)?.to_vec();
         let schemas_pos = 36 + name_len;
         let schemas_len = SerializedLen::from_le_bytes(read_field::<4>(data, schemas_pos)?).to_usize();
-        let expected = schemas_pos + 4 + schemas_len * 32 + 1;
+        let expected = schemas_pos + 4 + schemas_len * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "Issuer: expected {} bytes, got {}", expected, data.len()
@@ -337,8 +337,7 @@ impl Issuer {
             let start = schemas_pos + 4 + i * 32;
             authorized_schemas.push(read_field::<32>(data, start)?);
         }
-        let trusted = read_byte(data, expected - 1)? != 0;
-        Ok(Issuer { pub_key, name, authorized_schemas, trusted })
+        Ok(Issuer { pub_key, name, authorized_schemas })
     }
 }
 
@@ -727,6 +726,41 @@ pub const CAPABILITY_REVOKE_DOMAIN: pallas::Base = pallas::Base::from_raw([11, 0
 /// share a construction namespace with credential nullifiers (which are 3-argument Poseidon); the
 /// fourth argument separates them. 12 is the next free domain slot.
 pub const CAPABILITY_REVOKE_KEY_DOMAIN: pallas::Base = pallas::Base::from_raw([12, 0, 0, 0]);
+
+/// Domain separator for a capability id. `compute_capability_id` used to hash the first eight bytes
+/// of `CredentialRequirement::encode()` — `schema_hash[0..8]` — so the name, issuer, threshold and
+/// attribute were ignored and distinct capabilities collided on one schema. 13 is the next free slot.
+pub const CAPABILITY_ID_DOMAIN: pallas::Base = pallas::Base::from_raw([13, 0, 0, 0]);
+
+/// The capability id, `H(domain, fold(requirement.encode() ‖ name), len)`.
+///
+/// One definition for the contract (`register_capability`) and the harness/client, so the two
+/// cannot drift; before 2026-10-22 both sides hashed only the first eight bytes of the requirement,
+/// which is `schema_hash[0..8]`.
+pub fn derive_capability_id(
+    name: &[u8],
+    requirement: &CredentialRequirement,
+) -> Result<CapabilityId, ContractError> {
+    let mut data = requirement.encode()?;
+    data.extend_from_slice(name);
+    let mut acc = pallas::Base::zero();
+    for chunk in data.chunks(64) {
+        let mut wide = [0u8; 64];
+        for (slot, b) in wide.iter_mut().zip(chunk.iter()) {
+            *slot = *b;
+        }
+        acc = poseidon_hash([
+            acc,
+            pallas::Base::from_uniform_bytes(&wide),
+            pallas::Base::from(chunk.len() as u64),
+        ]);
+    }
+    Ok(CapabilityId(poseidon_hash([
+        CAPABILITY_ID_DOMAIN,
+        acc,
+        pallas::Base::from(data.len() as u64),
+    ])))
+}
 
 /// The revocation marker key, `poseidon(domain, capability_id, holder_x, holder_y)`.
 ///

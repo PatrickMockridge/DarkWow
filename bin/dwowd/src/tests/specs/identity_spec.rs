@@ -47,6 +47,27 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
         }, None)
         .expect("pre-compute register_capability");
     let cap_id = reg_result.capability_id.inner();
+    // A second capability over the **same** requirement with a different name. The pre-fix
+    // derivation hashed only `schema_hash[0..8]`, so this collided with `cap_id` and
+    // `register_capability` refused it as `CapabilityAlreadyExists`; it must now be accepted under
+    // its own id.
+    let reg_result2 = h.register_capability(b"can_vote_2".to_vec(),
+        CredentialRequirement {
+            schema_hash: schema_hash.to_repr(), issuer_pub,
+            min_threshold: 1, attribute_name: b"role".to_vec(),
+        }, None)
+        .expect("pre-compute second register_capability");
+    let cap2_key = reg_result2.capability_id.inner().to_repr().to_vec();
+    // A capability whose requirement names a schema the credential does not have. `issue_capability`
+    // used to fetch the credential and discard it; it now refuses the mismatch.
+    let reg_result3 = h.register_capability(b"can_vote_other".to_vec(),
+        CredentialRequirement {
+            schema_hash: pallas::Base::from(31u64).to_repr(), issuer_pub,
+            min_threshold: 1, attribute_name: b"role".to_vec(),
+        }, None)
+        .expect("pre-compute third register_capability");
+    let cap3_id = CapabilityId(reg_result3.capability_id.inner());
+    let cap3_key = reg_result3.capability_id.inner().to_repr().to_vec();
     // Pre-computed keys for verify_state closures
     // Issuer key = compute_issuer_key(pub) = poseidon_hash([x, y, 0, 0]).
     let issuer_key = poseidon_hash([
@@ -90,7 +111,9 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     let name = b"test_issuer".to_vec();
                     move || {
-                        let r = h.register_issuer(pk, name.clone(), vec![])?;
+                        // The issuer declares the one schema it will issue; `issue_credential`
+                        // refuses anything else (the list was dead state until 2026-10-22).
+                        let r = h.register_issuer(pk, name.clone(), vec![schema_hash.to_repr()])?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                     }
                 }),
@@ -106,6 +129,26 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                         b"tenure", pallas::Base::from(200u64),
                         pallas::Base::from(300u64), schema_hash, 0, 100000)?;
                     Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                }),
+            },
+            EndpointSpec {
+                name: "IssueCredentialV1_UndeclaredSchema", is_zk: true,
+                // The issuer declared `schema_hash`; this call proves a credential for a
+                // different schema. `authorized_schemas` was written and read by nothing before
+                // 2026-10-22, so this row succeeded; it must now be refused with
+                // `SchemaNotRecognized` = Custom(8), not accepted and not some later error.
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(8))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new({
+                    let other_schema = pallas::Base::from(31u64);
+                    move || {
+                        let r = h.issue_credential(&[], issuer_secret, credential_secret,
+                            b"role", pallas::Base::from(100u64),
+                            b"tenure", pallas::Base::from(200u64),
+                            pallas::Base::from(301u64), other_schema, 0, 100000)?;
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
+                    }
                 }),
             },
             EndpointSpec {
@@ -128,6 +171,57 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                             }, None)?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                     }
+                }),
+            },
+            EndpointSpec {
+                name: "RegisterCapabilityV1_SameSchemaDifferentName", is_zk: false,
+                // Same requirement, different name. Under the truncated id derivation this was
+                // refused as a duplicate; the id now commits to the whole requirement plus name.
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: Some(Box::new({ let k = cap2_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("second capability must be stored under its own id".into())); } Ok(()) } })),
+                generate: Box::new({
+                    let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
+                    move || {
+                        let r = h.register_capability(b"can_vote_2".to_vec(),
+                            CredentialRequirement {
+                                schema_hash: schema_hash.to_repr(), issuer_pub: pk,
+                                min_threshold: 1, attribute_name: b"role".to_vec(),
+                            }, None)?;
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+                    }
+                }),
+            },
+            EndpointSpec {
+                name: "RegisterCapabilityV1_OtherSchema", is_zk: false,
+                // A capability over a schema no credential in this spec has. Registration itself
+                // does not require a credential; issuing to it is the next row's subject.
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: Some(Box::new({ let k = cap3_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("third capability must be stored".into())); } Ok(()) } })),
+                generate: Box::new({
+                    let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
+                    move || {
+                        let r = h.register_capability(b"can_vote_other".to_vec(),
+                            CredentialRequirement {
+                                schema_hash: pallas::Base::from(31u64).to_repr(), issuer_pub: pk,
+                                min_threshold: 1, attribute_name: b"role".to_vec(),
+                            }, None)?;
+                        Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
+                    }
+                }),
+            },
+            EndpointSpec {
+                name: "IssueCapabilityV1_CredentialDoesNotMatch", is_zk: false,
+                // The credential is schema 30; this capability requires schema 31. The arm used to
+                // discard the fetched credential and increment `issued_count`; it must now refuse
+                // with SchemaNotRecognized = Custom(8) before any state is prepared.
+                expectation: EndpointExpectation::RejectionByEndpoint(&["ContractError(Custom(8))"]),
+                generate_with_coinbase: None,
+                verify_state: None,
+                generate: Box::new(move || {
+                    let r = h.issue_capability(cap3_id, holder_pub, credential_nf)?;
+                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![] })
                 }),
             },
             EndpointSpec {

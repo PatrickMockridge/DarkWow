@@ -97,8 +97,9 @@ impl MultiSigHarness {
         let n = pallas::Base::from(u64::from(total_keys));
         // The same derivation the contract stores, called rather than re-implemented so the two
         // cannot drift.
+        let first_commitment = member_commitments[0];
         let group_id = dwow_multisig_contract::model::MultiSigGroup::derive_group_id(
-            member_commitments[0], threshold, total_keys,
+            first_commitment, threshold, total_keys,
         ).inner();
         let tx_nonce = pallas::Base::from(300u64);
 
@@ -119,8 +120,8 @@ impl MultiSigHarness {
 
         let witnesses = vec![
             Witness::Base(Value::known(group_id)), Witness::Base(Value::known(t)),
-            Witness::Base(Value::known(n)), Witness::Base(Value::known(tx_commitment)),
-            Witness::Base(Value::known(tx_nonce)),
+            Witness::Base(Value::known(n)), Witness::Base(Value::known(first_commitment)),
+            Witness::Base(Value::known(tx_commitment)), Witness::Base(Value::known(tx_nonce)),
         ];
         // constrain_instance order: group_id, threshold, total_keys, tx_binding, tx_nonce —
         // the pair is last, which is the convention the node reads.

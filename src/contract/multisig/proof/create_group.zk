@@ -12,6 +12,11 @@ witness "CreateGroupV2" {
     Base group_id,
     Base threshold,
     Base total_keys,
+    # The first (deduplicated) member commitment. The host derives `group_id` from it and publishes
+    # that derivation in the metadata; the circuit now requires the exposed `group_id` to be the
+    # same derivation, so the proof commits to the group's first member and counts. Before this the
+    # exposed id was related to nothing and a proof over any bytes verified.
+    Base first_commitment,
 
     Base tx_commitment,
     Base tx_nonce,
@@ -19,8 +24,12 @@ witness "CreateGroupV2" {
 
 circuit "CreateGroupV2" {
     DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_GROUP_ID = witness_base(14);
 
     range_check(64, threshold);
+
+    derived_group_id = poseidon_hash(DOMAIN_GROUP_ID, first_commitment, threshold, total_keys);
+    constrain_equal_base(derived_group_id, group_id);
 
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
 

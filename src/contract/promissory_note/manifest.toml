@@ -24,6 +24,10 @@ name = "redeem"
 code = 1
 description = "Redeem a note via RedeemV1 — destroys monetary value, creates a zero-value receipt note as cryptographic proof of redemption."
 requires_proof = true
+# A revoke (burn) proof for each input, then the redeem proof for the zero-value receipt. The
+# singular field named only the receipt, so a manifest-driven prover emitted one proof where the
+# arm's metadata publishes two (2026-10-22).
+proof_circuits = ["Revoke_V2", "Redeem_V2"]
 proof_circuit = "Redeem_V2"
 
 [[functions]]
@@ -45,6 +49,8 @@ name = "transfer"
 code = 4
 description = "Atomic burn-and-blind-output via TransferV1. Burns input notes, creates new blind outputs. Enforces value conservation per token_commit."
 requires_proof = true
+# A revoke proof for each input, then a transfer proof for each output (2026-10-22).
+proof_circuits = ["Revoke_V2", "Transfer_V2"]
 proof_circuit = "Transfer_V2"
 
 [[functions]]
@@ -52,6 +58,8 @@ name = "otc_swap"
 code = 5
 description = "Peer-to-peer atomic swap via OtcSwapV1. Exactly 2 inputs and 2 outputs. Both parties must sign."
 requires_proof = true
+# A revoke proof for each input, then a transfer proof for each output (2026-10-22).
+proof_circuits = ["Revoke_V2", "Transfer_V2"]
 proof_circuit = "Transfer_V2"
 
 # ============================================================================

@@ -33,7 +33,6 @@ pub mod create_attestation;
 pub mod create_claim;
 pub mod verify_claim;
 pub mod consume_claim;
-pub mod check_not_revoked;
 pub mod delegate_attestation;
 pub mod verify_chain;
 pub mod update_delegation;

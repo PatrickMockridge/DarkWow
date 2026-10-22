@@ -48,7 +48,8 @@ circuit "Balance" {
     # five-input leaves to this same tree, so a four-input inclusion could never hold.
     # `owner_pub` is already a witness here — this file derives `derived_purse_id` from
     # it — so no slot moves.
-    purse_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, balance, state_nonce, owner_pub);
+    # The asset is part of the leaf (2026-10-22), as in `deposit.zk`/`withdraw.zk`.
+    purse_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, balance, state_nonce, owner_pub, asset_id);
     root = merkle_root(leaf_pos, path, purse_leaf);
     constrain_equal_base(root, expected_root);
     constrain_instance(expected_root);

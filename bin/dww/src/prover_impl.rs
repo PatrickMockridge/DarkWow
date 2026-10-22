@@ -467,20 +467,34 @@ fn compute_derived(
         ])),
         // The leaf commits to its owner: the fourth operand is the *secret* (an input slot,
         // so the DAG rule is satisfied), and `owner_pub = poseidon(7, secret)` is derived here.
-        DerivedRule::Leaf { id, contents, nonce, secret } => SlotValue::Base(poseidon_hash([
-            DRK_POSEIDON_DOMAIN_MERKLE_LEAF,
-            base(*id)?,
-            base(*contents)?,
-            base(*nonce)?,
-            poseidon_hash([DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, base(*secret)?]),
-        ])),
-        DerivedRule::LeafIncrement { id, contents, nonce, secret } => SlotValue::Base(poseidon_hash([
-            DRK_POSEIDON_DOMAIN_MERKLE_LEAF,
-            base(*id)?,
-            base(*contents)?,
-            base(*nonce)? + pallas::Base::one(),
-            poseidon_hash([DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, base(*secret)?]),
-        ])),
+        DerivedRule::Leaf { id, contents, nonce, secret, asset } => {
+            let owner = poseidon_hash([DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, base(*secret)?]);
+            let leaf = match asset {
+                Some(a) => poseidon_hash([
+                    DRK_POSEIDON_DOMAIN_MERKLE_LEAF,
+                    base(*id)?, base(*contents)?, base(*nonce)?, owner, base(*a)?,
+                ]),
+                None => poseidon_hash([
+                    DRK_POSEIDON_DOMAIN_MERKLE_LEAF,
+                    base(*id)?, base(*contents)?, base(*nonce)?, owner,
+                ]),
+            };
+            SlotValue::Base(leaf)
+        }
+        DerivedRule::LeafIncrement { id, contents, nonce, secret, asset } => {
+            let owner = poseidon_hash([DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, base(*secret)?]);
+            let leaf = match asset {
+                Some(a) => poseidon_hash([
+                    DRK_POSEIDON_DOMAIN_MERKLE_LEAF,
+                    base(*id)?, base(*contents)?, base(*nonce)? + pallas::Base::one(), owner, base(*a)?,
+                ]),
+                None => poseidon_hash([
+                    DRK_POSEIDON_DOMAIN_MERKLE_LEAF,
+                    base(*id)?, base(*contents)?, base(*nonce)? + pallas::Base::one(), owner,
+                ]),
+            };
+            SlotValue::Base(leaf)
+        }
         DerivedRule::Increment { a } => SlotValue::Base(base(*a)? + pallas::Base::one()),
         DerivedRule::MerkleRoot { .. } => {
             // expected_root/merkle_root is carried in the L1 note (§C.8.2), so it

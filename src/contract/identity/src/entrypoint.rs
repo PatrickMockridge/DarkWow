@@ -354,9 +354,17 @@ fn process_issue_credential_instruction(
     // the contract must also confirm the issuer_pub is a known trusted issuer.
     let issuers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_ISSUERS_TREE)?;
     let issuer_key = compute_issuer_key(&params.issuer_pub)?;
-    if !wasm::db::db_contains_key(issuers_db, &issuer_key)? {
-        msg!("[identity::issue_credential] ERROR: Issuer not registered");
-        return Err(IdentityError::IssuerNotTrusted.into());
+    let issuer_data = wasm::db::db_get(issuers_db, &issuer_key)?
+        .ok_or_else(|| {
+            msg!("[identity::issue_credential] ERROR: Issuer not registered");
+            IdentityError::IssuerNotTrusted
+        })?;
+    // `authorized_schemas` was stored and read by nothing: an issuer could issue any schema it had
+    // never declared. The list is now the predicate, not decoration.
+    let issuer = Issuer::decode(&issuer_data)?;
+    if !issuer.authorized_schemas.iter().any(|s| *s == params.schema_hash) {
+        msg!("[identity::issue_credential] ERROR: Issuer is not authorised for this schema");
+        return Err(IdentityError::SchemaNotRecognized.into())
     }
 
     let update = IssueCredentialUpdateV1 {
@@ -478,7 +486,7 @@ fn process_register_capability_instruction(
     msg!("[identity::register_capability] Registering capability");
 
     // Compute capability ID
-    let capability_id = compute_capability_id(&params.name, &params.credential_requirement)?;
+    let capability_id = derive_capability_id(&params.name, &params.credential_requirement)?;
 
     // Check if capability already exists
     let capabilities_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
@@ -553,11 +561,27 @@ fn process_issue_capability_instruction(
         }
     }
 
-    // Verify credential exists
+    // Verify the credential exists **and satisfies this capability**. The fetch used to be
+    // discarded and `issued_count` incremented unconditionally, so any credential — even revoked,
+    // expired or for another schema/issuer — could burn the `max_holders` budget.
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
     let cred_nullifier_bytes = params.credential_nullifier.to_bytes();
-    let _cred_data = wasm::db::db_get(credentials_db, &cred_nullifier_bytes)?
+    let cred_data = wasm::db::db_get(credentials_db, &cred_nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
+    let credential = Credential::decode(&cred_data)?;
+    if credential.revoked {
+        return Err(IdentityError::CredentialRevoked.into())
+    }
+    let now = wasm::util::get_verifying_block_height()?.get();
+    if credential.expires_at != 0 && now > credential.expires_at {
+        return Err(IdentityError::CredentialExpired.into())
+    }
+    if credential.schema_hash != capability.credential_requirement.schema_hash {
+        return Err(IdentityError::SchemaNotRecognized.into())
+    }
+    if credential.issuer_pub != capability.credential_requirement.issuer_pub {
+        return Err(IdentityError::IssuerNotTrusted.into())
+    }
 
     // Possession is proven at verification by the holder's signature (`OBL-C171`); issuance
     // records no possession key.
@@ -854,27 +878,6 @@ fn apply_revoke_capability_update(cid: ContractId, update: RevokeCapabilityUpdat
 // ============================================================================
 
 /// Compute capability ID from name and requirements
-fn compute_capability_id(
-    name: &[u8],
-    requirement: &CredentialRequirement,
-) -> Result<CapabilityId, ContractError> {
-    use dwow_sdk::crypto::poseidon_hash;
-    let mut data = requirement.encode()?;
-    data.extend_from_slice(name);
-    // `8.min(data.len())` used to size this slice, and `copy_from_slice` panics when the lengths
-    // differ — so a buffer shorter than 8 bytes was a panic rather than a rejection. `get(..8)`
-    // makes the short case an error and the copy below is then exact by construction.
-    let Some(head) = data.get(..8) else {
-        return Err(ContractError::IoError(format!(
-            "compute_capability_id: need 8 bytes, got {}", data.len()
-        )))
-    };
-    let mut u64_bytes = [0u8; 8];
-    u64_bytes.copy_from_slice(head);
-    let value = u64::from_le_bytes(u64_bytes);
-    let hash = poseidon_hash([dwow_sdk::pasta::pallas::Base::from(value)]);
-    Ok(CapabilityId(hash))
-}
 
 /// Compute a hashed DB key from an issuer pubkey so the raw pubkey is not
 /// exposed as a database key. Uses full 32-byte entropy via Poseidon.
@@ -939,7 +942,6 @@ fn apply_register_issuer_update(cid: ContractId, update: RegisterIssuerUpdateV1)
         pub_key: update.issuer_id,
         name: update.name,
         authorized_schemas: update.authorized_schemas,
-        trusted: true,
     };
 
     wasm::db::db_set(issuers_db, &compute_issuer_key(&update.issuer_id)?, &issuer.encode()?)?;

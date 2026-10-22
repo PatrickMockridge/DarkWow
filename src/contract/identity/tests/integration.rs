@@ -186,7 +186,6 @@ fn test_issuer_encoding() {
         pub_key: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1))),
         name: b"Government DMV".to_vec(),
         authorized_schemas: vec![[2u8; 32], [3u8; 32]],
-        trusted: true,
     };
 
     let encoded = issuer.encode().unwrap();
@@ -194,7 +193,6 @@ fn test_issuer_encoding() {
 
     assert_eq!(decoded.pub_key, issuer.pub_key);
     assert_eq!(decoded.name, issuer.name);
-    assert_eq!(decoded.trusted, true);
     assert_eq!(decoded.authorized_schemas.len(), 2);
 }
 

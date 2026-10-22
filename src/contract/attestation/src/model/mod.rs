@@ -847,30 +847,6 @@ impl DelegateAttestationUpdateV1 {
     }
 }
 
-/// Parameters for checking not revoked
-#[derive(Debug, Clone,)]
-pub struct CheckNotRevokedParamsV1 {
-    /// ZK proof for non-revocation
-    pub proof: Vec<u8>,
-    /// Revocation Merkle root
-    pub revocation_root: pallas::Base,
-    /// Nonce being checked
-    pub nonce: pallas::Base,
-}
-
-impl dwow_serial::Encodable for CheckNotRevokedParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for CheckNotRevokedParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl CheckNotRevokedParamsV1 { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let pl = SerializedLen::try_from_len(self.proof.len())?; let mut b = Vec::with_capacity(68+self.proof.len()); b.extend_from_slice(&pl.to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.revocation_root.to_repr()); b.extend_from_slice(&self.nonce.to_repr()); Ok(b) } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 68 { return Err(ContractError::IoError("CheckNotRevokedParamsV1: too short".into())); } let proof_len = SerializedLen::from_le_bytes(read_field::<4>(data, 0)?).to_usize(); let pos = 4+proof_len; if data.len() != pos+64 { return Err(ContractError::IoError(format!("CheckNotRevokedParamsV1: expected {} bytes, got {}", pos+64, data.len()))); } let proof = read_slice(data, 4, (pos) - (4))?.to_vec(); let revocation_root = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos)?)).ok_or_else(|| ContractError::IoError("CheckNotRevokedParamsV1: invalid revocation_root".into()))?; let nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, pos+32)?)).ok_or_else(|| ContractError::IoError("CheckNotRevokedParamsV1: invalid nonce".into()))?; Ok(CheckNotRevokedParamsV1 { proof, revocation_root, nonce }) } }
-
-/// State update for CheckNotRevokedV1
-#[derive(Debug, Clone)]
-pub struct CheckNotRevokedUpdateV1 {
-    /// Whether the nonce is not revoked
-    pub is_not_revoked: bool,
-    /// Hash of (nonce, revocation_root) for replay protection
-    pub proof_hash: pallas::Base,
-}
-
 /// Parameters for CheckAttestationV1 — the *bare id* lookup that `VerifyClaimV1` and
 /// `ValidateClaimV1` cannot do, because both take a `claim_id` and no claim exists yet when a job is
 /// created (`labor_market`'s `create_job_v1`, whose `attestation_id` was a prover-chosen expose with
@@ -1161,17 +1137,6 @@ impl ConsumeClaimUpdateV1 {
         let Some(tail_at) = data.len().checked_sub(32) else { return Err(ContractError::IoError("ConsumeClaimUpdateV1: too short".into())) };
         let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, tail_at)?)).ok_or_else(|| ContractError::IoError("ConsumeClaimUpdateV1: invalid nullifier".into()))?;
         Ok(ConsumeClaimUpdateV1 { claim_id, claim, nullifier })
-    }
-}
-
-impl dwow_serial::Encodable for CheckNotRevokedUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for CheckNotRevokedUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl CheckNotRevokedUpdateV1 {
-    pub const ENCODED_SIZE: usize = 33;
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33); b.push(self.is_not_revoked as u8); b.extend_from_slice(&self.proof_hash.to_repr()); b }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("CheckNotRevokedUpdateV1: expected 33 bytes, got {}", data.len()))); }
-        Ok(CheckNotRevokedUpdateV1 { is_not_revoked: read_byte(data, 0)? != 0, proof_hash: Option::<pallas::Base>::from(pallas::Base::from_repr(read_field::<32>(data, 1)?)).ok_or_else(|| ContractError::IoError("CheckNotRevokedUpdateV1: invalid proof_hash".into()))? })
     }
 }
 

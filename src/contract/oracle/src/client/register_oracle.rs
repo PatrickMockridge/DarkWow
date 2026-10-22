@@ -66,7 +66,7 @@ impl RegisterOracleV1CallData {
     }
 
     /// The registered operator identity: `H(DOMAIN_OPERATOR_COMMITMENT, oracle_secret, oracle_id)`,
-    /// with `DOMAIN_OPERATOR_COMMITMENT = witness_base(4)`.
+    /// with `DOMAIN_OPERATOR_COMMITMENT = witness_base(8)`.
     ///
     /// This was `PublicKey::from_secret(SecretKey::from_base(oracle_secret))` — the operator's
     /// static key, computed the same way the circuit derived it, and published. It is now a hiding

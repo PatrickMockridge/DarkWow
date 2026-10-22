@@ -38,6 +38,8 @@ name = "transfer"
 code = 3
 description = "Transfer native token value via TransferV1. Atomic burn + blind output with value conservation."
 requires_proof = true
+# One burn proof per input, one mint proof per output; the arm publishes them in that order.
+proof_circuits = ["Burn_V2", "Mint_V2"]
 # Uses Burn_V2 + Mint_V2 circuits (no dedicated Transfer circuit)
 
 [[functions]]

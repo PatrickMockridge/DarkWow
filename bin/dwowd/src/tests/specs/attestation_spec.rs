@@ -2,7 +2,7 @@
 
 use dwow_contract_test_harness::harness::{AttestationHarness, ContractHarness};
 use dwow_attestation_contract::model::Predicate;
-use dwow_sdk::crypto::{ATTESTATION_CONTRACT_ID, PublicKey, SecretKey, MerkleNode, pasta_prelude::PrimeField, poseidon_hash};
+use dwow_sdk::crypto::{ATTESTATION_CONTRACT_ID, PublicKey, SecretKey, pasta_prelude::PrimeField, poseidon_hash};
 use dwow_sdk::pasta::pallas;
 
 use crate::tests::blockchain::HeavyweightPipeline;
@@ -163,19 +163,6 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                             .map_err(modules::error_bridge::bridge)?;
                         Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                     }
-                }),
-            },
-            EndpointSpec {
-                name: "CheckNotRevokedV1", is_zk: true,
-                expectation: EndpointExpectation::Success,
-                generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
-                generate: Box::new(move || {
-                    let ep: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
-                    let r = h.check_not_revoked(
-                        pallas::Base::from(100u64), pallas::Base::from(200u64), 0, ep)
-                        .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { children: vec![], call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
