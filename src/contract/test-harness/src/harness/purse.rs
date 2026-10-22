@@ -100,7 +100,7 @@ impl PurseHarness {
         let dpi=poseidon_hash([pallas::Base::from(4u64),op,tid,pid]);
         let sn=pallas::Base::zero();let ob:u64=0;let nb:u64=amount;let tn=pallas::Base::from(300u64);
         let nf=poseidon_hash([dnl,os,pid,sn]);
-        let nl=poseidon_hash([dml,pid,pallas::Base::from(nb),sn + pallas::Base::from(1u64),op]);let ol=poseidon_hash([dml,pid,pallas::Base::from(ob),sn,op]);
+        let nl=poseidon_hash([dml,pid,pallas::Base::from(nb),sn + pallas::Base::from(1u64),op,tid]);let ol=poseidon_hash([dml,pid,pallas::Base::from(ob),sn,op,tid]);
         let (lp,p,root)=Self::build_root(ol);
         let er_base: pallas::Base = root.inner();
         let obl=ScalarBlind::from_u64(1u64);let dbl=ScalarBlind::from_u64(2u64);let nbl=ScalarBlind::from_u64(3u64);
@@ -171,7 +171,7 @@ impl PurseHarness {
         let dpi=poseidon_hash([pallas::Base::from(4u64),op,tid,pid]);
         let sn=pallas::Base::from(1u64);let ob:u64=100;let nb:u64=ob-amount;let tn=pallas::Base::from(300u64);
         let nf=poseidon_hash([dnl,os,pid,sn]);
-        let nl=poseidon_hash([dml,pid,pallas::Base::from(nb),sn + pallas::Base::from(1u64),op]);let ol=poseidon_hash([dml,pid,pallas::Base::from(ob),sn,op]);
+        let nl=poseidon_hash([dml,pid,pallas::Base::from(nb),sn + pallas::Base::from(1u64),op,tid]);let ol=poseidon_hash([dml,pid,pallas::Base::from(ob),sn,op,tid]);
         let (lp,p,root)=Self::build_root(ol);
         let er_base: pallas::Base = root.inner();
         // obl=5: Pedersen blind balance: obl = nbl + wbl (5 = 3 + 2)
@@ -229,8 +229,8 @@ impl PurseHarness {
         // Balance queries the CURRENT purse leaf (balance 50, nonce 2 — the withdraw
         // output). On-chain tree after Deposit(100)+Withdraw(50) is
         // [zero, leaf(100, nonce 1), leaf(50, nonce 2)]; witness the latest leaf.
-        let deposit_leaf = poseidon_hash([dml, pid, pallas::Base::from(100u64), pallas::Base::from(1u64), op]);
-        let withdraw_leaf = poseidon_hash([dml, pid, pallas::Base::from(bal), pallas::Base::from(2u64), op]);
+        let deposit_leaf = poseidon_hash([dml, pid, pallas::Base::from(100u64), pallas::Base::from(1u64), op, tid]);
+        let withdraw_leaf = poseidon_hash([dml, pid, pallas::Base::from(bal), pallas::Base::from(2u64), op, tid]);
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
         tree.append(MerkleNode::from_base(deposit_leaf));
